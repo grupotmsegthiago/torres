@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
-import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2 } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X } from "lucide-react";
 import type { Employee } from "@shared/schema";
 
 type Device = {
@@ -53,11 +53,13 @@ export default function ControlIdPage() {
             <TabsTrigger value="aparelhos" data-testid="tab-aparelhos"><KeyRound className="w-3.5 h-3.5 mr-1" /> Aparelhos</TabsTrigger>
             <TabsTrigger value="mapping" data-testid="tab-mapping"><Users className="w-3.5 h-3.5 mr-1" /> Mapping Funcionários</TabsTrigger>
             <TabsTrigger value="batidas" data-testid="tab-batidas"><ListChecks className="w-3.5 h-3.5 mr-1" /> Batidas</TabsTrigger>
+            <TabsTrigger value="folgas" data-testid="tab-folgas"><CalendarDays className="w-3.5 h-3.5 mr-1" /> Folgas/Faltas</TabsTrigger>
             <TabsTrigger value="folha" data-testid="tab-folha"><FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Folha de Ponto</TabsTrigger>
           </TabsList>
           <TabsContent value="aparelhos" className="mt-4"><DevicesTab /></TabsContent>
           <TabsContent value="mapping" className="mt-4"><MappingTab /></TabsContent>
           <TabsContent value="batidas" className="mt-4"><PunchesTab /></TabsContent>
+          <TabsContent value="folgas" className="mt-4"><AbsencesTab /></TabsContent>
           <TabsContent value="folha" className="mt-4"><FolhaTab /></TabsContent>
         </Tabs>
       </div>
@@ -464,6 +466,71 @@ function PunchesTab() {
     refetchInterval: 30000,
   });
 
+  const [editingPunch, setEditingPunch] = useState<Punch | null>(null);
+  const [editPunchAt, setEditPunchAt] = useState("");
+  const [editDirection, setEditDirection] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualEmpId, setManualEmpId] = useState("");
+  const [manualWhen, setManualWhen] = useState(new Date().toISOString().slice(0, 16));
+  const [manualDir, setManualDir] = useState("in");
+
+  function startEdit(p: Punch) {
+    setEditingPunch(p);
+    const d = new Date(p.punch_at);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setEditPunchAt(local);
+    setEditDirection(p.direction || "unknown");
+  }
+
+  async function saveEdit() {
+    if (!editingPunch) return;
+    try {
+      const r = await authFetch(`/api/control-id/punches/${editingPunch.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ punchAt: new Date(editPunchAt).toISOString(), direction: editDirection }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      toast({ title: "Batida atualizada", description: d.rhidSynced ? "Sincronizado com o RHID." : (d.rhidError || "Salvo apenas localmente.") });
+      setEditingPunch(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function deletePunch(p: Punch) {
+    if (!confirm(`Excluir esta batida (${formatDateTime(p.punch_at)})? Será removida do nosso sistema (no RHID continua).`)) return;
+    try {
+      const r = await authFetch(`/api/control-id/punches/${p.id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json()).message);
+      toast({ title: "Batida excluída" });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function createManual() {
+    if (!manualEmpId || !manualWhen) { toast({ title: "Preencha funcionário e data/hora", variant: "destructive" }); return; }
+    try {
+      const r = await authFetch("/api/control-id/manual-punch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: Number(manualEmpId), punchAt: new Date(manualWhen).toISOString(), direction: manualDir }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID com sucesso." : `Salva localmente. RHID: ${d.rhidError}` });
+      setManualOpen(false);
+      setManualEmpId(""); setManualWhen(new Date().toISOString().slice(0, 16));
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
   return (
     <div className="space-y-3">
       <Card className="p-3 flex flex-wrap gap-2 items-center">
@@ -477,7 +544,10 @@ function PunchesTab() {
         <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-from" />
         <span className="text-xs text-neutral-500">até</span>
         <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-to" />
-        <span className="text-xs text-neutral-500 ml-auto">{punches.length} batida(s)</span>
+        <span className="text-xs text-neutral-500">{punches.length} batida(s)</span>
+        <Button size="sm" className="ml-auto" onClick={() => setManualOpen(true)} data-testid="button-manual-punch">
+          <Plus className="w-3.5 h-3.5 mr-1" /> Bater Ponto
+        </Button>
       </Card>
 
       <Card>
@@ -492,28 +562,283 @@ function PunchesTab() {
                 <th className="p-2 text-left font-medium text-neutral-600">ID Aparelho</th>
                 <th className="p-2 text-center font-medium text-neutral-600">Direção</th>
                 <th className="p-2 text-center font-medium text-neutral-600">Método</th>
+                <th className="p-2 text-right font-medium text-neutral-600">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {punches.map(p => (
-                <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-punch-${p.id}`}>
-                  <td className="p-2 font-mono text-xs">{formatDateTime(p.punch_at)}</td>
-                  <td className="p-2 font-medium">
-                    {p.employee_id ? (empMap.get(p.employee_id)?.name || `#${p.employee_id}`) : <span className="text-amber-600 text-xs">⚠ não mapeado</span>}
-                  </td>
-                  <td className="p-2 font-mono text-xs">{p.control_id_user_id}</td>
-                  <td className="p-2 text-center">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
-                      {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
-                    </span>
-                  </td>
-                  <td className="p-2 text-center text-xs text-neutral-500">{p.source || "-"}</td>
-                </tr>
-              ))}
+              {punches.map(p => {
+                const isEditing = editingPunch?.id === p.id;
+                return (
+                  <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-punch-${p.id}`}>
+                    <td className="p-2 font-mono text-xs">
+                      {isEditing ? (
+                        <Input type="datetime-local" value={editPunchAt} onChange={e => setEditPunchAt(e.target.value)} className="h-7 text-xs w-44" data-testid={`input-edit-punchat-${p.id}`} />
+                      ) : formatDateTime(p.punch_at)}
+                    </td>
+                    <td className="p-2 font-medium">
+                      {p.employee_id ? (empMap.get(p.employee_id)?.name || `#${p.employee_id}`) : <span className="text-amber-600 text-xs">⚠ não mapeado</span>}
+                    </td>
+                    <td className="p-2 font-mono text-xs">{p.control_id_user_id || "—"}</td>
+                    <td className="p-2 text-center">
+                      {isEditing ? (
+                        <Select value={editDirection} onValueChange={setEditDirection}>
+                          <SelectTrigger className="h-7 text-xs w-28" data-testid={`select-edit-dir-${p.id}`}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="in">Entrada</SelectItem>
+                            <SelectItem value="out">Saída</SelectItem>
+                            <SelectItem value="unknown">—</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
+                          {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2 text-center text-xs text-neutral-500">{p.source || "-"}</td>
+                    <td className="p-2 text-right">
+                      {isEditing ? (
+                        <div className="flex gap-1 justify-end">
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={saveEdit} data-testid={`button-save-${p.id}`}><Save className="w-3.5 h-3.5" /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingPunch(null)} data-testid={`button-cancel-${p.id}`}><X className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1 justify-end">
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(p)} data-testid={`button-edit-punch-${p.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => deletePunch(p)} data-testid={`button-delete-punch-${p.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </Card>
+
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Bater Ponto Manual</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-neutral-600 mb-1 block">Funcionário *</label>
+              <Select value={manualEmpId} onValueChange={setManualEmpId}>
+                <SelectTrigger data-testid="select-manual-emp"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-600 mb-1 block">Data/Hora *</label>
+              <Input type="datetime-local" value={manualWhen} onChange={e => setManualWhen(e.target.value)} data-testid="input-manual-when" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-600 mb-1 block">Direção</label>
+              <Select value={manualDir} onValueChange={setManualDir}>
+                <SelectTrigger data-testid="select-manual-dir"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="in">Entrada</SelectItem>
+                  <SelectItem value="out">Saída</SelectItem>
+                  <SelectItem value="unknown">Não informado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-neutral-500">A batida será criada no nosso sistema e enviada automaticamente ao RHID Cloud (se o funcionário estiver mapeado a um aparelho).</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualOpen(false)} data-testid="button-manual-cancel">Cancelar</Button>
+            <Button onClick={createManual} data-testid="button-manual-save">Bater Ponto</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ═════════════════════ FOLGAS / FALTAS / ATESTADOS / FERIADOS ═════════════════════
+type Absence = {
+  id: number; employee_id: number; type: string;
+  start_date: string; end_date: string | null;
+  reason: string | null; status: string;
+};
+
+const ABSENCE_TYPES: Record<string, { label: string; color: string; icon: any }> = {
+  folga: { label: "Folga", color: "bg-blue-100 text-blue-700", icon: Coffee },
+  feriado: { label: "Feriado", color: "bg-purple-100 text-purple-700", icon: CalendarDays },
+  atestado: { label: "Atestado Médico", color: "bg-amber-100 text-amber-700", icon: Stethoscope },
+  falta: { label: "Falta", color: "bg-red-100 text-red-700", icon: CalendarX },
+  ferias: { label: "Férias", color: "bg-emerald-100 text-emerald-700", icon: CalendarDays },
+  licenca: { label: "Licença", color: "bg-indigo-100 text-indigo-700", icon: CalendarDays },
+};
+
+function AbsencesTab() {
+  const { toast } = useToast();
+  const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const empMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
+  const [filterEmp, setFilterEmp] = useState<string>("__all__");
+  const [editing, setEditing] = useState<Partial<Absence> | null>(null);
+
+  const { data: absences = [], isLoading } = useQuery<Absence[]>({
+    queryKey: ["/api/employee-absences", filterEmp],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filterEmp !== "__all__") params.set("employeeId", filterEmp);
+      const r = await authFetch(`/api/employee-absences?${params.toString()}`);
+      return r.json();
+    },
+  });
+
+  async function save() {
+    if (!editing?.employee_id || !editing?.type || !editing?.start_date) {
+      toast({ title: "Preencha funcionário, tipo e data inicial", variant: "destructive" });
+      return;
+    }
+    try {
+      const url = editing.id ? `/api/employee-absences/${editing.id}` : "/api/employee-absences";
+      const method = editing.id ? "PATCH" : "POST";
+      const body = {
+        employeeId: editing.employee_id, type: editing.type,
+        startDate: editing.start_date, endDate: editing.end_date || null,
+        reason: editing.reason || null, status: editing.status || "aprovado",
+      };
+      const r = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error((await r.json()).message);
+      toast({ title: editing.id ? "Atualizado" : "Lançamento criado" });
+      setEditing(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/employee-absences"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function remove(id: number) {
+    if (!confirm("Excluir este lançamento?")) return;
+    try {
+      const r = await authFetch(`/api/employee-absences/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json()).message);
+      toast({ title: "Excluído" });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee-absences"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <Card className="p-3 flex flex-wrap gap-2 items-center">
+        <Select value={filterEmp} onValueChange={setFilterEmp}>
+          <SelectTrigger className="w-56 h-8 text-sm" data-testid="filter-absence-emp"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">Todos os funcionários</SelectItem>
+            {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-neutral-500">{absences.length} lançamento(s)</span>
+        <Button size="sm" className="ml-auto" onClick={() => setEditing({ type: "folga", status: "aprovado", start_date: new Date().toISOString().slice(0, 10) })} data-testid="button-new-absence">
+          <Plus className="w-3.5 h-3.5 mr-1" /> Novo Lançamento
+        </Button>
+      </Card>
+
+      <Card>
+        {isLoading ? <p className="text-center text-sm text-neutral-400 py-8">Carregando...</p> : absences.length === 0 ? (
+          <p className="text-center text-sm text-neutral-400 py-8">Nenhum lançamento.</p>
+        ) : (
+          <table className="w-full text-sm" data-testid="table-absences">
+            <thead>
+              <tr className="border-b border-neutral-200 bg-neutral-50">
+                <th className="p-2 text-left font-medium text-neutral-600">Funcionário</th>
+                <th className="p-2 text-left font-medium text-neutral-600">Tipo</th>
+                <th className="p-2 text-left font-medium text-neutral-600">Início</th>
+                <th className="p-2 text-left font-medium text-neutral-600">Fim</th>
+                <th className="p-2 text-left font-medium text-neutral-600">Motivo</th>
+                <th className="p-2 text-center font-medium text-neutral-600">Status</th>
+                <th className="p-2 text-right font-medium text-neutral-600">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {absences.map(a => {
+                const t = ABSENCE_TYPES[a.type] || { label: a.type, color: "bg-neutral-100 text-neutral-600", icon: CalendarDays };
+                const Icon = t.icon;
+                return (
+                  <tr key={a.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-absence-${a.id}`}>
+                    <td className="p-2 font-medium">{empMap.get(a.employee_id)?.name || `#${a.employee_id}`}</td>
+                    <td className="p-2"><span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${t.color}`}><Icon className="w-3 h-3" /> {t.label.toUpperCase()}</span></td>
+                    <td className="p-2 font-mono text-xs">{new Date(a.start_date).toLocaleDateString("pt-BR")}</td>
+                    <td className="p-2 font-mono text-xs">{a.end_date ? new Date(a.end_date).toLocaleDateString("pt-BR") : "—"}</td>
+                    <td className="p-2 text-xs text-neutral-600">{a.reason || "—"}</td>
+                    <td className="p-2 text-center"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${a.status === "aprovado" ? "bg-emerald-100 text-emerald-700" : a.status === "pendente" ? "bg-amber-100 text-amber-700" : "bg-neutral-100 text-neutral-600"}`}>{(a.status || "—").toUpperCase()}</span></td>
+                    <td className="p-2 text-right">
+                      <div className="flex gap-1 justify-end">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing({ ...a, start_date: a.start_date.slice(0, 10), end_date: a.end_date?.slice(0, 10) || null })} data-testid={`button-edit-absence-${a.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => remove(a.id)} data-testid={`button-delete-absence-${a.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Dialog open={!!editing} onOpenChange={o => !o && setEditing(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editing?.id ? "Editar Lançamento" : "Novo Lançamento"}</DialogTitle></DialogHeader>
+          {editing && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-600 mb-1 block">Funcionário *</label>
+                <Select value={String(editing.employee_id || "")} onValueChange={v => setEditing({ ...editing, employee_id: Number(v) })}>
+                  <SelectTrigger data-testid="select-absence-emp"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-600 mb-1 block">Tipo *</label>
+                <Select value={editing.type || "folga"} onValueChange={v => setEditing({ ...editing, type: v })}>
+                  <SelectTrigger data-testid="select-absence-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(ABSENCE_TYPES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-bold text-neutral-600 mb-1 block">Data Início *</label>
+                  <Input type="date" value={editing.start_date || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} data-testid="input-absence-start" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-neutral-600 mb-1 block">Data Fim</label>
+                  <Input type="date" value={editing.end_date || ""} onChange={e => setEditing({ ...editing, end_date: e.target.value })} data-testid="input-absence-end" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-600 mb-1 block">Motivo / Observações</label>
+                <Input value={editing.reason || ""} onChange={e => setEditing({ ...editing, reason: e.target.value })} placeholder="Ex: CID Z76.0, médico Dr. Silva" data-testid="input-absence-reason" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-600 mb-1 block">Status</label>
+                <Select value={editing.status || "aprovado"} onValueChange={v => setEditing({ ...editing, status: v })}>
+                  <SelectTrigger data-testid="select-absence-status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="aprovado">Aprovado</SelectItem>
+                    <SelectItem value="pendente">Pendente</SelectItem>
+                    <SelectItem value="rejeitado">Rejeitado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)} data-testid="button-absence-cancel">Cancelar</Button>
+            <Button onClick={save} data-testid="button-absence-save">Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

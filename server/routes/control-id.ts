@@ -211,6 +211,102 @@ export function registerControlIdRoutes(app: Express) {
     res.json(data || []);
   });
 
+  // Bater ponto manualmente: cria local + envia ao RHID
+  app.post("/api/control-id/manual-punch", requireAuth, async (req: any, res) => {
+    try {
+      const { employeeId, punchAt, direction, deviceId } = req.body;
+      // Funcionário comum só pode bater pra si mesmo
+      const isAdmin = ["diretoria", "admin", "rh"].includes(req.user?.role);
+      const targetEmployeeId = isAdmin && employeeId ? Number(employeeId) : Number(req.user?.employeeId);
+      if (!targetEmployeeId) return res.status(400).json({ message: "employeeId não identificado" });
+      if (!punchAt) return res.status(400).json({ message: "punchAt obrigatório" });
+
+      const r = await ctrl.createManualPunch({
+        employeeId: targetEmployeeId,
+        punchAt: new Date(punchAt),
+        direction: direction || "unknown",
+        source: isAdmin && employeeId !== req.user?.employeeId ? "admin_manual" : "self_manual",
+        deviceId: deviceId ? Number(deviceId) : undefined,
+      });
+      res.status(201).json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Editar batida local (sincroniza com RHID se tem external_id)
+  app.patch("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { punchAt, direction } = req.body;
+      const fields: any = {};
+      if (punchAt) fields.punchAt = new Date(punchAt);
+      if (direction !== undefined) fields.direction = direction;
+      const r = await ctrl.updateLocalPunch(id, fields);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Deletar batida local (mantém no RHID por segurança)
+  app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const r = await ctrl.deleteLocalPunch(Number(req.params.id));
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─────── FOLGAS / FERIADOS / ATESTADOS / FALTAS ───────
+  app.get("/api/employee-absences", requireAuth, async (req, res) => {
+    const { employeeId, from, to } = req.query as Record<string, string>;
+    let q = supabaseAdmin.from("employee_absences").select("*").order("start_date", { ascending: false });
+    if (employeeId) q = q.eq("employee_id", Number(employeeId));
+    if (from) q = q.gte("start_date", from);
+    if (to) q = q.lte("start_date", to);
+    const { data } = await q;
+    res.json(data || []);
+  });
+
+  app.post("/api/employee-absences", requireAuth, requireAdminRole, async (req, res) => {
+    const { employeeId, type, startDate, endDate, reason, status } = req.body;
+    if (!employeeId || !type || !startDate) return res.status(400).json({ message: "employeeId, type e startDate obrigatórios" });
+    const validTypes = ["folga", "feriado", "atestado", "falta", "ferias", "licenca"];
+    if (!validTypes.includes(type)) return res.status(400).json({ message: `type deve ser um de: ${validTypes.join(", ")}` });
+    const { data, error } = await supabaseAdmin.from("employee_absences").insert({
+      employee_id: Number(employeeId),
+      type,
+      start_date: new Date(startDate).toISOString(),
+      end_date: endDate ? new Date(endDate).toISOString() : null,
+      reason: reason || null,
+      status: status || "aprovado",
+    }).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.status(201).json(data);
+  });
+
+  app.patch("/api/employee-absences/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { type, startDate, endDate, reason, status } = req.body;
+    const upd: any = {};
+    if (type !== undefined) upd.type = type;
+    if (startDate !== undefined) upd.start_date = new Date(startDate).toISOString();
+    if (endDate !== undefined) upd.end_date = endDate ? new Date(endDate).toISOString() : null;
+    if (reason !== undefined) upd.reason = reason;
+    if (status !== undefined) upd.status = status;
+    const { data, error } = await supabaseAdmin.from("employee_absences").update(upd).eq("id", id).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data);
+  });
+
+  app.delete("/api/employee-absences/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const { error } = await supabaseAdmin.from("employee_absences").delete().eq("id", Number(req.params.id));
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+
   // ─────── FOLHA CONSOLIDADA ───────
   app.get("/api/control-id/folha/:employeeId", requireAuth, async (req, res) => {
     try {

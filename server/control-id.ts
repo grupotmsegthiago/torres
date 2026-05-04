@@ -591,6 +591,110 @@ export async function autoImportPersons(deviceId: number): Promise<{
   return { created: toInsert.length, alreadyMapped, matched, unmatched };
 }
 
+// ============================ BATIDA MANUAL (criada pelo nosso sistema) ============================
+
+/**
+ * Cria uma batida manualmente no nosso sistema E tenta sincronizar com o RHID.
+ * Se o employee não estiver mapeado a nenhum aparelho, salva só local.
+ */
+export async function createManualPunch(params: {
+  employeeId: number;
+  punchAt: Date;
+  direction?: string;
+  source?: string;
+  deviceId?: number;
+}): Promise<{ punchId: number; rhidSynced: boolean; rhidError?: string }> {
+  const { employeeId, punchAt, direction = "unknown", source = "manual" } = params;
+
+  // Acha mapping ativo do employee
+  let mapping: any = null;
+  if (params.deviceId) {
+    const { data } = await supabaseAdmin.from("control_id_users_map")
+      .select("*").eq("employee_id", employeeId).eq("device_id", params.deviceId).eq("ativo", true).maybeSingle();
+    mapping = data;
+  } else {
+    const { data } = await supabaseAdmin.from("control_id_users_map")
+      .select("*").eq("employee_id", employeeId).eq("ativo", true).limit(1).maybeSingle();
+    mapping = data;
+  }
+
+  // Tenta enviar pro RHID primeiro
+  let rhidSynced = false;
+  let rhidError: string | undefined;
+  let externalId: string | null = null;
+  if (mapping) {
+    try {
+      const result = await createRhidPunch(Number(mapping.device_id), String(mapping.control_id_user_id), punchAt, 3);
+      rhidSynced = true;
+      externalId = result?.id ? String(result.id) : null;
+    } catch (e: any) {
+      rhidError = e.message;
+    }
+  } else {
+    rhidError = "Funcionário não mapeado a nenhum aparelho";
+  }
+
+  // Salva local (com referência ao RHID se sincronizou)
+  const { data: punch, error } = await supabaseAdmin.from("control_id_punches").insert({
+    device_id: mapping?.device_id || null,
+    control_id_user_id: mapping?.control_id_user_id || null,
+    employee_id: employeeId,
+    punch_at: punchAt.toISOString(),
+    direction,
+    source,
+    is_manual: true,
+    external_id: externalId,
+    rhid_synced_at: rhidSynced ? new Date().toISOString() : null,
+    rhid_sync_error: rhidError || null,
+    raw_event: { manual: true, createdBy: "system" },
+  }).select("id").single();
+
+  if (error) throw new Error(`Erro ao salvar batida local: ${error.message}`);
+  return { punchId: punch.id, rhidSynced, rhidError };
+}
+
+/**
+ * Atualiza batida local + tenta sincronizar com RHID se já estava sincronizada.
+ */
+export async function updateLocalPunch(punchId: number, fields: { punchAt?: Date; direction?: string }): Promise<{ ok: boolean; rhidSynced: boolean; rhidError?: string }> {
+  const { data: punch } = await supabaseAdmin.from("control_id_punches").select("*").eq("id", punchId).maybeSingle();
+  if (!punch) throw new Error("Batida não encontrada");
+
+  const upd: any = {};
+  if (fields.punchAt) upd.punch_at = fields.punchAt.toISOString();
+  if (fields.direction !== undefined) upd.direction = fields.direction;
+
+  // Tenta sincronizar com RHID se tem external_id
+  let rhidSynced = false;
+  let rhidError: string | undefined;
+  if (punch.external_id && punch.device_id) {
+    try {
+      await updateRhidPunch(Number(punch.device_id), String(punch.external_id), {
+        dateTime: fields.punchAt || new Date(punch.punch_at),
+      });
+      rhidSynced = true;
+      upd.rhid_synced_at = new Date().toISOString();
+      upd.rhid_sync_error = null;
+    } catch (e: any) {
+      rhidError = e.message;
+      upd.rhid_sync_error = rhidError;
+    }
+  }
+
+  const { error } = await supabaseAdmin.from("control_id_punches").update(upd).eq("id", punchId);
+  if (error) throw new Error(error.message);
+  return { ok: true, rhidSynced, rhidError };
+}
+
+/**
+ * Deleta batida local. Se tem external_id no RHID, NÃO deleta lá (segurança) — apenas marca local.
+ */
+export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean }> {
+  const { error } = await supabaseAdmin.from("control_id_punches").delete().eq("id", punchId);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+
 // ============================ WRITE BACK PARA RHID ============================
 
 /**
