@@ -949,27 +949,12 @@ export default function BoletimMedicaoPage() {
                                       )}
                                       {canEdit && (
                                         <button
-                                          onClick={() => {
-                                            if (isEditing) {
-                                              setEditingBillingId(null);
-                                            } else {
-                                              setEditingBillingId(b.id);
-                                              setEditBilling({
-                                                km_inicial: String(b.km_inicial || 0),
-                                                km_final: String(b.km_final || 0),
-                                                fat_acionamento: String(b.fat_acionamento || 0),
-                                                despesas_pedagio: String(b.despesas_pedagio || 0),
-                                                horario_inicio: b.horario_inicio || "",
-                                                horario_termino: b.horario_fim || "",
-                                                despesas_outras: String(b.despesas_outras || 0),
-                                              });
-                                            }
-                                          }}
-                                          className={`p-1.5 rounded-lg border border-transparent transition-all ${isEditing ? "bg-blue-100 border-blue-300 text-blue-700" : "hover:bg-amber-50 hover:border-amber-200"}`}
-                                          title="Editar Medição"
+                                          onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setObservacoesValue(b?.observacoes || ""); }}
+                                          className="p-1.5 rounded-lg border border-transparent transition-all hover:bg-amber-50 hover:border-amber-200"
+                                          title="Abrir Boletim de Medição"
                                           data-testid={`button-editar-medicao-${os.id}`}
                                         >
-                                          <Pencil size={15} className={isEditing ? "text-blue-600" : "text-amber-500"} />
+                                          <Pencil size={15} className="text-amber-500" />
                                         </button>
                                       )}
                                       <button
