@@ -648,6 +648,7 @@ export default function RelatorioFaturamentoPage() {
         originRaw: origem,
         originCity: origem ? extractCity(origem) : "—",
         destinationCity: destino ? extractCity(destino) : "—",
+        _raw: b,
       };
     });
   }, [billings, contracts]);
@@ -816,10 +817,113 @@ export default function RelatorioFaturamentoPage() {
     }, 600);
   };
 
-  const handleExportExcel = useCallback(() => {
+  const handleExportExcel = useCallback(async () => {
     if (rowsData.length === 0) return;
     const clientLabel = displayClientName || "CLIENTE";
     const isOmega = clientLabel.toUpperCase().includes("OMEGA SOLUTIONS");
+    const isLuft = clientLabel.toUpperCase().includes("INTEC");
+
+    if (isLuft) {
+      const filteredRows = rowsData.filter(r => r.osStatus !== "recusada");
+      const empIds = [...new Set(filteredRows.flatMap(r => {
+        const b = r._raw;
+        return [b?.vigilante_id, b?.vigilante2_id].filter(Boolean);
+      }))];
+      let cpfMap = new Map<number, string>();
+      if (empIds.length > 0) {
+        try {
+          const resp = await authFetch(`/api/employees`);
+          const emps: any[] = await resp.json();
+          emps.forEach((e: any) => { if (e.cpf) cpfMap.set(e.id, e.cpf); });
+        } catch { /* ignore */ }
+      }
+      const soMap = ordersMap;
+
+      const fmtDtHrLuft = (dateStr: string, timeStr: string) => {
+        if (!dateStr || dateStr === "—") return "-";
+        return `${dateStr} - ${timeStr || "00:00"}`;
+      };
+
+      const luftHeaders = [
+        "OS _ LUFT", "OS _ ESCOLTA", "SOLICITANTE",
+        "AGENTE 01", "CPF AGENTE 01", "AGENTE 02", "CPF AGENTE 02",
+        "PLACA VTR", "PLACA CAVALO", "MOTORISTA", "CPF",
+        "ORIGEM", "DESTINO",
+        "Data/Hora Inicial", "Data/Hora Saida Origem", "Data/Hora Chegada Destino", "Data/Hora Final",
+        "KM Inicio", "KM Final", "Total KM",
+        "Franquia KM", "KM excedente", "motivo km excedente",
+        "Total Horas", "motivo horas excedentes",
+        "Franquia de Horas", "Horas Exc",
+        "Custo adicional Km Exc.", "Custo adicional Horas Exc.",
+        "franquia (R$)", "Total KM Exc. (R$ )", "Total horas Exc. (R$ )",
+        "Valor Pedagio", "Valor Total", "FATURAR",
+      ];
+
+      const luftDataRows = filteredRows.map(r => {
+        const b = r._raw;
+        const so = soMap.get(b?.service_order_id);
+        const ag1Name = (b?.vigilante_name || "").split(" ").slice(0, 1).join(" ") || "-";
+        const ag1Cpf = cpfMap.get(b?.vigilante_id) || "-";
+        const ag2Name = (b?.vigilante2_name || "").split(" ").slice(0, 1).join(" ") || "-";
+        const ag2Cpf = cpfMap.get(b?.vigilante2_id) || "-";
+        const motorista = b?.motorista_escoltado || so?.escortedDriverName || so?.escorted_driver_name || "-";
+        const solicitante = so?.requester_name || so?.requesterName || "-";
+        const processoLuft = so?.processo_omega || so?.processoOmega || "";
+        const origem = b?.origem || so?.origin || "-";
+        const destino = b?.destino || so?.destination || "-";
+
+        const horaFimBilling = b?.horario_fim ? b.horario_fim.substring(0, 5) : "";
+        const horaInicioBilling = b?.horario_inicio ? b.horario_inicio.substring(0, 5) : "";
+        const dtHrInicial = fmtDtHrLuft(r.startDate, r.startTime);
+        const dtHrSaidaOrigem = fmtDtHrLuft(r.startDate, horaInicioBilling || r.startTime);
+        const dtHrChegadaDestino = fmtDtHrLuft(r.endDate, horaFimBilling || r.endTime);
+        const dtHrFinal = fmtDtHrLuft(r.endDate, horaFimBilling || r.endTime);
+
+        const horasMissaoDecimal = r.horasMissaoNum / 24;
+        const franquiaHorasDecimal = r.franchiseHours / 24;
+        const hrExcDecimal = r.hrExtraQtd > 0 ? r.hrExtraQtd / 24 : "-";
+        const kmExc = r.kmExtraQtd > 0 ? r.kmExtraQtd : r.kmExtraQtd === 0 ? 0 : "-";
+        const totalKmExcRS = r.kmExtraTotal > 0 ? Number(r.kmExtraTotal) : (r.kmExtraTotal === 0 ? 0 : "-");
+        const totalHorasExcRS = r.hrExtraTotal > 0 ? Number(r.hrExtraTotal) : (r.hrExtraTotal === 0 ? 0 : "-");
+
+        return [
+          processoLuft || "", r.id, solicitante,
+          ag1Name, ag1Cpf, ag2Name, ag2Cpf,
+          r.viatura, r.cargoPlate, motorista, "-",
+          origem, destino,
+          dtHrInicial, dtHrSaidaOrigem, dtHrChegadaDestino, dtHrFinal,
+          r.kmStart > 0 ? r.kmStart : "", r.kmEnd > 0 ? r.kmEnd : "", r.kmTotal > 0 ? r.kmTotal : 0,
+          r.franchiseKm, kmExc, "-",
+          horasMissaoDecimal, "-",
+          franquiaHorasDecimal, hrExcDecimal,
+          Number(r.unitKm || 0), Number(r.unitHr || 0),
+          Number(r.activationFee || 0), totalKmExcRS, totalHorasExcRS,
+          Number(r.tollVal || 0), Number(r.totalGeral || 0), "INTEC",
+        ];
+      });
+
+      const luftTotals: (string | number)[] = Array(35).fill("");
+      luftTotals[33] = Number(grandTotal.toFixed(2));
+
+      const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
+      exportFormattedExcel({
+        title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+        subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — INTEC / LUFT LOGISTICS`,
+        period: getPeriodLabel(),
+        headers: luftHeaders,
+        colWidths: [14, 12, 14, 10, 16, 10, 16, 10, 14, 14, 16, 16, 14, 20, 20, 22, 20, 10, 10, 10, 12, 12, 18, 12, 20, 14, 10, 18, 20, 12, 16, 18, 14, 14, 10],
+        rows: luftDataRows as any,
+        totalsRow: luftTotals,
+        currencyColumns: [27, 28, 29, 30, 31, 32, 33],
+        fileName: `Boletim_INTEC_LUFT_${periodShort}.xlsx`,
+        sheetName: "Boletim de Medição",
+        clientName: clientLabel,
+        customLogoUrl: "/logo-luft.jpeg",
+        customLogoExt: "jpeg",
+        dualLogo: true,
+      });
+      return;
+    }
 
     const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
     const baseDataRows = rowsData.filter(r => r.osStatus !== "recusada").map(r => [
@@ -894,7 +998,7 @@ export default function RelatorioFaturamentoPage() {
       sheetName: "Boletim",
       clientName: clientLabel,
     });
-  }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
+  }, [rowsData, grandTotal, displayClientName, startDate, endDate, ordersMap]);
 
   const fontBase = "'Inter', 'Segoe UI', system-ui, sans-serif";
   const fontMono = "'Roboto Mono', 'SF Mono', 'Consolas', monospace";

@@ -50,6 +50,9 @@ export interface ExcelExportConfig {
   currencyColumns?: number[];
   groupHeaders?: { label: string; span: number }[];
   clientName?: string;
+  customLogoUrl?: string;
+  customLogoExt?: "jpeg" | "png";
+  dualLogo?: boolean;
 }
 
 const BRL_FMT = '"R$ "#,##0.00';
@@ -82,15 +85,24 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   ws.columns = config.colWidths.map((w) => ({ width: w }));
 
   const logo = await fetchLogoAsBuffer();
+  let clientLogo: { buffer: ArrayBuffer; ext: "jpeg" | "png" } | null = null;
+  if (config.customLogoUrl) {
+    try {
+      const clResp = await fetch(config.customLogoUrl);
+      if (clResp.ok) clientLogo = { buffer: await clResp.arrayBuffer(), ext: config.customLogoExt || "jpeg" };
+    } catch { /* ignore */ }
+  }
 
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
   const accentFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
 
   const emptyArr = Array(colCount).fill(null);
+  const hasDualLogo = config.dualLogo && clientLogo;
 
   const row1 = ws.addRow(emptyArr);
-  if (logo) {
-    ws.mergeCells(1, 2, 1, colCount);
+  if (logo || hasDualLogo) {
+    const mergeStart = hasDualLogo ? 3 : 2;
+    ws.mergeCells(1, mergeStart, 1, hasDualLogo ? colCount - 2 : colCount);
   } else {
     ws.mergeCells(1, 1, 1, colCount);
   }
@@ -99,8 +111,10 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   clearBeyondColumns(ws, row1.number, colCount);
 
   const row2 = ws.addRow(emptyArr);
-  ws.mergeCells(2, 2, 2, colCount);
-  const c2 = row2.getCell(2);
+  const titleStart = hasDualLogo ? 3 : 2;
+  const titleEnd = hasDualLogo ? colCount - 2 : colCount;
+  ws.mergeCells(2, titleStart, 2, titleEnd);
+  const c2 = row2.getCell(titleStart);
   c2.value = config.title;
   c2.font = { bold: true, size: 14, color: { argb: WHITE } };
   c2.alignment = { horizontal: "center", vertical: "middle" };
@@ -112,7 +126,15 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
     const imageId = wb.addImage({ buffer: logo.buffer, extension: logo.ext });
     ws.addImage(imageId, {
       tl: { col: 0, row: 0 } as any,
-      br: { col: 1, row: 2 } as any,
+      br: { col: hasDualLogo ? 2 : 1, row: 2 } as any,
+      editAs: "oneCell",
+    });
+  }
+  if (hasDualLogo && clientLogo) {
+    const clImgId = wb.addImage({ buffer: clientLogo.buffer, extension: clientLogo.ext });
+    ws.addImage(clImgId, {
+      tl: { col: colCount - 2, row: 0 } as any,
+      br: { col: colCount, row: 2 } as any,
       editAs: "oneCell",
     });
   }
