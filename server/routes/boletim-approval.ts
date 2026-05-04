@@ -260,8 +260,8 @@ async function generateBoletimExcel(
     const fatHoraExtra = n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100;
     const fatKmExtra = n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100;
     const fatPedagio = n(b.despesas_pedagio);
-    const receitasOs = n(b.receitas_os);
-    const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs);
+    const adNoturno = n(b.fat_adicional_noturno);
+    const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + adNoturno);
     grandTotal += fatTotal;
 
     const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;

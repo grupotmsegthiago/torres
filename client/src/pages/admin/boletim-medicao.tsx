@@ -76,8 +76,8 @@ export default function BoletimMedicaoPage() {
   const [editBilling, setEditBilling] = useState<{
     km_inicial: string; km_final: string; fat_acionamento: string;
     despesas_pedagio: string; horario_inicio: string; horario_termino: string;
-    receitas_os: string;
-  }>({ km_inicial: "", km_final: "", fat_acionamento: "", despesas_pedagio: "", horario_inicio: "", horario_termino: "", receitas_os: "" });
+    despesas_outras: string;
+  }>({ km_inicial: "", km_final: "", fat_acionamento: "", despesas_pedagio: "", horario_inicio: "", horario_termino: "", despesas_outras: "" });
 
   const { data: billingAlerts = [] } = useQuery<any[]>({
     queryKey: ["/api/billing-alerts"],
@@ -407,7 +407,7 @@ export default function BoletimMedicaoPage() {
     if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
     if (fatTotal > 0) return fatTotal;
-    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0);
   };
   const totalFaturamento = periodFilteredOs.reduce((acc, o) => acc + getBillingTotal(o), 0);
   const totalFaturado = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
@@ -423,7 +423,7 @@ export default function BoletimMedicaoPage() {
 
   const exportBoletimExcel = () => {
     if (periodFilteredOs.length === 0) return;
-    const headers = ["#", "OS", "Cliente", "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Receitas OS", "Total", "Status"];
+    const headers = ["#", "OS", "Cliente", "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Total", "Status"];
     const rows = periodFilteredOs.map((os: any, i: number) => {
       const b = os.billing;
       const route = [os.origin, os.destination].filter(Boolean).join(" → ");
@@ -448,12 +448,11 @@ export default function BoletimMedicaoPage() {
         Number(b?.fat_km || 0),
         Number(b?.despesas_pedagio || 0),
         Number(b?.fat_adicional_noturno || 0),
-        Number(b?.receitas_os || 0),
-        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.receitas_os || 0),
+        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0),
         b?.status === "A_VERIFICAR" ? "A Verificar" : b?.status === "APROVADA" ? "Aprovada" : b?.status === "FATURADO" ? "Faturado" : b?.status || "—",
       ];
     });
-    const totals: (string | number)[] = Array(23).fill("");
+    const totals: (string | number)[] = Array(22).fill("");
     totals[0] = "TOTAL";
     totals[14] = `${periodFilteredOs.length} OS`;
     totals[15] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
@@ -461,8 +460,7 @@ export default function BoletimMedicaoPage() {
     totals[17] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
     totals[18] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
     totals[19] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
-    totals[20] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.receitas_os || 0), 0).toFixed(2));
-    totals[21] = Number(totalFaturamento.toFixed(2));
+    totals[20] = Number(totalFaturamento.toFixed(2));
     const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
     exportFormattedExcel({
       title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
@@ -927,7 +925,7 @@ export default function BoletimMedicaoPage() {
                                     {isOsRecusadaOuCancelada ? (
                                       <span className="font-mono font-black text-red-500">R$ 0,00</span>
                                     ) : (
-                                      <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0)) : "—"}</span>
+                                      <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
                                     )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
@@ -963,7 +961,7 @@ export default function BoletimMedicaoPage() {
                                                 despesas_pedagio: String(b.despesas_pedagio || 0),
                                                 horario_inicio: b.horario_inicio || "",
                                                 horario_termino: b.horario_fim || "",
-                                                receitas_os: String(b.receitas_os || 0),
+                                                despesas_outras: String(b.despesas_outras || 0),
                                               });
                                             }
                                           }}
@@ -1032,9 +1030,9 @@ export default function BoletimMedicaoPage() {
                                                 className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-hora-fim" />
                                             </div>
                                             <div>
-                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Receitas OS</label>
-                                              <input type="number" step="0.01" value={editBilling.receitas_os} onChange={e => setEditBilling(p => ({ ...p, receitas_os: e.target.value }))}
-                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-receitas-os" />
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Desp. Outras</label>
+                                              <input type="number" step="0.01" value={editBilling.despesas_outras} onChange={e => setEditBilling(p => ({ ...p, despesas_outras: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-despesas-outras" />
                                             </div>
                                           </div>
                                           <div className="flex items-center justify-between">
@@ -1058,7 +1056,7 @@ export default function BoletimMedicaoPage() {
                                                     despesas_pedagio: Number(editBilling.despesas_pedagio) || 0,
                                                     horario_inicio: editBilling.horario_inicio || undefined,
                                                     horario_termino: editBilling.horario_termino || undefined,
-                                                    receitas_os: Number(editBilling.receitas_os) || 0,
+                                                    despesas_outras: Number(editBilling.despesas_outras) || 0,
                                                   });
                                                 }}
                                                 disabled={salvarMedicaoMutation.isPending}
@@ -1101,7 +1099,7 @@ export default function BoletimMedicaoPage() {
                               const checkedTotal = checkedInGroup.reduce((acc, o) => {
                                 if (o.status === "recusada" || o.status === "cancelada") return acc;
                                 const b = o.billing;
-                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
+                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0);
                               }, 0);
                               return checkedCount > 0 ? (
                                 <tr className="bg-blue-50/80 border-b">

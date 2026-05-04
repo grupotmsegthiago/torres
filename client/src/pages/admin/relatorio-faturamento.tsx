@@ -103,8 +103,8 @@ export default function RelatorioFaturamentoPage() {
     const fatKm = n(b.fat_km);
     const fatHE = n(b.fat_hora_extra);
     const fatPed = n(b.despesas_pedagio);
-    const fatRec = n(b.receitas_os);
-    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatRec);
+    const fatAdNot = n(b.fat_adicional_noturno);
+    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatAdNot);
     return acc + total;
   }, 0), [approvedBillings, contracts]);
 
@@ -336,8 +336,8 @@ export default function RelatorioFaturamentoPage() {
       const fatPernoite = n(b?.fat_pernoite);
       const fatAdicNoturno = n(b?.fat_adicional_noturno);
       const despPedagio = n(editForm.despesas_pedagio);
-      const receitasOs = n(b?.receitas_os);
-      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio + receitasOs) * 100) / 100;
+      const despOutras = n(b?.despesas_outras);
+      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio + despOutras) * 100) / 100;
 
       const payload = {
         km_inicial: kmIni,
@@ -422,11 +422,11 @@ export default function RelatorioFaturamentoPage() {
       const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
       const fatKmExtra = zeroOut ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
       const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
-      const receitasOs = zeroOut ? 0 : n(b.receitas_os);
+      const fatAdNoturno = zeroOut ? 0 : n(b.fat_adicional_noturno);
       const valorAcionamentoFinal = zeroOut ? 0 : valorAcionamento;
       const fatTotal = zeroOut ? 0 : (isCancelada
-        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs)
-        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs)));
+        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno)
+        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno)));
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";

@@ -1195,7 +1195,7 @@ import type { Express } from "express";
       const {
         observacoes, despesas_pedagio, fat_acionamento, fat_km,
         km_inicial, km_final, horario_inicio, horario_termino,
-        receitas_os, recalcular,
+        despesas_outras, recalcular,
       } = req.body;
 
       const updateData: any = {};
@@ -1207,7 +1207,7 @@ import type { Express } from "express";
       if (km_final !== undefined) updateData.km_final = Number(km_final) || 0;
       if (horario_inicio !== undefined) updateData.horario_inicio = horario_inicio;
       if (horario_termino !== undefined) updateData.horario_fim = horario_termino;
-      if (receitas_os !== undefined) updateData.receitas_os = Number(receitas_os) || 0;
+      if (despesas_outras !== undefined) updateData.despesas_outras = Number(despesas_outras) || 0;
 
       if (recalcular && existing.contract_id) {
         const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
@@ -1217,7 +1217,7 @@ import type { Express } from "express";
           const hInicio = horario_inicio !== undefined ? horario_inicio : existing.horario_inicio;
           const hFim = horario_termino !== undefined ? horario_termino : existing.horario_fim;
           const pedagio = despesas_pedagio !== undefined ? Number(despesas_pedagio) : Number(existing.despesas_pedagio || 0);
-          const recOs = receitas_os !== undefined ? Number(receitas_os) : Number(existing.receitas_os || 0);
+          const despOutras = despesas_outras !== undefined ? Number(despesas_outras) : Number(existing.despesas_outras || 0);
           try {
             const resultado = calcularEscolta({
               km_inicial: kmI, km_final: Math.max(kmI, kmF), km_vazio: Number(existing.km_vazio || 0),
@@ -1226,8 +1226,8 @@ import type { Express } from "express";
               horario_inicio: hInicio || undefined, horario_fim: hFim || undefined,
               horario_agendado: existing.horario_agendado || undefined,
               despesas_pedagio: pedagio, despesas_combustivel: Number(existing.despesas_combustivel || 0),
-              despesas_outras: Number(existing.despesas_outras || 0),
-              receitas_os: recOs, contrato,
+              despesas_outras: despOutras,
+              receitas_os: 0, contrato,
             });
             Object.assign(updateData, {
               km_inicial: kmI, km_final: Math.max(kmI, kmF),
@@ -1236,14 +1236,17 @@ import type { Express } from "express";
               km_excedente: resultado.km_excedente, valor_franquia: resultado.valor_franquia,
               valor_km_extra: resultado.valor_km_extra,
               fat_acionamento: resultado.fat_acionamento, fat_hora_extra: resultado.fat_hora_extra,
-              fat_km: resultado.fat_km || resultado.faturamento?.fat_km || 0,
-              fat_total: resultado.faturamento?.fat_total || 0,
+              fat_km: resultado.fat_km || 0,
+              fat_total: resultado.fat_total || 0,
+              fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
+              fat_estadia: resultado.fat_estadia || 0,
+              fat_pernoite: resultado.fat_pernoite || 0,
               horas_trabalhadas: resultado.horas_trabalhadas,
               horario_inicio_considerado: resultado.horario_inicio_considerado,
-              despesas_pedagio: pedagio, receitas_os: recOs,
-              resultado_bruto: resultado.faturamento?.resultado_bruto || 0,
-              resultado_liquido: resultado.faturamento?.resultado_liquido || 0,
-              margem_percentual: resultado.faturamento?.margem_pct || 0,
+              despesas_pedagio: pedagio,
+              resultado_bruto: resultado.resultado?.bruto || 0,
+              resultado_liquido: resultado.resultado?.liquido || 0,
+              margem_percentual: resultado.resultado?.margem_pct || 0,
             });
             if (hInicio) updateData.horario_inicio = hInicio;
             if (hFim) updateData.horario_fim = hFim;
@@ -1259,8 +1262,11 @@ import type { Express } from "express";
         const fatHoraExtra = Number(data.fat_hora_extra || 0);
         const fatKm = Number(data.fat_km || 0);
         const pedagio = Number(data.despesas_pedagio || 0);
-        const recOs = Number(data.receitas_os || 0);
-        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + recOs;
+        const adNoturno = Number(data.fat_adicional_noturno || 0);
+        const estadia = Number(data.fat_estadia || 0);
+        const pernoite = Number(data.fat_pernoite || 0);
+        const despOutras = Number(data.despesas_outras || 0);
+        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras;
         const pagTotal = Number(data.pag_total || 0);
         const resultado = fatTotal - pagTotal;
         await supabaseAdmin.from("escort_billings").update({
@@ -1276,8 +1282,11 @@ import type { Express } from "express";
         const fatHoraExtra = Number(data?.fat_hora_extra || 0);
         const fatKm = Number(data?.fat_km || 0);
         const pedagio = Number(data?.despesas_pedagio || 0);
-        const recOs = Number(data?.receitas_os || 0);
-        const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + recOs;
+        const adNoturno = Number(data?.fat_adicional_noturno || 0);
+        const estadia = Number(data?.fat_estadia || 0);
+        const pernoite = Number(data?.fat_pernoite || 0);
+        const despOutras = Number(data?.despesas_outras || 0);
+        const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras;
         await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id).then(() => {});
       }
 
@@ -1332,7 +1341,7 @@ import type { Express } from "express";
       if (error) throw error;
 
       if (acao === "APROVADA" && data) {
-        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.despesas_pedagio || 0) + Number(data.receitas_os || 0);
+        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.fat_adicional_noturno || 0) + Number(data.despesas_pedagio || 0) + Number(data.despesas_outras || 0) + Number(data.fat_estadia || 0) + Number(data.fat_pernoite || 0);
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(data.service_order_id));
         if (totalFat > 0) {
@@ -1814,7 +1823,7 @@ import type { Express } from "express";
 
       const calcFat = (b: any) => {
         if (b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id))) return 0;
-        return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+        return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0);
       };
 
       // FIX #5 — OS cancelada não pode arrastar despesas para o agregado por viatura/agente,
