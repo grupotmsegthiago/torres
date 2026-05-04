@@ -14,6 +14,9 @@ import {
   DollarSign, Gauge, BarChart3, AlertTriangle, Filter, ChevronDown, ChevronUp,
   MapPin, Camera, Eye, ArrowLeft, ExternalLink, Ticket, FileText, Upload, CheckCircle2, Loader2, ShieldCheck, XCircle
 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ConciliacaoContent } from "./conciliacao-ticketlog";
+import { PostosContent } from "./ticketlog-postos";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 
 interface FuelingStats {
@@ -896,13 +899,32 @@ export default function FuelingPage() {
     return Array.from(set).sort().reverse();
   }, [fuelings]);
 
+  const [mainTab, setMainTab] = useState("registros");
+
   return (
     <AdminLayout>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-fueling-title">Controle de Abastecimento</h1>
           <p className="text-sm text-neutral-500 mt-1">Gestão completa de combustível da frota</p>
         </div>
+      </div>
+
+      <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
+        <TabsList className="mb-4 h-auto flex-wrap" data-testid="tabs-fueling-main">
+          <TabsTrigger value="registros" data-testid="tab-registros">
+            <Fuel className="w-4 h-4 mr-1.5" /> Registros
+          </TabsTrigger>
+          <TabsTrigger value="conciliacao" data-testid="tab-conciliacao">
+            <FileText className="w-4 h-4 mr-1.5" /> Conciliação TicketLog
+          </TabsTrigger>
+          <TabsTrigger value="postos" data-testid="tab-postos">
+            <MapPin className="w-4 h-4 mr-1.5" /> Postos DE/PARA
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="registros">
+      <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
         <div className="flex gap-2">
           <Button variant={viewMode === "dashboard" ? "default" : "outline"} size="sm" onClick={() => setViewMode("dashboard")} data-testid="button-view-dashboard">
             <BarChart3 className="w-4 h-4 mr-1" /> Dashboard
@@ -1227,6 +1249,16 @@ export default function FuelingPage() {
           onClose={() => setDetailItem(null)}
         />
       )}
+        </TabsContent>
+
+        <TabsContent value="conciliacao">
+          <ConciliacaoContent />
+        </TabsContent>
+
+        <TabsContent value="postos">
+          <PostosContent />
+        </TabsContent>
+      </Tabs>
     </AdminLayout>
   );
 }

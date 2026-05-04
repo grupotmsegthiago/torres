@@ -41,8 +41,6 @@ const CustosFixosPage = lazy(() => import("@/pages/admin/custos-fixos"));
 const SimuladorMissaoPage = lazy(() => import("@/pages/admin/simulador-missao"));
 const RelatorioOSPage = lazy(() => import("@/pages/admin/relatorio-os"));
 const CotacaoGastoPage = lazy(() => import("@/pages/admin/cotacao-gasto"));
-const ConciliacaoTicketlogPage = lazy(() => import("@/pages/admin/conciliacao-ticketlog"));
-const TicketlogPostosPage = lazy(() => import("@/pages/admin/ticketlog-postos"));
 const ControlIdPage = lazy(() => import("@/pages/admin/control-id"));
 const FaturasPage = lazy(() => import("@/pages/admin/faturas"));
 const InterExtratoPage = lazy(() => import("@/pages/admin/inter-extrato"));
@@ -209,8 +207,8 @@ function Router() {
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
         <Route path="/admin/relatorio-os">{() => <ProtectedRoute component={RelatorioOSPage} />}</Route>
         <Route path="/admin/cotacao-gasto">{() => <ProtectedRoute component={CotacaoGastoPage} />}</Route>
-        <Route path="/admin/conciliacao-ticketlog">{() => <ProtectedRoute component={ConciliacaoTicketlogPage} />}</Route>
-        <Route path="/admin/ticketlog-postos">{() => <ProtectedRoute component={TicketlogPostosPage} />}</Route>
+        <Route path="/admin/conciliacao-ticketlog">{() => { window.location.replace("/admin/fueling"); return null; }}</Route>
+        <Route path="/admin/ticketlog-postos">{() => { window.location.replace("/admin/fueling"); return null; }}</Route>
         <Route path="/admin/control-id">{() => <ProtectedRoute component={ControlIdPage} />}</Route>
         <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
         <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>

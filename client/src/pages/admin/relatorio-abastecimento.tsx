@@ -54,7 +54,7 @@ function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
   } else if (status === "nao_encontrado") {
     badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700" title={msg}><XCircle className="w-3 h-3" /> Não achou</span>;
   } else if (status === "sem_codigo_posto") {
-    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700" title="Cadastre o posto em /admin/ticketlog-postos"><AlertTriangle className="w-3 h-3" /> S/ posto</span>;
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700" title="Cadastre o posto em Abastecimento > aba Postos DE/PARA"><AlertTriangle className="w-3 h-3" /> S/ posto</span>;
   } else if (status === "sem_credenciais") {
     badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500" title="Configure TICKETLOG_USER/PASS">N/D</span>;
   } else if (status === "erro") {

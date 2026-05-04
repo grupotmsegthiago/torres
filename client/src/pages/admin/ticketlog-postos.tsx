@@ -86,8 +86,8 @@ export default function TicketlogPostosPage() {
   });
 
   return (
-    <AdminLayout>
-      <div className="space-y-4 p-4 max-w-6xl mx-auto">
+    <>
+      <div className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Fuel className="w-6 h-6 text-orange-500" />
@@ -224,6 +224,8 @@ export default function TicketlogPostosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </>
   );
 }
+
+export { TicketlogPostosPage as PostosContent };

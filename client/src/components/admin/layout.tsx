@@ -199,8 +199,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
-          { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: FileText },
-          { path: "/admin/ticketlog-postos", label: "Postos TicketLog (DE/PARA)", icon: Fuel },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
       },

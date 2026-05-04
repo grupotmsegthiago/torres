@@ -132,9 +132,9 @@ export default function ConciliacaoTicketlogPage() {
   }, [report]);
 
   return (
-    <AdminLayout>
+    <>
       <DetailCtx.Provider value={setDetailId}>
-      <div className="space-y-6 p-4 md:p-6">
+      <div className="space-y-6">
         {/* Upload card */}
         <Card className="p-5">
           <div className="flex items-start gap-4 flex-col md:flex-row md:items-end">
@@ -282,9 +282,11 @@ export default function ConciliacaoTicketlogPage() {
           setZoomedPhoto={setZoomedPhoto}
         />
       )}
-    </AdminLayout>
+    </>
   );
 }
+
+export { ConciliacaoTicketlogPage as ConciliacaoContent };
 
 function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "mismatch" }) {
   const openDetail = useContext(DetailCtx);
