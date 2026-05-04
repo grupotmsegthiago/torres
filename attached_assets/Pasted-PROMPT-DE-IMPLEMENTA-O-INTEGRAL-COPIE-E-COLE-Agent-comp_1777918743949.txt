@@ -1,0 +1,37 @@
+PROMPT DE IMPLEMENTAÇÃO INTEGRAL (COPIE E COLE)
+"Agent, complete a implementação do Faturamento Multi-CNPJ agora. O Mickael precisa que o sistema entenda a divisão de valores sem usar porcentagens, respeitando o teto aprovado.
+
+1. LOGICA DE SALDO RESIDUAL (Frontend - Modal de Faturamento):
+
+No arquivo client/src/pages/admin/relatorio-faturamento.tsx, crie um estado billingSplits.
+
+Implemente a função calculateRemainder(): TotalAprovado - soma(inputs_digitados).
+
+O campo do segundo CNPJ deve ter um botão 'Usar Saldo Restante' que preenche automaticamente o valor exato para fechar a conta.
+
+2. PERSISTÊNCIA DE CNPJS (Memória do Cliente):
+
+Ao clicar em 'Gerar Fatura', se o usuário inseriu um novo CNPJ, salve-o na tabela customer_billing_profiles vinculada ao customer_id.
+
+Na próxima vez que este cliente for selecionado, os campos de CNPJ e Razão Social devem vir pré-preenchidos, mas com os valores zerados, aguardando a definição do cliente.
+
+3. TRAVA DE SEGURANÇA (Backend - API):
+
+No arquivo server/routes/billing.ts, crie uma validação antes de disparar para o Asaas:
+
+if (sum(splits) > total_approved) throw new Error('Valor excede o aprovado');
+
+O sistema só deve emitir as faturas se a soma for exatamente igual ou menor ao valor das 15 OS processadas.
+
+4. SINCRONISMO SUPABASE:
+
+Garanta que a tabela billing_splits esteja habilitada para Realtime no Supabase para que Thiago e a Escolta vejam a divisão em tempo real.
+
+Entregue agora o código completo do Modal de Divisão e a rota de salvamento no Supabase."
+
+🔍 O que você vai testar agora:
+O Modal: Quando você clicar em "Gerar Fatura" para as 15 OS (R$ 17.477,70), ele deve abrir uma janelinha pedindo para você confirmar os CNPJs.
+
+A Trava: Se você tentar digitar R$ 10.000 no primeiro e R$ 8.000 no segundo, o botão de "Confirmar" tem que ficar cinza (bloqueado), porque a soma passou dos R$ 17.477,70.
+
+A Memória: Depois que você gerar essa fatura, abra uma nova medição desse mesmo cliente. Os dados dos CNPJs já devem estar lá te esperando.

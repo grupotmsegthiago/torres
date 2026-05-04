@@ -1632,6 +1632,53 @@ export function registerAsaasRoutes(app: Express) {
 
   const gerarFaturaLocks = new Map<number, number>();
 
+  app.get("/api/billing-profiles/:clientId", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const clientId = parseInt(req.params.clientId);
+      if (!clientId) return res.status(400).json({ message: "clientId inválido" });
+      const { data, error } = await supabaseAdmin
+        .from("customer_billing_profiles")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/billing-profiles/:clientId", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const clientId = parseInt(req.params.clientId);
+      if (!clientId) return res.status(400).json({ message: "clientId inválido" });
+      const { label, cnpj, razao_social, is_default } = req.body;
+      if (!cnpj || !razao_social) return res.status(400).json({ message: "CNPJ e Razão Social são obrigatórios" });
+      const { data, error } = await supabaseAdmin
+        .from("customer_billing_profiles")
+        .insert({ client_id: clientId, label: label || "", cnpj, razao_social, is_default: is_default || false })
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/billing-profiles/:id", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!id) return res.status(400).json({ message: "ID inválido" });
+      const { error } = await supabaseAdmin.from("customer_billing_profiles").delete().eq("id", id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/boletim-medicao/gerar-fatura/:clientId", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const clientId = parseInt(req.params.clientId);
@@ -1643,7 +1690,7 @@ export function registerAsaasRoutes(app: Express) {
       }
       gerarFaturaLocks.set(clientId, Date.now());
 
-      const { billingType, sendToAsaas, dueDate, startDate, endDate, expectedTotal } = req.body;
+      const { billingType, sendToAsaas, dueDate, startDate, endDate, expectedTotal, splits } = req.body;
       const user = (req as any).user;
 
       if (!startDate || !endDate) {
@@ -1715,6 +1762,29 @@ export function registerAsaasRoutes(app: Express) {
         const msg = `BLOQUEADO: Soma do backend (R$${totalValue.toFixed(2)}) difere do frontend (R$${Number(expectedTotal).toFixed(2)}). Diferença: R$${Math.abs(totalValue - Number(expectedTotal)).toFixed(2)}`;
         console.error(`[billing-audit] ${msg}`);
         return res.status(400).json({ message: msg });
+      }
+
+      if (splits && Array.isArray(splits) && splits.length > 0) {
+        const splitsSum = splits.reduce((s: number, sp: any) => s + (Number(sp.valor) || 0), 0);
+        if (Math.round(splitsSum * 100) > Math.round(totalValue * 100)) {
+          gerarFaturaLocks.delete(clientId);
+          return res.status(400).json({ message: `BLOQUEADO: Soma das parcelas (R$${splitsSum.toFixed(2)}) excede o valor total aprovado (R$${totalValue.toFixed(2)}).` });
+        }
+        if (Math.abs(splitsSum - totalValue) > 0.01) {
+          gerarFaturaLocks.delete(clientId);
+          return res.status(400).json({ message: `BLOQUEADO: Soma das parcelas (R$${splitsSum.toFixed(2)}) não confere com o total (R$${totalValue.toFixed(2)}). Diferença: R$${Math.abs(splitsSum - totalValue).toFixed(2)}.` });
+        }
+        for (const sp of splits) {
+          if (!sp.cnpj || !sp.razao_social) {
+            gerarFaturaLocks.delete(clientId);
+            return res.status(400).json({ message: "Todos os CNPJs da divisão precisam ter CNPJ e Razão Social preenchidos." });
+          }
+          if ((Number(sp.valor) || 0) <= 0) {
+            gerarFaturaLocks.delete(clientId);
+            return res.status(400).json({ message: `Valor inválido para o CNPJ ${sp.razao_social}. Informe um valor maior que zero.` });
+          }
+        }
+        console.log(`[billing-audit] SPLIT detectado: ${splits.length} parcelas. Soma: R$${splitsSum.toFixed(2)}`);
       }
 
       const now = new Date();
@@ -1874,6 +1944,42 @@ export function registerAsaasRoutes(app: Express) {
 
       if (invErr) throw invErr;
 
+      if (splits && Array.isArray(splits) && splits.length > 0) {
+        for (const sp of splits) {
+          await supabaseAdmin.from("billing_splits").insert({
+            invoice_id: invoice.id,
+            client_id: clientId,
+            profile_id: sp.profile_id || null,
+            cnpj: sp.cnpj,
+            razao_social: sp.razao_social,
+            valor: Number(sp.valor),
+            billing_ids: billingIds,
+            status: "PENDING",
+            created_by: user?.name || "Sistema",
+          });
+
+          if (sp.save_profile) {
+            const { data: existing } = await supabaseAdmin
+              .from("customer_billing_profiles")
+              .select("id")
+              .eq("client_id", clientId)
+              .eq("cnpj", sp.cnpj)
+              .maybeSingle();
+            if (!existing) {
+              await supabaseAdmin.from("customer_billing_profiles").insert({
+                client_id: clientId,
+                label: sp.label || "",
+                cnpj: sp.cnpj,
+                razao_social: sp.razao_social,
+                is_default: false,
+              });
+              console.log(`[billing] Novo perfil CNPJ salvo para cliente ${clientId}: ${sp.cnpj}`);
+            }
+          }
+        }
+        console.log(`[billing] ${splits.length} split(s) salvo(s) para invoice ${invoice.id}`);
+      }
+
       const { error: updateErr } = await supabaseAdmin
         .from("escort_billings")
         .update({
@@ -1891,7 +1997,7 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "GERAR_FATURA", targetId: String(invoice.id), targetType: "invoice",
-        details: `Fatura consolidada para ${clientName}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}. IDs: ${billingIds.join(", ")}. Asaas: ${asaasPaymentId || "não enviado"}`,
+        details: `Fatura consolidada para ${clientName}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}. IDs: ${billingIds.join(", ")}. Asaas: ${asaasPaymentId || "não enviado"}${splits?.length ? `. Splits: ${splits.length} CNPJ(s)` : ""}`,
         ipAddress: (req as any).ip,
       });
 

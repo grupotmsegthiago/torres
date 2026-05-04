@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
   Calculator, Calendar, Check, Receipt, Banknote, Send, Mail,
-  Clock, AlertTriangle, User as UserIcon, RefreshCw, Eye,
+  Clock, AlertTriangle, User as UserIcon, RefreshCw, Eye, Plus, Trash2, ArrowDown,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,7 @@ export default function RelatorioFaturamentoPage() {
   const [recalcLoteLoading, setRecalcLoteLoading] = useState(false);
   const [faturaDialog, setFaturaDialog] = useState(false);
   const [faturaBillingType, setFaturaBillingType] = useState("BOLETO");
+  const [billingSplits, setBillingSplits] = useState<Array<{ cnpj: string; razao_social: string; valor: string; label: string; profile_id?: number; save_profile: boolean }>>([]);
   const [faturaDueDate, setFaturaDueDate] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
     return d.toISOString().split("T")[0];
@@ -92,6 +93,16 @@ export default function RelatorioFaturamentoPage() {
   const { data: contracts = [] } = useQuery<any[]>({
     queryKey: ["/api/escort/contracts"],
     queryFn: async () => { const r = await authFetch("/api/escort/contracts"); return r.json(); },
+  });
+
+  const { data: billingProfiles = [], refetch: refetchProfiles } = useQuery<any[]>({
+    queryKey: ["/api/billing-profiles", selectedClient],
+    queryFn: async () => {
+      if (!selectedClient) return [];
+      const r = await authFetch(`/api/billing-profiles/${selectedClient}`);
+      return r.json();
+    },
+    enabled: Boolean(selectedClient),
   });
 
   const billingIdsKey = useMemo(() => billings.map((b: any) => String(b.id)).sort().join(","), [billings]);
@@ -154,15 +165,6 @@ export default function RelatorioFaturamentoPage() {
     },
     onError: (err: Error) => toast({ title: "Erro ao gerar fatura", description: err.message, variant: "destructive" }),
   });
-
-  const openFaturaDialog = () => {
-    const clientData = clients.find((c: any) => c.id.toString() === selectedClient);
-    const ptDays = Number(clientData?.payment_terms_days) || 15;
-    const suggestedDate = new Date();
-    suggestedDate.setDate(suggestedDate.getDate() + ptDays);
-    setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
-    setFaturaDialog(true);
-  };
 
   const openSendDialog = () => {
     const cd = clients.find((c: any) => c.id.toString() === selectedClient);
@@ -705,6 +707,53 @@ export default function RelatorioFaturamentoPage() {
   }, [rowsData]);
 
   const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+
+  const openFaturaDialog = () => {
+    const cd = clients.find((c: any) => c.id.toString() === selectedClient);
+    const ptDays = Number(cd?.payment_terms_days) || 15;
+    const suggestedDate = new Date();
+    suggestedDate.setDate(suggestedDate.getDate() + ptDays);
+    setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
+
+    if (billingProfiles.length > 0) {
+      setBillingSplits(billingProfiles.map((p: any) => ({
+        cnpj: p.cnpj || "",
+        razao_social: p.razao_social || "",
+        valor: "",
+        label: p.label || "",
+        profile_id: p.id,
+        save_profile: false,
+      })));
+    } else {
+      setBillingSplits([{
+        cnpj: cd?.cnpj || "",
+        razao_social: cd?.name || "",
+        valor: grandTotal.toFixed(2),
+        label: "Principal",
+        save_profile: false,
+      }]);
+    }
+    setFaturaDialog(true);
+  };
+
+  const splitsTotal = useMemo(() => billingSplits.reduce((s, sp) => s + (Number(sp.valor) || 0), 0), [billingSplits]);
+  const splitsRemainder = grandTotal - splitsTotal;
+  const splitsValid = billingSplits.length > 0 && billingSplits.every(sp => sp.cnpj && sp.razao_social && Number(sp.valor) > 0) && Math.abs(splitsRemainder) < 0.01;
+
+  const updateSplit = (index: number, field: string, value: string | boolean) => {
+    setBillingSplits(prev => prev.map((sp, i) => i === index ? { ...sp, [field]: value } : sp));
+  };
+  const addSplit = () => {
+    setBillingSplits(prev => [...prev, { cnpj: "", razao_social: "", valor: "", label: "", save_profile: true }]);
+  };
+  const removeSplit = (index: number) => {
+    setBillingSplits(prev => prev.filter((_, i) => i !== index));
+  };
+  const fillRemainder = (index: number) => {
+    const otherSum = billingSplits.reduce((s, sp, i) => i === index ? s : s + (Number(sp.valor) || 0), 0);
+    const remainder = Math.max(0, grandTotal - otherSum);
+    updateSplit(index, "valor", remainder.toFixed(2));
+  };
 
   const handlePrint = () => {
     const printArea = document.getElementById("print-area");
@@ -1468,13 +1517,13 @@ export default function RelatorioFaturamentoPage() {
       )}
 
       <Dialog open={faturaDialog} onOpenChange={setFaturaDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-wide">
-              <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura — Asaas
+              <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura — Divisão Multi-CNPJ
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Faturamento consolidado via integração Asaas com emissão fiscal CNAE 7870.
+              Divida o valor entre CNPJs diferentes. O sistema memoriza os perfis para próximas faturas.
             </DialogDescription>
           </DialogHeader>
 
@@ -1482,15 +1531,120 @@ export default function RelatorioFaturamentoPage() {
             <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-4">
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Razão Social / Tomador</p>
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Cliente / Tomador</p>
                   <p className="text-sm font-black text-indigo-900 uppercase" data-testid="text-fatura-client">{displayClientName}</p>
-                  <p className="text-[10px] text-indigo-500 font-mono">{clientData?.cnpj || clientData?.cpf || "CPF/CNPJ não cadastrado"}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Valor Total</p>
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Valor Total Aprovado</p>
                   <p className="text-xl font-black font-mono text-indigo-800" data-testid="text-fatura-total">{fmt(grandTotal)}</p>
-                  <p className="text-[10px] text-indigo-500">{rowsData.length} missão(ões) no período</p>
+                  <p className="text-[10px] text-indigo-500">{approvedBillings.length} OS no período</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Divisão por CNPJ</p>
+                <button
+                  onClick={addSplit}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase"
+                  data-testid="btn-add-cnpj-split"
+                >
+                  <Plus size={12} /> Adicionar CNPJ
+                </button>
+              </div>
+
+              {billingSplits.map((sp, idx) => (
+                <div key={idx} className="bg-white border border-gray-200 rounded-lg p-3 space-y-2" data-testid={`split-row-${idx}`}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                      {sp.label || `CNPJ ${idx + 1}`}
+                    </p>
+                    {billingSplits.length > 1 && (
+                      <button onClick={() => removeSplit(idx)} className="text-red-400 hover:text-red-600" data-testid={`btn-remove-split-${idx}`}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[10px] font-bold text-gray-500">CNPJ</Label>
+                      <Input
+                        value={sp.cnpj}
+                        onChange={(e) => updateSplit(idx, "cnpj", e.target.value)}
+                        placeholder="00.000.000/0000-00"
+                        className="text-xs font-mono h-8"
+                        data-testid={`input-split-cnpj-${idx}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] font-bold text-gray-500">Razão Social</Label>
+                      <Input
+                        value={sp.razao_social}
+                        onChange={(e) => updateSplit(idx, "razao_social", e.target.value)}
+                        placeholder="Nome da empresa"
+                        className="text-xs h-8"
+                        data-testid={`input-split-razao-${idx}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label className="text-[10px] font-bold text-gray-500">Valor (R$)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={sp.valor}
+                        onChange={(e) => updateSplit(idx, "valor", e.target.value)}
+                        placeholder="0.00"
+                        className="text-xs font-mono h-8 font-bold"
+                        data-testid={`input-split-valor-${idx}`}
+                      />
+                    </div>
+                    <button
+                      onClick={() => fillRemainder(idx)}
+                      className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-1.5 rounded whitespace-nowrap"
+                      title="Preencher com o saldo restante para fechar a conta"
+                      data-testid={`btn-fill-remainder-${idx}`}
+                    >
+                      <ArrowDown size={12} /> Usar Saldo Restante
+                    </button>
+                    {!sp.profile_id && (
+                      <label className="flex items-center gap-1 text-[10px] text-gray-500 whitespace-nowrap cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={sp.save_profile}
+                          onChange={(e) => updateSplit(idx, "save_profile", e.target.checked)}
+                          className="rounded border-gray-300"
+                          data-testid={`chk-save-profile-${idx}`}
+                        />
+                        Salvar
+                      </label>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className={`rounded-lg p-3 flex items-center justify-between ${Math.abs(splitsRemainder) < 0.01 ? "bg-emerald-50 border border-emerald-200" : splitsRemainder < 0 ? "bg-red-50 border border-red-300" : "bg-amber-50 border border-amber-200"}`}>
+              <div className="flex items-center gap-2">
+                {Math.abs(splitsRemainder) < 0.01 ? (
+                  <Check size={14} className="text-emerald-600" />
+                ) : (
+                  <AlertTriangle size={14} className={splitsRemainder < 0 ? "text-red-500" : "text-amber-500"} />
+                )}
+                <span className={`text-xs font-bold ${Math.abs(splitsRemainder) < 0.01 ? "text-emerald-700" : splitsRemainder < 0 ? "text-red-700" : "text-amber-700"}`}>
+                  {Math.abs(splitsRemainder) < 0.01
+                    ? "Valores conferem com o total aprovado"
+                    : splitsRemainder < 0
+                    ? `Excedeu o teto em ${fmt(Math.abs(splitsRemainder))}`
+                    : `Faltam ${fmt(splitsRemainder)} para fechar o total`}
+                </span>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-gray-400 uppercase">Soma Parcelas</p>
+                <p className="text-sm font-black font-mono" data-testid="text-splits-total">{fmt(splitsTotal)}</p>
               </div>
             </div>
 
@@ -1500,47 +1654,24 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-[10px] text-gray-500 font-mono">CNPJ 36.982.392/0001-89 &bull; CNAE 7870 — Escolta Armada</p>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1">Observações / Descrição Fiscal</p>
-              <p className="text-xs text-amber-900 font-medium" data-testid="text-fatura-descricao">
-                Referente ao Serviço de Escolta Armada — Ref. ao Mês {getPeriodLabel()}
-              </p>
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Vencimento</Label>
                 <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1 text-xs font-mono" data-testid="input-fatura-due-date" />
               </div>
               <div>
-                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail Financeiro</Label>
-                <Input
-                  type="email"
-                  value={clientData?.email_financeiro || clientData?.emailFinanceiro || "escolta@torresseguranca.com.br"}
-                  readOnly
-                  className="mt-1 text-xs font-mono bg-gray-50"
-                  data-testid="input-fatura-email"
-                />
+                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Tipo de Cobrança</Label>
+                <Select value={faturaBillingType} onValueChange={setFaturaBillingType}>
+                  <SelectTrigger className="mt-1 text-xs" data-testid="select-fatura-billing-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
+                    <SelectItem value="PIX">PIX (QR Code)</SelectItem>
+                    <SelectItem value="UNDEFINED">Boleto + PIX</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
-
-            <div>
-              <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Tipo de Cobrança</Label>
-              <Select value={faturaBillingType} onValueChange={setFaturaBillingType}>
-                <SelectTrigger className="mt-1 text-xs" data-testid="select-fatura-billing-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
-                  <SelectItem value="PIX">PIX (QR Code)</SelectItem>
-                  <SelectItem value="UNDEFINED">Boleto + PIX</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
-              <Check size={14} className="text-emerald-600 flex-shrink-0" />
-              <p className="text-[10px] text-emerald-700 font-medium">Cobrança será gerada automaticamente via Asaas com NFS-e (CNAE 7870)</p>
             </div>
           </div>
 
@@ -1558,14 +1689,22 @@ export default function RelatorioFaturamentoPage() {
                   startDate,
                   endDate,
                   expectedTotal: grandTotal,
-                });
+                  splits: billingSplits.length > 1 ? billingSplits.map(sp => ({
+                    cnpj: sp.cnpj,
+                    razao_social: sp.razao_social,
+                    valor: Number(sp.valor),
+                    label: sp.label,
+                    profile_id: sp.profile_id,
+                    save_profile: sp.save_profile,
+                  })) : undefined,
+                } as any);
               }}
-              disabled={gerarFaturaMutation.isPending || rowsData.length === 0}
-              className="bg-indigo-600 hover:bg-indigo-700 text-xs font-black uppercase gap-2 px-6"
+              disabled={gerarFaturaMutation.isPending || rowsData.length === 0 || !splitsValid}
+              className={`text-xs font-black uppercase gap-2 px-6 ${splitsValid ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-400 cursor-not-allowed"}`}
               data-testid="button-confirm-fatura"
             >
               {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-              GERAR BOLETO + PIX (ASAAS) {fmt(grandTotal)}
+              {billingSplits.length > 1 ? `GERAR ${billingSplits.length} FATURAS` : "GERAR FATURA"} {fmt(grandTotal)}
             </Button>
           </DialogFooter>
         </DialogContent>

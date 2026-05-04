@@ -1233,5 +1233,48 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] agent_daily_allowances error:", e.message);
   }
 
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS customer_billing_profiles (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        cnpj TEXT NOT NULL DEFAULT '',
+        razao_social TEXT NOT NULL DEFAULT '',
+        is_default BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_cbp_client ON customer_billing_profiles(client_id)`);
+    console.log("[db-init] customer_billing_profiles table ensured");
+  } catch (e: any) {
+    console.error("[db-init] customer_billing_profiles error:", e.message);
+  }
+
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS billing_splits (
+        id SERIAL PRIMARY KEY,
+        invoice_id INTEGER,
+        client_id INTEGER NOT NULL,
+        profile_id INTEGER,
+        cnpj TEXT NOT NULL DEFAULT '',
+        razao_social TEXT NOT NULL DEFAULT '',
+        valor NUMERIC(12,2) NOT NULL DEFAULT 0,
+        billing_ids TEXT[] DEFAULT '{}',
+        asaas_payment_id TEXT,
+        status TEXT DEFAULT 'PENDING',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by TEXT
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_bsplits_invoice ON billing_splits(invoice_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_bsplits_client ON billing_splits(client_id)`);
+    console.log("[db-init] billing_splits table ensured");
+  } catch (e: any) {
+    console.error("[db-init] billing_splits error:", e.message);
+  }
+
   await closeDbInitClient();
 }
