@@ -225,8 +225,13 @@ export function calcularEscolta(dados: {
     valor_km_extra_calc = fat_km_carregado;
     const horasExcedentes = Math.max(0, horas_missao - franquiaHoras);
     const horaExtraFracionada = contrato.hora_extra_fracionada !== false;
-    const horasExcedentesCobranca = horaExtraFracionada ? horasExcedentes : Math.ceil(horasExcedentes);
-    fat_hora_extra = horasExcedentesCobranca * valorHoraExtra;
+    if (horaExtraFracionada) {
+      const minutosExcedentes = Math.round(horasExcedentes * 60);
+      const valorMinuto = Math.floor(valorHoraExtra / 60 * 100) / 100;
+      fat_hora_extra = minutosExcedentes * valorMinuto;
+    } else {
+      fat_hora_extra = Math.ceil(horasExcedentes) * valorHoraExtra;
+    }
   } else {
     fat_km_carregado = km_faturado_carregado * valorKmCarregado;
     fat_km_vazio = km_vazio * valorKmVazio;

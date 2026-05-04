@@ -1371,7 +1371,11 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const horaExtraFracionada = os.contractValues?.hora_extra_fracionada !== false;
   const horasExtrasCalcRaw = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
   const horasExtrasCalc = horaExtraFracionada ? horasExtrasCalcRaw : Math.ceil(horasExtrasCalcRaw);
-  const horaExtraValorCalc = Math.round(horasExtrasCalc * valorHoraExtraContract * 100) / 100;
+  const minutosExtrasCalc = Math.round(horasExtrasCalc * 60);
+  const valorMinutoContract = Math.floor(valorHoraExtraContract / 60 * 100) / 100;
+  const horaExtraValorCalc = horaExtraFracionada
+    ? minutosExtrasCalc * valorMinutoContract
+    : Math.ceil(horasExtrasCalcRaw) * valorHoraExtraContract;
 
   const acionamento = Number(b?.fat_acionamento || 0);
   const horaExtra = horaExtraValorCalc > 0 ? horaExtraValorCalc : Number(b?.fat_hora_extra || 0);
@@ -1588,7 +1592,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
               <>
                 <div className="border-t border-neutral-100 pt-3 space-y-1">
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
-                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${Math.floor(horasExtrasCalc)}h${String(Math.round((horasExtrasCalc % 1) * 60)).padStart(2, "0")}min × ${fmt(valorHoraExtraContract)}/h` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
+                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
                   <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />
                   {demaisCustos > 0 && <FieldRow label="Demais Custos" value={fmt(demaisCustos)} bold />}
