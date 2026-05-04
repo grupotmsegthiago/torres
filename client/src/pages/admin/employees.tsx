@@ -609,6 +609,19 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   const residFileRef = useRef<HTMLInputElement>(null);
   const [cpfLoading, setCpfLoading] = useState(false);
 
+  const { data: fullEmployee, isLoading: loadingFullEmployee } = useQuery<Employee>({
+    queryKey: ["/api/employees", employee?.id],
+    queryFn: async () => {
+      const res = await authFetch(`/api/employees/${employee!.id}`);
+      if (!res.ok) throw new Error("Erro ao carregar dados completos");
+      return res.json();
+    },
+    enabled: !!employee?.id,
+    staleTime: 0,
+  });
+
+  const emp = fullEmployee || employee;
+
   type DocAttachment = { fileData: string; fileName: string; scanning: boolean };
   const [docAttachments, setDocAttachments] = useState<Record<string, DocAttachment>>({
     CNH: { fileData: "", fileName: "", scanning: false },
@@ -616,43 +629,88 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     "Comprovante de Residência": { fileData: "", fileName: "", scanning: false },
   });
 
+  const [formInitialized, setFormInitialized] = useState(!employee);
   const [form, setForm] = useState({
-    matricula: employee?.matricula || "",
-    name: employee?.name || "",
-    cpf: employee?.cpf || "",
-    rg: employee?.rg || "",
-    cnhNumber: employee?.cnhNumber || "",
-    cnhExpiry: employee?.cnhExpiry || "",
-    cnvNumber: (employee as any)?.cnvNumber || "",
-    cnvExpiry: (employee as any)?.cnvExpiry || "",
-    pis: employee?.pis || "",
-    role: employee?.role || "Vigilante",
-    category: employee?.category || "Mensalista",
-    phone: employee?.phone || "",
-    email: employee?.email || "",
-    address: employee?.address || "",
-    addressLat: (employee as any)?.addressLat || null,
-    addressLng: (employee as any)?.addressLng || null,
-    birthDate: employee?.birthDate || "",
-    motherName: employee?.motherName || "",
-    fatherName: employee?.fatherName || "",
-    nationality: employee?.nationality || "",
-    maritalStatus: employee?.maritalStatus || "",
-    education: employee?.education || "",
-    hireDate: employee?.hireDate || "",
-    vacationExpiry: employee?.vacationExpiry || "",
-    sindicato: employee?.sindicato || "",
-    paymentMethod: employee?.paymentMethod || "PIX",
-    bankName: employee?.bankName || "",
-    bankAgency: employee?.bankAgency || "",
-    bankAccount: employee?.bankAccount || "",
-    pixKey: employee?.pixKey || "",
-    photoUrl: employee?.photoUrl || "",
-    status: employee?.status || "ativo",
-    blockType: employee?.blockType || "",
-    blockReason: employee?.blockReason || "",
-    notes: employee?.notes || "",
+    matricula: "",
+    name: "",
+    cpf: "",
+    rg: "",
+    cnhNumber: "",
+    cnhExpiry: "",
+    cnvNumber: "",
+    cnvExpiry: "",
+    pis: "",
+    role: "Vigilante",
+    category: "Mensalista",
+    phone: "",
+    email: "",
+    address: "",
+    addressLat: null as number | null,
+    addressLng: null as number | null,
+    birthDate: "",
+    motherName: "",
+    fatherName: "",
+    nationality: "",
+    maritalStatus: "",
+    education: "",
+    hireDate: "",
+    vacationExpiry: "",
+    sindicato: "",
+    paymentMethod: "PIX",
+    bankName: "",
+    bankAgency: "",
+    bankAccount: "",
+    pixKey: "",
+    photoUrl: "",
+    status: "ativo",
+    blockType: "",
+    blockReason: "",
+    notes: "",
   });
+
+  useEffect(() => {
+    if (fullEmployee && !formInitialized) {
+      const e = fullEmployee as any;
+      setForm({
+        matricula: e.matricula || "",
+        name: e.name || "",
+        cpf: e.cpf || "",
+        rg: e.rg || "",
+        cnhNumber: e.cnhNumber || "",
+        cnhExpiry: e.cnhExpiry || "",
+        cnvNumber: e.cnvNumber || "",
+        cnvExpiry: e.cnvExpiry || "",
+        pis: e.pis || "",
+        role: e.role || "Vigilante",
+        category: e.category || "Mensalista",
+        phone: e.phone || "",
+        email: e.email || "",
+        address: e.address || "",
+        addressLat: e.addressLat || null,
+        addressLng: e.addressLng || null,
+        birthDate: e.birthDate || "",
+        motherName: e.motherName || "",
+        fatherName: e.fatherName || "",
+        nationality: e.nationality || "",
+        maritalStatus: e.maritalStatus || "",
+        education: e.education || "",
+        hireDate: e.hireDate || "",
+        vacationExpiry: e.vacationExpiry || "",
+        sindicato: e.sindicato || "",
+        paymentMethod: e.paymentMethod || "PIX",
+        bankName: e.bankName || "",
+        bankAgency: e.bankAgency || "",
+        bankAccount: e.bankAccount || "",
+        pixKey: e.pixKey || "",
+        photoUrl: e.photoUrl || "",
+        status: e.status || "ativo",
+        blockType: e.blockType || "",
+        blockReason: e.blockReason || "",
+        notes: e.notes || "",
+      });
+      setFormInitialized(true);
+    }
+  }, [fullEmployee, formInitialized]);
 
   const { data: nextMatricula } = useQuery<{ matricula: string }>({
     queryKey: ["/api/employees/next-matricula"],
@@ -875,6 +933,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       if (employee) {
         const { matricula, ...updateData } = payload;
         const res = await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
+        const saved = await res.json();
+        if (!saved || !saved.id) {
+          throw new Error("O servidor não confirmou o salvamento. Tente novamente.");
+        }
         employeeId = employee.id;
       } else {
         const res = await apiRequest("POST", "/api/employees", payload);
@@ -919,7 +981,37 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     },
   });
 
-  const displayMatricula = employee ? employee.matricula : (nextMatricula?.matricula || "Gerando...");
+  const displayMatricula = employee ? (emp?.matricula || employee.matricula) : (nextMatricula?.matricula || "Gerando...");
+
+  if (employee && loadingFullEmployee) {
+    return (
+      <Card className="p-6 bg-white border-neutral-200 mb-6" data-testid="card-employee-form">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Editar Funcionário</h2>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <Loader2 className="w-8 h-8 text-neutral-400 animate-spin" />
+          <p className="text-sm text-neutral-500">Carregando dados completos do funcionário...</p>
+        </div>
+      </Card>
+    );
+  }
+
+  if (employee && !formInitialized) {
+    return (
+      <Card className="p-6 bg-white border-neutral-200 mb-6" data-testid="card-employee-form">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Editar Funcionário</h2>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <Loader2 className="w-8 h-8 text-neutral-400 animate-spin" />
+          <p className="text-sm text-neutral-500">Preparando formulário...</p>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-6 bg-white border-neutral-200 mb-6" data-testid="card-employee-form">
