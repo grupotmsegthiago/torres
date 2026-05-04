@@ -72,6 +72,67 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // Backfill total: puxa TODO o histórico de batidas (ignora filtro de data)
+  app.post("/api/control-id/devices/:id/backfill", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const r = await ctrl.syncDevice(id, { fullBackfill: true });
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Auto-import: importa funcionários do aparelho e tenta auto-mapear por nome
+  app.post("/api/control-id/devices/:id/auto-import", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const r = await ctrl.autoImportPersons(id);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Atualizar funcionário no RHID (write-back)
+  app.put("/api/control-id/devices/:id/persons/:rhidPersonId", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const personId = String(req.params.rhidPersonId);
+      const r = await ctrl.updateRhidPerson(id, personId, req.body);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Criar batida no RHID (write-back)
+  app.post("/api/control-id/devices/:id/punches", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { rhidPersonId, dateTime, tipo } = req.body;
+      if (!rhidPersonId || !dateTime) return res.status(400).json({ message: "rhidPersonId e dateTime são obrigatórios" });
+      const r = await ctrl.createRhidPunch(id, String(rhidPersonId), new Date(dateTime), tipo || 3);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Atualizar batida no RHID (write-back)
+  app.put("/api/control-id/devices/:id/punches/:rhidPunchId", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const punchId = String(req.params.rhidPunchId);
+      const body: any = { ...req.body };
+      if (body.dateTime) body.dateTime = new Date(body.dateTime);
+      const r = await ctrl.updateRhidPunch(id, punchId, body);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Listar usuários cadastrados no aparelho (pra ajudar mapping)
   app.get("/api/control-id/devices/:id/users", requireAuth, requireAdminRole, async (req, res) => {
     try {

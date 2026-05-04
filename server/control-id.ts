@@ -242,23 +242,30 @@ async function fetchEventsRhid(device: DeviceRow, since: Date | null): Promise<C
   const token = await getOrLoginToken(device);
 
   const afdUrl = joinUrl(device.base_url, "/customerdb/afd.svc/a");
-  const afdRes = await tryFetch(afdUrl, {
+  let afdRes = await tryFetch(afdUrl, {
     headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
-    timeoutMs: 30000,
+    timeoutMs: 60000,
   });
   if (afdRes.status === 401 || afdRes.status === 403) {
     const newToken = await loginDevice(device);
-    const retry = await tryFetch(afdUrl, {
+    afdRes = await tryFetch(afdUrl, {
       headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
-      timeoutMs: 30000,
+      timeoutMs: 60000,
     });
-    if (!retry.ok) throw new Error(`RHID AFD falhou: HTTP ${retry.status}`);
-    const retryData = await retry.json();
-    return parseRhidAfdRecords(retryData, since);
   }
   if (!afdRes.ok) throw new Error(`RHID AFD falhou: HTTP ${afdRes.status}`);
   const afdData = await afdRes.json();
   return parseRhidAfdRecords(afdData, since);
+}
+
+/**
+ * Busca TODOS os eventos do dispositivo (sem filtro de data) — para backfill histórico completo.
+ */
+export async function fetchAllEvents(device: DeviceRow): Promise<ControlIdEvent[]> {
+  if (device.tipo === "rhid_cloud") {
+    return fetchEventsRhid(device, new Date(0));
+  }
+  return fetchEvents(device, new Date(0));
 }
 
 function parseRhidAfdRecords(afdData: any, since: Date | null): ControlIdEvent[] {
@@ -399,25 +406,30 @@ export async function testConnection(device: DeviceRow): Promise<{ ok: boolean; 
  * Sincroniza batidas novas de 1 device. Persiste em control_id_punches (dedup por external_id).
  * Auto-mapeia employee_id se houver mapping ativo em control_id_users_map.
  */
-export async function syncDevice(deviceId: number): Promise<{ fetched: number; saved: number; mapped: number; skipped: number; message: string }> {
+export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolean } = {}): Promise<{ fetched: number; saved: number; mapped: number; skipped: number; message: string }> {
   const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
   if (!device) throw new Error(`Device #${deviceId} não encontrado`);
-  if (!device.ativo) return { fetched: 0, saved: 0, mapped: 0, skipped: 0, message: "Device inativo" };
+  if (!device.ativo && !opts.fullBackfill) return { fetched: 0, saved: 0, mapped: 0, skipped: 0, message: "Device inativo" };
 
-  // Last sync = punch mais recente OU lastSyncAt OU 24h atrás
   let since: Date | null = null;
-  if (device.last_sync_at) since = new Date(device.last_sync_at);
-  const { data: lastPunch } = await supabaseAdmin
-    .from("control_id_punches")
-    .select("punch_at")
-    .eq("device_id", deviceId)
-    .order("punch_at", { ascending: false })
-    .limit(1).maybeSingle();
-  if (lastPunch?.punch_at) since = new Date(lastPunch.punch_at);
+  if (!opts.fullBackfill) {
+    if (device.last_sync_at) since = new Date(device.last_sync_at);
+    const { data: lastPunch } = await supabaseAdmin
+      .from("control_id_punches")
+      .select("punch_at")
+      .eq("device_id", deviceId)
+      .order("punch_at", { ascending: false })
+      .limit(1).maybeSingle();
+    if (lastPunch?.punch_at) since = new Date(lastPunch.punch_at);
+  } else {
+    since = new Date(0);
+  }
 
   let events: ControlIdEvent[] = [];
   try {
-    events = await fetchEvents(device as DeviceRow, since);
+    events = opts.fullBackfill
+      ? await fetchAllEvents(device as DeviceRow)
+      : await fetchEvents(device as DeviceRow, since);
   } catch (err: any) {
     await supabaseAdmin.from("control_id_devices").update({
       last_sync_at: new Date().toISOString(),
@@ -486,6 +498,205 @@ export async function syncDevice(deviceId: number): Promise<{ fetched: number; s
 
   console.log(`[ControlID] Sync device #${deviceId}: ${events.length} eventos, ${saved} novos, ${mapped} mapeados`);
   return { fetched: events.length, saved, mapped, skipped, message: `${saved} batida(s) nova(s)` };
+}
+
+// ============================ AUTO-IMPORT PERSONS ↔ EMPLOYEES ============================
+
+function normalizeName(s: string): string {
+  return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function nameTokens(s: string): string[] {
+  return normalizeName(s).split(" ").filter(t => t.length >= 3);
+}
+
+function nameMatchScore(a: string, b: string): number {
+  const ta = nameTokens(a), tb = nameTokens(b);
+  if (ta.length === 0 || tb.length === 0) return 0;
+  let common = 0;
+  for (const t of ta) if (tb.includes(t)) common++;
+  return common / Math.max(ta.length, tb.length);
+}
+
+/**
+ * Importa todos os funcionários do aparelho RHID e tenta auto-mapear com employees locais por nome (fuzzy).
+ * Cria mappings para os que casarem com score >= 0.5. Retorna lista de não-mapeados para mapping manual.
+ */
+export async function autoImportPersons(deviceId: number): Promise<{
+  created: number;
+  alreadyMapped: number;
+  unmatched: Array<{ rhidId: string; rhidName: string }>;
+  matched: Array<{ rhidId: string; rhidName: string; employeeId: number; employeeName: string; score: number }>;
+}> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+
+  const persons = await fetchUsers(device as DeviceRow);
+  console.log(`[ControlID] Auto-import: ${persons.length} pessoas no aparelho`);
+
+  const { data: employees } = await supabaseAdmin.from("employees").select("id, name").in("status", ["ativo", "active"]);
+  const localList = (employees || []) as Array<{ id: number; name: string }>;
+
+  const { data: existingMappings } = await supabaseAdmin
+    .from("control_id_users_map").select("control_id_user_id")
+    .eq("device_id", deviceId).eq("ativo", true);
+  const mappedIds = new Set((existingMappings || []).map((m: any) => String(m.control_id_user_id)));
+
+  const matched: any[] = [];
+  const unmatched: any[] = [];
+  let alreadyMapped = 0;
+  const toInsert: any[] = [];
+
+  for (const p of persons) {
+    if (mappedIds.has(p.id)) { alreadyMapped++; continue; }
+
+    let bestEmp: { id: number; name: string } | null = null;
+    let bestScore = 0;
+    for (const emp of localList) {
+      const s = nameMatchScore(p.name, emp.name);
+      if (s > bestScore) { bestScore = s; bestEmp = emp; }
+    }
+
+    if (bestEmp && bestScore >= 0.5) {
+      toInsert.push({
+        device_id: deviceId,
+        employee_id: bestEmp.id,
+        control_id_user_id: p.id,
+        control_id_user_name: p.name,
+        matricula: p.matricula || null,
+        ativo: true,
+      });
+      matched.push({ rhidId: p.id, rhidName: p.name, employeeId: bestEmp.id, employeeName: bestEmp.name, score: Number(bestScore.toFixed(2)) });
+    } else {
+      unmatched.push({ rhidId: p.id, rhidName: p.name });
+    }
+  }
+
+  if (toInsert.length > 0) {
+    const { error } = await supabaseAdmin.from("control_id_users_map").insert(toInsert);
+    if (error) throw new Error(`Erro ao salvar mappings: ${error.message}`);
+
+    // Backfill: associa batidas órfãs aos novos mappings
+    for (const m of toInsert) {
+      await supabaseAdmin.from("control_id_punches")
+        .update({ employee_id: m.employee_id })
+        .eq("device_id", deviceId)
+        .eq("control_id_user_id", m.control_id_user_id)
+        .is("employee_id", null);
+    }
+  }
+
+  return { created: toInsert.length, alreadyMapped, matched, unmatched };
+}
+
+// ============================ WRITE BACK PARA RHID ============================
+
+/**
+ * Atualiza um funcionário no RHID Cloud (PATCH em person.svc).
+ */
+export async function updateRhidPerson(deviceId: number, rhidPersonId: string, fields: Record<string, any>): Promise<any> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  if (device.tipo !== "rhid_cloud") throw new Error("Update suportado apenas em RHID Cloud");
+
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, `/customerdb/person.svc/${rhidPersonId}`);
+  let r = await tryFetch(url, {
+    method: "PUT",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(fields),
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    const newToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
+      method: "PUT",
+      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(fields),
+      timeoutMs: 20000,
+    });
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`RHID PUT person falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return await r.json().catch(() => ({}));
+}
+
+/**
+ * Cria uma batida manual no RHID Cloud (POST em afd.svc).
+ */
+export async function createRhidPunch(deviceId: number, rhidPersonId: string, dateTime: Date, tipo: number = 3): Promise<any> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  if (device.tipo !== "rhid_cloud") throw new Error("Create punch suportado apenas em RHID Cloud");
+
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, `/customerdb/afd.svc/`);
+  const body = {
+    idPerson: Number(rhidPersonId),
+    dateTime: `/Date(${dateTime.getTime()}-0300)/`,
+    Tipo: tipo,
+    approvalStatus: 2,
+  };
+  let r = await tryFetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(body),
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    const newToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body),
+      timeoutMs: 20000,
+    });
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`RHID POST punch falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return await r.json().catch(() => ({}));
+}
+
+/**
+ * Atualiza uma batida existente no RHID Cloud (PUT em afd.svc).
+ */
+export async function updateRhidPunch(deviceId: number, rhidPunchId: string, fields: Record<string, any>): Promise<any> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  if (device.tipo !== "rhid_cloud") throw new Error("Update punch suportado apenas em RHID Cloud");
+
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, `/customerdb/afd.svc/${rhidPunchId}`);
+  const body: any = { ...fields };
+  if (fields.dateTime instanceof Date) {
+    body.dateTime = `/Date(${fields.dateTime.getTime()}-0300)/`;
+  }
+  let r = await tryFetch(url, {
+    method: "PUT",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(body),
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    const newToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
+      method: "PUT",
+      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body),
+      timeoutMs: 20000,
+    });
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`RHID PUT punch falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return await r.json().catch(() => ({}));
 }
 
 export async function syncAllDevices(): Promise<{ devices: number; totalSaved: number }> {

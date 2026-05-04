@@ -71,6 +71,8 @@ function DevicesTab() {
   const [editing, setEditing] = useState<Partial<Device & { password?: string }> | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
+  const [backfillingId, setBackfillingId] = useState<number | null>(null);
+  const [importingId, setImportingId] = useState<number | null>(null);
 
   const { data: devices = [], isLoading } = useQuery<Device[]>({
     queryKey: ["/api/control-id/devices"],
@@ -126,6 +128,39 @@ function DevicesTab() {
     } finally { setSyncingId(null); }
   }
 
+  async function backfillDevice(id: number) {
+    if (!confirm("Backfill total: vai buscar TODO o histórico de batidas (pode levar minutos e baixar milhares de registros). Confirma?")) return;
+    setBackfillingId(id);
+    try {
+      const r = await authFetch(`/api/control-id/devices/${id}/backfill`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      toast({ title: "Backfill concluído", description: `${d.fetched || 0} batida(s) buscada(s), ${d.saved || 0} nova(s), ${d.skipped || 0} duplicada(s)` });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+    } catch (e: any) {
+      toast({ title: "Erro no backfill", description: e.message, variant: "destructive" });
+    } finally { setBackfillingId(null); }
+  }
+
+  async function autoImport(id: number) {
+    setImportingId(id);
+    try {
+      const r = await authFetch(`/api/control-id/devices/${id}/auto-import`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      const unmatchedNames = (d.unmatched || []).map((u: any) => u.rhidName).join(", ");
+      toast({
+        title: "Auto-importação concluída",
+        description: `${d.created} mapeamento(s) criado(s) automaticamente. ${d.unmatched?.length || 0} não casaram (mapeie manualmente): ${unmatchedNames || "—"}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/mappings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+    } catch (e: any) {
+      toast({ title: "Erro ao importar", description: e.message, variant: "destructive" });
+    } finally { setImportingId(null); }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
@@ -171,6 +206,12 @@ function DevicesTab() {
                     </Button>
                     <Button variant="outline" size="sm" disabled={syncingId === d.id} onClick={() => syncDevice(d.id)} data-testid={`button-sync-${d.id}`}>
                       {syncingId === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />} Sync
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={backfillingId === d.id} onClick={() => backfillDevice(d.id)} data-testid={`button-backfill-${d.id}`} title="Importar TODO o histórico de batidas (uma vez)">
+                      {backfillingId === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />} Backfill
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={importingId === d.id} onClick={() => autoImport(d.id)} data-testid={`button-import-${d.id}`} title="Importar funcionários do aparelho e auto-mapear por nome">
+                      {importingId === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5 mr-1" />} Importar Funcionários
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing({ ...d, password: "" })} data-testid={`button-edit-${d.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600" onClick={() => { if (confirm(`Remover "${d.nome}"?`)) deleteMutation.mutate(d.id); }} data-testid={`button-delete-${d.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
