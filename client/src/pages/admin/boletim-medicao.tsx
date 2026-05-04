@@ -1357,8 +1357,13 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
     hCalc = diff / 60;
   }
 
+  const franquiaHorasContract = Number(os.contractValues?.franquia_horas || 0);
+  const valorHoraExtraContract = Number(os.contractValues?.valor_hora_extra || 0);
+  const horasExtrasCalc = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
+  const horaExtraValorCalc = Math.round(horasExtrasCalc * valorHoraExtraContract * 100) / 100;
+
   const acionamento = Number(b?.fat_acionamento || 0);
-  const horaExtra = Number(b?.fat_hora_extra || 0);
+  const horaExtra = horaExtraValorCalc > 0 ? horaExtraValorCalc : Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
   const adNoturno = Number(b?.fat_adicional_noturno || 0);
@@ -1535,8 +1540,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                           return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
                         } catch { return "—"; }
                       };
-                      const franquiaHoras = Number(b?.franquia_horas || os.contractValues?.franquia_horas || 0);
-                      const horasExtras = hCalc > franquiaHoras && franquiaHoras > 0 ? hCalc - franquiaHoras : 0;
+                      const horasExtras = horasExtrasCalc;
                       const fmtH = (h: number) => h > 0 ? `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, "0")}min` : "0h00";
                       return (
                         <>
@@ -1571,7 +1575,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
               <>
                 <div className="border-t border-neutral-100 pt-3 space-y-1">
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
-                  {horaExtra > 0 && <FieldRow label="Valor Hora Extra" value={fmt(horaExtra)} accent="amber" bold />}
+                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${Math.floor(horasExtrasCalc)}h${String(Math.round((horasExtrasCalc % 1) * 60)).padStart(2, "0")}min × ${fmt(valorHoraExtraContract)}/h` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
                   <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />
                   {demaisCustos > 0 && <FieldRow label="Demais Custos" value={fmt(demaisCustos)} bold />}
