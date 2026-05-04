@@ -2279,7 +2279,10 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
         const toBRTe = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
         const scheduledTime = so.scheduledDate ? toBRTe(new Date(so.scheduledDate)) : undefined;
-        const startTime = so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt as string)) : undefined;
+        const encStepLogs = (so.stepLogs || []) as any[];
+        const checkinChegada = [...encStepLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && l.timestamp);
+        const chegadaOrigemTime = checkinChegada ? toBRTe(new Date(checkinChegada.timestamp)) : undefined;
+        const startTime = chegadaOrigemTime || (so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt as string)) : undefined);
         const completedDateVal = updated.completedDate || so.completedDate;
         const endTime = completedDateVal ? toBRTe(new Date(completedDateVal as string)) : undefined;
 

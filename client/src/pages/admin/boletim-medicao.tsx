@@ -1356,7 +1356,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
     if (!chegadaReal) return agendado;
     const minAg = toMin(agendado);
     const minReal = toMin(chegadaReal);
-    return minReal <= minAg ? agendado : chegadaReal;
+    return minReal <= minAg ? chegadaReal : agendado;
   })();
   const realFim = fmtToHHMM(os.hora_fim_missao) || fmtToHHMM(os.completedDate) || b?.horario_fim;
   let hCalc = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
@@ -1551,21 +1551,16 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                       };
                       const horasExtras = horasExtrasCalc;
                       const fmtH = (h: number) => h > 0 ? `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, "0")}min` : "0h00";
-                      const chegouAntes = chegadaReal && agendado && toMin(chegadaReal) < toMin(agendado);
+                      const inicioReal = chegadaReal || agendado;
+                      const inicioDifere = inicioReal && inicioCobranca && inicioReal !== inicioCobranca;
                       return (
                         <>
                           <div className="grid grid-cols-2 gap-3">
                             <FieldRow label="Data / Hora Inicial" value={fmtDtHr(horaInicial)} />
                             <FieldRow label="Data / Hora Final" value={fmtDtHr(horaFinal)} />
                           </div>
-                          {chegouAntes && (
-                            <div className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
-                              <Clock size={11} />
-                              <span>Agente chegou às <strong>{chegadaReal}</strong> (antes do agendado {agendado}). Cobrança a partir de <strong>{inicioCobranca}</strong>.</span>
-                            </div>
-                          )}
                           <div className="grid grid-cols-2 gap-3">
-                            <FieldRow label={chegouAntes ? `Horas (${inicioCobranca}→${realFim})` : "Total de Horas"} value={fmtH(hCalc)} accent="blue" />
+                            <FieldRow label="Total de Horas" value={fmtH(hCalc)} accent="blue" />
                             <FieldRow label="Total de Extras" value={horasExtras > 0 ? fmtH(horasExtras) : "—"} accent={horasExtras > 0 ? "amber" : undefined} />
                           </div>
                         </>

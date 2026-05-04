@@ -142,8 +142,8 @@ export function calcularInicioCobranca(agendado?: string, chegadaReal?: string):
   const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
   const minAg = toMin(agendado);
   const minReal = toMin(chegadaReal);
-  if (minReal <= minAg) return { inicio_considerado: agendado, usou_agendado: true };
-  return { inicio_considerado: chegadaReal, usou_agendado: false };
+  if (minReal <= minAg) return { inicio_considerado: chegadaReal, usou_agendado: false };
+  return { inicio_considerado: agendado, usou_agendado: true };
 }
 
 export function calcularHorasTrabalhadas(inicio: string, fim?: string): number {
