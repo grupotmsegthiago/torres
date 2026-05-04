@@ -467,8 +467,11 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
 
   let saved = 0, mapped = 0, skipped = 0;
   const toInsert: any[] = [];
+  const seenInBatch = new Set<string>(); // dedup intra-batch (RHID às vezes devolve repetido)
   for (const ev of events) {
     if (existingSet.has(ev.id)) { skipped++; continue; }
+    if (seenInBatch.has(ev.id)) { skipped++; continue; }
+    seenInBatch.add(ev.id);
     const employeeId = mapByUserId.get(ev.userId) || null;
     if (employeeId) mapped++;
     toInsert.push({
@@ -486,8 +489,16 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   }
 
   if (toInsert.length > 0) {
-    const { error } = await supabaseAdmin.from("control_id_punches").insert(toInsert);
-    if (error) throw new Error(`Erro ao salvar batidas: ${error.message}`);
+    // upsert em lotes de 500 (Supabase limita ~1000 por chamada) com onConflict
+    // pra evitar duplicate key violation se algum external_id escapou do dedup.
+    const CHUNK = 500;
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK);
+      const { error } = await supabaseAdmin
+        .from("control_id_punches")
+        .upsert(chunk, { onConflict: "device_id,external_id", ignoreDuplicates: true });
+      if (error) throw new Error(`Erro ao salvar batidas (lote ${i / CHUNK + 1}): ${error.message}`);
+    }
   }
 
   await supabaseAdmin.from("control_id_devices").update({
