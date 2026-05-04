@@ -1378,8 +1378,9 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const horaExtra = Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
-  const receitasOs = Number(b?.receitas_os || 0);
-  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOs;
+  const adNoturno = Number(b?.fat_adicional_noturno || 0);
+  const demaisCustos = Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0);
+  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + adNoturno + demaisCustos;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
   const startTime = os.missionStartedAt ? fmtTime(os.missionStartedAt) : null;
@@ -1590,8 +1591,8 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                   {horaExtra > 0 && <FieldRow label="Valor Hora Extra" value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
                   <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />
-                  {receitasOs > 0 && <FieldRow label="Receitas OS" value={fmt(receitasOs)} accent="green" bold />}
-                  {Number(b?.fat_adicional_noturno || 0) > 0 && <FieldRow label="Adicional Noturno" value={fmt(Number(b.fat_adicional_noturno))} accent="violet" bold />}
+                  {demaisCustos > 0 && <FieldRow label="Demais Custos" value={fmt(demaisCustos)} bold />}
+                  {adNoturno > 0 && <FieldRow label="Adicional Noturno" value={fmt(adNoturno)} accent="violet" bold />}
                 </div>
 
                 <div className={`rounded-xl p-4 text-center border-2 ${resultado >= 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
