@@ -2121,6 +2121,17 @@ export function registerAsaasRoutes(app: Express) {
         const invoiceMap = new Map<number, any>();
         for (const inv of (invoicesRaw || [])) invoiceMap.set(inv.id, inv);
 
+        // Buscar invoices CRIADAS no período que podem não ter sido capturadas
+        // pelas billings (ex: fatura criada em maio com missões de abril)
+        const { data: invoicesCreatedInPeriod } = await supabaseAdmin
+          .from("invoices")
+          .select("*")
+          .gte("created_at", fromIso)
+          .lte("created_at", toIso);
+        for (const inv of (invoicesCreatedInPeriod || [])) {
+          if (!invoiceMap.has(inv.id)) invoiceMap.set(inv.id, inv);
+        }
+
         // Filtra invoices da Torres (oculta quando provider_cnpj é outro CNPJ)
         const invoiceIsTorres = (inv: any) => {
           if (!inv) return false;
@@ -2152,8 +2163,12 @@ export function registerAsaasRoutes(app: Express) {
           }
         }
 
-        // Buscar clientes (nome atual + CPF/CNPJ)
-        const allClientIds = Array.from(new Set(validBillings.map((b: any) => b.client_id).filter(Boolean))) as number[];
+        // Buscar clientes (nome atual + CPF/CNPJ) — inclui IDs das invoices criadas no período
+        const invClientIds = (invoicesCreatedInPeriod || []).map((i: any) => i.client_id).filter(Boolean);
+        const allClientIds = Array.from(new Set([
+          ...validBillings.map((b: any) => b.client_id).filter(Boolean),
+          ...invClientIds,
+        ])) as number[];
         const clientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
@@ -2230,6 +2245,43 @@ export function registerAsaasRoutes(app: Express) {
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
             osCount: bills.length,
             osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
+            rawStatus: inv.status,
+            rawNfseStatus: inv.nfse_status,
+            rawBoletimStatus: null,
+            normalizedStatus: ns,
+            invoiceId: inv.id,
+            approvalToken: null,
+            approvalUrl: null,
+          });
+        }
+
+        // Invoices criadas no período que NÃO apareceram via billings
+        // (missões fora do período mas fatura criada dentro)
+        for (const inv of (invoicesCreatedInPeriod || [])) {
+          if (!invoiceIsTorres(inv)) continue;
+          if (fatGroups.has(inv.id)) continue;
+          const ns = normalizeInvoiceStatus(inv);
+          const cli = clientMap.get(inv.client_id);
+          rows.push({
+            id: `INV-${inv.id}`,
+            source: "INVOICE",
+            sourceId: inv.id,
+            clientId: inv.client_id,
+            clientName: cli?.name || inv.client_name,
+            clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
+            description: inv.description,
+            value: Number(inv.value || 0),
+            netValue: inv.net_value != null ? Number(inv.net_value) : null,
+            dueDate: inv.due_date,
+            paymentDate: inv.payment_date,
+            createdAt: inv.created_at,
+            updatedAt: inv.updated_at,
+            asaasPaymentId: inv.asaas_payment_id,
+            invoiceUrl: inv.invoice_url,
+            nfseUrl: inv.nfse_url,
+            nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
+            osCount: 0,
+            osList: [],
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             rawBoletimStatus: null,
