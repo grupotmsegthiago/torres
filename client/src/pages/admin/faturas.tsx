@@ -469,6 +469,11 @@ export default function FaturasPage() {
                                   <p className="text-xs font-mono font-bold text-neutral-700 truncate max-w-[140px]">{inv.asaas_payment_id}</p>
                                   <p className="text-[10px] text-neutral-400">#{inv.id}</p>
                                 </>
+                              ) : inv.status === "CANCELLED" ? (
+                                <>
+                                  <p className="text-xs font-medium text-neutral-500">Cancelada</p>
+                                  <p className="text-[10px] text-neutral-400">#{inv.id}</p>
+                                </>
                               ) : (
                                 <>
                                   <p className="text-xs font-medium text-amber-600">Aguardando</p>
