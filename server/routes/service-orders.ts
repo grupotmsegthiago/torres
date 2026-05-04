@@ -454,6 +454,8 @@ import type { Express } from "express";
               else doCalc += amt;
             }
           }
+          const pedagioEstOS = Number((updatedSo as any).pedagioEstimado) || 0;
+          if (pedagioEstOS > 0 && dpCalc === 0) dpCalc = pedagioEstOS;
           const resultado = calcularEscolta({
             km_inicial: kmI, km_final: kmFN, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
@@ -666,6 +668,8 @@ import type { Express } from "express";
               else do2 += amt;
             }
           }
+          const pedagioEstOS2 = Number((updatedSo as any).pedagioEstimado) || 0;
+          if (pedagioEstOS2 > 0 && dp2 === 0) dp2 = pedagioEstOS2;
           const resultado = calcularEscolta({
             contrato, km_inicial: kmI, km_final: kmFN,
             km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
@@ -1432,7 +1436,7 @@ import type { Express } from "express";
       }
     }
 
-    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao"];
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao", "pedagioEstimado", "pedagioIdaVolta"];
     const changedBillingFields = existing && billingRelevantFields.some(f => {
       const oldVal = (existing as any)[f];
       const newVal = (parsed.data as any)[f];
@@ -1468,7 +1472,7 @@ import type { Express } from "express";
 
           let despPedagioAR = Number(bill.despesas_pedagio || 0);
           const pedagioOS = Number((data as any).pedagioEstimado) || 0;
-          if (pedagioOS > 0 && despPedagioAR === 0) despPedagioAR = pedagioOS;
+          if (pedagioOS > 0) despPedagioAR = pedagioOS;
 
           const mcListAR = await storage.getMissionCostsByOS(osId);
           let dpAR = 0, dcAR = 0, doAR = 0, roAR = 0;

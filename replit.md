@@ -368,6 +368,11 @@ padrões reaparecendo, corrija imediatamente.
 - ❌ Não validar `EMAIL_PASS`/`SMTP_PASS` antes de enviar — erro confuso e tentativa repetida. ✅ Helper retorna `null` e loga uma vez se faltar credencial.
 - ❌ BCC para destinatário externo do cliente — vaza endereços internos da Torres. ✅ BCC vai SOMENTE para `thiago@grupotmseg.com.br` e contatos internos da empresa.
 
+### Sincronismo OS ↔ Billing (`server/routes/service-orders.ts`)
+- ❌ `billingRelevantFields` sem `pedagioEstimado` / `pedagioIdaVolta` — editar pedágio na OS não dispara recálculo do billing. ✅ Incluir ambos na lista para que o auto-recalc rode ao salvar a OS.
+- ❌ `if (pedagioOS > 0 && despPedagioAR === 0)` — só usa pedágio da OS se billing tiver zero; ignorava atualização de valor já existente. ✅ `if (pedagioOS > 0)` (sempre sobrescreve com o valor manual da OS).
+- ❌ Recálculos batch (conclusão automática e auditoria) sem fallback para `pedagioEstimado` da OS — pedágio ficava zerado quando não havia mission_cost de pedágio. ✅ Sempre checar `(updatedSo as any).pedagioEstimado` como fallback quando `dpCalc === 0`.
+
 ### Cache PWA (`server/static.ts`, `client/public/sw.js`, `client/src/main.tsx`)
 - ❌ `express.static(distPath)` sem `setHeaders` — `index.html` fica cacheado pelo navegador apontando para hashes JS antigos após deploy. ✅ `setHeaders` com `no-cache` para `index.html`/`sw.js`/`manifest.json` e `immutable max-age=31536000` para `/assets/*` (já têm hash do Vite).
 - ❌ Service Worker sem versionamento — não tem como saber se está velho. ✅ `SW_VERSION` no topo do `sw.js` e limpeza de caches antigos no `activate`.
