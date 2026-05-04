@@ -216,8 +216,16 @@ export function registerControlIdRoutes(app: Express) {
     let q = supabaseAdmin.from("control_id_punches").select("*").order("punch_at", { ascending: false }).limit(Number(limit));
     if (employeeId) q = q.eq("employee_id", Number(employeeId));
     if (deviceId) q = q.eq("device_id", Number(deviceId));
-    if (from) q = q.gte("punch_at", from);
-    if (to) q = q.lte("punch_at", to);
+    if (from) {
+      // se vier só YYYY-MM-DD, considera 00:00:00 do dia (início)
+      const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? `${from}T00:00:00.000Z` : from;
+      q = q.gte("punch_at", fromIso);
+    }
+    if (to) {
+      // se vier só YYYY-MM-DD, inclui o dia inteiro (até 23:59:59.999)
+      const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? `${to}T23:59:59.999Z` : to;
+      q = q.lte("punch_at", toIso);
+    }
     const { data } = await q;
     res.json(data || []);
   });
