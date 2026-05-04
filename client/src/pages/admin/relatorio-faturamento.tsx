@@ -826,7 +826,8 @@ export default function RelatorioFaturamentoPage() {
     if (rowsData.length === 0) return;
     const clientLabel = displayClientName || "CLIENTE";
     const isOmega = clientLabel.toUpperCase().includes("OMEGA SOLUTIONS");
-    const isLuft = clientLabel.toUpperCase().includes("INTEC");
+    const isLuft = clientLabel.toUpperCase().includes("INTEC") || clientLabel.toUpperCase().includes("LUFT");
+    console.log("[Excel] clientLabel:", clientLabel, "isLuft:", isLuft, "isOmega:", isOmega, "rows:", rowsData.length);
 
     if (isLuft) {
       const filteredRows = rowsData.filter(r => r.osStatus !== "recusada");
@@ -911,22 +912,27 @@ export default function RelatorioFaturamentoPage() {
       luftTotals[33] = Number(grandTotal.toFixed(2));
 
       const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
-      exportFormattedExcel({
-        title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
-        subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — INTEC / LUFT LOGISTICS`,
-        period: getPeriodLabel(),
-        headers: luftHeaders,
-        colWidths: [14, 12, 14, 10, 16, 10, 16, 10, 14, 14, 16, 16, 14, 20, 20, 22, 20, 10, 10, 10, 12, 12, 18, 12, 20, 14, 10, 18, 20, 12, 16, 18, 14, 14, 10],
-        rows: luftDataRows as any,
-        totalsRow: luftTotals,
-        currencyColumns: [27, 28, 29, 30, 31, 32, 33],
-        fileName: `Boletim_INTEC_LUFT_${periodShort}.xlsx`,
-        sheetName: "Boletim de Medição",
-        clientName: clientLabel,
-        customLogoUrl: "/logo-luft.jpeg",
-        customLogoExt: "jpeg",
-        dualLogo: true,
-      });
+      try {
+        await exportFormattedExcel({
+          title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+          subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — INTEC / LUFT LOGISTICS`,
+          period: getPeriodLabel(),
+          headers: luftHeaders,
+          colWidths: [14, 12, 14, 10, 16, 10, 16, 10, 14, 14, 16, 16, 14, 20, 20, 22, 20, 10, 10, 10, 12, 12, 18, 12, 20, 14, 10, 18, 20, 12, 16, 18, 14, 14, 10],
+          rows: luftDataRows as any,
+          totalsRow: luftTotals,
+          currencyColumns: [27, 28, 29, 30, 31, 32, 33],
+          fileName: `Boletim_INTEC_LUFT_${periodShort}.xlsx`,
+          sheetName: "Boletim de Medição",
+          clientName: clientLabel,
+          customLogoUrl: "/logo-luft.jpeg",
+          customLogoExt: "jpeg",
+          dualLogo: true,
+        });
+      } catch (err) {
+        console.error("[Excel LUFT] Erro ao gerar:", err);
+        alert("Erro ao gerar Excel LUFT. Verifique o console.");
+      }
       return;
     }
 
@@ -989,20 +995,25 @@ export default function RelatorioFaturamentoPage() {
     totals[totalsCols - 1] = Number(grandTotal.toFixed(2));
 
     const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
-    exportFormattedExcel({
-      title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
-      subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientLabel}`,
-      period: getPeriodLabel(),
-      headers,
-      groupHeaders,
-      colWidths,
-      rows: dataRows,
-      totalsRow: totals,
-      currencyColumns,
-      fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20)}_${periodShort}.xlsx`,
-      sheetName: "Boletim",
-      clientName: clientLabel,
-    });
+    try {
+      await exportFormattedExcel({
+        title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+        subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientLabel}`,
+        period: getPeriodLabel(),
+        headers,
+        groupHeaders,
+        colWidths,
+        rows: dataRows,
+        totalsRow: totals,
+        currencyColumns,
+        fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20)}_${periodShort}.xlsx`,
+        sheetName: "Boletim",
+        clientName: clientLabel,
+      });
+    } catch (err) {
+      console.error("[Excel] Erro ao gerar:", err);
+      alert("Erro ao gerar Excel. Verifique o console.");
+    }
   }, [rowsData, grandTotal, displayClientName, startDate, endDate, ordersMap]);
 
   const fontBase = "'Inter', 'Segoe UI', system-ui, sans-serif";
