@@ -639,8 +639,7 @@ export default function CustosFixosPage() {
                       <th className="py-2 px-1 text-right text-violet-700" title="Adicional Noturno (sal/h × 1,2)">Adic.Not</th>
                       <th className="py-2 px-1 text-right text-blue-700" title="DSR sobre HE+AdicNot">DSR</th>
                       <th className="py-2 px-1 text-right text-cyan-700" title="Vale Refeição R$/dia × dias úteis">VR</th>
-                      <th className="py-2 px-1 text-right text-teal-700" title="Ajuda de Custo (cadastro Salário)">Ajuda</th>
-                      <th className="py-2 px-1 text-right text-emerald-700" title="Cesta Básica (CCT)">Cesta</th>
+                      <th className="py-2 px-1 text-right text-emerald-700" title="Cesta Básica (CCT) — também conhecida como Ajuda de Custo">Cesta</th>
                       <th className="py-2 px-1 text-right text-sky-700" title="Vale Transporte">VT</th>
                       <th className="py-2 px-1 text-right text-stone-600" title="Outros benefícios">Outros</th>
                       <th className="py-2 px-1 text-right text-fuchsia-700" title="Diárias do mês (lançamento manual)">Diárias</th>
@@ -680,7 +679,6 @@ export default function CustosFixosPage() {
                             {fmtBRL(a.vrTotal)}
                             <div className="text-[9px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
                           </td>
-                          <td className="py-2 px-1 text-right">{cell(a.ajudaCusto, "text-teal-700 dark:text-teal-400")}</td>
                           <td className="py-2 px-1 text-right">{cell(a.cesta, "text-emerald-700 dark:text-emerald-400")}</td>
                           <td className="py-2 px-1 text-right">{cell(a.vt, "text-sky-700 dark:text-sky-400")}</td>
                           <td className="py-2 px-1 text-right">{cell(a.outros, "text-stone-600 dark:text-stone-300")}</td>
@@ -705,18 +703,16 @@ export default function CustosFixosPage() {
 
               {/* Diagnóstico de cadastros faltantes */}
               {(() => {
-                const semAjuda = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.ajudaCusto ?? 0) === 0).length;
                 const semHE = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.horaExtra ?? 0) === 0 && (a.adicionalNoturno ?? 0) === 0).length;
                 const semVT = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.vt ?? 0) === 0).length;
                 const totalAtivos = rhSummary.porAgente.filter((a: any) => !a.semSalario).length;
-                if (semAjuda + semHE + semVT === 0) return null;
+                if (semHE + semVT === 0) return null;
                 return (
                   <div className="mt-3 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded text-[11px] text-amber-900 dark:text-amber-200">
                     <div className="font-bold mb-1 flex items-center gap-1.5">
                       <AlertCircle className="h-3.5 w-3.5" /> Campos não cadastrados (zerados):
                     </div>
                     <ul className="ml-5 list-disc space-y-0.5">
-                      {semAjuda > 0 && <li><b>Ajuda de Custo:</b> {semAjuda}/{totalAtivos} agentes — cadastre em <i>Funcionários → Salário → Ajuda de Custo Mensal</i></li>}
                       {semVT > 0 && <li><b>Vale Transporte:</b> {semVT}/{totalAtivos} agentes — cadastre em <i>Funcionários → Salário → VT Mensal</i></li>}
                       {semHE > 0 && <li><b>Horas Extras / Adicional Noturno:</b> {semHE}/{totalAtivos} agentes sem registro nos últimos 3 meses no Ponto iD/jornada</li>}
                     </ul>
