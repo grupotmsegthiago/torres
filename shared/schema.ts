@@ -59,7 +59,7 @@ export const clients = pgTable("clients", {
   paymentTermsDays: integer("payment_terms_days"),
   billingCutoffDay: integer("billing_cutoff_day"),
   emiteNf: boolean("emite_nf").default(false),
-  retemInss: boolean("retem_inss").default(false),
+  retemInss: boolean("retem_inss").default(true),
   inssAliquota: decimal("inss_aliquota", { precision: 5, scale: 2 }).default("11.00"),
   createdAt: timestamp("created_at").defaultNow(),
 });
