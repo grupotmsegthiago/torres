@@ -1433,12 +1433,23 @@ function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
 }
 
 function EspelhoRhidDialog({ employeeId, month, onClose }: { employeeId: number; month: string; onClose: () => void }) {
-  const { data, isLoading } = useQuery<EspelhoRhidData>({
+  const { data, isLoading, error, refetch } = useQuery<EspelhoRhidData>({
     queryKey: ["/api/control-id/espelho-rhid", employeeId, month],
     queryFn: async () => {
       const r = await authFetch(`/api/control-id/espelho-rhid/${employeeId}?month=${month}`);
-      return r.json();
+      const text = await r.text();
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`Resposta não é JSON: ${text.slice(0, 200)}`);
+      }
     },
+    retry: 1,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   function doPrint() {
@@ -1465,7 +1476,11 @@ function EspelhoRhidDialog({ employeeId, month, onClose }: { employeeId: number;
             <EspelhoRhidView data={data} />
           </div>
         ) : (
-          <div className="py-8 text-center text-sm text-red-500">Erro ao carregar.</div>
+          <div className="py-8 text-center text-sm text-red-500 space-y-3">
+            <div>Erro ao carregar o espelho.</div>
+            {error && <div className="text-xs text-neutral-500 font-mono break-all px-4">{(error as Error).message}</div>}
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Tentar novamente</Button>
+          </div>
         )}
         <DialogFooter className="no-print">
           <Button variant="outline" onClick={onClose}>Fechar</Button>
