@@ -97,7 +97,7 @@ export default function RelatorioNFPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
-  const [nfModal, setNfModal] = useState<{ id: number; url: string | null; loading: boolean; error: string | null } | null>(null);
+  const [nfModal, setNfModal] = useState<{ id: number; url: string | null; contentType: string | null; htmlText: string | null; loading: boolean; error: string | null } | null>(null);
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE"; sourceId: number; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
@@ -202,18 +202,23 @@ export default function RelatorioNFPage() {
   });
 
   const openNfMirror = async (id: number) => {
-    setNfModal({ id, url: null, loading: true, error: null });
+    setNfModal({ id, url: null, contentType: null, htmlText: null, loading: true, error: null });
     try {
       const res = await authFetch(`/api/invoices/${id}/nfse-pdf`);
       if (!res.ok) {
         const txt = await res.text();
         throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
       }
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      setNfModal({ id, url, loading: false, error: null });
+      let htmlText: string | null = null;
+      if (ct.includes("html")) {
+        try { htmlText = await blob.text(); } catch {}
+      }
+      setNfModal({ id, url, contentType: ct, htmlText, loading: false, error: null });
     } catch (e: any) {
-      setNfModal({ id, url: null, loading: false, error: e?.message || "Erro ao carregar NF" });
+      setNfModal({ id, url: null, contentType: null, htmlText: null, loading: false, error: e?.message || "Erro ao carregar NF" });
     }
   };
 
@@ -634,14 +639,108 @@ export default function RelatorioNFPage() {
 
       {/* Modal NF */}
       <Dialog open={!!nfModal} onOpenChange={open => { if (!open) setNfModal(null); }}>
-        <DialogContent className="max-w-5xl h-[85vh] p-0 flex flex-col">
-          <DialogHeader className="px-4 py-3 border-b">
-            <DialogTitle className="text-sm">Espelho da Nota Fiscal</DialogTitle>
+        <DialogContent className="max-w-6xl h-[90vh] p-0 flex flex-col" aria-describedby={undefined}>
+          <DialogHeader className="px-4 py-3 border-b flex flex-row items-center justify-between gap-2 space-y-0">
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4 text-emerald-700" />
+              Espelho da Nota Fiscal
+            </DialogTitle>
+            <div className="flex items-center gap-2 mr-8">
+              {nfModal?.url && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => window.open(nfModal.url!, "_blank", "noopener,noreferrer")}
+                    data-testid="button-nf-open-new-tab"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1" /> Nova aba
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = nfModal.url!;
+                      const ext = (nfModal.contentType || "").includes("pdf") ? "pdf" : "html";
+                      a.download = `nfse-${nfModal.id}.${ext}`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    data-testid="button-nf-download"
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1" /> Baixar
+                  </Button>
+                </>
+              )}
+            </div>
           </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {nfModal?.loading && <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
-            {nfModal?.error && <div className="p-6 text-sm text-red-600">{nfModal.error}</div>}
-            {nfModal?.url && <iframe src={nfModal.url} className="w-full h-full border-0" title="Espelho NF" />}
+          <div className="flex-1 overflow-hidden bg-slate-50">
+            {nfModal?.loading && (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-500">
+                <Loader2 className="h-7 w-7 animate-spin" />
+                <span className="text-xs">Carregando espelho da NF…</span>
+              </div>
+            )}
+            {nfModal?.error && (
+              <div className="flex flex-col items-center justify-center h-full p-6 gap-3">
+                <AlertOctagon className="h-8 w-8 text-red-500" />
+                <div className="text-sm text-red-700 text-center max-w-md">{nfModal.error}</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openNfMirror(nfModal.id)}
+                  data-testid="button-nf-retry"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" /> Tentar novamente
+                </Button>
+              </div>
+            )}
+            {nfModal?.url && !nfModal.loading && !nfModal.error && (
+              <>
+                {(nfModal.contentType || "").includes("pdf") ? (
+                  <object
+                    data={nfModal.url}
+                    type="application/pdf"
+                    className="w-full h-full"
+                    aria-label="Espelho da NFS-e"
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-6 gap-3 text-center">
+                      <FileText className="h-10 w-10 text-slate-400" />
+                      <div className="text-sm text-slate-600">
+                        Seu navegador não consegue exibir o PDF dentro da página.
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="default" onClick={() => window.open(nfModal.url!, "_blank")}>
+                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir em nova aba
+                        </Button>
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={nfModal.url!} download={`nfse-${nfModal.id}.pdf`}>
+                            <Download className="h-3.5 w-3.5 mr-1" /> Baixar PDF
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  </object>
+                ) : nfModal.htmlText ? (
+                  <iframe
+                    srcDoc={nfModal.htmlText}
+                    className="w-full h-full border-0 bg-white"
+                    title="Espelho NF"
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  />
+                ) : (
+                  <iframe
+                    src={nfModal.url}
+                    className="w-full h-full border-0 bg-white"
+                    title="Espelho NF"
+                  />
+                )}
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
