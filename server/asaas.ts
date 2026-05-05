@@ -258,15 +258,18 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     const emiteNf = opts?.emiteNf !== false; // padrão true se não informado
 
     if (["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH"].includes(payStatus)) return "PAGO";
+    if (["CANCELLED", "CANCELED"].includes(payStatus)) return "NF_CANCELADA";
+    // Cliente isento de NF: ignora qualquer nfse_status acidental e classifica
+    // pelo pagamento — vencido ou aguardando pagamento (s/ NF).
+    if (!emiteNf) {
+      if (payStatus === "OVERDUE") return "VENCIDO";
+      return "AGUARDANDO_PAGAMENTO";
+    }
     if (nfStatus.includes("CANCEL")) return "NF_CANCELADA";
     if (["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatus)) return "NF_ERRO";
     if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(nfStatus)) return "NF_EMITIDA";
     if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(nfStatus)) return "NF_PROCESSANDO";
-    if (["CANCELLED", "CANCELED"].includes(payStatus)) return "NF_CANCELADA";
     if (payStatus === "OVERDUE") return "VENCIDO";
-    // Cliente isento de NF: faturas em aberto ficam como "Aguardando pagamento"
-    // (não faz sentido falar em NF emitida/autorizada).
-    if (!emiteNf) return "AGUARDANDO_PAGAMENTO";
     return "AUTORIZADO";
   }
 
@@ -1935,7 +1938,7 @@ export function registerAsaasRoutes(app: Express) {
                   spPixCopiaECola = pixData.payload;
                 } catch {}
               }
-              if (spAsaasPaymentId) {
+              if (spAsaasPaymentId && emiteNfConsolidado) {
                 try {
                   const nfResult = await emitNfseImmediate({
                     paymentId: spAsaasPaymentId,
@@ -1953,6 +1956,8 @@ export function registerAsaasRoutes(app: Express) {
                   spNfseStatus = "ERROR";
                   console.log(`[asaas] NFS-e split ${idx + 1} error: ${nfErr.message}`);
                 }
+              } else if (spAsaasPaymentId && !emiteNfConsolidado) {
+                console.log(`[asaas] NFS-e split ${idx + 1} NÃO emitida (cliente ${clientId} com emite_nf=false).`);
               }
               await logSystemAudit({
                 userId: user?.id, userName: user?.name, userRole: user?.role,
@@ -2112,7 +2117,7 @@ export function registerAsaasRoutes(app: Express) {
             } catch {}
           }
 
-          if (asaasPaymentId) {
+          if (asaasPaymentId && emiteNfConsolidado) {
             try {
               const nfResult = await emitNfseImmediate({
                 paymentId: asaasPaymentId,
@@ -2130,6 +2135,8 @@ export function registerAsaasRoutes(app: Express) {
               nfseStatus = "ERROR";
               console.log(`[asaas] NFS-e auto-emission error (non-blocking): ${nfErr.message}`);
             }
+          } else if (asaasPaymentId && !emiteNfConsolidado) {
+            console.log(`[asaas] NFS-e NÃO emitida (cliente ${clientId} com emite_nf=false). Apenas cobrança consolidada gerada.`);
           }
 
           await logSystemAudit({
