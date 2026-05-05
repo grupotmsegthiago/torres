@@ -220,11 +220,17 @@ export default function BalancoGerencialPage() {
   const viaturasAtivasGlobal = useMemo(() => (allVehicles || []).filter(isActiveVehicle).length, [allVehicles]);
   const metaResult = useMemo(() => calcMeta(custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal), [custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal]);
 
+  // Mesma regra do backend (server/routes/fixed-costs.ts isAtivo) +
+  // filtro por role "Vigilante" (agentes operacionais, não Adm/Operador).
   const activeAgentCount = useMemo(() => {
     if (!allEmployees) return 0;
-    return allEmployees.filter((e: any) =>
-      e.status !== "inativo" && e.status !== "desligado"
-    ).length;
+    const bloqueados = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
+    return allEmployees.filter((e: any) => {
+      const role = String(e.role || "").toLowerCase();
+      if (!role.includes("vigil")) return false;
+      const s = String(e.status || "").toLowerCase().trim();
+      return !s || !bloqueados.includes(s);
+    }).length;
   }, [allEmployees]);
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
