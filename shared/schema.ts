@@ -530,6 +530,24 @@ export const insertEmployeeDocumentSchema = createInsertSchema(employeeDocuments
 export type InsertEmployeeDocument = z.infer<typeof insertEmployeeDocumentSchema>;
 export type EmployeeDocument = typeof employeeDocuments.$inferSelect;
 
+// Dependentes do funcionário (filhos para abatimento de IRRF + outros)
+export const employeeDependents = pgTable("employee_dependents", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  name: text("name").notNull(),
+  birthDate: date("birth_date").notNull(),
+  parentesco: text("parentesco").notNull().default("filho"), // filho, conjuge, enteado, etc
+  cpf: text("cpf"),
+  certidaoData: text("certidao_data"), // base64 da certidão de nascimento
+  certidaoFileName: text("certidao_file_name"),
+  deduzIr: boolean("deduz_ir").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertEmployeeDependentSchema = createInsertSchema(employeeDependents).omit({ id: true, createdAt: true });
+export type InsertEmployeeDependent = z.infer<typeof insertEmployeeDependentSchema>;
+export type EmployeeDependent = typeof employeeDependents.$inferSelect;
+
 export const weapons = pgTable("weapons", {
   id: serial("id").primaryKey(),
   type: text("type").notNull(),

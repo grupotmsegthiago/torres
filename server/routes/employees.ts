@@ -194,6 +194,47 @@ import type { Express } from "express";
     res.status(201).json(salary);
   });
 
+  // ========== DEPENDENTES (Folha 2025 / IRRF) ==========
+  app.get("/api/employees/:id/dependents", requireAuth, async (req, res) => {
+    const empId = Number(req.params.id);
+    if (isNaN(empId)) return res.status(400).json({ message: "ID inválido" });
+    const { data, error } = await supabaseAdmin.from("employee_dependents")
+      .select("*").eq("employee_id", empId).order("birth_date", { ascending: true });
+    if (error) return res.status(500).json({ message: error.message });
+    res.json((data || []).map((r: any) => toCamelObj(r)));
+  });
+
+  app.post("/api/employees/:id/dependents", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+    const empId = Number(req.params.id);
+    if (isNaN(empId)) return res.status(400).json({ message: "ID inválido" });
+    const { name, birthDate, parentesco, cpf, certidaoData, certidaoFileName, deduzIr, notes } = req.body;
+    if (!name || !birthDate) return res.status(400).json({ message: "Nome e data de nascimento são obrigatórios" });
+    const payload: any = {
+      employee_id: empId,
+      name: String(name).trim(),
+      birth_date: birthDate,
+      parentesco: parentesco || "filho",
+      cpf: cpf || null,
+      certidao_data: certidaoData || null,
+      certidao_file_name: certidaoFileName || null,
+      deduz_ir: deduzIr !== undefined ? Boolean(deduzIr) : true,
+      notes: notes || null,
+    };
+    const { data, error } = await supabaseAdmin.from("employee_dependents").insert(payload).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.status(201).json(toCamelObj(data));
+  });
+
+  app.delete("/api/employee-dependents/:id", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
+    const { error } = await supabaseAdmin.from("employee_dependents").delete().eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ message: "Dependente removido" });
+  });
+
   app.delete("/api/employee-salaries/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeSalary(Number(req.params.id));
     res.json({ message: "Registro salarial removido" });

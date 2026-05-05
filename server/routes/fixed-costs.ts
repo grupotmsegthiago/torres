@@ -237,9 +237,22 @@ export async function calculateAgentMonthlyCost(
   const diarias = opts?.diariasManuais ?? 0;
   const horasMensais = Number(s.horas_mensais || 220);
   const periculosidadePct = Number(s.periculosidade_pct ?? 30) / 100;
-  const dependentesIR = Number(s.dependentes_ir || 0);
   const ajudaCustoMensal = Number(s.ajuda_custo_mensal || 0);
   const diasTrabalhados = opts?.diasTrabalhados ?? 30; // default mês cheio
+
+  // Dependentes IR: prioriza contagem da tabela `employee_dependents` (com certidão).
+  // Fallback para o campo legado `dependentes_ir` do salário se a tabela estiver vazia.
+  let dependentesIR = Number(s.dependentes_ir || 0);
+  try {
+    const { count } = await supabaseAdmin
+      .from("employee_dependents")
+      .select("id", { count: "exact", head: true })
+      .eq("employee_id", employeeId)
+      .eq("deduz_ir", true);
+    if (typeof count === "number" && count > 0) dependentesIR = count;
+  } catch {
+    /* mantém fallback */
+  }
 
   // Engine de folha 2025 (CLT brasileira)
   const folha = calcularFolha({

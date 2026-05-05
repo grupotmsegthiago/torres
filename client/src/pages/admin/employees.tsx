@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1394,10 +1394,11 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
-type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "aceites";
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "aceites" | "dependentes";
 const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "documentos", label: "Documentos", icon: FileText },
   { key: "contrato", label: "Contrato", icon: ClipboardList },
+  { key: "dependentes", label: "Dependentes", icon: Users },
   { key: "multas", label: "Multas", icon: Ban },
   { key: "disciplinar", label: "Disciplinar", icon: Shield },
   { key: "faltas", label: "Faltas", icon: AlertTriangle },
@@ -2453,6 +2454,40 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     queryKey: ["/api/employees", employee.id, "salaries"],
     queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/salaries`); return r.json(); },
   });
+  const { data: dependents = [], isLoading: loadingDeps } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "dependents"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/dependents`); return r.json(); },
+  });
+
+  const [showDepForm, setShowDepForm] = useState(false);
+  const [depForm, setDepForm] = useState({ name: "", birthDate: "", parentesco: "filho", cpf: "", deduzIr: true, certidaoData: "", certidaoFileName: "", notes: "" });
+  const handleCertidaoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" }); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => setDepForm(p => ({ ...p, certidaoData: ev.target!.result as string, certidaoFileName: file.name }));
+    reader.readAsDataURL(file);
+  };
+  const addDependent = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/dependents`, depForm); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "dependents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      setDepForm({ name: "", birthDate: "", parentesco: "filho", cpf: "", deduzIr: true, certidaoData: "", certidaoFileName: "", notes: "" });
+      setShowDepForm(false);
+      toast({ title: "Dependente adicionado", description: "Contagem de IRRF atualizada automaticamente." });
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+  const deleteDependent = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-dependents/${id}`); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "dependents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      toast({ title: "Dependente removido" });
+    },
+  });
 
   const [docForm, setDocForm] = useState({ type: "RG", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" });
   const [showDocForm, setShowDocForm] = useState(false);
@@ -2622,6 +2657,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
     contrato: 0,
+    dependentes: dependents.length,
     multas: fines.length,
     disciplinar: disciplinary.length,
     faltas: absences.length,
@@ -3205,6 +3241,140 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                       <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deletePayslip.mutate(p.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "dependentes" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Dependentes do Funcionário</h3>
+                <span className="text-[10px] text-neutral-500">({dependents.filter((d: any) => d.deduzIr).length} para IRRF · R$ 189,59/dependente)</span>
+              </div>
+              <Button size="sm" onClick={() => setShowDepForm(!showDepForm)} data-testid="button-add-dependent">
+                <Plus className="w-3.5 h-3.5 mr-1" /> {showDepForm ? "Cancelar" : "Adicionar Dependente"}
+              </Button>
+            </div>
+
+            {showDepForm && (
+              <fieldset className="border border-neutral-200 rounded-lg p-3 bg-neutral-50/50">
+                <legend className="text-xs font-semibold text-neutral-600 px-2">Novo Dependente</legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">Nome completo *</label>
+                    <Input value={depForm.name} onChange={(e) => setDepForm({ ...depForm, name: e.target.value })} placeholder="Ex.: João da Silva Jr." data-testid="input-dep-name" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">Data de Nascimento *</label>
+                    <Input type="date" value={depForm.birthDate} onChange={(e) => setDepForm({ ...depForm, birthDate: e.target.value })} data-testid="input-dep-birth" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">Parentesco</label>
+                    <select className="w-full border border-neutral-200 rounded h-9 px-2 text-sm bg-white" value={depForm.parentesco} onChange={(e) => setDepForm({ ...depForm, parentesco: e.target.value })} data-testid="select-dep-parentesco">
+                      <option value="filho">Filho(a)</option>
+                      <option value="enteado">Enteado(a)</option>
+                      <option value="conjuge">Cônjuge / Companheiro(a)</option>
+                      <option value="pais">Pais / Avós</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">CPF (opcional)</label>
+                    <Input value={depForm.cpf} onChange={(e) => setDepForm({ ...depForm, cpf: e.target.value })} placeholder="000.000.000-00" data-testid="input-dep-cpf" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">Certidão de Nascimento (PDF/JPG/PNG, máx 5MB)</label>
+                    <div className="flex items-center gap-2">
+                      <Input type="file" accept=".pdf,image/*" onChange={handleCertidaoFile} className="text-xs" data-testid="input-dep-certidao" />
+                      {depForm.certidaoFileName && (
+                        <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 flex items-center gap-1 whitespace-nowrap">
+                          <CheckCircle2 className="w-3 h-3" />{depForm.certidaoFileName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2 flex items-center gap-2">
+                    <input type="checkbox" id="dep-deduz-ir" checked={depForm.deduzIr} onChange={(e) => setDepForm({ ...depForm, deduzIr: e.target.checked })} data-testid="checkbox-dep-deduz-ir" />
+                    <label htmlFor="dep-deduz-ir" className="text-xs text-neutral-700">
+                      Abate IRRF (filhos até 21 anos, ou 24 se universitário, e dependentes legais conforme RFB)
+                    </label>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-semibold text-neutral-700 mb-1 block">Observações</label>
+                    <Input value={depForm.notes} onChange={(e) => setDepForm({ ...depForm, notes: e.target.value })} placeholder="Ex.: estuda na faculdade X, recebe pensão..." data-testid="input-dep-notes" />
+                  </div>
+                </div>
+                <div className="flex justify-end mt-3">
+                  <Button size="sm" onClick={() => addDependent.mutate()} disabled={addDependent.isPending || !depForm.name || !depForm.birthDate} data-testid="button-save-dependent">
+                    {addDependent.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1" />}
+                    Salvar Dependente
+                  </Button>
+                </div>
+              </fieldset>
+            )}
+
+            {loadingDeps ? (
+              <div className="text-center py-8 text-neutral-400 text-sm"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando...</div>
+            ) : dependents.length === 0 ? (
+              <div className="text-center py-10 border border-dashed border-neutral-200 rounded-lg">
+                <Baby className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
+                <p className="text-sm text-neutral-500">Nenhum dependente cadastrado</p>
+                <p className="text-[11px] text-neutral-400 mt-1">Adicione filhos e cônjuge para abater R$ 189,59 cada no IRRF</p>
+              </div>
+            ) : (
+              <table className="w-full text-xs border border-neutral-200 rounded-lg overflow-hidden">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-neutral-600">Nome</th>
+                    <th className="px-3 py-2 text-left font-semibold text-neutral-600">Parentesco</th>
+                    <th className="px-3 py-2 text-left font-semibold text-neutral-600">Nasc.</th>
+                    <th className="px-3 py-2 text-center font-semibold text-neutral-600">Idade</th>
+                    <th className="px-3 py-2 text-center font-semibold text-neutral-600">IRRF</th>
+                    <th className="px-3 py-2 text-center font-semibold text-neutral-600">Certidão</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dependents.map((d: any) => {
+                    const idade = d.birthDate ? Math.floor((Date.now() - new Date(d.birthDate).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0;
+                    return (
+                      <tr key={d.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-dependent-${d.id}`}>
+                        <td className="px-3 py-2 font-medium text-neutral-900">{titleCase(d.name)}</td>
+                        <td className="px-3 py-2 capitalize text-neutral-600">{d.parentesco}</td>
+                        <td className="px-3 py-2 text-neutral-600">{formatDateBRT(d.birthDate)}</td>
+                        <td className="px-3 py-2 text-center text-neutral-600">{idade}a</td>
+                        <td className="px-3 py-2 text-center">
+                          {d.deduzIr ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold border border-emerald-100">
+                              <CheckCircle2 className="w-3 h-3" />Sim
+                            </span>
+                          ) : (
+                            <span className="text-neutral-400 text-[10px]">Não</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {d.certidaoData ? (
+                            <button onClick={() => { const a = document.createElement("a"); a.href = d.certidaoData; a.download = d.certidaoFileName || `certidao_${d.name}.pdf`; a.click(); }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-100 hover:bg-blue-100"
+                              data-testid={`download-certidao-${d.id}`}>
+                              <Download className="w-3 h-3" />Baixar
+                            </button>
+                          ) : (
+                            <span className="text-neutral-300 text-[10px]">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Remover dependente "${d.name}"?`)) deleteDependent.mutate(d.id); }} data-testid={`button-delete-dependent-${d.id}`}>
+                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

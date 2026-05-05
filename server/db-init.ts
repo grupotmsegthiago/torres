@@ -139,6 +139,23 @@ export async function ensureDbSchema() {
     `);
 
     await execSql(`
+      CREATE TABLE IF NOT EXISTS employee_dependents (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        birth_date DATE NOT NULL,
+        parentesco TEXT NOT NULL DEFAULT 'filho',
+        cpf TEXT,
+        certidao_data TEXT,
+        certidao_file_name TEXT,
+        deduz_ir BOOLEAN NOT NULL DEFAULT TRUE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_employee_dependents_employee ON employee_dependents(employee_id)`);
+
+    await execSql(`
       CREATE TABLE IF NOT EXISTS weapons (
         id SERIAL PRIMARY KEY,
         type TEXT NOT NULL,
