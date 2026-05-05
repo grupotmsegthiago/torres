@@ -1170,7 +1170,11 @@ export async function ensureCalcMissionRPC() {
     // Novas colunas (CCT atual): VR diário (R$ 43/dia útil) + Cesta Básica mensal (R$ 200)
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_refeicao_diario NUMERIC(10,2) DEFAULT 43.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 200.00`);
-    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta)");
+    // Folha 2025: periculosidade, dependentes IR, ajuda de custo fixa
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS periculosidade_pct NUMERIC(5,2) DEFAULT 30.00`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS dependentes_ir INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 0`);
+    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta + folha 2025)");
   } catch (e: any) {
     console.error("[db-init] employee_salaries alter error:", e.message);
   }

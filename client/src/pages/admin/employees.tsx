@@ -197,6 +197,9 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     beneficiosOutros: "0",
     encargosPct: "80",
     horasMensais: "220",
+    periculosidadePct: "30",
+    dependentesIr: "0",
+    ajudaCustoMensal: "0",
   });
 
   const createMutation = useMutation({
@@ -211,6 +214,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
         valeRefeicaoDiario: "43.00", cestaBasica: "200.00",
         valeTransporteMensal: "0", beneficiosOutros: "0",
         encargosPct: "80", horasMensais: "220",
+        periculosidadePct: "30", dependentesIr: "0", ajudaCustoMensal: "0",
       });
       toast({ title: "Salário cadastrado" });
     },
@@ -275,11 +279,29 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
                 <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Horas Mensais</label>
                 <Input type="text" inputMode="decimal" value={form.horasMensais} onChange={(e) => setForm({ ...form, horasMensais: e.target.value })} placeholder="220" data-testid="input-salary-horas" />
               </div>
-              <div className="flex items-end">
-                <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !form.baseSalary || !form.effectiveDate} className="w-full" data-testid="button-save-salary">
-                  {createMutation.isPending ? "Salvando..." : "Adicionar"}
-                </Button>
+            </div>
+            <div className="border-t pt-3 mt-3">
+              <h4 className="text-sm font-semibold text-neutral-700 mb-2">Folha 2025 (CLT)</h4>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Periculosidade (%)</label>
+                  <Input type="text" inputMode="decimal" value={form.periculosidadePct} onChange={(e) => setForm({ ...form, periculosidadePct: e.target.value })} placeholder="30" data-testid="input-salary-peric" />
+                  <p className="text-[10px] text-neutral-500 mt-0.5">Padrão vigilantes: 30%</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Dependentes IR</label>
+                  <Input type="number" min="0" value={form.dependentesIr} onChange={(e) => setForm({ ...form, dependentesIr: e.target.value })} placeholder="0" data-testid="input-salary-deps" />
+                  <p className="text-[10px] text-neutral-500 mt-0.5">R$ 189,59/dependente</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Ajuda de Custo (R$/mês)</label>
+                  <Input type="text" inputMode="decimal" value={form.ajudaCustoMensal} onChange={(e) => setForm({ ...form, ajudaCustoMensal: e.target.value })} placeholder="0" data-testid="input-salary-ajuda" />
+                  <p className="text-[10px] text-neutral-500 mt-0.5">Valor fixo mensal</p>
+                </div>
               </div>
+              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !form.baseSalary || !form.effectiveDate} className="w-full mt-3" data-testid="button-save-salary">
+                {createMutation.isPending ? "Salvando..." : "Adicionar Salário"}
+              </Button>
             </div>
             <p className="text-[11px] text-neutral-500 mt-2">
               Diárias pontuais (plantões extras, ajudas) são lançadas separadamente em <strong>Custos Fixos → Diárias</strong>.

@@ -170,7 +170,8 @@ import type { Express } from "express";
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
     const { baseSalary, effectiveDate, reason, notes,
             valeRefeicaoDiario, cestaBasica, valeTransporteMensal,
-            beneficiosOutros, encargosPct, horasMensais } = req.body;
+            beneficiosOutros, encargosPct, horasMensais,
+            periculosidadePct, dependentesIr, ajudaCustoMensal } = req.body;
     if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
     const payload: any = {
       employeeId: emp.id,
@@ -185,6 +186,10 @@ import type { Express } from "express";
     if (beneficiosOutros !== undefined && beneficiosOutros !== "") payload.beneficiosOutros = String(beneficiosOutros);
     if (encargosPct !== undefined && encargosPct !== "") payload.encargosPct = String(encargosPct);
     if (horasMensais !== undefined && horasMensais !== "") payload.horasMensais = String(horasMensais);
+    // Folha 2025
+    if (periculosidadePct !== undefined && periculosidadePct !== "") payload.periculosidadePct = String(periculosidadePct);
+    if (dependentesIr !== undefined && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr);
+    if (ajudaCustoMensal !== undefined && ajudaCustoMensal !== "") payload.ajudaCustoMensal = String(ajudaCustoMensal);
     const salary = await storage.createEmployeeSalary(payload);
     res.status(201).json(salary);
   });

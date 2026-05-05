@@ -155,6 +155,10 @@ export const employeeSalaries = pgTable("employee_salaries", {
   // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
   valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
   cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
+  // Folha 2025: Periculosidade (30% padrão para vigilantes), Dependentes IR, Ajuda de Custo fixa
+  periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
+  dependentesIr: integer("dependentes_ir").default(0),
+  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

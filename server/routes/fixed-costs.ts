@@ -5,6 +5,7 @@ import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
+import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
 const fixedCostInputSchema = insertFixedCostSchema.extend({
@@ -124,7 +125,7 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
  */
 export async function calculateAgentMonthlyCost(
   employeeId: number,
-  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number; rescisaoPct?: number }
+  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number; rescisaoPct?: number; diasTrabalhados?: number }
 ): Promise<{
   total: number;
   breakdown: {
@@ -144,6 +145,21 @@ export async function calculateAgentMonthlyCost(
     rescisao: number;
     horaExtra: number;
     adicionalNoturno: number;
+    // === Folha 2025 (engine completa) ===
+    salarioProporcional: number;
+    periculosidade: number;
+    dsr: number;
+    ajudaCusto: number;
+    inss: number;
+    irrf: number;
+    fgts: number;
+    provisaoTercoFerias: number;
+    provisaoFGTSsobreFerias13: number;
+    provisaoINSSsobreFerias13: number;
+    totalBruto: number;
+    totalDeducoes: number;
+    totalProvisoes: number;
+    liquidoFuncionario: number;
   };
 }> {
   const { data, error } = await supabaseAdmin
@@ -162,12 +178,11 @@ export async function calculateAgentMonthlyCost(
     vrDias = countBusinessDays(from, to, set);
   }
 
-  // Média mensal de hora extra e adicional noturno nos últimos 3 meses (a partir de jornada_calculos)
-  let horaExtraMedia = 0;
-  let adicionalNoturnoMedia = 0;
+  // Médias mensais de HORAS extras e HORAS noturnas nos últimos 3 meses (jornada_calculos)
+  let horasExtrasMedia = 0;
+  let horasNoturnasMedia = 0;
   {
     const now = new Date();
-    // Gera os 3 meses de referência no formato YYYY-MM
     const meses: string[] = [];
     for (let i = 1; i <= 3; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -175,25 +190,22 @@ export async function calculateAgentMonthlyCost(
     }
     const { data: jornData, error: jornErr } = await supabaseAdmin
       .from("jornada_calculos")
-      .select("horas_extras, valor_noturno, mes_referencia")
+      .select("horas_extras, horas_noturnas, mes_referencia")
       .eq("employee_id", employeeId)
       .in("mes_referencia", meses);
     if (!jornErr && jornData && jornData.length > 0) {
-      // Agrupa por mês e soma; divide pelo nº de meses distintos encontrados
-      const porMes = new Map<string, { extras: number; noturno: number }>();
+      const porMes = new Map<string, { extras: number; noturnas: number }>();
       for (const r of jornData) {
         const k = String(r.mes_referencia || "").slice(0, 7);
-        if (!porMes.has(k)) porMes.set(k, { extras: 0, noturno: 0 });
+        if (!porMes.has(k)) porMes.set(k, { extras: 0, noturnas: 0 });
         porMes.get(k)!.extras += Number(r.horas_extras || 0);
-        porMes.get(k)!.noturno += Number(r.valor_noturno || 0);
+        porMes.get(k)!.noturnas += Number(r.horas_noturnas || 0);
       }
       const nMeses = porMes.size;
-      porMes.forEach((v) => {
-        horaExtraMedia += v.extras;
-        adicionalNoturnoMedia += v.noturno;
-      });
-      horaExtraMedia = horaExtraMedia / nMeses;
-      adicionalNoturnoMedia = adicionalNoturnoMedia / nMeses;
+      let sumE = 0, sumN = 0;
+      porMes.forEach((v) => { sumE += v.extras; sumN += v.noturnas; });
+      horasExtrasMedia = sumE / nMeses;
+      horasNoturnasMedia = sumN / nMeses;
     }
   }
 
@@ -206,16 +218,17 @@ export async function calculateAgentMonthlyCost(
         vt: 0, cesta: 0, outros: 0, diarias: opts?.diariasManuais ?? 0,
         horasMensais: 220, custoHora: 0,
         ferias: 0, decimoTerceiro: 0, rescisao: 0, horaExtra: 0, adicionalNoturno: 0,
+        salarioProporcional: 0, periculosidade: 0, dsr: 0, ajudaCusto: 0,
+        inss: 0, irrf: 0, fgts: 0, provisaoTercoFerias: 0,
+        provisaoFGTSsobreFerias13: 0, provisaoINSSsobreFerias13: 0,
+        totalBruto: 0, totalDeducoes: 0, totalProvisoes: 0, liquidoFuncionario: 0,
       },
     };
   }
 
   const s: any = data[0];
   const base = Number(s.base_salary || 0);
-  const encargosPct = Number(s.encargos_pct ?? 80) / 100;
-  const encargos = base * encargosPct;
   const vrDiario = Number(s.vale_refeicao_diario ?? 43);
-  // Compat: se o campo legado vale_refeicao_mensal estiver preenchido, usa-o; senão calcula por dia útil.
   const vrLegacy = Number(s.vale_refeicao_mensal || 0);
   const vrTotal = vrLegacy > 0 ? vrLegacy : vrDiario * vrDias;
   const vt = Number(s.vale_transporte_mensal || 0);
@@ -223,27 +236,60 @@ export async function calculateAgentMonthlyCost(
   const outros = Number(s.beneficios_outros || 0);
   const diarias = opts?.diariasManuais ?? 0;
   const horasMensais = Number(s.horas_mensais || 220);
+  const periculosidadePct = Number(s.periculosidade_pct ?? 30) / 100;
+  const dependentesIR = Number(s.dependentes_ir || 0);
+  const ajudaCustoMensal = Number(s.ajuda_custo_mensal || 0);
+  const diasTrabalhados = opts?.diasTrabalhados ?? 30; // default mês cheio
 
-  // Provisões mensais calculadas automaticamente
-  // Férias: (salário + encargos) × (1 + 1/3) / 12
-  const ferias = ((base + encargos) * (4 / 3)) / 12;
-  // 13º salário: (salário + encargos) / 12
-  const decimoTerceiro = (base + encargos) / 12;
-  // Rescisão (FGTS + multa rescisória): percentual configurável sobre folha bruta
-  const rescisaoPct = (opts?.rescisaoPct ?? 8) / 100;
-  const folhaBruta = base + encargos + vrTotal + vt + cesta + outros;
-  const rescisao = folhaBruta * rescisaoPct;
-  // Hora extra: média mensal de horas × custo/hora × 1.5 (adicional 50%)
-  const custoHoraBase = horasMensais > 0 ? (base + encargos) / horasMensais : 0;
-  const horaExtra = horaExtraMedia * custoHoraBase * 1.5;
-  // Adicional noturno: média mensal do valor já calculado pelo jornada_calculos (20% da hora normal)
-  const adicionalNoturno = adicionalNoturnoMedia;
+  // Engine de folha 2025 (CLT brasileira)
+  const folha = calcularFolha({
+    salarioBaseCheio: base,
+    diasTrabalhados,
+    horasMensais,
+    periculosidadePct,
+    horasExtras: horasExtrasMedia,
+    horasNoturnas: horasNoturnasMedia,
+    diasUteis: vrDias,
+    refeicaoDiaria: vrDiario,
+    ajudaCustoMensal,
+    dependentesIR,
+  });
 
-  const total = base + encargos + vrTotal + vt + cesta + outros + diarias + ferias + decimoTerceiro + rescisao + horaExtra + adicionalNoturno;
+  // Custo total para a empresa = Bruto + FGTS + Provisões + outros benefícios não tributáveis (cesta/VT/outros) + diárias manuais
+  const total = folha.custoTotalEmpresa + cesta + vt + outros + diarias;
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
+
+  // Compat: campos antigos da UI continuam funcionando
+  const encargos = folha.inss + folha.irrf + folha.fgts; // soma das deduções/encargos (compatibilidade visual)
+  const ferias = folha.provisaoFerias + folha.provisaoTercoFerias;
+  const decimoTerceiro = folha.provisaoDecimoTerceiro;
+  const rescisao = folha.provisaoFGTSsobreFerias13 + folha.provisaoINSSsobreFerias13;
+
   return {
     total,
-    breakdown: { base, encargos, vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora, ferias, decimoTerceiro, rescisao, horaExtra, adicionalNoturno },
+    breakdown: {
+      base: folha.salarioProporcional,
+      encargos,
+      vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora,
+      ferias, decimoTerceiro, rescisao,
+      horaExtra: folha.horasExtrasValor,
+      adicionalNoturno: folha.adicionalNoturnoValor,
+      // === Folha 2025 ===
+      salarioProporcional: folha.salarioProporcional,
+      periculosidade: folha.periculosidade,
+      dsr: folha.dsr,
+      ajudaCusto: folha.ajudaCusto,
+      inss: folha.inss,
+      irrf: folha.irrf,
+      fgts: folha.fgts,
+      provisaoTercoFerias: folha.provisaoTercoFerias,
+      provisaoFGTSsobreFerias13: folha.provisaoFGTSsobreFerias13,
+      provisaoINSSsobreFerias13: folha.provisaoINSSsobreFerias13,
+      totalBruto: folha.totalBruto,
+      totalDeducoes: folha.totalDeducoes,
+      totalProvisoes: folha.totalProvisoes,
+      liquidoFuncionario: folha.liquidoFuncionario,
+    },
   };
 }
 
@@ -337,28 +383,14 @@ export function registerFixedCostsRoutes(app: Express) {
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
 
-    const porAgente: Array<{
-      id: number; name: string; total: number;
-      base: number; encargos: number;
-      vrDiario: number; vrDias: number; vrTotal: number;
-      vt: number; cesta: number; outros: number; diarias: number;
-      horasMensais: number; custoHora: number;
-      ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
-      semSalario: boolean;
-    }> = [];
+    const porAgente: any[] = [];
     let totalMensal = 0;
-    let totalBase = 0;
-    let totalEncargos = 0;
-    let totalVR = 0;
-    let totalVT = 0;
-    let totalCesta = 0;
-    let totalOutros = 0;
-    let totalDiarias = 0;
-    let totalFerias = 0;
-    let totalDecimoTerceiro = 0;
-    let totalRescisao = 0;
-    let totalHoraExtra = 0;
-    let totalAdicionalNoturno = 0;
+    const acc = {
+      base: 0, peric: 0, he: 0, adicNot: 0, dsr: 0, refeicao: 0, ajudaCusto: 0,
+      bruto: 0, inss: 0, irrf: 0, fgts: 0, deducoes: 0, liquido: 0,
+      prov13: 0, provFer: 0, prov13Ferias: 0, provFGTSFer: 0, provINSSFer: 0, provisoes: 0,
+      vt: 0, cesta: 0, outros: 0, diarias: 0,
+    };
 
     for (const emp of ativos) {
       const r = await calculateAgentMonthlyCost(emp.id, {
@@ -367,39 +399,50 @@ export function registerFixedCostsRoutes(app: Express) {
         diariasManuais: diarias.porAgente[emp.id] || 0,
       });
       totalMensal += r.total;
-      totalBase += r.breakdown.base;
-      totalEncargos += r.breakdown.encargos;
-      totalVR += r.breakdown.vrTotal;
-      totalVT += r.breakdown.vt;
-      totalCesta += r.breakdown.cesta;
-      totalOutros += r.breakdown.outros;
-      totalDiarias += r.breakdown.diarias;
-      totalFerias += r.breakdown.ferias;
-      totalDecimoTerceiro += r.breakdown.decimoTerceiro;
-      totalRescisao += r.breakdown.rescisao;
-      totalHoraExtra += r.breakdown.horaExtra;
-      totalAdicionalNoturno += r.breakdown.adicionalNoturno;
+      const b = r.breakdown;
+      acc.base += b.salarioProporcional; acc.peric += b.periculosidade;
+      acc.he += b.horaExtra; acc.adicNot += b.adicionalNoturno; acc.dsr += b.dsr;
+      acc.refeicao += b.vrTotal; acc.ajudaCusto += b.ajudaCusto;
+      acc.bruto += b.totalBruto; acc.inss += b.inss; acc.irrf += b.irrf; acc.fgts += b.fgts;
+      acc.deducoes += b.totalDeducoes; acc.liquido += b.liquidoFuncionario;
+      acc.prov13 += b.decimoTerceiro; acc.provFer += b.ferias - b.provisaoTercoFerias;
+      acc.prov13Ferias += b.provisaoTercoFerias;
+      acc.provFGTSFer += b.provisaoFGTSsobreFerias13; acc.provINSSFer += b.provisaoINSSsobreFerias13;
+      acc.provisoes += b.totalProvisoes;
+      acc.vt += b.vt; acc.cesta += b.cesta; acc.outros += b.outros; acc.diarias += b.diarias;
+
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
         total: r.total,
-        base: r.breakdown.base,
-        encargos: r.breakdown.encargos,
-        vrDiario: r.breakdown.vrDiario,
-        vrDias: r.breakdown.vrDias,
-        vrTotal: r.breakdown.vrTotal,
-        vt: r.breakdown.vt,
-        cesta: r.breakdown.cesta,
-        outros: r.breakdown.outros,
-        diarias: r.breakdown.diarias,
-        horasMensais: r.breakdown.horasMensais,
-        custoHora: r.breakdown.custoHora,
-        ferias: r.breakdown.ferias,
-        decimoTerceiro: r.breakdown.decimoTerceiro,
-        rescisao: r.breakdown.rescisao,
-        horaExtra: r.breakdown.horaExtra,
-        adicionalNoturno: r.breakdown.adicionalNoturno,
-        semSalario: r.breakdown.base === 0,
+        // Vencimentos
+        salarioProporcional: b.salarioProporcional,
+        periculosidade: b.periculosidade,
+        horaExtra: b.horaExtra,
+        adicionalNoturno: b.adicionalNoturno,
+        dsr: b.dsr,
+        vrDiario: b.vrDiario, vrDias: b.vrDias, vrTotal: b.vrTotal,
+        ajudaCusto: b.ajudaCusto,
+        vt: b.vt, cesta: b.cesta, outros: b.outros, diarias: b.diarias,
+        totalBruto: b.totalBruto,
+        // Deduções
+        inss: b.inss, irrf: b.irrf, fgts: b.fgts,
+        totalDeducoes: b.totalDeducoes,
+        liquidoFuncionario: b.liquidoFuncionario,
+        // Provisões
+        decimoTerceiro: b.decimoTerceiro,
+        ferias: b.ferias - b.provisaoTercoFerias, // separa férias puras do 1/3
+        provisaoTercoFerias: b.provisaoTercoFerias,
+        provisaoFGTSsobreFerias13: b.provisaoFGTSsobreFerias13,
+        provisaoINSSsobreFerias13: b.provisaoINSSsobreFerias13,
+        totalProvisoes: b.totalProvisoes,
+        // Compat (mantém UI antiga funcionando)
+        base: b.salarioProporcional,
+        encargos: b.encargos,
+        rescisao: b.rescisao,
+        horasMensais: b.horasMensais,
+        custoHora: b.custoHora,
+        semSalario: b.salarioProporcional === 0,
       });
     }
 
@@ -413,19 +456,30 @@ export function registerFixedCostsRoutes(app: Express) {
       agentCount: ativos.length,
       period: { from, to, businessDays, holidaysCount: holidaySet.size },
       breakdown: {
-        base: totalBase,
-        encargos: totalEncargos,
-        vr: totalVR,
-        vt: totalVT,
-        cesta: totalCesta,
-        outros: totalOutros,
-        diarias: totalDiarias,
-        ferias: totalFerias,
-        decimoTerceiro: totalDecimoTerceiro,
-        rescisao: totalRescisao,
-        horaExtra: totalHoraExtra,
-        adicionalNoturno: totalAdicionalNoturno,
-        beneficios: totalVR + totalVT + totalCesta + totalOutros + totalDiarias,
+        // Compat (UI antiga)
+        base: acc.base,
+        encargos: acc.inss + acc.irrf + acc.fgts,
+        vr: acc.refeicao,
+        vt: acc.vt, cesta: acc.cesta, outros: acc.outros, diarias: acc.diarias,
+        ferias: acc.provFer + acc.prov13Ferias,
+        decimoTerceiro: acc.prov13,
+        rescisao: acc.provFGTSFer + acc.provINSSFer,
+        horaExtra: acc.he,
+        adicionalNoturno: acc.adicNot,
+        beneficios: acc.refeicao + acc.vt + acc.cesta + acc.outros + acc.diarias + acc.ajudaCusto,
+        // Folha 2025
+        salarioProporcional: acc.base,
+        periculosidade: acc.peric,
+        dsr: acc.dsr,
+        ajudaCusto: acc.ajudaCusto,
+        totalBruto: acc.bruto,
+        inss: acc.inss, irrf: acc.irrf, fgts: acc.fgts,
+        totalDeducoes: acc.deducoes,
+        liquidoFuncionario: acc.liquido,
+        provisaoTercoFerias: acc.prov13Ferias,
+        provisaoFGTSsobreFerias13: acc.provFGTSFer,
+        provisaoINSSsobreFerias13: acc.provINSSFer,
+        totalProvisoes: acc.provisoes,
       },
       porAgente,
     });

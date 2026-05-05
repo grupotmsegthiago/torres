@@ -71,6 +71,12 @@ interface RHSummary {
     vr: number; vt: number; cesta: number; outros: number; diarias: number;
     ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
     beneficios: number;
+    // Folha 2025
+    salarioProporcional: number; periculosidade: number; dsr: number; ajudaCusto: number;
+    totalBruto: number; inss: number; irrf: number; fgts: number;
+    totalDeducoes: number; liquidoFuncionario: number;
+    provisaoTercoFerias: number; provisaoFGTSsobreFerias13: number; provisaoINSSsobreFerias13: number;
+    totalProvisoes: number;
   };
   porAgente: Array<{
     id: number; name: string; total: number;
@@ -80,6 +86,12 @@ interface RHSummary {
     horasMensais: number; custoHora: number;
     ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
     semSalario?: boolean;
+    // Folha 2025
+    salarioProporcional: number; periculosidade: number; dsr: number; ajudaCusto: number;
+    totalBruto: number; inss: number; irrf: number; fgts: number;
+    totalDeducoes: number; liquidoFuncionario: number;
+    provisaoTercoFerias: number; provisaoFGTSsobreFerias13: number; provisaoINSSsobreFerias13: number;
+    totalProvisoes: number;
   }>;
 }
 
@@ -613,71 +625,82 @@ export default function CustosFixosPage() {
           {rhSummary && rhSummary.porAgente.length > 0 && (
             <Card className="p-4 mt-3">
               <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                <Users className="h-4 w-4" /> Custo por Agente
+                <Users className="h-4 w-4" /> Custo Real por Agente — Folha 2025 (CLT)
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground uppercase">
-                      <th className="py-2 px-2">Agente</th>
-                      <th className="py-2 px-2 text-right">Base</th>
-                      <th className="py-2 px-2 text-right">Encargos</th>
-                      <th className="py-2 px-2 text-right">VR</th>
-                      <th className="py-2 px-2 text-right">Cesta</th>
-                      <th className="py-2 px-2 text-right">VT+Outros</th>
-                      <th className="py-2 px-2 text-right">Diárias</th>
-                      <th className="py-2 px-2 text-right text-yellow-700">Férias</th>
-                      <th className="py-2 px-2 text-right text-green-700">13º</th>
-                      <th className="py-2 px-2 text-right text-red-700">Rescisão</th>
-                      <th className="py-2 px-2 text-right text-indigo-700">H.Extra</th>
-                      <th className="py-2 px-2 text-right text-violet-700">Adic.Not.</th>
-                      <th className="py-2 px-2 text-right font-bold">Total</th>
+                    <tr className="border-b text-left text-[10px] text-muted-foreground uppercase">
+                      <th className="py-2 px-1.5 sticky left-0 bg-background">Agente</th>
+                      <th className="py-2 px-1.5 text-right" title="Salário Proporcional (cheio ÷ 30 × dias trab.)">Sal.Prop</th>
+                      <th className="py-2 px-1.5 text-right text-orange-700" title="Periculosidade (% sobre salário proporcional)">Peric</th>
+                      <th className="py-2 px-1.5 text-right text-indigo-700" title="Horas Extras (sal/h × 1,6 × horas)">H.Extra</th>
+                      <th className="py-2 px-1.5 text-right text-violet-700" title="Adicional Noturno (sal/h × 1,2 × horas)">Adic.Not</th>
+                      <th className="py-2 px-1.5 text-right text-blue-700" title="DSR sobre HE+AdicNot">DSR</th>
+                      <th className="py-2 px-1.5 text-right text-cyan-700" title="Refeição R$/dia × dias úteis">VR</th>
+                      <th className="py-2 px-1.5 text-right text-teal-700" title="Ajuda de Custo fixa">Ajuda</th>
+                      <th className="py-2 px-1.5 text-right font-bold border-l">Bruto</th>
+                      <th className="py-2 px-1.5 text-right text-rose-700 border-l" title="INSS progressivo">INSS</th>
+                      <th className="py-2 px-1.5 text-right text-rose-700" title="IRRF progressivo">IRRF</th>
+                      <th className="py-2 px-1.5 text-right text-amber-700" title="FGTS 8%">FGTS</th>
+                      <th className="py-2 px-1.5 text-right text-green-700 border-l" title="Provisão 13º (sal cheio ÷ 12)">13º</th>
+                      <th className="py-2 px-1.5 text-right text-yellow-700" title="Provisão Férias + 1/3">Férias</th>
+                      <th className="py-2 px-1.5 text-right font-bold border-l">Custo</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rhSummary.porAgente.map((a) => (
                       <tr key={a.id} className={`border-b hover:bg-muted/30 ${a.semSalario ? "opacity-60" : ""}`} data-testid={`row-agent-${a.id}`}>
-                        <td className="py-2 px-2 font-medium">
+                        <td className="py-2 px-1.5 font-medium sticky left-0 bg-background">
                           {a.name}
                           {a.semSalario && (
-                            <span className="ml-1 text-[10px] text-amber-600 font-semibold">(sem salário cadastrado)</span>
+                            <span className="ml-1 text-[9px] text-amber-600 font-semibold">(s/ salário)</span>
                           )}
                         </td>
-                        <td className="py-2 px-2 text-right">{fmtBRL(a.base)}</td>
-                        <td className="py-2 px-2 text-right text-amber-700 dark:text-amber-400">{fmtBRL(a.encargos)}</td>
-                        <td className="py-2 px-2 text-right text-cyan-700 dark:text-cyan-400">
+                        <td className="py-2 px-1.5 text-right tabular-nums">{fmtBRL(a.salarioProporcional ?? a.base)}</td>
+                        <td className="py-2 px-1.5 text-right text-orange-700 dark:text-orange-400 tabular-nums">{fmtBRL(a.periculosidade ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-indigo-700 dark:text-indigo-400 tabular-nums">{(a.horaExtra ?? 0) > 0 ? fmtBRL(a.horaExtra) : "—"}</td>
+                        <td className="py-2 px-1.5 text-right text-violet-700 dark:text-violet-400 tabular-nums" data-testid={`text-agent-noturno-${a.id}`}>{(a.adicionalNoturno ?? 0) > 0 ? fmtBRL(a.adicionalNoturno) : "—"}</td>
+                        <td className="py-2 px-1.5 text-right text-blue-700 dark:text-blue-400 tabular-nums">{(a.dsr ?? 0) > 0 ? fmtBRL(a.dsr) : "—"}</td>
+                        <td className="py-2 px-1.5 text-right text-cyan-700 dark:text-cyan-400 tabular-nums">
                           {fmtBRL(a.vrTotal)}
-                          <div className="text-[10px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
+                          <div className="text-[9px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
                         </td>
-                        <td className="py-2 px-2 text-right">{fmtBRL(a.cesta)}</td>
-                        <td className="py-2 px-2 text-right">{fmtBRL(a.vt + a.outros)}</td>
-                        <td className="py-2 px-2 text-right text-violet-700 dark:text-violet-400">
-                          {a.diarias > 0 ? fmtBRL(a.diarias) : "—"}
-                        </td>
-                        <td className="py-2 px-2 text-right text-yellow-700 dark:text-yellow-400">
-                          {fmtBRL(a.ferias ?? 0)}
-                        </td>
-                        <td className="py-2 px-2 text-right text-green-700 dark:text-green-400">
-                          {fmtBRL(a.decimoTerceiro ?? 0)}
-                        </td>
-                        <td className="py-2 px-2 text-right text-red-700 dark:text-red-400">
-                          {fmtBRL(a.rescisao ?? 0)}
-                        </td>
-                        <td className="py-2 px-2 text-right text-indigo-700 dark:text-indigo-400">
-                          {(a.horaExtra ?? 0) > 0 ? fmtBRL(a.horaExtra) : "—"}
-                        </td>
-                        <td className="py-2 px-2 text-right text-violet-700 dark:text-violet-400" data-testid={`text-agent-noturno-${a.id}`}>
-                          {(a.adicionalNoturno ?? 0) > 0 ? fmtBRL(a.adicionalNoturno) : "—"}
-                        </td>
-                        <td className="py-2 px-2 text-right font-semibold">{fmtBRL(a.total)}</td>
+                        <td className="py-2 px-1.5 text-right text-teal-700 dark:text-teal-400 tabular-nums">{(a.ajudaCusto ?? 0) > 0 ? fmtBRL(a.ajudaCusto) : "—"}</td>
+                        <td className="py-2 px-1.5 text-right font-bold border-l tabular-nums">{fmtBRL(a.totalBruto ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-rose-700 dark:text-rose-400 border-l tabular-nums">{fmtBRL(a.inss ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-rose-700 dark:text-rose-400 tabular-nums">{fmtBRL(a.irrf ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-amber-700 dark:text-amber-400 tabular-nums">{fmtBRL(a.fgts ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-green-700 dark:text-green-400 border-l tabular-nums">{fmtBRL(a.decimoTerceiro ?? 0)}</td>
+                        <td className="py-2 px-1.5 text-right text-yellow-700 dark:text-yellow-400 tabular-nums">{fmtBRL((a.ferias ?? 0) + (a.provisaoTercoFerias ?? 0))}</td>
+                        <td className="py-2 px-1.5 text-right font-bold border-l tabular-nums">{fmtBRL(a.total)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-2">
-                Férias = (base+enc)×4/3÷12 · 13º = (base+enc)÷12 · Rescisão = 8% folha bruta · H.Extra e Adic.Noturno = média últimos 3 meses (jornada).
-                VR = R$/dia × dias úteis. Cadastre salários em <strong>Funcionários → Salário</strong>.
+              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                <div className="p-2 bg-muted/40 rounded">
+                  <div className="text-muted-foreground uppercase font-semibold">Total Bruto</div>
+                  <div className="font-bold tabular-nums" data-testid="text-rh-bruto">{fmtBRL(rhSummary.breakdown.totalBruto ?? 0)}</div>
+                </div>
+                <div className="p-2 bg-rose-50 dark:bg-rose-950/30 rounded">
+                  <div className="text-rose-700 uppercase font-semibold">Deduções (INSS+IRRF)</div>
+                  <div className="font-bold text-rose-800 dark:text-rose-300 tabular-nums" data-testid="text-rh-deducoes">{fmtBRL(rhSummary.breakdown.totalDeducoes ?? 0)}</div>
+                </div>
+                <div className="p-2 bg-amber-50 dark:bg-amber-950/30 rounded">
+                  <div className="text-amber-700 uppercase font-semibold">FGTS Mensal</div>
+                  <div className="font-bold text-amber-800 dark:text-amber-300 tabular-nums" data-testid="text-rh-fgts">{fmtBRL(rhSummary.breakdown.fgts ?? 0)}</div>
+                </div>
+                <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded">
+                  <div className="text-green-700 uppercase font-semibold">Provisões 13º+Férias</div>
+                  <div className="font-bold text-green-800 dark:text-green-300 tabular-nums" data-testid="text-rh-provisoes">{fmtBRL(rhSummary.breakdown.totalProvisoes ?? 0)}</div>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+                <strong>Engine de Folha 2025:</strong> Sal.Prop = (cheio ÷ 30) × dias trab. · Peric = 30% · HE = sal/h × 1,6 · AdicNot = sal/h × 1,2 · DSR = (HE+AdicNot) × descanso/úteis ·
+                INSS progressivo 7,5%-14% (teto R$ 8.157,41) · IRRF progressivo (R$ 189,59/dependente) · FGTS 8% · Provisões = sal cheio ÷ 12.
+                HE/AdicNot são médias dos últimos 3 meses (jornada). Cadastre salário e periculosidade em <strong>Funcionários → Salário</strong>.
               </p>
             </Card>
           )}
