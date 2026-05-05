@@ -311,12 +311,14 @@ export async function calculateAgentCostPerHour(employeeId: number): Promise<num
   return r.breakdown.custoHora;
 }
 
-// Critério de agente ativo: exclui inativo, desligado, bloqueado, afastado e férias
+// Critério de agente ativo: exclui inativo, desligado, bloqueado, afastado, férias,
+// demitido, suspenso — e também variantes com sufixo (ex: "bloqueado_definitivo",
+// "bloqueado_temporario", "afastado_inss", "ferias_remuneradas").
 function isAtivo(e: any): boolean {
   const s = String(e.status || "").toLowerCase().trim();
   if (!s) return true; // sem status → considera ativo
-  const bloqueados = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
-  return !bloqueados.includes(s);
+  const prefixosBloqueados = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
+  return !prefixosBloqueados.some((p) => s === p || s.startsWith(p + "_") || s.startsWith(p + "-") || s.startsWith(p + " "));
 }
 
 /**

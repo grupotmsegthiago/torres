@@ -222,14 +222,16 @@ export default function BalancoGerencialPage() {
 
   // Mesma regra do backend (server/routes/fixed-costs.ts isAtivo) +
   // filtro por role "Vigilante" (agentes operacionais, não Adm/Operador).
+  // Usa match por prefixo p/ pegar variantes ("bloqueado_definitivo", etc.).
   const activeAgentCount = useMemo(() => {
     if (!allEmployees) return 0;
-    const bloqueados = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
+    const prefixos = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
     return allEmployees.filter((e: any) => {
       const role = String(e.role || "").toLowerCase();
       if (!role.includes("vigil")) return false;
       const s = String(e.status || "").toLowerCase().trim();
-      return !s || !bloqueados.includes(s);
+      if (!s) return true;
+      return !prefixos.some((p) => s === p || s.startsWith(p + "_") || s.startsWith(p + "-") || s.startsWith(p + " "));
     }).length;
   }, [allEmployees]);
 
