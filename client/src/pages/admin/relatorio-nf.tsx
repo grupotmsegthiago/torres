@@ -74,7 +74,7 @@ type RelatorioResponse = {
 const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: string; icon: any }> = {
   AGUARDANDO_BOLETIM: { label: "Sem boletim",       cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
-  AUTORIZADO:         { label: "Autorizado",        cls: "text-violet-700",  bg: "bg-violet-50 border-violet-200",     icon: CheckCircle2 },
+  AUTORIZADO:         { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
   NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   NF_EMITIDA:         { label: "NF emitida",        cls: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200",   icon: FileText },
@@ -297,7 +297,7 @@ export default function RelatorioNFPage() {
     { key: "TOTAL",              label: "Total no período",  icon: Receipt,        cls: "from-slate-700 to-slate-900 text-white" },
     { key: "AGUARDANDO_BOLETIM", label: "Sem boletim",       icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
-    { key: "AUTORIZADO",         label: "Autorizado",        icon: CheckCircle2,   cls: "from-violet-500 to-violet-700 text-white" },
+    { key: "AUTORIZADO",         label: "NF processando",    icon: Hourglass,      cls: "from-blue-500 to-blue-700 text-white" },
     { key: "AGUARDANDO_PAGAMENTO", label: "Aguard. pagto (s/ NF)", icon: Banknote, cls: "from-indigo-500 to-indigo-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
@@ -375,9 +375,8 @@ export default function RelatorioNFPage() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="AGUARDANDO_BOLETIM">Sem boletim</SelectItem>
                   <SelectItem value="PENDENTE_APROVACAO">Aguardando aprovação</SelectItem>
-                  <SelectItem value="AUTORIZADO">Autorizado</SelectItem>
+                  <SelectItem value="AUTORIZADO">NF processando</SelectItem>
                   <SelectItem value="AGUARDANDO_PAGAMENTO">Aguard. pagto (sem NF)</SelectItem>
-                  <SelectItem value="NF_PROCESSANDO">NF processando</SelectItem>
                   <SelectItem value="NF_EMITIDA">NF emitida</SelectItem>
                   <SelectItem value="PAGO">Pago</SelectItem>
                   <SelectItem value="NF_ERRO">Com erro</SelectItem>
@@ -442,16 +441,15 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
                   <th className="text-center px-3 py-2 font-semibold">Status</th>
                   <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
-                  <th className="text-left px-3 py-2 font-semibold">Status Asaas</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
                   const Icon = meta.icon;
@@ -615,9 +613,6 @@ export default function RelatorioNFPage() {
                         ) : r.dueDate ? (
                           <span className="text-amber-600 text-[11px]">Aguardando</span>
                         ) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-500">
-                        {asaasParts.length ? asaasParts.map((p, i) => <div key={i}>{p}</div>) : "—"}
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-700">
                         {r.nfseNumber || <span className="text-slate-300">—</span>}

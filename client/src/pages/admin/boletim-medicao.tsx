@@ -72,6 +72,7 @@ export default function BoletimMedicaoPage() {
   const [enviarAprovacaoDialog, setEnviarAprovacaoDialog] = useState<{ clientId: number; clientName: string; clientEmail: string; billingIds: number[]; total: number; osCount: number; minDate: string; maxDate: string } | null>(null);
   const [enviarAprovacaoEmail, setEnviarAprovacaoEmail] = useState("");
   const [enviarAprovacaoLoading, setEnviarAprovacaoLoading] = useState(false);
+  const [expandedPendencyClient, setExpandedPendencyClient] = useState<number | null>(null);
   const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
   const [editBilling, setEditBilling] = useState<{
     km_inicial: string; km_final: string; fat_acionamento: string;
@@ -673,29 +674,217 @@ export default function BoletimMedicaoPage() {
           </div>
         </div>
 
-        {billingAlerts.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {billingAlerts.map((alert: any) => {
-              const isRed = ["ATRASO_APROVACAO", "VENCIMENTO_EMISSAO", "OS_ESQUECIDA"].includes(alert.alert_type);
-              const isAmber = ["ANTECIPACAO_APROVACAO", "PENDENTE_FATURAMENTO"].includes(alert.alert_type);
-              const bg = isRed ? "bg-red-50 border-red-200" : isAmber ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200";
-              const iconColor = isRed ? "text-red-600" : isAmber ? "text-amber-600" : "text-blue-600";
-              const textColor = isRed ? "text-red-800" : isAmber ? "text-amber-800" : "text-blue-800";
-              return (
-                <div key={alert.id} className={`flex items-start gap-3 p-3 rounded-lg border ${bg}`} data-testid={`billing-alert-${alert.id}`}>
-                  <AlertTriangle size={16} className={`${iconColor} mt-0.5 shrink-0`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-bold ${textColor}`}>{alert.message}</p>
-                    {alert.period_start && <p className="text-[10px] text-neutral-500 mt-0.5">Período: {alert.period_start} a {alert.period_end}</p>}
+        {(() => {
+          const brToday = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+          const dayBR = brToday.getDate();
+          const ymd = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+          const cycleFor = (billingCycle: string | null | undefined): { start: Date; end: Date; label: string } | null => {
+            if (billingCycle === "quinzenal") {
+              if (dayBR >= 16) {
+                const s = new Date(brToday.getFullYear(), brToday.getMonth(), 1);
+                const e = new Date(brToday.getFullYear(), brToday.getMonth(), 16);
+                return { start: s, end: e, label: `1ª Quinzena (${ymd(s)} a ${ymd(new Date(e.getTime() - 86400000))})` };
+              }
+              const prevStart = new Date(brToday.getFullYear(), brToday.getMonth() - 1, 16);
+              const prevEnd = new Date(brToday.getFullYear(), brToday.getMonth(), 1);
+              return { start: prevStart, end: prevEnd, label: `2ª Quinzena (${ymd(prevStart)} a ${ymd(new Date(prevEnd.getTime() - 86400000))})` };
+            }
+            if (billingCycle === "mensal") {
+              const s = new Date(brToday.getFullYear(), brToday.getMonth() - 1, 1);
+              const e = new Date(brToday.getFullYear(), brToday.getMonth(), 1);
+              return { start: s, end: e, label: `Mês ${String(s.getMonth() + 1).padStart(2, "0")}/${s.getFullYear()}` };
+            }
+            return null;
+          };
+
+          type Pend = {
+            clientId: number;
+            clientName: string;
+            cycleLabel: string;
+            cycleStart: Date;
+            cycleEnd: Date;
+            pendentes: any[];
+            pendentesValor: number;
+            aprovadas: any[];
+            aprovadasValor: number;
+          };
+
+          const pendencias: Pend[] = [];
+          for (const [cid, group] of Object.entries(clientGroups)) {
+            const billingCycle = group.orders[0]?.clientBillingCycle;
+            const cycle = cycleFor(billingCycle);
+            if (!cycle) continue;
+            const inCycle = group.orders.filter(o => {
+              const ref = o.billing?.data_missao || o.scheduledDate || o.completedDate;
+              if (!ref) return false;
+              const d = new Date(_eu(ref));
+              return d >= cycle.start && d < cycle.end;
+            });
+            if (inCycle.length === 0) continue;
+
+            const pendentes = inCycle.filter(o => {
+              const st = o.billing?.status;
+              if (!o.billing) return o.status !== "cancelada" && o.status !== "recusada";
+              return ["A_VERIFICAR", "REJEITADA"].includes(st) || (o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && st !== "APROVADA" && st !== "FATURADO" && st !== "PAGO");
+            });
+            const aprovadas = inCycle.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO" && !o.billing?.invoice_id);
+
+            if (pendentes.length === 0 && aprovadas.length === 0) continue;
+
+            pendencias.push({
+              clientId: Number(cid),
+              clientName: group.clientName,
+              cycleLabel: cycle.label,
+              cycleStart: cycle.start,
+              cycleEnd: cycle.end,
+              pendentes,
+              pendentesValor: pendentes.reduce((s, o) => s + getBillingTotal(o), 0),
+              aprovadas,
+              aprovadasValor: aprovadas.reduce((s, o) => s + getBillingTotal(o), 0),
+            });
+          }
+
+          pendencias.sort((a, b) => (b.pendentes.length + b.aprovadas.length) - (a.pendentes.length + a.aprovadas.length));
+
+          if (pendencias.length === 0) return null;
+
+          const totPend = pendencias.reduce((s, p) => s + p.pendentes.length, 0);
+          const totPendVal = pendencias.reduce((s, p) => s + p.pendentesValor, 0);
+          const totAprov = pendencias.reduce((s, p) => s + p.aprovadas.length, 0);
+          const totAprovVal = pendencias.reduce((s, p) => s + p.aprovadasValor, 0);
+
+          const goToClient = (clientId: number, filter: StatusFilter) => {
+            setStatusFilter(filter);
+            setExpandedClient(clientId);
+            setTimeout(() => {
+              const el = document.querySelector(`[data-testid="client-group-${clientId}"]`);
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 100);
+          };
+
+          return (
+            <div className="mb-4 bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 border border-amber-200 rounded-xl overflow-hidden shadow-sm" data-testid="pendencias-faturamento-panel">
+              <div className="px-4 py-3 border-b border-amber-200 bg-white/40 backdrop-blur-sm flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={18} className="text-amber-700" />
+                  <div>
+                    <h3 className="text-xs font-black text-amber-900 uppercase tracking-wider">Pendências de Faturamento</h3>
+                    <p className="text-[10px] text-amber-700">{pendencias.length} cliente(s) com OS do ciclo fechado aguardando ação</p>
                   </div>
-                  <button onClick={() => resolveAlertMutation.mutate(alert.id)} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 whitespace-nowrap px-2 py-1 rounded hover:bg-white/50" data-testid={`resolve-alert-${alert.id}`}>
-                    Resolver
-                  </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="flex items-center gap-3 text-[11px] font-semibold">
+                  {totPend > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-300">
+                      <Clock size={12} /> {totPend} aguard. aprovação · {fmt(totPendVal)}
+                    </span>
+                  )}
+                  {totAprov > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 text-orange-800 border border-orange-300">
+                      <FileText size={12} /> {totAprov} aprovadas s/ fatura · {fmt(totAprovVal)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="divide-y divide-amber-100">
+                {pendencias.map((p) => {
+                  const expanded = expandedPendencyClient === p.clientId;
+                  const totalOs = p.pendentes.length + p.aprovadas.length;
+                  return (
+                    <div key={p.clientId} data-testid={`pendency-client-${p.clientId}`}>
+                      <button
+                        onClick={() => setExpandedPendencyClient(expanded ? null : p.clientId)}
+                        className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/50 transition-colors text-left"
+                        data-testid={`pendency-toggle-${p.clientId}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {expanded ? <ChevronDown size={16} className="text-amber-700 shrink-0" /> : <ChevronRight size={16} className="text-amber-700 shrink-0" />}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-neutral-900 truncate">{p.clientName}</p>
+                            <p className="text-[10px] text-neutral-500 mt-0.5">{p.cycleLabel} · {totalOs} OS</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {p.pendentes.length > 0 && (
+                            <Badge className="bg-amber-100 text-amber-800 border border-amber-300 font-bold text-[10px]" data-testid={`pendency-badge-pend-${p.clientId}`}>
+                              {p.pendentes.length} aguard. aprov. · {fmt(p.pendentesValor)}
+                            </Badge>
+                          )}
+                          {p.aprovadas.length > 0 && (
+                            <Badge className="bg-orange-100 text-orange-800 border border-orange-300 font-bold text-[10px]" data-testid={`pendency-badge-aprov-${p.clientId}`}>
+                              {p.aprovadas.length} a faturar · {fmt(p.aprovadasValor)}
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                      {expanded && (
+                        <div className="px-4 pb-3 space-y-3 bg-white/40">
+                          {p.pendentes.length > 0 && (
+                            <div className="rounded-lg border border-amber-200 bg-white overflow-hidden">
+                              <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Clock size={12} /> Aguardando aprovação ({p.pendentes.length})
+                                </span>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                                  onClick={() => goToClient(p.clientId, "PENDENTE")}
+                                  data-testid={`btn-resolver-pend-${p.clientId}`}
+                                >
+                                  Resolver agora <ArrowRight size={12} className="ml-1" />
+                                </Button>
+                              </div>
+                              <div className="px-3 py-2 flex flex-wrap gap-1">
+                                {p.pendentes.slice(0, 30).map((os: any) => (
+                                  <span key={os.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded text-[10px] font-mono text-amber-800">
+                                    {os.osNumber || `TOR-${String(os.id).padStart(4, "0")}`}
+                                    <span className="text-amber-400">·</span>
+                                    <span className="text-amber-600">{fmtDate(os.billing?.data_missao || os.scheduledDate || os.completedDate)}</span>
+                                    {getBillingTotal(os) > 0 && <><span className="text-amber-400">·</span><span className="text-amber-700 font-semibold">{fmt(getBillingTotal(os))}</span></>}
+                                  </span>
+                                ))}
+                                {p.pendentes.length > 30 && <span className="text-[10px] text-amber-700 font-bold">+{p.pendentes.length - 30}</span>}
+                              </div>
+                            </div>
+                          )}
+                          {p.aprovadas.length > 0 && (
+                            <div className="rounded-lg border border-orange-200 bg-white overflow-hidden">
+                              <div className="px-3 py-2 bg-orange-50 border-b border-orange-200 flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
+                                  <FileText size={12} /> Aprovadas sem fatura ({p.aprovadas.length}) · {fmt(p.aprovadasValor)}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[10px] bg-orange-600 hover:bg-orange-700 text-white font-bold"
+                                  onClick={() => goToClient(p.clientId, "A_FATURAR")}
+                                  data-testid={`btn-gerar-fatura-${p.clientId}`}
+                                >
+                                  Gerar fatura agora <ArrowRight size={12} className="ml-1" />
+                                </Button>
+                              </div>
+                              <div className="px-3 py-2 flex flex-wrap gap-1">
+                                {p.aprovadas.slice(0, 30).map((os: any) => (
+                                  <span key={os.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded text-[10px] font-mono text-orange-800">
+                                    {os.osNumber || `TOR-${String(os.id).padStart(4, "0")}`}
+                                    <span className="text-orange-400">·</span>
+                                    <span className="text-orange-600">{fmtDate(os.billing?.data_missao || os.scheduledDate || os.completedDate)}</span>
+                                    <span className="text-orange-400">·</span>
+                                    <span className="text-orange-700 font-semibold">{fmt(getBillingTotal(os))}</span>
+                                  </span>
+                                ))}
+                                {p.aprovadas.length > 30 && <span className="text-[10px] text-orange-700 font-bold">+{p.aprovadas.length - 30}</span>}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-neutral-300" /></div>

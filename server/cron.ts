@@ -668,6 +668,7 @@ export function initCronJobs() {
       if (allBillings?.length) {
         for (const billing of allBillings) {
           if (!billing.data_missao || !billing.client_id) continue;
+          if (!billing.os_number) continue;
           const mDate = new Date(billing.data_missao);
           const daysSince = Math.floor((now.getTime() - mDate.getTime()) / (1000 * 60 * 60 * 24));
           if (daysSince <= 30) continue;

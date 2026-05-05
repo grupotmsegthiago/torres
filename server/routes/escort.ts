@@ -1635,7 +1635,14 @@ import type { Express } from "express";
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw error;
-      res.json(data || []);
+      const filtered = (data || []).filter((a: any) => {
+        if (a.alert_type === "OS_ESQUECIDA") {
+          const os = String(a.os_numbers || "").trim();
+          if (!os || os.toLowerCase() === "null") return false;
+        }
+        return true;
+      });
+      res.json(filtered);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
