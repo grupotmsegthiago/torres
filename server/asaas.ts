@@ -2323,19 +2323,23 @@ export function registerAsaasRoutes(app: Express) {
           if (!invoiceMap.has(inv.id)) invoiceMap.set(inv.id, inv);
         }
 
-        // SEMPRE incluir invoices ABERTAS (sem confirmação de pagamento,
+        // SEMPRE incluir invoices ABERTAS (sem confirmação de pagamento e
         // não canceladas) — independente do filtro de data, para que
         // valores em aberto não "somem" da tela ao mudar o período.
-        const OPEN_STATUSES = ["PENDING", "OVERDUE", "AWAITING_RISK_ANALYSIS", "AGUARDANDO_FATURAMENTO"];
+        // Estratégia: buscar TUDO e filtrar fora apenas pagos/cancelados.
+        const PAID_OR_CANCELED = new Set([
+          "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "PAGO",
+          "CANCELLED", "CANCELED", "REFUNDED", "REFUND_REQUESTED",
+        ]);
         const { data: invoicesOpen } = await supabaseAdmin
           .from("invoices")
-          .select("*")
-          .in("status", OPEN_STATUSES);
+          .select("*");
         const openInvoicesAdded: any[] = [];
         for (const inv of (invoicesOpen || [])) {
-          // pula canceladas (nfse_status) — pagamento em aberto mas NF cancelada
-          // já foi tratada via cancelamento de cobrança Asaas
-          if (String(inv.nfse_status || "").toUpperCase() === "CANCELED") continue;
+          const st = String(inv.status || "").toUpperCase();
+          if (PAID_OR_CANCELED.has(st)) continue;
+          // pula NFs canceladas (nfse_status CANCELED) — cobrança Asaas já cancelada
+          if (String(inv.nfse_status || "").toUpperCase().includes("CANCEL")) continue;
           if (!invoiceMap.has(inv.id)) {
             invoiceMap.set(inv.id, inv);
             openInvoicesAdded.push(inv);

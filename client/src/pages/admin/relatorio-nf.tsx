@@ -538,7 +538,9 @@ export default function RelatorioNFPage() {
                         ) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-3 py-2 text-xs">
-                        {isPago && r.paymentDate ? (
+                        {r.normalizedStatus === "NF_CANCELADA" || String(r.rawStatus || "").toUpperCase() === "CANCELLED" || String(r.rawStatus || "").toUpperCase() === "CANCELED" ? (
+                          <span className="text-neutral-500 text-[11px] italic">Cancelado</span>
+                        ) : isPago && r.paymentDate ? (
                           <div className="text-emerald-700 font-medium">
                             {fmtDate(r.paymentDate)}
                             <div className="text-[10px] text-emerald-600 mt-0.5">Pago</div>
