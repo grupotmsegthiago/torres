@@ -618,54 +618,65 @@ export default function RelatorioNFPage() {
                         {r.nfseNumber || <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white divide-x divide-slate-200 overflow-hidden shadow-sm">
                           {r.source === "BOLETIM" && r.approvalUrl && (
-                            <Button asChild size="sm" variant="outline" className="h-7 px-2 text-[11px]" data-testid={`button-open-boletim-${r.id}`}>
-                              <Link href={r.approvalUrl}>
-                                <Eye className="h-3 w-3 mr-1" /> Ver boletim
-                              </Link>
-                            </Button>
+                            <Link
+                              href={r.approvalUrl}
+                              className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                              title="Ver boletim"
+                              data-testid={`button-open-boletim-${r.id}`}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Link>
                           )}
                           {r.source === "INVOICE" && r.invoiceUrl && (
-                            <Button asChild size="sm" variant="outline" className="h-7 px-2 text-[11px]" data-testid={`button-open-fatura-${r.id}`}>
-                              <a href={r.invoiceUrl} target="_blank" rel="noreferrer">
-                                <ExternalLink className="h-3 w-3 mr-1" /> Fatura
-                              </a>
-                            </Button>
+                            <a
+                              href={r.invoiceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                              title="Abrir fatura"
+                              data-testid={`button-open-fatura-${r.id}`}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
                           )}
                           {r.source === "INVOICE" && r.invoiceId && (r.normalizedStatus === "NF_EMITIDA" || r.nfseUrl) && (
-                            <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openNfMirror(r.invoiceId!)} data-testid={`button-open-nf-${r.id}`}>
-                              <FileText className="h-3 w-3 mr-1" /> NF
-                            </Button>
-                          )}
-                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[11px] text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
-                              onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "asaas", reason: "" })}
-                              data-testid={`button-cancel-nf-${r.id}`}
+                            <button
+                              type="button"
+                              onClick={() => openNfMirror(r.invoiceId!)}
+                              className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                              title="Ver espelho da NF"
+                              data-testid={`button-open-nf-${r.id}`}
                             >
-                              <Ban className="h-3 w-3 mr-1" /> Cancelar
-                            </Button>
+                              <FileText className="h-3.5 w-3.5" />
+                            </button>
                           )}
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "NF_EMITIDA" && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[11px] text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                            <button
+                              type="button"
                               onClick={() => setEmitModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), nfNumber: r.nfseNumber || "", note: "" })}
-                              data-testid={`button-mark-emitted-${r.id}`}
+                              className="h-7 w-7 inline-flex items-center justify-center text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
                               title="Marcar como NF emitida"
+                              data-testid={`button-mark-emitted-${r.id}`}
                             >
-                              <FileCheck2 className="h-3 w-3 mr-1" /> Emitida
-                            </Button>
+                              <FileCheck2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <button
+                              type="button"
+                              onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "asaas", reason: "" })}
+                              className="h-7 w-7 inline-flex items-center justify-center text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+                              title="Cancelar NF"
+                              data-testid={`button-cancel-nf-${r.id}`}
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                            </button>
                           )}
                           {isDiretoria && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[11px] text-slate-600 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+                            <button
+                              type="button"
                               onClick={() => setDeleteModal({
                                 source: r.source as any,
                                 sourceId: r.source === "INVOICE" ? (r.invoiceId || r.sourceId) : r.sourceId,
@@ -674,11 +685,12 @@ export default function RelatorioNFPage() {
                                 description: r.description || "",
                                 reason: "",
                               })}
-                              data-testid={`button-delete-row-${r.id}`}
+                              className="h-7 w-7 inline-flex items-center justify-center text-slate-500 hover:bg-red-50 hover:text-red-700 transition-colors"
                               title="Excluir registro"
+                              data-testid={`button-delete-row-${r.id}`}
                             >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           )}
                         </div>
                       </td>
