@@ -2323,6 +2323,25 @@ export function registerAsaasRoutes(app: Express) {
           if (!invoiceMap.has(inv.id)) invoiceMap.set(inv.id, inv);
         }
 
+        // SEMPRE incluir invoices ABERTAS (sem confirmação de pagamento,
+        // não canceladas) — independente do filtro de data, para que
+        // valores em aberto não "somem" da tela ao mudar o período.
+        const OPEN_STATUSES = ["PENDING", "OVERDUE", "AWAITING_RISK_ANALYSIS", "AGUARDANDO_FATURAMENTO"];
+        const { data: invoicesOpen } = await supabaseAdmin
+          .from("invoices")
+          .select("*")
+          .in("status", OPEN_STATUSES);
+        const openInvoicesAdded: any[] = [];
+        for (const inv of (invoicesOpen || [])) {
+          // pula canceladas (nfse_status) — pagamento em aberto mas NF cancelada
+          // já foi tratada via cancelamento de cobrança Asaas
+          if (String(inv.nfse_status || "").toUpperCase() === "CANCELED") continue;
+          if (!invoiceMap.has(inv.id)) {
+            invoiceMap.set(inv.id, inv);
+            openInvoicesAdded.push(inv);
+          }
+        }
+
         // Filtra invoices da Torres (oculta quando provider_cnpj é outro CNPJ)
         const invoiceIsTorres = (inv: any) => {
           if (!inv) return false;
@@ -2355,10 +2374,13 @@ export function registerAsaasRoutes(app: Express) {
         }
 
         // Buscar clientes (nome atual + CPF/CNPJ) — inclui IDs das invoices criadas no período
+        // e das invoices em aberto (PENDING/OVERDUE) que estamos sempre mostrando
         const invClientIds = (invoicesCreatedInPeriod || []).map((i: any) => i.client_id).filter(Boolean);
+        const openInvClientIds = openInvoicesAdded.map((i: any) => i.client_id).filter(Boolean);
         const allClientIds = Array.from(new Set([
           ...validBillings.map((b: any) => b.client_id).filter(Boolean),
           ...invClientIds,
+          ...openInvClientIds,
         ])) as number[];
         const clientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
         if (allClientIds.length > 0) {
@@ -2449,10 +2471,16 @@ export function registerAsaasRoutes(app: Express) {
         }
 
         // Invoices criadas no período que NÃO apareceram via billings
-        // (missões fora do período mas fatura criada dentro)
-        for (const inv of (invoicesCreatedInPeriod || [])) {
+        // (missões fora do período mas fatura criada dentro) +
+        // invoices em aberto (PENDING/OVERDUE) de qualquer período —
+        // pra nunca "sumirem" da tela enquanto não houver pagamento.
+        const extraInvoices = [...(invoicesCreatedInPeriod || []), ...openInvoicesAdded];
+        const seenExtra = new Set<number>();
+        for (const inv of extraInvoices) {
           if (!invoiceIsTorres(inv)) continue;
           if (fatGroups.has(inv.id)) continue;
+          if (seenExtra.has(inv.id)) continue;
+          seenExtra.add(inv.id);
           const ns = normalizeInvoiceStatus(inv);
           const cli = clientMap.get(inv.client_id);
           rows.push({
