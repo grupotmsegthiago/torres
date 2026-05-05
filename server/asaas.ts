@@ -24,10 +24,17 @@ function getApiKey(): string {
   return key;
 }
 
+const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
 function buildInvoiceDescription(_clientName: string, periodoInicio: string, periodoFim: string, _osCount?: number): string {
-  const inicio = new Date(periodoInicio + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  const fim = new Date(periodoFim + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  return `Ref. a Serviço de Escolta Armada Caracterizada - Período: ${inicio} a ${fim}`;
+  const inicioDate = new Date(periodoInicio + "T12:00:00Z");
+  const fimDate = new Date(periodoFim + "T12:00:00Z");
+  const inicio = inicioDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const fim = fimDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  // Mês de referência: usa o mês do início do período
+  const mesRef = MESES_PT[inicioDate.getUTCMonth()];
+  const anoRef = inicioDate.getUTCFullYear();
+  return `Referente aos serviços de Escolta Armada - Período: ${inicio} a ${fim} (${mesRef}/${anoRef})`;
 }
 
 const INSS_OBSERVACAO_LEGAL = "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
@@ -72,8 +79,12 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
   const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
   const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
   const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
+  // serviceDescription = texto principal que aparece na DISCRIMINAÇÃO DOS SERVIÇOS da NF.
+  // Usa a description vinda do faturamento (já formatada como "Referente aos serviços de Escolta Armada - Período: ... (Mês/Ano)")
+  // e mantém DESCRICAO_SERVICO_FIXA como fallback caso não venha.
+  const serviceDescription = (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
   const payload: Record<string, any> = {
-    serviceDescription: DESCRICAO_SERVICO_FIXA,
+    serviceDescription,
     observations: `${baseObs} ${inssObs}`.trim(),
     value: opts.value,
     deductions: 0,
@@ -1851,7 +1862,7 @@ export function registerAsaasRoutes(app: Express) {
           const splitValue = Number(sp.valor);
           const splitCnpj = String(sp.cnpj || "").replace(/\D/g, "");
           const splitName = sp.razao_social || clientName;
-          const splitDescricao = `Ref. a Serviço de Escolta Armada Caracterizada - Período: ${periodoInicio} a ${periodoFim} (${splitName})`;
+          const splitDescricao = `${buildInvoiceDescription(splitName, periodoInicio, periodoFim)} - ${splitName}`;
 
           let spAsaasCustomerId: string | null = null;
           let spAsaasPaymentId: string | null = null;
