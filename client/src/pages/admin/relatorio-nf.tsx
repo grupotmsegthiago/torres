@@ -456,17 +456,24 @@ export default function RelatorioNFPage() {
                   if (r.rawBoletimStatus) asaasParts.push(`Boletim: ${r.rawBoletimStatus}`);
                   if (r.rawStatus) asaasParts.push(`Cobrança: ${r.rawStatus}`);
                   if (r.rawNfseStatus) asaasParts.push(`NF: ${r.rawNfseStatus}`);
-                  const isOverdue = r.normalizedStatus === "VENCIDO";
                   const isPago = r.normalizedStatus === "PAGO";
-                  const diasAtraso = (() => {
-                    if (!r.dueDate || isPago) return 0;
+                  const isCancelada = r.normalizedStatus === "NF_CANCELADA"
+                    || String(r.rawStatus || "").toUpperCase() === "CANCELLED"
+                    || String(r.rawStatus || "").toUpperCase() === "CANCELED";
+                  const diasInfo = (() => {
+                    if (!r.dueDate || isPago || isCancelada) return { atraso: 0, restantes: 0, hoje: false };
                     const due = new Date(r.dueDate + "T12:00:00");
                     const now = new Date();
                     now.setHours(12, 0, 0, 0);
-                    const diff = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-                    return diff > 0 ? diff : 0;
+                    const diffMs = due.getTime() - now.getTime();
+                    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+                    if (diffDays < 0) return { atraso: -diffDays, restantes: 0, hoje: false };
+                    if (diffDays === 0) return { atraso: 0, restantes: 0, hoje: true };
+                    return { atraso: 0, restantes: diffDays, hoje: false };
                   })();
-                  const rowBg = isOverdue ? "bg-red-50/60 hover:bg-red-100/60" : isPago ? "bg-emerald-50/40 hover:bg-emerald-50/80" : "hover:bg-slate-50/60";
+                  const diasAtraso = diasInfo.atraso;
+                  const isOverdue = diasAtraso > 0 || r.normalizedStatus === "VENCIDO";
+                  const rowBg = isOverdue ? "bg-red-50/70 hover:bg-red-100/70" : isPago ? "bg-emerald-50/40 hover:bg-emerald-50/80" : diasInfo.hoje ? "bg-amber-50/50 hover:bg-amber-100/60" : "hover:bg-slate-50/60";
                   return (
                     <tr key={r.id} className={rowBg} data-testid={`row-${r.id}`}>
                       <td className="px-3 py-2">
@@ -526,16 +533,63 @@ export default function RelatorioNFPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-xs">
-                        {r.dueDate ? (
-                          <div className={`font-medium ${isOverdue ? "text-red-700" : "text-slate-700"}`}>
-                            {fmtDate(r.dueDate)}
-                            {diasAtraso > 0 && (
-                              <div className="text-[10px] font-bold text-red-600 mt-0.5">
-                                {diasAtraso}d em atraso
-                              </div>
-                            )}
+                        {!r.dueDate ? (
+                          <span className="text-slate-300">—</span>
+                        ) : isCancelada ? (
+                          <div className="text-neutral-500 line-through">{fmtDate(r.dueDate)}</div>
+                        ) : isPago ? (
+                          <div className="text-slate-600">{fmtDate(r.dueDate)}</div>
+                        ) : isOverdue ? (
+                          <div
+                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-red-700 text-white shadow-sm"
+                            title={`Vencido há ${diasAtraso} dia${diasAtraso === 1 ? "" : "s"}`}
+                          >
+                            <div className="flex items-center gap-1 font-bold text-[11px] leading-none">
+                              <AlertOctagon className="h-3 w-3" />
+                              {fmtDate(r.dueDate)}
+                            </div>
+                            <div className="text-[10px] font-bold leading-none">
+                              {diasAtraso}d EM ATRASO
+                            </div>
                           </div>
-                        ) : <span className="text-slate-300">—</span>}
+                        ) : diasInfo.hoje ? (
+                          <div
+                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-amber-500 text-white shadow-sm"
+                            title="Vence hoje"
+                          >
+                            <div className="flex items-center gap-1 font-bold text-[11px] leading-none">
+                              <AlertTriangle className="h-3 w-3" />
+                              {fmtDate(r.dueDate)}
+                            </div>
+                            <div className="text-[10px] font-bold leading-none">VENCE HOJE</div>
+                          </div>
+                        ) : diasInfo.restantes <= 3 ? (
+                          <div
+                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-amber-100 border border-amber-400 text-amber-900"
+                            title={`Vence em ${diasInfo.restantes} dia${diasInfo.restantes === 1 ? "" : "s"}`}
+                          >
+                            <div className="flex items-center gap-1 font-semibold text-[11px] leading-none">
+                              <Clock className="h-3 w-3" />
+                              {fmtDate(r.dueDate)}
+                            </div>
+                            <div className="text-[10px] font-bold leading-none">
+                              {diasInfo.restantes}d restante{diasInfo.restantes === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-900"
+                            title={`Faltam ${diasInfo.restantes} dia${diasInfo.restantes === 1 ? "" : "s"}`}
+                          >
+                            <div className="flex items-center gap-1 font-semibold text-[11px] leading-none text-emerald-800">
+                              <Calendar className="h-3 w-3" />
+                              {fmtDate(r.dueDate)}
+                            </div>
+                            <div className="text-[10px] font-bold leading-none text-emerald-800">
+                              faltam {diasInfo.restantes}d
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {r.normalizedStatus === "NF_CANCELADA" || String(r.rawStatus || "").toUpperCase() === "CANCELLED" || String(r.rawStatus || "").toUpperCase() === "CANCELED" ? (
