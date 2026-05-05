@@ -12,6 +12,7 @@ import {
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
   CircleDot, Timer, Download, Send, Mail, Camera, Search,
+  CheckSquare, ArrowUpRight, Receipt,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
@@ -825,14 +826,14 @@ export default function BoletimMedicaoPage() {
                                 <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
                                   <Clock size={12} /> Aguardando aprovação ({p.pendentes.length})
                                 </span>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                                <button
+                                  type="button"
                                   onClick={() => goToClient(p.clientId, "PENDENTE")}
+                                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 hover:border-amber-400 text-[11px] font-semibold transition-colors"
                                   data-testid={`btn-resolver-pend-${p.clientId}`}
                                 >
-                                  Resolver agora <ArrowRight size={12} className="ml-1" />
-                                </Button>
+                                  <CheckSquare size={13} /> Aprovar <ArrowUpRight size={12} className="opacity-70" />
+                                </button>
                               </div>
                               <div className="px-3 py-2 flex flex-wrap gap-1">
                                 {p.pendentes.slice(0, 30).map((os: any) => (
@@ -853,14 +854,14 @@ export default function BoletimMedicaoPage() {
                                 <span className="text-[11px] font-bold text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
                                   <FileText size={12} /> Aprovadas sem fatura ({p.aprovadas.length}) · {fmt(p.aprovadasValor)}
                                 </span>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-[10px] bg-orange-600 hover:bg-orange-700 text-white font-bold"
+                                <button
+                                  type="button"
                                   onClick={() => goToClient(p.clientId, "A_FATURAR")}
+                                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-orange-300 bg-white text-orange-800 hover:bg-orange-100 hover:border-orange-400 text-[11px] font-semibold transition-colors"
                                   data-testid={`btn-gerar-fatura-${p.clientId}`}
                                 >
-                                  Gerar fatura agora <ArrowRight size={12} className="ml-1" />
-                                </Button>
+                                  <Receipt size={13} /> Gerar fatura <ArrowUpRight size={12} className="opacity-70" />
+                                </button>
                               </div>
                               <div className="px-3 py-2 flex flex-wrap gap-1">
                                 {p.aprovadas.slice(0, 30).map((os: any) => (
