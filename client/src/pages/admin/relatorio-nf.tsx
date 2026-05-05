@@ -438,7 +438,8 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Criado em</th>
-                  <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
+                  <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
+                  <th className="text-center px-3 py-2 font-semibold">Dias</th>
                   <th className="text-center px-3 py-2 font-semibold">Status</th>
                   <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
@@ -447,9 +448,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={10} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
                   const Icon = meta.icon;
@@ -528,63 +529,47 @@ export default function RelatorioNFPage() {
                         {fmtBRL(r.value)}
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(r.createdAt)}</td>
-                      <td className="px-3 py-2 text-xs">
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">
                         {!r.dueDate ? (
                           <span className="text-slate-300">—</span>
                         ) : isCancelada ? (
-                          <div className="text-neutral-500 line-through">{fmtDate(r.dueDate)}</div>
+                          <span className="text-neutral-500 line-through">{fmtDate(r.dueDate)}</span>
+                        ) : (
+                          <span className="text-slate-700 font-medium tabular-nums">{fmtDate(r.dueDate)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-center whitespace-nowrap">
+                        {!r.dueDate || isCancelada ? (
+                          <span className="text-slate-300">—</span>
                         ) : isPago ? (
-                          <div className="text-slate-600">{fmtDate(r.dueDate)}</div>
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                            <CheckCircle2 className="h-3 w-3" /> Pago
+                          </span>
                         ) : isOverdue ? (
-                          <div
-                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-red-700 text-white shadow-sm"
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-red-700"
                             title={`Vencido há ${diasAtraso} dia${diasAtraso === 1 ? "" : "s"}`}
                           >
-                            <div className="flex items-center gap-1 font-bold text-[11px] leading-none">
-                              <AlertOctagon className="h-3 w-3" />
-                              {fmtDate(r.dueDate)}
-                            </div>
-                            <div className="text-[10px] font-bold leading-none">
-                              {diasAtraso}d EM ATRASO
-                            </div>
-                          </div>
+                            <AlertOctagon className="h-3 w-3" /> {diasAtraso}d atraso
+                          </span>
                         ) : diasInfo.hoje ? (
-                          <div
-                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-amber-500 text-white shadow-sm"
-                            title="Vence hoje"
-                          >
-                            <div className="flex items-center gap-1 font-bold text-[11px] leading-none">
-                              <AlertTriangle className="h-3 w-3" />
-                              {fmtDate(r.dueDate)}
-                            </div>
-                            <div className="text-[10px] font-bold leading-none">VENCE HOJE</div>
-                          </div>
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-amber-500" title="Vence hoje">
+                            <AlertTriangle className="h-3 w-3" /> hoje
+                          </span>
                         ) : diasInfo.restantes <= 3 ? (
-                          <div
-                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-amber-100 border border-amber-400 text-amber-900"
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-400"
                             title={`Vence em ${diasInfo.restantes} dia${diasInfo.restantes === 1 ? "" : "s"}`}
                           >
-                            <div className="flex items-center gap-1 font-semibold text-[11px] leading-none">
-                              <Clock className="h-3 w-3" />
-                              {fmtDate(r.dueDate)}
-                            </div>
-                            <div className="text-[10px] font-bold leading-none">
-                              {diasInfo.restantes}d restante{diasInfo.restantes === 1 ? "" : "s"}
-                            </div>
-                          </div>
+                            <Clock className="h-3 w-3" /> {diasInfo.restantes}d
+                          </span>
                         ) : (
-                          <div
-                            className="inline-flex flex-col gap-0.5 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-900"
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200"
                             title={`Faltam ${diasInfo.restantes} dia${diasInfo.restantes === 1 ? "" : "s"}`}
                           >
-                            <div className="flex items-center gap-1 font-semibold text-[11px] leading-none text-emerald-800">
-                              <Calendar className="h-3 w-3" />
-                              {fmtDate(r.dueDate)}
-                            </div>
-                            <div className="text-[10px] font-bold leading-none text-emerald-800">
-                              faltam {diasInfo.restantes}d
-                            </div>
-                          </div>
+                            <Calendar className="h-3 w-3" /> {diasInfo.restantes}d
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
