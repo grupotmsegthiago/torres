@@ -53,6 +53,7 @@ export const clients = pgTable("clients", {
   city: text("city"),
   state: text("state"),
   zip: text("zip"),
+  inscricaoMunicipal: text("inscricao_municipal"),
   notes: text("notes"),
   billingCycle: text("billing_cycle"),
   prazoAprovacaoDias: integer("prazo_aprovacao_dias"),

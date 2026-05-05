@@ -510,7 +510,7 @@ async function ensureInvoicesTable() {
   }
 }
 
-async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string): Promise<string> {
+async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string, municipalInscription?: string): Promise<string> {
   const cleanDoc = cpfCnpj.replace(/[^\d]/g, "");
   if (!cleanDoc) throw new Error("CPF/CNPJ é obrigatório para criar cobrança no Asaas");
 
@@ -542,6 +542,9 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
         if (state) updatePayload.state = state;
         if (zip) updatePayload.postalCode = zip.replace(/[^\d]/g, "");
       }
+      if (!existing.municipalInscription && municipalInscription) {
+        updatePayload.municipalInscription = municipalInscription;
+      }
       if (Object.keys(updatePayload).length > 0) {
         try {
           await asaasRequest("PUT", `/customers/${existing.id}`, updatePayload);
@@ -571,6 +574,7 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   if (city) customerPayload.cityName = city;
   if (state) customerPayload.state = state;
   if (zip) customerPayload.postalCode = zip.replace(/[^\d]/g, "");
+  if (municipalInscription) customerPayload.municipalInscription = municipalInscription;
 
   const customer = await asaasRequest("POST", "/customers", customerPayload);
   return customer.id;
@@ -699,17 +703,19 @@ export function registerAsaasRoutes(app: Express) {
       let clientState: string | undefined;
       let clientZip: string | undefined;
       if (clientId) {
-        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip").eq("id", clientId).single();
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip, inscricao_municipal").eq("id", clientId).single();
         if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
         clientCity = cliInfo?.city || undefined;
         clientState = cliInfo?.state || undefined;
         clientZip = cliInfo?.zip || undefined;
+        (clientPhone as any); // keep TS happy
+        var clientInscMun: string | undefined = cliInfo?.inscricao_municipal || undefined;
       }
 
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
-        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip);
+        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientInscMun);
 
         let emiteNf = false;
         let retemInss = false;
@@ -1249,7 +1255,8 @@ export function registerAsaasRoutes(app: Express) {
 
       const asaasCustomerId = await findOrCreateAsaasCustomer(
         clientName, cpfCnpj, clientEmail, clientPhone,
-        clientData?.address, clientData?.city, clientData?.state, clientData?.zip
+        clientData?.address, clientData?.city, clientData?.state, clientData?.zip,
+        clientData?.inscricao_municipal || undefined
       );
 
       const paymentPayload: any = {
@@ -1910,7 +1917,7 @@ export function registerAsaasRoutes(app: Express) {
 
           if (sendToAsaas && process.env.ASAAS_API_KEY && splitCnpj) {
             try {
-              spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip);
+              spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, clientData?.inscricao_municipal || undefined);
               const payload: any = {
                 customer: spAsaasCustomerId,
                 billingType: billingType || "BOLETO",
@@ -2091,7 +2098,7 @@ export function registerAsaasRoutes(app: Express) {
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
-          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip);
+          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, clientData?.inscricao_municipal || undefined);
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",

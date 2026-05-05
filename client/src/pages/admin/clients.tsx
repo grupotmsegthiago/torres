@@ -315,6 +315,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     city: client?.city || "",
     state: client?.state || "",
     zip: client?.zip || "",
+    inscricaoMunicipal: (client as any)?.inscricaoMunicipal || (client as any)?.inscricao_municipal || "",
     notes: client?.notes || "",
     billingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || "",
     prazoAprovacaoDias: String((client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || ""),
@@ -402,7 +403,33 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         <h2 className="text-lg font-semibold">{client ? "Editar Cliente" : "Novo Cliente"}</h2>
         <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-form"><X className="w-4 h-4" /></Button>
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (form.emiteNf) {
+          const missing: string[] = [];
+          const hasDoc = (form.cnpj || form.cpf || "").replace(/\D/g, "").length >= 11;
+          if (!form.razaoSocial.trim() && !form.name.trim()) missing.push("Razão Social ou Nome do Tomador");
+          if (!hasDoc) missing.push("CNPJ ou CPF");
+          const primaryEmail = (form.email || form.emailFinanceiro || form.emailContratual || "").trim();
+          if (!primaryEmail) missing.push("E-mail (qualquer um: principal, financeiro ou contratual)");
+          if (!form.address.trim()) missing.push("Endereço (rua, número)");
+          if (!form.city.trim()) missing.push("Cidade");
+          else if (/^\d+$/.test(form.city.trim())) missing.push("Cidade (deve ser nome, não código numérico — ex.: \"Limeira\")");
+          if (!form.state.trim() || form.state.trim().length !== 2) missing.push("Estado (UF — 2 letras, ex.: SP)");
+          if (form.zip.replace(/\D/g, "").length !== 8) missing.push("CEP (8 dígitos)");
+          const isPJ = (form.cnpj || "").replace(/\D/g, "").length === 14;
+          if (isPJ && !form.inscricaoMunicipal.trim()) missing.push("Inscrição Municipal (exigida pela prefeitura para tomador PJ)");
+          if (missing.length > 0) {
+            toast({
+              title: "Faltam dados para emitir NFS-e",
+              description: "Preencha: " + missing.join("; "),
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+        mutation.mutate(form);
+      }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNPJ</label>
           <div className="relative">
@@ -602,18 +629,39 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div className="md:col-span-2">
-              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Endereço</label>
-              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-client-address" />
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Endereço {form.emiteNf && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número" data-testid="input-client-address" />
             </div>
             <div>
-              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Cidade</label>
-              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} data-testid="input-client-city" />
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Cidade {form.emiteNf && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Ex.: Limeira" data-testid="input-client-city" />
+              {form.emiteNf && /^\d+$/.test((form.city || "").trim()) && (
+                <p className="text-[10px] text-red-600 mt-1">Use o nome da cidade, não o código IBGE.</p>
+              )}
             </div>
             <div>
-              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Estado</label>
-              <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} data-testid="input-client-state" />
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Estado (UF) {form.emiteNf && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.state} maxLength={2} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) })} placeholder="SP" data-testid="input-client-state" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Inscrição Municipal {form.emiteNf && (form.cnpj || "").replace(/\D/g, "").length === 14 && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura" data-testid="input-client-inscricao-municipal" />
+              <p className="text-[10px] text-neutral-500 mt-1">Exigida pela prefeitura para emitir NFS-e (tomador PJ)</p>
             </div>
           </div>
+          {form.emiteNf && (
+            <div className="mt-4 p-3 rounded-md border border-amber-300 bg-amber-50 text-[11px] text-amber-900">
+              <b>Para emissão de NFS-e</b>, o Asaas exige: CNPJ/CPF, Razão Social ou Nome, e-mail, endereço completo (rua + nº), cidade (nome), UF, CEP (8 dígitos) e — para PJ — Inscrição Municipal. Sem qualquer um destes, a prefeitura recusa a nota.
+            </div>
+          )}
         </div>
         <div className="md:col-span-2 border-t border-neutral-200 pt-4 mt-2">
           <p className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" /> Ciclo Financeiro</p>
