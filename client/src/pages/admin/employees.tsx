@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1934,7 +1934,6 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   const [discountCategory, setDiscountCategory] = useState<"falta" | "multa" | "abastecimento" | null>(null);
   const [discountForm, setDiscountForm] = useState({ type: "Falta injustificada", description: "", amount: "", numFaltas: "1", occurrenceDate: "" });
   const DISCOUNT_TYPES = ["Abastecimento indevido", "Multa de trânsito", "Falta injustificada", "Atraso", "Dano a equipamento", "Adiantamento", "Outro"];
-  const [heHours, setHeHours] = useState("");
   const addDiscountMut = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", `/api/employees/${employee.id}/salary-discounts`, {
@@ -1970,9 +1969,18 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
       `═══════════════════ VENCIMENTOS ═══════════════════`,
       `Salário Base${propLabel}: ${fmtR(v.salarioBase)}`,
       `Periculosidade (30%)${propLabel}: ${fmtR(v.periculosidade)}`,
+      summary.horasExtras?.horas > 0 ? `Horas Extras (${summary.horasExtras.horas}h via Ponto iD): ${fmtR(v.horasExtrasValor || 0)}` : "",
+      summary.horasExtras?.noturnas > 0 ? `Adicional Noturno (${summary.horasExtras.noturnas}h): ${fmtR(v.adicionalNoturnoValor || 0)}` : "",
+      v.dsr > 0 ? `DSR sobre HE/Noturno: ${fmtR(v.dsr)}` : "",
       `Vale Refeição${propLabel}: ${fmtR(v.valeRefeicao)}`,
       `Cesta Básica${propLabel}: ${fmtR(v.cestaBasica)}`,
       `TOTAL VENCIMENTOS: ${fmtR(v.total)}`,
+      ``,
+      `═══════════════════ DEDUÇÕES LEGAIS (CLT) ═══════════════════`,
+      `INSS: ${fmtR(summary.deducoesLegais?.inss || 0)}`,
+      `IRRF (${summary.deducoesLegais?.dependentesIR || 0} dep): ${fmtR(summary.deducoesLegais?.irrf || 0)}`,
+      `FGTS (depósito empregador 8%): ${fmtR(summary.deducoesLegais?.fgts || 0)}`,
+      `TOTAL DEDUÇÕES (descontadas do funcionário): ${fmtR(summary.deducoesLegais?.total || 0)}`,
       ``,
     ];
     if (summary.descontos.length > 0) {
@@ -2025,16 +2033,11 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Remuneração Líquida Estimada</span>
               <span className="text-[10px] text-neutral-500">{MESES[selMonth-1]} {selYear}</span>
             </div>
-            {(() => {
-              const heTotal = heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0;
-              return (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido + heTotal)}</span>
-                  {heTotal > 0 && <span className="text-xs text-indigo-300 font-medium">(+{fmtR(heTotal)} HE)</span>}
-                  {summary.totalDescontos > 0 && <span className="text-xs text-red-400 font-medium">(-{fmtR(summary.totalDescontos)} desc.)</span>}
-                </div>
-              );
-            })()}
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
+              {summary.deducoesLegais?.total > 0 && <span className="text-[10px] text-amber-300 font-medium">(-{fmtR(summary.deducoesLegais.total)} INSS+IRRF)</span>}
+              {summary.totalDescontos > 0 && <span className="text-[10px] text-red-400 font-medium">(-{fmtR(summary.totalDescontos)} ocorr.)</span>}
+            </div>
             {summary.proporcional && (
               <div className="flex items-center gap-1.5 mt-2">
                 <AlertTriangle className="w-3 h-3 text-amber-400" />
@@ -2043,14 +2046,22 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-neutral-400">Ganhos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total + (heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0))}</span></span>
+                <span className="text-[10px] text-neutral-400">Vencimentos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total)}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="text-[10px] text-neutral-400">INSS+IRRF: <span className="text-amber-400 font-semibold">{fmtR(summary.deducoesLegais?.total || 0)}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-[10px] text-neutral-400">Descontos: <span className="text-red-400 font-semibold">{fmtR(summary.totalDescontos)}</span></span>
+                <span className="text-[10px] text-neutral-400">Ocorrências: <span className="text-red-400 font-semibold">{fmtR(summary.totalDescontos)}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-blue-400" />
+                <span className="text-[10px] text-neutral-400">Custo Empresa: <span className="text-blue-300 font-semibold">{fmtR(summary.custoTotalEmpresa || 0)}</span></span>
               </div>
             </div>
           </div>
@@ -2064,7 +2075,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-xs uppercase tracking-wider text-emerald-800 font-bold">Vencimentos</span>
                 </div>
-                <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total + (heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0))}</span>
+                <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total)}</span>
               </div>
               <div className="p-3 space-y-2">
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
@@ -2095,39 +2106,54 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
                 </div>
-                {(() => {
-                  const heVal = CCT_SP_2025.horaExtraValor;
-                  const totalHE = heHours && Number(heHours) > 0 ? +(Number(heHours) * heVal * 1.5).toFixed(2) : 0;
-                  const folhaHE = +(totalHE / 2).toFixed(2);
-                  const bonusHE = +(totalHE - folhaHE).toFixed(2);
-                  return totalHE > 0 ? (
-                    <>
-                      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center justify-between">
-                        <div>
-                          <div className="text-xs font-semibold text-indigo-800">Hora Extra (50% Folha)</div>
-                          <div className="text-[10px] text-indigo-400 mt-0.5">{heHours}h × R$ {heVal.toFixed(2)} × 1.5 ÷ 2</div>
-                        </div>
-                        <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(folhaHE)}</span>
+                {summary.horasExtras?.horas > 0 && (
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-he-auto">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
+                        Horas Extras
+                        <span className="text-[9px] bg-indigo-200/60 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
                       </div>
-                      <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-center justify-between">
-                        <div>
-                          <div className="text-xs font-semibold text-amber-800">Bônus HE (50% Extra)</div>
-                          <div className="text-[10px] text-amber-400 mt-0.5">Pago extra-folha</div>
-                        </div>
-                        <span className="text-sm font-bold text-amber-700 tabular-nums">+ {fmtR(bonusHE)}</span>
-                      </div>
-                    </>
-                  ) : null;
-                })()}
-                <div className="border-t border-neutral-100 pt-2 mt-1">
-                  <div className="flex items-end gap-3">
-                    <div className="flex-1">
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Horas Extras no Mês</label>
-                      <Input type="number" min="0" step="0.5" value={heHours} onChange={(e) => setHeHours(e.target.value)} placeholder="0" className="text-xs h-8" data-testid="input-he-hours" />
+                      <div className="text-[10px] text-indigo-500 mt-0.5">{summary.horasExtras.horas}h × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
                     </div>
-                    <p className="text-[9px] text-neutral-400 pb-2">50% folha + 50% bônus</p>
+                    <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(summary.vencimentos.horasExtrasValor || 0)}</span>
                   </div>
-                </div>
+                )}
+                {summary.horasExtras?.noturnas > 0 && (
+                  <div className="bg-violet-50 border border-violet-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-noturno-auto">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-violet-800 flex items-center gap-1.5">
+                        Adicional Noturno
+                        <span className="text-[9px] bg-violet-200/60 text-violet-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
+                      </div>
+                      <div className="text-[10px] text-violet-500 mt-0.5">{summary.horasExtras.noturnas}h × valor hora × 1,20</div>
+                    </div>
+                    <span className="text-sm font-bold text-violet-700 tabular-nums">+ {fmtR(summary.vencimentos.adicionalNoturnoValor || 0)}</span>
+                  </div>
+                )}
+                {summary.vencimentos.dsr > 0 && (
+                  <div className="bg-sky-50 border border-sky-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-dsr">
+                    <div>
+                      <div className="text-xs font-semibold text-sky-800">DSR sobre HE / Noturno</div>
+                      <div className="text-[10px] text-sky-500 mt-0.5">Repouso semanal remunerado (CLT)</div>
+                    </div>
+                    <span className="text-sm font-bold text-sky-700 tabular-nums">+ {fmtR(summary.vencimentos.dsr)}</span>
+                  </div>
+                )}
+                {summary.vencimentos.ajudaCusto > 0 && (
+                  <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-neutral-800">Ajuda de Custo</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">Indenizatório (não tributável)</div>
+                    </div>
+                    <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.ajudaCusto)}</span>
+                  </div>
+                )}
+                {summary.horasExtras && summary.horasExtras.horas === 0 && summary.horasExtras.noturnas === 0 && (
+                  <div className="bg-neutral-50 border border-dashed border-neutral-200 rounded-lg p-2.5 flex items-center gap-2" data-testid="row-he-empty">
+                    <Clock className="w-3.5 h-3.5 text-neutral-400" />
+                    <span className="text-[10px] text-neutral-500">Sem horas extras / noturnas registradas no Ponto iD para este mês</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2173,6 +2199,80 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border border-amber-200 rounded-xl overflow-hidden" data-testid="card-deducoes-legais">
+              <div className="bg-amber-50 border-b border-amber-100 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center">
+                    <Receipt className="w-3.5 h-3.5 text-amber-700" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wider text-amber-800 font-bold">Deduções Legais (CLT)</span>
+                </div>
+                <span className="text-xs font-bold text-amber-700">- {fmtR(summary.deducoesLegais?.total || 0)}</span>
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-inss">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">INSS</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">Faixas progressivas 7,5% / 9% / 12% / 14%</div>
+                  </div>
+                  <span className="text-sm font-bold text-amber-700 tabular-nums">- {fmtR(summary.deducoesLegais?.inss || 0)}</span>
+                </div>
+                <div className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-irrf">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">IRRF</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">{summary.deducoesLegais?.dependentesIR || 0} dep. × R$ 189,59 — Tabela 2025</div>
+                  </div>
+                  <span className="text-sm font-bold text-amber-700 tabular-nums">- {fmtR(summary.deducoesLegais?.irrf || 0)}</span>
+                </div>
+                <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-fgts">
+                  <div>
+                    <div className="text-xs font-semibold text-blue-800">FGTS (8% — empresa)</div>
+                    <div className="text-[10px] text-blue-400 mt-0.5">Não desconta do funcionário · custo da empresa</div>
+                  </div>
+                  <span className="text-sm font-bold text-blue-700 tabular-nums">{fmtR(summary.deducoesLegais?.fgts || 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-violet-200 rounded-xl overflow-hidden" data-testid="card-provisoes">
+              <div className="bg-violet-50 border-b border-violet-100 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center">
+                    <PiggyBank className="w-3.5 h-3.5 text-violet-700" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wider text-violet-800 font-bold">Provisões Mensais</span>
+                </div>
+                <span className="text-xs font-bold text-violet-700">{fmtR(summary.provisoes?.total || 0)}</span>
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="bg-white border border-violet-100 rounded-lg p-3 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-neutral-800">13º salário</div>
+                  <span className="text-sm font-bold text-violet-700 tabular-nums">{fmtR(summary.provisoes?.decimoTerceiro || 0)}</span>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-3 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-neutral-800">Férias</div>
+                  <span className="text-sm font-bold text-violet-700 tabular-nums">{fmtR(summary.provisoes?.ferias || 0)}</span>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-3 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-neutral-800">1/3 Constitucional</div>
+                  <span className="text-sm font-bold text-violet-700 tabular-nums">{fmtR(summary.provisoes?.tercoFerias || 0)}</span>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-3 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-neutral-800">FGTS s/ Férias+13º</div>
+                  <span className="text-sm font-bold text-violet-700 tabular-nums">{fmtR(summary.provisoes?.fgtsSobreFerias13 || 0)}</span>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-3 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-neutral-800">INSS s/ Férias+13º</div>
+                  <span className="text-sm font-bold text-violet-700 tabular-nums">{fmtR(summary.provisoes?.inssSobreFerias13 || 0)}</span>
+                </div>
+                <div className="text-[10px] text-violet-500 italic px-1 pt-1">
+                  Mesma engine usada na Controladoria — reflete no custo fixo automaticamente.
+                </div>
               </div>
             </div>
           </div>

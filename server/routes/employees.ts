@@ -5,6 +5,8 @@ import type { Express } from "express";
   import { insertEmployeeSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
+  import { calcularFolha } from "../lib/payroll";
+  import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 
   export function registerEmployeeRoutes(app: Express) {
     app.get("/api/employees", requireAuth, async (req, res) => {
@@ -278,19 +280,34 @@ import type { Express } from "express";
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00, cestaBasica: 208.45, diasUteisMes: 22 };
-      const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
-      const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
-      const totalBruto = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
+      // Salário vigente — preferimos o registro real (mesmo que controladoria usa)
+      const { data: salRows } = await supabaseAdmin
+        .from("employee_salaries").select("*").eq("employee_id", empId)
+        .order("effective_date", { ascending: false }).limit(1);
+      const sal: any = salRows?.[0] || {};
 
+      const CCT_FALLBACK = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 208.45 };
+      const baseSalary = Number(sal.base_salary || CCT_FALLBACK.salarioBase);
+      const periculosidadePct = Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100;
+      const vrDiario = Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia);
+      const cestaMensal = Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica);
+      const vt = Number(sal.vale_transporte_mensal || 0);
+      const outros = Number(sal.beneficios_outros || 0);
+      const horasMensais = Number(sal.horas_mensais || 220);
+      const ajudaCustoMensal = Number(sal.ajuda_custo_mensal || 0);
+
+      // Dias úteis do mês (descontando feriados nacionais/estaduais)
+      const { from, to } = monthRange(year, month);
+      const holidaySet = await loadHolidaySet(from, to);
+      const diasUteis = countBusinessDays(from, to, holidaySet);
+
+      // Proporcional na admissão
       let proporcional = false;
       let diasTrabalhados = 30;
       let fatorProporcional = 1;
       if (emp.hireDate) {
         const hire = new Date(emp.hireDate);
-        const hireMonth = hire.getMonth() + 1;
-        const hireYear = hire.getFullYear();
-        if (hireYear === year && hireMonth === month) {
+        if (hire.getFullYear() === year && hire.getMonth() + 1 === month) {
           const hireDay = hire.getDate();
           const daysInMonth = new Date(year, month, 0).getDate();
           diasTrabalhados = daysInMonth - hireDay + 1;
@@ -299,31 +316,135 @@ import type { Express } from "express";
         }
       }
 
-      const salarioProporcional = +(CCT.salarioBase * fatorProporcional).toFixed(2);
-      const periculosidadeProporcional = +(periculosidade * fatorProporcional).toFixed(2);
-      const vrProporcional = +(valeRefeicaoMes * fatorProporcional).toFixed(2);
-      const cestaProporcional = +(CCT.cestaBasica * fatorProporcional).toFixed(2);
-      const totalVencimentos = +(salarioProporcional + periculosidadeProporcional + vrProporcional + cestaProporcional).toFixed(2);
+      // Dependentes para IRRF (mesma regra da engine de custos fixos)
+      let dependentesIR = Number(sal.dependentes_ir || 0);
+      try {
+        const { count } = await supabaseAdmin
+          .from("employee_dependents")
+          .select("id", { count: "exact", head: true })
+          .eq("employee_id", empId).eq("deduz_ir", true);
+        if (typeof count === "number" && count > 0) dependentesIR = count;
+      } catch { /* fallback */ }
 
+      // ===== HORAS EXTRAS / NOTURNAS automáticas do Ponto iD (Control iD) =====
+      const mesRef = `${year}-${String(month).padStart(2, "0")}`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const inicioMes = `${mesRef}-01T00:00:00-03:00`;
+      const fimMes = `${mesRef}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+
+      let horasExtras = 0;
+      let horasNoturnas = 0;
+      let horasFonte: "ponto_operacional" | "jornada_calculos" | "nenhuma" = "nenhuma";
+      let registrosPonto = 0;
+
+      // 1ª fonte: ponto_operacional (Ponto iD oficial)
+      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
+        .select("horas_extras, horas_noturno")
+        .eq("employee_id", empId)
+        .gte("entrada", inicioMes).lte("entrada", fimMes);
+      if (pontos && pontos.length > 0) {
+        for (const p of pontos) {
+          horasExtras += Number((p as any).horas_extras || 0);
+          horasNoturnas += Number((p as any).horas_noturno || 0);
+        }
+        horasFonte = "ponto_operacional";
+        registrosPonto = pontos.length;
+      } else {
+        // 2ª fonte: jornada_calculos (lançamentos manuais da diretoria)
+        const { data: jorn } = await supabaseAdmin.from("jornada_calculos")
+          .select("horas_extras, horas_noturnas")
+          .eq("employee_id", empId).eq("mes_referencia", mesRef);
+        if (jorn && jorn.length > 0) {
+          for (const j of jorn) {
+            horasExtras += Number((j as any).horas_extras || 0);
+            horasNoturnas += Number((j as any).horas_noturnas || 0);
+          }
+          horasFonte = "jornada_calculos";
+          registrosPonto = jorn.length;
+        }
+      }
+      horasExtras = Math.round(horasExtras * 100) / 100;
+      horasNoturnas = Math.round(horasNoturnas * 100) / 100;
+
+      // ===== ENGINE DE FOLHA 2025 (mesmo padrão do custo fixo) =====
+      const folha = calcularFolha({
+        salarioBaseCheio: baseSalary,
+        diasTrabalhados,
+        horasMensais,
+        periculosidadePct,
+        horasExtras,
+        horasNoturnas,
+        diasUteis,
+        refeicaoDiaria: vrDiario,
+        ajudaCustoMensal,
+        dependentesIR,
+      });
+
+      // Vencimentos visíveis (CLT — base + peric + HE + DSR + adic + benefícios)
+      const totalVencimentos = +(folha.totalBruto + cestaMensal + vt + outros).toFixed(2);
+
+      // Descontos manuais (ocorrências) + descontos legais (INSS + IRRF)
       const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*")
         .eq("employee_id", empId).eq("month", month).eq("year", year);
-      const totalDescontos = (discounts || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
-      const liquido = +(totalVencimentos - totalDescontos).toFixed(2);
+      const totalDescontosManuais = (discounts || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
+      const totalDeducoesLegais = +(folha.inss + folha.irrf).toFixed(2);
+      const liquido = +(totalVencimentos - totalDescontosManuais - totalDeducoesLegais).toFixed(2);
+
+      // Custo total para a empresa (idêntico ao fixed-costs)
+      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros).toFixed(2);
 
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
-        month, year, proporcional, diasTrabalhados, fatorProporcional,
+        month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis,
+        // ► Mantém compat com UI atual + enriquece com engine
         vencimentos: {
-          salarioBase: salarioProporcional,
-          periculosidade: periculosidadeProporcional,
-          valeRefeicao: vrProporcional,
-          cestaBasica: cestaProporcional,
+          salarioBase: folha.salarioProporcional,
+          periculosidade: folha.periculosidade,
+          horasExtrasValor: folha.horasExtrasValor,
+          adicionalNoturnoValor: folha.adicionalNoturnoValor,
+          dsr: folha.dsr,
+          valeRefeicao: folha.refeicao,
+          cestaBasica: cestaMensal,
+          valeTransporte: vt,
+          ajudaCusto: folha.ajudaCusto,
+          outros,
           total: totalVencimentos,
+          baseTributavel: folha.baseTributavel,
+          totalBruto: folha.totalBruto,
         },
-        descontos: discounts.map(d => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.createdBy, createdAt: d.createdAt })),
-        totalDescontos,
+        // ► Horas extras auto via Ponto iD
+        horasExtras: {
+          horas: horasExtras,
+          noturnas: horasNoturnas,
+          valor: folha.horasExtrasValor,
+          dsrValor: folha.dsr,
+          fonte: horasFonte,
+          registros: registrosPonto,
+          mesRef,
+        },
+        // ► Deduções legais (INSS / IRRF / FGTS)
+        deducoesLegais: {
+          inss: folha.inss,
+          irrf: folha.irrf,
+          fgts: folha.fgts,
+          dependentesIR,
+          total: totalDeducoesLegais,
+        },
+        // ► Provisões mensais (custo da empresa)
+        provisoes: {
+          decimoTerceiro: folha.provisaoDecimoTerceiro,
+          ferias: folha.provisaoFerias,
+          tercoFerias: folha.provisaoTercoFerias,
+          fgtsSobreFerias13: folha.provisaoFGTSsobreFerias13,
+          inssSobreFerias13: folha.provisaoINSSsobreFerias13,
+          total: folha.totalProvisoes,
+        },
+        // ► Compat com UI antiga
+        descontos: (discounts || []).map((d: any) => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.created_by, createdAt: d.created_at })),
+        totalDescontos: totalDescontosManuais,
         liquido,
-        cctRef: { salarioBase: CCT.salarioBase, periculosidadePct: CCT.periculosidadePct, valeRefeicaoDia: CCT.valeRefeicaoDia, cestaBasica: CCT.cestaBasica, totalBruto },
+        custoTotalEmpresa,
+        cctRef: { salarioBase: baseSalary, periculosidadePct: periculosidadePct * 100, valeRefeicaoDia: vrDiario, cestaBasica: cestaMensal, totalBruto: totalVencimentos },
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
