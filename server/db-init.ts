@@ -1174,6 +1174,10 @@ export async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS periculosidade_pct NUMERIC(5,2) DEFAULT 30.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS dependentes_ir INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 0`);
+    // Backfill: registros antigos vêm com NULL → aplica padrão Folha 2025 (vigilantes = 30% periculosidade)
+    await execSql(`UPDATE employee_salaries SET periculosidade_pct = 30.00 WHERE periculosidade_pct IS NULL`);
+    await execSql(`UPDATE employee_salaries SET dependentes_ir = 0 WHERE dependentes_ir IS NULL`);
+    await execSql(`UPDATE employee_salaries SET ajuda_custo_mensal = 0 WHERE ajuda_custo_mensal IS NULL`);
     console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta + folha 2025)");
   } catch (e: any) {
     console.error("[db-init] employee_salaries alter error:", e.message);
