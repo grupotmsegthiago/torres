@@ -311,11 +311,12 @@ export async function calculateAgentCostPerHour(employeeId: number): Promise<num
   return r.breakdown.custoHora;
 }
 
-// Critério de agente ativo: mesmo do Balanço Gerencial (excluir inativo e desligado)
+// Critério de agente ativo: exclui inativo, desligado, bloqueado, afastado e férias
 function isAtivo(e: any): boolean {
-  return e.status !== "inativo" && e.status !== "desligado" &&
-    e.status !== "Inativo" && e.status !== "Desligado" &&
-    e.status !== "INATIVO" && e.status !== "DESLIGADO";
+  const s = String(e.status || "").toLowerCase().trim();
+  if (!s) return true; // sem status → considera ativo
+  const bloqueados = ["inativo", "desligado", "bloqueado", "afastado", "férias", "ferias", "demitido", "suspenso"];
+  return !bloqueados.includes(s);
 }
 
 /**
