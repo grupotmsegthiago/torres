@@ -338,6 +338,18 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // ─────── ESTATÍSTICAS DA FOLHA (horas, hora extra, custo estimado) ───────
+  app.get("/api/control-id/folha-stats/:employeeId", requireAuth, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.employeeId);
+      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const stats = await ctrl.buildFolhaStats(employeeId, monthYear);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── PAINEL DO MÊS (status hoje + horas mês) ───────
   app.get("/api/control-id/painel-mes", requireAuth, async (req, res) => {
     try {

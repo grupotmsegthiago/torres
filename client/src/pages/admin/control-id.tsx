@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
-import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText } from "lucide-react";
 import type { Employee } from "@shared/schema";
 
 type Device = {
@@ -26,9 +26,17 @@ type Punch = {
   id: number; device_id: number; control_id_user_id: string; employee_id: number | null;
   punch_at: string; direction: string | null; source: string | null;
 };
+type FolhaPunch = { id: number; punchAt: string; time: string; direction: string | null; source: string | null };
 type FolhaDay = {
   date: string; clockIn: string | null; lunchOut: string | null; lunchIn: string | null;
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
+  punches?: FolhaPunch[];
+};
+type FolhaStats = {
+  hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
+  daysWorked: number; baseSalary: number; valorHora: number; valorHoraExtra: number;
+  custoBase: number; custoExtra: number; custoTotalEstimado: number; encargosPct: number; custoComEncargos: number;
+  hasSalary: boolean;
 };
 
 function formatDateTime(iso: string | null) {
@@ -1098,12 +1106,22 @@ function ChipStat({ label, value, cls, Icon, active, onClick }: { label: string;
   );
 }
 
+function fmtBRL(n: number): string {
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 function FolhaTab() {
+  const { toast } = useToast();
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const [employeeId, setEmployeeId] = useState<string>("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [editingDay, setEditingDay] = useState<FolhaDay | null>(null);
+  const [viewingDay, setViewingDay] = useState<FolhaDay | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
 
-  const { data: folha = [], isLoading } = useQuery<FolhaDay[]>({
+  const employee = employees.find(e => String(e.id) === employeeId);
+
+  const { data: folha = [], isLoading, refetch: refetchFolha } = useQuery<FolhaDay[]>({
     queryKey: ["/api/control-id/folha", employeeId, month],
     queryFn: async () => {
       if (!employeeId) return [];
@@ -1113,11 +1131,26 @@ function FolhaTab() {
     enabled: !!employeeId,
   });
 
-  const totalHoras = folha.reduce((s, d) => s + (Number(d.hoursWorked) || 0), 0);
+  const { data: stats } = useQuery<FolhaStats>({
+    queryKey: ["/api/control-id/folha-stats", employeeId, month],
+    queryFn: async () => {
+      const r = await authFetch(`/api/control-id/folha-stats/${employeeId}?month=${month}`);
+      return r.json();
+    },
+    enabled: !!employeeId,
+  });
+
+  function handlePrint() {
+    document.body.classList.add("printing-folha");
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => document.body.classList.remove("printing-folha"), 500);
+    }, 50);
+  }
 
   return (
     <div className="space-y-3">
-      <Card className="p-3 flex gap-2 items-center flex-wrap">
+      <Card className="p-3 flex gap-2 items-center flex-wrap no-print">
         <Select value={employeeId} onValueChange={setEmployeeId}>
           <SelectTrigger className="w-64 h-9 text-sm" data-testid="select-folha-employee"><SelectValue placeholder="Selecione um funcionário" /></SelectTrigger>
           <SelectContent>
@@ -1125,51 +1158,572 @@ function FolhaTab() {
           </SelectContent>
         </Select>
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-month" />
-        {employeeId && folha.length > 0 && (
-          <span className="ml-auto text-sm font-bold text-neutral-700">Total: <span className="text-blue-600">{totalHoras.toFixed(2)}h</span> em {folha.length} dia(s)</span>
+        {employeeId && (
+          <>
+            <Button variant="outline" size="sm" onClick={handlePrint} className="h-9" data-testid="button-print-individual">
+              <Printer className="w-3.5 h-3.5 mr-1" /> Imprimir Espelho
+            </Button>
+          </>
         )}
+        <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)} className="h-9 ml-auto" data-testid="button-print-batch">
+          <FileText className="w-3.5 h-3.5 mr-1" /> Impressão em Lote
+        </Button>
       </Card>
 
+      {employeeId && stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 no-print">
+          <StatCard
+            title="Horas trabalhadas"
+            value={`${stats.hoursWorked.toFixed(2)}h`}
+            sub={`de ${stats.hoursLimit}h · ${stats.percentUsed.toFixed(0)}%`}
+            Icon={Clock}
+            color="blue"
+            progress={Math.min(100, stats.percentUsed)}
+            barColor={stats.percentUsed >= 100 ? "bg-red-600" : stats.percentUsed >= 90 ? "bg-orange-500" : stats.percentUsed >= 70 ? "bg-amber-400" : "bg-emerald-500"}
+          />
+          <StatCard
+            title="Hora Extra"
+            value={`${stats.horaExtra.toFixed(2)}h`}
+            sub={stats.horaExtra > 0 ? `${fmtBRL(stats.valorHoraExtra)}/h × ${stats.horaExtra.toFixed(1)}` : "Sem horas extras"}
+            Icon={TrendingUp}
+            color={stats.horaExtra > 0 ? "orange" : "neutral"}
+          />
+          <StatCard
+            title="Restantes p/ limite"
+            value={`${stats.horasRestantes.toFixed(2)}h`}
+            sub={stats.horasRestantes <= 0 ? "Limite atingido" : "Antes de virar HE"}
+            Icon={Hourglass}
+            color={stats.horasRestantes <= 0 ? "red" : stats.horasRestantes < 22 ? "amber" : "emerald"}
+          />
+          <StatCard
+            title="Custo estimado"
+            value={fmtBRL(stats.custoTotalEstimado)}
+            sub={!stats.hasSalary ? "Sem salário cadastrado" : stats.horaExtra > 0 ? `Base ${fmtBRL(stats.custoBase)} + HE ${fmtBRL(stats.custoExtra)}` : `Base ${fmtBRL(stats.custoBase)}`}
+            Icon={DollarSign}
+            color="emerald"
+          />
+        </div>
+      )}
+
       {!employeeId ? (
-        <Card className="p-8 text-center text-sm text-neutral-400">Selecione um funcionário para ver a folha consolidada das batidas Control iD.</Card>
+        <Card className="p-8 text-center text-sm text-neutral-400 no-print">Selecione um funcionário para ver a folha consolidada das batidas Control iD.</Card>
       ) : isLoading ? (
-        <p className="text-center text-sm text-neutral-400 py-8">Carregando...</p>
+        <p className="text-center text-sm text-neutral-400 py-8 no-print">Carregando...</p>
       ) : folha.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-neutral-500">
+        <Card className="p-8 text-center text-sm text-neutral-500 no-print">
           <Clock className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
           <p>Sem batidas para esse funcionário no mês selecionado.</p>
           <p className="text-xs mt-1 text-neutral-400">Confirme se ele está mapeado na aba "Mapping Funcionários".</p>
         </Card>
       ) : (
-        <Card>
-          <table className="w-full text-sm" data-testid="table-folha">
-            <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="p-2 text-left font-medium text-neutral-600">Data</th>
-                <th className="p-2 text-center font-medium text-neutral-600">Entrada</th>
-                <th className="p-2 text-center font-medium text-neutral-600">Saída Almoço</th>
-                <th className="p-2 text-center font-medium text-neutral-600">Volta Almoço</th>
-                <th className="p-2 text-center font-medium text-neutral-600">Saída</th>
-                <th className="p-2 text-right font-medium text-neutral-600">Horas</th>
-                <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {folha.map(d => (
-                <tr key={d.date} className="border-b border-neutral-100" data-testid={`row-folha-${d.date}`}>
-                  <td className="p-2 font-medium">{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
-                  <td className="p-2 text-center font-mono text-xs">{d.clockIn || "—"}</td>
-                  <td className="p-2 text-center font-mono text-xs">{d.lunchOut || "—"}</td>
-                  <td className="p-2 text-center font-mono text-xs">{d.lunchIn || "—"}</td>
-                  <td className="p-2 text-center font-mono text-xs">{d.clockOut || "—"}</td>
-                  <td className="p-2 text-right font-bold text-blue-600">{d.hoursWorked || "—"}</td>
-                  <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
+        <>
+          <div className="print-only print-header">
+            <h1>Espelho de Ponto Eletrônico</h1>
+            <div className="company">TORRES VIGILÂNCIA E SEGURANÇA PATRIMONIAL</div>
+            <table className="info-table">
+              <tbody>
+                <tr><td><b>Funcionário:</b></td><td>{employee?.name}</td><td><b>Matrícula:</b></td><td>{employee?.matricula}</td></tr>
+                <tr><td><b>Cargo:</b></td><td>{employee?.role}</td><td><b>Mês/Ano:</b></td><td>{new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</td></tr>
+                {stats && <tr><td><b>Horas trabalhadas:</b></td><td>{stats.hoursWorked.toFixed(2)}h / {stats.hoursLimit}h</td><td><b>Horas extras:</b></td><td>{stats.horaExtra.toFixed(2)}h</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <Card className="folha-card">
+            <table className="w-full text-sm" data-testid="table-folha">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50">
+                  <th className="p-2 text-left font-medium text-neutral-600">Data</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Entrada</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Saída Almoço</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Volta Almoço</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Saída</th>
+                  <th className="p-2 text-right font-medium text-neutral-600">Horas</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
+                  <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+              </thead>
+              <tbody>
+                {folha.map(d => (
+                  <tr key={d.date} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-folha-${d.date}`}>
+                    <td className="p-2 font-medium">{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
+                    <td className="p-2 text-center font-mono text-xs">{d.clockIn || "—"}</td>
+                    <td className="p-2 text-center font-mono text-xs">{d.lunchOut || "—"}</td>
+                    <td className="p-2 text-center font-mono text-xs">{d.lunchIn || "—"}</td>
+                    <td className="p-2 text-center font-mono text-xs">{d.clockOut || "—"}</td>
+                    <td className="p-2 text-right font-bold text-blue-600">{d.hoursWorked || "—"}</td>
+                    <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
+                    <td className="p-2 text-right no-print">
+                      <div className="inline-flex gap-1">
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-neutral-600 hover:text-blue-600" title="Ver detalhes (espelho RHID)" onClick={() => setViewingDay(d)} data-testid={`button-view-day-${d.date}`}>
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-neutral-600 hover:text-emerald-600" title="Editar batidas do dia" onClick={() => setEditingDay(d)} data-testid={`button-edit-day-${d.date}`}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {stats && (
+                  <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
+                    <td className="p-2" colSpan={5}>Total no mês ({stats.daysWorked} dias)</td>
+                    <td className="p-2 text-right text-blue-700">{stats.hoursWorked.toFixed(2)}h</td>
+                    <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
+                      {stats.horaExtra > 0 && <span className="text-orange-600">+{stats.horaExtra.toFixed(2)}h extra</span>}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
+
+          <div className="print-only print-footer">
+            <div className="signature-block">
+              <div className="sig-line">
+                <div className="line"></div>
+                <div className="label">{employee?.name}<br/>Funcionário</div>
+              </div>
+              <div className="sig-line">
+                <div className="line"></div>
+                <div className="label">Empregador</div>
+              </div>
+            </div>
+            <div className="footer-note">Documento emitido em {new Date().toLocaleString("pt-BR")} · Sistema Torres Vigilância · Batidas Control iD</div>
+          </div>
+        </>
+      )}
+
+      {editingDay && employeeId && (
+        <EditDayDialog
+          day={editingDay}
+          employeeId={Number(employeeId)}
+          onClose={() => setEditingDay(null)}
+          onChanged={() => { refetchFolha(); queryClient.invalidateQueries({ queryKey: ["/api/control-id/folha-stats", employeeId, month] }); }}
+        />
+      )}
+      {viewingDay && (
+        <ViewDayDialog day={viewingDay} employeeName={employee?.name || ""} onClose={() => setViewingDay(null)} />
+      )}
+      {batchOpen && (
+        <BatchPrintDialog month={month} employees={employees} onClose={() => setBatchOpen(false)} />
       )}
     </div>
+  );
+}
+
+function StatCard({ title, value, sub, Icon, color, progress, barColor }: { title: string; value: string; sub?: string; Icon: any; color: "blue" | "emerald" | "amber" | "orange" | "red" | "neutral"; progress?: number; barColor?: string }) {
+  const colorMap: Record<string, string> = {
+    blue: "border-blue-200 bg-blue-50/40",
+    emerald: "border-emerald-200 bg-emerald-50/40",
+    amber: "border-amber-200 bg-amber-50/40",
+    orange: "border-orange-200 bg-orange-50/40",
+    red: "border-red-200 bg-red-50/40",
+    neutral: "border-neutral-200 bg-neutral-50/40",
+  };
+  const iconColor: Record<string, string> = {
+    blue: "text-blue-600", emerald: "text-emerald-600", amber: "text-amber-600",
+    orange: "text-orange-600", red: "text-red-600", neutral: "text-neutral-400",
+  };
+  return (
+    <Card className={`p-3 border ${colorMap[color]}`} data-testid={`card-stat-${title.toLowerCase().replace(/\s/g, "-")}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">{title}</span>
+        <Icon className={`w-4 h-4 ${iconColor[color]}`} />
+      </div>
+      <div className={`text-xl font-bold tabular-nums ${iconColor[color]}`}>{value}</div>
+      {sub && <div className="text-[11px] text-neutral-500 mt-0.5">{sub}</div>}
+      {progress != null && (
+        <div className="w-full bg-neutral-200 rounded-full h-1.5 mt-2 overflow-hidden">
+          <div className={`h-full ${barColor || "bg-blue-500"} transition-all`} style={{ width: `${progress}%` }} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay; employeeId: number; onClose: () => void; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [punches, setPunches] = useState<FolhaPunch[]>(day.punches || []);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTime, setEditTime] = useState("");
+  const [editDir, setEditDir] = useState<string>("unknown");
+  const [adding, setAdding] = useState(false);
+  const [newTime, setNewTime] = useState(`${day.date}T08:00`);
+  const [newDir, setNewDir] = useState("unknown");
+
+  function startEdit(p: FolhaPunch) {
+    setEditingId(p.id);
+    const d = new Date(p.punchAt);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setEditTime(local);
+    setEditDir(p.direction || "unknown");
+  }
+
+  async function saveEdit(p: FolhaPunch) {
+    try {
+      const r = await authFetch(`/api/control-id/punches/${p.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ punchAt: new Date(editTime).toISOString(), direction: editDir }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      toast({ title: "Batida atualizada", description: d.rhidSynced ? "Sincronizado com o RHID." : (d.rhidError || "Salvo apenas localmente.") });
+      setPunches(arr => arr.map(x => x.id === p.id ? { ...x, punchAt: new Date(editTime).toISOString(), direction: editDir, time: new Date(editTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) } : x));
+      setEditingId(null);
+      onChanged();
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function delPunch(p: FolhaPunch) {
+    if (!confirm(`Excluir batida ${p.time}?`)) return;
+    try {
+      const r = await authFetch(`/api/control-id/punches/${p.id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json()).message);
+      toast({ title: "Batida excluída" });
+      setPunches(arr => arr.filter(x => x.id !== p.id));
+      onChanged();
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function addPunch() {
+    try {
+      const r = await authFetch("/api/control-id/manual-punch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, punchAt: new Date(newTime).toISOString(), direction: newDir }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message);
+      toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID." : (d.rhidError || "Salva localmente.") });
+      setAdding(false);
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            Editar batidas — {new Date(day.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          {punches.length === 0 ? (
+            <div className="text-center text-sm text-neutral-400 py-4">Sem batidas neste dia.</div>
+          ) : (
+            <table className="w-full text-sm border rounded">
+              <thead className="bg-neutral-50 text-xs text-neutral-600">
+                <tr>
+                  <th className="p-2 text-left">#</th>
+                  <th className="p-2 text-left">Data/Hora</th>
+                  <th className="p-2 text-center">Direção</th>
+                  <th className="p-2 text-center">Origem</th>
+                  <th className="p-2 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {punches.map((p, idx) => (
+                  <tr key={p.id} className="border-t" data-testid={`row-edit-punch-${p.id}`}>
+                    <td className="p-2 text-neutral-400 text-xs">{idx + 1}</td>
+                    <td className="p-2 font-mono text-xs">
+                      {editingId === p.id ? (
+                        <Input type="datetime-local" value={editTime} onChange={e => setEditTime(e.target.value)} className="h-7 text-xs w-44" />
+                      ) : formatDateTime(p.punchAt)}
+                    </td>
+                    <td className="p-2 text-center">
+                      {editingId === p.id ? (
+                        <Select value={editDir} onValueChange={setEditDir}>
+                          <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="in">Entrada</SelectItem>
+                            <SelectItem value="out">Saída</SelectItem>
+                            <SelectItem value="unknown">—</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
+                          {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2 text-center text-xs text-neutral-500">{p.source || "—"}</td>
+                    <td className="p-2 text-right">
+                      {editingId === p.id ? (
+                        <div className="inline-flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={() => saveEdit(p)}><Save className="w-3.5 h-3.5" /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}><X className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      ) : (
+                        <div className="inline-flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(p)}><Pencil className="w-3.5 h-3.5" /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => delPunch(p)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {adding ? (
+            <Card className="p-3 bg-blue-50/40 border-blue-200 flex flex-wrap gap-2 items-end">
+              <div>
+                <label className="text-[11px] font-medium text-neutral-600">Data/Hora</label>
+                <Input type="datetime-local" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-8 text-xs w-44" />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-neutral-600">Direção</label>
+                <Select value={newDir} onValueChange={setNewDir}>
+                  <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="in">Entrada</SelectItem>
+                    <SelectItem value="out">Saída</SelectItem>
+                    <SelectItem value="unknown">—</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button size="sm" onClick={addPunch} className="h-8"><Save className="w-3.5 h-3.5 mr-1" /> Adicionar</Button>
+              <Button size="sm" variant="ghost" onClick={() => setAdding(false)} className="h-8">Cancelar</Button>
+            </Card>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="w-full">
+              <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar batida manual neste dia
+            </Button>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employeeName: string; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ScanFace className="w-5 h-5 text-blue-600" />
+            Espelho RHID — {employeeName}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Card className="p-3 bg-neutral-50">
+            <div className="text-xs text-neutral-500">Data</div>
+            <div className="text-base font-bold">{new Date(day.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</div>
+          </Card>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="border rounded p-2">
+              <div className="text-[10px] uppercase font-bold text-emerald-700">Entrada</div>
+              <div className="font-mono text-sm font-bold mt-1">{day.clockIn || "—"}</div>
+            </div>
+            <div className="border rounded p-2">
+              <div className="text-[10px] uppercase font-bold text-amber-700">Saída Almoço</div>
+              <div className="font-mono text-sm font-bold mt-1">{day.lunchOut || "—"}</div>
+            </div>
+            <div className="border rounded p-2">
+              <div className="text-[10px] uppercase font-bold text-amber-700">Volta Almoço</div>
+              <div className="font-mono text-sm font-bold mt-1">{day.lunchIn || "—"}</div>
+            </div>
+            <div className="border rounded p-2">
+              <div className="text-[10px] uppercase font-bold text-red-700">Saída</div>
+              <div className="font-mono text-sm font-bold mt-1">{day.clockOut || "—"}</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded p-2">
+            <span className="text-xs text-neutral-600">Total trabalhado:</span>
+            <span className="font-bold text-blue-700">{day.hoursWorked || "—"}h</span>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-neutral-600 mb-1">Todas as batidas registradas no aparelho:</div>
+            <div className="border rounded max-h-64 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-neutral-50 sticky top-0">
+                  <tr>
+                    <th className="p-1.5 text-left">#</th>
+                    <th className="p-1.5 text-left">Hora</th>
+                    <th className="p-1.5 text-center">Direção</th>
+                    <th className="p-1.5 text-left">Origem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(day.punches || []).map((p, idx) => (
+                    <tr key={p.id} className="border-t">
+                      <td className="p-1.5 text-neutral-400">{idx + 1}</td>
+                      <td className="p-1.5 font-mono">{p.time}</td>
+                      <td className="p-1.5 text-center">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
+                          {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
+                        </span>
+                      </td>
+                      <td className="p-1.5 text-neutral-500">{p.source || "—"}</td>
+                    </tr>
+                  ))}
+                  {(day.punches || []).length === 0 && (
+                    <tr><td colSpan={4} className="p-3 text-center text-neutral-400">Sem batidas</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BatchPrintDialog({ month, employees, onClose }: { month: string; employees: Employee[]; onClose: () => void }) {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [printData, setPrintData] = useState<Array<{ emp: Employee; folha: FolhaDay[]; stats: FolhaStats | null }> | null>(null);
+
+  function toggleAll() {
+    if (selected.size === employees.length) setSelected(new Set());
+    else setSelected(new Set(employees.map(e => e.id)));
+  }
+
+  async function gerarLote() {
+    if (selected.size === 0) { toast({ title: "Selecione ao menos um funcionário", variant: "destructive" }); return; }
+    setLoading(true);
+    try {
+      const ids = Array.from(selected);
+      const data = await Promise.all(ids.map(async id => {
+        const emp = employees.find(e => e.id === id)!;
+        const [folhaR, statsR] = await Promise.all([
+          authFetch(`/api/control-id/folha/${id}?month=${month}`).then(r => r.json()),
+          authFetch(`/api/control-id/folha-stats/${id}?month=${month}`).then(r => r.json()),
+        ]);
+        return { emp, folha: folhaR as FolhaDay[], stats: statsR as FolhaStats };
+      }));
+      setPrintData(data);
+      setTimeout(() => {
+        document.body.classList.add("printing-batch");
+        window.print();
+        setTimeout(() => {
+          document.body.classList.remove("printing-batch");
+          setPrintData(null);
+          onClose();
+        }, 800);
+      }, 200);
+    } catch (e: any) {
+      toast({ title: "Erro ao gerar lote", description: e.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <Dialog open={!printData} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="w-5 h-5 text-blue-600" />
+              Impressão em Lote — {new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between bg-neutral-50 border rounded p-2">
+              <span className="text-sm font-medium">{selected.size} de {employees.length} selecionado(s)</span>
+              <Button size="sm" variant="outline" onClick={toggleAll}>{selected.size === employees.length ? "Desmarcar todos" : "Selecionar todos"}</Button>
+            </div>
+            <div className="border rounded max-h-80 overflow-auto">
+              {employees.map(e => (
+                <label key={e.id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-neutral-50 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(e.id)}
+                    onChange={() => {
+                      const s = new Set(selected);
+                      if (s.has(e.id)) s.delete(e.id); else s.add(e.id);
+                      setSelected(s);
+                    }}
+                    className="h-4 w-4"
+                  />
+                  <span className="font-medium">{e.name}</span>
+                  <span className="text-xs text-neutral-500">· {e.role}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={gerarLote} disabled={loading || selected.size === 0}>
+              {loading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Printer className="w-3.5 h-3.5 mr-1" />}
+              Gerar e imprimir {selected.size > 0 ? `(${selected.size})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {printData && (
+        <div className="batch-print-area">
+          {printData.map((entry, idx) => (
+            <div key={entry.emp.id} className="batch-print-page" style={idx > 0 ? { pageBreakBefore: "always" } : undefined}>
+              <div className="print-header">
+                <h1>Espelho de Ponto Eletrônico</h1>
+                <div className="company">TORRES VIGILÂNCIA E SEGURANÇA PATRIMONIAL</div>
+                <table className="info-table">
+                  <tbody>
+                    <tr><td><b>Funcionário:</b></td><td>{entry.emp.name}</td><td><b>Matrícula:</b></td><td>{entry.emp.matricula}</td></tr>
+                    <tr><td><b>Cargo:</b></td><td>{entry.emp.role}</td><td><b>Mês/Ano:</b></td><td>{new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</td></tr>
+                    {entry.stats && <tr><td><b>Horas trabalhadas:</b></td><td>{entry.stats.hoursWorked.toFixed(2)}h / {entry.stats.hoursLimit}h</td><td><b>Horas extras:</b></td><td>{entry.stats.horaExtra.toFixed(2)}h</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <table className="folha-print-table">
+                <thead>
+                  <tr>
+                    <th>Data</th><th>Entrada</th><th>S. Almoço</th><th>V. Almoço</th><th>Saída</th><th>Horas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entry.folha.map(d => (
+                    <tr key={d.date}>
+                      <td>{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
+                      <td>{d.clockIn || "—"}</td>
+                      <td>{d.lunchOut || "—"}</td>
+                      <td>{d.lunchIn || "—"}</td>
+                      <td>{d.clockOut || "—"}</td>
+                      <td className="text-right"><b>{d.hoursWorked || "—"}</b></td>
+                    </tr>
+                  ))}
+                  {entry.stats && (
+                    <tr className="total-row">
+                      <td colSpan={5}><b>Total ({entry.stats.daysWorked} dias)</b></td>
+                      <td className="text-right"><b>{entry.stats.hoursWorked.toFixed(2)}h</b></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              <div className="print-footer">
+                <div className="signature-block">
+                  <div className="sig-line"><div className="line"></div><div className="label">{entry.emp.name}<br/>Funcionário</div></div>
+                  <div className="sig-line"><div className="line"></div><div className="label">Empregador</div></div>
+                </div>
+                <div className="footer-note">Documento emitido em {new Date().toLocaleString("pt-BR")} · Sistema Torres Vigilância · Batidas Control iD</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

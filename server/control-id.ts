@@ -916,6 +916,57 @@ export async function syncAllDevices(): Promise<{ devices: number; totalSaved: n
  * Gera folha de ponto consolidada (por funcionário, por dia) a partir das batidas.
  * Para cada dia: 1ª batida = entrada, última = saída, intermediárias = almoço.
  */
+export async function buildFolhaStats(employeeId: number, monthYear: string): Promise<any> {
+  const dias = await buildFolhaPonto(employeeId, monthYear);
+  const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
+  const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
+
+  // Pega salário vigente mais recente (cuja effective_date <= último dia do mês)
+  const [yyyy, mm] = monthYear.split("-").map(Number);
+  const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
+  const { data: salaryRows } = await supabaseAdmin
+    .from("employee_salaries")
+    .select("base_salary, horas_mensais, encargos_pct, effective_date")
+    .eq("employee_id", employeeId)
+    .lte("effective_date", monthEndStr)
+    .order("effective_date", { ascending: false })
+    .limit(1);
+
+  const sal = (salaryRows && salaryRows[0]) as any;
+  const baseSalary = sal ? Number(sal.base_salary) || 0 : 0;
+  const hoursLimit = sal && sal.horas_mensais ? Number(sal.horas_mensais) : 220;
+  const encargosPct = sal && sal.encargos_pct != null ? Number(sal.encargos_pct) : 80;
+
+  const horasNormais = Math.min(hoursWorked, hoursLimit);
+  const horaExtra = Math.max(0, hoursWorked - hoursLimit);
+  const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
+  const valorHoraExtra = valorHora * 1.5; // CLT padrão 50%
+  const custoExtra = valorHoraExtra * horaExtra;
+  const custoBase = baseSalary;
+  const custoComEncargos = (custoBase + custoExtra) * (1 + encargosPct / 100);
+
+  return {
+    employeeId,
+    monthYear,
+    hoursWorked: +hoursWorked.toFixed(2),
+    hoursLimit,
+    horasNormais: +horasNormais.toFixed(2),
+    horaExtra: +horaExtra.toFixed(2),
+    horasRestantes: +Math.max(0, hoursLimit - hoursWorked).toFixed(2),
+    percentUsed: hoursLimit > 0 ? +((hoursWorked / hoursLimit) * 100).toFixed(1) : 0,
+    daysWorked,
+    baseSalary,
+    valorHora: +valorHora.toFixed(2),
+    valorHoraExtra: +valorHoraExtra.toFixed(2),
+    custoExtra: +custoExtra.toFixed(2),
+    custoBase: +custoBase.toFixed(2),
+    encargosPct,
+    custoComEncargos: +custoComEncargos.toFixed(2),
+    custoTotalEstimado: +(custoBase + custoExtra).toFixed(2),
+    hasSalary: !!sal,
+  };
+}
+
 export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const [yyyy, mm] = monthYear.split("-").map(Number);
   const monthStart = new Date(Date.UTC(yyyy, mm - 1, 1));
@@ -1064,7 +1115,7 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
 
   const { data: punches } = await supabaseAdmin
     .from("control_id_punches")
-    .select("punch_at, direction, source, control_id_user_id")
+    .select("id, punch_at, direction, source, control_id_user_id")
     .eq("employee_id", employeeId)
     .gte("punch_at", start.toISOString())
     .lt("punch_at", end.toISOString())
@@ -1093,6 +1144,13 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
       clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
       totalPunches: sorted.length,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
+      punches: sorted.map((p: any) => ({
+        id: p.id,
+        punchAt: p.punch_at,
+        time: fmt(p.punch_at),
+        direction: p.direction,
+        source: p.source,
+      })),
     };
     // calcula horas trabalhadas
     if (entry.clockIn && entry.clockOut) {

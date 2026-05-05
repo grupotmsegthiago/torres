@@ -416,3 +416,54 @@
   animation: progress-bar-slide 1.8s ease-in-out infinite;
 }
 
+
+/* ═════════ Impressão de Espelho de Ponto (Control iD) ═════════ */
+.print-only { display: none; }
+.batch-print-area { display: none; }
+
+@media screen {
+  body.printing-folha .no-print,
+  body.printing-batch .no-print { /* será ignorado em screen */ }
+}
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: white !important; }
+
+  /* Modo individual: esconde tudo exceto a folha do funcionário */
+  body.printing-folha .no-print { display: none !important; }
+  body.printing-folha aside,
+  body.printing-folha header,
+  body.printing-folha nav { display: none !important; }
+  body.printing-folha .print-only { display: block !important; }
+
+  /* Modo lote: esconde tudo exceto a área de lote */
+  body.printing-batch * { visibility: hidden !important; }
+  body.printing-batch .batch-print-area,
+  body.printing-batch .batch-print-area * { visibility: visible !important; }
+  body.printing-batch .batch-print-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
+
+  .print-header h1 { font-size: 16pt; margin: 0 0 4pt 0; text-align: center; }
+  .print-header .company { font-size: 10pt; text-align: center; color: #555; margin-bottom: 8pt; }
+  .print-header .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 9pt; }
+  .print-header .info-table td { padding: 3pt 6pt; border: 1px solid #999; }
+
+  .folha-print-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .folha-print-table th,
+  .folha-print-table td { border: 1px solid #999; padding: 3pt 6pt; text-align: center; }
+  .folha-print-table thead { background: #eee; }
+  .folha-print-table .total-row { background: #f0f6ff; font-weight: bold; }
+  .folha-print-table td.text-right { text-align: right; }
+
+  .folha-card table { font-size: 9pt; }
+  .folha-card th, .folha-card td { border: 1px solid #999 !important; padding: 3pt 6pt !important; }
+
+  .print-footer { margin-top: 18pt; }
+  .print-footer .signature-block { display: flex; justify-content: space-around; margin-top: 30pt; }
+  .print-footer .sig-line { text-align: center; width: 40%; }
+  .print-footer .sig-line .line { border-top: 1px solid #333; margin-bottom: 4pt; }
+  .print-footer .sig-line .label { font-size: 9pt; }
+  .print-footer .footer-note { font-size: 7pt; color: #888; text-align: center; margin-top: 18pt; }
+
+  .batch-print-page { padding: 0; }
+}
