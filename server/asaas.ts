@@ -2391,14 +2391,14 @@ export function registerAsaasRoutes(app: Express) {
           ...invClientIds,
           ...openInvClientIds,
         ])) as number[];
-        const clientMap = new Map<number, { name: string; cpfCnpj: string | null; emiteNf: boolean }>();
+        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, name, cnpj, cpf, emite_nf")
+            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false });
+            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false });
           }
         }
 
@@ -2453,6 +2453,7 @@ export function registerAsaasRoutes(app: Express) {
             sourceId: inv.id,
             clientId: inv.client_id,
             clientName: cli?.name || inv.client_name,
+            clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             description: inv.description,
             value: Number(inv.value || 0),
@@ -2498,6 +2499,7 @@ export function registerAsaasRoutes(app: Express) {
             sourceId: inv.id,
             clientId: inv.client_id,
             clientName: cli?.name || inv.client_name,
+            clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             description: inv.description,
             value: Number(inv.value || 0),
@@ -2538,6 +2540,7 @@ export function registerAsaasRoutes(app: Express) {
             sourceId: ap.id,
             clientId: ap.client_id,
             clientName: cli?.name || ap.client_name,
+            clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || null,
             description: `Boletim de medição — período ${ap.period_start} a ${ap.period_end}`,
             value: valorPeriodo,
@@ -2581,6 +2584,7 @@ export function registerAsaasRoutes(app: Express) {
             sourceId: b.id,
             clientId: b.client_id,
             clientName: cli?.name || b.client_name || "—",
+            clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || null,
             description: `${lbl} — missão de ${dataFmt} (sem boletim)`,
             value: billingValor(b),

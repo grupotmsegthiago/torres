@@ -28,6 +28,7 @@ type RelatorioRow = {
   sourceId: number;
   clientId: number | null;
   clientName: string;
+  clientFantasia: string | null;
   clientCpfCnpj: string | null;
   description: string | null;
   value: number;
@@ -436,22 +437,21 @@ export default function RelatorioNFPage() {
                 <tr className="text-xs text-slate-600">
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
-                  <th className="text-left px-3 py-2 font-semibold">Descrição</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
-                  <th className="text-center px-3 py-2 font-semibold">Status</th>
+                  <th className="text-left px-3 py-2 font-semibold">Criado em</th>
                   <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
+                  <th className="text-center px-3 py-2 font-semibold">Status</th>
                   <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
                   <th className="text-left px-3 py-2 font-semibold">Status Asaas</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
-                  <th className="text-left px-3 py-2 font-semibold">Criado em</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={11} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={10} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
                   const Icon = meta.icon;
@@ -495,15 +495,15 @@ export default function RelatorioNFPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="font-medium text-slate-800 max-w-[240px] truncate" title={r.clientName} data-testid={`text-client-${r.id}`}>
-                          {r.clientName}
+                        <div className="font-medium text-slate-800 max-w-[260px] truncate" title={r.clientName} data-testid={`text-client-${r.id}`}>
+                          {r.clientFantasia || r.clientName}
                         </div>
+                        {r.clientFantasia && r.clientFantasia !== r.clientName && (
+                          <div className="text-[11px] text-slate-500 max-w-[260px] truncate" title={r.clientName}>
+                            {r.clientName}
+                          </div>
+                        )}
                         {r.clientCpfCnpj && <div className="text-[11px] text-slate-400">{r.clientCpfCnpj}</div>}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="text-xs text-slate-600 max-w-[260px] truncate" title={r.description || ""}>
-                          {r.description || "—"}
-                        </div>
                         <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-x-1 gap-y-0.5 items-center" data-testid={`os-list-${r.id}`}>
                           {r.osList && r.osList.length > 0 ? (
                             <>
@@ -521,20 +521,15 @@ export default function RelatorioNFPage() {
                                 </span>
                               ))}
                             </>
-                          ) : (
+                          ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums" data-testid={`text-value-${r.id}`}>
                         {fmtBRL(r.value)}
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}`}>
-                          <Icon className="h-3 w-3" />
-                          {meta.label}
-                        </span>
-                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(r.createdAt)}</td>
                       <td className="px-3 py-2 text-xs">
                         {!r.dueDate ? (
                           <span className="text-slate-300">—</span>
@@ -594,6 +589,12 @@ export default function RelatorioNFPage() {
                           </div>
                         )}
                       </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}`}>
+                          <Icon className="h-3 w-3" />
+                          {meta.label}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-xs">
                         {r.normalizedStatus === "NF_CANCELADA" || String(r.rawStatus || "").toUpperCase() === "CANCELLED" || String(r.rawStatus || "").toUpperCase() === "CANCELED" ? (
                           <span className="text-neutral-500 text-[11px] italic">Cancelado</span>
@@ -621,7 +622,6 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-xs text-slate-700">
                         {r.nfseNumber || <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(r.createdAt)}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-center gap-1">
                           {r.source === "BOLETIM" && r.approvalUrl && (
