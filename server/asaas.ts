@@ -510,18 +510,27 @@ async function ensureInvoicesTable() {
   }
 }
 
-async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string, municipalInscription?: string): Promise<string> {
+interface AsaasCustomerOpts {
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  municipalInscription?: string;
+  stateInscription?: string;
+}
+
+async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string, opts: AsaasCustomerOpts = {}): Promise<string> {
   const cleanDoc = cpfCnpj.replace(/[^\d]/g, "");
   if (!cleanDoc) throw new Error("CPF/CNPJ é obrigatório para criar cobrança no Asaas");
 
-  function parseAddress(raw?: string) {
-    if (!raw) return {};
+  function fallbackParse(raw?: string) {
+    if (!raw) return { addressNumber: "S/N" as string | undefined, complement: undefined as string | undefined };
     const parts = raw.split(",").map(s => s.trim());
-    const street = parts[0] || "";
-    const number = parts[1] || "S/N";
-    const complement = parts.slice(2).join(", ") || undefined;
-    return { address: street, addressNumber: number, complement };
+    return { addressNumber: parts[1] || "S/N", complement: parts.slice(2).join(", ") || undefined };
   }
+  const fb = fallbackParse(address);
+  const finalAddress = address ? address.split(",")[0].trim() : undefined;
+  const finalNumber = opts.addressNumber || fb.addressNumber;
+  const finalComplement = opts.complement || fb.complement;
 
   try {
     const search = await asaasRequest("GET", `/customers?cpfCnpj=${cleanDoc}`);
@@ -535,16 +544,17 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
         if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
         updatePayload.notificationDisabled = true;
       }
-      if (!existing.addressNumber && address) {
-        const parsed = parseAddress(address);
-        Object.assign(updatePayload, parsed);
+      if (!existing.addressNumber && finalAddress) {
+        updatePayload.address = finalAddress;
+        updatePayload.addressNumber = finalNumber;
+        if (finalComplement) updatePayload.complement = finalComplement;
         if (city) updatePayload.cityName = city;
         if (state) updatePayload.state = state;
         if (zip) updatePayload.postalCode = zip.replace(/[^\d]/g, "");
       }
-      if (!existing.municipalInscription && municipalInscription) {
-        updatePayload.municipalInscription = municipalInscription;
-      }
+      if (!existing.province && opts.province) updatePayload.province = opts.province;
+      if (!existing.municipalInscription && opts.municipalInscription) updatePayload.municipalInscription = opts.municipalInscription;
+      if (!existing.stateInscription && opts.stateInscription) updatePayload.stateInscription = opts.stateInscription;
       if (Object.keys(updatePayload).length > 0) {
         try {
           await asaasRequest("PUT", `/customers/${existing.id}`, updatePayload);
@@ -561,20 +571,23 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   const primaryEmail = emails[0]?.trim() || undefined;
   const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",") || undefined;
 
-  const parsed = parseAddress(address);
   const customerPayload: any = {
     name,
     cpfCnpj: cleanDoc,
     notificationDisabled: true,
-    ...parsed,
   };
+  if (finalAddress) customerPayload.address = finalAddress;
+  if (finalNumber) customerPayload.addressNumber = finalNumber;
+  if (finalComplement) customerPayload.complement = finalComplement;
   if (primaryEmail) customerPayload.email = primaryEmail;
   if (additionalEmails) customerPayload.additionalEmails = additionalEmails;
   if (phone) customerPayload.mobilePhone = phone.replace(/[^\d]/g, "");
   if (city) customerPayload.cityName = city;
   if (state) customerPayload.state = state;
   if (zip) customerPayload.postalCode = zip.replace(/[^\d]/g, "");
-  if (municipalInscription) customerPayload.municipalInscription = municipalInscription;
+  if (opts.province) customerPayload.province = opts.province;
+  if (opts.municipalInscription) customerPayload.municipalInscription = opts.municipalInscription;
+  if (opts.stateInscription) customerPayload.stateInscription = opts.stateInscription;
 
   const customer = await asaasRequest("POST", "/customers", customerPayload);
   return customer.id;
@@ -703,7 +716,7 @@ export function registerAsaasRoutes(app: Express) {
       let clientState: string | undefined;
       let clientZip: string | undefined;
       if (clientId) {
-        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, city, state, zip, inscricao_municipal").eq("id", clientId).single();
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
         if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || cliInfo?.email_contratual || cliInfo?.email_operacional || undefined;
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
@@ -711,11 +724,17 @@ export function registerAsaasRoutes(app: Express) {
         clientState = cliInfo?.state || undefined;
         clientZip = cliInfo?.zip || undefined;
         (clientPhone as any); // keep TS happy
-        var clientInscMun: string | undefined = cliInfo?.inscricao_municipal || undefined;
+        var clientOpts: AsaasCustomerOpts = {
+          addressNumber: cliInfo?.address_number || undefined,
+          complement: cliInfo?.address_complement || undefined,
+          province: cliInfo?.bairro || undefined,
+          municipalInscription: cliInfo?.inscricao_municipal || undefined,
+          stateInscription: cliInfo?.inscricao_estadual || undefined,
+        };
       }
 
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
-        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientInscMun);
+        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientOpts);
 
         let emiteNf = false;
         let retemInss = false;
@@ -1239,7 +1258,7 @@ export function registerAsaasRoutes(app: Express) {
       const clientId = invoice.client_id;
       if (!clientId) return res.status(400).json({ message: "Fatura sem cliente vinculado." });
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, zip, email, email_financeiro, phone, name").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       if (!cpfCnpj) return res.status(400).json({ message: "Cliente sem CPF/CNPJ cadastrado. Atualize o cadastro primeiro." });
 
@@ -1256,7 +1275,13 @@ export function registerAsaasRoutes(app: Express) {
       const asaasCustomerId = await findOrCreateAsaasCustomer(
         clientName, cpfCnpj, clientEmail, clientPhone,
         clientData?.address, clientData?.city, clientData?.state, clientData?.zip,
-        clientData?.inscricao_municipal || undefined
+        {
+          addressNumber: clientData?.address_number || undefined,
+          complement: clientData?.address_complement || undefined,
+          province: clientData?.bairro || undefined,
+          municipalInscription: clientData?.inscricao_municipal || undefined,
+          stateInscription: clientData?.inscricao_estadual || undefined,
+        }
       );
 
       const paymentPayload: any = {
@@ -1847,7 +1872,7 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const retemInssConsolidado = clientData?.retem_inss === true;
@@ -1917,7 +1942,13 @@ export function registerAsaasRoutes(app: Express) {
 
           if (sendToAsaas && process.env.ASAAS_API_KEY && splitCnpj) {
             try {
-              spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, clientData?.inscricao_municipal || undefined);
+              spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, {
+                addressNumber: clientData?.address_number || undefined,
+                complement: clientData?.address_complement || undefined,
+                province: clientData?.bairro || undefined,
+                municipalInscription: clientData?.inscricao_municipal || undefined,
+                stateInscription: clientData?.inscricao_estadual || undefined,
+              });
               const payload: any = {
                 customer: spAsaasCustomerId,
                 billingType: billingType || "BOLETO",
@@ -2098,7 +2129,13 @@ export function registerAsaasRoutes(app: Express) {
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
-          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, clientData?.inscricao_municipal || undefined);
+          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, {
+            addressNumber: clientData?.address_number || undefined,
+            complement: clientData?.address_complement || undefined,
+            province: clientData?.bairro || undefined,
+            municipalInscription: clientData?.inscricao_municipal || undefined,
+            stateInscription: clientData?.inscricao_estadual || undefined,
+          });
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",

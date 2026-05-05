@@ -312,10 +312,14 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     phone: client?.phone || "",
     contactPerson: (client as any)?.contactPerson || (client as any)?.contact_person || "",
     address: client?.address || "",
+    addressNumber: (client as any)?.addressNumber || (client as any)?.address_number || "",
+    addressComplement: (client as any)?.addressComplement || (client as any)?.address_complement || "",
+    bairro: (client as any)?.bairro || "",
     city: client?.city || "",
     state: client?.state || "",
     zip: client?.zip || "",
     inscricaoMunicipal: (client as any)?.inscricaoMunicipal || (client as any)?.inscricao_municipal || "",
+    inscricaoEstadual: (client as any)?.inscricaoEstadual || (client as any)?.inscricao_estadual || "",
     notes: client?.notes || "",
     billingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || "",
     prazoAprovacaoDias: String((client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || ""),
@@ -342,7 +346,10 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         name: data.nome_fantasia || data.razao_social || prev.name,
         email: data.email && data.email !== "" ? data.email : prev.email,
         phone,
-        address: [data.logradouro, data.numero, data.complemento].filter(Boolean).join(", ") || prev.address,
+        address: data.logradouro || prev.address,
+        addressNumber: data.numero || prev.addressNumber,
+        addressComplement: data.complemento || prev.addressComplement,
+        bairro: data.bairro || prev.bairro,
         city: data.municipio || prev.city,
         state: data.uf || prev.state,
         zip: data.cep ? data.cep.replace(/(\d{5})(\d{3})/, "$1-$2") : prev.zip,
@@ -408,14 +415,17 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         if (form.emiteNf) {
           const missing: string[] = [];
           const hasDoc = (form.cnpj || form.cpf || "").replace(/\D/g, "").length >= 11;
-          if (!form.razaoSocial.trim() && !form.name.trim()) missing.push("Razão Social ou Nome do Tomador");
+          if (!form.razaoSocial.trim()) missing.push("Razão Social");
+          if (!form.name.trim()) missing.push("Nome do Tomador");
           if (!hasDoc) missing.push("CNPJ ou CPF");
-          const primaryEmail = (form.email || form.emailFinanceiro || form.emailContratual || "").trim();
-          if (!primaryEmail) missing.push("E-mail (qualquer um: principal, financeiro ou contratual)");
-          if (!form.address.trim()) missing.push("Endereço (rua, número)");
+          const primaryEmail = (form.email || form.emailFinanceiro || form.emailContratual || form.emailOperacional || "").trim();
+          if (!primaryEmail) missing.push("E-mail (qualquer um)");
+          if (!form.address.trim()) missing.push("Logradouro (rua/avenida)");
+          if (!form.addressNumber.trim()) missing.push("Número do endereço");
+          if (!form.bairro.trim()) missing.push("Bairro");
           if (!form.city.trim()) missing.push("Cidade");
-          else if (/^\d+$/.test(form.city.trim())) missing.push("Cidade (deve ser nome, não código numérico — ex.: \"Limeira\")");
-          if (!form.state.trim() || form.state.trim().length !== 2) missing.push("Estado (UF — 2 letras, ex.: SP)");
+          else if (/^\d+$/.test(form.city.trim())) missing.push("Cidade (deve ser nome, não código numérico — ex.: \"Navegantes\")");
+          if (!form.state.trim() || form.state.trim().length !== 2) missing.push("Estado (UF — 2 letras, ex.: SC)");
           if (form.zip.replace(/\D/g, "").length !== 8) missing.push("CEP (8 dígitos)");
           const isPJ = (form.cnpj || "").replace(/\D/g, "").length === 14;
           if (isPJ && !form.inscricaoMunicipal.trim()) missing.push("Inscrição Municipal (exigida pela prefeitura para tomador PJ)");
@@ -463,7 +473,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <p className="text-xs text-neutral-500 mt-1">Nome usado na NF, boletim, fatura e relatórios</p>
         </div>
         <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Razão Social</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Razão Social {form.emiteNf && <span className="text-red-600">*</span>}</label>
           <Input value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} data-testid="input-client-razao-social" />
           <p className="text-xs text-neutral-500 mt-1">Nome legal completo (usado em contratos)</p>
         </div>
@@ -627,39 +637,60 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Pessoa de Contato</label>
             <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} data-testid="input-client-contact" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mt-4">
+            <div className="md:col-span-8">
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Logradouro (Rua/Avenida) {form.emiteNf && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Ex.: Av. Brasil" data-testid="input-client-address" />
+            </div>
             <div className="md:col-span-2">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
-                Endereço {form.emiteNf && <span className="text-red-600">*</span>}
+                Número {form.emiteNf && <span className="text-red-600">*</span>}
               </label>
-              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Rua, número" data-testid="input-client-address" />
+              <Input value={form.addressNumber} onChange={(e) => setForm({ ...form, addressNumber: e.target.value })} placeholder="571" data-testid="input-client-address-number" />
             </div>
-            <div>
+            <div className="md:col-span-2">
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Complemento</label>
+              <Input value={form.addressComplement} onChange={(e) => setForm({ ...form, addressComplement: e.target.value })} placeholder="Sala 501" data-testid="input-client-address-complement" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
+                Bairro {form.emiteNf && <span className="text-red-600">*</span>}
+              </label>
+              <Input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} placeholder="Centro" data-testid="input-client-bairro" />
+            </div>
+            <div className="md:col-span-3">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
                 Cidade {form.emiteNf && <span className="text-red-600">*</span>}
               </label>
-              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Ex.: Limeira" data-testid="input-client-city" />
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Ex.: Navegantes" data-testid="input-client-city" />
               {form.emiteNf && /^\d+$/.test((form.city || "").trim()) && (
                 <p className="text-[10px] text-red-600 mt-1">Use o nome da cidade, não o código IBGE.</p>
               )}
             </div>
-            <div>
+            <div className="md:col-span-1">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
-                Estado (UF) {form.emiteNf && <span className="text-red-600">*</span>}
+                UF {form.emiteNf && <span className="text-red-600">*</span>}
               </label>
-              <Input value={form.state} maxLength={2} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) })} placeholder="SP" data-testid="input-client-state" />
+              <Input value={form.state} maxLength={2} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) })} placeholder="SC" data-testid="input-client-state" />
             </div>
-            <div>
+            <div className="md:col-span-6">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
                 Inscrição Municipal {form.emiteNf && (form.cnpj || "").replace(/\D/g, "").length === 14 && <span className="text-red-600">*</span>}
               </label>
               <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura" data-testid="input-client-inscricao-municipal" />
               <p className="text-[10px] text-neutral-500 mt-1">Exigida pela prefeitura para emitir NFS-e (tomador PJ)</p>
             </div>
+            <div className="md:col-span-6">
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Inscrição Estadual</label>
+              <Input value={form.inscricaoEstadual} onChange={(e) => setForm({ ...form, inscricaoEstadual: e.target.value })} placeholder="Nº na Sefaz (opcional)" data-testid="input-client-inscricao-estadual" />
+              <p className="text-[10px] text-neutral-500 mt-1">Opcional — usada apenas em NF-e de produto (ICMS)</p>
+            </div>
           </div>
           {form.emiteNf && (
             <div className="mt-4 p-3 rounded-md border border-amber-300 bg-amber-50 text-[11px] text-amber-900">
-              <b>Para emissão de NFS-e</b>, o Asaas exige: CNPJ/CPF, Razão Social ou Nome, e-mail, endereço completo (rua + nº), cidade (nome), UF, CEP (8 dígitos) e — para PJ — Inscrição Municipal. Sem qualquer um destes, a prefeitura recusa a nota.
+              <b>Para emissão de NFS-e via Asaas</b>, todos os campos marcados com <span className="text-red-600 font-bold">*</span> são obrigatórios: Razão Social, Nome do Tomador, CNPJ/CPF, e-mail, Logradouro, Número, Bairro, Cidade (nome), UF, CEP (8 dígitos) e Inscrição Municipal (para PJ). Sem qualquer um destes, a prefeitura recusa a nota.
             </div>
           )}
         </div>
