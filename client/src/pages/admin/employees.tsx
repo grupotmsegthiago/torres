@@ -3301,6 +3301,7 @@ export default function EmployeesPage() {
   const [docAlertOpen, setDocAlertOpen] = useState(false);
   const [empPage, setEmpPage] = useState(1);
   const [searchEmp, setSearchEmp] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ativo" | "inativo" | "todos">("ativo");
   const EMP_PER_PAGE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
@@ -3410,7 +3411,7 @@ export default function EmployeesPage() {
           })()}
 
           <Card className="bg-white border-neutral-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-neutral-200">
+            <div className="px-4 py-3 border-b border-neutral-200 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                 <Input
@@ -3421,18 +3422,51 @@ export default function EmployeesPage() {
                   data-testid="input-search-employees"
                 />
               </div>
+              {(() => {
+                const all = employees || [];
+                const counts = {
+                  ativo: all.filter(e => e.status === "ativo").length,
+                  inativo: all.filter(e => e.status !== "ativo").length,
+                  todos: all.length,
+                };
+                const tabs: Array<{ key: "ativo" | "inativo" | "todos"; label: string; cls: string }> = [
+                  { key: "ativo", label: "Ativos", cls: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-700 data-[active=true]:border-emerald-200" },
+                  { key: "inativo", label: "Inativos", cls: "data-[active=true]:bg-neutral-100 data-[active=true]:text-neutral-700 data-[active=true]:border-neutral-300" },
+                  { key: "todos", label: "Todos", cls: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-700 data-[active=true]:border-blue-200" },
+                ];
+                return (
+                  <div className="flex items-center gap-1.5">
+                    {tabs.map(t => (
+                      <button
+                        key={t.key}
+                        data-active={statusFilter === t.key}
+                        onClick={() => { setStatusFilter(t.key); setEmpPage(1); }}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 ${t.cls}`}
+                        data-testid={`tab-status-${t.key}`}
+                      >
+                        {t.label} <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             {isLoading ? (
               <div className="p-8 text-center text-neutral-400">Carregando...</div>
             ) : (employees || []).length === 0 ? (
               <div className="p-8 text-center text-neutral-400">Nenhum funcionário cadastrado</div>
             ) : (() => {
+              const byStatus = (employees || []).filter(e =>
+                statusFilter === "todos" ? true :
+                statusFilter === "ativo" ? e.status === "ativo" :
+                e.status !== "ativo"
+              );
               const filtered = searchEmp.trim()
-                ? (employees || []).filter(e => {
+                ? byStatus.filter(e => {
                     const s = searchEmp.toLowerCase();
                     return e.name?.toLowerCase().includes(s) || e.cpf?.toLowerCase().includes(s) || e.matricula?.toLowerCase().includes(s);
                   })
-                : (employees || []);
+                : byStatus;
               const totalEmpPages = Math.ceil(filtered.length / EMP_PER_PAGE);
               const safeEmpPage = Math.min(empPage, totalEmpPages || 1);
               const paginated = filtered.slice((safeEmpPage - 1) * EMP_PER_PAGE, safeEmpPage * EMP_PER_PAGE);
