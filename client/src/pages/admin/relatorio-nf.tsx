@@ -881,41 +881,64 @@ export default function RelatorioNFPage() {
 
       {/* Modal excluir registro */}
       <Dialog open={!!deleteModal} onOpenChange={open => { if (!open && !deleteRowMutation.isPending) setDeleteModal(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-700">
-              <Trash2 className="h-4 w-4" /> Excluir registro
-            </DialogTitle>
-            <DialogDescription>
-              {deleteModal?.source === "BOLETIM"
-                ? "O boletim será removido permanentemente do sistema. As ordens de serviço associadas voltam a ficar pendentes de aprovação."
-                : "A fatura será removida permanentemente. As ordens de serviço vinculadas serão desvinculadas e poderão ser refaturadas."}
-              {" "}Apenas a diretoria pode realizar esta exclusão.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteModal && (
-            <div className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-1">
-                <div><span className="text-slate-500">Tipo:</span> <strong>{deleteModal.source === "BOLETIM" ? "Boletim de medição" : "Fatura"}</strong></div>
-                <div><span className="text-slate-500">Cliente:</span> <strong>{deleteModal.clientName}</strong></div>
-                <div className="text-xs text-slate-600 truncate" title={deleteModal.description}>{deleteModal.description || "—"}</div>
-                <div><span className="text-slate-500">Valor:</span> <strong>{fmtBRL(deleteModal.value)}</strong></div>
+        <DialogContent className="max-w-lg p-0 overflow-hidden gap-0">
+          <div className="px-6 pt-6 pb-4 border-b border-slate-200 bg-gradient-to-br from-red-50 to-rose-50">
+            <DialogHeader className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-red-100 border border-red-200 flex items-center justify-center shrink-0">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <DialogTitle className="text-lg font-bold text-red-900 m-0">Excluir registro</DialogTitle>
               </div>
+              <DialogDescription className="text-sm text-slate-600 leading-relaxed">
+                {deleteModal?.source === "BOLETIM"
+                  ? "O boletim será removido permanentemente. As ordens de serviço associadas voltam a ficar pendentes de aprovação."
+                  : "A fatura será removida permanentemente. As ordens de serviço vinculadas serão desvinculadas e poderão ser refaturadas."}
+                <span className="block mt-1.5 text-xs font-semibold text-red-700">⚠ Apenas a diretoria pode realizar esta exclusão.</span>
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          {deleteModal && (
+            <div className="px-6 py-5 space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+                <div className="px-3 py-2 bg-white border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    {deleteModal.source === "BOLETIM" ? "Boletim de medição" : "Fatura"}
+                  </span>
+                  <span className="text-sm font-bold text-slate-900">{fmtBRL(deleteModal.value)}</span>
+                </div>
+                <div className="px-3 py-2.5 space-y-1.5 text-sm">
+                  <div className="font-semibold text-slate-900 truncate" title={deleteModal.clientName}>
+                    {deleteModal.clientName}
+                  </div>
+                  {deleteModal.description && (
+                    <div className="text-xs text-slate-600 leading-relaxed line-clamp-2" title={deleteModal.description}>
+                      {deleteModal.description}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
-                <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo (registrado no log)</label>
+                <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                  Motivo da exclusão <span className="text-slate-400 font-normal">(registrado no log)</span>
+                </label>
                 <Textarea
                   value={deleteModal.reason}
                   onChange={e => setDeleteModal({ ...deleteModal, reason: e.target.value })}
-                  placeholder="Ex.: boletim duplicado, gerado por engano"
-                  className="min-h-[60px] text-xs"
+                  placeholder="Ex.: boletim duplicado, gerado por engano…"
+                  className="min-h-[80px] text-sm resize-none"
                   maxLength={500}
                   data-testid="input-delete-reason"
                 />
+                <div className="text-[10px] text-slate-400 mt-1 text-right">{deleteModal.reason.length}/500</div>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteModal(null)} disabled={deleteRowMutation.isPending} data-testid="button-cancel-delete">
+
+          <DialogFooter className="px-6 py-4 bg-slate-50 border-t border-slate-200 sm:justify-between gap-2">
+            <Button variant="outline" onClick={() => setDeleteModal(null)} disabled={deleteRowMutation.isPending} data-testid="button-cancel-delete" className="min-w-[90px]">
               Voltar
             </Button>
             <Button
@@ -923,8 +946,9 @@ export default function RelatorioNFPage() {
               onClick={() => deleteModal && deleteRowMutation.mutate({ source: deleteModal.source, sourceId: deleteModal.sourceId, reason: deleteModal.reason })}
               disabled={deleteRowMutation.isPending || !deleteModal}
               data-testid="button-confirm-delete"
+              className="font-semibold"
             >
-              {deleteRowMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Excluindo…</> : <><Trash2 className="h-4 w-4 mr-1" /> Excluir definitivamente</>}
+              {deleteRowMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Excluindo…</> : <><Trash2 className="h-4 w-4 mr-1.5" /> Excluir definitivamente</>}
             </Button>
           </DialogFooter>
         </DialogContent>
