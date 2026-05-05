@@ -1167,20 +1167,42 @@ export function registerAsaasRoutes(app: Express) {
         console.log(`[asaas] NFS-e da fatura #${id} marcada como cancelada localmente. ${reason || ""}`);
       }
 
-      const { data: updated, error: updErr } = await supabaseAdmin.from("invoices").update({
+      // Se a NFS-e foi cancelada (definitivamente ou em processamento), cancela também a cobrança
+      // no Asaas — uma NF cancelada não pode ter pagamento pendente atrelado.
+      let paymentCanceled = false;
+      let paymentCancelMsg = "";
+      const isCancelStatus = ["CANCELED", "PROCESSING_CANCELLATION"].includes(cancelStatus);
+      if (isCancelStatus && invoice.asaas_payment_id && !["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(invoice.status)) {
+        try {
+          await asaasRequest("DELETE", `/payments/${invoice.asaas_payment_id}`);
+          paymentCanceled = true;
+          paymentCancelMsg = " Cobrança Asaas também cancelada.";
+          console.log(`[asaas] Cobrança ${invoice.asaas_payment_id} cancelada (NFS-e cancelada).`);
+        } catch (payErr: any) {
+          paymentCancelMsg = ` Atenção: NF cancelada mas cobrança Asaas não pôde ser cancelada (${payErr.message}). Cancele manualmente no painel Asaas.`;
+          console.error(`[asaas] Falha ao cancelar pagamento ${invoice.asaas_payment_id}: ${payErr.message}`);
+        }
+      } else if (isCancelStatus && invoice.asaas_payment_id) {
+        paymentCancelMsg = ` Cobrança NÃO foi cancelada porque o pagamento já foi recebido (status ${invoice.status}).`;
+      }
+
+      const updates: any = {
         nfse_status: cancelStatus,
         updated_at: new Date().toISOString(),
-      }).eq("id", id).select().single();
+      };
+      if (paymentCanceled) updates.status = "CANCELED";
+
+      const { data: updated, error: updErr } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
       if (updErr) throw updErr;
 
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "CANCELAR_NFSE", targetId: String(id), targetType: "invoice",
-        details: `NFS-e da fatura #${id} cancelada por ${user?.name || "diretoria"}. ${cancelMessage}`,
+        details: `NFS-e da fatura #${id} cancelada por ${user?.name || "diretoria"}. ${cancelMessage}${paymentCancelMsg}`,
         ipAddress: (req as any).ip,
       });
 
-      res.json({ success: true, message: cancelMessage, invoice: updated });
+      res.json({ success: true, message: cancelMessage + paymentCancelMsg, invoice: updated });
     } catch (err: any) {
       console.error("[asaas] Erro ao cancelar NFS-e:", err.message);
       res.status(500).json({ message: err.message });
