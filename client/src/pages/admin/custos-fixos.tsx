@@ -700,33 +700,6 @@ export default function CustosFixosPage() {
                       );
                     })}
                   </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 bg-muted/40 font-bold text-[11px]">
-                      <td className="py-2 px-1 sticky left-0 bg-muted/40 z-10">TOTAIS</td>
-                      <td className="py-2 px-1 text-right tabular-nums">{fmtBRL(rhSummary.breakdown.salarioProporcional ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-orange-700 tabular-nums">{fmtBRL(rhSummary.breakdown.periculosidade ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-indigo-700 tabular-nums">{fmtBRL(rhSummary.breakdown.horaExtra ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-violet-700 tabular-nums">{fmtBRL(rhSummary.breakdown.adicionalNoturno ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-blue-700 tabular-nums">{fmtBRL(rhSummary.breakdown.dsr ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-cyan-700 tabular-nums">{fmtBRL(rhSummary.breakdown.vr ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-teal-700 tabular-nums">{fmtBRL(rhSummary.breakdown.ajudaCusto ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-emerald-700 tabular-nums">{fmtBRL(rhSummary.breakdown.cesta ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-sky-700 tabular-nums">{fmtBRL(rhSummary.breakdown.vt ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-stone-600 tabular-nums">{fmtBRL(rhSummary.breakdown.outros ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-fuchsia-700 tabular-nums">{fmtBRL(rhSummary.breakdown.diarias ?? 0)}</td>
-                      <td className="py-2 px-1 text-right border-l-2 bg-emerald-50/50 dark:bg-emerald-950/25 tabular-nums">{fmtBRL(rhSummary.breakdown.totalBruto ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-rose-700 border-l tabular-nums">{fmtBRL(rhSummary.breakdown.inss ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-rose-700 tabular-nums">{fmtBRL(rhSummary.breakdown.irrf ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-amber-700 tabular-nums">{fmtBRL(rhSummary.breakdown.fgts ?? 0)}</td>
-                      <td className="py-2 px-1 text-right bg-rose-50/50 dark:bg-rose-950/25 tabular-nums">{fmtBRL(rhSummary.breakdown.liquidoFuncionario ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-green-700 border-l tabular-nums">{fmtBRL(rhSummary.breakdown.decimoTerceiro ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-yellow-700 tabular-nums">{fmtBRL((rhSummary.breakdown.ferias ?? 0) - (rhSummary.breakdown.provisaoTercoFerias ?? 0))}</td>
-                      <td className="py-2 px-1 text-right text-yellow-700 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoTercoFerias ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-amber-700 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoFGTSsobreFerias13 ?? 0)}</td>
-                      <td className="py-2 px-1 text-right text-rose-600 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoINSSsobreFerias13 ?? 0)}</td>
-                      <td className="py-2 px-1 text-right border-l-2 bg-indigo-100/70 dark:bg-indigo-900/40 text-indigo-900 dark:text-indigo-100 tabular-nums">{fmtBRL(rhSummary.monthly ?? 0)}</td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
 
