@@ -194,12 +194,10 @@ const menuSections: MenuSection[] = [
         adminOnly: true,
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
-          { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
-          { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
       },
     ],
