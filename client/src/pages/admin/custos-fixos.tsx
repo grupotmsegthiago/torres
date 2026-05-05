@@ -625,60 +625,131 @@ export default function CustosFixosPage() {
           {rhSummary && rhSummary.porAgente.length > 0 && (
             <Card className="p-4 mt-3">
               <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                <Users className="h-4 w-4" /> Custo Real por Agente — Folha 2025 (CLT)
+                <Users className="h-4 w-4" /> Custo Real por Agente — Folha 2025 (CLT) · Linha por funcionário
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-[11px]" data-testid="table-custo-agente-completo">
                   <thead>
-                    <tr className="border-b text-left text-[10px] text-muted-foreground uppercase">
-                      <th className="py-2 px-1.5 sticky left-0 bg-background">Agente</th>
-                      <th className="py-2 px-1.5 text-right" title="Salário Proporcional (cheio ÷ 30 × dias trab.)">Sal.Prop</th>
-                      <th className="py-2 px-1.5 text-right text-orange-700" title="Periculosidade (% sobre salário proporcional)">Peric</th>
-                      <th className="py-2 px-1.5 text-right text-indigo-700" title="Horas Extras (sal/h × 1,6 × horas)">H.Extra</th>
-                      <th className="py-2 px-1.5 text-right text-violet-700" title="Adicional Noturno (sal/h × 1,2 × horas)">Adic.Not</th>
-                      <th className="py-2 px-1.5 text-right text-blue-700" title="DSR sobre HE+AdicNot">DSR</th>
-                      <th className="py-2 px-1.5 text-right text-cyan-700" title="Refeição R$/dia × dias úteis">VR</th>
-                      <th className="py-2 px-1.5 text-right text-teal-700" title="Ajuda de Custo fixa">Ajuda</th>
-                      <th className="py-2 px-1.5 text-right font-bold border-l">Bruto</th>
-                      <th className="py-2 px-1.5 text-right text-rose-700 border-l" title="INSS progressivo">INSS</th>
-                      <th className="py-2 px-1.5 text-right text-rose-700" title="IRRF progressivo">IRRF</th>
-                      <th className="py-2 px-1.5 text-right text-amber-700" title="FGTS 8%">FGTS</th>
-                      <th className="py-2 px-1.5 text-right text-green-700 border-l" title="Provisão 13º (sal cheio ÷ 12)">13º</th>
-                      <th className="py-2 px-1.5 text-right text-yellow-700" title="Provisão Férias + 1/3">Férias</th>
-                      <th className="py-2 px-1.5 text-right font-bold border-l">Custo</th>
+                    <tr className="border-b-2 text-left text-[9px] text-muted-foreground uppercase">
+                      <th className="py-2 px-1 sticky left-0 bg-background z-10 min-w-[160px]">Agente</th>
+                      {/* VENCIMENTOS */}
+                      <th className="py-2 px-1 text-right" title="Salário Proporcional (cheio ÷ 30 × dias trab.)">Sal.Prop</th>
+                      <th className="py-2 px-1 text-right text-orange-700" title="Periculosidade 30%">Peric</th>
+                      <th className="py-2 px-1 text-right text-indigo-700" title="Horas Extras (sal/h × 1,6 × horas Ponto iD)">H.Extra</th>
+                      <th className="py-2 px-1 text-right text-violet-700" title="Adicional Noturno (sal/h × 1,2)">Adic.Not</th>
+                      <th className="py-2 px-1 text-right text-blue-700" title="DSR sobre HE+AdicNot">DSR</th>
+                      <th className="py-2 px-1 text-right text-cyan-700" title="Vale Refeição R$/dia × dias úteis">VR</th>
+                      <th className="py-2 px-1 text-right text-teal-700" title="Ajuda de Custo (cadastro Salário)">Ajuda</th>
+                      <th className="py-2 px-1 text-right text-emerald-700" title="Cesta Básica (CCT)">Cesta</th>
+                      <th className="py-2 px-1 text-right text-sky-700" title="Vale Transporte">VT</th>
+                      <th className="py-2 px-1 text-right text-stone-600" title="Outros benefícios">Outros</th>
+                      <th className="py-2 px-1 text-right text-fuchsia-700" title="Diárias do mês (lançamento manual)">Diárias</th>
+                      <th className="py-2 px-1 text-right font-bold border-l-2 bg-emerald-50/40 dark:bg-emerald-950/20">Bruto</th>
+                      {/* DEDUÇÕES */}
+                      <th className="py-2 px-1 text-right text-rose-700 border-l" title="INSS progressivo">INSS</th>
+                      <th className="py-2 px-1 text-right text-rose-700" title="IRRF progressivo">IRRF</th>
+                      <th className="py-2 px-1 text-right text-amber-700" title="FGTS 8% (custo empresa, não desconta)">FGTS</th>
+                      <th className="py-2 px-1 text-right font-bold bg-rose-50/40 dark:bg-rose-950/20" title="Líquido recebido pelo funcionário">Líquido</th>
+                      {/* PROVISÕES */}
+                      <th className="py-2 px-1 text-right text-green-700 border-l" title="Provisão 13º (sal cheio ÷ 12)">13º</th>
+                      <th className="py-2 px-1 text-right text-yellow-700" title="Provisão Férias">Férias</th>
+                      <th className="py-2 px-1 text-right text-yellow-700" title="Provisão 1/3 Férias">1/3</th>
+                      <th className="py-2 px-1 text-right text-amber-700" title="FGTS sobre 13º+Férias+1/3">FGTS-P</th>
+                      <th className="py-2 px-1 text-right text-rose-600" title="INSS sobre 13º+Férias+1/3">INSS-P</th>
+                      {/* CUSTO */}
+                      <th className="py-2 px-1 text-right font-bold border-l-2 bg-indigo-50/60 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-200">CUSTO TOTAL</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rhSummary.porAgente.map((a) => (
-                      <tr key={a.id} className={`border-b hover:bg-muted/30 ${a.semSalario ? "opacity-60" : ""}`} data-testid={`row-agent-${a.id}`}>
-                        <td className="py-2 px-1.5 font-medium sticky left-0 bg-background">
-                          {a.name}
-                          {a.semSalario && (
-                            <span className="ml-1 text-[9px] text-amber-600 font-semibold">(s/ salário)</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-1.5 text-right tabular-nums">{fmtBRL(a.salarioProporcional ?? a.base)}</td>
-                        <td className="py-2 px-1.5 text-right text-orange-700 dark:text-orange-400 tabular-nums">{fmtBRL(a.periculosidade ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-indigo-700 dark:text-indigo-400 tabular-nums">{(a.horaExtra ?? 0) > 0 ? fmtBRL(a.horaExtra) : "—"}</td>
-                        <td className="py-2 px-1.5 text-right text-violet-700 dark:text-violet-400 tabular-nums" data-testid={`text-agent-noturno-${a.id}`}>{(a.adicionalNoturno ?? 0) > 0 ? fmtBRL(a.adicionalNoturno) : "—"}</td>
-                        <td className="py-2 px-1.5 text-right text-blue-700 dark:text-blue-400 tabular-nums">{(a.dsr ?? 0) > 0 ? fmtBRL(a.dsr) : "—"}</td>
-                        <td className="py-2 px-1.5 text-right text-cyan-700 dark:text-cyan-400 tabular-nums">
-                          {fmtBRL(a.vrTotal)}
-                          <div className="text-[9px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
-                        </td>
-                        <td className="py-2 px-1.5 text-right text-teal-700 dark:text-teal-400 tabular-nums">{(a.ajudaCusto ?? 0) > 0 ? fmtBRL(a.ajudaCusto) : "—"}</td>
-                        <td className="py-2 px-1.5 text-right font-bold border-l tabular-nums">{fmtBRL(a.totalBruto ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-rose-700 dark:text-rose-400 border-l tabular-nums">{fmtBRL(a.inss ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-rose-700 dark:text-rose-400 tabular-nums">{fmtBRL(a.irrf ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-amber-700 dark:text-amber-400 tabular-nums">{fmtBRL(a.fgts ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-green-700 dark:text-green-400 border-l tabular-nums">{fmtBRL(a.decimoTerceiro ?? 0)}</td>
-                        <td className="py-2 px-1.5 text-right text-yellow-700 dark:text-yellow-400 tabular-nums">{fmtBRL((a.ferias ?? 0) + (a.provisaoTercoFerias ?? 0))}</td>
-                        <td className="py-2 px-1.5 text-right font-bold border-l tabular-nums">{fmtBRL(a.total)}</td>
-                      </tr>
-                    ))}
+                    {rhSummary.porAgente.map((a) => {
+                      const cell = (v: number, color = "") => (v ?? 0) > 0
+                        ? <span className={`tabular-nums ${color}`}>{fmtBRL(v)}</span>
+                        : <span className="text-neutral-300 dark:text-neutral-600 tabular-nums">R$ 0,00</span>;
+                      return (
+                        <tr key={a.id} className={`border-b hover:bg-muted/30 ${a.semSalario ? "opacity-60" : ""}`} data-testid={`row-agent-${a.id}`}>
+                          <td className="py-2 px-1 font-medium sticky left-0 bg-background z-10 truncate max-w-[180px]">
+                            {a.name}
+                            {a.semSalario && <span className="ml-1 text-[9px] text-amber-600 font-semibold">(s/ salário)</span>}
+                          </td>
+                          <td className="py-2 px-1 text-right tabular-nums">{fmtBRL(a.salarioProporcional ?? a.base)}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.periculosidade, "text-orange-700 dark:text-orange-400")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.horaExtra, "text-indigo-700 dark:text-indigo-400")}</td>
+                          <td className="py-2 px-1 text-right" data-testid={`text-agent-noturno-${a.id}`}>{cell(a.adicionalNoturno, "text-violet-700 dark:text-violet-400")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.dsr, "text-blue-700 dark:text-blue-400")}</td>
+                          <td className="py-2 px-1 text-right text-cyan-700 dark:text-cyan-400 tabular-nums">
+                            {fmtBRL(a.vrTotal)}
+                            <div className="text-[9px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
+                          </td>
+                          <td className="py-2 px-1 text-right">{cell(a.ajudaCusto, "text-teal-700 dark:text-teal-400")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.cesta, "text-emerald-700 dark:text-emerald-400")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.vt, "text-sky-700 dark:text-sky-400")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.outros, "text-stone-600 dark:text-stone-300")}</td>
+                          <td className="py-2 px-1 text-right">{cell(a.diarias, "text-fuchsia-700 dark:text-fuchsia-400")}</td>
+                          <td className="py-2 px-1 text-right font-bold border-l-2 bg-emerald-50/30 dark:bg-emerald-950/15 tabular-nums">{fmtBRL(a.totalBruto ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-rose-700 dark:text-rose-400 border-l tabular-nums">{fmtBRL(a.inss ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-rose-700 dark:text-rose-400 tabular-nums">{fmtBRL(a.irrf ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-amber-700 dark:text-amber-400 tabular-nums">{fmtBRL(a.fgts ?? 0)}</td>
+                          <td className="py-2 px-1 text-right font-bold bg-rose-50/30 dark:bg-rose-950/15 tabular-nums">{fmtBRL(a.liquidoFuncionario ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-green-700 dark:text-green-400 border-l tabular-nums">{fmtBRL(a.decimoTerceiro ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-yellow-700 dark:text-yellow-400 tabular-nums">{fmtBRL(a.ferias ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-yellow-700 dark:text-yellow-400 tabular-nums">{fmtBRL(a.provisaoTercoFerias ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-amber-700 dark:text-amber-400 tabular-nums">{fmtBRL(a.provisaoFGTSsobreFerias13 ?? 0)}</td>
+                          <td className="py-2 px-1 text-right text-rose-600 dark:text-rose-400 tabular-nums">{fmtBRL(a.provisaoINSSsobreFerias13 ?? 0)}</td>
+                          <td className="py-2 px-1 text-right font-bold border-l-2 bg-indigo-50/50 dark:bg-indigo-950/25 text-indigo-800 dark:text-indigo-200 tabular-nums">{fmtBRL(a.total)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 bg-muted/40 font-bold text-[11px]">
+                      <td className="py-2 px-1 sticky left-0 bg-muted/40 z-10">TOTAIS</td>
+                      <td className="py-2 px-1 text-right tabular-nums">{fmtBRL(rhSummary.breakdown.salarioProporcional ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-orange-700 tabular-nums">{fmtBRL(rhSummary.breakdown.periculosidade ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-indigo-700 tabular-nums">{fmtBRL(rhSummary.breakdown.horaExtra ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-violet-700 tabular-nums">{fmtBRL(rhSummary.breakdown.adicionalNoturno ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-blue-700 tabular-nums">{fmtBRL(rhSummary.breakdown.dsr ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-cyan-700 tabular-nums">{fmtBRL(rhSummary.breakdown.vr ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-teal-700 tabular-nums">{fmtBRL(rhSummary.breakdown.ajudaCusto ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-emerald-700 tabular-nums">{fmtBRL(rhSummary.breakdown.cesta ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-sky-700 tabular-nums">{fmtBRL(rhSummary.breakdown.vt ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-stone-600 tabular-nums">{fmtBRL(rhSummary.breakdown.outros ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-fuchsia-700 tabular-nums">{fmtBRL(rhSummary.breakdown.diarias ?? 0)}</td>
+                      <td className="py-2 px-1 text-right border-l-2 bg-emerald-50/50 dark:bg-emerald-950/25 tabular-nums">{fmtBRL(rhSummary.breakdown.totalBruto ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-rose-700 border-l tabular-nums">{fmtBRL(rhSummary.breakdown.inss ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-rose-700 tabular-nums">{fmtBRL(rhSummary.breakdown.irrf ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-amber-700 tabular-nums">{fmtBRL(rhSummary.breakdown.fgts ?? 0)}</td>
+                      <td className="py-2 px-1 text-right bg-rose-50/50 dark:bg-rose-950/25 tabular-nums">{fmtBRL(rhSummary.breakdown.liquidoFuncionario ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-green-700 border-l tabular-nums">{fmtBRL(rhSummary.breakdown.decimoTerceiro ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-yellow-700 tabular-nums">{fmtBRL((rhSummary.breakdown.ferias ?? 0) - (rhSummary.breakdown.provisaoTercoFerias ?? 0))}</td>
+                      <td className="py-2 px-1 text-right text-yellow-700 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoTercoFerias ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-amber-700 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoFGTSsobreFerias13 ?? 0)}</td>
+                      <td className="py-2 px-1 text-right text-rose-600 tabular-nums">{fmtBRL(rhSummary.breakdown.provisaoINSSsobreFerias13 ?? 0)}</td>
+                      <td className="py-2 px-1 text-right border-l-2 bg-indigo-100/70 dark:bg-indigo-900/40 text-indigo-900 dark:text-indigo-100 tabular-nums">{fmtBRL(rhSummary.monthly ?? 0)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
+
+              {/* Diagnóstico de cadastros faltantes */}
+              {(() => {
+                const semAjuda = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.ajudaCusto ?? 0) === 0).length;
+                const semHE = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.horaExtra ?? 0) === 0 && (a.adicionalNoturno ?? 0) === 0).length;
+                const semVT = rhSummary.porAgente.filter((a: any) => !a.semSalario && (a.vt ?? 0) === 0).length;
+                const totalAtivos = rhSummary.porAgente.filter((a: any) => !a.semSalario).length;
+                if (semAjuda + semHE + semVT === 0) return null;
+                return (
+                  <div className="mt-3 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded text-[11px] text-amber-900 dark:text-amber-200">
+                    <div className="font-bold mb-1 flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5" /> Campos não cadastrados (zerados):
+                    </div>
+                    <ul className="ml-5 list-disc space-y-0.5">
+                      {semAjuda > 0 && <li><b>Ajuda de Custo:</b> {semAjuda}/{totalAtivos} agentes — cadastre em <i>Funcionários → Salário → Ajuda de Custo Mensal</i></li>}
+                      {semVT > 0 && <li><b>Vale Transporte:</b> {semVT}/{totalAtivos} agentes — cadastre em <i>Funcionários → Salário → VT Mensal</i></li>}
+                      {semHE > 0 && <li><b>Horas Extras / Adicional Noturno:</b> {semHE}/{totalAtivos} agentes sem registro nos últimos 3 meses no Ponto iD/jornada</li>}
+                    </ul>
+                  </div>
+                );
+              })()}
               <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                 <div className="p-2 bg-muted/40 rounded">
                   <div className="text-muted-foreground uppercase font-semibold">Total Bruto</div>
