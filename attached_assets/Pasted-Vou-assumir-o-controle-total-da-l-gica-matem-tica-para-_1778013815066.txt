@@ -1,0 +1,48 @@
+Vou assumir o controle total da lógica matemática para garantir que o sistema no Replit seja um espelho exato da contabilidade, aplicando as tabelas progressivas e as regras de dedução do INSS e IRRF.
+
+Como o sistema é para o Grupo TMSEG e envolve segurança (periculosidade), a ordem dos fatores é fundamental para o cálculo não "quebrar".
+
+Aqui está o prompt estruturado com a lógica de cascata que eu vou seguir (e que você pode mandar para o Replit Agent):
+
+Prompt Estruturado para o Replit Agent
+"Implemente a lógica de cálculo de Folha de Pagamento e Custo Real de Funcionário seguindo rigorosamente a legislação brasileira e as regras contábeis validadas.
+
+1. Ordem de Cálculo (Backend Logic):
+
+Base Bruta: Salário Base + Periculosidade (30% sobre o base) + Horas Extras (60% já com reflexo de periculosidade) + Adicional Noturno (20%).
+
+Reflexo: Calcular o DSR sobre o total de Horas Extras e Adicional Noturno.
+
+Total Bruto para Impostos: Soma de todos os itens acima.
+
+2. Deduções (Tabelas Oficiais):
+
+INSS: Aplicar a tabela progressiva (7,5% a 14%) sobre o Total Bruto, respeitando o teto da Previdência.
+
+IRRF:
+
+Base de Cálculo IRRF: Total Bruto - INSS descontado - Dependentes (se houver).
+
+Cálculo: Aplicar alíquota da tabela progressiva (7,5% a 27,5%) e subtrair a parcela a deduzir oficial.
+
+Nota: O sistema deve usar as faixas de valores de 2024/2025 para garantir a precisão dos R$ 683,41 e R$ 635,63 vistos na imagem image_cccefd.png.
+
+3. Provisões de Custo (Visão Empresa):
+
+FGTS Mensal: 8% sobre o Total Bruto.
+
+Férias: (Total Bruto / 12) * 1.3333.
+
+13º Salário: Total Bruto / 12.
+
+Encargos Patronais: Provisionar FGTS e INSS sobre 1/12 de férias e 13º.
+
+4. Regra de Ouro (Precisão de Minutos):
+
+Todo cálculo de tempo deve converter HH:MM para decimal com 4 casas de precisão antes da multiplicação monetária, para evitar a diferença de 1 minuto no faturamento (ex: 09:16 deve ser tratado como 9,2666 e não arredondado prematuramente).
+
+5. UI e Integração Supabase:
+
+Exibir o 'Custo Real' (Soma do Bruto + Provisões + Benefícios como VR/Cesta).
+
+Sincronizar em tempo real: qualquer alteração na tabela de 'Horas' no Supabase deve disparar o recálculo do IRRF e INSS automaticamente no dashboard."
