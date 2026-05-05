@@ -338,6 +338,17 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // ─────── PAINEL DO MÊS (status hoje + horas mês) ───────
+  app.get("/api/control-id/painel-mes", requireAuth, async (req, res) => {
+    try {
+      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const data = await ctrl.buildPainelMes(monthYear);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── SYNC GLOBAL (admin) ───────
   app.post("/api/control-id/sync-all", requireAuth, requireAdminRole, async (_req, res) => {
     try {

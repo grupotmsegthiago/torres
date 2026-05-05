@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
-import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle } from "lucide-react";
 import type { Employee } from "@shared/schema";
 
 type Device = {
@@ -37,7 +37,7 @@ function formatDateTime(iso: string | null) {
 }
 
 export default function ControlIdPage() {
-  const [tab, setTab] = useState("aparelhos");
+  const [tab, setTab] = useState("painel");
   return (
     <AdminLayout>
       <div className="p-4 space-y-4 max-w-7xl mx-auto">
@@ -55,12 +55,14 @@ export default function ControlIdPage() {
             <TabsTrigger value="mapping" data-testid="tab-mapping"><Users className="w-3.5 h-3.5 mr-1" /> Mapping Funcionários</TabsTrigger>
             <TabsTrigger value="batidas" data-testid="tab-batidas"><ListChecks className="w-3.5 h-3.5 mr-1" /> Batidas</TabsTrigger>
             <TabsTrigger value="folgas" data-testid="tab-folgas"><CalendarDays className="w-3.5 h-3.5 mr-1" /> Folgas/Faltas</TabsTrigger>
+            <TabsTrigger value="painel" data-testid="tab-painel"><Gauge className="w-3.5 h-3.5 mr-1" /> Painel do Mês</TabsTrigger>
             <TabsTrigger value="folha" data-testid="tab-folha"><FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Folha de Ponto</TabsTrigger>
           </TabsList>
           <TabsContent value="aparelhos" className="mt-4"><DevicesTab /></TabsContent>
           <TabsContent value="mapping" className="mt-4"><MappingTab /></TabsContent>
           <TabsContent value="batidas" className="mt-4"><PunchesTab /></TabsContent>
           <TabsContent value="folgas" className="mt-4"><AbsencesTab /></TabsContent>
+          <TabsContent value="painel" className="mt-4"><PainelMesTab /></TabsContent>
           <TabsContent value="folha" className="mt-4"><FolhaTab /></TabsContent>
         </Tabs>
       </div>
@@ -893,6 +895,209 @@ function AbsencesTab() {
 }
 
 // ═════════════════════ FOLHA CONSOLIDADA ═════════════════════
+// ═════════════════════ PAINEL DO MÊS ═════════════════════
+type PainelRow = {
+  employeeId: number; name: string; role: string;
+  mapped: boolean;
+  hoursWorked: number; hoursLimit: number; hoursRemaining: number; percentUsed: number;
+  daysWorked: number;
+  todayStatus: "NAO_BATEU" | "EM_ANDAMENTO" | "EM_ABERTO" | "COMPLETO" | "AUSENCIA" | "NAO_MAPEADO" | "MES_PASSADO";
+  todayPunchCount: number;
+  openSinceMinutes: number | null;
+  lastPunchAt: string | null;
+  absenceType: string | null;
+};
+
+const STATUS_BADGE: Record<string, { label: string; cls: string; Icon: any }> = {
+  NAO_BATEU: { label: "Não bateu", cls: "bg-red-100 text-red-700 border-red-300", Icon: UserX },
+  EM_ANDAMENTO: { label: "Em andamento", cls: "bg-blue-100 text-blue-700 border-blue-300", Icon: PlayCircle },
+  EM_ABERTO: { label: "Ponto em aberto", cls: "bg-amber-100 text-amber-800 border-amber-400", Icon: Hourglass },
+  COMPLETO: { label: "Encerrou hoje", cls: "bg-emerald-100 text-emerald-700 border-emerald-300", Icon: CheckCircle2 },
+  AUSENCIA: { label: "Ausência", cls: "bg-purple-100 text-purple-700 border-purple-300", Icon: CalendarX },
+  NAO_MAPEADO: { label: "Sem mapeamento", cls: "bg-neutral-100 text-neutral-500 border-neutral-300", Icon: MinusCircle },
+  MES_PASSADO: { label: "—", cls: "bg-neutral-100 text-neutral-400 border-neutral-200", Icon: MinusCircle },
+};
+
+function fmtSinceMin(min: number | null): string {
+  if (min == null) return "";
+  if (min < 60) return `${min}min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
+function PainelMesTab() {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [filter, setFilter] = useState<"TODOS" | "ALERTAS" | "NAO_BATEU" | "EM_ABERTO" | "PERTO_LIMITE">("ALERTAS");
+  const [search, setSearch] = useState("");
+
+  const { data: rows = [], isLoading, refetch, isFetching } = useQuery<PainelRow[]>({
+    queryKey: ["/api/control-id/painel-mes", month],
+    queryFn: async () => {
+      const r = await authFetch(`/api/control-id/painel-mes?month=${month}`);
+      return r.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  const isCurrentMonth = month === new Date().toISOString().slice(0, 7);
+
+  const counts = useMemo(() => {
+    const c = { naoBateu: 0, emAberto: 0, emAndamento: 0, completo: 0, ausencia: 0, naoMapeado: 0, pertoLimite: 0 };
+    for (const r of rows) {
+      if (r.todayStatus === "NAO_BATEU") c.naoBateu++;
+      else if (r.todayStatus === "EM_ABERTO") c.emAberto++;
+      else if (r.todayStatus === "EM_ANDAMENTO") c.emAndamento++;
+      else if (r.todayStatus === "COMPLETO") c.completo++;
+      else if (r.todayStatus === "AUSENCIA") c.ausencia++;
+      else if (r.todayStatus === "NAO_MAPEADO") c.naoMapeado++;
+      if (r.percentUsed >= 90) c.pertoLimite++;
+    }
+    return c;
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (q && !r.name.toLowerCase().includes(q) && !(r.role || "").toLowerCase().includes(q)) return false;
+      if (filter === "TODOS") return true;
+      if (filter === "NAO_BATEU") return r.todayStatus === "NAO_BATEU";
+      if (filter === "EM_ABERTO") return r.todayStatus === "EM_ABERTO";
+      if (filter === "PERTO_LIMITE") return r.percentUsed >= 90;
+      if (filter === "ALERTAS") return r.todayStatus === "NAO_BATEU" || r.todayStatus === "EM_ABERTO" || r.percentUsed >= 90;
+      return true;
+    });
+  }, [rows, filter, search]);
+
+  return (
+    <div className="space-y-3">
+      <Card className="p-3 flex flex-wrap gap-2 items-center">
+        <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-painel-month" />
+        <Input placeholder="Buscar funcionário..." value={search} onChange={e => setSearch(e.target.value)} className="w-56 h-9 text-sm" data-testid="input-painel-search" />
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9" data-testid="button-painel-refresh">
+          <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} /> Atualizar
+        </Button>
+        <span className="ml-auto text-[11px] text-neutral-500">{rows.length} funcionário(s) ativo(s) · atualiza a cada 60s</span>
+      </Card>
+
+      {isCurrentMonth && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <ChipStat label="Não bateram" value={counts.naoBateu} cls="bg-red-50 border-red-300 text-red-700" Icon={UserX} active={filter === "NAO_BATEU"} onClick={() => setFilter(filter === "NAO_BATEU" ? "TODOS" : "NAO_BATEU")} />
+          <ChipStat label="Em aberto" value={counts.emAberto} cls="bg-amber-50 border-amber-400 text-amber-800" Icon={Hourglass} active={filter === "EM_ABERTO"} onClick={() => setFilter(filter === "EM_ABERTO" ? "TODOS" : "EM_ABERTO")} />
+          <ChipStat label="Em andamento" value={counts.emAndamento} cls="bg-blue-50 border-blue-300 text-blue-700" Icon={PlayCircle} />
+          <ChipStat label="Encerraram" value={counts.completo} cls="bg-emerald-50 border-emerald-300 text-emerald-700" Icon={CheckCircle2} />
+          <ChipStat label="Ausentes" value={counts.ausencia} cls="bg-purple-50 border-purple-300 text-purple-700" Icon={CalendarX} />
+          <ChipStat label="≥ 90% horas" value={counts.pertoLimite} cls="bg-orange-50 border-orange-400 text-orange-800" Icon={AlertTriangle} active={filter === "PERTO_LIMITE"} onClick={() => setFilter(filter === "PERTO_LIMITE" ? "TODOS" : "PERTO_LIMITE")} />
+        </div>
+      )}
+
+      <Card className="p-2 flex flex-wrap gap-1 items-center text-xs">
+        <span className="text-neutral-500 mr-1">Mostrar:</span>
+        {[
+          { v: "ALERTAS" as const, l: "Apenas alertas" },
+          { v: "TODOS" as const, l: "Todos" },
+          { v: "NAO_BATEU" as const, l: "Não bateram" },
+          { v: "EM_ABERTO" as const, l: "Ponto aberto" },
+          { v: "PERTO_LIMITE" as const, l: "Perto do limite" },
+        ].map(opt => (
+          <button
+            key={opt.v}
+            onClick={() => setFilter(opt.v)}
+            data-testid={`filter-${opt.v}`}
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition ${
+              filter === opt.v ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50"
+            }`}
+          >{opt.l}</button>
+        ))}
+      </Card>
+
+      {isLoading ? (
+        <p className="text-center text-sm text-neutral-400 py-8"><Loader2 className="w-5 h-5 animate-spin inline mr-1" /> Carregando...</p>
+      ) : filtered.length === 0 ? (
+        <Card className="p-8 text-center text-sm text-neutral-500">
+          <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-300 mb-2" />
+          <p>Nada para mostrar com esse filtro.</p>
+        </Card>
+      ) : (
+        <Card className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="table-painel">
+            <thead>
+              <tr className="border-b border-neutral-200 bg-neutral-50 text-xs text-neutral-600">
+                <th className="p-2 text-left font-semibold">Funcionário</th>
+                {isCurrentMonth && <th className="p-2 text-left font-semibold">Status hoje</th>}
+                <th className="p-2 text-left font-semibold">Última batida</th>
+                <th className="p-2 text-right font-semibold">Horas no mês</th>
+                <th className="p-2 text-left font-semibold w-[180px]">Limite (220h)</th>
+                <th className="p-2 text-right font-semibold">Falta</th>
+                <th className="p-2 text-center font-semibold">Dias</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r => {
+                const meta = STATUS_BADGE[r.todayStatus] || STATUS_BADGE.MES_PASSADO;
+                const pct = Math.min(100, r.percentUsed);
+                const barColor = pct >= 100 ? "bg-red-600" : pct >= 90 ? "bg-orange-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500";
+                return (
+                  <tr key={r.employeeId} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-painel-${r.employeeId}`}>
+                    <td className="p-2">
+                      <div className="font-medium text-neutral-800">{r.name}</div>
+                      <div className="text-[11px] text-neutral-500">{r.role}{!r.mapped && <span className="ml-2 text-neutral-400 italic">· não mapeado</span>}</div>
+                    </td>
+                    {isCurrentMonth && (
+                      <td className="p-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${meta.cls}`}>
+                          <meta.Icon className="w-3 h-3" /> {meta.label}
+                        </span>
+                        {r.todayStatus === "EM_ABERTO" && r.openSinceMinutes != null && (
+                          <div className="text-[10px] text-amber-700 mt-0.5">há {fmtSinceMin(r.openSinceMinutes)} sem fechar</div>
+                        )}
+                        {r.todayStatus === "AUSENCIA" && r.absenceType && (
+                          <div className="text-[10px] text-purple-700 mt-0.5">{r.absenceType}</div>
+                        )}
+                        {(r.todayStatus === "EM_ANDAMENTO" || r.todayStatus === "COMPLETO" || r.todayStatus === "EM_ABERTO") && (
+                          <div className="text-[10px] text-neutral-400 mt-0.5">{r.todayPunchCount} batida(s) hoje</div>
+                        )}
+                      </td>
+                    )}
+                    <td className="p-2 text-xs text-neutral-600">{r.lastPunchAt ? formatDateTime(r.lastPunchAt) : <span className="text-neutral-300">—</span>}</td>
+                    <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{r.hoursWorked.toFixed(2)}h</td>
+                    <td className="p-2">
+                      <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
+                        <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="text-[10px] text-neutral-500 mt-0.5">{pct.toFixed(0)}% de {r.hoursLimit}h</div>
+                    </td>
+                    <td className={`p-2 text-right font-semibold tabular-nums ${r.hoursRemaining < 0 ? "text-red-600" : r.hoursRemaining < 22 ? "text-orange-600" : "text-neutral-700"}`}>
+                      {r.hoursRemaining < 0 ? `+${Math.abs(r.hoursRemaining).toFixed(1)}h extra` : `${r.hoursRemaining.toFixed(1)}h`}
+                    </td>
+                    <td className="p-2 text-center text-xs text-neutral-500">{r.daysWorked}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ChipStat({ label, value, cls, Icon, active, onClick }: { label: string; value: number; cls: string; Icon: any; active?: boolean; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={`p-2 rounded-lg border ${cls} ${onClick ? "cursor-pointer hover:shadow-sm" : "cursor-default"} ${active ? "ring-2 ring-offset-1 ring-blue-500" : ""} transition text-left`}
+      data-testid={`stat-${label.toLowerCase().replace(/\s/g, "-")}`}
+    >
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide opacity-80">
+        <Icon className="w-3 h-3" /> {label}
+      </div>
+      <div className="text-2xl font-bold leading-none mt-1 tabular-nums">{value}</div>
+    </button>
+  );
+}
+
 function FolhaTab() {
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const [employeeId, setEmployeeId] = useState<string>("");

@@ -174,10 +174,7 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/employees", label: "Cadastro", icon: Users },
           { path: "/admin/control-id", label: "Ponto Control iD", icon: Clock },
-          { path: "/admin/timesheets", label: "Folha de Ponto (legado)", icon: Clock },
           { path: "/admin/holerites", label: "Holerites", icon: Receipt, adminOnly: true },
-          { path: "/admin/ponto-operacional", label: "Ponto Operacional", icon: Play },
-          { path: "/admin/jornada-diretoria", label: "Jornada", icon: Clock, adminOnly: true },
         ],
       },
     ],

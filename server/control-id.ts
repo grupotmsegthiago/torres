@@ -916,6 +916,146 @@ export async function syncAllDevices(): Promise<{ devices: number; totalSaved: n
  * Gera folha de ponto consolidada (por funcionário, por dia) a partir das batidas.
  * Para cada dia: 1ª batida = entrada, última = saída, intermediárias = almoço.
  */
+export async function buildPainelMes(monthYear: string): Promise<any[]> {
+  const [yyyy, mm] = monthYear.split("-").map(Number);
+  const monthStart = new Date(Date.UTC(yyyy, mm - 1, 1));
+  const monthEnd = new Date(Date.UTC(yyyy, mm, 1));
+
+  const todayBrt = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const isCurrentMonth = todayBrt.startsWith(monthYear);
+
+  const { data: emps } = await supabaseAdmin
+    .from("employees")
+    .select("id, name, role, status")
+    .eq("status", "ativo")
+    .order("name", { ascending: true });
+
+  if (!emps || emps.length === 0) return [];
+
+  const empIds = emps.map((e: any) => e.id);
+
+  const { data: maps } = await supabaseAdmin
+    .from("control_id_users_map")
+    .select("employee_id, ativo")
+    .in("employee_id", empIds);
+  const mappedSet = new Set(((maps || []) as any[]).filter(m => m.ativo).map(m => m.employee_id));
+
+  const { data: punches } = await supabaseAdmin
+    .from("control_id_punches")
+    .select("employee_id, punch_at")
+    .in("employee_id", empIds)
+    .gte("punch_at", monthStart.toISOString())
+    .lt("punch_at", monthEnd.toISOString())
+    .order("punch_at", { ascending: true });
+
+  const byEmp = new Map<number, any[]>();
+  for (const p of (punches || []) as any[]) {
+    if (!byEmp.has(p.employee_id)) byEmp.set(p.employee_id, []);
+    byEmp.get(p.employee_id)!.push(p);
+  }
+
+  // ausências do mês
+  const { data: absences } = await supabaseAdmin
+    .from("employee_absences")
+    .select("employee_id, type, start_date, end_date")
+    .in("employee_id", empIds)
+    .lte("start_date", monthEnd.toISOString().slice(0, 10))
+    .gte("end_date", monthStart.toISOString().slice(0, 10));
+
+  const absByEmp = new Map<number, any[]>();
+  for (const a of (absences || []) as any[]) {
+    if (!absByEmp.has(a.employee_id)) absByEmp.set(a.employee_id, []);
+    absByEmp.get(a.employee_id)!.push(a);
+  }
+
+  const HOURS_LIMIT = 220;
+  const OPEN_PUNCH_MIN_GAP_MIN = 30; // se única batida + > 30min atrás → ponto em aberto
+
+  const result: any[] = [];
+  for (const e of emps as any[]) {
+    const list = (byEmp.get(e.id) || []).sort((a, b) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
+    const dayMap = new Map<string, any[]>();
+    for (const p of list) {
+      const dt = new Date(p.punch_at);
+      const dayKey = new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+      if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
+      dayMap.get(dayKey)!.push(p);
+    }
+
+    let totalMin = 0;
+    let daysWorked = 0;
+    for (const [, dp] of Array.from(dayMap.entries())) {
+      const sorted = (dp as any[]).sort((a, b) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
+      if (sorted.length < 2) continue;
+      const inMs = new Date(sorted[0].punch_at).getTime();
+      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
+      let workedMin = (outMs - inMs) / 60000;
+      if (sorted.length >= 4) {
+        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
+        workedMin -= lunchMin;
+      }
+      if (workedMin > 0) {
+        totalMin += workedMin;
+        daysWorked++;
+      }
+    }
+
+    const todayPunches = isCurrentMonth ? (dayMap.get(todayBrt) || []) : [];
+    const lastPunchAt = list.length > 0 ? list[list.length - 1].punch_at : null;
+
+    // ausência ativa hoje?
+    const absToday = isCurrentMonth
+      ? (absByEmp.get(e.id) || []).find(a => a.start_date <= todayBrt && a.end_date >= todayBrt)
+      : null;
+
+    let todayStatus: string;
+    let openSinceMinutes: number | null = null;
+    if (!isCurrentMonth) {
+      todayStatus = "MES_PASSADO";
+    } else if (!mappedSet.has(e.id)) {
+      todayStatus = "NAO_MAPEADO";
+    } else if (absToday) {
+      todayStatus = "AUSENCIA";
+    } else if (todayPunches.length === 0) {
+      todayStatus = "NAO_BATEU";
+    } else if (todayPunches.length === 1) {
+      const lastMs = new Date(todayPunches[0].punch_at).getTime();
+      const gap = (Date.now() - lastMs) / 60000;
+      if (gap > OPEN_PUNCH_MIN_GAP_MIN) {
+        todayStatus = "EM_ABERTO";
+        openSinceMinutes = Math.round(gap);
+      } else {
+        todayStatus = "EM_ANDAMENTO";
+      }
+    } else if (todayPunches.length % 2 === 1) {
+      todayStatus = "EM_ABERTO";
+      const lastMs = new Date(todayPunches[todayPunches.length - 1].punch_at).getTime();
+      openSinceMinutes = Math.round((Date.now() - lastMs) / 60000);
+    } else {
+      todayStatus = "COMPLETO";
+    }
+
+    const hoursWorked = +(totalMin / 60).toFixed(2);
+    result.push({
+      employeeId: e.id,
+      name: e.name,
+      role: e.role,
+      mapped: mappedSet.has(e.id),
+      hoursWorked,
+      hoursLimit: HOURS_LIMIT,
+      hoursRemaining: +(HOURS_LIMIT - hoursWorked).toFixed(2),
+      percentUsed: +((hoursWorked / HOURS_LIMIT) * 100).toFixed(1),
+      daysWorked,
+      todayStatus,
+      todayPunchCount: todayPunches.length,
+      openSinceMinutes,
+      lastPunchAt,
+      absenceType: absToday ? absToday.type : null,
+    });
+  }
+  return result;
+}
+
 export async function buildFolhaPonto(employeeId: number, monthYear: string): Promise<any[]> {
   // monthYear = "2026-05"
   const [yyyy, mm] = monthYear.split("-").map(Number);
