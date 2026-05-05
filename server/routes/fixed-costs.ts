@@ -397,6 +397,23 @@ export function registerFixedCostsRoutes(app: Express) {
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
 
+    // Horas trabalhadas no mês (Control iD / timesheets) — agregado por agente
+    const horasMes = new Map<number, { normais: number; extras: number }>();
+    try {
+      const { data: ts } = await supabaseAdmin
+        .from("timesheets")
+        .select("employee_id, hours_worked, overtime")
+        .gte("date", from)
+        .lte("date", to);
+      for (const r of (ts || []) as any[]) {
+        const id = Number(r.employee_id);
+        if (!horasMes.has(id)) horasMes.set(id, { normais: 0, extras: 0 });
+        const slot = horasMes.get(id)!;
+        slot.normais += Number(r.hours_worked || 0);
+        slot.extras += Number(r.overtime || 0);
+      }
+    } catch { /* sem dados → barras zeradas */ }
+
     const porAgente: any[] = [];
     let totalMensal = 0;
     const acc = {
@@ -425,10 +442,20 @@ export function registerFixedCostsRoutes(app: Express) {
       acc.provisoes += b.totalProvisoes;
       acc.vt += b.vt; acc.cesta += b.cesta; acc.outros += b.outros; acc.diarias += b.diarias;
 
+      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
+      // Se "normais" exceder 220 (algumas integrações somam HE em hours_worked),
+      // realoca o excedente para "extras" automaticamente.
+      let horasNormaisMes = Math.min(220, hm.normais);
+      let horasExtrasMes = hm.extras + Math.max(0, hm.normais - 220);
+      // Cap visual em 100h de HE (até 320h totais)
+      if (horasExtrasMes > 100) horasExtrasMes = 100;
+
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
         total: r.total,
+        horasNormaisMes,
+        horasExtrasMes,
         // Vencimentos
         salarioProporcional: b.salarioProporcional,
         periculosidade: b.periculosidade,

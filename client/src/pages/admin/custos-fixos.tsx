@@ -85,6 +85,7 @@ interface RHSummary {
     vt: number; cesta: number; outros: number; diarias: number;
     horasMensais: number; custoHora: number;
     ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
+    horasNormaisMes?: number; horasExtrasMes?: number;
     semSalario?: boolean;
     // Folha 2025
     salarioProporcional: number; periculosidade: number; dsr: number; ajudaCusto: number;
@@ -664,9 +665,36 @@ export default function CustosFixosPage() {
                         : <span className="text-neutral-300 dark:text-neutral-600 tabular-nums">R$ 0,00</span>;
                       return (
                         <tr key={a.id} className={`border-b hover:bg-muted/30 ${a.semSalario ? "opacity-60" : ""}`} data-testid={`row-agent-${a.id}`}>
-                          <td className="py-2 px-1 font-medium sticky left-0 bg-background z-10 truncate max-w-[180px]">
-                            {a.name}
-                            {a.semSalario && <span className="ml-1 text-[9px] text-amber-600 font-semibold">(s/ salário)</span>}
+                          <td className="py-2 px-1 font-medium sticky left-0 bg-background z-10 max-w-[220px]">
+                            <div className="truncate">{a.name}{a.semSalario && <span className="ml-1 text-[9px] text-amber-600 font-semibold">(s/ salário)</span>}</div>
+                            {(() => {
+                              const hn = a.horasNormaisMes ?? 0;
+                              const he = a.horasExtrasMes ?? 0;
+                              const pctN = Math.min(100, (hn / 220) * 100);
+                              const pctE = Math.min(100, (he / 100) * 100);
+                              return (
+                                <div className="mt-1 grid grid-cols-2 gap-1.5">
+                                  <div title={`Horas normais (Control iD): ${hn.toFixed(1)}h / 220h`} data-testid={`progress-horas-normais-${a.id}`}>
+                                    <div className="flex items-center justify-between text-[9px] leading-none mb-0.5">
+                                      <span className="text-muted-foreground font-semibold">Normal</span>
+                                      <span className="tabular-nums font-mono text-[8.5px]">{hn.toFixed(0)}/220h</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+                                      <div className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all" style={{ width: `${pctN}%` }} />
+                                    </div>
+                                  </div>
+                                  <div title={`Horas extras: ${he.toFixed(1)}h / 100h (até 320h totais)`} data-testid={`progress-horas-extras-${a.id}`}>
+                                    <div className="flex items-center justify-between text-[9px] leading-none mb-0.5">
+                                      <span className="text-muted-foreground font-semibold">Extra</span>
+                                      <span className="tabular-nums font-mono text-[8.5px]">{he.toFixed(0)}/100h</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+                                      <div className={`h-full transition-all ${he >= 100 ? "bg-rose-500 dark:bg-rose-400" : he > 60 ? "bg-amber-500 dark:bg-amber-400" : "bg-indigo-500 dark:bg-indigo-400"}`} style={{ width: `${pctE}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="py-2 px-1 text-right tabular-nums">{fmtBRL(a.salarioProporcional ?? a.base)}</td>
                           <td className="py-2 px-1 text-right">{cell(a.periculosidade, "text-orange-700 dark:text-orange-400")}</td>
