@@ -24,8 +24,8 @@ const CCT_SP_2025 = {
   salarioBase: 2432.50,
   periculosidadePct: 30,
   get periculosidade() { return this.salarioBase * (this.periculosidadePct / 100); },
-  valeRefeicaoDia: 40.00,
-  cestaBasica: 208.45,
+  valeRefeicaoDia: 43.00,
+  cestaBasica: 200.00,
   diasUteisMes: 22,
   encargosSociaisPct: 80,
   horaExtraValor: 22.99,
@@ -2095,7 +2095,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
                   <div>
                     <div className="text-xs font-semibold text-neutral-800">Vale Refeição</div>
-                    <div className="text-[10px] text-neutral-400 mt-0.5">R$ {CCT_SP_2025.valeRefeicaoDia}/dia x {CCT_SP_2025.diasUteisMes}d{propTag}</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">R$ {((summary.vencimentos.valeRefeicao || 0) / Math.max(1, summary.diasUteis || 1)).toFixed(2).replace('.', ',')}/dia × {summary.diasUteis || 0} dias úteis{propTag}</div>
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.valeRefeicao)}</span>
                 </div>

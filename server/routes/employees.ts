@@ -286,7 +286,7 @@ import type { Express } from "express";
         .order("effective_date", { ascending: false }).limit(1);
       const sal: any = salRows?.[0] || {};
 
-      const CCT_FALLBACK = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 208.45 };
+      const CCT_FALLBACK = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 200.00 };
       const baseSalary = Number(sal.base_salary || CCT_FALLBACK.salarioBase);
       const periculosidadePct = Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100;
       const vrDiario = Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia);
