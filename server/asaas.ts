@@ -249,11 +249,13 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     | "NF_CANCELADA"
     | "PAGO"
     | "VENCIDO"
+    | "AGUARDANDO_PAGAMENTO"
     | "OUTRO";
 
-  export function normalizeInvoiceStatus(invoice: any): NormalizedNfStatus {
+  export function normalizeInvoiceStatus(invoice: any, opts?: { emiteNf?: boolean }): NormalizedNfStatus {
     const payStatus = String(invoice?.status || "").toUpperCase();
     const nfStatus = String(invoice?.nfse_status || "").toUpperCase();
+    const emiteNf = opts?.emiteNf !== false; // padrão true se não informado
 
     if (["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH"].includes(payStatus)) return "PAGO";
     if (nfStatus.includes("CANCEL")) return "NF_CANCELADA";
@@ -262,6 +264,9 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(nfStatus)) return "NF_PROCESSANDO";
     if (["CANCELLED", "CANCELED"].includes(payStatus)) return "NF_CANCELADA";
     if (payStatus === "OVERDUE") return "VENCIDO";
+    // Cliente isento de NF: faturas em aberto ficam como "Aguardando pagamento"
+    // (não faz sentido falar em NF emitida/autorizada).
+    if (!emiteNf) return "AGUARDANDO_PAGAMENTO";
     return "AUTORIZADO";
   }
 
@@ -2386,14 +2391,14 @@ export function registerAsaasRoutes(app: Express) {
           ...invClientIds,
           ...openInvClientIds,
         ])) as number[];
-        const clientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
+        const clientMap = new Map<number, { name: string; cpfCnpj: string | null; emiteNf: boolean }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, name, cnpj, cpf")
+            .select("id, name, cnpj, cpf, emite_nf")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null });
+            clientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false });
           }
         }
 
@@ -2439,8 +2444,8 @@ export function registerAsaasRoutes(app: Express) {
 
         // FAT — uma linha por invoice (valor = invoice.value real cobrado)
         for (const { inv, bills } of fatGroups.values()) {
-          const ns = normalizeInvoiceStatus(inv);
           const cli = clientMap.get(inv.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
+          const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
           const earliest = bills.map(b => b.data_missao).sort()[0];
           rows.push({
             id: `INV-${inv.id}`,
@@ -2485,8 +2490,8 @@ export function registerAsaasRoutes(app: Express) {
           if (fatGroups.has(inv.id)) continue;
           if (seenExtra.has(inv.id)) continue;
           seenExtra.add(inv.id);
-          const ns = normalizeInvoiceStatus(inv);
           const cli = clientMap.get(inv.client_id);
+          const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
           rows.push({
             id: `INV-${inv.id}`,
             source: "INVOICE",
@@ -2602,7 +2607,7 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
+        const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "AGUARDANDO_PAGAMENTO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
         const totals: Record<string, { count: number; value: number }> = {};
         for (const st of STATUSES) {
           const subset = rows.filter(r => r.normalizedStatus === st);

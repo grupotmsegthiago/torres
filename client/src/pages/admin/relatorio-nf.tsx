@@ -19,7 +19,7 @@ import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
   | "AGUARDANDO_BOLETIM"
-  | "PENDENTE_APROVACAO" | "AUTORIZADO" | "NF_PROCESSANDO" | "NF_EMITIDA"
+  | "PENDENTE_APROVACAO" | "AUTORIZADO" | "AGUARDANDO_PAGAMENTO" | "NF_PROCESSANDO" | "NF_EMITIDA"
   | "NF_ERRO" | "NF_CANCELADA" | "PAGO" | "VENCIDO" | "OUTRO";
 
 type RelatorioRow = {
@@ -74,6 +74,7 @@ const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: st
   AGUARDANDO_BOLETIM: { label: "Sem boletim",       cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
   AUTORIZADO:         { label: "Autorizado",        cls: "text-violet-700",  bg: "bg-violet-50 border-violet-200",     icon: CheckCircle2 },
+  AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
   NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   NF_EMITIDA:         { label: "NF emitida",        cls: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200",   icon: FileText },
   NF_ERRO:            { label: "NF com erro",       cls: "text-red-700",     bg: "bg-red-50 border-red-200",           icon: AlertTriangle },
@@ -296,6 +297,7 @@ export default function RelatorioNFPage() {
     { key: "AGUARDANDO_BOLETIM", label: "Sem boletim",       icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
     { key: "AUTORIZADO",         label: "Autorizado",        icon: CheckCircle2,   cls: "from-violet-500 to-violet-700 text-white" },
+    { key: "AGUARDANDO_PAGAMENTO", label: "Aguard. pagto (s/ NF)", icon: Banknote, cls: "from-indigo-500 to-indigo-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
     { key: "VENCIDO",            label: "Vencido",           icon: AlertOctagon,   cls: "from-red-600 to-red-800 text-white" },
@@ -373,6 +375,7 @@ export default function RelatorioNFPage() {
                   <SelectItem value="AGUARDANDO_BOLETIM">Sem boletim</SelectItem>
                   <SelectItem value="PENDENTE_APROVACAO">Aguardando aprovação</SelectItem>
                   <SelectItem value="AUTORIZADO">Autorizado</SelectItem>
+                  <SelectItem value="AGUARDANDO_PAGAMENTO">Aguard. pagto (sem NF)</SelectItem>
                   <SelectItem value="NF_PROCESSANDO">NF processando</SelectItem>
                   <SelectItem value="NF_EMITIDA">NF emitida</SelectItem>
                   <SelectItem value="PAGO">Pago</SelectItem>
