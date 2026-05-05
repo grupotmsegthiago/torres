@@ -208,8 +208,8 @@ export default function BalancoGerencialPage() {
     refetchInterval: 600_000,
   });
 
-  // Custos de RH (folha cct) — usado para o cálculo da meta de faturamento real
-  const { data: rhSummary } = useQuery<{ monthly: number }>({
+  // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
+  const { data: rhSummary } = useQuery<{ monthly: number; daily: number; agentCount: number }>({
     queryKey: ["/api/fixed-costs/rh-summary"],
     refetchInterval: 600_000,
   });
@@ -344,13 +344,20 @@ export default function BalancoGerencialPage() {
     };
   }, [data, range]);
 
+  // RH usa a MESMA folha real da tela "Custos Fixos" (engine calcularFolha
+  // que considera salário cadastrado, INSS/IRRF/FGTS, 13º, férias, provisões).
+  // Rateia o mensal pelo período. Fallback: fórmula CCT antiga se a API não respondeu.
   const provisaoRH = useMemo(() => {
+    const mensalReal = Number(rhSummary?.monthly || 0);
+    if (mensalReal > 0) return (mensalReal / 30) * daysInPeriod;
     return CCT.custoDiario * activeAgentCount * daysInPeriod;
-  }, [activeAgentCount, daysInPeriod]);
+  }, [rhSummary, activeAgentCount, daysInPeriod]);
 
   const provisaoDiaria = useMemo(() => {
+    const mensalReal = Number(rhSummary?.monthly || 0);
+    if (mensalReal > 0) return mensalReal / 30;
     return CCT.custoDiario * activeAgentCount;
-  }, [activeAgentCount]);
+  }, [rhSummary, activeAgentCount]);
 
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
@@ -622,14 +629,14 @@ export default function BalancoGerencialPage() {
                   <div className="mt-3">
                     <div
                       className="flex items-center justify-between mb-1"
-                      title="Provisão CCT: estimativa contratual baseada em custo diário CCT × agentes ativos × dias do período"
+                      title="Folha real: mesmo cálculo da tela Custos Fixos (engine calcularFolha com salário cadastrado, INSS/IRRF/FGTS, 13º, férias e provisões)"
                     >
-                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (Provisão CCT)</span>
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (Folha Real)</span>
                       <span className="text-xs font-mono font-bold text-amber-700">{fmt(totals.provisaoRH)}</span>
                     </div>
                     <div className="space-y-0.5 pl-2 border-l-2 border-amber-100">
                       <Row
-                        label={`Provisão CCT (${activeAgentCount} ag. × ${daysInPeriod}d)`}
+                        label={`Folha mensal real ÷ 30 × ${daysInPeriod}d (${rhSummary?.agentCount ?? activeAgentCount} ag.)`}
                         value={fmt(totals.provisaoRH)}
                         muted
                       />
