@@ -1119,12 +1119,12 @@ export async function buildEspelhoRhid(employeeId: number, fromYmd: string, toYm
 }
 
 export async function buildPainelMes(monthYear: string): Promise<any[]> {
-  const [yyyy, mm] = monthYear.split("-").map(Number);
-  const monthStart = new Date(Date.UTC(yyyy, mm - 1, 1));
-  const monthEnd = new Date(Date.UTC(yyyy, mm, 1));
+  // ciclo fechamento RHID
+  const { start: monthStart, end: monthEnd } = monthToFechamento(monthYear);
 
   const todayBrt = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
-  const isCurrentMonth = todayBrt.startsWith(monthYear);
+  const todayMs = Date.now();
+  const isCurrentMonth = todayMs >= monthStart.getTime() && todayMs < monthEnd.getTime();
 
   const { data: emps } = await supabaseAdmin
     .from("employees")
@@ -1258,11 +1258,22 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   return result;
 }
 
-export async function buildFolhaPonto(employeeId: number, monthYear: string): Promise<any[]> {
-  // monthYear = "2026-05"
+/**
+ * Converte um mês "YYYY-MM" no ciclo de fechamento RHID (dia 26 do mês anterior
+ * até dia 25 do mês informado). Clamp inferior em 2026-03-01 (início dos dados).
+ */
+export function monthToFechamento(monthYear: string): { start: Date; end: Date } {
   const [yyyy, mm] = monthYear.split("-").map(Number);
-  const start = new Date(Date.UTC(yyyy, mm - 1, 1));
-  const end = new Date(Date.UTC(yyyy, mm, 1));
+  let start = new Date(Date.UTC(yyyy, mm - 2, 26)); // dia 26 do mês anterior
+  const end = new Date(Date.UTC(yyyy, mm - 1, 26)); // exclusivo: 00:00 de 26 do mês = fim do dia 25
+  const minStart = new Date(Date.UTC(2026, 2, 1)); // 01/03/2026
+  if (start.getTime() < minStart.getTime()) start = minStart;
+  return { start, end };
+}
+
+export async function buildFolhaPonto(employeeId: number, monthYear: string): Promise<any[]> {
+  // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
+  const { start, end } = monthToFechamento(monthYear);
 
   const { data: punches } = await supabaseAdmin
     .from("control_id_punches")
