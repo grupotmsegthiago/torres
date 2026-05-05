@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
-import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText, BarChart3 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import type { Employee } from "@shared/schema";
 
 type Device = {
@@ -1206,7 +1207,7 @@ function FolhaTab() {
       )}
 
       {!employeeId ? (
-        <Card className="p-8 text-center text-sm text-neutral-400 no-print">Selecione um funcionário para ver a folha consolidada das batidas Control iD.</Card>
+        <FolhaOverview month={month} onSelect={(id) => setEmployeeId(String(id))} />
       ) : isLoading ? (
         <p className="text-center text-sm text-neutral-400 py-8 no-print">Carregando...</p>
       ) : folha.length === 0 ? (
@@ -1308,6 +1309,218 @@ function FolhaTab() {
       {batchOpen && (
         <BatchPrintDialog month={month} employees={employees} onClose={() => setBatchOpen(false)} />
       )}
+    </div>
+  );
+}
+
+type OverviewRow = {
+  employeeId: number; name: string; role: string | null; matricula: string | null;
+  hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number;
+  percentUsed: number; daysWorked: number; baseSalary: number;
+  custoBase: number; custoExtra: number; custoTotalEstimado: number; custoComEncargos: number; hasSalary: boolean;
+};
+
+function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: number) => void }) {
+  const { data: rows = [], isLoading } = useQuery<OverviewRow[]>({
+    queryKey: ["/api/control-id/folha-overview", month],
+    queryFn: async () => {
+      const r = await authFetch(`/api/control-id/folha-overview?month=${month}`);
+      return r.json();
+    },
+  });
+
+  if (isLoading) return <Card className="p-8 text-center text-sm text-neutral-400 no-print"><Loader2 className="w-5 h-5 mx-auto animate-spin mb-2" />Calculando visão geral...</Card>;
+
+  const totals = rows.reduce((acc, r) => ({
+    funcionarios: acc.funcionarios + 1,
+    comBatidas: acc.comBatidas + (r.daysWorked > 0 ? 1 : 0),
+    horas: acc.horas + r.hoursWorked,
+    horaExtra: acc.horaExtra + r.horaExtra,
+    custoBase: acc.custoBase + r.custoBase,
+    custoExtra: acc.custoExtra + r.custoExtra,
+    custoTotal: acc.custoTotal + r.custoTotalEstimado,
+    custoEncargos: acc.custoEncargos + r.custoComEncargos,
+    semSalario: acc.semSalario + (r.hasSalary ? 0 : 1),
+    semBatidas: acc.semBatidas + (r.daysWorked === 0 ? 1 : 0),
+    acimaLimite: acc.acimaLimite + (r.percentUsed >= 100 ? 1 : 0),
+  }), { funcionarios: 0, comBatidas: 0, horas: 0, horaExtra: 0, custoBase: 0, custoExtra: 0, custoTotal: 0, custoEncargos: 0, semSalario: 0, semBatidas: 0, acimaLimite: 0 });
+
+  const chartData = rows
+    .filter(r => r.hoursWorked > 0)
+    .slice(0, 15)
+    .map(r => ({
+      name: r.name.split(" ").slice(0, 2).join(" "),
+      fullName: r.name,
+      horas: r.hoursWorked,
+      extra: r.horaExtra,
+      pct: r.percentUsed,
+      employeeId: r.employeeId,
+    }));
+
+  const custoChartData = rows
+    .filter(r => r.custoTotalEstimado > 0)
+    .sort((a, b) => b.custoTotalEstimado - a.custoTotalEstimado)
+    .slice(0, 10)
+    .map(r => ({
+      name: r.name.split(" ").slice(0, 2).join(" "),
+      fullName: r.name,
+      base: r.custoBase,
+      extra: r.custoExtra,
+      employeeId: r.employeeId,
+    }));
+
+  const statusDist = [
+    { name: "Sem batidas", value: totals.semBatidas, color: "#9ca3af" },
+    { name: "Trabalhando (<70%)", value: rows.filter(r => r.daysWorked > 0 && r.percentUsed < 70).length, color: "#10b981" },
+    { name: "Próximo (70-90%)", value: rows.filter(r => r.percentUsed >= 70 && r.percentUsed < 90).length, color: "#f59e0b" },
+    { name: "Crítico (90-100%)", value: rows.filter(r => r.percentUsed >= 90 && r.percentUsed < 100).length, color: "#f97316" },
+    { name: "Acima do limite (HE)", value: totals.acimaLimite, color: "#dc2626" },
+  ].filter(s => s.value > 0);
+
+  return (
+    <div className="space-y-3 no-print">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <StatCard title="Funcionários ativos" value={String(totals.funcionarios)} sub={`${totals.comBatidas} com batidas no mês`} Icon={Users} color="blue" />
+        <StatCard title="Horas totais" value={`${totals.horas.toFixed(1)}h`} sub={`${totals.horaExtra > 0 ? `+${totals.horaExtra.toFixed(1)}h extras` : "Sem horas extras"}`} Icon={Clock} color={totals.horaExtra > 0 ? "orange" : "blue"} />
+        <StatCard title="Custo estimado" value={fmtBRL(totals.custoTotal)} sub={`Base ${fmtBRL(totals.custoBase)} + HE ${fmtBRL(totals.custoExtra)}`} Icon={DollarSign} color="emerald" />
+        <StatCard title="Custo c/ encargos" value={fmtBRL(totals.custoEncargos)} sub={totals.semSalario > 0 ? `${totals.semSalario} sem salário cadastrado` : "Inclui encargos sociais"} Icon={TrendingUp} color={totals.semSalario > 0 ? "amber" : "emerald"} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <Card className="p-3 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-blue-600" />
+            <h3 className="text-sm font-bold text-neutral-700">Horas trabalhadas por funcionário (top 15)</h3>
+          </div>
+          {chartData.length === 0 ? (
+            <div className="text-center text-xs text-neutral-400 py-12">Sem batidas no período.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 28)}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 30, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+                <XAxis type="number" stroke="#6b7280" fontSize={11} />
+                <YAxis type="category" dataKey="name" stroke="#374151" fontSize={11} width={120} />
+                <RTooltip
+                  formatter={(v: any, key: any, item: any) => key === "horas" ? [`${(v as number).toFixed(2)}h (${item.payload.pct.toFixed(0)}%)`, "Horas"] : [`${(v as number).toFixed(2)}h`, "Hora extra"]}
+                  labelFormatter={(label, items: any[]) => items?.[0]?.payload?.fullName || label}
+                />
+                <Bar dataKey="horas" fill="#3b82f6" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d: any) => onSelect(d.employeeId)}>
+                  {chartData.map((d, i) => (
+                    <Cell key={i} fill={d.pct >= 100 ? "#dc2626" : d.pct >= 90 ? "#f97316" : d.pct >= 70 ? "#f59e0b" : "#3b82f6"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </Card>
+
+        <Card className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Gauge className="w-4 h-4 text-orange-600" />
+            <h3 className="text-sm font-bold text-neutral-700">Distribuição de status</h3>
+          </div>
+          {statusDist.length === 0 ? (
+            <div className="text-center text-xs text-neutral-400 py-12">Sem dados.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={statusDist} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={(d: any) => d.value}>
+                  {statusDist.map((s, i) => <Cell key={i} fill={s.color} />)}
+                </Pie>
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <RTooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </Card>
+      </div>
+
+      {custoChartData.length > 0 && (
+        <Card className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-sm font-bold text-neutral-700">Custo estimado por funcionário (top 10)</h3>
+          </div>
+          <ResponsiveContainer width="100%" height={Math.max(220, custoChartData.length * 32)}>
+            <BarChart data={custoChartData} layout="vertical" margin={{ top: 4, right: 30, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+              <XAxis type="number" stroke="#6b7280" fontSize={11} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(1)}k`} />
+              <YAxis type="category" dataKey="name" stroke="#374151" fontSize={11} width={120} />
+              <RTooltip
+                formatter={(v: any) => fmtBRL(v as number)}
+                labelFormatter={(label, items: any[]) => items?.[0]?.payload?.fullName || label}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="base" stackId="c" fill="#10b981" name="Salário base" cursor="pointer" onClick={(d: any) => onSelect(d.employeeId)} />
+              <Bar dataKey="extra" stackId="c" fill="#f97316" name="Hora extra" cursor="pointer" onClick={(d: any) => onSelect(d.employeeId)} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      <Card>
+        <div className="p-2 border-b bg-neutral-50 flex items-center gap-2">
+          <ListChecks className="w-4 h-4 text-neutral-600" />
+          <h3 className="text-sm font-bold text-neutral-700">Ranking detalhado · {new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</h3>
+          <span className="text-xs text-neutral-400 ml-auto">Clique numa linha pra abrir o espelho</span>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-neutral-50/50 text-xs text-neutral-600">
+              <th className="p-2 text-left">Funcionário</th>
+              <th className="p-2 text-center">Dias</th>
+              <th className="p-2 text-right">Horas</th>
+              <th className="p-2 text-center w-32">% / Limite</th>
+              <th className="p-2 text-right">H. Extra</th>
+              <th className="p-2 text-right">Salário Base</th>
+              <th className="p-2 text-right">Custo Total</th>
+              <th className="p-2 text-right">Com Encargos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const barColor = r.percentUsed >= 100 ? "bg-red-600" : r.percentUsed >= 90 ? "bg-orange-500" : r.percentUsed >= 70 ? "bg-amber-400" : "bg-emerald-500";
+              return (
+                <tr key={r.employeeId} className="border-b border-neutral-100 hover:bg-blue-50/40 cursor-pointer" onClick={() => onSelect(r.employeeId)} data-testid={`row-overview-${r.employeeId}`}>
+                  <td className="p-2 font-medium">
+                    {r.name}
+                    {r.role && <span className="text-xs text-neutral-400 ml-2">· {r.role}</span>}
+                    {!r.hasSalary && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">sem salário</span>}
+                  </td>
+                  <td className="p-2 text-center text-xs text-neutral-500">{r.daysWorked}</td>
+                  <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{r.hoursWorked.toFixed(2)}h</td>
+                  <td className="p-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-neutral-200 rounded-full h-1.5 overflow-hidden">
+                        <div className={`h-full ${barColor}`} style={{ width: `${Math.min(100, r.percentUsed)}%` }} />
+                      </div>
+                      <span className="text-[10px] tabular-nums text-neutral-500 w-10 text-right">{r.percentUsed.toFixed(0)}%</span>
+                    </div>
+                  </td>
+                  <td className={`p-2 text-right tabular-nums font-medium ${r.horaExtra > 0 ? "text-orange-600" : "text-neutral-300"}`}>
+                    {r.horaExtra > 0 ? `${r.horaExtra.toFixed(2)}h` : "—"}
+                  </td>
+                  <td className="p-2 text-right tabular-nums text-neutral-600">{r.hasSalary ? fmtBRL(r.baseSalary) : "—"}</td>
+                  <td className="p-2 text-right tabular-nums font-bold text-emerald-700">{r.hasSalary ? fmtBRL(r.custoTotalEstimado) : "—"}</td>
+                  <td className="p-2 text-right tabular-nums text-neutral-500">{r.hasSalary ? fmtBRL(r.custoComEncargos) : "—"}</td>
+                </tr>
+              );
+            })}
+            {rows.length > 0 && (
+              <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
+                <td className="p-2">TOTAL ({totals.funcionarios} funcionários)</td>
+                <td className="p-2 text-center text-xs">—</td>
+                <td className="p-2 text-right text-blue-700 tabular-nums">{totals.horas.toFixed(2)}h</td>
+                <td className="p-2"></td>
+                <td className="p-2 text-right text-orange-600 tabular-nums">{totals.horaExtra > 0 ? `${totals.horaExtra.toFixed(2)}h` : "—"}</td>
+                <td className="p-2 text-right tabular-nums text-neutral-600">{fmtBRL(totals.custoBase)}</td>
+                <td className="p-2 text-right tabular-nums text-emerald-700">{fmtBRL(totals.custoTotal)}</td>
+                <td className="p-2 text-right tabular-nums text-neutral-700">{fmtBRL(totals.custoEncargos)}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

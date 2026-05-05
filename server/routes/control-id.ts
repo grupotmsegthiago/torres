@@ -338,6 +338,44 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // ─────── VISÃO GERAL DA FOLHA (todos funcionários do mês) ───────
+  app.get("/api/control-id/folha-overview", requireAuth, async (req, res) => {
+    try {
+      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const { data: employees } = await supabaseAdmin
+        .from("employees")
+        .select("id, name, role, matricula, status")
+        .order("name");
+      const activeEmps = (employees || []).filter((e: any) => e.status !== "demitido" && e.status !== "inativo");
+      const rows = await Promise.all(activeEmps.map(async (e: any) => {
+        const stats = await ctrl.buildFolhaStats(e.id, monthYear);
+        return {
+          employeeId: e.id,
+          name: e.name,
+          role: e.role,
+          matricula: e.matricula,
+          hoursWorked: stats.hoursWorked,
+          hoursLimit: stats.hoursLimit,
+          horaExtra: stats.horaExtra,
+          horasRestantes: stats.horasRestantes,
+          percentUsed: stats.percentUsed,
+          daysWorked: stats.daysWorked,
+          baseSalary: stats.baseSalary,
+          custoBase: stats.custoBase,
+          custoExtra: stats.custoExtra,
+          custoTotalEstimado: stats.custoTotalEstimado,
+          custoComEncargos: stats.custoComEncargos,
+          hasSalary: stats.hasSalary,
+        };
+      }));
+      // Ordena: quem mais trabalhou primeiro
+      rows.sort((a, b) => b.hoursWorked - a.hoursWorked);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── ESTATÍSTICAS DA FOLHA (horas, hora extra, custo estimado) ───────
   app.get("/api/control-id/folha-stats/:employeeId", requireAuth, async (req, res) => {
     try {
