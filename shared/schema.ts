@@ -1059,6 +1059,8 @@ export const invoices = pgTable("invoices", {
   notes: text("notes"),
   providerCnpj: text("provider_cnpj"),
   createdBy: integer("created_by"),
+  // Última mensagem de erro retornada pelo Asaas ao tentar emitir a NFS-e
+  nfseErrorMessage: text("nfse_error_message"),
   // Gateway de cobrança: 'asaas' (legado) | 'inter' (novo)
   gateway: text("gateway").notNull().default("asaas"),
   // ID único da cobrança no Banco Inter (codigoSolicitacao)

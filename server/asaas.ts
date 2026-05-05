@@ -1303,6 +1303,7 @@ export function registerAsaasRoutes(app: Express) {
         } catch (nfErr: any) {
           console.error(`[asaas] NFS-e falhou para fatura #${id}: ${nfErr.message}`);
           updates.nfse_status = "ERRO";
+          updates.nfse_error_message = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
         }
       }
 
@@ -1903,6 +1904,7 @@ export function registerAsaasRoutes(app: Express) {
           let spInvoiceStatus = "PENDING";
           let spNfseStatus: string | null = null;
           let spNfseNumber: string | null = null;
+          let spNfseErrorMessage: string | null = null;
 
           const spInssValor = retemInssConsolidado ? Number((splitValue * inssAliquotaConsolidado / 100).toFixed(2)) : 0;
 
@@ -1954,6 +1956,7 @@ export function registerAsaasRoutes(app: Express) {
                   console.log(`[asaas] NFS-e split ${idx + 1} emitida para payment ${spAsaasPaymentId}. ID: ${nfResult.id}`);
                 } catch (nfErr: any) {
                   spNfseStatus = "ERROR";
+                  spNfseErrorMessage = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
                   console.log(`[asaas] NFS-e split ${idx + 1} error: ${nfErr.message}`);
                 }
               } else if (spAsaasPaymentId && !emiteNfConsolidado) {
@@ -1993,6 +1996,7 @@ export function registerAsaasRoutes(app: Express) {
             pix_copia_e_cola: spPixCopiaECola,
             nfse_status: spNfseStatus,
             nfse_number: spNfseNumber,
+            nfse_error_message: spNfseErrorMessage,
             notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões). Split ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}.`,
             external_reference: `BOLETIM-${clientId}-${billingIds.length}OS-SPLIT${idx + 1}`,
             provider_cnpj: TORRES_CNPJ,
@@ -2083,6 +2087,7 @@ export function registerAsaasRoutes(app: Express) {
       let invoiceStatus = "PENDING";
       let nfseStatus: string | null = null;
       let nfseNumber: string | null = null;
+      let nfseErrorMessage: string | null = null;
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
@@ -2133,6 +2138,7 @@ export function registerAsaasRoutes(app: Express) {
               console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
             } catch (nfErr: any) {
               nfseStatus = "ERROR";
+              nfseErrorMessage = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
               console.log(`[asaas] NFS-e auto-emission error (non-blocking): ${nfErr.message}`);
             }
           } else if (asaasPaymentId && !emiteNfConsolidado) {
@@ -2173,6 +2179,7 @@ export function registerAsaasRoutes(app: Express) {
         pix_copia_e_cola: pixCopiaECola,
         nfse_status: nfseStatus,
         nfse_number: nfseNumber,
+        nfse_error_message: nfseErrorMessage,
         notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         provider_cnpj: TORRES_CNPJ,
@@ -2477,6 +2484,7 @@ export function registerAsaasRoutes(app: Express) {
             osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
+            nfseErrorMessage: inv.nfse_error_message || null,
             rawBoletimStatus: null,
             normalizedStatus: ns,
             invoiceId: inv.id,
@@ -2523,6 +2531,7 @@ export function registerAsaasRoutes(app: Express) {
             osList: [],
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
+            nfseErrorMessage: inv.nfse_error_message || null,
             rawBoletimStatus: null,
             normalizedStatus: ns,
             invoiceId: inv.id,

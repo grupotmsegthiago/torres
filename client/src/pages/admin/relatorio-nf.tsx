@@ -45,6 +45,7 @@ type RelatorioRow = {
   osList: Array<{ id: number; osNumber: string }>;
   rawStatus: string | null;
   rawNfseStatus: string | null;
+  nfseErrorMessage: string | null;
   rawBoletimStatus: string | null;
   normalizedStatus: NormalizedStatus;
   invoiceId: number | null;
@@ -573,10 +574,25 @@ export default function RelatorioNFPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}`}>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}`}
+                          title={r.normalizedStatus === "NF_ERRO" && r.nfseErrorMessage ? r.nfseErrorMessage : undefined}
+                          data-testid={`status-${r.id}`}
+                        >
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </span>
+                        {r.normalizedStatus === "NF_ERRO" && r.nfseErrorMessage && (
+                          <button
+                            type="button"
+                            className="block mx-auto mt-1 text-[10px] text-red-600 hover:text-red-800 hover:underline max-w-[180px] truncate"
+                            title={r.nfseErrorMessage}
+                            onClick={() => alert(`Erro retornado pelo Asaas ao emitir a NFS-e:\n\n${r.nfseErrorMessage}`)}
+                            data-testid={`button-nfse-error-${r.id}`}
+                          >
+                            {r.nfseErrorMessage}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {r.normalizedStatus === "NF_CANCELADA" || String(r.rawStatus || "").toUpperCase() === "CANCELLED" || String(r.rawStatus || "").toUpperCase() === "CANCELED" ? (
