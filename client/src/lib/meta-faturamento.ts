@@ -93,6 +93,10 @@ export function useMetaConfig(): [MetaConfig, (cfg: Partial<MetaConfig>) => void
 export interface MetaResult {
   config: MetaConfig;
   custoFixoMensal: number;
+  /** Piso diário aplicado (R$). Se a meta calculada for menor que o piso, o piso prevalece. */
+  pisoDiario: number;
+  /** True se o valor diário publicado foi elevado pelo piso (custo + lucro era menor que o mínimo operacional). */
+  pisoAplicado: boolean;
   /** Meta REALISTA — cobre custos fixos, RH, custos variáveis E impostos */
   realista: {
     fator: number; // 1 - imposto - custVar - lucro
@@ -131,14 +135,28 @@ export interface MetaResult {
  * Fórmula SIMPLIFICADA (a antiga — só cobre fixo, ignora imposto/variável):
  *   Faturamento = CustoFixo / (1 − lucro%)
  */
-export function calcMeta(custoFixoMensal: number, cfg: MetaConfig): MetaResult {
+/** Piso operacional: R$ 2.000 por viatura ativa, com mínimo absoluto de R$ 6.000/dia (3 viaturas). */
+export const PISO_DIARIO_POR_VIATURA = 2000;
+export const PISO_DIARIO_MINIMO = 6000;
+
+export function calcPisoDiario(viaturasAtivas: number): number {
+  return Math.max(PISO_DIARIO_MINIMO, viaturasAtivas * PISO_DIARIO_POR_VIATURA);
+}
+
+export function calcMeta(custoFixoMensal: number, cfg: MetaConfig, viaturasAtivas: number = 0): MetaResult {
   const lucro = cfg.lucroPct / 100;
   const imp = cfg.impostoPct / 100;
   const cv = cfg.custoVarPct / 100;
 
   const fatorReal = 1 - imp - cv - lucro;
   const validaReal = fatorReal > 0;
-  const metaMensalReal = validaReal ? custoFixoMensal / fatorReal : 0;
+  let metaMensalReal = validaReal ? custoFixoMensal / fatorReal : 0;
+
+  // Aplica piso diário (R$ 2.000 por viatura, mínimo R$ 6.000/dia)
+  const pisoDiario = calcPisoDiario(viaturasAtivas);
+  const pisoMensal = pisoDiario * 30;
+  const pisoAplicado = validaReal && metaMensalReal < pisoMensal;
+  if (pisoAplicado) metaMensalReal = pisoMensal;
 
   const fatorSimp = 1 - lucro;
   const metaMensalSimp = fatorSimp > 0 ? custoFixoMensal / fatorSimp : 0;
@@ -146,6 +164,8 @@ export function calcMeta(custoFixoMensal: number, cfg: MetaConfig): MetaResult {
   return {
     config: cfg,
     custoFixoMensal,
+    pisoDiario,
+    pisoAplicado,
     realista: {
       fator: fatorReal,
       valida: validaReal,
@@ -158,7 +178,7 @@ export function calcMeta(custoFixoMensal: number, cfg: MetaConfig): MetaResult {
         impostos: metaMensalReal * imp,
         custosVariaveis: metaMensalReal * cv,
         custosFixos: custoFixoMensal,
-        lucro: metaMensalReal * lucro,
+        lucro: metaMensalReal - (metaMensalReal * imp) - (metaMensalReal * cv) - custoFixoMensal,
       },
     },
     simplificada: {

@@ -31,7 +31,7 @@ const fmtHoras = (val: number) => {
   return `${h}h${m.toString().padStart(2, "0")}`;
 };
 
-const META_DIARIA_VIATURA = 1800;
+const META_DIARIA_VIATURA = 2000;
 const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
 
 const CCT = {
@@ -217,7 +217,8 @@ export default function BalancoGerencialPage() {
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
   const [metaCfg] = useMetaConfig();
   const custoFixoTotalMensal = (fixedCostsSummary?.monthly || 0) + (rhSummary?.monthly || 0);
-  const metaResult = useMemo(() => calcMeta(custoFixoTotalMensal, metaCfg), [custoFixoTotalMensal, metaCfg]);
+  const viaturasAtivasGlobal = useMemo(() => (allVehicles || []).filter(isActiveVehicle).length, [allVehicles]);
+  const metaResult = useMemo(() => calcMeta(custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal), [custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal]);
 
   const activeAgentCount = useMemo(() => {
     if (!allEmployees) return 0;
@@ -840,6 +841,11 @@ export default function BalancoGerencialPage() {
                   <p className="text-[11px] text-emerald-700/80 font-bold">
                     Cobre custos fixos+RH ({fmt(custoFixoTotalMensal)}/mês) · impostos {metaCfg.impostoPct}% · custos variáveis {metaCfg.custoVarPct}%
                   </p>
+                  {metaResult.pisoAplicado && (
+                    <p className="text-[10px] text-amber-700 font-bold mt-0.5" data-testid="text-piso-aplicado">
+                      Piso operacional aplicado: {fmt(metaResult.pisoDiario)}/dia (R$ 2.000 × {viaturasAtivasGlobal} viatura{viaturasAtivasGlobal !== 1 ? "s" : ""}, mín. R$ 6.000)
+                    </p>
+                  )}
                 </div>
                 <Link to="/admin/custos-fixos">
                   <Button variant="outline" size="sm" className="text-[10px] font-black uppercase" data-testid="button-meta-configurar">

@@ -138,7 +138,8 @@ export default function CustosFixosPage() {
 
   // === META DE FATURAMENTO (configuração compartilhada com Balanço Gerencial) ===
   const [metaCfg, setMetaCfg] = useMetaConfig();
-  const meta = useMemo(() => calcMeta(totalMensal, metaCfg), [totalMensal, metaCfg]);
+  const viaturasAtivas = summary?.fleetRent?.count ?? 0;
+  const meta = useMemo(() => calcMeta(totalMensal, metaCfg, viaturasAtivas), [totalMensal, metaCfg, viaturasAtivas]);
 
   // Sugestão de % de custos variáveis a partir do histórico (últimos 3 meses completos)
   const { data: varRatio } = useQuery<{
@@ -266,6 +267,11 @@ export default function CustosFixosPage() {
               <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
                 Quanto a empresa precisa faturar para cobrir <strong>TODOS os custos + impostos + custos variáveis</strong> e ainda sobrar {metaCfg.lucroPct}% de lucro líquido.
               </p>
+              {meta.pisoAplicado && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-1" data-testid="text-piso-aplicado">
+                  Piso operacional aplicado: {fmtBRL(meta.pisoDiario)}/dia (R$ 2.000 × {viaturasAtivas} viatura{viaturasAtivas !== 1 ? "s" : ""} ativa{viaturasAtivas !== 1 ? "s" : ""}, mín. R$ 6.000/dia)
+                </p>
+              )}
             </div>
           </div>
 
