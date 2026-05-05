@@ -1436,7 +1436,10 @@ function EspelhoRhidDialog({ employeeId, month, onClose }: { employeeId: number;
   const { data, isLoading, error, refetch } = useQuery<EspelhoRhidData>({
     queryKey: ["/api/control-id/espelho-rhid", employeeId, month],
     queryFn: async () => {
-      const r = await authFetch(`/api/control-id/espelho-rhid/${employeeId}?month=${month}`);
+      const r = await authFetch(`/api/control-id/espelho-rhid/${employeeId}?month=${month}&_=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Accept": "application/json" },
+      });
       const text = await r.text();
       if (!r.ok) {
         throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
@@ -1998,7 +2001,7 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
     try {
       const ids = Array.from(selected);
       const data = await Promise.all(ids.map(id =>
-        authFetch(`/api/control-id/espelho-rhid/${id}?month=${month}`).then(r => r.json() as Promise<EspelhoRhidData>)
+        authFetch(`/api/control-id/espelho-rhid/${id}?month=${month}&_=${Date.now()}`, { cache: "no-store", headers: { "Accept": "application/json" } }).then(r => r.json() as Promise<EspelhoRhidData>)
       ));
       setPrintData(data);
       setTimeout(() => {
