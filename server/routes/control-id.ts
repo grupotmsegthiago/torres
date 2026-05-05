@@ -338,6 +338,28 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // ─────── ESPELHO RHID OFICIAL (formato Control iD Cloud) ───────
+  app.get("/api/control-id/espelho-rhid/:employeeId", requireAuth, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.employeeId);
+      let from = String(req.query.from || "");
+      let to = String(req.query.to || "");
+      if (!from || !to) {
+        // default: fechamento RHID = dia 26 do mês anterior até dia 25 do mês informado
+        const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+        const [yyyy, mm] = month.split("-").map(Number);
+        const fromD = new Date(Date.UTC(yyyy, mm - 2, 26));
+        const toD = new Date(Date.UTC(yyyy, mm - 1, 25));
+        from = fromD.toISOString().slice(0, 10);
+        to = toD.toISOString().slice(0, 10);
+      }
+      const data = await ctrl.buildEspelhoRhid(employeeId, from, to);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── VISÃO GERAL DA FOLHA (todos funcionários do mês) ───────
   app.get("/api/control-id/folha-overview", requireAuth, async (req, res) => {
     try {

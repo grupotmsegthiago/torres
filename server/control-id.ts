@@ -967,6 +967,157 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   };
 }
 
+/**
+ * Espelho de Ponto Eletrônico no formato OFICIAL do RHID Cloud (Control iD).
+ * Recebe período from/to (YYYY-MM-DD) e retorna estrutura completa por dia,
+ * incluindo dias sem batidas, com jornada calculada (até 3 pares) e tratamentos.
+ */
+export async function buildEspelhoRhid(employeeId: number, fromYmd: string, toYmd: string): Promise<any> {
+  const start = new Date(fromYmd + "T00:00:00-03:00");
+  const end = new Date(toYmd + "T23:59:59-03:00");
+
+  const { data: empData } = await supabaseAdmin
+    .from("employees")
+    .select("id, name, matricula, cpf, pis, role, hire_date, address, sindicato, category")
+    .eq("id", employeeId)
+    .maybeSingle();
+  const employee = empData || {};
+
+  const { data: punches } = await supabaseAdmin
+    .from("control_id_punches")
+    .select("id, punch_at, direction, source, control_id_user_id")
+    .eq("employee_id", employeeId)
+    .gte("punch_at", start.toISOString())
+    .lte("punch_at", end.toISOString())
+    .order("punch_at", { ascending: true });
+
+  const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+  const ymdBRT = (iso: string) => {
+    const d = new Date(iso);
+    return new Date(d.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+  };
+
+  const dayMap = new Map<string, any[]>();
+  for (const p of (punches || [])) {
+    const k = ymdBRT(p.punch_at);
+    if (!dayMap.has(k)) dayMap.set(k, []);
+    dayMap.get(k)!.push(p);
+  }
+
+  const WEEKDAYS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
+  const days: any[] = [];
+
+  // Itera dia a dia no período (inclui sem batida)
+  const cur = new Date(fromYmd + "T12:00:00-03:00");
+  const last = new Date(toYmd + "T12:00:00-03:00");
+  let totalMin = 0;
+
+  while (cur.getTime() <= last.getTime()) {
+    const ymd = cur.toISOString().slice(0, 10);
+    const wd = WEEKDAYS[cur.getDay()];
+    const dayPunches = (dayMap.get(ymd) || []).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
+
+    // Marcações brutas: lista de horários no campo "MARCAÇÕES REGISTRADAS NO PONTO ELETRÔNICO"
+    const marcacoes = dayPunches.map((p: any) => fmt(p.punch_at));
+
+    // Deduplica marcações por minuto pra montar jornada limpa
+    const seen = new Set<string>();
+    const cleanPunches: any[] = [];
+    for (const p of dayPunches) {
+      const t = fmt(p.punch_at);
+      if (seen.has(t)) continue;
+      seen.add(t);
+      cleanPunches.push({ ...p, time: t });
+    }
+
+    // Monta jornada (até 3 pares ent/saí)
+    const pairs: { ent: string; sai: string }[] = [];
+    for (let i = 0; i + 1 < cleanPunches.length && pairs.length < 3; i += 2) {
+      pairs.push({ ent: cleanPunches[i].time, sai: cleanPunches[i + 1].time });
+    }
+    const jornada = {
+      ent1: pairs[0]?.ent || "", sai1: pairs[0]?.sai || "",
+      ent2: pairs[1]?.ent || "", sai2: pairs[1]?.sai || "",
+      ent3: pairs[2]?.ent || "", sai3: pairs[2]?.sai || "",
+    };
+
+    // Duração trabalhada
+    let dayMin = 0;
+    for (const pr of pairs) {
+      const [eh, em] = pr.ent.split(":").map(Number);
+      const [sh, sm] = pr.sai.split(":").map(Number);
+      const diff = (sh * 60 + sm) - (eh * 60 + em);
+      if (diff > 0) dayMin += diff;
+    }
+    const duracao = dayMin > 0 ? `${String(Math.floor(dayMin / 60)).padStart(2, "0")}:${String(dayMin % 60).padStart(2, "0")}` : "";
+    totalMin += dayMin;
+
+    // Tratamentos (ocorrências) sobre os dados originais
+    const tratamentos: { horario: string; ocorr: string; motivo: string }[] = [];
+    // 1) duplicatas de horário
+    const counts = new Map<string, number>();
+    for (const p of dayPunches) counts.set(fmt(p.punch_at), (counts.get(fmt(p.punch_at)) || 0) + 1);
+    for (const [t, c] of Array.from(counts.entries())) {
+      if (c > 1) tratamentos.push({ horario: t, ocorr: "D", motivo: "MARCAÇÃO DUPLICADA" });
+    }
+    // 2) origem da batida
+    for (const p of cleanPunches) {
+      const src = (p.source || "").toLowerCase();
+      if (src.includes("manual") || src.includes("mobile") || src.includes("web")) {
+        tratamentos.push({ horario: p.time, ocorr: "I", motivo: "MARCAÇÃO MOBILE/WEB" });
+      } else if (src.includes("rhid") || src.includes("idface") || src.includes("control")) {
+        tratamentos.push({ horario: p.time, ocorr: "I", motivo: "MARCAÇÃO IDFACE/IDFLEX" });
+      }
+    }
+    // 3) ímpar (entrada sem saída)
+    if (cleanPunches.length % 2 === 1) {
+      tratamentos.push({ horario: cleanPunches[cleanPunches.length - 1].time, ocorr: "D", motivo: "ENTRADA SEM SAÍDA" });
+    }
+
+    days.push({
+      date: ymd,
+      label: `${String(cur.getDate()).padStart(2, "0")}/${String(cur.getMonth() + 1).padStart(2, "0")}/${String(cur.getFullYear()).slice(-2)}`,
+      weekday: wd,
+      marcacoes,
+      jornada,
+      duracao,
+      ch: "00030",
+      tratamentos,
+    });
+
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const totalHHMM = `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+
+  return {
+    company: {
+      name: "TORRES VIGILANCIA PATRIMONIAL LTDA",
+      cnpj: "36.982.392/0001-89",
+      cei: "",
+      endereco: "AV RAIMUNDO PEREIRA DE MAGALHÃES, 5720 - PIRITUBA - 02939000 - SÃO PAULO - SP",
+    },
+    employee: {
+      id: employee.id,
+      name: (employee.name || "").toUpperCase(),
+      matricula: employee.matricula || "",
+      cpf: employee.cpf || "",
+      pis: employee.pis || employee.cpf || "",
+      role: (employee.role || "").toUpperCase(),
+      admissao: employee.hire_date ? new Date(employee.hire_date + "T12:00:00").toLocaleDateString("pt-BR") : "",
+      centroCusto: (employee.category || "").toUpperCase() || "—",
+      departamento: "TORRES",
+    },
+    periodo: { from: fromYmd, to: toYmd },
+    days,
+    totalHHMM,
+    horariosContratuais: [
+      { codigo: "00030", ent1: "04:00", sai1: "23:59", ent2: "", sai2: "" },
+    ],
+    emitidoEm: new Date().toLocaleString("pt-BR"),
+  };
+}
+
 export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const [yyyy, mm] = monthYear.split("-").map(Number);
   const monthStart = new Date(Date.UTC(yyyy, mm - 1, 1));

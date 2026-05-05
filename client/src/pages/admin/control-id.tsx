@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -26,6 +26,21 @@ type Mapping = {
 type Punch = {
   id: number; device_id: number; control_id_user_id: string; employee_id: number | null;
   punch_at: string; direction: string | null; source: string | null;
+};
+type EspelhoRhidData = {
+  company: { name: string; cnpj: string; cei: string; endereco: string };
+  employee: { id: number; name: string; matricula: string; cpf: string; pis: string; role: string; admissao: string; centroCusto: string; departamento: string };
+  periodo: { from: string; to: string };
+  days: Array<{
+    date: string; label: string; weekday: string;
+    marcacoes: string[];
+    jornada: { ent1: string; sai1: string; ent2: string; sai2: string; ent3: string; sai3: string };
+    duracao: string; ch: string;
+    tratamentos: Array<{ horario: string; ocorr: string; motivo: string }>;
+  }>;
+  totalHHMM: string;
+  horariosContratuais: Array<{ codigo: string; ent1: string; sai1: string; ent2: string; sai2: string }>;
+  emitidoEm: string;
 };
 type FolhaPunch = { id: number; punchAt: string; time: string; direction: string | null; source: string | null };
 type FolhaDay = {
@@ -1141,13 +1156,9 @@ function FolhaTab() {
     enabled: !!employeeId,
   });
 
-  function handlePrint() {
-    document.body.classList.add("printing-folha");
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => document.body.classList.remove("printing-folha"), 500);
-    }, 50);
-  }
+  const [espelhoOpen, setEspelhoOpen] = useState(false);
+
+  function openEspelho() { setEspelhoOpen(true); }
 
   return (
     <div className="space-y-3">
@@ -1161,8 +1172,8 @@ function FolhaTab() {
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-month" />
         {employeeId && (
           <>
-            <Button variant="outline" size="sm" onClick={handlePrint} className="h-9" data-testid="button-print-individual">
-              <Printer className="w-3.5 h-3.5 mr-1" /> Imprimir Espelho
+            <Button variant="outline" size="sm" onClick={openEspelho} className="h-9" data-testid="button-print-individual">
+              <Printer className="w-3.5 h-3.5 mr-1" /> Espelho RHID (oficial)
             </Button>
           </>
         )}
@@ -1218,19 +1229,7 @@ function FolhaTab() {
         </Card>
       ) : (
         <>
-          <div className="print-only print-header">
-            <h1>Espelho de Ponto Eletrônico</h1>
-            <div className="company">TORRES VIGILÂNCIA E SEGURANÇA PATRIMONIAL</div>
-            <table className="info-table">
-              <tbody>
-                <tr><td><b>Funcionário:</b></td><td>{employee?.name}</td><td><b>Matrícula:</b></td><td>{employee?.matricula}</td></tr>
-                <tr><td><b>Cargo:</b></td><td>{employee?.role}</td><td><b>Mês/Ano:</b></td><td>{new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</td></tr>
-                {stats && <tr><td><b>Horas trabalhadas:</b></td><td>{stats.hoursWorked.toFixed(2)}h / {stats.hoursLimit}h</td><td><b>Horas extras:</b></td><td>{stats.horaExtra.toFixed(2)}h</td></tr>}
-              </tbody>
-            </table>
-          </div>
-
-          <Card className="folha-card">
+          <Card>
             <table className="w-full text-sm" data-testid="table-folha">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50">
@@ -1279,19 +1278,6 @@ function FolhaTab() {
             </table>
           </Card>
 
-          <div className="print-only print-footer">
-            <div className="signature-block">
-              <div className="sig-line">
-                <div className="line"></div>
-                <div className="label">{employee?.name}<br/>Funcionário</div>
-              </div>
-              <div className="sig-line">
-                <div className="line"></div>
-                <div className="label">Empregador</div>
-              </div>
-            </div>
-            <div className="footer-note">Documento emitido em {new Date().toLocaleString("pt-BR")} · Sistema Torres Vigilância · Batidas Control iD</div>
-          </div>
         </>
       )}
 
@@ -1309,7 +1295,186 @@ function FolhaTab() {
       {batchOpen && (
         <BatchPrintDialog month={month} employees={employees} onClose={() => setBatchOpen(false)} />
       )}
+      {espelhoOpen && employeeId && (
+        <EspelhoRhidDialog employeeId={Number(employeeId)} month={month} onClose={() => setEspelhoOpen(false)} />
+      )}
     </div>
+  );
+}
+
+// ═══════════════ Espelho RHID (formato oficial Control iD) ═══════════════
+function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
+  const fromBR = new Date(data.periodo.from + "T12:00:00").toLocaleDateString("pt-BR");
+  const toBR = new Date(data.periodo.to + "T12:00:00").toLocaleDateString("pt-BR");
+  return (
+    <div className="rhid-espelho">
+      <div className="rhid-page-header">
+        <span>Página 01 de 01</span>
+        <span>Emitido em {data.emitidoEm}</span>
+      </div>
+      <div className="rhid-title-row">
+        <div>
+          <div className="rhid-title-1">Espelho</div>
+          <div className="rhid-title-2">de Ponto Eletrônico</div>
+        </div>
+        <div className="rhid-period">DE {fromBR} ATÉ {toBR}</div>
+      </div>
+
+      <table className="rhid-info">
+        <tbody>
+          <tr>
+            <td><b>EMPRESA:</b> {data.company.name}</td>
+            <td><b>CNPJ:</b> {data.company.cnpj}</td>
+            <td><b>CEI:</b> {data.company.cei || "—"}</td>
+          </tr>
+          <tr>
+            <td colSpan={3}><b>ENDEREÇO:</b> {data.company.endereco}</td>
+          </tr>
+          <tr>
+            <td><b>NOME:</b> {data.employee.name}</td>
+            <td><b>PIS/PASEP:</b> {data.employee.pis}</td>
+            <td><b>ADMISSÃO:</b> {data.employee.admissao}</td>
+          </tr>
+          <tr>
+            <td><b>CENTRO DE CUSTO:</b> {data.employee.centroCusto}</td>
+            <td><b>CPF:</b> {data.employee.cpf}</td>
+            <td><b>MATRÍCULA:</b> {data.employee.matricula}</td>
+          </tr>
+          <tr>
+            <td><b>DEPARTAMENTO:</b> {data.employee.departamento}</td>
+            <td colSpan={2}><b>CARGO:</b> {data.employee.role}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table className="rhid-table">
+        <thead>
+          <tr className="group-row">
+            <th rowSpan={2}>DIA</th>
+            <th rowSpan={2}>MARCAÇÕES REGISTRADAS<br/>NO PONTO ELETRÔNICO</th>
+            <th colSpan={7}>JORNADA REALIZADA</th>
+            <th colSpan={4}>TRATAMENTOS EFETUADOS SOBRE OS DADOS ORIGINAIS</th>
+          </tr>
+          <tr>
+            <th>ENT. 1</th><th>SAÍ. 1</th>
+            <th>ENT. 2</th><th>SAÍ. 2</th>
+            <th>ENT. 3</th><th>SAÍ. 3</th>
+            <th>DURAÇÃO</th>
+            <th>CH</th><th>HORÁRIO</th><th>OCORR</th><th>MOTIVO</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.days.map(d => {
+            const trat = d.tratamentos;
+            const rowspan = Math.max(1, trat.length);
+            return (
+              <React.Fragment key={d.date}>
+                <tr>
+                  <td className="dia" rowSpan={rowspan}>{d.label} - {d.weekday}</td>
+                  <td className="marcacoes" rowSpan={rowspan}>{d.marcacoes.join(" ")}</td>
+                  <td rowSpan={rowspan}>{d.jornada.ent1}</td>
+                  <td rowSpan={rowspan}>{d.jornada.sai1}</td>
+                  <td rowSpan={rowspan}>{d.jornada.ent2}</td>
+                  <td rowSpan={rowspan}>{d.jornada.sai2}</td>
+                  <td rowSpan={rowspan}>{d.jornada.ent3}</td>
+                  <td rowSpan={rowspan}>{d.jornada.sai3}</td>
+                  <td className="duracao" rowSpan={rowspan}>{d.duracao}</td>
+                  <td className="ch" rowSpan={rowspan}>{d.ch}</td>
+                  <td>{trat[0]?.horario || ""}</td>
+                  <td className="ocorr">{trat[0]?.ocorr || ""}</td>
+                  <td className="motivo">{trat[0]?.motivo || ""}</td>
+                </tr>
+                {trat.slice(1).map((t, i) => (
+                  <tr key={i} className="trat-extra">
+                    <td>{t.horario}</td>
+                    <td className="ocorr">{t.ocorr}</td>
+                    <td className="motivo">{t.motivo}</td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
+          <tr className="rhid-total">
+            <td colSpan={8} className="text-right"><b>TOTAL</b></td>
+            <td className="duracao"><b>{data.totalHHMM}</b></td>
+            <td colSpan={4}></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="rhid-legend">(I)=Incluído, (P)=Pré-assinalado, (D)=Desconsiderado</div>
+
+      <div className="rhid-horarios">
+        <div className="rhid-horarios-title">Horários Contratuais<br/>do Empregado</div>
+        <table className="rhid-horarios-table">
+          <thead>
+            <tr><th>CÓDIGO DO HORÁRIO(CH)</th><th>ENT</th><th>SAI</th><th>ENT</th><th>SAI</th></tr>
+          </thead>
+          <tbody>
+            {data.horariosContratuais.map(h => (
+              <tr key={h.codigo}><td>{h.codigo}</td><td>{h.ent1}</td><td>{h.sai1}</td><td>{h.ent2}</td><td>{h.sai2}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rhid-signatures">
+        <div className="sig">
+          <div className="line"></div>
+          <div className="label">{data.employee.name}</div>
+        </div>
+        <div className="sig">
+          <div className="line"></div>
+          <div className="label">{data.company.name}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EspelhoRhidDialog({ employeeId, month, onClose }: { employeeId: number; month: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery<EspelhoRhidData>({
+    queryKey: ["/api/control-id/espelho-rhid", employeeId, month],
+    queryFn: async () => {
+      const r = await authFetch(`/api/control-id/espelho-rhid/${employeeId}?month=${month}`);
+      return r.json();
+    },
+  });
+
+  function doPrint() {
+    document.body.classList.add("printing-espelho");
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => document.body.classList.remove("printing-espelho"), 500);
+    }, 100);
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-auto" aria-describedby={undefined}>
+        <DialogHeader className="no-print">
+          <DialogTitle className="flex items-center gap-2">
+            <ScanFace className="w-5 h-5 text-blue-600" />
+            Espelho RHID — formato oficial Control iD
+          </DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="py-12 text-center"><Loader2 className="w-6 h-6 mx-auto animate-spin text-neutral-400" /></div>
+        ) : data ? (
+          <div className="rhid-espelho-container">
+            <EspelhoRhidView data={data} />
+          </div>
+        ) : (
+          <div className="py-8 text-center text-sm text-red-500">Erro ao carregar.</div>
+        )}
+        <DialogFooter className="no-print">
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+          <Button onClick={doPrint} disabled={!data}>
+            <Printer className="w-4 h-4 mr-1" /> Imprimir / Salvar PDF
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1805,7 +1970,7 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
   const { toast } = useToast();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [printData, setPrintData] = useState<Array<{ emp: Employee; folha: FolhaDay[]; stats: FolhaStats | null }> | null>(null);
+  const [printData, setPrintData] = useState<EspelhoRhidData[] | null>(null);
 
   function toggleAll() {
     if (selected.size === employees.length) setSelected(new Set());
@@ -1817,20 +1982,15 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
     setLoading(true);
     try {
       const ids = Array.from(selected);
-      const data = await Promise.all(ids.map(async id => {
-        const emp = employees.find(e => e.id === id)!;
-        const [folhaR, statsR] = await Promise.all([
-          authFetch(`/api/control-id/folha/${id}?month=${month}`).then(r => r.json()),
-          authFetch(`/api/control-id/folha-stats/${id}?month=${month}`).then(r => r.json()),
-        ]);
-        return { emp, folha: folhaR as FolhaDay[], stats: statsR as FolhaStats };
-      }));
+      const data = await Promise.all(ids.map(id =>
+        authFetch(`/api/control-id/espelho-rhid/${id}?month=${month}`).then(r => r.json() as Promise<EspelhoRhidData>)
+      ));
       setPrintData(data);
       setTimeout(() => {
-        document.body.classList.add("printing-batch");
+        document.body.classList.add("printing-espelho");
         window.print();
         setTimeout(() => {
-          document.body.classList.remove("printing-batch");
+          document.body.classList.remove("printing-espelho");
           setPrintData(null);
           onClose();
         }, 800);
@@ -1887,52 +2047,10 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
       </Dialog>
 
       {printData && (
-        <div className="batch-print-area">
-          {printData.map((entry, idx) => (
-            <div key={entry.emp.id} className="batch-print-page" style={idx > 0 ? { pageBreakBefore: "always" } : undefined}>
-              <div className="print-header">
-                <h1>Espelho de Ponto Eletrônico</h1>
-                <div className="company">TORRES VIGILÂNCIA E SEGURANÇA PATRIMONIAL</div>
-                <table className="info-table">
-                  <tbody>
-                    <tr><td><b>Funcionário:</b></td><td>{entry.emp.name}</td><td><b>Matrícula:</b></td><td>{entry.emp.matricula}</td></tr>
-                    <tr><td><b>Cargo:</b></td><td>{entry.emp.role}</td><td><b>Mês/Ano:</b></td><td>{new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</td></tr>
-                    {entry.stats && <tr><td><b>Horas trabalhadas:</b></td><td>{entry.stats.hoursWorked.toFixed(2)}h / {entry.stats.hoursLimit}h</td><td><b>Horas extras:</b></td><td>{entry.stats.horaExtra.toFixed(2)}h</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-              <table className="folha-print-table">
-                <thead>
-                  <tr>
-                    <th>Data</th><th>Entrada</th><th>S. Almoço</th><th>V. Almoço</th><th>Saída</th><th>Horas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entry.folha.map(d => (
-                    <tr key={d.date}>
-                      <td>{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
-                      <td>{d.clockIn || "—"}</td>
-                      <td>{d.lunchOut || "—"}</td>
-                      <td>{d.lunchIn || "—"}</td>
-                      <td>{d.clockOut || "—"}</td>
-                      <td className="text-right"><b>{d.hoursWorked || "—"}</b></td>
-                    </tr>
-                  ))}
-                  {entry.stats && (
-                    <tr className="total-row">
-                      <td colSpan={5}><b>Total ({entry.stats.daysWorked} dias)</b></td>
-                      <td className="text-right"><b>{entry.stats.hoursWorked.toFixed(2)}h</b></td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-              <div className="print-footer">
-                <div className="signature-block">
-                  <div className="sig-line"><div className="line"></div><div className="label">{entry.emp.name}<br/>Funcionário</div></div>
-                  <div className="sig-line"><div className="line"></div><div className="label">Empregador</div></div>
-                </div>
-                <div className="footer-note">Documento emitido em {new Date().toLocaleString("pt-BR")} · Sistema Torres Vigilância · Batidas Control iD</div>
-              </div>
+        <div className="rhid-espelho-container">
+          {printData.map((d, idx) => (
+            <div key={d.employee.id} style={idx > 0 ? { pageBreakBefore: "always", marginTop: "20mm" } : undefined}>
+              <EspelhoRhidView data={d} />
             </div>
           ))}
         </div>
