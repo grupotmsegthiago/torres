@@ -703,8 +703,8 @@ export function registerAsaasRoutes(app: Express) {
       let clientState: string | undefined;
       let clientZip: string | undefined;
       if (clientId) {
-        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip, inscricao_municipal").eq("id", clientId).single();
-        if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, city, state, zip, inscricao_municipal").eq("id", clientId).single();
+        if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || cliInfo?.email_contratual || cliInfo?.email_operacional || undefined;
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
         clientCity = cliInfo?.city || undefined;
@@ -926,7 +926,7 @@ export function registerAsaasRoutes(app: Express) {
         let clientEmail = "";
         if (existing.client_id) {
           const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", existing.client_id).single();
-          clientEmail = cli?.email_financeiro || cli?.email || "";
+          clientEmail = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || "";
         }
         if (clientEmail) {
           sendBillingEmail({
@@ -981,7 +981,7 @@ export function registerAsaasRoutes(app: Express) {
       let email = req.body.email || "";
       if (!email && invoice.client_id) {
         const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", invoice.client_id).single();
-        email = cli?.email_financeiro || cli?.email || "";
+        email = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || "";
       }
       if (!email) return res.status(400).json({ message: "E-mail do cliente não encontrado. Informe no campo 'email'." });
 
@@ -1244,7 +1244,7 @@ export function registerAsaasRoutes(app: Express) {
       if (!cpfCnpj) return res.status(400).json({ message: "Cliente sem CPF/CNPJ cadastrado. Atualize o cadastro primeiro." });
 
       const clientName = clientData?.name || invoice.client_name;
-      const clientEmail = clientData?.email_financeiro || clientData?.email || undefined;
+      const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
       const clientPhone = clientData?.phone || undefined;
       const emiteNf = clientData?.emite_nf === true;
       const totalValue = parseFloat(invoice.value);
@@ -1885,7 +1885,7 @@ export function registerAsaasRoutes(app: Express) {
         }
         console.log(`[asaas] Validação quinzenal OK para cliente ${clientId}: 0 OS pendentes no período ${startDate} a ${endDate}.`);
       }
-      const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || undefined;
+      const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
       const clientPhoneConsolidado = clientData?.phone || undefined;
 
       // ============================================================
