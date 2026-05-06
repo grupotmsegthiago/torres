@@ -18,7 +18,7 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
-  CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck,
+  CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck, Ban,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -3150,7 +3150,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [preAlertLoading, setPreAlertLoading] = useState(false);
   const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
   const [, forceUpdate] = useState(0);
-  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | null>(null);
+  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | "refuse" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
   const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
@@ -3183,8 +3183,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   });
 
   const missionMutation = useMutation({
-    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel"; serviceOrderId: number; reason?: string }) => {
-      const url = action === "finish" ? "/api/mission/finish" : "/api/mission/cancel";
+    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel" | "refuse"; serviceOrderId: number; reason?: string }) => {
+      const url = action === "finish" ? "/api/mission/finish" : action === "refuse" ? "/api/mission/refuse" : "/api/mission/cancel";
       const res = await authFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3197,7 +3197,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       return res.json();
     },
     onSuccess: (_, vars) => {
-      toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
+      const labels = { finish: { t: "Missão finalizada", d: "foi concluída" }, cancel: { t: "Missão cancelada", d: "foi cancelada" }, refuse: { t: "Missão recusada", d: "foi recusada" } } as const;
+      const l = labels[vars.action];
+      toast({ title: l.t, description: `OS ${v.activeOs?.osNumber} ${l.d} com sucesso.` });
       setMissionAction(null);
       setCancelReason("");
       invalidateRelatedQueries("service-order");
@@ -3766,12 +3768,26 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             </TooltipTrigger>
             <TooltipContent>Cancelar Missão</TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-600 hover:text-orange-700 transition-colors"
+                onClick={() => setMissionAction("refuse")}
+                data-testid={`btn-refuse-mission-${v.id}`}
+              >
+                <Ban className="w-3 h-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Recusar Missão (zera faturamento)</TooltipContent>
+          </Tooltip>
           <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); } }}>
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-sm">
                   {missionAction === "finish" ? (
                     <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</>
+                  ) : missionAction === "refuse" ? (
+                    <><Ban className="w-5 h-5 text-orange-600" /> Recusar Missão</>
                   ) : (
                     <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>
                   )}
@@ -3779,7 +3795,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 <DialogDescription className="text-xs">
                   {missionAction === "finish"
                     ? `Tem certeza que deseja finalizar a missão ${v.activeOs.osNumber}? O veículo e o kit serão liberados.`
-                    : `Tem certeza que deseja cancelar a missão ${v.activeOs.osNumber}?`
+                    : missionAction === "refuse"
+                      ? `Tem certeza que deseja recusar a missão ${v.activeOs.osNumber}? Faturamento, custos e cobranças serão zerados.`
+                      : `Tem certeza que deseja cancelar a missão ${v.activeOs.osNumber}?`
                   }
                 </DialogDescription>
               </DialogHeader>
@@ -3790,9 +3808,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   <p className="text-xs text-neutral-500 mt-1">Veículo</p>
                   <p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
                 </div>
-                {missionAction === "cancel" && (
+                {(missionAction === "cancel" || missionAction === "refuse") && (
                   <div>
-                    <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo do cancelamento</label>
+                    <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo da {missionAction === "refuse" ? "recusa" : "cancelamento"}</label>
                     <textarea
                       className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300"
                       rows={2}
@@ -3805,21 +3823,21 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 )}
                 <div className="flex gap-2">
                   <Button
-                    className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
+                    className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : missionAction === "refuse" ? "bg-orange-600 hover:bg-orange-700" : "bg-red-600 hover:bg-red-700"}`}
                     onClick={() => {
                       if (v.activeOs) {
                         missionMutation.mutate({
                           action: missionAction!,
                           serviceOrderId: v.activeOs.id,
-                          reason: missionAction === "cancel" ? cancelReason : undefined,
+                          reason: (missionAction === "cancel" || missionAction === "refuse") ? cancelReason : undefined,
                         });
                       }
                     }}
-                    disabled={missionMutation.isPending || (missionAction === "cancel" && !cancelReason.trim())}
+                    disabled={missionMutation.isPending || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())}
                     data-testid={`btn-confirm-mission-action-${v.id}`}
                   >
                     {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                    {missionAction === "finish" ? "Confirmar Finalização" : "Confirmar Cancelamento"}
+                    {missionAction === "finish" ? "Confirmar Finalização" : missionAction === "refuse" ? "Confirmar Recusa" : "Confirmar Cancelamento"}
                   </Button>
                   <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); }} data-testid={`btn-dismiss-mission-action-${v.id}`}>
                     Voltar
@@ -4053,7 +4071,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
   const [cmdOpen, setCmdOpen] = useState(false);
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [mirrorOpen, setMirrorOpen] = useState(false);
-  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | null>(null);
+  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | "refuse" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [preAlertLoading, setPreAlertLoading] = useState(false);
   const [ctxPdfUrl, setCtxPdfUrl] = useState<string | null>(null);
@@ -4089,14 +4107,16 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
   });
 
   const missionMutation = useMutation({
-    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel"; serviceOrderId: number; reason?: string }) => {
-      const url = action === "finish" ? "/api/mission/finish" : "/api/mission/cancel";
+    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel" | "refuse"; serviceOrderId: number; reason?: string }) => {
+      const url = action === "finish" ? "/api/mission/finish" : action === "refuse" ? "/api/mission/refuse" : "/api/mission/cancel";
       const res = await authFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceOrderId, reason }) });
       if (!res.ok) { const data = await res.json().catch(() => ({ message: "Erro desconhecido" })); throw new Error(data.message); }
       return res.json();
     },
     onSuccess: (_, vars) => {
-      toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
+      const labels = { finish: { t: "Missão finalizada", d: "foi concluída" }, cancel: { t: "Missão cancelada", d: "foi cancelada" }, refuse: { t: "Missão recusada", d: "foi recusada" } } as const;
+      const l = labels[vars.action];
+      toast({ title: l.t, description: `OS ${v.activeOs?.osNumber} ${l.d} com sucesso.` });
       setMissionAction(null); setCancelReason("");
       invalidateRelatedQueries("service-order");
       invalidateRelatedQueries("billing");
@@ -4564,10 +4584,10 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
-              {missionAction === "finish" ? <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</> : <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>}
+              {missionAction === "finish" ? <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</> : missionAction === "refuse" ? <><Ban className="w-5 h-5 text-orange-600" /> Recusar Missão</> : <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              {missionAction === "finish" ? `Finalizar missão ${v.activeOs?.osNumber}? Veículo e kit serão liberados.` : `Cancelar missão ${v.activeOs?.osNumber}?`}
+              {missionAction === "finish" ? `Finalizar missão ${v.activeOs?.osNumber}? Veículo e kit serão liberados.` : missionAction === "refuse" ? `Recusar missão ${v.activeOs?.osNumber}? Faturamento, custos e cobranças serão zerados.` : `Cancelar missão ${v.activeOs?.osNumber}?`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -4575,18 +4595,18 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
               <p className="text-xs text-neutral-500">OS</p><p className="text-sm font-bold text-neutral-900">{v.activeOs?.osNumber}</p>
               <p className="text-xs text-neutral-500 mt-1">Veículo</p><p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
             </div>
-            {missionAction === "cancel" && (
+            {(missionAction === "cancel" || missionAction === "refuse") && (
               <div>
-                <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo do cancelamento</label>
+                <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo da {missionAction === "refuse" ? "recusa" : "cancelamento"}</label>
                 <textarea className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300" rows={2} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Informe o motivo..." data-testid={`ctx-cancel-reason-${v.id}`} />
               </div>
             )}
             <div className="flex gap-2">
-              <Button className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
-                onClick={() => { if (v.activeOs) { missionMutation.mutate({ action: missionAction!, serviceOrderId: v.activeOs.id, reason: missionAction === "cancel" ? cancelReason : undefined }); } }}
-                disabled={missionMutation.isPending || (missionAction === "cancel" && !cancelReason.trim())} data-testid={`ctx-confirm-mission-${v.id}`}>
+              <Button className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : missionAction === "refuse" ? "bg-orange-600 hover:bg-orange-700" : "bg-red-600 hover:bg-red-700"}`}
+                onClick={() => { if (v.activeOs) { missionMutation.mutate({ action: missionAction!, serviceOrderId: v.activeOs.id, reason: (missionAction === "cancel" || missionAction === "refuse") ? cancelReason : undefined }); } }}
+                disabled={missionMutation.isPending || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())} data-testid={`ctx-confirm-mission-${v.id}`}>
                 {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                {missionAction === "finish" ? "Confirmar Finalização" : "Confirmar Cancelamento"}
+                {missionAction === "finish" ? "Confirmar Finalização" : missionAction === "refuse" ? "Confirmar Recusa" : "Confirmar Cancelamento"}
               </Button>
               <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); onClose(); }}>Voltar</Button>
             </div>

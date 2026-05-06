@@ -1991,6 +1991,110 @@ Responda APENAS com JSON: {"km_lido": number}`;
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/mission/refuse", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { serviceOrderId, reason } = req.body;
+      const motivo = String(reason || "").trim();
+      if (motivo.length < 3) {
+        return res.status(400).json({ message: "Informe o motivo da recusa (mínimo 3 caracteres)." });
+      }
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+
+      const user = req.user!;
+      const adminName = user.name || user.email || "Sistema";
+
+      const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+      const refuseEntry = {
+        step: "recusada",
+        completedAt: new Date().toISOString(),
+        agentName: `ADMIN: ${adminName}`,
+        agentId: user.id,
+        geo: null,
+        nextStep: "recusada",
+        reason: motivo,
+      };
+
+      const updates: any = {
+        status: "recusada",
+        missionStatus: so.missionStatus,
+        completedDate: nowBRTString(),
+        cancellationReason: motivo,
+        revenueValue: 0,
+        fat_calculado: 0,
+        custo_total_alocado: 0,
+        lucro_calculado: 0,
+        margem_calculada: 0,
+        valorEstimado: 0,
+        pedagioEstimado: 0,
+        custos_congelados_em: new Date().toISOString(),
+        custos_congelados_por: `recusada_por_${adminName}`,
+        stepLogs: [...existingLogs, refuseEntry],
+      };
+
+      if (so.kitId) {
+        try { await storage.updateWeaponKit(so.kitId, { status: "disponível" }); } catch (_e) {}
+      }
+      if (so.vehicleId) {
+        try { await storage.updateVehicle(so.vehicleId, { status: "disponível" }); } catch (_e) {}
+      }
+
+      lastMissionPos.delete(serviceOrderId);
+      try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) {}
+
+      try {
+        await supabaseAdmin.from("escort_billings")
+          .update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 })
+          .eq("service_order_id", serviceOrderId)
+          .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+      } catch (_e) {}
+
+      try {
+        const { data: existingCosts } = await supabaseAdmin.from("mission_costs")
+          .select("id")
+          .eq("service_order_id", serviceOrderId);
+        if (existingCosts?.length) {
+          for (const mc of existingCosts) {
+            try { await removeAutoTransaction("mission_cost", String(mc.id)); } catch (_e) {}
+          }
+        }
+        await supabaseAdmin.from("mission_costs").delete().eq("service_order_id", serviceOrderId);
+      } catch (_e) {}
+
+      try {
+        await removeAutoTransaction("service_order", String(serviceOrderId));
+      } catch (_e) {}
+
+      try {
+        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
+          .select("id, asaas_payment_id")
+          .eq("origin_type", "service_order")
+          .eq("origin_id", String(serviceOrderId))
+          .not("asaas_payment_id", "is", null);
+        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
+          const apiKey = process.env.ASAAS_API_KEY;
+          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
+          for (const tx of pendingTxs) {
+            if (!tx.asaas_payment_id) continue;
+            try {
+              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
+                method: "DELETE",
+                headers: { "access_token": apiKey },
+              });
+              console.log(`[OS-Refuse] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${so.osNumber}`);
+            } catch (asaasErr: any) {
+              console.error(`[OS-Refuse] Asaas cancel failed: ${asaasErr.message}`);
+            }
+          }
+        }
+      } catch (_e) {}
+
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+      console.log(`[OS-Refuse] OS ${so.osNumber} recusada por ${adminName} — motivo: ${motivo}`);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/mission/finish", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { serviceOrderId } = req.body;
