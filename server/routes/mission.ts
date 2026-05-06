@@ -545,7 +545,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
-      if (hasDivergence) {
+      // Email só em casos GRAVES: placa não confere OU condição crítica (dano/ausente)
+      const isCritical = result.placa_confere === false ||
+        result.condicao === "dano_visivel" || result.condicao === "danificado" || result.condicao === "ausente";
+
+      if (hasDivergence && isCritical) {
         try {
           const so = await storage.getServiceOrder(serviceOrderId);
           const emp = await storage.getEmployee(employeeId);
