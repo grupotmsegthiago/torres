@@ -725,11 +725,13 @@ export default function BoletimMedicaoPage() {
             if (inCycle.length === 0) continue;
 
             const pendentes = inCycle.filter(o => {
+              if (o.status === "cancelada" || o.status === "recusada") return false;
+              if (o.billing?.status === "CANCELADO" || o.billing?.status === "CANCELADA") return false;
               const st = o.billing?.status;
-              if (!o.billing) return o.status !== "cancelada" && o.status !== "recusada";
+              if (!o.billing) return true;
               return ["A_VERIFICAR", "REJEITADA"].includes(st) || (o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && st !== "APROVADA" && st !== "FATURADO" && st !== "PAGO");
             });
-            const aprovadas = inCycle.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO" && !o.billing?.invoice_id);
+            const aprovadas = inCycle.filter(o => o.status !== "cancelada" && o.status !== "recusada" && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO" && !o.billing?.invoice_id);
 
             if (pendentes.length === 0 && aprovadas.length === 0) continue;
 
