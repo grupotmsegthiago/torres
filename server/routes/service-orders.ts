@@ -1607,6 +1607,88 @@ import type { Express } from "express";
       }
     }
 
+    // Recalcula boletim quando missionStartedAt/completedDate/status mudam
+    // (mesma lógica do /step-adjustments). Permite que ediçôes diretas no
+    // formulário principal da OS propaguem para o escort_billings.
+    try {
+      const billingRelevantChanged =
+        parsed.data.missionStartedAt !== undefined ||
+        parsed.data.completedDate !== undefined ||
+        (parsed.data.status !== undefined && (parsed.data.status === "concluída" || parsed.data.status === "concluida"));
+      if (billingRelevantChanged && data.type === "escolta") {
+        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+          .select("id, status").eq("service_order_id", data.id).limit(1);
+        const FROZEN = ["APROVADA", "FATURADO", "PAGO"];
+        if (existingBilling?.[0] && !FROZEN.includes(existingBilling[0].status)) {
+          const phs = await storage.getMissionPhotosByOS(data.id);
+          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
+          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
+          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
+          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
+          const kmF = kmFP?.kmValue || 0;
+          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+          const sTime = data.scheduledDate ? toBRT(new Date(data.scheduledDate)) : undefined;
+          const stepLogsArr = (data.stepLogs || []) as any[];
+          const checkinEntry = [...stepLogsArr].reverse().find((l: any) => l.step === "checkin_chegada_km" && (l.timestamp || l.completedAt));
+          const stTime = data.missionStartedAt ? toBRT(new Date(data.missionStartedAt as string)) : (checkinEntry ? toBRT(new Date(checkinEntry.timestamp || checkinEntry.completedAt)) : undefined);
+          const cdValid = data.completedDate && new Date(data.completedDate as string).getFullYear() > 2000;
+          const eTime = cdValid ? toBRT(new Date(data.completedDate as string)) : undefined;
+
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (data.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", data.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (data.clientId) {
+            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", data.clientId).eq("status", "Ativo").limit(1);
+            if (cc2?.length) contrato = cc2[0];
+          }
+
+          const kmFN = kmF > kmI ? kmF : kmI;
+          const mcList = await storage.getMissionCostsByOS(data.id);
+          let dp = 0, dc = 0, douts = 0, ro = 0;
+          for (const mc of mcList) {
+            const amt = Number(mc.amount) || 0;
+            if ((mc as any).costType === "revenue") { ro += amt; }
+            else {
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) dp += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dc += amt;
+              else douts += amt;
+            }
+          }
+          const pedEst = Number((data as any).pedagioEstimado) || 0;
+          if (pedEst > 0 && dp === 0) dp = pedEst;
+
+          const resultado = calcularEscolta({
+            contrato, km_inicial: kmI, km_final: kmFN,
+            km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+            horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
+            despesas_pedagio: dp, despesas_combustivel: dc, despesas_outras: douts, receitas_os: ro,
+          });
+
+          const n = (v: any) => Number(v) || 0;
+          await supabaseAdmin.from("escort_billings").update({
+            km_inicial: n(kmI), km_final: n(kmFN), km_total: n(resultado.km_total),
+            km_carregado: n(resultado.km_carregado), km_faturado: n(resultado.km_faturado),
+            km_franquia: n(resultado.km_franquia), km_excedente: n(resultado.km_excedente),
+            horario_inicio: stTime || null, horario_fim: eTime || null,
+            horario_inicio_considerado: resultado.horario_inicio_considerado,
+            horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
+            fat_acionamento: n(resultado.fat_acionamento), fat_hora_extra: n(resultado.fat_hora_extra),
+            fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
+            fat_km_vazio: n(resultado.faturamento.km_vazio),
+            fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
+            fat_adicional_noturno: n(resultado.fat_adicional_noturno), fat_total: n(resultado.fat_total),
+            receitas_os: n(resultado.receitas_os),
+            despesas_pedagio: n(dp), despesas_combustivel: n(dc), despesas_outras: n(douts),
+          }).eq("id", existingBilling[0].id);
+          console.log(`[so-patch-recalc] OS ${data.osNumber}: km=${kmI}->${kmFN}, h=${stTime}->${eTime}, fat=${resultado.fat_total}`);
+        }
+      }
+    } catch (recalcErr: any) {
+      console.error(`[so-patch-recalc] Erro ao recalcular boletim:`, recalcErr.message);
+    }
+
     res.json(data);
   });
 
