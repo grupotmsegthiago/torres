@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { calcKmL } from "@/lib/fuel-kml";
+import { computeTicketlogStats } from "@/lib/fuel-ticketlog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -63,85 +64,67 @@ function computeValidIntervals(sorted: VehicleFueling[]) {
   return intervals;
 }
 
+// computeStats e computePerVehicleData agora usam a lógica TicketLog
+// (ver client/src/lib/fuel-ticketlog.ts):
+//  • Litros/Custo do período = soma do que está no período.
+//  • Km rodados do período = pra cada abastecida no período, soma o gap
+//    de hodômetro contra a abastecida imediatamente anterior do veículo,
+//    mesmo que essa anterior esteja FORA do período. É a única forma
+//    cujos números casam com o relatório oficial da TicketLog.
+//  • Km/L = Km rodados / Litros.
+
 function computeStats(
-  fuelings: VehicleFueling[],
-  vehicles: Vehicle[]
+  filteredFuelings: VehicleFueling[],
+  allFuelings: VehicleFueling[],
+  vehicles: Vehicle[],
 ): FuelingStats {
-  let totalLiters = 0;
-  let totalCost = 0;
-
-  const byVehicle: Record<number, VehicleFueling[]> = {};
-  for (const f of fuelings) {
-    totalLiters += Number(f.liters) || 0;
-    totalCost += Number(f.totalCost) || 0;
-    if (!byVehicle[f.vehicleId]) byVehicle[f.vehicleId] = [];
-    byVehicle[f.vehicleId].push(f);
-  }
-
-  const vehicleAvgs: { vehicleId: number; avg: number }[] = [];
-  let totalKmDriven = 0;
-  let totalLitersForAvg = 0;
-
-  for (const [vid, records] of Object.entries(byVehicle)) {
-    const sorted = [...records].sort((a, b) => a.km - b.km);
-    const intervals = computeValidIntervals(sorted);
-    const kmSum = intervals.reduce((s, i) => s + i.km, 0);
-    const litersSum = intervals.reduce((s, i) => s + i.liters, 0);
-    if (litersSum > 0 && kmSum > 0) {
-      vehicleAvgs.push({ vehicleId: Number(vid), avg: kmSum / litersSum });
-      totalKmDriven += kmSum;
-      totalLitersForAvg += litersSum;
-    }
-  }
-
-  const avgKmPerLiter = totalLitersForAvg > 0 ? totalKmDriven / totalLitersForAvg : 0;
-  const avgCostPerKm = totalKmDriven > 0 ? totalCost / totalKmDriven : 0;
-
+  const inPeriod = new Set(filteredFuelings.map(f => f.id));
+  const tl = computeTicketlogStats(allFuelings, f => inPeriod.has(f.id));
   const getPlate = (vid: number) => vehicles.find(v => v.id === vid)?.plate || "?";
 
-  let bestAvg: FuelingStats["bestAvg"] = null;
-  let worstAvg: FuelingStats["worstAvg"] = null;
-  if (vehicleAvgs.length > 0) {
-    const best = vehicleAvgs.reduce((a, b) => a.avg > b.avg ? a : b);
-    const worst = vehicleAvgs.reduce((a, b) => a.avg < b.avg ? a : b);
-    bestAvg = { plate: getPlate(best.vehicleId), avg: best.avg };
-    worstAvg = { plate: getPlate(worst.vehicleId), avg: worst.avg };
-  }
-
-  return { totalLiters, totalCost, avgKmPerLiter, avgCostPerKm, totalFuelings: fuelings.length, bestAvg, worstAvg };
+  return {
+    totalLiters: tl.totalLiters,
+    totalCost: tl.totalCost,
+    avgKmPerLiter: tl.avgKmPerLiter,
+    avgCostPerKm: tl.avgCostPerKm,
+    totalFuelings: tl.totalFuelings,
+    bestAvg: tl.bestAvg ? { plate: getPlate(tl.bestAvg.vehicleId), avg: tl.bestAvg.avg } : null,
+    worstAvg: tl.worstAvg ? { plate: getPlate(tl.worstAvg.vehicleId), avg: tl.worstAvg.avg } : null,
+  };
 }
 
-function computePerVehicleData(fuelings: VehicleFueling[], vehicles: Vehicle[]) {
-  const byVehicle: Record<number, VehicleFueling[]> = {};
-  for (const f of fuelings) {
-    if (!byVehicle[f.vehicleId]) byVehicle[f.vehicleId] = [];
-    byVehicle[f.vehicleId].push(f);
+function computePerVehicleData(
+  filteredFuelings: VehicleFueling[],
+  allFuelings: VehicleFueling[],
+  vehicles: Vehicle[],
+) {
+  const inPeriod = new Set(filteredFuelings.map(f => f.id));
+  const tl = computeTicketlogStats(allFuelings, f => inPeriod.has(f.id));
+  const statsByVehicle = new Map(tl.perVehicle.map(s => [s.vehicleId, s]));
+
+  // Pra "Último KM" e "Última data" mostramos da história inteira do veículo
+  // (independente do período), porque é informação de estado, não de período.
+  const histByVehicle: Record<number, VehicleFueling[]> = {};
+  for (const f of allFuelings) {
+    if (!histByVehicle[f.vehicleId]) histByVehicle[f.vehicleId] = [];
+    histByVehicle[f.vehicleId].push(f);
   }
 
   return vehicles.map(v => {
-    const records = byVehicle[v.id] || [];
-    const sorted = [...records].sort((a, b) => a.km - b.km);
-    const totalLiters = records.reduce((s, f) => s + (Number(f.liters) || 0), 0);
-    const totalCost = records.reduce((s, f) => s + (Number(f.totalCost) || 0), 0);
-    let avgKmL = 0;
-
-    const intervals = computeValidIntervals(sorted);
-    const kmSum = intervals.reduce((s, i) => s + i.km, 0);
-    const litersSum = intervals.reduce((s, i) => s + i.liters, 0);
-    const costSum = intervals.reduce((s, i) => s + (i.cost || 0), 0);
-    if (litersSum > 0 && kmSum > 0) avgKmL = kmSum / litersSum;
-    const costPerKm = kmSum > 0 && costSum > 0 ? costSum / kmSum : 0;
-
+    const stats = statsByVehicle.get(v.id);
+    const hist = histByVehicle[v.id] || [];
+    const sortedKm = [...hist].sort((a, b) => a.km - b.km);
+    const sortedDate = [...hist].sort((a, b) => b.date.localeCompare(a.date));
     return {
       vehicle: v,
-      count: records.length,
-      totalLiters,
-      totalCost,
-      avgKmL,
-      kmDriven: kmSum,
-      costPerKm,
-      lastKm: sorted.length > 0 ? sorted[sorted.length - 1].km : 0,
-      lastDate: records.length > 0 ? [...records].sort((a, b) => b.date.localeCompare(a.date))[0].date : null,
+      count: stats?.count ?? 0,
+      totalLiters: stats?.liters ?? 0,
+      totalCost: stats?.cost ?? 0,
+      avgKmL: stats?.kmL ?? 0,
+      kmDriven: stats?.kmRodados ?? 0,
+      costPerKm: stats?.costPerKm ?? 0,
+      lastKm: sortedKm.length > 0 ? sortedKm[sortedKm.length - 1].km : 0,
+      lastDate: sortedDate.length > 0 ? sortedDate[0].date : null,
     };
   }).filter(x => x.count > 0).sort((a, b) => b.count - a.count);
 }
@@ -925,8 +908,8 @@ export default function FuelingPage() {
     return list;
   }, [fuelings, filterVehicle, filterMonth, periodMode, searchFueling, vehicles, employees, allUsers]);
 
-  const stats = useMemo(() => computeStats(filteredFuelings, vehicles), [filteredFuelings, vehicles]);
-  const perVehicle = useMemo(() => computePerVehicleData(filteredFuelings, vehicles || []), [filteredFuelings, vehicles]);
+  const stats = useMemo(() => computeStats(filteredFuelings, fuelings, vehicles), [filteredFuelings, fuelings, vehicles]);
+  const perVehicle = useMemo(() => computePerVehicleData(filteredFuelings, fuelings, vehicles || []), [filteredFuelings, fuelings, vehicles]);
 
   const getVehicle = (id: number) => vehicles.find(v => v.id === id);
   const getDriver = (id: number | null) => id ? employees.find(e => e.id === id)?.name : null;
