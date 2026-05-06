@@ -985,7 +985,10 @@ export default function FuelingPage() {
         </div>
         <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="h-9 border border-neutral-300 rounded-lg px-3 text-sm bg-white" data-testid="select-filter-month">
           <option value="">Todo período</option>
-          {months.map(m => <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>)}
+          {months.map(m => {
+            const [y, mo] = m.split("-").map(Number);
+            return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>;
+          })}
         </select>
         <div className="relative flex-1 min-w-[200px]">
           <input
