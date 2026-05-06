@@ -593,6 +593,129 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   return customer.id;
 }
 
+/**
+ * Emite uma fatura "AGUARDANDO_FATURAMENTO" automaticamente:
+ * cria cobrança no Asaas (boleto/PIX) e, se cliente.emite_nf=true, dispara NFS-e.
+ * Atualiza a invoice in-place. Reutilizado pela aprovação automática do boletim.
+ */
+export async function emitInvoiceAuto(
+  invoiceId: number,
+  opts: { dueDate: string; billingType?: string; actorName?: string }
+): Promise<{ success: boolean; message: string; nfEmitted: boolean; paymentId?: string }> {
+  if (!process.env.ASAAS_API_KEY) {
+    return { success: false, message: "Asaas não configurado (ASAAS_API_KEY)", nfEmitted: false };
+  }
+
+  const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).single();
+  if (!invoice) return { success: false, message: "Fatura não encontrada", nfEmitted: false };
+  if (invoice.status !== "AGUARDANDO_FATURAMENTO") {
+    return { success: false, message: `Status inválido: ${invoice.status}`, nfEmitted: false };
+  }
+
+  const clientId = invoice.client_id;
+  if (!clientId) return { success: false, message: "Fatura sem cliente vinculado", nfEmitted: false };
+
+  const { data: clientData } = await supabaseAdmin.from("clients")
+    .select("cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual")
+    .eq("id", clientId).single();
+  const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
+  if (!cpfCnpj) return { success: false, message: "Cliente sem CPF/CNPJ cadastrado", nfEmitted: false };
+
+  const clientName = clientData?.name || invoice.client_name;
+  const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
+  const clientPhone = clientData?.phone || undefined;
+  const emiteNf = clientData?.emite_nf === true;
+  const totalValue = parseFloat(invoice.value);
+  const billingType = opts.billingType || "BOLETO";
+
+  if (totalValue <= 0) return { success: false, message: "Valor da fatura é R$ 0,00", nfEmitted: false };
+
+  const asaasCustomerId = await findOrCreateAsaasCustomer(
+    clientName, cpfCnpj, clientEmail, clientPhone,
+    clientData?.address, clientData?.city, clientData?.state, clientData?.zip,
+    {
+      addressNumber: clientData?.address_number || undefined,
+      complement: clientData?.address_complement || undefined,
+      province: clientData?.bairro || undefined,
+      municipalInscription: clientData?.inscricao_municipal || undefined,
+      stateInscription: clientData?.inscricao_estadual || undefined,
+    }
+  );
+
+  const paymentPayload: any = {
+    customer: asaasCustomerId,
+    billingType,
+    value: totalValue,
+    dueDate: opts.dueDate,
+    description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
+    externalReference: invoice.external_reference || `FATURA-${invoiceId}`,
+    notificationDisabled: true,
+  };
+  if (emiteNf) {
+    paymentPayload.postalService = false;
+    paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`.substring(0, 500);
+  }
+
+  console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: R$${totalValue.toFixed(2)} venc=${opts.dueDate}`);
+  const payment = await asaasRequest("POST", "/payments", paymentPayload);
+
+  const updates: any = {
+    asaas_customer_id: asaasCustomerId,
+    asaas_payment_id: payment.id,
+    client_cpf_cnpj: cpfCnpj,
+    due_date: opts.dueDate,
+    billing_type: billingType,
+    status: payment.status || "PENDING",
+    invoice_url: payment.invoiceUrl,
+    bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
+    updated_at: new Date().toISOString(),
+  };
+
+  let nfEmitted = false;
+  if (emiteNf) {
+    try {
+      const nfResult = await emitNfseImmediate({
+        paymentId: payment.id,
+        value: totalValue,
+        description: invoice.description || DESCRICAO_SERVICO_FIXA,
+      });
+      updates.nfse_status = nfResult.status === "AUTHORIZED" || nfResult.status === "SYNCHRONIZED" ? "AUTHORIZED" : nfResult.status;
+      if (nfResult.number) updates.nfse_number = String(nfResult.number);
+      nfEmitted = true;
+      console.log(`[asaas] [auto] NFS-e emitida para fatura #${invoiceId}: ${nfResult.status}`);
+    } catch (nfErr: any) {
+      console.error(`[asaas] [auto] NFS-e falhou para fatura #${invoiceId}: ${nfErr.message}`);
+      updates.nfse_status = "ERRO";
+      updates.nfse_error_message = String(nfErr?.message || "Erro").slice(0, 1000);
+    }
+  }
+
+  await supabaseAdmin.from("invoices").update(updates).eq("id", invoiceId);
+
+  const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
+  if (billingIdsMatch) {
+    const bIds = billingIdsMatch[1].split(",").map((s: string) => s.trim());
+    await supabaseAdmin.from("escort_billings").update({
+      status: "FATURADO",
+      invoice_id: invoiceId,
+      faturado_em: new Date().toISOString(),
+      faturado_por: opts.actorName || "Auto-Aprovação Cliente",
+    }).in("id", bIds);
+  }
+
+  await logSystemAudit({
+    action: "EMITIR_FATURA_AUTO_APROVACAO", targetId: String(invoiceId), targetType: "invoice",
+    details: `Fatura #${invoiceId} auto-emitida após aprovação do cliente. ${clientName} R$${totalValue.toFixed(2)} venc=${opts.dueDate}. Asaas=${payment.id}${nfEmitted ? " + NFS-e" : ""}`,
+  });
+
+  return {
+    success: true,
+    message: `Cobrança ${billingType} gerada${nfEmitted ? " + NFS-e emitida" : ""}. Asaas=${payment.id}`,
+    nfEmitted,
+    paymentId: payment.id,
+  };
+}
+
 export function registerAsaasRoutes(app: Express) {
   ensureInvoicesTable().catch(e => console.log("[asaas] table check:", e.message));
 

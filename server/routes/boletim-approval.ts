@@ -1,6 +1,7 @@
 import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
+import { emitInvoiceAuto } from "../asaas";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -742,6 +743,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       if (updateErr) throw updateErr;
 
+      let autoEmitResult: { success: boolean; message: string; nfEmitted: boolean; paymentId?: string } | null = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
         const { error: billErr } = await supabaseAdmin
@@ -776,7 +778,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         const periodLabel = `${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}`;
         const description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;
 
-        const { error: invErr } = await supabaseAdmin.from("invoices").insert({
+        const { data: invInserted, error: invErr } = await supabaseAdmin.from("invoices").insert({
           client_id: approval.client_id,
           client_name: approval.client_name,
           description,
@@ -786,10 +788,35 @@ export function registerBoletimApprovalRoutes(app: Express) {
           status: "AGUARDANDO_FATURAMENTO",
           external_reference: `BOLETIM-${approval.id}`,
           notes: `Aprovado por ${nome || "Cliente"} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Billing IDs: ${billingIds.join(", ")}`,
-        });
+        }).select().single();
 
         if (invErr) console.error("[boletim-approval] Erro ao criar fatura pendente:", invErr.message);
         else console.log(`[boletim-approval] Fatura pendente criada para ${approval.client_name} — R$${totalCalc.toFixed(2)}`);
+
+        // ─── Emissão automática (Asaas + NFS-e) ───────────────────────────
+        // Lê prazo de pagamento do cliente (fallback 30 dias) e dispara cobrança+NF.
+        if (invInserted && approval.client_id) {
+          try {
+            const { data: cli } = await supabaseAdmin.from("clients")
+              .select("payment_terms_days, billing_type")
+              .eq("id", approval.client_id).single();
+            const prazo = Number(cli?.payment_terms_days) > 0 ? Number(cli?.payment_terms_days) : 30;
+            const due = new Date(Date.now() + prazo * 24 * 60 * 60 * 1000);
+            // Formata em America/Sao_Paulo (YYYY-MM-DD)
+            const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
+            const billingType = (cli?.billing_type as string) || "BOLETO";
+
+            autoEmitResult = await emitInvoiceAuto(invInserted.id, {
+              dueDate,
+              billingType,
+              actorName: `Auto: aprovação cliente (${nome || approval.client_name})`,
+            });
+            console.log(`[boletim-approval] Auto-emissão: ${autoEmitResult.success ? "OK" : "FALHA"} — ${autoEmitResult.message}`);
+          } catch (autoErr: any) {
+            console.error("[boletim-approval] Auto-emissão falhou:", autoErr.message);
+            autoEmitResult = { success: false, message: autoErr.message, nfEmitted: false };
+          }
+        }
       } catch (invCreateErr: any) {
         console.error("[boletim-approval] Erro ao criar fatura:", invCreateErr.message);
       }
@@ -840,11 +867,19 @@ export function registerBoletimApprovalRoutes(app: Express) {
                     <td style="padding: 10px 12px; color: #888; font-size: 12px;">${clientIp}</td>
                   </tr>
                 </table>
+                ${autoEmitResult && autoEmitResult.success ? `
+                <div style="background: #d1fae5; border: 1px solid #10b981; border-radius: 8px; padding: 16px; text-align: center;">
+                  <p style="margin: 0; color: #065f46; font-weight: 700; font-size: 14px;">
+                    ✅ Cobrança Asaas gerada automaticamente${autoEmitResult.nfEmitted ? " + NFS-e emitida" : ""}.
+                  </p>
+                  <p style="margin: 6px 0 0; color: #047857; font-size: 12px;">${autoEmitResult.message}</p>
+                </div>` : `
                 <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 16px; text-align: center;">
                   <p style="margin: 0; color: #854d0e; font-weight: 700; font-size: 14px;">
                     Ação necessária: Emitir NF-e e boleto para este cliente.
                   </p>
-                </div>
+                  ${autoEmitResult ? `<p style="margin: 6px 0 0; color: #b45309; font-size: 12px;">Auto-emissão falhou: ${autoEmitResult.message}</p>` : ""}
+                </div>`}
               </div>
               <div style="background: #f1f5f9; padding: 12px 24px; text-align: center; border-top: 1px solid #e2e8f0;">
                 <p style="color: #64748b; font-size: 11px; margin: 0;">Torres Vigilância Patrimonial — Sistema de Gestão</p>
@@ -863,7 +898,10 @@ export function registerBoletimApprovalRoutes(app: Express) {
         console.error("[boletim-approval] Erro ao enviar notificação de aprovação:", mailErr.message);
       }
 
-      res.json({ success: true, message: "Boletim aprovado com sucesso! A nota fiscal e boleto serão emitidos em breve." });
+      const okMsg = autoEmitResult && autoEmitResult.success
+        ? `Boletim aprovado! Cobrança gerada${autoEmitResult.nfEmitted ? " e NF-e emitida" : ""} automaticamente.`
+        : "Boletim aprovado com sucesso! A nota fiscal e boleto serão emitidos em breve.";
+      res.json({ success: true, message: okMsg, autoEmit: autoEmitResult });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
