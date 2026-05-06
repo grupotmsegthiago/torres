@@ -1164,7 +1164,7 @@ export default function FuelingPage() {
                           <p className="text-xs text-neutral-500">{pv.vehicle.model} {pv.vehicle.brand}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-6 text-sm">
+                      <div className="flex items-center gap-4 text-sm overflow-x-auto">
                         <div className="text-center">
                           <p className="text-xs text-neutral-400">Abastecimentos</p>
                           <p className="font-bold text-neutral-900">{pv.count}</p>
@@ -1199,7 +1199,7 @@ export default function FuelingPage() {
                         {(() => {
                           const fs = fuelTypeShareByVehicle.get(pv.vehicle.id);
                           return (
-                            <div className="text-center min-w-[120px]" data-testid={`fuel-share-${pv.vehicle.id}`} title={fs && fs.total > 0 ? `Álcool ${fs.litAlcool.toFixed(1)}L · Gasolina ${fs.litGasolina.toFixed(1)}L` : "sem abastecimentos"}>
+                            <div className="text-center min-w-[110px] shrink-0" data-testid={`fuel-share-${pv.vehicle.id}`} title={fs && fs.total > 0 ? `Álcool ${fs.litAlcool.toFixed(1)}L · Gasolina ${fs.litGasolina.toFixed(1)}L` : "sem abastecimentos"}>
                               <p className="text-xs text-neutral-400">Álcool / Gasolina</p>
                               {fs && fs.total > 0 ? (
                                 <>
@@ -1225,7 +1225,7 @@ export default function FuelingPage() {
                           const pctU = totalCount > 0 ? (ts!.countUrbano / totalCount) * 100 : 0;
                           const pctR = totalCount > 0 ? (ts!.countRodovia / totalCount) * 100 : 0;
                           return (
-                            <div className="text-center min-w-[140px]" data-testid={`trip-share-${pv.vehicle.id}`} title={ts && totalCount > 0 ? `${ts.countUrbano} viagens ≤100km · ${ts.countRodovia} viagens >100km` : "sem missões"}>
+                            <div className="text-center min-w-[130px] shrink-0" data-testid={`trip-share-${pv.vehicle.id}`} title={ts && totalCount > 0 ? `${ts.countUrbano} viagens ≤100km · ${ts.countRodovia} viagens >100km` : "sem missões"}>
                               <p className="text-xs text-neutral-400">≤100km / &gt;100km</p>
                               {ts && totalCount > 0 ? (
                                 <>
