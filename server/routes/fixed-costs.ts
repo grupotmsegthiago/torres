@@ -399,9 +399,55 @@ export function registerFixedCostsRoutes(app: Express) {
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
 
-    // Horas trabalhadas no mês (Control iD / timesheets) — agregado por agente
+    // Horas trabalhadas no mês — agregado por agente.
+    // Fonte: control_id_punches (sync Control iD em tempo real). Fallback: timesheets (manual).
     const horasMes = new Map<number, { normais: number; extras: number }>();
     try {
+      const fromIso = new Date(from + "T00:00:00-03:00").toISOString();
+      const toIso = new Date(to + "T23:59:59-03:00").toISOString();
+      const { data: punches } = await supabaseAdmin
+        .from("control_id_punches")
+        .select("employee_id, punch_at")
+        .gte("punch_at", fromIso)
+        .lte("punch_at", toIso)
+        .order("punch_at", { ascending: true });
+
+      // Agrupa por (employee_id, dia BRT)
+      const byEmpDay = new Map<string, string[]>();
+      for (const p of (punches || []) as any[]) {
+        const empId = p.employee_id;
+        if (empId == null) continue;
+        const dt = new Date(p.punch_at);
+        const dayKey = new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+        const k = `${empId}|${dayKey}`;
+        if (!byEmpDay.has(k)) byEmpDay.set(k, []);
+        byEmpDay.get(k)!.push(p.punch_at);
+      }
+
+      // Calcula horas trabalhadas por dia (1ª/última batida menos almoço se houver 4 batidas)
+      // e separa normais (até 8h/dia) de extras (acima)
+      for (const [key, times] of Array.from(byEmpDay.entries())) {
+        const empId = Number(key.split("|")[0]);
+        const sorted = times.slice().sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        if (sorted.length < 2) continue;
+        const inMs = new Date(sorted[0]).getTime();
+        const outMs = new Date(sorted[sorted.length - 1]).getTime();
+        let workedMin = (outMs - inMs) / 60000;
+        if (sorted.length >= 4) {
+          const lunchMin = (new Date(sorted[2]).getTime() - new Date(sorted[1]).getTime()) / 60000;
+          workedMin -= lunchMin;
+        }
+        const horas = Math.max(0, workedMin / 60);
+        if (!horasMes.has(empId)) horasMes.set(empId, { normais: 0, extras: 0 });
+        const slot = horasMes.get(empId)!;
+        // Jornada padrão CLT: 8h/dia. Acima vira HE.
+        const normaisDia = Math.min(8, horas);
+        const extrasDia = Math.max(0, horas - 8);
+        slot.normais += normaisDia;
+        slot.extras += extrasDia;
+      }
+
+      // Fallback: agentes sem batidas no Control iD usam timesheets manuais (se existirem)
       const { data: ts } = await supabaseAdmin
         .from("timesheets")
         .select("employee_id, hours_worked, overtime")
@@ -409,12 +455,15 @@ export function registerFixedCostsRoutes(app: Express) {
         .lte("date", to);
       for (const r of (ts || []) as any[]) {
         const id = Number(r.employee_id);
+        if (horasMes.has(id)) continue; // já tem dados do Control iD
         if (!horasMes.has(id)) horasMes.set(id, { normais: 0, extras: 0 });
         const slot = horasMes.get(id)!;
         slot.normais += Number(r.hours_worked || 0);
         slot.extras += Number(r.overtime || 0);
       }
-    } catch { /* sem dados → barras zeradas */ }
+    } catch (e: any) {
+      console.warn("[rh-summary] horasMes fallback:", e?.message || e);
+    }
 
     const porAgente: any[] = [];
     let totalMensal = 0;

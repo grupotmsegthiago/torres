@@ -129,6 +129,8 @@ export default function CustosFixosPage() {
 
   const { data: rhSummary, isLoading: rhLoading } = useQuery<RHSummary>({
     queryKey: ["/api/fixed-costs/rh-summary"],
+    refetchInterval: 60_000, // sincroniza com sync Control iD (1min)
+    refetchOnWindowFocus: true,
   });
 
   const totalMensal = (summary?.monthly ?? 0) + (rhSummary?.monthly ?? 0);
