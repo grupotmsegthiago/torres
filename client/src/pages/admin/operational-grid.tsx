@@ -4792,19 +4792,18 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                         <span className="font-medium text-neutral-700 text-right">{data.os.destination}</span>
                       </div>
                     )}
-                    {data.os.route && (
-                      <div className="flex justify-between text-xs gap-2">
-                        <span className="text-neutral-500 flex items-center gap-1 flex-shrink-0"><Navigation className="w-3 h-3 text-blue-500" />Rota</span>
-                        <span className="font-medium text-neutral-700 text-right">{data.os.route}</span>
-                      </div>
-                    )}
                   </div>
                 )}
                 {lc && (
                   <>
-                    <div className="flex justify-between text-xs">
+                    <div className="flex justify-between items-start text-xs">
                       <span className="text-neutral-500">KM Total</span>
-                      <span className="font-bold text-neutral-700">{n(lc.km_total)} km</span>
+                      <div className="text-right">
+                        <span className={`font-bold ${n(lc.km_total) > 0 ? "text-neutral-700" : "text-neutral-400"}`}>{n(lc.km_total)} km</span>
+                        {n(lc.km_total) === 0 && n(lc.km_inicial) === 0 && (
+                          <p className="text-[9px] text-amber-600 mt-0.5 italic">Sem fotos km_chegada/km_final</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-neutral-500">Horas Missão</span>
