@@ -994,10 +994,24 @@ export default function MobileMissaoPage() {
     refetchInterval: 30000,
   });
 
-  const { data: scheduledList = [] } = useQuery<any[]>({
+  const { data: scheduledListRaw = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/scheduled"],
-    enabled: activeTab === "agendamentos",
+    refetchInterval: 30000,
   });
+
+  const nowMsForList = Date.now();
+  const scheduledList = [...scheduledListRaw]
+    .map((s: any) => ({
+      ...s,
+      _isOverdue: s.scheduledDate ? parseUTCTimestamp(s.scheduledDate) < nowMsForList : false,
+    }))
+    .sort((a: any, b: any) => {
+      if (a._isOverdue !== b._isOverdue) return a._isOverdue ? -1 : 1;
+      const da = a.scheduledDate ? parseUTCTimestamp(a.scheduledDate) : Infinity;
+      const db = b.scheduledDate ? parseUTCTimestamp(b.scheduledDate) : Infinity;
+      return da - db;
+    });
+  const overdueCount = scheduledList.filter((s: any) => s._isOverdue).length;
 
   const currentStep = (mission?.missionStatus as MissionStep) || "aguardando";
   const config = stepConfig[currentStep] || stepConfig.aguardando;
@@ -1585,7 +1599,7 @@ export default function MobileMissaoPage() {
     );
   }
 
-  const scheduledCount = (mission?.scheduledMissions?.length || 0) + scheduledList.length;
+  const scheduledCount = scheduledList.length;
 
   if (!mission && activeTab === "missao") {
     return (
@@ -1658,10 +1672,10 @@ export default function MobileMissaoPage() {
                 {scheduledList.length} agendamento{scheduledList.length > 1 ? "s" : ""}
               </p>
               {scheduledList.map((s: any) => (
-                <div key={s.id} className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2" data-testid={`scheduled-card-${s.id}`}>
+                <div key={s.id} className={`bg-white rounded-2xl border ${s._isOverdue ? "border-red-400 bg-red-50" : "border-neutral-200"} p-4 space-y-2`} data-testid={`scheduled-card-${s.id}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center">
+                      <div className={`w-8 h-8 rounded-lg ${s._isOverdue ? "bg-red-600" : "bg-neutral-900"} flex items-center justify-center`}>
                         <Crosshair className="w-4 h-4 text-white" />
                       </div>
                       <div>
@@ -1669,9 +1683,14 @@ export default function MobileMissaoPage() {
                         <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(parseUTCTimestamp(s.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "Agendada"}</p>
                       </div>
                     </div>
-                    {s.priority === "imediata" && (
-                      <span className="bg-red-500 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse">Imediata</span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {s._isOverdue && (
+                        <span className="bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse" data-testid={`badge-overdue-${s.id}`}>Atrasada</span>
+                      )}
+                      {s.priority === "imediata" && (
+                        <span className="bg-orange-500 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse">Imediata</span>
+                      )}
+                    </div>
                   </div>
 
                   {s.scheduledDate && (
@@ -1768,13 +1787,28 @@ export default function MobileMissaoPage() {
           >
             <Calendar className="w-4 h-4 inline mr-1.5" />
             Agendamentos
-            {mission?.scheduledMissions?.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                {mission.scheduledMissions.length}
+            {scheduledCount > 0 && (
+              <span className={`absolute -top-1 -right-1 ${overdueCount > 0 ? "bg-red-500 animate-pulse" : "bg-blue-500"} text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center`} data-testid="badge-scheduled-count">
+                {scheduledCount}
               </span>
             )}
           </button>
         </div>
+        {overdueCount > 0 && (
+          <button
+            onClick={() => setActiveTab("agendamentos")}
+            className="w-full bg-red-50 border-2 border-red-400 rounded-2xl px-4 py-3 flex items-center gap-3 animate-pulse"
+            data-testid="banner-overdue-missions"
+          >
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+            <div className="flex-1 text-left">
+              <p className="text-xs font-black text-red-700 uppercase tracking-wider">
+                {overdueCount} missão{overdueCount > 1 ? "ões" : ""} atrasada{overdueCount > 1 ? "s" : ""}
+              </p>
+              <p className="text-[10px] text-red-600">Toque para ver os agendamentos pendentes</p>
+            </div>
+          </button>
+        )}
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center">
