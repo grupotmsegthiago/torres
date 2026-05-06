@@ -13,7 +13,9 @@ import {
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
   Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert, AlertTriangle,
+  Info, Wrench, Building2, UserCog,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { queryClient, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -597,83 +599,136 @@ export default function BalancoGerencialPage() {
               (totals.desp_manutencao || 0) +
               (totals.desp_outras || 0);
             const fixos = totals.custosFixosRateados || 0;
-            const Row = ({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) => (
-              <div className="flex justify-between items-baseline">
-                <span className={`text-xs ${muted ? "text-neutral-500" : "text-neutral-700"}`}>{label}</span>
-                <span className={`text-xs font-mono font-semibold ${muted ? "text-neutral-500" : "text-neutral-800"}`}>{value}</span>
+            const TipRow = ({ label, value, color = "neutral" }: { label: string; value: string; color?: string }) => (
+              <div className="flex justify-between items-baseline gap-3 py-0.5">
+                <span className="text-[11px] text-neutral-300">{label}</span>
+                <span className={`text-[11px] font-mono font-bold ${color === "red" ? "text-red-300" : color === "amber" ? "text-amber-300" : color === "blue" ? "text-blue-300" : "text-neutral-100"}`}>{value}</span>
               </div>
             );
+
+            type Cat = {
+              key: string; label: string; value: number; color: "red" | "amber" | "blue";
+              icon: any; bg: string; text: string; bar: string;
+              tipTitle: string; tipDesc: string; rows: Array<{ label: string; value: number }>;
+            };
+            const cats: Cat[] = [];
+            if (operacional > 0) cats.push({
+              key: "op", label: "Operacional", value: operacional, color: "red",
+              icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
+              tipTitle: "Custos Operacionais",
+              tipDesc: "Despesas variáveis ligadas diretamente à execução das missões: pagamento variável aos agentes (VRP), combustível, pedágios, manutenção de viaturas e outras despesas registradas no período.",
+              rows: [
+                { label: "VRP (agentes)", value: totals.pag },
+                { label: "Combustível", value: totals.desp_combustivel },
+                { label: "Pedágio", value: totals.desp_pedagio },
+                { label: "Manutenção", value: totals.desp_manutencao },
+                { label: "Outras despesas", value: totals.desp_outras },
+              ].filter(r => r.value > 0),
+            });
+            if (totals.provisaoRH > 0) cats.push({
+              key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
+              icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
+              tipTitle: "RH — Folha Real Rateada",
+              tipDesc: `Custo real de pessoal calculado pelo mesmo motor da tela Custos Fixos: salário cadastrado + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias. Rateado por dia no período.`,
+              rows: [
+                { label: `Folha mensal real (${rhSummary?.agentCount ?? activeAgentCount} ag.)`, value: (totals.provisaoRH / Math.max(daysInPeriod, 1)) * 30 },
+                { label: `÷ 30 × ${daysInPeriod} dia(s)`, value: totals.provisaoRH },
+              ],
+            });
+            if (fixos > 0) cats.push({
+              key: "fx", label: "Estrutura (rateado)", value: fixos, color: "blue",
+              icon: Building2, bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500",
+              tipTitle: "Custos de Estrutura",
+              tipDesc: `Custo de "estar aberto": aluguel, contas, sistemas, tributos administrativos e demais custos fixos. Rateados por dia conforme o período selecionado.`,
+              rows: [
+                { label: "Base mensal fixa", value: totals.custosFixosMensal },
+                { label: `÷ 30 × ${daysInPeriod} dia(s)`, value: fixos },
+                { label: "Custo por dia", value: totals.custosFixosMensal / 30 },
+              ],
+            });
+
             return (
-              <Card className="p-4 border-neutral-200" data-testid="card-custos">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                    <ArrowDownRight size={16} className="text-red-700" />
+              <TooltipProvider delayDuration={150}>
+                <Card className="p-4 border-neutral-200" data-testid="card-custos">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                      <ArrowDownRight size={16} className="text-red-700" />
+                    </div>
+                    <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="ml-auto text-neutral-300 hover:text-neutral-500" aria-label="Como é calculado" data-testid="info-custos-totais">
+                          <Info size={13} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
+                        Soma de tudo que custa para operar no período: despesas operacionais reais + folha real rateada + custos fixos rateados. Passe o mouse em cada categoria para ver o detalhe.
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
-                  <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
-                </div>
-                <p className="text-xl font-black text-red-700 font-mono" data-testid="text-custo-total">{fmt(totals.custoTotal)}</p>
+                  <p className="text-xl font-black text-red-700 font-mono" data-testid="text-custo-total">{fmt(totals.custoTotal)}</p>
 
-                {totals.custoTotal === 0 && (
-                  <p className="text-xs text-neutral-500 mt-2">Sem despesas no período</p>
-                )}
+                  {totals.custoTotal === 0 ? (
+                    <p className="text-xs text-neutral-500 mt-2">Sem despesas no período</p>
+                  ) : (
+                    <>
+                      <div className="mt-3 h-1.5 w-full rounded-full bg-neutral-100 overflow-hidden flex" data-testid="bar-custos-mix">
+                        {cats.map(c => (
+                          <Tooltip key={`bar-${c.key}`}>
+                            <TooltipTrigger asChild>
+                              <div className={`${c.bar} h-full`} style={{ width: `${(c.value / totals.custoTotal) * 100}%` }} />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              <b>{c.label}</b> · {fmt(c.value)} ({fmtPct((c.value / totals.custoTotal) * 100)})
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
 
-                {operacional > 0 && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">Operacional</span>
-                      <span className="text-xs font-mono font-bold text-red-700">{fmt(operacional)}</span>
-                    </div>
-                    <div className="space-y-0.5 pl-2 border-l-2 border-red-100">
-                      {totals.pag > 0 && <Row label="VRP (agentes)" value={fmt(totals.pag)} muted />}
-                      {totals.desp_combustivel > 0 && <Row label="Combustível" value={fmt(totals.desp_combustivel)} muted />}
-                      {totals.desp_pedagio > 0 && <Row label="Pedágio" value={fmt(totals.desp_pedagio)} muted />}
-                      {totals.desp_manutencao > 0 && <Row label="Manutenção" value={fmt(totals.desp_manutencao)} muted />}
-                      {totals.desp_outras > 0 && <Row label="Outras" value={fmt(totals.desp_outras)} muted />}
-                    </div>
-                  </div>
-                )}
-
-                {totals.provisaoRH > 0 && (
-                  <div className="mt-3">
-                    <div
-                      className="flex items-center justify-between mb-1"
-                      title="Folha real: mesmo cálculo da tela Custos Fixos (engine calcularFolha com salário cadastrado, INSS/IRRF/FGTS, 13º, férias e provisões)"
-                    >
-                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (Folha Real)</span>
-                      <span className="text-xs font-mono font-bold text-amber-700">{fmt(totals.provisaoRH)}</span>
-                    </div>
-                    <div className="space-y-0.5 pl-2 border-l-2 border-amber-100">
-                      <Row
-                        label={`Folha mensal real ÷ 30 × ${daysInPeriod}d (${rhSummary?.agentCount ?? activeAgentCount} ag.)`}
-                        value={fmt(totals.provisaoRH)}
-                        muted
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {fixos > 0 && (
-                  <div className="mt-3">
-                    <div
-                      className="flex items-center justify-between mb-1"
-                      title={`Custo de Estar Aberto: ${fmt(totals.custosFixosMensal)}/mês ÷ 30 × ${daysInPeriod} dias`}
-                    >
-                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Estrutura (rateado)</span>
-                      <span className="text-xs font-mono font-bold text-blue-700">{fmt(fixos)}</span>
-                    </div>
-                    <div className="space-y-0.5 pl-2 border-l-2 border-blue-100">
-                      <Row
-                        label={`${daysInPeriod} dia(s) × ${fmt(totals.custosFixosMensal / 30)}/dia`}
-                        value={fmt(fixos)}
-                        muted
-                      />
-                      <p className="text-[10px] text-neutral-400 italic mt-0.5">
-                        Base: {fmt(totals.custosFixosMensal)}/mês
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </Card>
+                      <div className="mt-3 space-y-1.5">
+                        {cats.map(c => {
+                          const Icon = c.icon;
+                          const pct = (c.value / totals.custoTotal) * 100;
+                          return (
+                            <Tooltip key={c.key}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-neutral-50 text-left transition-colors`}
+                                  data-testid={`row-cat-${c.key}`}
+                                >
+                                  <span className={`w-6 h-6 rounded ${c.bg} flex items-center justify-center shrink-0`}>
+                                    <Icon size={12} className={c.text} />
+                                  </span>
+                                  <span className="text-[11px] font-bold text-neutral-700 flex-1 truncate">{c.label}</span>
+                                  <span className="text-[10px] text-neutral-400 font-mono tabular-nums">{fmtPct(pct)}</span>
+                                  <span className={`text-xs font-mono font-black ${c.text} tabular-nums`}>{fmt(c.value)}</span>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-sm p-3 bg-neutral-900 text-neutral-100 border-neutral-700">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <Icon size={13} className={c.text} />
+                                  <span className="text-xs font-black uppercase tracking-wide">{c.tipTitle}</span>
+                                </div>
+                                <p className="text-[11px] text-neutral-300 leading-relaxed mb-2">{c.tipDesc}</p>
+                                <div className="border-t border-neutral-700 pt-2">
+                                  {c.rows.map((r, i) => (
+                                    <TipRow key={i} label={r.label} value={fmt(r.value)} color={c.color} />
+                                  ))}
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-neutral-700 flex items-baseline justify-between">
+                                  <span className="text-[10px] uppercase font-black text-neutral-400">% do total</span>
+                                  <span className={`text-xs font-mono font-black ${c.color === "red" ? "text-red-300" : c.color === "amber" ? "text-amber-300" : "text-blue-300"}`}>{fmtPct(pct)}</span>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </Card>
+              </TooltipProvider>
             );
           })()}
           <Card className="p-4 border-neutral-200" data-testid="card-lucro">
