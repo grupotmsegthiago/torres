@@ -373,7 +373,11 @@ function MappingTab() {
   });
   const { data: deviceUsers = [], refetch: refetchDeviceUsers, isFetching: loadingUsers } = useQuery<Array<{ id: string; name: string; matricula?: string }>>({
     queryKey: ["/api/control-id/devices", deviceId, "users"],
-    queryFn: async () => { const r = await authFetch(`/api/control-id/devices/${deviceId}/users`); return r.json(); },
+    queryFn: async () => {
+      const r = await authFetch(`/api/control-id/devices/${deviceId}/users`);
+      const j = await r.json().catch(() => []);
+      return Array.isArray(j) ? j : [];
+    },
     enabled: false,
   });
 
