@@ -1172,6 +1172,28 @@ import type { Express } from "express";
       try { await removeAutoTransaction("service_order", String(req.params.id)); } catch (_e) {}
     }
 
+    // REATIVAÇÃO: transição de recusada/cancelada → concluída
+    // Limpa flags de congelamento da OS e reseta o billing para permitir recálculo limpo.
+    const wasCancelladaOuRecusada = existing && (existing.status === "recusada" || existing.status === "cancelada");
+    const isNowConcluida = parsed.data.status === "concluída" || parsed.data.status === "concluida";
+    const isReactivating = wasCancelladaOuRecusada && isNowConcluida;
+    if (isReactivating) {
+      // Limpa marcadores de congelamento na OS
+      (parsed.data as any).custos_congelados_em = null;
+      (parsed.data as any).custos_congelados_por = null;
+      (parsed.data as any).cancellationReason = null;
+      // Reseta o billing CANCELADO para permitir recálculo (status volta para A_VERIFICAR e limpa observação de cancelamento)
+      try {
+        await supabaseAdmin.from("escort_billings")
+          .update({ status: "A_VERIFICAR", observacoes: null })
+          .eq("service_order_id", Number(req.params.id))
+          .eq("status", "CANCELADO");
+        console.log(`[so-patch-reactivate] OS ${req.params.id}: billing CANCELADO → A_VERIFICAR (recusada/cancelada → concluída)`);
+      } catch (e: any) {
+        console.error(`[so-patch-reactivate] erro ao resetar billing:`, e.message);
+      }
+    }
+
     const isRecusadaOuCancelada = (parsed.data.status === "recusada" || parsed.data.status === "cancelada")
       && existing && existing.status !== parsed.data.status;
     if (isRecusadaOuCancelada) {
