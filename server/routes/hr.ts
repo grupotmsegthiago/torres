@@ -9,6 +9,80 @@ import type { Express } from "express";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
 
+  // Parser determinístico para holerites do layout TORRES Vigilância
+  // Estrutura: bloco "N [referência] valor" + bloco de labels separado (Dias trabalhados, Periculosidade 30%, Horas extras 60%, Adicional noturno 20%, DSR horas extras, Vale refeição, Ajuda de custo)
+  function parseHoleriteTorres(text: string): any | null {
+    const toNum = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+
+    // 1) Captura linhas numeradas com valor monetário (último número da linha)
+    // Ex: "1 24,00 2.052,24" / "2 615,67" / "3 134,13 2.504,55"
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const itemValues: Record<number, number> = {};
+    for (const ln of lines) {
+      const m = ln.match(/^(\d{1,2})\s+([\d.,]+)(?:\s+([\d.,]+))?\s*$/);
+      if (m) {
+        const idx = Number(m[1]);
+        if (idx >= 1 && idx <= 20) {
+          // valor é o ÚLTIMO número da linha (proventos), não a referência
+          const valStr = m[3] || m[2];
+          itemValues[idx] = toNum(valStr);
+        }
+      }
+    }
+    if (Object.keys(itemValues).length === 0) return null;
+
+    // 2) Detecta quais rubricas estão presentes no texto (independente de ordem)
+    const has = {
+      diasTrabalhados: /Dias\s+trabalhados|Sal[áa]rio\s+(?:Base|do\s+M[êe]s)/i.test(text),
+      periculosidade: /Periculosidade/i.test(text),
+      horasExtras: /Horas?\s+extras?/i.test(text),
+      adicionalNoturno: /Adicional\s+noturno/i.test(text),
+      dsr: /\bDSR\b|Descanso\s+Semanal/i.test(text),
+      valeRefeicao: /Vale\s+(refei[çc][ãa]o|alimenta[çc][ãa]o)|^V[RA]\b/im.test(text),
+      ajudaCusto: /Ajuda\s+de\s+custo/i.test(text),
+    };
+
+    // Ordem canônica do holerite TORRES Vigilância: Dias Trabalhados → Periculosidade → Horas Extras → Adicional Noturno → DSR → Vale Refeição → Ajuda de Custo
+    const canonicalOrder: { key: string; present: boolean }[] = [
+      { key: "salarioBase", present: has.diasTrabalhados },
+      { key: "periculosidade", present: has.periculosidade },
+      { key: "horasExtras", present: has.horasExtras },
+      { key: "adicionalNoturno", present: has.adicionalNoturno },
+      { key: "dsr", present: has.dsr },
+      { key: "valeRefeicao", present: has.valeRefeicao },
+      { key: "ajudaCusto", present: has.ajudaCusto },
+    ];
+    const uniqKeys = canonicalOrder.filter(x => x.present).map(x => x.key);
+
+    if (uniqKeys.length === 0) return null;
+
+    // 3) Mapeia posição→valor: labels[i] = itemValues[i+1]
+    const out: Record<string, number> = {
+      salarioBase: 0, periculosidade: 0, horasExtras: 0, adicionalNoturno: 0,
+      dsr: 0, valeRefeicao: 0, ajudaCusto: 0, beneficios: 0,
+    };
+    for (let i = 0; i < uniqKeys.length; i++) {
+      const v = itemValues[i + 1];
+      if (v != null && out[uniqKeys[i]] === 0) out[uniqKeys[i]] = v;
+    }
+
+    // 4) Total dos vencimentos (quando presente)
+    const totMatch = text.match(/Total\s+dos\s+Vencimentos[\s\S]{0,80}?([\d.]+,\d{2})/i);
+    const totalBruto = totMatch ? toNum(totMatch[1]) : 0;
+    const liqMatch = text.match(/L[ií]quido\s+a\s+Receber[^\d]*([\d.]+,\d{2})/i);
+    const totalLiquido = liqMatch ? toNum(liqMatch[1]) : 0;
+
+    // 5) Validação: se soma das rubricas + diferença ≈ totalBruto, joga resíduo em "beneficios"
+    const sum = out.salarioBase + out.periculosidade + out.horasExtras + out.adicionalNoturno + out.dsr + out.valeRefeicao + out.ajudaCusto;
+    if (totalBruto > 0 && Math.abs(sum - totalBruto) > 0.5) {
+      // tem item não mapeado — distribui no beneficios
+      const diff = totalBruto - sum;
+      if (diff > 0) out.beneficios = +diff.toFixed(2);
+    }
+
+    return { ...out, totalBruto, totalLiquido };
+  }
+
   export function registerHRRoutes(app: Express) {
     // ====================== AUDIT LOG ======================
 
@@ -696,6 +770,7 @@ import type { Express } from "express";
       // Se for PDF, extrai o texto e envia como texto (mais preciso e rápido que OCR de imagem)
       const isPdf = /^data:application\/pdf/i.test(imageData);
       let pdfText = "";
+      let preParsed: any = null;
       if (isPdf) {
         try {
           const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
@@ -710,6 +785,14 @@ import type { Express } from "express";
           return res.status(400).json({ message: "Não foi possível ler o PDF: " + pdfErr.message });
         }
         if (!pdfText) return res.status(400).json({ message: "PDF sem texto legível. Envie uma imagem (foto/scan) do holerite." });
+
+        // Parser determinístico para holerites do layout TORRES (valores numerados + labels separados)
+        try {
+          preParsed = parseHoleriteTorres(pdfText);
+          if (preParsed) console.log("[ocr-holerite] Parser determinístico:", JSON.stringify(preParsed));
+        } catch (e: any) {
+          console.warn("[ocr-holerite] parser determinístico falhou:", e.message);
+        }
       }
 
       console.log("[ocr-holerite] Enviando para OpenAI...");
@@ -803,8 +886,18 @@ ${empNames}`
         }
       }
 
+      // Merge: parser determinístico tem prioridade sobre OpenAI para rubricas (PDF layout disjunto)
+      const finalData = { ...parsed };
+      if (preParsed) {
+        const fields = ["salarioBase", "periculosidade", "horasExtras", "adicionalNoturno", "dsr", "valeRefeicao", "ajudaCusto", "beneficios", "totalBruto", "totalLiquido"];
+        for (const f of fields) {
+          if (preParsed[f] && preParsed[f] > 0) finalData[f] = preParsed[f];
+        }
+        console.log("[ocr-holerite] Merge final:", JSON.stringify({ salarioBase: finalData.salarioBase, periculosidade: finalData.periculosidade, horasExtras: finalData.horasExtras, adicionalNoturno: finalData.adicionalNoturno, dsr: finalData.dsr, valeRefeicao: finalData.valeRefeicao, ajudaCusto: finalData.ajudaCusto, totalBruto: finalData.totalBruto }));
+      }
+
       console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${parsed.employeeName}`);
-      res.json({ ...parsed, matchedEmployeeId });
+      res.json({ ...finalData, matchedEmployeeId });
     } catch (err: any) {
       console.error("[ocr-holerite] Error:", err.message);
       res.status(500).json({ message: "Erro ao processar holerite: " + (err.message || "Erro desconhecido") });
