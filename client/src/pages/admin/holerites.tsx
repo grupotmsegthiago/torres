@@ -325,20 +325,47 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
         const data = await r.json();
         setOcrResult(data);
 
-        setForm(f => ({
-          ...f,
-          employeeId: data.matchedEmployeeId ? String(data.matchedEmployeeId) : f.employeeId,
-          month: data.month ? String(data.month) : f.month,
-          year: data.year ? String(data.year) : f.year,
-          salarioBase: data.salarioBase ? String(data.salarioBase) : f.salarioBase,
-          periculosidade: data.periculosidade ? String(data.periculosidade) : f.periculosidade,
-          horasExtras: data.horasExtras ? String(data.horasExtras) : f.horasExtras,
-          adicionalNoturno: data.adicionalNoturno ? String(data.adicionalNoturno) : f.adicionalNoturno,
-          beneficios: data.beneficios ? String(data.beneficios) : f.beneficios,
-          descontos: data.descontos ? String(data.descontos) : f.descontos,
-        }));
+        const filled = {
+          employeeId: data.matchedEmployeeId ? String(data.matchedEmployeeId) : "",
+          month: data.month ? String(data.month) : "",
+          year: data.year ? String(data.year) : "",
+          salarioBase: data.salarioBase ? String(data.salarioBase) : "0",
+          periculosidade: data.periculosidade ? String(data.periculosidade) : "0",
+          horasExtras: data.horasExtras ? String(data.horasExtras) : "0",
+          adicionalNoturno: data.adicionalNoturno ? String(data.adicionalNoturno) : "0",
+          beneficios: data.beneficios ? String(data.beneficios) : "0",
+          descontos: data.descontos ? String(data.descontos) : "0",
+        };
+        setForm(f => ({ ...f, ...filled }));
 
-        toast({ title: "Holerite importado com sucesso!", description: `Funcionário: ${data.employeeName || "não identificado"} · ${data.competencia || ""}` });
+        // Auto-save quando OCR identificou funcionário + competência
+        if (filled.employeeId && filled.month && filled.year) {
+          try {
+            const sb = Number(filled.salarioBase) || 0;
+            const he = Number(filled.horasExtras) || 0;
+            const an = Number(filled.adicionalNoturno) || 0;
+            const pe = Number(filled.periculosidade) || 0;
+            const be = Number(filled.beneficios) || 0;
+            const de = Number(filled.descontos) || 0;
+            await apiRequest("POST", `/api/employees/${filled.employeeId}/payslips`, {
+              employeeId: filled.employeeId,
+              month: Number(filled.month),
+              year: Number(filled.year),
+              salarioBase: sb, horasExtras: he, adicionalNoturno: an, periculosidade: pe, beneficios: be, descontos: de,
+              documentUrl: base64,
+              status: "pendente",
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
+            toast({ title: "Holerite importado e salvo!", description: `${data.employeeName || ""} · ${data.competencia || ""}` });
+            onClose();
+            setOcrProcessing(false);
+            return;
+          } catch (saveErr: any) {
+            toast({ title: "OCR OK, mas falhou ao salvar", description: saveErr.message + ". Revise os dados e clique em Salvar.", variant: "destructive" });
+          }
+        } else {
+          toast({ title: "Holerite lido com sucesso!", description: `Revise${!filled.employeeId ? " e selecione o funcionário" : ""} antes de salvar.` });
+        }
       } catch (err: any) {
         toast({ title: "Erro no OCR", description: err.message || "Não foi possível ler o documento", variant: "destructive" });
       }
