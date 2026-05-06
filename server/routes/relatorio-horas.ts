@@ -271,6 +271,7 @@ export function registerRelatorioHorasRoutes(app: Express) {
         employeesCount: list.filter(e => e.osCount > 0 || e.totalHorasPonto > 0).length,
       };
 
+      console.log("[relatorio-horas] dias por emp:", list.map(e => `${e.name}=${e.diasTrabalhados}`).join(", "));
       res.json({
         from: startQ || null,
         to: endQ || null,
