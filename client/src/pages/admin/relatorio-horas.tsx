@@ -24,7 +24,7 @@ type EmployeeRow = {
     fim: string;
     horas: number;
     role: "principal" | "secundario";
-    fonte: "step_logs" | "mission_dates";
+    fonte: "step_logs" | "mission_dates" | "fallback" | "sem_horario";
   }>;
 };
 
@@ -331,8 +331,8 @@ export default function RelatorioHorasPage() {
                                             </span>
                                           </td>
                                           <td className="py-1 pl-2">
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-700 font-bold">
-                                              {o.fonte === "step_logs" ? "Saída→Retorno" : "Início→Fim"}
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${o.fonte === "sem_horario" ? "bg-red-100 text-red-700" : "bg-neutral-200 text-neutral-700"}`}>
+                                              {o.fonte === "step_logs" ? "Saída→Retorno" : o.fonte === "mission_dates" ? "Início→Fim" : o.fonte === "fallback" ? "Aproximado" : "Sem horário"}
                                             </span>
                                           </td>
                                         </tr>

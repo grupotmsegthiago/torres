@@ -39,11 +39,34 @@ function findStepTs(stepLogs: any[], stepKey: string): string | null {
   return null;
 }
 
-function osWindow(os: any): { ini: string | null; fim: string | null; from: "step_logs" | "mission_dates" | null } {
+function firstStepTs(stepLogs: any[]): string | null {
+  if (!Array.isArray(stepLogs) || !stepLogs.length) return null;
+  for (const l of stepLogs) {
+    const ts = l.timestamp || l.completedAt;
+    if (ts) return ts;
+  }
+  return null;
+}
+
+function lastStepTs(stepLogs: any[]): string | null {
+  if (!Array.isArray(stepLogs) || !stepLogs.length) return null;
+  for (let i = stepLogs.length - 1; i >= 0; i--) {
+    const l = stepLogs[i];
+    const ts = l.timestamp || l.completedAt;
+    if (ts) return ts;
+  }
+  return null;
+}
+
+function osWindow(os: any): { ini: string | null; fim: string | null; from: "step_logs" | "mission_dates" | "fallback" | null } {
   const stepIni = findStepTs(os.step_logs, "checkout_km_saida");
   const stepFim = findStepTs(os.step_logs, "chegada_base") || findStepTs(os.step_logs, "encerrada") || findStepTs(os.step_logs, "retorno_base");
   if (stepIni && stepFim) return { ini: stepIni, fim: stepFim, from: "step_logs" };
   if (os.mission_started_at && os.completed_date) return { ini: os.mission_started_at, fim: os.completed_date, from: "mission_dates" };
+  // Fallback amplo: primeiro/último step_log + completed_date
+  const ini = stepIni || os.mission_started_at || firstStepTs(os.step_logs);
+  const fim = stepFim || os.completed_date || lastStepTs(os.step_logs);
+  if (ini && fim) return { ini, fim, from: "fallback" };
   return { ini: null, fim: null, from: null };
 }
 
@@ -83,11 +106,11 @@ export function registerRelatorioHorasRoutes(app: Express) {
 
       const osValid = (osRows || []).filter((o: any) => {
         if (o.cancellation_reason && String(o.cancellation_reason).trim().length > 2) return false;
-        const w = osWindow(o);
-        if (!w.ini || !w.fim) return false;
+        const refDate = o.completed_date || o.mission_started_at || o.scheduled_date;
+        if (!refDate) return false;
         if (startQ) {
           const startDt = parseYmdToBRT(startQ);
-          if (new Date(w.ini) < startDt) return false;
+          if (new Date(refDate) < startDt) return false;
         }
         return true;
       });
@@ -136,10 +159,9 @@ export function registerRelatorioHorasRoutes(app: Express) {
       if (sourceQ === "os" || sourceQ === "ambos") {
         for (const o of osValid) {
           const w = osWindow(o);
-          if (!w.ini || !w.fim) continue;
-          const horas = diffHours(w.ini, w.fim);
-          if (horas <= 0) continue;
-          const dateLabel = ymdBRT(w.ini);
+          const horas = w.ini && w.fim ? diffHours(w.ini, w.fim) : 0;
+          const refDate = w.ini || o.mission_started_at || o.completed_date || o.scheduled_date;
+          const dateLabel = ymdBRT(refDate);
           const principalId = o.assigned_employee_id ? Number(o.assigned_employee_id) : null;
           const secundarioId = o.assigned_employee_2_id ? Number(o.assigned_employee_2_id) : null;
           const targets: { id: number; role: "principal" | "secundario" }[] = [];
@@ -155,15 +177,16 @@ export function registerRelatorioHorasRoutes(app: Express) {
               osId: o.id,
               osNumber: o.os_number,
               date: dateLabel,
-              ini: w.ini,
-              fim: w.fim,
+              ini: w.ini || refDate,
+              fim: w.fim || refDate,
               horas: Math.round(horas * 100) / 100,
               role: t.role,
-              fonte: w.from!,
+              fonte: (w.from || "sem_horario") as any,
             });
             const cur = emp.primeiraOs;
-            if (!cur || w.ini < cur.date) {
-              emp.primeiraOs = { osId: o.id, osNumber: o.os_number, date: w.ini };
+            const refIso = (w.ini || refDate) as string;
+            if (!cur || refIso < cur.date) {
+              emp.primeiraOs = { osId: o.id, osNumber: o.os_number, date: refIso };
             }
           }
         }
