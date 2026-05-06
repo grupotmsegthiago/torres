@@ -338,13 +338,13 @@ export default function BoletimMedicaoPage() {
   const filteredGroups = Object.entries(clientGroups).map(([cid, group]) => {
     let orders = group.orders;
     if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
-    else if (statusFilter === "PENDENTE") orders = orders.filter(o => o.status !== "recusada" && o.status !== "cancelada" && (!o.billing || o.billing?.status === "A_VERIFICAR"));
+    else if (statusFilter === "PENDENTE") orders = orders.filter(o => o.status !== "recusada" && o.status !== "cancelada" && !(String((o as any).cancellationReason || "").trim().length > 2) && (!o.billing || o.billing?.status === "A_VERIFICAR"));
     else if (statusFilter === "ENVIADA_APROVACAO") orders = orders.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "A_FATURAR") orders = orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
     else if (statusFilter === "FATURADA") orders = orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO");
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
-    else if (statusFilter === "CANCELADA") orders = orders.filter(o => o.status === "cancelada" || o.status === "recusada" || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO");
+    else if (statusFilter === "CANCELADA") orders = orders.filter(o => o.status === "cancelada" || o.status === "recusada" || (String((o as any).cancellationReason || "").trim().length > 2) || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO");
     else if (statusFilter === "FORA_CICLO") {
       orders = orders.filter(o => {
         if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
@@ -388,12 +388,12 @@ export default function BoletimMedicaoPage() {
 
   const totalOs = periodFilteredOs.length;
   const liveCount = periodFilteredOs.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
-  const pendingCount = periodFilteredOs.filter(o => o.status !== "recusada" && o.status !== "cancelada" && (!o.billing || o.billing?.status === "A_VERIFICAR")).length;
+  const pendingCount = periodFilteredOs.filter(o => o.status !== "recusada" && o.status !== "cancelada" && !(String((o as any).cancellationReason || "").trim().length > 2) && (!o.billing || o.billing?.status === "A_VERIFICAR")).length;
   const sentForApprovalCount = periodFilteredOs.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
   const approvedCount = periodFilteredOs.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
   const faturadoCount = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").length;
   const aFaturarCount = periodFilteredOs.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
-  const canceladasCount = periodFilteredOs.filter(o => o.status === "cancelada" || o.status === "recusada" || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO").length;
+  const canceladasCount = periodFilteredOs.filter(o => o.status === "cancelada" || o.status === "recusada" || (String((o as any).cancellationReason || "").trim().length > 2) || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO").length;
   const foraCicloCount = periodFilteredOs.filter(o => {
     if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
     const bStatus = o.billing?.status;
@@ -724,14 +724,19 @@ export default function BoletimMedicaoPage() {
             });
             if (inCycle.length === 0) continue;
 
+            const isLogicallyRefused = (o: any) => {
+              const r = String((o as any).cancellationReason || "").trim();
+              return r.length > 2;
+            };
             const pendentes = inCycle.filter(o => {
               if (o.status === "cancelada" || o.status === "recusada") return false;
+              if (isLogicallyRefused(o)) return false;
               if (o.billing?.status === "CANCELADO" || o.billing?.status === "CANCELADA") return false;
               const st = o.billing?.status;
               if (!o.billing) return true;
               return ["A_VERIFICAR", "REJEITADA"].includes(st) || (o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && st !== "APROVADA" && st !== "FATURADO" && st !== "PAGO");
             });
-            const aprovadas = inCycle.filter(o => o.status !== "cancelada" && o.status !== "recusada" && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO" && !o.billing?.invoice_id);
+            const aprovadas = inCycle.filter(o => o.status !== "cancelada" && o.status !== "recusada" && !isLogicallyRefused(o) && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO" && !o.billing?.invoice_id);
 
             if (pendentes.length === 0 && aprovadas.length === 0) continue;
 
