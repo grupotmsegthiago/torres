@@ -1731,8 +1731,22 @@ import type { Express } from "express";
       }
       const billings = Array.from(billingDedup.values());
 
-      const { data: transactions, error: tErr } = await supabaseAdmin.from("financial_transactions").select("*");
-      if (tErr) throw tErr;
+      // Pagina pra superar o limite default de 1000 do Supabase REST
+      const transactions: any[] = [];
+      const PAGE_SIZE = 1000;
+      let offset = 0;
+      while (true) {
+        const { data: page, error: tErr } = await supabaseAdmin
+          .from("financial_transactions")
+          .select("*")
+          .order("due_date", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (tErr) throw tErr;
+        if (!page || page.length === 0) break;
+        transactions.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
 
       const { data: vehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model");
       const { data: employees } = await supabaseAdmin.from("employees").select("id, name");
