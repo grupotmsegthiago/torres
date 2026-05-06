@@ -1,0 +1,57 @@
+1. Compreensão do Objetivo
+O problema central é que, ao clicar no botão de "Emitir", o sistema retorna a mensagem "Cliente sem CPF/CNPJ válido", mesmo com o cadastro da OMEGA aparentemente correto (CNPJ 20.130.573/0001-47).
+
+Para avançarmos, preciso que você observe um detalhe técnico:
+
+Quando o erro aparece na tela (o aviso vermelho), ele agora deve mostrar detalhes como cnpj_cliente ou cnpj_fatura. O que exatamente está escrito depois desses nomes?
+
+2. Panorama Geral da Solução
+O erro indica que, em algum ponto da "viagem" que o dado faz entre o seu banco de dados e o Asaas, ele se perde ou chega vazio. Vamos criar um código de validação forçada que você pode pedir para o Replit aplicar. O objetivo é garantir que o sistema não apenas "tente" achar o CNPJ, mas que ele pare e limpe o dado antes de enviar para o Asaas.
+
+3. Programa e Instruções de Implementação
+Peça ao Replit para substituir ou ajustar a lógica do botão de emissão com este código mais rigoroso:
+
+JavaScript
+// --- DOCUMENTAÇÃO DO SEGMENTO DE CÓDIGO ---
+// Este bloco garante que o CNPJ seja extraído, limpo e validado 
+// antes de qualquer comunicação com a API do Asaas.
+
+async function emitirFaturaComValidacao(faturaId) {
+  try {
+    // 1. Busca os dados da fatura e do cliente vinculado no Supabase
+    const { data: fatura, error } = await supabase
+      .from('invoices')
+      .select(`*, clients (*)`)
+      .eq('id', faturaId)
+      .single();
+
+    if (error || !fatura) throw new Error("Fatura não encontrada.");
+
+    // 2. Extração e Limpeza (Sanitização)
+    // Tenta pegar o CNPJ do cadastro do cliente ou da própria fatura
+    let documentoBruto = fatura.clients?.cnpj || fatura.client_cpf_cnpj;
+    
+    // Remove pontos, barras e traços: "20.130.573/0001-47" -> "20130573000147"
+    const documentoLimpo = documentoBruto ? documentoBruto.replace(/\D/g, '') : '';
+
+    // 3. Validação de Segurança
+    if (documentoLimpo.length !== 11 && documentoLimpo.length !== 14) {
+      throw new Error(`Documento inválido: Encontrado "${documentoLimpo}" (Tamanho: ${documentoLimpo.length}).`);
+    }
+
+    // 4. Prossegue com a integração Asaas usando o documento limpo
+    console.log(`[TMSEGo] Iniciando emissão para CNPJ: ${documentoLimpo}`);
+    // Chame aqui a sua função de integração (ex: asaasService.emitir...)
+
+  } catch (err) {
+    console.error("[ERRO EMISSÃO]:", err.message);
+    // Exibe o erro detalhado no brinde (toast) da tela
+    showToast(err.message, "error"); 
+  }
+}
+Instruções Detalhadas para Implementar:
+Localize o arquivo: No Replit, procure onde está a função que o botão da interface chama (provavelmente relacionado ao arquivo de rotas de faturamento ou invoices).
+
+Substitua a lógica de busca: Em vez de usar apenas o .ilike() (que busca por nome), force o sistema a priorizar o documentoLimpo como mostrei acima.
+
+Verifique o Banco: Notei na sua imagem que o campo "Data do Venc." aparece como Invalid Date. Isso pode estar travando o processo de emissão no Asaas antes mesmo do CNPJ ser validado. Peça ao Replit para verificar se o formato da data enviado ao Asaas é YYYY-MM-DD.

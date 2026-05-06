@@ -88,8 +88,12 @@ const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: st
 
 const fmtBRL = (v: number) =>
   (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const fmtDate = (s?: string | null) =>
-  s ? new Date(s).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+const fmtDate = (s?: string | null) => {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+};
 const fmtDateTime = (s?: string | null) => {
   if (!s) return "—";
   const d = new Date(s);
