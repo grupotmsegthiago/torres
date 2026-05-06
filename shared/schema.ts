@@ -827,6 +827,13 @@ export const employeePayslips = pgTable("employee_payslips", {
   documentUrl: text("document_url"),
   financialTransactionId: integer("financial_transaction_id"),
   notes: text("notes"),
+  assinaturaStatus: text("assinatura_status").default("pendente"),
+  assinadoEm: timestamp("assinado_em"),
+  assinaturaFacialFoto: text("assinatura_facial_foto"),
+  assinaturaDesenho: text("assinatura_desenho"),
+  assinaturaTermo: text("assinatura_termo"),
+  assinaturaIp: text("assinatura_ip"),
+  assinaturaUserAgent: text("assinatura_user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

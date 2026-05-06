@@ -904,6 +904,91 @@ ${empNames}`
     }
   });
 
+  // ====================== ASSINATURA DE HOLERITE (FUNCIONÁRIO) ======================
+
+  // Lista holerites do funcionário logado (mobile)
+  app.get("/api/mobile/my-payslips", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (!user.employeeId) return res.json([]);
+      const { data } = await supabaseAdmin
+        .from("employee_payslips")
+        .select("*")
+        .eq("employee_id", user.employeeId)
+        .order("year", { ascending: false })
+        .order("month", { ascending: false });
+      res.json(toCamelArray(data || []));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Funcionário assina o holerite (envia facial + assinatura desenhada + aceita termo)
+  app.post("/api/payslips/:id/sign", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const id = Number(req.params.id);
+      const { facialFoto, assinaturaDesenho, termoAceito, termoTexto } = req.body || {};
+
+      if (!facialFoto || !/^data:image\//i.test(facialFoto)) {
+        return res.status(400).json({ message: "Foto facial obrigatória" });
+      }
+      if (!assinaturaDesenho || !/^data:image\//i.test(assinaturaDesenho)) {
+        return res.status(400).json({ message: "Assinatura digital obrigatória" });
+      }
+      if (!termoAceito) {
+        return res.status(400).json({ message: "É necessário aceitar o termo de ciência" });
+      }
+
+      // Busca holerite e valida posse
+      const { data: rows } = await supabaseAdmin.from("employee_payslips").select("*").eq("id", id).limit(1);
+      if (!rows?.length) return res.status(404).json({ message: "Holerite não encontrado" });
+      const ps = rows[0];
+      if (!user.employeeId || ps.employee_id !== user.employeeId) {
+        return res.status(403).json({ message: "Holerite não pertence a este funcionário" });
+      }
+      if (ps.assinatura_status === "assinado") {
+        return res.status(400).json({ message: "Holerite já assinado" });
+      }
+
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+      const ua = (req.headers["user-agent"] as string) || "";
+
+      const { data: updated } = await supabaseAdmin.from("employee_payslips").update({
+        assinatura_status: "assinado",
+        assinado_em: new Date().toISOString(),
+        assinatura_facial_foto: facialFoto,
+        assinatura_desenho: assinaturaDesenho,
+        assinatura_termo: termoTexto || "Declaro ter recebido a importância líquida discriminada neste recibo e estou ciente de todos os valores apresentados.",
+        assinatura_ip: ip,
+        assinatura_user_agent: ua,
+      }).eq("id", id).select().single();
+
+      await logSystemAudit({
+        userId: user.id, userName: user.name || user.username,
+        userRole: user.role, action: "ASSINAR_HOLERITE",
+        details: `Funcionário #${user.employeeId} assinou holerite #${id} (${ps.month}/${ps.year}) — IP ${ip}`,
+      });
+
+      res.json(toCamelObj(updated));
+    } catch (err: any) {
+      console.error("[sign-payslip]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin visualiza evidências da assinatura
+  app.get("/api/payslips/:id/signature", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { data: rows } = await supabaseAdmin.from("employee_payslips").select("id, employee_id, month, year, assinatura_status, assinado_em, assinatura_facial_foto, assinatura_desenho, assinatura_termo, assinatura_ip, assinatura_user_agent").eq("id", id).limit(1);
+      if (!rows?.length) return res.status(404).json({ message: "Holerite não encontrado" });
+      res.json(toCamelObj(rows[0]));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ====================== TESTAR TODAS APIs ======================
 
   app.post("/api/consulta/testar-todas", requireAuth, requireAdminRole, async (req, res) => {

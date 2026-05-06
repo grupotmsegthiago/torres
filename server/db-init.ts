@@ -427,6 +427,13 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS data_pagamento TEXT`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS financial_transaction_id INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_status TEXT DEFAULT 'pendente'`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_facial_foto TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_desenho TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_termo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_ip TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_user_agent TEXT`).catch(() => {});
 
     const decimalMigrations = [
       `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,

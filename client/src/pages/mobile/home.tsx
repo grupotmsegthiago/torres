@@ -2,7 +2,7 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign } from "lucide-react";
+import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign, FileText } from "lucide-react";
 
 export default function MobileHomePage() {
   const { user } = useAuth();
@@ -141,6 +141,13 @@ export default function MobileHomePage() {
               <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
               <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Meu RH</p>
               <p className="text-[10px] text-neutral-400 mt-0.5">Holerite e faltas</p>
+            </div>
+          </Link>
+          <Link href="/mobile/holerites">
+            <div className="bg-white rounded-2xl border border-emerald-200 p-4 text-center active:bg-emerald-50 transition-colors" data-testid="link-holerites">
+              <FileText className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Holerites</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Assinar e baixar</p>
             </div>
           </Link>
           <Link href="/mobile/checklist">

@@ -15,7 +15,7 @@ import {
 import {
   Receipt, Plus, Loader2, DollarSign, Calendar, User, FileText,
   Upload, Download, Trash2, CheckCircle2, Clock, AlertTriangle,
-  ChevronDown, ChevronUp, BarChart3, Eye, ScanLine
+  ChevronDown, ChevronUp, BarChart3, Eye, ScanLine, ShieldCheck, ShieldAlert
 } from "lucide-react";
 
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -136,6 +136,7 @@ function PayslipRow({ payslip: p, onViewReport }: { payslip: any; onViewReport: 
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showSig, setShowSig] = useState(false);
 
   const statusColors: Record<string, string> = {
     pendente: "bg-amber-100 text-amber-800",
@@ -192,11 +193,20 @@ function PayslipRow({ payslip: p, onViewReport }: { payslip: any; onViewReport: 
           <p className="text-sm font-bold text-neutral-900 truncate">{p.employeeName}</p>
           <p className="text-[10px] text-neutral-400">{p.employeeRole} · {MESES[(p.month || 1) - 1]}/{p.year}</p>
         </div>
-        <div className="text-right shrink-0">
+        <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
           <p className="text-sm font-black text-neutral-900">{BRL(Number(p.netSalary) || 0)}</p>
           <Badge className={`text-[9px] ${statusColors[p.status] || statusColors.pendente}`} data-testid={`badge-status-${p.id}`}>
             {statusLabels[p.status] || "Pendente"}
           </Badge>
+          {p.assinaturaStatus === "assinado" ? (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-0.5" data-testid={`badge-assinatura-${p.id}`}>
+              <ShieldCheck size={9} /> ASSINADO
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+              <ShieldAlert size={9} /> NÃO ASSINADO
+            </span>
+          )}
         </div>
         {expanded ? <ChevronUp size={14} className="text-neutral-400" /> : <ChevronDown size={14} className="text-neutral-400" />}
       </div>
@@ -290,13 +300,94 @@ function PayslipRow({ payslip: p, onViewReport }: { payslip: any; onViewReport: 
               <BarChart3 size={12} className="mr-1" /> Relatório
             </Button>
 
+            {p.assinaturaStatus === "assinado" && (
+              <Button size="sm" variant="outline" className="text-xs h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setShowSig(true)} data-testid={`button-ver-assinatura-${p.id}`}>
+                <ShieldCheck size={12} className="mr-1" /> Ver Assinatura
+              </Button>
+            )}
+
             <Button size="sm" variant="ghost" className="text-xs h-8 text-red-400 hover:text-red-600 ml-auto" onClick={() => { if (confirm("Excluir holerite?")) deleteMutation.mutate(); }} disabled={deleteMutation.isPending} data-testid={`button-excluir-${p.id}`}>
               <Trash2 size={12} />
             </Button>
           </div>
         </div>
       )}
+
+      {showSig && <SignatureEvidenceModal payslipId={p.id} payslipLabel={`${p.employeeName} · ${MESES[(p.month||1)-1]}/${p.year}`} onClose={() => setShowSig(false)} />}
     </Card>
+  );
+}
+
+function SignatureEvidenceModal({ payslipId, payslipLabel, onClose }: { payslipId: number; payslipLabel: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/payslips", payslipId, "signature"],
+    queryFn: async () => {
+      const r = await authFetch(`/api/payslips/${payslipId}/signature`);
+      return r.json();
+    },
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldCheck className="text-emerald-600" size={20} /> Evidência de Assinatura Digital
+          </DialogTitle>
+          <p className="text-xs text-neutral-500">{payslipLabel}</p>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="animate-spin text-neutral-400" /></div>
+        ) : !data ? (
+          <p className="text-sm text-neutral-500 py-4">Sem dados de assinatura.</p>
+        ) : (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                <p className="text-[10px] font-black uppercase text-neutral-400 mb-1">Reconhecimento Facial</p>
+                {data.assinaturaFacialFoto ? (
+                  <img src={data.assinaturaFacialFoto} alt="Foto facial" className="w-full rounded border border-neutral-300" data-testid="img-evidence-facial" />
+                ) : <p className="text-xs text-neutral-400 italic">Sem foto</p>}
+              </div>
+              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                <p className="text-[10px] font-black uppercase text-neutral-400 mb-1">Assinatura Digital</p>
+                {data.assinaturaDesenho ? (
+                  <img src={data.assinaturaDesenho} alt="Assinatura" className="w-full bg-white rounded border border-neutral-300" data-testid="img-evidence-signature" />
+                ) : <p className="text-xs text-neutral-400 italic">Sem assinatura</p>}
+              </div>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs">
+              <p className="font-bold text-emerald-800 mb-1">Termo aceito pelo funcionário:</p>
+              <p className="text-neutral-700 whitespace-pre-line leading-relaxed">{data.assinaturaTermo || "—"}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px] bg-neutral-50 border border-neutral-200 rounded-lg p-3">
+              <div>
+                <p className="font-black uppercase text-neutral-400">Assinado em</p>
+                <p className="text-neutral-800 font-bold">{data.assinadoEm ? new Date(data.assinadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
+              </div>
+              <div>
+                <p className="font-black uppercase text-neutral-400">Status</p>
+                <p className="text-emerald-700 font-bold uppercase">{data.assinaturaStatus || "—"}</p>
+              </div>
+              <div>
+                <p className="font-black uppercase text-neutral-400">Endereço IP</p>
+                <p className="text-neutral-800 font-mono">{data.assinaturaIp || "—"}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="font-black uppercase text-neutral-400">Dispositivo (User-Agent)</p>
+                <p className="text-neutral-700 text-[10px] break-all">{data.assinaturaUserAgent || "—"}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button onClick={onClose} variant="outline" data-testid="button-close-evidence">Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
