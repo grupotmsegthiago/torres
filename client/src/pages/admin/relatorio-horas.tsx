@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Users, Filter, ChevronDown, ChevronRight, Download, Calendar, BarChart3, Loader2 } from "lucide-react";
 import AdminLayout from "@/components/admin/layout";
@@ -279,9 +279,8 @@ export default function RelatorioHorasPage() {
                     const isOpen = expanded === e.employeeId;
                     const diff = e.totalHorasOs - e.totalHorasPonto;
                     return (
-                      <>
+                      <Fragment key={`emp-${e.employeeId}`}>
                         <tr
-                          key={`row-${e.employeeId}`}
                           className="hover:bg-emerald-50/50 cursor-pointer"
                           onClick={() => setExpanded(isOpen ? null : e.employeeId)}
                           data-testid={`row-employee-${e.employeeId}`}
@@ -300,7 +299,7 @@ export default function RelatorioHorasPage() {
                           <td className={`px-3 py-2 text-right font-mono font-bold ${Math.abs(diff) > 1 ? "text-red-600" : "text-neutral-400"}`}>{fmtH(diff)}</td>
                         </tr>
                         {isOpen && (
-                          <tr key={`detail-${e.employeeId}`} className="bg-neutral-50">
+                          <tr className="bg-neutral-50">
                             <td colSpan={10} className="px-4 py-3">
                               {e.osList.length === 0 ? (
                                 <p className="text-xs text-neutral-500 italic">Nenhuma OS no período.</p>
@@ -345,7 +344,7 @@ export default function RelatorioHorasPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })
                 )}
