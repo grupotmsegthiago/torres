@@ -150,6 +150,8 @@ export function registerRelatorioHorasRoutes(app: Express) {
           totalHorasOs: 0,
           totalHorasPonto: 0,
           diasComPonto: 0,
+          diasTrabalhados: 0,
+          _diasSet: new Set<string>(),
           osList: [] as any[],
         };
         perEmployee.set(empId, obj);
@@ -173,6 +175,7 @@ export function registerRelatorioHorasRoutes(app: Express) {
             const emp = ensureEmp(t.id);
             emp.osCount += 1;
             emp.totalHorasOs += horas;
+            emp._diasSet.add(dateLabel);
             emp.osList.push({
               osId: o.id,
               osNumber: o.os_number,
@@ -241,18 +244,24 @@ export function registerRelatorioHorasRoutes(app: Express) {
             const emp = ensureEmp(empId);
             emp.totalHorasPonto += dayMin / 60;
             emp.diasComPonto += 1;
+            const [, dayStr] = key.split("|");
+            if (dayStr) emp._diasSet.add(dayStr);
           }
         }
       }
 
       const list = Array.from(perEmployee.values())
-        .map(e => ({
-          ...e,
-          totalHorasOs: Math.round(e.totalHorasOs * 100) / 100,
-          totalHorasPonto: Math.round(e.totalHorasPonto * 100) / 100,
-          mediaHorasPorOs: e.osCount > 0 ? Math.round((e.totalHorasOs / e.osCount) * 100) / 100 : 0,
-          osList: e.osList.sort((a, b) => b.ini.localeCompare(a.ini)),
-        }))
+        .map(e => {
+          const { _diasSet, ...rest } = e as any;
+          return {
+            ...rest,
+            diasTrabalhados: _diasSet.size,
+            totalHorasOs: Math.round(e.totalHorasOs * 100) / 100,
+            totalHorasPonto: Math.round(e.totalHorasPonto * 100) / 100,
+            mediaHorasPorOs: e.osCount > 0 ? Math.round((e.totalHorasOs / e.osCount) * 100) / 100 : 0,
+            osList: e.osList.sort((a: any, b: any) => b.ini.localeCompare(a.ini)),
+          };
+        })
         .sort((a, b) => (b.totalHorasOs + b.totalHorasPonto) - (a.totalHorasOs + a.totalHorasPonto));
 
       const totals = {

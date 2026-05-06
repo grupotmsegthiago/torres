@@ -15,6 +15,7 @@ type EmployeeRow = {
   totalHorasOs: number;
   totalHorasPonto: number;
   diasComPonto: number;
+  diasTrabalhados: number;
   mediaHorasPorOs: number;
   osList: Array<{
     osId: number;
@@ -114,10 +115,11 @@ export default function RelatorioHorasPage() {
   const exportCSV = () => {
     if (!data?.employees?.length) return;
     const rows = [
-      ["Matrícula", "Nome", "1ª OS", "OSs no período", "Horas (OS)", "Média h/OS", "Dias com ponto", "Horas (Ponto)", "Diferença OS-Ponto"],
+      ["Matrícula", "Nome", "Dias trabalhados", "1ª OS", "OSs no período", "Horas (OS)", "Média h/OS", "Dias com ponto", "Horas (Ponto)", "Diferença OS-Ponto"],
       ...data.employees.map(e => [
         e.matricula || "",
         e.name,
+        String(e.diasTrabalhados),
         e.primeiraOs ? fmtDateBR(e.primeiraOs.date) : "—",
         String(e.osCount),
         fmtH(e.totalHorasOs),
@@ -289,7 +291,7 @@ export default function RelatorioHorasPage() {
                             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </td>
                           <td className="px-3 py-2 font-mono text-xs text-neutral-600">{e.matricula || "—"}</td>
-                          <td className="px-3 py-2 font-bold text-neutral-900" data-testid={`text-name-${e.employeeId}`}>{e.name}</td>
+                          <td className="px-3 py-2 font-bold text-neutral-900" data-testid={`text-name-${e.employeeId}`}>{e.name} <span className="text-xs font-mono text-emerald-700">({e.diasTrabalhados} {e.diasTrabalhados === 1 ? "dia" : "dias"})</span></td>
                           <td className="px-3 py-2 text-xs text-neutral-600">{e.primeiraOs ? fmtDateBR(e.primeiraOs.date) : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold">{e.osCount}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-violet-700" data-testid={`text-horas-os-${e.employeeId}`}>{fmtH(e.totalHorasOs)}</td>
