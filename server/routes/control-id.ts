@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { requireAuth, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import * as ctrl from "../control-id";
+import { isAtivo } from "./fixed-costs";
 
 export function registerControlIdRoutes(app: Express) {
   // ─────── DEVICES (CRUD) ───────
@@ -368,7 +369,7 @@ export function registerControlIdRoutes(app: Express) {
         .from("employees")
         .select("id, name, role, matricula, status")
         .order("name");
-      const activeEmps = (employees || []).filter((e: any) => e.status !== "demitido" && e.status !== "inativo");
+      const activeEmps = (employees || []).filter(isAtivo);
       const rows = await Promise.all(activeEmps.map(async (e: any) => {
         const stats = await ctrl.buildFolhaStats(e.id, monthYear);
         return {
