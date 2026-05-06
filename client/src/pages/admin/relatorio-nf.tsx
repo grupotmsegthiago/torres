@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send,
 } from "lucide-react";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
@@ -104,6 +104,7 @@ export default function RelatorioNFPage() {
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE"; sourceId: number; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
+  const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -184,6 +185,25 @@ export default function RelatorioNFPage() {
       invalidateRelatedQueries("billing");
     },
     onError: (e: any) => toast({ title: "Erro ao excluir", description: e?.message, variant: "destructive" }),
+  });
+
+  const emitirFaturaMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; dueDate: string; billingType: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/emitir`, {
+        method: "POST",
+        body: JSON.stringify({ dueDate: payload.dueDate, billingType: payload.billingType }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Fatura emitida", description: data?.message || "Cobrança gerada no Asaas." });
+      setEmitirFaturaModal(null);
+      invalidateRelatedQueries("invoice");
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao emitir fatura", description: e?.message, variant: "destructive" }),
   });
 
   const markEmittedMutation = useMutation({
@@ -672,6 +692,21 @@ export default function RelatorioNFPage() {
                               <FileText className="h-3.5 w-3.5" />
                             </button>
                           )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && String(r.rawStatus || "").toUpperCase() === "AGUARDANDO_FATURAMENTO" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const due = new Date(Date.now() + 30 * 86400000);
+                                const dueStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
+                                setEmitirFaturaModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), dueDate: dueStr, billingType: "BOLETO" });
+                              }}
+                              className="h-7 w-7 inline-flex items-center justify-center text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                              title="Faturar (gerar cobrança Asaas + NFS-e)"
+                              data-testid={`button-emitir-fatura-${r.id}`}
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "NF_EMITIDA" && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
                             <button
                               type="button"
@@ -1153,6 +1188,69 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-emit"
             >
               {markEmittedMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Marcando…</> : <><FileCheck2 className="h-4 w-4 mr-1" /> Confirmar como emitida</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Modal: Faturar (Asaas + NFS-e) */}
+      <Dialog open={!!emitirFaturaModal} onOpenChange={open => { if (!open && !emitirFaturaMutation.isPending) setEmitirFaturaModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-indigo-700">
+              <Send className="h-4 w-4" /> Faturar — Gerar cobrança no Asaas
+            </DialogTitle>
+            <DialogDescription>
+              Esta fatura está aguardando faturamento. Ao confirmar, o sistema gera a cobrança no Asaas
+              (boleto/PIX) e, se o cliente emite NF, dispara a NFS-e automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+          {emitirFaturaModal && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-1">
+                <div><span className="text-slate-500">Cliente:</span> <strong>{emitirFaturaModal.clientName}</strong></div>
+                <div><span className="text-slate-500">Valor:</span> <strong className="text-emerald-700">{fmtBRL(emitirFaturaModal.value)}</strong></div>
+                <div><span className="text-slate-500">Fatura:</span> <strong>#{emitirFaturaModal.invoiceId}</strong></div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Vencimento</label>
+                <Input
+                  type="date"
+                  value={emitirFaturaModal.dueDate}
+                  onChange={e => setEmitirFaturaModal({ ...emitirFaturaModal, dueDate: e.target.value })}
+                  className="text-xs"
+                  data-testid="input-emitir-due-date"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Tipo de cobrança</label>
+                <Select
+                  value={emitirFaturaModal.billingType}
+                  onValueChange={v => setEmitirFaturaModal({ ...emitirFaturaModal, billingType: v })}
+                >
+                  <SelectTrigger className="text-xs" data-testid="select-emitir-billing-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
+                    <SelectItem value="PIX">PIX</SelectItem>
+                    <SelectItem value="UNDEFINED">Boleto + PIX</SelectItem>
+                    <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmitirFaturaModal(null)} disabled={emitirFaturaMutation.isPending} data-testid="button-cancel-emitir">
+              Voltar
+            </Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={() => emitirFaturaModal && emitirFaturaMutation.mutate({ invoiceId: emitirFaturaModal.invoiceId, dueDate: emitirFaturaModal.dueDate, billingType: emitirFaturaModal.billingType })}
+              disabled={emitirFaturaMutation.isPending || !emitirFaturaModal || !emitirFaturaModal.dueDate}
+              data-testid="button-confirm-emitir"
+            >
+              {emitirFaturaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Emitindo…</> : <><Send className="h-4 w-4 mr-1" /> Emitir agora</>}
             </Button>
           </DialogFooter>
         </DialogContent>
