@@ -419,7 +419,12 @@ export default function RelatorioOSPage() {
   const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
   const [dateTo, setDateTo] = useState<string>(getTodayBRT());
 
-  const META_DIARIA_VIATURA = 1800;
+  // Regra unificada (alinhada com Custos Fixos / Balanço Gerencial):
+  // Meta diária = max(PISO_OPERACIONAL, viaturas × META_DIARIA_VIATURA)
+  // Piso garante receita mínima mesmo com frota reduzida.
+  const META_DIARIA_VIATURA = 2000;
+  const PISO_DIARIO_FIXO = 6000;
+  const PISO_POR_VIATURA = 2000;
   const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
 
   const { data: allVehicles } = useQuery<any[]>({
@@ -431,8 +436,12 @@ export default function RelatorioOSPage() {
     const d1 = new Date(dateFrom + "T12:00:00");
     const d2 = new Date(dateTo + "T12:00:00");
     const days = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-    const receita = META_DIARIA_VIATURA * days * activeCount;
-    return { receita, viaturas: activeCount, dias: days };
+    const metaPorViaturaDia = META_DIARIA_VIATURA * activeCount;
+    const piso = Math.max(PISO_DIARIO_FIXO, activeCount * PISO_POR_VIATURA);
+    const diaria = Math.max(metaPorViaturaDia, piso);
+    const pisoAplicado = piso > metaPorViaturaDia;
+    const receita = diaria * days;
+    return { receita, viaturas: activeCount, dias: days, diaria, pisoAplicado, piso };
   }, [allVehicles, dateFrom, dateTo]);
 
   const pctOf = (value: number, meta: number) => meta > 0 ? Math.min((value / meta) * 100, 150) : 0;
@@ -767,7 +776,16 @@ export default function RelatorioOSPage() {
                 <Target className="w-4 h-4 text-neutral-400 shrink-0" />
                 <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Meta do Período</span>
                 <span className="text-sm font-black text-white">{fmtBRL(metas.receita)}</span>
-                <span className="text-[10px] text-neutral-500">({metas.viaturas} viat. × {metas.dias}d × {fmtBRL(META_DIARIA_VIATURA)}/dia)</span>
+                <span className="text-[10px] text-neutral-500">
+                  {metas.pisoAplicado
+                    ? `(piso operacional ${fmtBRL(metas.diaria)}/dia × ${metas.dias}d)`
+                    : `(${metas.viaturas} viat. × ${metas.dias}d × ${fmtBRL(META_DIARIA_VIATURA)}/dia)`}
+                </span>
+                {metas.pisoAplicado && (
+                  <span className="text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-400/30 rounded px-1.5 py-0.5 uppercase tracking-wider" title={`Piso operacional: max(R$ 6.000, ${metas.viaturas} viat. × R$ 2.000) = ${fmtBRL(metas.piso)}/dia`}>
+                    Piso aplicado
+                  </span>
+                )}
                 <div className="flex-1 min-w-[120px]">
                   <div className="flex items-center justify-between text-[9px] mb-0.5">
                     <span className="text-neutral-500">Receita: {fmtBRL(totals.receita)}</span>
