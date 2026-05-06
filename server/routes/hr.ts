@@ -722,10 +722,19 @@ ${empNames}`
           },
           {
             role: "user",
-            content: [
-              { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
-              { type: "image_url", image_url: { url: imageData } },
-            ],
+            content: (() => {
+              const isPdf = /^data:application\/pdf/i.test(imageData);
+              if (isPdf) {
+                return [
+                  { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
+                  { type: "file", file: { filename: "holerite.pdf", file_data: imageData } },
+                ] as any;
+              }
+              return [
+                { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
+                { type: "image_url", image_url: { url: imageData } },
+              ];
+            })(),
           },
         ],
       });
