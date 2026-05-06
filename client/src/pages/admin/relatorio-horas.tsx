@@ -73,44 +73,49 @@ function ymdAddDays(ymd: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
+const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
 export default function RelatorioHorasPage() {
+  const today = todayBRTYmd();
+  const todayD = new Date(`${today}T12:00:00-03:00`);
+
   const [employeeId, setEmployeeId] = useState<string>("");
+  const [mode, setMode] = useState<"mes" | "personalizado">("mes");
+  const [mes, setMes] = useState<number>(todayD.getMonth() + 1);
+  const [ano, setAno] = useState<number>(todayD.getFullYear());
   const [start, setStart] = useState<string>("");
-  const [end, setEnd] = useState<string>(ymdAddDays(todayBRTYmd(), -1));
-  const [source, setSource] = useState<Source>("ambos");
+  const [end, setEnd] = useState<string>(ymdAddDays(today, -1));
   const [expanded, setExpanded] = useState<number | null>(null);
+  const source: Source = "ambos";
 
   const { data: funcionarios } = useQuery<Funcionario[]>({ queryKey: ["/api/employees"] });
+
+  // Calcula start/end efetivos conforme modo
+  const { effStart, effEnd } = useMemo(() => {
+    if (mode === "mes") {
+      const first = `${ano}-${String(mes).padStart(2, "0")}-01`;
+      const lastDay = new Date(ano, mes, 0).getDate();
+      const last = `${ano}-${String(mes).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      return { effStart: first, effEnd: last };
+    }
+    return { effStart: start, effEnd: end };
+  }, [mode, mes, ano, start, end]);
 
   const queryKey = useMemo(() => {
     const params = new URLSearchParams();
     if (employeeId) params.set("employeeId", employeeId);
-    if (start) params.set("start", start);
-    if (end) params.set("end", end);
+    if (effStart) params.set("start", effStart);
+    if (effEnd) params.set("end", effEnd);
     params.set("source", source);
     return [`/api/relatorios/horas-trabalhadas?${params.toString()}`] as const;
-  }, [employeeId, start, end, source]);
+  }, [employeeId, effStart, effEnd, source]);
 
   const { data, isLoading, isFetching } = useQuery<Resp>({ queryKey });
 
-  const applyPreset = (preset: "semana" | "mes" | "30d" | "ano" | "tudo") => {
-    const today = todayBRTYmd();
-    const ontem = ymdAddDays(today, -1);
-    setEnd(ontem);
-    if (preset === "semana") {
-      setStart(ymdAddDays(today, -7));
-    } else if (preset === "mes") {
-      const d = new Date(`${today}T12:00:00-03:00`);
-      setStart(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
-    } else if (preset === "30d") {
-      setStart(ymdAddDays(today, -30));
-    } else if (preset === "ano") {
-      const d = new Date(`${today}T12:00:00-03:00`);
-      setStart(`${d.getFullYear()}-01-01`);
-    } else if (preset === "tudo") {
-      setStart("");
-    }
-  };
+  const anosDisponiveis = useMemo(() => {
+    const y = todayD.getFullYear();
+    return [y - 2, y - 1, y, y + 1];
+  }, [todayD]);
 
   const exportCSV = () => {
     if (!data?.employees?.length) return;
@@ -134,7 +139,7 @@ export default function RelatorioHorasPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `relatorio-horas-${start || "inicio"}_${end}.csv`;
+    a.download = `relatorio-horas-${effStart || "inicio"}_${effEnd || "fim"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -168,7 +173,19 @@ export default function RelatorioHorasPage() {
             <Filter size={14} className="text-neutral-500" />
             <span className="text-xs font-black uppercase text-neutral-700 tracking-wider">Filtros</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setMode("mes")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border ${mode === "mes" ? "bg-emerald-600 text-white border-emerald-700" : "bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50"}`}
+              data-testid="button-mode-mes"
+            >Por Mês</button>
+            <button
+              onClick={() => setMode("personalizado")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border ${mode === "personalizado" ? "bg-emerald-600 text-white border-emerald-700" : "bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50"}`}
+              data-testid="button-mode-personalizado"
+            >Personalizado</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Funcionário</label>
               <select
@@ -183,58 +200,55 @@ export default function RelatorioHorasPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data inicial</label>
-              <input
-                type="date"
-                value={start}
-                onChange={e => setStart(e.target.value)}
-                className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"
-                data-testid="input-date-start"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data final</label>
-              <input
-                type="date"
-                value={end}
-                onChange={e => setEnd(e.target.value)}
-                className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"
-                data-testid="input-date-end"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Fonte</label>
-              <select
-                value={source}
-                onChange={e => setSource(e.target.value as Source)}
-                className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium bg-white"
-                data-testid="select-source"
-              >
-                <option value="ambos">OS + Ponto</option>
-                <option value="os">Apenas OS (missões)</option>
-                <option value="ponto">Apenas Ponto Control iD</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Atalhos</label>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  ["semana", "7 dias"],
-                  ["mes", "Mês"],
-                  ["30d", "30 dias"],
-                  ["ano", "Ano"],
-                  ["tudo", "Tudo"],
-                ].map(([k, label]) => (
-                  <button
-                    key={k}
-                    onClick={() => applyPreset(k as any)}
-                    className="px-2 py-1 text-[10px] font-bold bg-neutral-100 hover:bg-neutral-200 rounded border border-neutral-300"
-                    data-testid={`button-preset-${k}`}
-                  >{label}</button>
-                ))}
-              </div>
-            </div>
+            {mode === "mes" ? (
+              <>
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Mês</label>
+                  <select
+                    value={mes}
+                    onChange={e => setMes(Number(e.target.value))}
+                    className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium bg-white"
+                    data-testid="select-mes"
+                  >
+                    {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Ano</label>
+                  <select
+                    value={ano}
+                    onChange={e => setAno(Number(e.target.value))}
+                    className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium bg-white"
+                    data-testid="select-ano"
+                  >
+                    {anosDisponiveis.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data inicial</label>
+                  <input
+                    type="date"
+                    value={start}
+                    onChange={e => setStart(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"
+                    data-testid="input-date-start"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data final</label>
+                  <input
+                    type="date"
+                    value={end}
+                    onChange={e => setEnd(e.target.value)}
+                    className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"
+                    data-testid="input-date-end"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <p className="text-[10px] text-neutral-400 mt-2 flex items-center gap-1">
             <Calendar size={10} /> Apenas dias <b>fechados</b> (até ontem). OSs em andamento são ignoradas.
@@ -291,7 +305,7 @@ export default function RelatorioHorasPage() {
                             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </td>
                           <td className="px-3 py-2 font-mono text-xs text-neutral-600">{e.matricula || "—"}</td>
-                          <td className="px-3 py-2 font-bold text-neutral-900" data-testid={`text-name-${e.employeeId}`}>{e.name} <span className="text-xs font-mono text-emerald-700">({e.diasTrabalhados} {e.diasTrabalhados === 1 ? "dia" : "dias"})</span></td>
+                          <td className="px-3 py-2 font-bold text-neutral-900" data-testid={`text-name-${e.employeeId}`}>{e.name} <span className="text-xs font-mono text-emerald-700">({e.diasTrabalhados ?? 0} {(e.diasTrabalhados ?? 0) === 1 ? "dia" : "dias"})</span></td>
                           <td className="px-3 py-2 text-xs text-neutral-600">{e.primeiraOs ? fmtDateBR(e.primeiraOs.date) : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold">{e.osCount}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-violet-700" data-testid={`text-horas-os-${e.employeeId}`}>{fmtH(e.totalHorasOs)}</td>
