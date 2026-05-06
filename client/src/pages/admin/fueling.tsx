@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
+import { calcKmL } from "@/lib/fuel-kml";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -1144,11 +1145,40 @@ export default function FuelingPage() {
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.totalCost ? `R$ ${Number(orig.totalCost).toFixed(2)}` : "-"}</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.costPerLiter ? `R$ ${Number(orig.costPerLiter).toFixed(3)}` : "-"}</td>
                                     <td className="px-4 py-2.5">
-                                      {h.kmL !== null ? (
-                                        <span className={`font-semibold ${h.kmL >= 12 ? "text-emerald-600" : h.kmL >= 7 ? "text-green-600" : h.kmL >= 5 ? "text-amber-600" : "text-red-600"}`}>
-                                          {h.kmL.toFixed(2)}
-                                        </span>
-                                      ) : idx === 0 ? <span className="text-xs text-neutral-400 italic">1º reg.</span> : <span className="text-neutral-300">-</span>}
+                                      {(() => {
+                                        const info = calcKmL(vehicleFuelings, orig);
+                                        if (!info) return idx === 0 ? <span className="text-xs text-neutral-400 italic">1º reg.</span> : <span className="text-neutral-300">-</span>;
+                                        if (info.isIncoerente) {
+                                          return (
+                                            <span
+                                              className="inline-flex items-center gap-1 text-xs font-semibold text-red-600"
+                                              title={`Trecho de ${info.totalDist} km com ${info.totalLiters.toFixed(2)}L → ${(info.kmLCombined ?? info.kmL).toFixed(1)} km/L (impossível). Provável abastecimento não registrado ou hodômetro digitado errado.`}
+                                              data-testid={`kml-incoerente-${h.id}`}
+                                            >
+                                              ⚠ incoerente
+                                              <span className="text-[10px] text-neutral-400 line-through font-normal">{info.kmL.toFixed(1)}</span>
+                                            </span>
+                                          );
+                                        }
+                                        if (info.isSuspect && info.kmLCombined !== null && info.segments > 1) {
+                                          const v = info.kmLCombined;
+                                          return (
+                                            <span className="inline-flex items-center gap-1" title={`Trecho curto / tanque parcial: ${info.totalDist} km com ${info.totalLiters.toFixed(2)}L em ${info.segments} abastecimentos consecutivos. Média individual ${info.kmL.toFixed(1)} km/L é enganosa — a real combinada é ${v.toFixed(1)} km/L.`}>
+                                              <span className={`font-semibold ${v >= 12 ? "text-emerald-600" : v >= 7 ? "text-green-600" : v >= 5 ? "text-amber-600" : "text-red-600"}`}>{v.toFixed(2)}</span>
+                                              <span className="text-[10px] text-neutral-400 line-through">{info.kmL.toFixed(1)}</span>
+                                            </span>
+                                          );
+                                        }
+                                        const v = info.kmL;
+                                        return (
+                                          <span
+                                            className={`font-semibold ${v >= 12 ? "text-emerald-600" : v >= 7 ? "text-green-600" : v >= 5 ? "text-amber-600" : "text-red-600"}`}
+                                            title={info.isSuspect ? `Atenção: ${v.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                                          >
+                                            {v.toFixed(2)}
+                                          </span>
+                                        );
+                                      })()}
                                     </td>
                                     <td className="px-4 py-2.5 text-neutral-600">
                                       {h.costPerKm !== null ? `R$ ${h.costPerKm.toFixed(2)}` : "-"}

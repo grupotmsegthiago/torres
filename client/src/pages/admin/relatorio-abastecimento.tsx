@@ -22,49 +22,7 @@ const fuelLabel: Record<string, string> = {
 type SortField = "date" | "plate" | "cost" | "station";
 type SortDir = "asc" | "desc";
 
-// Calcula km/L combinando trechos curtos consecutivos (tanque parcial).
-// Quando o trecho individual é "suspeito" (< 6 km/L, > 20 km/L ou < 100 km),
-// soma com abastecimentos anteriores do mesmo veículo até atingir uma janela
-// confiável (>= 100 km e km/L entre 6 e 20). Devolve também a média individual
-// pra exibir o contraste.
-function calcKmL(allFuelings: VehicleFueling[], current: VehicleFueling) {
-  const sameVehicle = allFuelings
-    .filter(x => x.vehicleId === current.vehicleId && (Number(x.liters) || 0) > 0)
-    .sort((a, b) => a.km - b.km);
-  const idx = sameVehicle.findIndex(x => x.id === current.id);
-  if (idx <= 0) return null;
-  const prev = sameVehicle[idx - 1];
-  const dist = current.km - prev.km;
-  const liters = Number(current.liters) || 0;
-  if (dist <= 0 || liters <= 0) return null;
-  const kmL = dist / liters;
-
-  const isSuspect = kmL < 6 || kmL > 20 || dist < 100;
-  if (!isSuspect) {
-    return { kmL, kmLCombined: kmL, isSuspect: false, segments: 1, totalDist: dist, totalLiters: liters };
-  }
-
-  // Acumula pra trás até a janela ficar plausível (máx 6 trechos).
-  let totalDist = dist;
-  let totalLiters = liters;
-  let segments = 1;
-  let i = idx;
-  while (i > 1 && segments < 6) {
-    i--;
-    const seg = sameVehicle[i];
-    const segPrev = sameVehicle[i - 1];
-    const segDist = seg.km - segPrev.km;
-    const segLit = Number(seg.liters) || 0;
-    if (segDist <= 0 || segLit <= 0) break;
-    totalDist += segDist;
-    totalLiters += segLit;
-    segments++;
-    const med = totalDist / totalLiters;
-    if (totalDist >= 100 && med >= 6 && med <= 20) break;
-  }
-  const kmLCombined = totalLiters > 0 ? totalDist / totalLiters : null;
-  return { kmL, kmLCombined, isSuspect: true, segments, totalDist, totalLiters };
-}
+import { calcKmL } from "@/lib/fuel-kml";
 
 function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
   const { toast } = useToast();
@@ -512,6 +470,7 @@ export default function RelatorioAbastecimentoPage() {
                   const kmL = kmInfo?.kmL ?? null;
                   const kmLCombined = kmInfo?.kmLCombined ?? null;
                   const kmLSuspect = !!kmInfo?.isSuspect;
+                  const kmLIncoerente = !!kmInfo?.isIncoerente;
 
                   const noCost = (Number(f.totalCost) || 0) <= 0;
                   const noLiters = (Number(f.liters) || 0) <= 0;
@@ -576,7 +535,20 @@ export default function RelatorioAbastecimentoPage() {
                       </td>
                       <td className="p-2 text-right">
                         {kmL !== null ? (
-                          kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
+                          kmLIncoerente ? (
+                            <div
+                              className="flex flex-col items-end leading-tight"
+                              title={`Trecho de ${kmInfo!.totalDist} km com ${kmInfo!.totalLiters.toFixed(2)}L → ${(kmInfo!.kmLCombined ?? kmInfo!.kmL).toFixed(1)} km/L (impossível). Provável abastecimento não registrado ou hodômetro digitado errado.`}
+                              data-testid={`text-kml-incoerente-${f.id}`}
+                            >
+                              <span className="font-bold text-sm flex items-center gap-1 text-red-600">
+                                <AlertTriangle className="w-3 h-3" />
+                                ⚠ incoerente
+                              </span>
+                              <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
+                              <span className="text-[10px] text-red-500">faltou registrar?</span>
+                            </div>
+                          ) : kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
                             <div
                               className="flex flex-col items-end leading-tight"
                               title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${kmInfo.totalLiters.toFixed(2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${kmL.toFixed(1)} km/L é enganosa — a real combinada é ${kmLCombined.toFixed(1)} km/L.`}
