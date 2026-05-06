@@ -21,6 +21,50 @@ const fuelLabel: Record<string, string> = {
 type SortField = "date" | "plate" | "cost" | "station";
 type SortDir = "asc" | "desc";
 
+// Calcula km/L combinando trechos curtos consecutivos (tanque parcial).
+// Quando o trecho individual é "suspeito" (< 6 km/L, > 20 km/L ou < 100 km),
+// soma com abastecimentos anteriores do mesmo veículo até atingir uma janela
+// confiável (>= 100 km e km/L entre 6 e 20). Devolve também a média individual
+// pra exibir o contraste.
+function calcKmL(allFuelings: VehicleFueling[], current: VehicleFueling) {
+  const sameVehicle = allFuelings
+    .filter(x => x.vehicleId === current.vehicleId && (Number(x.liters) || 0) > 0)
+    .sort((a, b) => a.km - b.km);
+  const idx = sameVehicle.findIndex(x => x.id === current.id);
+  if (idx <= 0) return null;
+  const prev = sameVehicle[idx - 1];
+  const dist = current.km - prev.km;
+  const liters = Number(current.liters) || 0;
+  if (dist <= 0 || liters <= 0) return null;
+  const kmL = dist / liters;
+
+  const isSuspect = kmL < 6 || kmL > 20 || dist < 100;
+  if (!isSuspect) {
+    return { kmL, kmLCombined: kmL, isSuspect: false, segments: 1, totalDist: dist, totalLiters: liters };
+  }
+
+  // Acumula pra trás até a janela ficar plausível (máx 6 trechos).
+  let totalDist = dist;
+  let totalLiters = liters;
+  let segments = 1;
+  let i = idx;
+  while (i > 1 && segments < 6) {
+    i--;
+    const seg = sameVehicle[i];
+    const segPrev = sameVehicle[i - 1];
+    const segDist = seg.km - segPrev.km;
+    const segLit = Number(seg.liters) || 0;
+    if (segDist <= 0 || segLit <= 0) break;
+    totalDist += segDist;
+    totalLiters += segLit;
+    segments++;
+    const med = totalDist / totalLiters;
+    if (totalDist >= 100 && med >= 6 && med <= 20) break;
+  }
+  const kmLCombined = totalLiters > 0 ? totalDist / totalLiters : null;
+  return { kmL, kmLCombined, isSuspect: true, segments, totalDist, totalLiters };
+}
+
 function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -406,11 +450,10 @@ export default function RelatorioAbastecimentoPage() {
                   const gasP = Number(f.gasolinePrice) || 0;
                   const ethP = Number(f.ethanolPrice) || 0;
                   const ratio = gasP > 0 && ethP > 0 ? ((ethP / gasP) * 100) : null;
-                  const prevFueling = fuelings
-                    .filter(x => x.vehicleId === f.vehicleId && x.km < f.km)
-                    .sort((a, b) => b.km - a.km)[0];
-                  const kmL = prevFueling && f.km > prevFueling.km && Number(f.liters) > 0
-                    ? ((f.km - prevFueling.km) / Number(f.liters)) : null;
+                  const kmInfo = calcKmL(fuelings, f);
+                  const kmL = kmInfo?.kmL ?? null;
+                  const kmLCombined = kmInfo?.kmLCombined ?? null;
+                  const kmLSuspect = !!kmInfo?.isSuspect;
 
                   const noCost = (Number(f.totalCost) || 0) <= 0;
                   const noLiters = (Number(f.liters) || 0) <= 0;
@@ -475,9 +518,29 @@ export default function RelatorioAbastecimentoPage() {
                       </td>
                       <td className="p-2 text-right">
                         {kmL !== null ? (
-                          <span className={`font-bold text-sm ${kmL >= 10 ? "text-green-600" : kmL >= 7 ? "text-amber-600" : "text-red-600"}`}>
-                            {kmL.toFixed(1)} km/L
-                          </span>
+                          kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
+                            <div
+                              className="flex flex-col items-end leading-tight"
+                              title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${kmInfo.totalLiters.toFixed(2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${kmL.toFixed(1)} km/L é enganosa — a real combinada é ${kmLCombined.toFixed(1)} km/L.`}
+                              data-testid={`text-kml-${f.id}`}
+                            >
+                              <span className={`font-bold text-sm flex items-center gap-1 ${kmLCombined >= 10 ? "text-green-600" : kmLCombined >= 7 ? "text-amber-600" : "text-red-600"}`}>
+                                <AlertTriangle className="w-3 h-3 text-amber-500" />
+                                {kmLCombined.toFixed(1)} km/L
+                              </span>
+                              <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
+                              <span className="text-[10px] text-amber-600">combinado de {kmInfo.segments} abast.</span>
+                            </div>
+                          ) : (
+                            <span
+                              className={`font-bold text-sm inline-flex items-center gap-1 ${kmL >= 10 ? "text-green-600" : kmL >= 7 ? "text-amber-600" : "text-red-600"}`}
+                              title={kmLSuspect ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                              data-testid={`text-kml-${f.id}`}
+                            >
+                              {kmLSuspect && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                              {kmL.toFixed(1)} km/L
+                            </span>
+                          )
                         ) : <span className="text-xs text-neutral-300">-</span>}
                       </td>
                       <td className="p-2 text-sm text-neutral-600 max-w-[140px] truncate" title={f.station || ""}>
@@ -533,11 +596,10 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
   const { toast } = useToast();
   const [aiResult, setAiResult] = useState<any>(null);
 
-  const prevFueling = fuelings
-    .filter(x => x.vehicleId === fueling.vehicleId && x.km < fueling.km)
-    .sort((a, b) => b.km - a.km)[0];
-  const kmL = prevFueling && fueling.km > prevFueling.km && Number(fueling.liters) > 0
-    ? ((fueling.km - prevFueling.km) / Number(fueling.liters)) : null;
+  const kmInfo = calcKmL(fuelings, fueling);
+  const kmL = kmInfo?.kmL ?? null;
+  const kmLCombined = kmInfo?.kmLCombined ?? null;
+  const kmLSuspect = !!kmInfo?.isSuspect;
 
   const photos = [
     { label: "Placa do Veículo", url: fueling.platePhoto },
@@ -610,9 +672,27 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
               </div>
               <div className="bg-emerald-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-emerald-600">Média KM/L</p>
-                <p className={`font-bold text-lg ${kmL ? (kmL >= 10 ? "text-green-700" : kmL >= 7 ? "text-amber-700" : "text-red-700") : "text-neutral-400"}`}>
-                  {kmL ? `${kmL.toFixed(1)} km/L` : "-"}
-                </p>
+                {kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
+                  <>
+                    <p
+                      className={`font-bold text-lg flex items-center justify-center gap-1 ${kmLCombined >= 10 ? "text-green-700" : kmLCombined >= 7 ? "text-amber-700" : "text-red-700"}`}
+                      title={`Combinada de ${kmInfo.segments} abastecimentos: ${kmInfo.totalDist} km / ${kmInfo.totalLiters.toFixed(2)}L. Média individual ${kmL!.toFixed(1)} indica tanque parcial.`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                      {kmLCombined.toFixed(1)} km/L
+                    </p>
+                    <p className="text-[10px] text-amber-700 mt-0.5">combinado de {kmInfo.segments} abast.</p>
+                    <p className="text-[10px] text-neutral-400 line-through">{kmL!.toFixed(1)} individual</p>
+                  </>
+                ) : (
+                  <p
+                    className={`font-bold text-lg inline-flex items-center justify-center gap-1 ${kmL ? (kmL >= 10 ? "text-green-700" : kmL >= 7 ? "text-amber-700" : "text-red-700") : "text-neutral-400"}`}
+                    title={kmLSuspect && kmL ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                  >
+                    {kmLSuspect && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
+                    {kmL ? `${kmL.toFixed(1)} km/L` : "-"}
+                  </p>
+                )}
               </div>
             </div>
 
