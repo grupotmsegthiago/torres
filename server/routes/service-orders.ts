@@ -642,7 +642,8 @@ import type { Express } from "express";
 
       const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", osId).limit(1);
-      if (existingBilling?.[0] && existingBilling[0].status === "A_VERIFICAR") {
+      const FROZEN_BILL_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
+      if (existingBilling?.[0] && !FROZEN_BILL_STATUSES.includes(existingBilling[0].status)) {
         const updatedSo = await storage.getServiceOrder(osId);
         if (updatedSo) {
           const phs = await storage.getMissionPhotosByOS(osId);
