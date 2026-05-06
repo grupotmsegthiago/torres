@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -363,7 +363,7 @@ function MappingTab() {
   const { toast } = useToast();
   const { data: devices = [] } = useQuery<Device[]>({ queryKey: ["/api/control-id/devices"] });
   const [deviceId, setDeviceId] = useState<number | null>(null);
-  useMemo(() => { if (!deviceId && devices.length > 0) setDeviceId(devices[0].id); }, [devices, deviceId]);
+  useEffect(() => { if (!deviceId && devices.length > 0) setDeviceId(devices[0].id); }, [devices, deviceId]);
 
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: mappings = [] } = useQuery<Mapping[]>({
