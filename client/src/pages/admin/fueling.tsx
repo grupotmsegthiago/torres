@@ -3,6 +3,7 @@ import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { calcKmL } from "@/lib/fuel-kml";
 import { computeTicketlogStats } from "@/lib/fuel-ticketlog";
+import { computeUrbanHighwayShare, filterMissionsByPeriod, type ClassifiableMission, type TripShare } from "@/lib/trip-classifier";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -870,6 +871,7 @@ export default function FuelingPage() {
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: serviceOrders = [] } = useQuery<any[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fueling/${id}`); },
@@ -910,6 +912,47 @@ export default function FuelingPage() {
 
   const stats = useMemo(() => computeStats(filteredFuelings, fuelings, vehicles), [filteredFuelings, fuelings, vehicles]);
   const perVehicle = useMemo(() => computePerVehicleData(filteredFuelings, fuelings, vehicles || []), [filteredFuelings, fuelings, vehicles]);
+
+  // Faixa de datas do período atual (pra filtrar missões coerentemente
+  // com o filtro de combustível em cima da tela).
+  const periodRange = useMemo(() => {
+    if (!filterMonth) return { from: undefined as string | undefined, to: undefined as string | undefined };
+    if (periodMode === "cycle") {
+      const c = getCycleByValue(filterMonth);
+      return c ? { from: c.startDate, to: c.endDate } : { from: undefined, to: undefined };
+    }
+    const [y, m] = filterMonth.split("-").map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    return {
+      from: `${y}-${String(m).padStart(2, "0")}-01`,
+      to: `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+    };
+  }, [filterMonth, periodMode]);
+
+  // % urbano vs rodovia por veículo, baseado nas missões executadas
+  // dentro do período do filtro.
+  const tripShareByVehicle = useMemo(() => {
+    const missionsInPeriod = filterMissionsByPeriod(serviceOrders as ClassifiableMission[], periodRange.from, periodRange.to);
+    const map = new Map<number, TripShare>();
+    const byV = new Map<number, ClassifiableMission[]>();
+    for (const m of missionsInPeriod) {
+      const vid = (m as any).vehicleId;
+      if (!vid) continue;
+      if (!byV.has(vid)) byV.set(vid, []);
+      byV.get(vid)!.push(m);
+    }
+    byV.forEach((list, vid) => map.set(vid, computeUrbanHighwayShare(list)));
+    return map;
+  }, [serviceOrders, periodRange.from, periodRange.to]);
+
+  // Total geral (todos veículos somados) pro card de resumo
+  const tripShareTotal = useMemo(() => {
+    const missionsInPeriod = filterMissionsByPeriod(serviceOrders as ClassifiableMission[], periodRange.from, periodRange.to);
+    const filteredByV = filterVehicle === "all"
+      ? missionsInPeriod
+      : missionsInPeriod.filter(m => (m as any).vehicleId === filterVehicle);
+    return computeUrbanHighwayShare(filteredByV);
+  }, [serviceOrders, periodRange.from, periodRange.to, filterVehicle]);
 
   const getVehicle = (id: number) => vehicles.find(v => v.id === id);
   const getDriver = (id: number | null) => id ? employees.find(e => e.id === id)?.name : null;
@@ -1066,6 +1109,13 @@ export default function FuelingPage() {
           sub={stats.bestAvg?.plate}
           color="bg-emerald-600"
         />
+        <StatCard
+          icon={Gauge}
+          label="Urbano / Rodovia"
+          value={tripShareTotal.kmTotal > 0 ? `${tripShareTotal.pctUrbano.toFixed(0)}% / ${tripShareTotal.pctRodovia.toFixed(0)}%` : "-"}
+          sub={tripShareTotal.kmTotal > 0 ? `${(tripShareTotal.countUrbano + tripShareTotal.countRodovia)} missões` : undefined}
+          color="bg-amber-600"
+        />
       </div>
 
       {viewMode === "dashboard" ? (
@@ -1139,6 +1189,31 @@ export default function FuelingPage() {
                           <p className="text-xs text-neutral-400">Último KM</p>
                           <p className="font-bold text-neutral-900">{pv.lastKm.toLocaleString("pt-BR")}</p>
                         </div>
+                        {(() => {
+                          const ts = tripShareByVehicle.get(pv.vehicle.id);
+                          if (!ts || ts.kmTotal <= 0) {
+                            return (
+                              <div className="text-center min-w-[110px]" data-testid={`trip-share-${pv.vehicle.id}`}>
+                                <p className="text-xs text-neutral-400">Urb / Rod</p>
+                                <p className="text-xs text-neutral-300">sem missões</p>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="text-center min-w-[110px]" data-testid={`trip-share-${pv.vehicle.id}`} title={`${ts.countUrbano} urb (${ts.kmUrbano.toFixed(0)} km) · ${ts.countRodovia} rod (${ts.kmRodovia.toFixed(0)} km)`}>
+                              <p className="text-xs text-neutral-400">Urb / Rod</p>
+                              <div className="flex h-2 rounded overflow-hidden bg-neutral-100 mt-1">
+                                <div className="bg-amber-500" style={{ width: `${ts.pctUrbano}%` }} />
+                                <div className="bg-sky-600" style={{ width: `${ts.pctRodovia}%` }} />
+                              </div>
+                              <p className="text-[11px] font-bold text-neutral-700 mt-0.5">
+                                <span className="text-amber-700">{ts.pctUrbano.toFixed(0)}%</span>
+                                <span className="text-neutral-300 mx-1">/</span>
+                                <span className="text-sky-700">{ts.pctRodovia.toFixed(0)}%</span>
+                              </p>
+                            </div>
+                          );
+                        })()}
                         {isExpanded ? <ChevronUp className="w-5 h-5 text-neutral-400" /> : <ChevronDown className="w-5 h-5 text-neutral-400" />}
                       </div>
                     </div>
