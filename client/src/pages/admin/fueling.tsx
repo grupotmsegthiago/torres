@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
+import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -899,7 +900,10 @@ export default function FuelingPage() {
   const filteredFuelings = useMemo(() => {
     let list = fuelings || [];
     if (filterVehicle !== "all") list = list.filter(f => f.vehicleId === filterVehicle);
-    if (filterMonth) list = list.filter(f => f.date?.startsWith(filterMonth));
+    if (filterMonth) {
+      const cyc = getCycleByValue(filterMonth);
+      if (cyc) list = list.filter(f => f.date && f.date >= cyc.startDate && f.date <= cyc.endDate);
+    }
     if (searchFueling.trim()) {
       const s = searchFueling.toLowerCase();
       list = list.filter(f => {
@@ -925,11 +929,19 @@ export default function FuelingPage() {
     gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
   };
 
-  const months = useMemo(() => {
-    const set = new Set<string>();
-    (fuelings || []).forEach(f => { if (f.date) set.add(f.date.slice(0, 7)); });
-    return Array.from(set).sort().reverse();
-  }, [fuelings]);
+  const cycles = useMemo(
+    () => listCyclesFromDates((fuelings || []).map(f => f.date).filter(Boolean) as string[]),
+    [fuelings]
+  );
+  // Default: ciclo corrente já selecionado quando a tela abre.
+  useEffect(() => {
+    if (filterMonth === "" && cycles.length > 0 && !filterMonthTouched.current) {
+      const cur = getCurrentCycle();
+      setFilterMonth(cur.value);
+    }
+  }, [cycles, filterMonth]);
+  const filterMonthTouched = useRef(false);
+  const currentCycleInfo = filterMonth ? getCycleByValue(filterMonth) : null;
 
   const [mainTab, setMainTab] = useState("registros");
 
@@ -983,13 +995,21 @@ export default function FuelingPage() {
             {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
-        <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="h-9 border border-neutral-300 rounded-lg px-3 text-sm bg-white" data-testid="select-filter-month">
+        <select
+          value={filterMonth}
+          onChange={e => { filterMonthTouched.current = true; setFilterMonth(e.target.value); }}
+          className="h-9 border border-neutral-300 rounded-lg px-3 text-sm bg-white"
+          data-testid="select-filter-month"
+          title={currentCycleInfo ? currentCycleInfo.rangeLabel : "Período de fechamento (16 → 15)"}
+        >
           <option value="">Todo período</option>
-          {months.map(m => {
-            const [y, mo] = m.split("-").map(Number);
-            return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>;
-          })}
+          {cycles.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
+        {currentCycleInfo && (
+          <span className="text-xs text-neutral-500 hidden md:inline" data-testid="text-cycle-range">
+            ({currentCycleInfo.rangeLabel})
+          </span>
+        )}
         <div className="relative flex-1 min-w-[200px]">
           <input
             type="text"

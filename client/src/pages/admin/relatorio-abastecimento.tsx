@@ -11,6 +11,7 @@ import {
   ShieldCheck, XCircle, ExternalLink
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
+import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
@@ -133,8 +134,9 @@ function formatTimeBR(d: string | null) {
 
 export default function RelatorioAbastecimentoPage() {
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [cycleValue, setCycleValue] = useState<string>(() => getCurrentCycle().value);
+  const [dateFrom, setDateFrom] = useState<string>(() => getCurrentCycle().startDate);
+  const [dateTo, setDateTo] = useState<string>(() => getCurrentCycle().endDate);
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -428,12 +430,38 @@ export default function RelatorioAbastecimentoPage() {
               </div>
             </div>
             <div>
+              <label className="text-xs text-neutral-500 mb-1 block">Ciclo de fechamento</label>
+              <select
+                className="h-9 border border-neutral-300 rounded-md px-2 text-sm bg-white w-[170px]"
+                value={cycleValue}
+                onChange={e => {
+                  const v = e.target.value;
+                  setCycleValue(v);
+                  if (v === "") { setDateFrom(""); setDateTo(""); return; }
+                  const c = getCycleByValue(v);
+                  if (c) { setDateFrom(c.startDate); setDateTo(c.endDate); }
+                }}
+                data-testid="select-cycle"
+                title={cycleValue ? (getCycleByValue(cycleValue)?.rangeLabel ?? "") : "Período de fechamento (16 → 15)"}
+              >
+                <option value="">Personalizado / todo</option>
+                {listCyclesFromDates(fuelings.map(f => f.date).filter(Boolean) as string[]).map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+              {cycleValue && (
+                <p className="text-[10px] text-neutral-500 mt-0.5" data-testid="text-cycle-range">
+                  {getCycleByValue(cycleValue)?.rangeLabel}
+                </p>
+              )}
+            </div>
+            <div>
               <label className="text-xs text-neutral-500 mb-1 block">De</label>
-              <Input type="date" className="h-9 text-sm w-[140px]" value={dateFrom} onChange={e => setDateFrom(e.target.value)} data-testid="input-date-from" />
+              <Input type="date" className="h-9 text-sm w-[140px]" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCycleValue(""); }} data-testid="input-date-from" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">Até</label>
-              <Input type="date" className="h-9 text-sm w-[140px]" value={dateTo} onChange={e => setDateTo(e.target.value)} data-testid="input-date-to" />
+              <Input type="date" className="h-9 text-sm w-[140px]" value={dateTo} onChange={e => { setDateTo(e.target.value); setCycleValue(""); }} data-testid="input-date-to" />
             </div>
           </div>
         </Card>
