@@ -140,6 +140,7 @@ export default function RelatorioAbastecimentoPage() {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [onlyAlerts, setOnlyAlerts] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -189,8 +190,19 @@ export default function RelatorioAbastecimentoPage() {
     return list;
   }, [fuelings, search, dateFrom, dateTo, vMap, eMap]);
 
+  // Conjunto de IDs com média km/L suspeita (trecho curto / fora da faixa 6-20).
+  const suspectIds = useMemo(() => {
+    const set = new Set<number>();
+    baseFiltered.forEach(f => {
+      const info = calcKmL(fuelings, f);
+      if (info?.isSuspect) set.add(f.id);
+    });
+    return set;
+  }, [baseFiltered, fuelings]);
+
   const sorted = useMemo(() => {
     let list = onlyIncomplete ? baseFiltered.filter(isIncomplete) : [...baseFiltered];
+    if (onlyAlerts) list = list.filter(f => suspectIds.has(f.id));
     list.sort((a, b) => {
       let cmp = 0;
       if (sortField === "date") cmp = (a.createdAt || a.date).localeCompare(b.createdAt || b.date);
@@ -203,7 +215,7 @@ export default function RelatorioAbastecimentoPage() {
       return sortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [baseFiltered, sortField, sortDir, vMap, onlyIncomplete]);
+  }, [baseFiltered, sortField, sortDir, vMap, onlyIncomplete, onlyAlerts, suspectIds]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -299,6 +311,24 @@ export default function RelatorioAbastecimentoPage() {
             </Button>
           </div>
         </div>
+
+        {suspectIds.size > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50/70 p-3 flex items-start gap-3" data-testid="banner-suspect-fuelings">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm text-amber-900">
+              <strong>{suspectIds.size}</strong> abastecimento(s) com <strong>média suspeita</strong> (trecho &lt; 100 km ou fora da faixa 6–20 km/L) — provável tanque parcial. A coluna "Média KM/L" já mostra a média combinada real.
+            </div>
+            <Button
+              size="sm"
+              variant={onlyAlerts ? "default" : "outline"}
+              className={onlyAlerts ? "h-7" : "border-amber-400 text-amber-800 hover:bg-amber-100 h-7"}
+              onClick={() => setOnlyAlerts(v => !v)}
+              data-testid="button-toggle-alerts"
+            >
+              {onlyAlerts ? "Ver todos" : `Ver só alertas (${suspectIds.size})`}
+            </Button>
+          </div>
+        )}
 
         {(stats.semValor > 0 || stats.semLitros > 0 || onlyIncomplete) && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-start gap-3" data-testid="banner-incomplete-fuelings">
