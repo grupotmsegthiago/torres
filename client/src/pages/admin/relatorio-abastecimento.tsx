@@ -92,6 +92,7 @@ function formatTimeBR(d: string | null) {
 
 export default function RelatorioAbastecimentoPage() {
   const [search, setSearch] = useState("");
+  const [periodMode, setPeriodMode] = useState<"cycle" | "month">("cycle");
   const [cycleValue, setCycleValue] = useState<string>(() => getCurrentCycle().value);
   const [dateFrom, setDateFrom] = useState<string>(() => getCurrentCycle().startDate);
   const [dateTo, setDateTo] = useState<string>(() => getCurrentCycle().endDate);
@@ -388,28 +389,86 @@ export default function RelatorioAbastecimentoPage() {
               </div>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Ciclo de fechamento</label>
+              <label className="text-xs text-neutral-500 mb-1 block">Tipo de período</label>
+              <div className="inline-flex rounded-md border border-neutral-300 overflow-hidden h-9" data-testid="toggle-period-mode-report">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeriodMode("cycle");
+                    setCycleValue("");
+                    const c = getCurrentCycle();
+                    setCycleValue(c.value); setDateFrom(c.startDate); setDateTo(c.endDate);
+                  }}
+                  className={`px-2.5 text-xs font-medium ${periodMode === "cycle" ? "bg-neutral-900 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
+                  data-testid="button-mode-cycle-report"
+                  title="Ciclo de fechamento do cartão (16 → 15)"
+                >Ciclo (16→15)</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeriodMode("month");
+                    const today = new Date();
+                    const y = today.getFullYear(); const m = today.getMonth() + 1;
+                    const v = `${y}-${String(m).padStart(2, "0")}`;
+                    const lastDay = new Date(y, m, 0).getDate();
+                    setCycleValue(v);
+                    setDateFrom(`${y}-${String(m).padStart(2, "0")}-01`);
+                    setDateTo(`${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`);
+                  }}
+                  className={`px-2.5 text-xs font-medium border-l border-neutral-300 ${periodMode === "month" ? "bg-neutral-900 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
+                  data-testid="button-mode-month-report"
+                  title="Mês civil (dia 01 → último dia do mês)"
+                >Mês civil</button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-neutral-500 mb-1 block">{periodMode === "cycle" ? "Ciclo de fechamento" : "Mês civil"}</label>
               <select
-                className="h-9 border border-neutral-300 rounded-md px-2 text-sm bg-white w-[170px]"
+                className="h-9 border border-neutral-300 rounded-md px-2 text-sm bg-white w-[180px]"
                 value={cycleValue}
                 onChange={e => {
                   const v = e.target.value;
                   setCycleValue(v);
                   if (v === "") { setDateFrom(""); setDateTo(""); return; }
-                  const c = getCycleByValue(v);
-                  if (c) { setDateFrom(c.startDate); setDateTo(c.endDate); }
+                  if (periodMode === "cycle") {
+                    const c = getCycleByValue(v);
+                    if (c) { setDateFrom(c.startDate); setDateTo(c.endDate); }
+                  } else {
+                    const [y, m] = v.split("-").map(Number);
+                    const lastDay = new Date(y, m, 0).getDate();
+                    setDateFrom(`${y}-${String(m).padStart(2, "0")}-01`);
+                    setDateTo(`${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`);
+                  }
                 }}
                 data-testid="select-cycle"
-                title={cycleValue ? (getCycleByValue(cycleValue)?.rangeLabel ?? "") : "Período de fechamento (16 → 15)"}
+                title={periodMode === "cycle"
+                  ? (cycleValue ? (getCycleByValue(cycleValue)?.rangeLabel ?? "") : "Período de fechamento (16 → 15)")
+                  : "Mês civil (01 → último dia)"}
               >
                 <option value="">Personalizado / todo</option>
-                {listCyclesFromDates(fuelings.map(f => f.date).filter(Boolean) as string[]).map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
+                {periodMode === "cycle"
+                  ? listCyclesFromDates(fuelings.map(f => f.date).filter(Boolean) as string[]).map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))
+                  : (() => {
+                      const set = new Set<string>();
+                      const today = new Date();
+                      set.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+                      fuelings.forEach(f => { if (f.date) set.add(f.date.slice(0, 7)); });
+                      return Array.from(set).sort().reverse().map(m => {
+                        const [y, mo] = m.split("-").map(Number);
+                        return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>;
+                      });
+                    })()}
               </select>
-              {cycleValue && (
+              {cycleValue && periodMode === "cycle" && (
                 <p className="text-[10px] text-neutral-500 mt-0.5" data-testid="text-cycle-range">
                   {getCycleByValue(cycleValue)?.rangeLabel}
+                </p>
+              )}
+              {cycleValue && periodMode === "month" && (
+                <p className="text-[10px] text-neutral-500 mt-0.5" data-testid="text-month-range">
+                  {dateFrom} → {dateTo}
                 </p>
               )}
             </div>

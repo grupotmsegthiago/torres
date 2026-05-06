@@ -875,6 +875,7 @@ export default function FuelingPage() {
   const [editItem, setEditItem] = useState<VehicleFueling | undefined>();
   const [detailItem, setDetailItem] = useState<VehicleFueling | null>(null);
   const [filterVehicle, setFilterVehicle] = useState<number | "all">("all");
+  const [periodMode, setPeriodMode] = useState<"cycle" | "month">("cycle");
   const [filterMonth, setFilterMonth] = useState<string>("");
   const [expandedVehicle, setExpandedVehicle] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"dashboard" | "history">("dashboard");
@@ -902,8 +903,12 @@ export default function FuelingPage() {
     let list = fuelings || [];
     if (filterVehicle !== "all") list = list.filter(f => f.vehicleId === filterVehicle);
     if (filterMonth) {
-      const cyc = getCycleByValue(filterMonth);
-      if (cyc) list = list.filter(f => f.date && f.date >= cyc.startDate && f.date <= cyc.endDate);
+      if (periodMode === "cycle") {
+        const cyc = getCycleByValue(filterMonth);
+        if (cyc) list = list.filter(f => f.date && f.date >= cyc.startDate && f.date <= cyc.endDate);
+      } else {
+        list = list.filter(f => f.date?.startsWith(filterMonth));
+      }
     }
     if (searchFueling.trim()) {
       const s = searchFueling.toLowerCase();
@@ -918,7 +923,7 @@ export default function FuelingPage() {
       });
     }
     return list;
-  }, [fuelings, filterVehicle, filterMonth, searchFueling, vehicles, employees, allUsers]);
+  }, [fuelings, filterVehicle, filterMonth, periodMode, searchFueling, vehicles, employees, allUsers]);
 
   const stats = useMemo(() => computeStats(filteredFuelings, vehicles), [filteredFuelings, vehicles]);
   const perVehicle = useMemo(() => computePerVehicleData(filteredFuelings, vehicles || []), [filteredFuelings, vehicles]);
@@ -934,15 +939,29 @@ export default function FuelingPage() {
     () => listCyclesFromDates((fuelings || []).map(f => f.date).filter(Boolean) as string[]),
     [fuelings]
   );
-  // Default: ciclo corrente já selecionado quando a tela abre.
-  useEffect(() => {
-    if (filterMonth === "" && cycles.length > 0 && !filterMonthTouched.current) {
-      const cur = getCurrentCycle();
-      setFilterMonth(cur.value);
-    }
-  }, [cycles, filterMonth]);
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    const today = new Date();
+    set.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+    (fuelings || []).forEach(f => { if (f.date) set.add(f.date.slice(0, 7)); });
+    return Array.from(set).sort().reverse();
+  }, [fuelings]);
   const filterMonthTouched = useRef(false);
-  const currentCycleInfo = filterMonth ? getCycleByValue(filterMonth) : null;
+  // Default: ciclo/mês corrente já selecionado quando a tela abre.
+  useEffect(() => {
+    if (filterMonth === "" && !filterMonthTouched.current) {
+      if (periodMode === "cycle" && cycles.length > 0) {
+        setFilterMonth(getCurrentCycle().value);
+      } else if (periodMode === "month" && months.length > 0) {
+        const today = new Date();
+        setFilterMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+      }
+    }
+  }, [cycles, months, filterMonth, periodMode]);
+  const currentCycleInfo = filterMonth && periodMode === "cycle" ? getCycleByValue(filterMonth) : null;
+  const currentMonthLabel = filterMonth && periodMode === "month"
+    ? (() => { const [y, m] = filterMonth.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); })()
+    : null;
 
   const [mainTab, setMainTab] = useState("registros");
 
@@ -996,19 +1015,45 @@ export default function FuelingPage() {
             {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
+        <div className="inline-flex rounded-lg border border-neutral-300 overflow-hidden" data-testid="toggle-period-mode">
+          <button
+            type="button"
+            onClick={() => { filterMonthTouched.current = false; setFilterMonth(""); setPeriodMode("cycle"); }}
+            className={`h-9 px-3 text-xs font-medium transition-colors ${periodMode === "cycle" ? "bg-neutral-900 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
+            data-testid="button-mode-cycle"
+            title="Ciclo de fechamento do cartão (16 → 15)"
+          >Ciclo (16→15)</button>
+          <button
+            type="button"
+            onClick={() => { filterMonthTouched.current = false; setFilterMonth(""); setPeriodMode("month"); }}
+            className={`h-9 px-3 text-xs font-medium transition-colors border-l border-neutral-300 ${periodMode === "month" ? "bg-neutral-900 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
+            data-testid="button-mode-month"
+            title="Mês civil (dia 01 → último dia do mês)"
+          >Mês civil</button>
+        </div>
         <select
           value={filterMonth}
           onChange={e => { filterMonthTouched.current = true; setFilterMonth(e.target.value); }}
           className="h-9 border border-neutral-300 rounded-lg px-3 text-sm bg-white"
           data-testid="select-filter-month"
-          title={currentCycleInfo ? currentCycleInfo.rangeLabel : "Período de fechamento (16 → 15)"}
+          title={currentCycleInfo ? currentCycleInfo.rangeLabel : (periodMode === "cycle" ? "Período de fechamento (16 → 15)" : "Mês civil")}
         >
           <option value="">Todo período</option>
-          {cycles.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          {periodMode === "cycle"
+            ? cycles.map(c => <option key={c.value} value={c.value}>{c.label}</option>)
+            : months.map(m => {
+                const [y, mo] = m.split("-").map(Number);
+                return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>;
+              })}
         </select>
         {currentCycleInfo && (
           <span className="text-xs text-neutral-500 hidden md:inline" data-testid="text-cycle-range">
             ({currentCycleInfo.rangeLabel})
+          </span>
+        )}
+        {currentMonthLabel && (
+          <span className="text-xs text-neutral-500 hidden md:inline" data-testid="text-month-range">
+            (mês civil: {currentMonthLabel})
           </span>
         )}
         <div className="relative flex-1 min-w-[200px]">

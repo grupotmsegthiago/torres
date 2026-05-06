@@ -1,0 +1,348 @@
+
+	        <table border="1" cellpadding="3" cellspacing="2" align="center" class="gm_rel">
+	            <tr bgcolor=C0C0C0 class="AC">
+	                <td colspan="26" class="Titulo"><b>Relat&oacute;rio Custos do Veiculo por Km e Indicadores</b>&nbsp;</td>
+	            </tr>
+	            <tr>
+	                <td class="FormLabel" colspan="3">Per&iacute;odo:</td>
+	                <td class="FormCampo" colspan="16">01/05/2026 a 06/05/2026</td>
+	            </tr>
+	            <tr>
+	                <td class="FormLabel" colspan="3">Ve&iacute;culo:</td>
+	                <td class="FormCampo" colspan="16">
+	                    --- Todos ---
+	                </td>
+	            </tr>
+	            
+	                <tr>
+	                    <td class="FormLabel" colspan="3">Tipo Frota:</td>
+	                    <td class="FormCampo" colspan="16">PROPRIA</td>
+	                </tr>
+	            
+	            <tr>
+	                <td class="FormLabel" colspan="3">Situa&ccedil;&atilde;o do Ve&iacute;culo:</td>
+	                <td class="FormCampo" colspan="16">
+	                    -= Todos =-
+	                    
+	                </td>
+	            </tr>
+
+				<tr>
+	                <td class="FormLabel" colspan="3">Fam&iacute;lia:</td>
+	                <td class="FormCampo" colspan="16">
+	                    -= Todos =-
+	                    
+	                </td>
+	            </tr>
+                
+                <tr><td class="FormBotao" colspan="26">&nbsp;</td></tr>
+	            <tr>
+	                <th rowspan="2">Placa</th>
+	                <th rowspan="2">Nr. Frota</th>
+	                <th rowspan="2">Tipo de Frota</th>
+					<th rowspan="2">Fam&iacute;lia</th>
+	                <th rowspan="2">Modelo</th>
+	                <th rowspan="2">Km Rodados</th>
+					<th rowspan="2">Km Rodados Arla 32</th>
+	                <th rowspan="2">Horas Trabalhadas</th>
+					<th rowspan="2">Horas Trabalhadas Arla 32</th>
+	                <th colspan="5">Custos</th>
+	                <th colspan="3">Total Litros</th>
+	                <th colspan="4">Custos por Km</th>
+	                <th colspan="3">Km / Litro</th>
+	                <th colspan="3">Litros / Hora</th>
+	            </tr>
+	            <tr>
+	                <th>Abastecimento</th>
+					<th>Abastecimentos Arla 32</th>
+	                <th>&Oacute;leo</th>
+	                <th>Manuten&ccedil;&atilde;o<br>Oficina</th>
+	                <th>Demais Servi&ccedil;os</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>Manuten&ccedil;&atilde;o<br> Oficina</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	            </tr>
+		        
+		            <tr  bgcolor="390"><td colspan="27" class="SubTitulo"><b>NAO DEFINIDO</b></td></tr>
+		            
+		                                    <tr class="LinhaImpar AR">
+		                                        <td class="AL" nowrap><a href="javascript:Detail(26552121, '41DF42CA004DA5540224A4B9C98322B69D58CA1F83C19B6188642A7AF506736D64E5A80B20B9CC2D021ADA7FFE7C7CF5')">COR0002</a></td>
+		                                        <td class="AL" nowrap></td>
+		                                        <td class="AL" nowrap>PROPRIA</td>
+												<td class="AL" nowrap></td>
+												<td class="AL" nowrap>CARTAO CORINGA</td>
+		                                        <td>316,00</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td><a href="javascript:Abastecimento(26552121,'01/05/2026','06/05/2026','N','N')" title="Detalhes Abastecimento">100,00</a></td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>13,18</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>0,32</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>23,98</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                    </tr>
+	                                        
+	                                        
+		            <tr  bgcolor="390"><td colspan="27" class="SubTitulo"><b>VW</b></td></tr>
+		            
+		                                    <tr class="LinhaPar AR">
+		                                        <td class="AL" nowrap><a href="javascript:Detail(26550626, '47E671D88CFF2CEB4E435398AADABD4A330ED94814CFE6B695EE151CC3D2891A9AABC1B91A4B107CB5FA84E3FF8DFB9F')">UEB7H08</a></td>
+		                                        <td class="AL" nowrap></td>
+		                                        <td class="AL" nowrap>PROPRIA</td>
+												<td class="AL" nowrap></td>
+												<td class="AL" nowrap>VW POLO</td>
+		                                        <td>994,00</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td><a href="javascript:Abastecimento(26550626,'01/05/2026','06/05/2026','N','N')" title="Detalhes Abastecimento">395,95</a></td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>94,91</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>0,40</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>10,47</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                    </tr>
+	                                        
+	                                        
+		                                    <tr class="LinhaImpar AR">
+		                                        <td class="AL" nowrap><a href="javascript:Detail(26550627, 'B40F35D19417E90C6F288F22C21C5BE0FBDAA469BB246E3A2DC25CAD3E667126DB3A77C5FE11E83C8E840F84725A0432')">UER7D08</a></td>
+		                                        <td class="AL" nowrap></td>
+		                                        <td class="AL" nowrap>PROPRIA</td>
+												<td class="AL" nowrap></td>
+												<td class="AL" nowrap>VW POLO</td>
+		                                        <td>1.696,00</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td><a href="javascript:Abastecimento(26550627,'01/05/2026','06/05/2026','N','N')" title="Detalhes Abastecimento">524,87</a></td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>126,57</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>0,31</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>13,40</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                    </tr>
+	                                        
+	                                        
+		                                    <tr class="LinhaPar AR">
+		                                        <td class="AL" nowrap><a href="javascript:Detail(26550628, '1F378D12E9081B51C07B4A0A1BA36A25CCCF5195C80196B87508CA6FEBA8187EA481DDBEF3A42907FDAADFE2A545B97D')">UGU6E48</a></td>
+		                                        <td class="AL" nowrap></td>
+		                                        <td class="AL" nowrap>PROPRIA</td>
+												<td class="AL" nowrap></td>
+												<td class="AL" nowrap>VW POLO</td>
+		                                        <td>1.344,00</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td><a href="javascript:Abastecimento(26550628,'01/05/2026','06/05/2026','N','N')" title="Detalhes Abastecimento">548,36</a></td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>89,27</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>0,41</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>15,06</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+												<td>&nbsp;</td>
+		                                        <td>&nbsp;</td>
+		                                    </tr>
+	                                        
+	                                        
+				
+				<tr class="nowrap AR">
+					<td class="Total" colspan="5">Total</td>
+					<td class="Total">4.350,00</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">1.569,18</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">323,93</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">0,36</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">13,43</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+					<td class="Total">&nbsp;</td>
+				</tr>
+	        </table><br>
+	        <table border="1" cellpadding="3" cellspacing="2" align="center" class="gm_rel">
+	            <tr bgcolor=C0C0C0 class="AC"><td colspan="15" class="Titulo">M&eacute;dia de Custos</td></tr>
+	            <tr>
+	                <th rowspan="2">Marca do Ve&iacute;culo</th>
+	                <th rowspan="2">Km Rodados</th>
+					<th rowspan="2">Km Rodados Arla 32</th>
+	                <th rowspan="2">Horas Trabalhadas</th>
+					<th rowspan="2">Horas Trabalhadas Arla 32</th>
+	                <th colspan="4">Custos por Km</th>
+	                <th colspan="3">Km / Litro</th>
+	                <th colspan="3">Litros / Hora</th>
+	            </tr>
+	            <tr>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>Manuten&ccedil;&atilde;o<br> Oficina</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	            </tr>
+	            
+		                <tr class="LinhaImpar AR">
+		                    <td class="AL">NAO DEFINIDO</td>
+		                    <td>316,00</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>0,32</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>23,98</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                </tr>
+					
+		                <tr class="LinhaPar AR">
+		                    <td class="AL">VW</td>
+		                    <td>4.034,00</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>0,36</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>12,98</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                </tr>
+					
+	            <tr>
+	                <th rowspan="2">Frota</th>
+	                <th rowspan="2">Km Rodados</th>
+					<th rowspan="2">Km Rodados Arla 32</th>
+	                <th rowspan="2">Horas Trabalhadas</th>
+					<th rowspan="2">Horas Trabalhadas Arla 32</th>
+	                <th colspan="4">Custos por Km</th>
+	                <th colspan="3">Km / Litro</th>
+	                <th colspan="3">Litros / Hora</th>
+	            </tr>
+	            <tr>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>Manuten&ccedil;&atilde;o<br> Oficina</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	                <th>Abastecimento</th>
+					<th>Abastecimento Arla 32</th>
+	                <th>&Oacute;leo</th>
+	            </tr>
+	            
+		                <tr class="LinhaImpar AR">
+		                    <td class="AL">PROPRIA</td>
+		                    <td>4.350,00</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>0,36</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>13,43</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+							<td>&nbsp;</td>
+		                    <td>&nbsp;</td>
+		                </tr>
+					
+	            <tr><td colspan="15" class="FormBotao">&nbsp;</td></tr>
+			</table>
+            
+	<table class="gcd-msg-usuario" cellpadding="3" cellspacing="2" align="center" width="100%" style="border:1px solid #fff;">
+    	<tr>
+			<td width="16"><img src="/Img/ico_info.jpg" width="16" height="16" border="0" title="Legenda Informa&ccedil;&atilde;o" alt="Legenda Informa&ccedil;&atilde;o"></td>
+			<td  class="gm_msg_rodape">- Clique sobre a  <b>placa</b> do Ve&iacute;culo para exibir o cadastro.<br>- Clique sobre os &iacute;tens Abastecimento, &Oacute;leo, Manuten&ccedil;&atilde;o ou Demais Servi&ccedil;os na coluna Custos para vizualizar detalhes.</td>
+		</tr>
+	</table>
+
+    <div id="override_replataform" style="background: #eaeff5;width: 100%; height:100%;position:fixed;left:0;top:0;z-index:99999"></div>
+
+<script>if(window.addOnSubmit){ addOnSubmit();}</script>
+
+    </body>
+</html>
