@@ -419,6 +419,9 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS dsr DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS vale_refeicao DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS ajuda_custo DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});

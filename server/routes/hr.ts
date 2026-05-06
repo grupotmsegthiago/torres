@@ -524,18 +524,21 @@ import type { Express } from "express";
       const horasExtras = Number(body.horasExtras) || 0;
       const adicionalNoturno = Number(body.adicionalNoturno) || 0;
       const periculosidade = Number(body.periculosidade) || 0;
+      const dsr = Number(body.dsr) || 0;
+      const valeRefeicao = Number(body.valeRefeicao) || 0;
+      const ajudaCusto = Number(body.ajudaCusto) || 0;
       const beneficios = Number(body.beneficios) || 0;
       const descontos = Number(body.descontos) || 0;
-      const grossSalary = +(salarioBase + horasExtras + adicionalNoturno + periculosidade + beneficios).toFixed(2);
+      const grossSalary = +(salarioBase + horasExtras + adicionalNoturno + periculosidade + dsr + valeRefeicao + ajudaCusto + beneficios).toFixed(2);
       const netSalary = +(grossSalary - descontos).toFixed(2);
 
       const data = {
         employeeId,
         month: Number(body.month),
         year: Number(body.year),
-        salarioBase, horasExtras, adicionalNoturno, periculosidade, beneficios, descontos,
+        salarioBase, horasExtras, adicionalNoturno, periculosidade, dsr, valeRefeicao, ajudaCusto, beneficios, descontos,
         grossSalary, netSalary,
-        deductions: descontos, benefits: beneficios,
+        deductions: descontos, benefits: beneficios + valeRefeicao + ajudaCusto,
         status: body.status || "pendente",
         dataPagamento: body.dataPagamento || null,
         documentUrl: body.documentUrl || null,
@@ -715,26 +718,33 @@ import type { Express } from "express";
         messages: [
           {
             role: "system",
-            content: `Você é um sistema especializado em extrair dados de holerites e contracheques brasileiros.
-Analise a imagem do holerite/contracheque e extraia os seguintes campos. Retorne APENAS um JSON válido (sem markdown, sem texto extra):
+            content: `Você é um sistema especializado em extrair dados de holerites/contracheques brasileiros (CLT).
+Retorne APENAS um JSON válido (sem markdown, sem texto extra):
 {
-  "employeeName": "nome completo do funcionário conforme aparece no documento",
-  "employeeCpf": "CPF do funcionário no formato 000.000.000-00",
+  "employeeName": "nome completo do funcionário",
+  "employeeCpf": "CPF no formato 000.000.000-00",
   "month": número do mês (1-12),
   "year": número do ano (ex: 2026),
-  "salarioBase": valor numérico do salário base (sem R$),
-  "periculosidade": valor numérico da periculosidade/adicional periculosidade (sem R$),
-  "horasExtras": valor numérico total de horas extras em reais (sem R$),
-  "adicionalNoturno": valor numérico do adicional noturno (sem R$),
-  "beneficios": valor numérico total de benefícios/gratificações/VR/VA/cesta (sem R$),
-  "descontos": valor numérico total de descontos (INSS + IRRF + VT + outros) (sem R$),
-  "totalBruto": valor numérico do total de vencimentos/proventos (sem R$),
-  "totalLiquido": valor numérico do salário líquido a receber (sem R$),
-  "competencia": "texto da competência/referência conforme aparece (ex: ABR/2026)"
+  "salarioBase": valor PAGO da rubrica de salário base/dias trabalhados/salário do mês (proporcional aos dias trabalhados — geralmente é o PRIMEIRO valor da coluna de proventos),
+  "periculosidade": valor da rubrica "Periculosidade" ou "Adicional de Periculosidade" (geralmente 30% do salário base),
+  "horasExtras": valor da rubrica "Horas Extras" (50%, 60%, 100% — some todas as variações),
+  "adicionalNoturno": valor da rubrica "Adicional Noturno" (geralmente 20%),
+  "dsr": valor da rubrica "DSR" / "DSR sobre Horas Extras" / "Descanso Semanal Remunerado" (some todas as variações de DSR),
+  "valeRefeicao": valor da rubrica "Vale Refeição" / "VR" / "VA" / "Vale Alimentação" / "Cesta Básica",
+  "ajudaCusto": valor da rubrica "Ajuda de Custo" / "Auxílio" (que NÃO seja VR/VA),
+  "beneficios": SOMENTE outros benefícios/gratificações que não se encaixem nos campos acima (gratificação, prêmio, comissão). NÃO duplicar VR/Ajuda de Custo aqui.
+  "descontos": SOMA de TODOS os descontos (INSS + IRRF + VT + faltas + adiantamentos + outros),
+  "totalBruto": "Total dos Vencimentos" / "Total Bruto" / "Proventos" (SOMA de todos os proventos antes dos descontos),
+  "totalLiquido": "Líquido a Receber" / "Valor Líquido",
+  "competencia": "texto da competência (ex: ABR/2026, 04/2026)"
 }
 
-Se um campo não for encontrado, retorne 0 para números e "" para strings. Nunca invente valores.
-Os valores devem ser números (ex: 2432.50, não "2.432,50"). Converta o formato brasileiro para decimal.
+REGRAS CRÍTICAS:
+1) Se um campo não for encontrado, retorne 0 (numérico) ou "" (string). Nunca invente.
+2) Valores SEMPRE em decimal americano: "2.432,50" → 2432.50
+3) Holerites brasileiros podem ter LAYOUT DISJUNTO em PDFs: a coluna de valores aparece numerada (1, 2, 3, …) em um bloco e os labels/descrições (Salário Base, Periculosidade, Horas extras, Adicional noturno, DSR, Vale refeição, Ajuda de custo) aparecem em outro bloco do texto. Nesse caso, MAPEIE POR POSIÇÃO: a 1ª descrição corresponde ao 1º valor, a 2ª descrição ao 2º valor, etc. A ordem típica é: Dias trabalhados/Salário Base → Periculosidade → Horas Extras → Adicional Noturno → DSR → Vale Refeição → Ajuda de Custo.
+4) Se houver coluna "Referência" (ex: 134,13) E coluna "Proventos" (ex: 2.504,55) na mesma linha, o VALOR é o de proventos (em R$), NÃO a referência (que é qtd de horas/dias).
+5) VALIDE: salarioBase + periculosidade + horasExtras + adicionalNoturno + dsr + valeRefeicao + ajudaCusto + beneficios deve ser ≈ totalBruto. Se sobrar diferença significativa, coloque em "beneficios".
 
 FUNCIONÁRIOS CADASTRADOS NO SISTEMA (use para identificar o funcionário correto):
 ${empNames}`

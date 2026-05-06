@@ -221,7 +221,19 @@ function PayslipRow({ payslip: p, onViewReport }: { payslip: any; onViewReport: 
               <p className="font-bold text-indigo-700">{BRL(Number(p.adicionalNoturno) || 0)}</p>
             </div>
             <div>
-              <p className="text-neutral-400 font-bold uppercase text-[10px]">Benefícios</p>
+              <p className="text-neutral-400 font-bold uppercase text-[10px]">DSR</p>
+              <p className="font-bold text-purple-700">{BRL(Number(p.dsr) || 0)}</p>
+            </div>
+            <div>
+              <p className="text-neutral-400 font-bold uppercase text-[10px]">Vale Refeição</p>
+              <p className="font-bold text-blue-700">{BRL(Number(p.valeRefeicao) || 0)}</p>
+            </div>
+            <div>
+              <p className="text-neutral-400 font-bold uppercase text-[10px]">Ajuda de Custo</p>
+              <p className="font-bold text-blue-700">{BRL(Number(p.ajudaCusto) || 0)}</p>
+            </div>
+            <div>
+              <p className="text-neutral-400 font-bold uppercase text-[10px]">Outros Benefícios</p>
               <p className="font-bold text-blue-700">{BRL(Number(p.beneficios) || 0)}</p>
             </div>
             <div>
@@ -298,6 +310,9 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
     horasExtras: "",
     adicionalNoturno: "",
     periculosidade: "",
+    dsr: "",
+    valeRefeicao: "",
+    ajudaCusto: "",
     beneficios: "",
     descontos: "",
     status: "pendente",
@@ -333,6 +348,9 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
           periculosidade: data.periculosidade ? String(data.periculosidade) : "0",
           horasExtras: data.horasExtras ? String(data.horasExtras) : "0",
           adicionalNoturno: data.adicionalNoturno ? String(data.adicionalNoturno) : "0",
+          dsr: data.dsr ? String(data.dsr) : "0",
+          valeRefeicao: data.valeRefeicao ? String(data.valeRefeicao) : "0",
+          ajudaCusto: data.ajudaCusto ? String(data.ajudaCusto) : "0",
           beneficios: data.beneficios ? String(data.beneficios) : "0",
           descontos: data.descontos ? String(data.descontos) : "0",
         };
@@ -345,13 +363,17 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
             const he = Number(filled.horasExtras) || 0;
             const an = Number(filled.adicionalNoturno) || 0;
             const pe = Number(filled.periculosidade) || 0;
+            const ds = Number(filled.dsr) || 0;
+            const vr = Number(filled.valeRefeicao) || 0;
+            const ac = Number(filled.ajudaCusto) || 0;
             const be = Number(filled.beneficios) || 0;
             const de = Number(filled.descontos) || 0;
             await apiRequest("POST", `/api/employees/${filled.employeeId}/payslips`, {
               employeeId: filled.employeeId,
               month: Number(filled.month),
               year: Number(filled.year),
-              salarioBase: sb, horasExtras: he, adicionalNoturno: an, periculosidade: pe, beneficios: be, descontos: de,
+              salarioBase: sb, horasExtras: he, adicionalNoturno: an, periculosidade: pe,
+              dsr: ds, valeRefeicao: vr, ajudaCusto: ac, beneficios: be, descontos: de,
               documentUrl: base64,
               status: "pendente",
             });
@@ -401,9 +423,12 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
   const horasExtras = Number(form.horasExtras) || 0;
   const adicionalNoturno = Number(form.adicionalNoturno) || 0;
   const periculosidade = Number(form.periculosidade) || 0;
+  const dsr = Number(form.dsr) || 0;
+  const valeRefeicao = Number(form.valeRefeicao) || 0;
+  const ajudaCusto = Number(form.ajudaCusto) || 0;
   const beneficios = Number(form.beneficios) || 0;
   const descontos = Number(form.descontos) || 0;
-  const totalBruto = salarioBase + horasExtras + adicionalNoturno + periculosidade + beneficios;
+  const totalBruto = salarioBase + horasExtras + adicionalNoturno + periculosidade + dsr + valeRefeicao + ajudaCusto + beneficios;
   const totalLiquido = totalBruto - descontos;
 
   const createMutation = useMutation({
@@ -412,7 +437,7 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
         ...form,
         month: Number(form.month),
         year: Number(form.year),
-        salarioBase, horasExtras, adicionalNoturno, periculosidade, beneficios, descontos,
+        salarioBase, horasExtras, adicionalNoturno, periculosidade, dsr, valeRefeicao, ajudaCusto, beneficios, descontos,
         documentUrl,
       });
     },
@@ -532,7 +557,19 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
                 <Input type="number" step="0.01" value={form.adicionalNoturno} onChange={e => setForm({ ...form, adicionalNoturno: e.target.value })} placeholder="0.00" data-testid="input-adicional-noturno" />
               </div>
               <div>
-                <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Benefícios</label>
+                <label className="text-[11px] font-bold text-neutral-600 mb-1 block">DSR</label>
+                <Input type="number" step="0.01" value={form.dsr} onChange={e => setForm({ ...form, dsr: e.target.value })} placeholder="0.00" data-testid="input-dsr" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Vale Refeição</label>
+                <Input type="number" step="0.01" value={form.valeRefeicao} onChange={e => setForm({ ...form, valeRefeicao: e.target.value })} placeholder="0.00" data-testid="input-vale-refeicao" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Ajuda de Custo</label>
+                <Input type="number" step="0.01" value={form.ajudaCusto} onChange={e => setForm({ ...form, ajudaCusto: e.target.value })} placeholder="0.00" data-testid="input-ajuda-custo" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Outros Benefícios</label>
                 <Input type="number" step="0.01" value={form.beneficios} onChange={e => setForm({ ...form, beneficios: e.target.value })} placeholder="0.00" data-testid="input-beneficios" />
               </div>
               <div>
