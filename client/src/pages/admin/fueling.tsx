@@ -945,6 +945,29 @@ export default function FuelingPage() {
     return map;
   }, [serviceOrders, periodRange.from, periodRange.to]);
 
+  // Participação de cada viatura nas OSs do período (% por contagem e por km)
+  const osShareByVehicle = useMemo(() => {
+    const missionsInPeriod = filterMissionsByPeriod(serviceOrders as ClassifiableMission[], periodRange.from, periodRange.to);
+    const map = new Map<number, { count: number; km: number; pctCount: number; pctKm: number }>();
+    let totalCount = 0, totalKm = 0;
+    for (const m of missionsInPeriod) {
+      const vid = (m as any).vehicleId;
+      if (!vid) continue;
+      const km = Number((m as any).kmTotalCalculado ?? (m as any).km_total_calculado ?? 0);
+      const cur = map.get(vid) || { count: 0, km: 0, pctCount: 0, pctKm: 0 };
+      cur.count += 1;
+      cur.km += km > 0 ? km : 0;
+      map.set(vid, cur);
+      totalCount += 1;
+      if (km > 0) totalKm += km;
+    }
+    map.forEach(v => {
+      v.pctCount = totalCount > 0 ? (v.count / totalCount) * 100 : 0;
+      v.pctKm = totalKm > 0 ? (v.km / totalKm) * 100 : 0;
+    });
+    return { map, totalCount, totalKm };
+  }, [serviceOrders, periodRange.from, periodRange.to]);
+
   // % álcool vs gasolina por veículo (peso = litros) no período filtrado
   const fuelTypeShareByVehicle = useMemo(() => {
     const map = new Map<number, { litAlcool: number; litGasolina: number; total: number; pctAlcool: number; pctGasolina: number }>();
@@ -1211,6 +1234,28 @@ export default function FuelingPage() {
                                     <span className="text-green-700">{fs.pctAlcool.toFixed(0)}%</span>
                                     <span className="text-neutral-300 mx-1">/</span>
                                     <span className="text-blue-700">{fs.pctGasolina.toFixed(0)}%</span>
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-xs text-neutral-300 mt-1">-</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {(() => {
+                          const os = osShareByVehicle.map.get(pv.vehicle.id);
+                          return (
+                            <div className="text-center min-w-[120px]" data-testid={`os-share-${pv.vehicle.id}`} title={os ? `${os.count} de ${osShareByVehicle.totalCount} OSs · ${os.km.toFixed(0)} de ${osShareByVehicle.totalKm.toFixed(0)} km` : "sem missões"}>
+                              <p className="text-xs text-neutral-400">% das OSs</p>
+                              {os && os.count > 0 ? (
+                                <>
+                                  <div className="flex h-2 rounded overflow-hidden bg-neutral-100 mt-1" title={`${os.pctKm.toFixed(0)}% do km rodado total`}>
+                                    <div className="bg-violet-600" style={{ width: `${os.pctKm}%` }} />
+                                  </div>
+                                  <p className="text-[11px] font-bold mt-0.5">
+                                    <span className="text-violet-700">{os.pctCount.toFixed(0)}%</span>
+                                    <span className="text-neutral-300 mx-1">·</span>
+                                    <span className="text-violet-500">{os.pctKm.toFixed(0)}% km</span>
                                   </p>
                                 </>
                               ) : (
