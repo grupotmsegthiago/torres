@@ -613,13 +613,18 @@ export async function emitInvoiceAuto(
   }
 
   const clientId = invoice.client_id;
-  if (!clientId) return { success: false, message: "Fatura sem cliente vinculado", nfEmitted: false };
-
-  const { data: clientData } = await supabaseAdmin.from("clients")
-    .select("cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual")
-    .eq("id", clientId).single();
-  const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
-  if (!cpfCnpj) return { success: false, message: "Cliente sem CPF/CNPJ cadastrado", nfEmitted: false };
+  const clientCols = "id, cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
+  let clientData: any = null;
+  if (clientId) {
+    const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
+    clientData = r.data;
+  }
+  if (!clientData && invoice.client_name) {
+    const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
+    clientData = r.data?.[0] || null;
+  }
+  const cpfCnpj = (clientData?.cnpj || clientData?.cpf || invoice.client_cpf_cnpj || "").toString().replace(/[^\d]/g, "");
+  if (!cpfCnpj || cpfCnpj.length < 11) return { success: false, message: "Cliente sem CPF/CNPJ cadastrado", nfEmitted: false };
 
   const clientName = clientData?.name || invoice.client_name;
   const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
@@ -1379,11 +1384,22 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const clientId = invoice.client_id;
-      if (!clientId) return res.status(400).json({ message: "Fatura sem cliente vinculado." });
-
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
-      const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
-      if (!cpfCnpj) return res.status(400).json({ message: "Cliente sem CPF/CNPJ cadastrado. Atualize o cadastro primeiro." });
+      const clientCols = "id, cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
+      let clientData: any = null;
+      if (clientId) {
+        const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
+        clientData = r.data;
+      }
+      // Fallback: busca por nome se cadastro não encontrado por id
+      if (!clientData && invoice.client_name) {
+        const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
+        clientData = r.data?.[0] || null;
+      }
+      // CNPJ/CPF: cadastro do cliente → CNPJ já gravado na fatura → erro
+      let cpfCnpj = (clientData?.cnpj || clientData?.cpf || invoice.client_cpf_cnpj || "").toString().replace(/[^\d]/g, "");
+      if (!cpfCnpj || cpfCnpj.length < 11) {
+        return res.status(400).json({ message: "Cliente sem CPF/CNPJ válido cadastrado. Atualize o cadastro do cliente e tente novamente." });
+      }
 
       const clientName = clientData?.name || invoice.client_name;
       const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
