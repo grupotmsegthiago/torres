@@ -102,7 +102,7 @@ export default function RelatorioNFPage() {
   const isDiretoria = user?.role === "diretoria";
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; contentType: string | null; htmlText: string | null; loading: boolean; error: string | null } | null>(null);
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
-  const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE"; sourceId: number; clientName: string; value: number; description: string; reason: string } | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
   useEffect(() => {
@@ -169,7 +169,7 @@ export default function RelatorioNFPage() {
   });
 
   const deleteRowMutation = useMutation({
-    mutationFn: async (payload: { source: "BOLETIM" | "INVOICE"; sourceId: number; reason: string }) => {
+    mutationFn: async (payload: { source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; reason: string }) => {
       const r = await authFetch(`/api/relatorio-nf/delete-row`, {
         method: "POST",
         body: JSON.stringify(payload),

@@ -2868,8 +2868,21 @@ export function registerAsaasRoutes(app: Express) {
         const source = String(req.body?.source || "").toUpperCase();
         const rawId = req.body?.sourceId;
         const reason = String(req.body?.reason || "").slice(0, 500);
-        if (rawId === undefined || rawId === null || rawId === "" || (source !== "BOLETIM" && source !== "INVOICE")) {
-          return res.status(400).json({ message: "source (BOLETIM|INVOICE) e sourceId obrigatórios" });
+        if (rawId === undefined || rawId === null || rawId === "" || !["BOLETIM", "INVOICE", "BILLING_AVULSO"].includes(source)) {
+          return res.status(400).json({ message: "source (BOLETIM|INVOICE|BILLING_AVULSO) e sourceId obrigatórios" });
+        }
+
+        if (source === "BILLING_AVULSO") {
+          // billings.id é UUID (string)
+          const sourceId = String(rawId);
+          const { data: bil } = await supabaseAdmin.from("billings").select("*").eq("id", sourceId).maybeSingle();
+          if (!bil) return res.status(404).json({ message: "Billing não encontrada" });
+          if (bil.invoice_id) return res.status(400).json({ message: "Billing já está vinculada a uma fatura. Exclua a fatura primeiro." });
+          if (bil.boletim_id) return res.status(400).json({ message: "Billing está vinculada a um boletim. Exclua o boletim primeiro." });
+          const { error } = await supabaseAdmin.from("billings").delete().eq("id", sourceId);
+          if (error) throw error;
+          console.log(`[relatorio-nf] Billing avulsa ${sourceId} (${bil.client_name}, R$${billingValor(bil)}) EXCLUÍDA por ${user.email}. Motivo: ${reason || "—"}`);
+          return res.json({ success: true, removed: { source, sourceId, clientName: bil.client_name, value: billingValor(bil) } });
         }
 
         if (source === "BOLETIM") {
