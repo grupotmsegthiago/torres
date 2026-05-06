@@ -163,7 +163,10 @@ export function initCronJobs() {
     // (TicketLog pode demorar minutos pra processar a transação após o agente
     //  passar o cartão; tentamos novamente até bater)
     // ============================================================
-    cron.schedule("*/20 * * * *", async () => {
+    let ticketLogRunning = false;
+    cron.schedule("*/1 * * * *", async () => {
+      if (ticketLogRunning) return; // evita sobreposição
+      ticketLogRunning = true;
       try {
         const { isTicketLogConfigured, retryPendingValidations } = await import("./ticketlog");
         if (!isTicketLogConfigured()) return;
@@ -171,6 +174,8 @@ export function initCronJobs() {
         if (r.tried > 0) log(`CRON TicketLog: ${r.tried} tentativa(s) — ${r.ok} OK, ${r.divergent} divergente, ${r.failed} falhou`, "cron");
       } catch (e: any) {
         log(`CRON TicketLog: Erro: ${e.message}`, "cron");
+      } finally {
+        ticketLogRunning = false;
       }
     });
 
@@ -196,9 +201,12 @@ export function initCronJobs() {
 
     // ============================================================
     // CRON: Reconciliação Banco Inter — extrato dos últimos 7 dias
-    // a cada 30 min, casa entradas com invoices PENDING
+    // a cada 1 min, casa entradas com invoices PENDING
     // ============================================================
-    cron.schedule("*/30 * * * *", async () => {
+    let interReconcileRunning = false;
+    cron.schedule("*/1 * * * *", async () => {
+      if (interReconcileRunning) return; // evita sobreposição
+      interReconcileRunning = true;
       try {
         const { isInterConfigured } = await import("./services/inter/client");
         if (!isInterConfigured()) return; // pula silenciosamente se Inter não configurado
@@ -278,6 +286,8 @@ export function initCronJobs() {
         }
       } catch (e: any) {
         log(`CRON Inter-Reconcile: Erro: ${e.message}`, "cron");
+      } finally {
+        interReconcileRunning = false;
       }
     });
 
