@@ -945,14 +945,28 @@ export default function FuelingPage() {
     return map;
   }, [serviceOrders, periodRange.from, periodRange.to]);
 
-  // Total geral (todos veículos somados) pro card de resumo
-  const tripShareTotal = useMemo(() => {
-    const missionsInPeriod = filterMissionsByPeriod(serviceOrders as ClassifiableMission[], periodRange.from, periodRange.to);
-    const filteredByV = filterVehicle === "all"
-      ? missionsInPeriod
-      : missionsInPeriod.filter(m => (m as any).vehicleId === filterVehicle);
-    return computeUrbanHighwayShare(filteredByV);
-  }, [serviceOrders, periodRange.from, periodRange.to, filterVehicle]);
+  // % álcool vs gasolina por veículo (peso = litros) no período filtrado
+  const fuelTypeShareByVehicle = useMemo(() => {
+    const map = new Map<number, { litAlcool: number; litGasolina: number; total: number; pctAlcool: number; pctGasolina: number }>();
+    for (const f of filteredFuelings) {
+      const ft = String((f as any).fuelType || "").toLowerCase();
+      if (ft !== "etanol" && ft !== "alcool" && ft !== "álcool" && ft !== "gasolina") continue;
+      const lit = Number(f.liters || 0);
+      if (lit <= 0) continue;
+      const cur = map.get(f.vehicleId) || { litAlcool: 0, litGasolina: 0, total: 0, pctAlcool: 0, pctGasolina: 0 };
+      if (ft === "gasolina") cur.litGasolina += lit;
+      else cur.litAlcool += lit;
+      map.set(f.vehicleId, cur);
+    }
+    map.forEach(v => {
+      v.total = v.litAlcool + v.litGasolina;
+      if (v.total > 0) {
+        v.pctAlcool = (v.litAlcool / v.total) * 100;
+        v.pctGasolina = (v.litGasolina / v.total) * 100;
+      }
+    });
+    return map;
+  }, [filteredFuelings]);
 
   const getVehicle = (id: number) => vehicles.find(v => v.id === id);
   const getDriver = (id: number | null) => id ? employees.find(e => e.id === id)?.name : null;
@@ -1109,13 +1123,6 @@ export default function FuelingPage() {
           sub={stats.bestAvg?.plate}
           color="bg-emerald-600"
         />
-        <StatCard
-          icon={Gauge}
-          label="Urbano / Rodovia"
-          value={tripShareTotal.kmTotal > 0 ? `${tripShareTotal.pctUrbano.toFixed(0)}% / ${tripShareTotal.pctRodovia.toFixed(0)}%` : "-"}
-          sub={tripShareTotal.kmTotal > 0 ? `${(tripShareTotal.countUrbano + tripShareTotal.countRodovia)} missões` : undefined}
-          color="bg-amber-600"
-        />
       </div>
 
       {viewMode === "dashboard" ? (
@@ -1190,27 +1197,48 @@ export default function FuelingPage() {
                           <p className="font-bold text-neutral-900">{pv.lastKm.toLocaleString("pt-BR")}</p>
                         </div>
                         {(() => {
-                          const ts = tripShareByVehicle.get(pv.vehicle.id);
-                          if (!ts || ts.kmTotal <= 0) {
-                            return (
-                              <div className="text-center min-w-[110px]" data-testid={`trip-share-${pv.vehicle.id}`}>
-                                <p className="text-xs text-neutral-400">Urb / Rod</p>
-                                <p className="text-xs text-neutral-300">sem missões</p>
-                              </div>
-                            );
-                          }
+                          const fs = fuelTypeShareByVehicle.get(pv.vehicle.id);
                           return (
-                            <div className="text-center min-w-[110px]" data-testid={`trip-share-${pv.vehicle.id}`} title={`${ts.countUrbano} urb (${ts.kmUrbano.toFixed(0)} km) · ${ts.countRodovia} rod (${ts.kmRodovia.toFixed(0)} km)`}>
-                              <p className="text-xs text-neutral-400">Urb / Rod</p>
-                              <div className="flex h-2 rounded overflow-hidden bg-neutral-100 mt-1">
-                                <div className="bg-amber-500" style={{ width: `${ts.pctUrbano}%` }} />
-                                <div className="bg-sky-600" style={{ width: `${ts.pctRodovia}%` }} />
-                              </div>
-                              <p className="text-[11px] font-bold text-neutral-700 mt-0.5">
-                                <span className="text-amber-700">{ts.pctUrbano.toFixed(0)}%</span>
-                                <span className="text-neutral-300 mx-1">/</span>
-                                <span className="text-sky-700">{ts.pctRodovia.toFixed(0)}%</span>
-                              </p>
+                            <div className="text-center min-w-[120px]" data-testid={`fuel-share-${pv.vehicle.id}`} title={fs && fs.total > 0 ? `Álcool ${fs.litAlcool.toFixed(1)}L · Gasolina ${fs.litGasolina.toFixed(1)}L` : "sem abastecimentos"}>
+                              <p className="text-xs text-neutral-400">Álcool / Gasolina</p>
+                              {fs && fs.total > 0 ? (
+                                <>
+                                  <div className="flex h-2 rounded overflow-hidden bg-neutral-100 mt-1">
+                                    <div className="bg-green-500" style={{ width: `${fs.pctAlcool}%` }} />
+                                    <div className="bg-blue-600" style={{ width: `${fs.pctGasolina}%` }} />
+                                  </div>
+                                  <p className="text-[11px] font-bold mt-0.5">
+                                    <span className="text-green-700">{fs.pctAlcool.toFixed(0)}%</span>
+                                    <span className="text-neutral-300 mx-1">/</span>
+                                    <span className="text-blue-700">{fs.pctGasolina.toFixed(0)}%</span>
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-xs text-neutral-300 mt-1">-</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {(() => {
+                          const ts = tripShareByVehicle.get(pv.vehicle.id);
+                          return (
+                            <div className="text-center min-w-[120px]" data-testid={`trip-share-${pv.vehicle.id}`} title={ts && ts.kmTotal > 0 ? `${ts.countUrbano} urb (${ts.kmUrbano.toFixed(0)} km) · ${ts.countRodovia} rod (${ts.kmRodovia.toFixed(0)} km)` : "sem missões"}>
+                              <p className="text-xs text-neutral-400">Urbano / Rodovia</p>
+                              {ts && ts.kmTotal > 0 ? (
+                                <>
+                                  <div className="flex h-2 rounded overflow-hidden bg-neutral-100 mt-1">
+                                    <div className="bg-amber-500" style={{ width: `${ts.pctUrbano}%` }} />
+                                    <div className="bg-sky-600" style={{ width: `${ts.pctRodovia}%` }} />
+                                  </div>
+                                  <p className="text-[11px] font-bold mt-0.5">
+                                    <span className="text-amber-700">{ts.pctUrbano.toFixed(0)}%</span>
+                                    <span className="text-neutral-300 mx-1">/</span>
+                                    <span className="text-sky-700">{ts.pctRodovia.toFixed(0)}%</span>
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-xs text-neutral-300 mt-1">-</p>
+                              )}
                             </div>
                           );
                         })()}
