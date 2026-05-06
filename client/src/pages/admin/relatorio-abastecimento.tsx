@@ -95,6 +95,7 @@ export default function RelatorioAbastecimentoPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -118,7 +119,12 @@ export default function RelatorioAbastecimentoPage() {
   const vMap = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles]);
   const eMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
 
-  const sorted = useMemo(() => {
+  const isIncomplete = (f: VehicleFueling) => (Number(f.totalCost) || 0) <= 0 || (Number(f.liters) || 0) <= 0;
+
+  // baseFiltered = aplica filtros de data/busca; é a base para os contadores
+  // do banner/cards (independente do toggle "só incompletos") para nunca
+  // esconder o aviso enquanto ainda há registros incompletos no escopo.
+  const baseFiltered = useMemo(() => {
     let list = [...fuelings];
     if (dateFrom) list = list.filter(f => f.date >= dateFrom);
     if (dateTo) list = list.filter(f => f.date <= dateTo);
@@ -136,6 +142,11 @@ export default function RelatorioAbastecimentoPage() {
         );
       });
     }
+    return list;
+  }, [fuelings, search, dateFrom, dateTo, vMap, eMap]);
+
+  const sorted = useMemo(() => {
+    let list = onlyIncomplete ? baseFiltered.filter(isIncomplete) : [...baseFiltered];
     list.sort((a, b) => {
       let cmp = 0;
       if (sortField === "date") cmp = (a.createdAt || a.date).localeCompare(b.createdAt || b.date);
@@ -148,7 +159,7 @@ export default function RelatorioAbastecimentoPage() {
       return sortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [fuelings, search, dateFrom, dateTo, sortField, sortDir, vMap, eMap]);
+  }, [baseFiltered, sortField, sortDir, vMap, onlyIncomplete]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -156,13 +167,18 @@ export default function RelatorioAbastecimentoPage() {
   };
 
   const stats = useMemo(() => {
-    const total = sorted.length;
-    const gastoTotal = sorted.reduce((s, f) => s + (Number(f.totalCost) || 0), 0);
-    const litrosTotal = sorted.reduce((s, f) => s + (Number(f.liters) || 0), 0);
-    const gasCount = sorted.filter(f => f.fuelType === "gasolina").length;
-    const ethCount = sorted.filter(f => f.fuelType === "etanol").length;
-    return { total, gastoTotal, litrosTotal, gasCount, ethCount };
-  }, [sorted]);
+    // contadores e somatórios são derivados de baseFiltered (sem aplicar
+    // o toggle "só incompletos") para que os totais e o aviso reflitam
+    // sempre o escopo real do filtro de data/busca.
+    const total = baseFiltered.length;
+    const gastoTotal = baseFiltered.reduce((s, f) => s + (Number(f.totalCost) || 0), 0);
+    const litrosTotal = baseFiltered.reduce((s, f) => s + (Number(f.liters) || 0), 0);
+    const gasCount = baseFiltered.filter(f => f.fuelType === "gasolina").length;
+    const ethCount = baseFiltered.filter(f => f.fuelType === "etanol").length;
+    const semValor = baseFiltered.filter(f => (Number(f.totalCost) || 0) <= 0).length;
+    const semLitros = baseFiltered.filter(f => (Number(f.liters) || 0) <= 0).length;
+    return { total, gastoTotal, litrosTotal, gasCount, ethCount, semValor, semLitros };
+  }, [baseFiltered]);
 
   // Eficiência REAL (tanque-a-tanque, baseada no hodômetro):
   // Para cada viatura, soma o km rodado entre dois abastecimentos cuja
@@ -240,17 +256,67 @@ export default function RelatorioAbastecimentoPage() {
           </div>
         </div>
 
+        {(stats.semValor > 0 || stats.semLitros > 0 || onlyIncomplete) && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-start gap-3" data-testid="banner-incomplete-fuelings">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm text-amber-900">
+              {(stats.semValor > 0 || stats.semLitros > 0) ? (
+                <>
+                  <strong>Atenção:</strong>{" "}
+                  {stats.semValor > 0 && <span data-testid="text-sem-valor-count">{stats.semValor} abastecimento(s) sem valor preenchido</span>}
+                  {stats.semValor > 0 && stats.semLitros > 0 && " e "}
+                  {stats.semLitros > 0 && <span data-testid="text-sem-litros-count">{stats.semLitros} sem litros</span>}
+                  {" "}não estão sendo somados nos totais.
+                </>
+              ) : (
+                <span>Filtro <strong>"só incompletos"</strong> ativo — nenhum registro incompleto no escopo atual.</span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-400 text-amber-800 hover:bg-amber-100 h-7"
+              onClick={() => setOnlyIncomplete(v => !v)}
+              data-testid="button-toggle-incomplete"
+            >
+              {onlyIncomplete ? "Ver todos" : "Ver registros"}
+            </Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <Card className="p-3 bg-blue-50 border-blue-200">
             <p className="text-xs text-blue-600 font-medium">Abastecimentos</p>
             <p className="text-2xl font-bold text-blue-900" data-testid="text-total-count">{stats.total}</p>
           </Card>
           <Card className="p-3 bg-red-50 border-red-200">
-            <p className="text-xs text-red-600 font-medium">Gasto Total</p>
+            <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+              Gasto Total
+              {stats.semValor > 0 && (
+                <AlertTriangle
+                  className="w-3.5 h-3.5 text-amber-600"
+                  data-testid="icon-alert-gasto"
+                  aria-label={`${stats.semValor} registro(s) sem valor não somados`}
+                >
+                  <title>{stats.semValor} registro(s) sem valor não estão somados</title>
+                </AlertTriangle>
+              )}
+            </p>
             <p className="text-2xl font-bold text-red-900" data-testid="text-total-cost">R$ {stats.gastoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
           </Card>
           <Card className="p-3 bg-emerald-50 border-emerald-200">
-            <p className="text-xs text-emerald-600 font-medium">Litros Total</p>
+            <p className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+              Litros Total
+              {stats.semLitros > 0 && (
+                <AlertTriangle
+                  className="w-3.5 h-3.5 text-amber-600"
+                  data-testid="icon-alert-litros"
+                  aria-label={`${stats.semLitros} registro(s) sem litros não somados`}
+                >
+                  <title>{stats.semLitros} registro(s) sem litros não estão somados</title>
+                </AlertTriangle>
+              )}
+            </p>
             <p className="text-2xl font-bold text-emerald-900" data-testid="text-total-liters">{stats.litrosTotal.toFixed(1)}L</p>
           </Card>
           <Card className="p-3 bg-amber-50 border-amber-200">
@@ -346,8 +412,12 @@ export default function RelatorioAbastecimentoPage() {
                   const kmL = prevFueling && f.km > prevFueling.km && Number(f.liters) > 0
                     ? ((f.km - prevFueling.km) / Number(f.liters)) : null;
 
+                  const noCost = (Number(f.totalCost) || 0) <= 0;
+                  const noLiters = (Number(f.liters) || 0) <= 0;
+                  const incomplete = noCost || noLiters;
+
                   return (
-                    <tr key={f.id} className={`border-b border-neutral-100 hover:bg-neutral-50 transition-colors ${idx === 0 ? "bg-yellow-50/50" : ""}`} data-testid={`row-fueling-${f.id}`}>
+                    <tr key={f.id} className={`border-b border-neutral-100 hover:bg-neutral-50 transition-colors ${incomplete ? "bg-red-50 hover:bg-red-100" : idx === 0 ? "bg-yellow-50/50" : ""}`} data-testid={`row-fueling-${f.id}`}>
                       <td className="p-2 font-mono text-xs text-neutral-500">#{f.id}</td>
                       <td className="p-2">
                         <div className="text-sm font-medium text-neutral-900">{formatDateBR(f.date)}</div>
@@ -370,6 +440,11 @@ export default function RelatorioAbastecimentoPage() {
                           <Droplets className="w-3 h-3" />
                           {fuelLabel[f.fuelType] || f.fuelType}
                         </span>
+                        {noLiters ? (
+                          <div className="text-[10px] italic text-red-600 font-medium mt-0.5" data-testid={`text-sem-litros-${f.id}`}>— sem litros</div>
+                        ) : (
+                          <div className="text-[10px] text-neutral-500 mt-0.5">{Number(f.liters).toFixed(2)}L</div>
+                        )}
                       </td>
                       <td className="p-2 text-right text-xs text-neutral-600">{gasP > 0 ? `R$ ${gasP.toFixed(3)}` : "-"}</td>
                       <td className="p-2 text-right text-xs text-neutral-600">{ethP > 0 ? `R$ ${ethP.toFixed(3)}` : "-"}</td>
@@ -392,7 +467,11 @@ export default function RelatorioAbastecimentoPage() {
                         )}
                       </td>
                       <td className="p-2 text-right font-bold text-neutral-900">
-                        R$ {Number(f.totalCost || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        {noCost ? (
+                          <span className="italic text-red-600 font-medium" data-testid={`text-sem-valor-${f.id}`}>— sem valor</span>
+                        ) : (
+                          <>R$ {Number(f.totalCost || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</>
+                        )}
                       </td>
                       <td className="p-2 text-right">
                         {kmL !== null ? (

@@ -283,7 +283,25 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
         </div>
       )}
 
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-4">
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        // Validação de >0 só no cadastro novo. Edição de registros antigos
+        // zerados continua liberada (escopo da tarefa #35) para que o
+        // gestor possa corrigi-los sem bloqueio.
+        if (!fueling) {
+          const litersNum = parseBRL(form.liters);
+          const totalNum = parseBRL(form.totalCost);
+          if (litersNum <= 0) {
+            toast({ title: "Litros deve ser maior que zero", variant: "destructive" });
+            return;
+          }
+          if (totalNum <= 0) {
+            toast({ title: "Valor total deve ser maior que zero", variant: "destructive" });
+            return;
+          }
+        }
+        mutation.mutate(form);
+      }} className="space-y-4">
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <DollarSign className="w-3.5 h-3.5" /> Preço no Posto (obrigatório)
@@ -411,11 +429,25 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           </div>
         )}
 
-        <div className="flex gap-3">
-          <Button type="submit" disabled={mutation.isPending || !pricesReady} data-testid="button-save-fueling">
-            {mutation.isPending ? "Salvando..." : "Salvar"}
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+        <div className="flex flex-col gap-2">
+          {(() => {
+            const reasons: string[] = [];
+            if (!pricesReady) reasons.push("Informe os preços de gasolina e etanol");
+            // Em edição, só avisa (não bloqueia) sobre litros/valor zerados.
+            if (!fueling && parseBRL(form.liters) <= 0) reasons.push("Litros deve ser maior que zero");
+            if (!fueling && parseBRL(form.totalCost) <= 0) reasons.push("Valor total deve ser maior que zero");
+            return reasons.length > 0 ? (
+              <p className="text-xs text-amber-700 flex items-center gap-1" data-testid="text-save-disabled-reason">
+                <AlertTriangle className="w-3 h-3" /> {reasons.join(" · ")}
+              </p>
+            ) : null;
+          })()}
+          <div className="flex gap-3">
+            <Button type="submit" disabled={mutation.isPending || !pricesReady || (!fueling && (parseBRL(form.liters) <= 0 || parseBRL(form.totalCost) <= 0))} data-testid="button-save-fueling">
+              {mutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          </div>
         </div>
       </form>
     </Card>

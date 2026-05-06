@@ -623,8 +623,24 @@ export default function MobileAbastecimentoPage() {
               })}
             </div>
 
+            {(() => {
+              const litersNum = parseBRL(liters);
+              const cplNum = parseBRL(costPerLiter);
+              const totalNum = litersNum * cplNum;
+              const reasons: string[] = [];
+              if (!km) reasons.push("Informe o KM");
+              if (litersNum <= 0) reasons.push("Litros deve ser maior que zero");
+              if (cplNum <= 0) reasons.push("R$/Litro deve ser maior que zero");
+              if (litersNum > 0 && cplNum > 0 && totalNum <= 0) reasons.push("Valor total deve ser maior que zero");
+              if (!photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto) reasons.push("Tire as 3 fotos obrigatórias");
+              return reasons.length > 0 ? (
+                <p className="text-[11px] text-amber-700 font-bold flex items-start gap-1 px-1" data-testid="text-proceed-disabled-reason">
+                  <span className="mt-0.5">⚠️</span><span>{reasons.join(" · ")}</span>
+                </p>
+              ) : null;
+            })()}
             <button onClick={() => setStep("PLATE")}
-              disabled={!km || !liters || !costPerLiter || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
+              disabled={!km || parseBRL(liters) <= 0 || parseBRL(costPerLiter) <= 0 || (parseBRL(liters) * parseBRL(costPerLiter)) <= 0 || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
               className="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               data-testid="button-proceed-plate">
               <ShieldCheck size={16} /> Prosseguir — Verificar Placa
