@@ -625,27 +625,65 @@ export default function BalancoGerencialPage() {
                 { label: "Outras despesas", value: totals.desp_outras },
               ].filter(r => r.value > 0),
             });
-            if (totals.provisaoRH > 0) cats.push({
-              key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
-              icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
-              tipTitle: "RH — Folha Real Rateada",
-              tipDesc: `Custo real de pessoal calculado pelo mesmo motor da tela Custos Fixos: salário cadastrado + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias. Rateado por dia no período.`,
-              rows: [
-                { label: `Folha mensal real (${rhSummary?.agentCount ?? activeAgentCount} ag.)`, value: (totals.provisaoRH / Math.max(daysInPeriod, 1)) * 30 },
-                { label: `÷ 30 × ${daysInPeriod} dia(s)`, value: totals.provisaoRH },
-              ],
-            });
-            if (fixos > 0) cats.push({
-              key: "fx", label: "Estrutura (rateado)", value: fixos, color: "blue",
-              icon: Building2, bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500",
-              tipTitle: "Custos de Estrutura",
-              tipDesc: `Custo de "estar aberto": aluguel, contas, sistemas, tributos administrativos e demais custos fixos. Rateados por dia conforme o período selecionado.`,
-              rows: [
-                { label: "Base mensal fixa", value: totals.custosFixosMensal },
-                { label: `÷ 30 × ${daysInPeriod} dia(s)`, value: fixos },
-                { label: "Custo por dia", value: totals.custosFixosMensal / 30 },
-              ],
-            });
+            const PERIOD_BASE_DAYS: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
+            const PERIOD_FOLHA_LABEL: Record<Period, string> = {
+              DAY: "Folha diária real",
+              WEEK: "Folha semanal real",
+              MONTH: "Folha mensal real",
+              QUARTER: "Folha trimestral real",
+              SEMESTER: "Folha semestral real",
+              YEAR: "Folha anual real",
+            };
+            const PERIOD_ESTRUTURA_LABEL: Record<Period, string> = {
+              DAY: "Custo diário fixo",
+              WEEK: "Base semanal fixa",
+              MONTH: "Base mensal fixa",
+              QUARTER: "Base trimestral fixa",
+              SEMESTER: "Base semestral fixa",
+              YEAR: "Base anual fixa",
+            };
+            const PERIOD_ADJ: Record<Period, string> = {
+              DAY: "diário", WEEK: "semanal", MONTH: "mensal", QUARTER: "trimestral", SEMESTER: "semestral", YEAR: "anual",
+            };
+            const baseDays = PERIOD_BASE_DAYS[period];
+            const monthlyFolha = Number(rhSummary?.monthly || 0) > 0
+              ? Number(rhSummary?.monthly || 0)
+              : (totals.provisaoRH / Math.max(daysInPeriod, 1)) * 30;
+            const baseFolha = (monthlyFolha / 30) * baseDays;
+            const baseEstrutura = (totals.custosFixosMensal / 30) * baseDays;
+            const sameAsBase = daysInPeriod === baseDays;
+
+            if (totals.provisaoRH > 0) {
+              const rhRows: Array<{ label: string; value: number }> = [
+                { label: `${PERIOD_FOLHA_LABEL[period]} (${rhSummary?.agentCount ?? activeAgentCount} ag.)`, value: baseFolha },
+              ];
+              if (!sameAsBase) {
+                rhRows.push({ label: `÷ ${baseDays} × ${daysInPeriod} dia(s)`, value: totals.provisaoRH });
+              }
+              cats.push({
+                key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
+                icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
+                tipTitle: "RH — Folha Real Rateada",
+                tipDesc: `Custo real de pessoal calculado pelo mesmo motor da tela Custos Fixos: salário cadastrado + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias. Rateado conforme o período selecionado (${PERIOD_ADJ[period]}).`,
+                rows: rhRows,
+              });
+            }
+            if (fixos > 0) {
+              const fxRows: Array<{ label: string; value: number }> = [
+                { label: PERIOD_ESTRUTURA_LABEL[period], value: baseEstrutura },
+              ];
+              if (!sameAsBase) {
+                fxRows.push({ label: `÷ ${baseDays} × ${daysInPeriod} dia(s)`, value: fixos });
+              }
+              fxRows.push({ label: "Custo por dia", value: totals.custosFixosMensal / 30 });
+              cats.push({
+                key: "fx", label: "Estrutura (rateado)", value: fixos, color: "blue",
+                icon: Building2, bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500",
+                tipTitle: "Custos de Estrutura",
+                tipDesc: `Custo de "estar aberto": aluguel, contas, sistemas, tributos administrativos e demais custos fixos. Rateados conforme o período selecionado (${PERIOD_ADJ[period]}).`,
+                rows: fxRows,
+              });
+            }
 
             return (
               <TooltipProvider delayDuration={150}>
