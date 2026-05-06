@@ -605,7 +605,21 @@ import type { Express } from "express";
         }
       }
 
-      await storage.updateServiceOrder(osId, { stepLogs: currentLogs });
+      // Deriva missionStartedAt/completedDate dos step logs ajustados,
+      // pra que o recálculo do boletim e o relatório enxerguem os horários.
+      const findStepTs = (...keys: string[]): string | null => {
+        for (const k of keys) {
+          const e = [...currentLogs].reverse().find((l: any) => l.step === k && (l.timestamp || l.completedAt));
+          if (e) return e.timestamp || e.completedAt;
+        }
+        return null;
+      };
+      const inicioMissaoTs = findStepTs("iniciar_missao", "checkin_chegada_km");
+      const fimMissaoTs = findStepTs("finalizada", "chegada_destino");
+      const soUpdates: any = { stepLogs: currentLogs };
+      if (inicioMissaoTs) soUpdates.missionStartedAt = new Date(inicioMissaoTs);
+      if (fimMissaoTs) soUpdates.completedDate = new Date(fimMissaoTs);
+      await storage.updateServiceOrder(osId, soUpdates);
 
       if (auditEntries.length > 0) {
         const auditMessage = `AJUSTE MANUAL por ${adminName}:\n${auditEntries.join("\n")}`;
