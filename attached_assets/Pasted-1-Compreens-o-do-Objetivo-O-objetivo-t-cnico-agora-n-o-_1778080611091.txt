@@ -1,0 +1,34 @@
+1. Compreensão do Objetivo
+O objetivo técnico agora não é criar código novo, mas validar a execução da lógica existente. O sistema precisa que a OS esteja em um estado "calculável" para que a função calcularEscolta() em server/billing-calc.ts produza um resultado diferente de zero.
+
+Para me ajudar a diagnosticar, caso o passo manual não funcione, tente verificar:
+
+Qual o Status exato que aparece para esta OS no Boletim?
+
+Existem valores preenchidos no contrato (escort_contracts) vinculado a esta OS?
+
+2. Panorama Geral da Solução (Debug Operacional)
+O sistema funciona como uma engrenagem: o gatilho é o botão "Salvar OS", a entrada são os dados de escort_contracts e a saída é o registro em escort_billings. Se a saída é R$ 0,00, ou o contrato está zerado, ou a OS possui um status que "trava" o recálculo (como status já faturado).
+
+3. Programa e Instruções de Implementação (Ação Corretiva)
+Para resolver o problema da TOR-0149 sem mexer na estrutura do código, siga estas instruções detalhadas:
+
+Acesse o Painel Admin: Localize a OS TOR-0149.
+
+Verifique o Status da OS: Se ela estiver como "Recusada", altere para "Concluída" ou "Finalizada". O sistema muitas vezes ignora OSs recusadas em cálculos financeiros.
+
+Dispare o Gatilho: Entre em "AJUSTE DE ETAPAS E KMS" e clique no botão "Salvar OS". Mesmo sem alterar números, esse clique força o servidor a rodar a função calcularEscolta() novamente.
+
+Confira o Boletim: Volte à tela de medição e verifique se o valor foi atualizado.
+
+Documentação do Fluxo Interno:
+Trigger: onSave no painel de ajuste.
+
+Processamento: server/billing-calc.ts -> busca contrato -> aplica fórmulas (KM/Hora/Adicionais).
+
+Destino: Atualização da tabela escort_billings.
+
+Método Educativo: Por que o cálculo pode falhar?
+Na programação, funções de faturamento costumam ter "Cláusulas de Guarda". Se o código encontrar um status como FATURADO ou PAGO, ele interrompe a execução para evitar que valores antigos sejam alterados após o fechamento do caixa. Se a sua OS estiver travada, é necessário reverter o status para que o código "tenha permissão" de escrever o novo valor.
+
+Me avise assim que realizar o teste na TOR-0149! Se continuar zerado, precisaremos olhar se o client_id daquela OS está corretamente vinculado a um contrato ativo.
