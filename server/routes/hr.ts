@@ -697,8 +697,9 @@ import type { Express } from "express";
         try {
           const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
           const buf = Buffer.from(b64, "base64");
-          const pdfParse: any = (await import("pdf-parse")).default || (await import("pdf-parse"));
-          const parsed = await pdfParse(buf);
+          const { PDFParse } = await import("pdf-parse");
+          const parser = new PDFParse({ data: buf });
+          const parsed = await parser.getText();
           pdfText = (parsed.text || "").trim();
           console.log(`[ocr-holerite] PDF text extracted: ${pdfText.length} chars`);
         } catch (pdfErr: any) {
