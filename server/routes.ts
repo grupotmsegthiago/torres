@@ -480,6 +480,7 @@ async function ensureSystemSettingsTable() {
   import { registerDailyAllowancesRoutes } from "./routes/daily-allowances";
   import { registerInterRoutes } from "./routes/inter";
   import { registerControlIdRoutes } from "./routes/control-id";
+  import { registerRelatorioHorasRoutes } from "./routes/relatorio-horas";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -926,6 +927,7 @@ async function ensureSystemSettingsTable() {
     registerInterRoutes(app);
     registerDailyAllowancesRoutes(app);
     registerControlIdRoutes(app);
+    registerRelatorioHorasRoutes(app);
 
   
   // ===== WEAPONS =====
