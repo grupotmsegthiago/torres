@@ -690,7 +690,25 @@ import type { Express } from "express";
       const allEmps = await storage.getEmployees();
       const empNames = allEmps.filter((e: any) => e.status === "ativo").map((e: any) => `${e.name} (CPF: ${e.cpf || "N/A"})`).join("\n");
 
-      console.log("[ocr-holerite] Enviando para OpenAI Vision...");
+      // Se for PDF, extrai o texto e envia como texto (mais preciso e rápido que OCR de imagem)
+      const isPdf = /^data:application\/pdf/i.test(imageData);
+      let pdfText = "";
+      if (isPdf) {
+        try {
+          const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
+          const buf = Buffer.from(b64, "base64");
+          const pdfParse: any = (await import("pdf-parse")).default || (await import("pdf-parse"));
+          const parsed = await pdfParse(buf);
+          pdfText = (parsed.text || "").trim();
+          console.log(`[ocr-holerite] PDF text extracted: ${pdfText.length} chars`);
+        } catch (pdfErr: any) {
+          console.error("[ocr-holerite] pdf-parse falhou:", pdfErr.message);
+          return res.status(400).json({ message: "Não foi possível ler o PDF: " + pdfErr.message });
+        }
+        if (!pdfText) return res.status(400).json({ message: "PDF sem texto legível. Envie uma imagem (foto/scan) do holerite." });
+      }
+
+      console.log("[ocr-holerite] Enviando para OpenAI...");
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -722,19 +740,12 @@ ${empNames}`
           },
           {
             role: "user",
-            content: (() => {
-              const isPdf = /^data:application\/pdf/i.test(imageData);
-              if (isPdf) {
-                return [
+            content: isPdf
+              ? `Extraia os dados deste holerite/contracheque (texto extraído do PDF):\n\n${pdfText}`
+              : ([
                   { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
-                  { type: "file", file: { filename: "holerite.pdf", file_data: imageData } },
-                ] as any;
-              }
-              return [
-                { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
-                { type: "image_url", image_url: { url: imageData } },
-              ];
-            })(),
+                  { type: "image_url", image_url: { url: imageData } },
+                ] as any),
           },
         ],
       });
