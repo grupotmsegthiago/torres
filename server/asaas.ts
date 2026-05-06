@@ -533,9 +533,12 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   const finalComplement = opts.complement || fb.complement;
 
   try {
+    console.log(`[asaas] Buscando customer por CNPJ limpo=${cleanDoc} (original="${cpfCnpj}")`);
     const search = await asaasRequest("GET", `/customers?cpfCnpj=${cleanDoc}`);
+    console.log(`[asaas] /customers?cpfCnpj=${cleanDoc} → ${search?.data?.length || 0} resultado(s)`);
     if (search.data && search.data.length > 0) {
       const existing = search.data[0];
+      console.log(`[asaas] Customer existente encontrado: id=${existing.id} name="${existing.name}"`);
       const updatePayload: any = {};
       if (!existing.email && email) {
         const emails = email.split(/[;,]\s*/);
@@ -1384,21 +1387,43 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const clientId = invoice.client_id;
-      const clientCols = "id, cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
+      const clientCols = "*";
       let clientData: any = null;
+      let lookupSteps: string[] = [];
+
+      // Etapa 1: busca por client_id
       if (clientId) {
         const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
-        clientData = r.data;
+        if (r.error) console.log(`[emitir #${id}] STEP1 by id=${clientId} ERROR:`, r.error.message);
+        clientData = r.data || null;
+        lookupSteps.push(`STEP1 by id=${clientId}: ${clientData ? `FOUND name="${clientData.name}" cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : "NOT FOUND"}`);
+      } else {
+        lookupSteps.push("STEP1 skipped (invoice.client_id vazio)");
       }
-      // Fallback: busca por nome se cadastro não encontrado por id
+
+      // Etapa 2: fallback por nome (ilike) — sempre retorna array, não single
       if (!clientData && invoice.client_name) {
         const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
-        clientData = r.data?.[0] || null;
+        if (r.error) console.log(`[emitir #${id}] STEP2 by name="${invoice.client_name}" ERROR:`, r.error.message);
+        const arr = r.data || [];
+        clientData = arr.length > 0 ? arr[0] : null;
+        lookupSteps.push(`STEP2 by name="${invoice.client_name}": ${clientData ? `FOUND id=${clientData.id} cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : `NOT FOUND (array vazio: ${arr.length === 0})`}`);
+      } else if (!clientData) {
+        lookupSteps.push("STEP2 skipped (sem invoice.client_name)");
       }
-      // CNPJ/CPF: cadastro do cliente → CNPJ já gravado na fatura → erro
-      let cpfCnpj = (clientData?.cnpj || clientData?.cpf || invoice.client_cpf_cnpj || "").toString().replace(/[^\d]/g, "");
-      if (!cpfCnpj || cpfCnpj.length < 11) {
-        return res.status(400).json({ message: "Cliente sem CPF/CNPJ válido cadastrado. Atualize o cadastro do cliente e tente novamente." });
+
+      // Etapa 3: CNPJ direto da fatura como último recurso
+      const rawCnpjClient = clientData?.cnpj || clientData?.cpf || "";
+      const rawCnpjInvoice = invoice.client_cpf_cnpj || "";
+      const cpfCnpj = String(rawCnpjClient || rawCnpjInvoice || "").replace(/[^\d]/g, "");
+      lookupSteps.push(`STEP3 final: cliente="${rawCnpjClient}" invoice="${rawCnpjInvoice}" → limpo="${cpfCnpj}" (len=${cpfCnpj.length})`);
+
+      console.log(`[emitir #${id}] LOOKUP:\n  - ${lookupSteps.join("\n  - ")}`);
+
+      if (!cpfCnpj || (cpfCnpj.length !== 11 && cpfCnpj.length !== 14)) {
+        return res.status(400).json({
+          message: `Cliente sem CPF/CNPJ válido. Detalhes: client_id=${clientId || "vazio"}, client_name="${invoice.client_name || ""}", cnpj_cliente="${rawCnpjClient || "vazio"}", cnpj_fatura="${rawCnpjInvoice || "vazio"}". Atualize o cadastro do cliente.`,
+        });
       }
 
       const clientName = clientData?.name || invoice.client_name;
@@ -1422,6 +1447,14 @@ export function registerAsaasRoutes(app: Express) {
           stateInscription: clientData?.inscricao_estadual || undefined,
         }
       );
+
+      // Persiste asaas_customer_id no cadastro do cliente pra evitar buscas futuras
+      // (silenciosamente ignora se a coluna não existir no schema)
+      if (clientData?.id && clientData.asaas_customer_id !== asaasCustomerId) {
+        const { error: updErr } = await supabaseAdmin.from("clients").update({ asaas_customer_id: asaasCustomerId }).eq("id", clientData.id);
+        if (updErr) console.log(`[emitir #${id}] asaas_customer_id não persistido: ${updErr.message}`);
+        else console.log(`[emitir #${id}] clients.asaas_customer_id=${asaasCustomerId} salvo (cliente ${clientData.id})`);
+      }
 
       const paymentPayload: any = {
         customer: asaasCustomerId,
