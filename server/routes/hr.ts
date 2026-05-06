@@ -728,14 +728,28 @@ import type { Express } from "express";
   app.get("/api/payslips/employee-report/:id", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const employeeId = Number(req.params.id);
-      const year = Number(req.query.year) || new Date().getFullYear();
       const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      const { data: rowsRaw3 } = await supabaseAdmin.from("employee_payslips").select("*")
-        .eq("employee_id", employeeId).eq("year", year)
-        .order("month", { ascending: true });
-      const rows = toCamelArray(rowsRaw3 || []);
+      const fromMonth = req.query.fromMonth ? Number(req.query.fromMonth) : undefined;
+      const fromYear = req.query.fromYear ? Number(req.query.fromYear) : undefined;
+      const toMonth = req.query.toMonth ? Number(req.query.toMonth) : undefined;
+      const toYear = req.query.toYear ? Number(req.query.toYear) : undefined;
+      const year = req.query.year ? Number(req.query.year) : undefined;
+
+      let q = supabaseAdmin.from("employee_payslips").select("*").eq("employee_id", employeeId);
+      if (year && !fromYear) q = q.eq("year", year);
+      const { data: rowsRaw3 } = await q.order("year", { ascending: true }).order("month", { ascending: true });
+      let rows = toCamelArray(rowsRaw3 || []);
+
+      if (fromYear && fromMonth && toYear && toMonth) {
+        const fromKey = fromYear * 100 + fromMonth;
+        const toKey = toYear * 100 + toMonth;
+        rows = rows.filter((r: any) => {
+          const k = (Number(r.year) || 0) * 100 + (Number(r.month) || 0);
+          return k >= fromKey && k <= toKey;
+        });
+      }
 
       const totalBruto = rows.reduce((s: number, r: any) => s + (Number(r.grossSalary) || 0), 0);
       const totalLiquido = rows.reduce((s: number, r: any) => s + (Number(r.netSalary) || 0), 0);
@@ -743,11 +757,33 @@ import type { Express } from "express";
       const totalHorasExtras = rows.reduce((s: number, r: any) => s + (Number(r.horasExtras) || 0), 0);
 
       res.json({
-        employee: { id: emp.id, name: emp.name, role: emp.role },
-        year,
+        employee: { id: emp.id, name: emp.name, role: emp.role, cpf: emp.cpf, admissionDate: emp.admissionDate },
+        year, fromMonth, fromYear, toMonth, toYear,
         payslips: rows,
         totals: { bruto: +totalBruto.toFixed(2), liquido: +totalLiquido.toFixed(2), descontos: +totalDescontos.toFixed(2), horasExtras: +totalHorasExtras.toFixed(2) },
       });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/payslips/pending-signatures", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const sinceMonth = Number(req.query.sinceMonth) || 4;
+      const sinceYear = Number(req.query.sinceYear) || 2026;
+      const { data: rowsRaw } = await supabaseAdmin.from("employee_payslips").select("*")
+        .or(`assinatura_status.is.null,assinatura_status.neq.assinado`)
+        .order("year", { ascending: true }).order("month", { ascending: true });
+      let rows = toCamelArray(rowsRaw || []);
+      const sinceKey = sinceYear * 100 + sinceMonth;
+      rows = rows.filter((r: any) => {
+        const k = (Number(r.year) || 0) * 100 + (Number(r.month) || 0);
+        return k >= sinceKey && r.assinaturaStatus !== "assinado";
+      });
+      const allEmps = await storage.getEmployees();
+      const enriched = rows.map((r: any) => {
+        const emp = allEmps.find((e: any) => e.id === r.employeeId);
+        return { ...r, employeeName: emp?.name || "—", employeeRole: emp?.role || "" };
+      });
+      res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
