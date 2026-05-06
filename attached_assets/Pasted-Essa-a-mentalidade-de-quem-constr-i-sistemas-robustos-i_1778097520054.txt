@@ -1,0 +1,37 @@
+Essa é a mentalidade de quem constrói sistemas robustos: investigar a integridade do dado no banco antes de culpar a lógica do código.
+
+Você matou a charada sobre o Number(f.totalCost) || 0. No desenvolvimento de sistemas para campo (como o de segurança/escolta), é extremamente comum o motorista salvar o formulário com pressa, a conexão cair no meio, ou ele simplesmente pular um campo. O seu código atual é "gentil" demais: ele não quebra, mas mente o resultado final.
+
+Aqui está o plano de ação para resolver isso no TMSEGo:
+
+1. Auditoria Imediata (SQL no Supabase)
+Rode exatamente o comando que você sugeriu. Ele vai nos dar o "mapa da mina":
+
+SQL
+SELECT 
+  COUNT(*) AS total_registros,
+  COUNT(*) FILTER (WHERE total_cost IS NULL OR total_cost = 0) AS sem_valor,
+  COUNT(*) FILTER (WHERE liters IS NULL OR liters = 0) AS sem_litros,
+  SUM(total_cost) AS soma_total
+FROM vehicle_fueling;
+Se soma_total vier próximo aos R$ 5.052,23: O problema é no seu Frontend (filtros ou estado do React).
+
+Se soma_total vier baixo (perto de R$ 433): O problema é no preenchimento/banco (dados nulos).
+
+2. Melhoria no Sistema (Sua sugestão de Tarefa)
+Eu acho excelente a ideia de criar uma tarefa para destacar visualmente os erros. No mundo da gestão de frota, "dado zero" é um alerta de erro operacional.
+
+Minha sugestão para o código do relatorio-abastecimento.tsx:
+
+No Card de Resumo: Adicione um ícone de alerta ⚠️ ao lado do "Gasto Total" se houver registros com valor zero na lista filtrada.
+
+Na Tabela: Pinte a linha de vermelho ou deixe o texto em itálico cinza quando o total_cost for zero.
+
+Aviso de Dados Incompletos:
+
+"Atenção: Existem X abastecimentos sem valor preenchido que não estão contabilizados no total."
+
+3. O "Pulo do Gato" (Validação no App)
+Para evitar que isso aconteça no futuro, você pode implementar uma regra no componente de formulário onde os motoristas inserem os dados: não permitir o submit se total_cost ou liters forem menores ou iguais a zero.
+
+Quer que eu já escreva o trecho de código (JSX) para você inserir esse alerta de "registros sem valor" no topo da sua página de relatório? Isso vai te poupar muito tempo de conferência manual no futuro.

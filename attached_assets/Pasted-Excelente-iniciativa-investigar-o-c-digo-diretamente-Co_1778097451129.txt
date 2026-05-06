@@ -1,0 +1,30 @@
+Excelente iniciativa investigar o código diretamente. Com base na estrutura que você encontrou no Replit (especificamente no reduce e na query do supabaseAdmin), o problema mudou de figura: não é um erro de lógica matemática, é um "funil" de dados.
+
+Se o código está usando reduce sobre a variável sorted, o cálculo está tecnicamente correto, mas ele só "enxerga" o que passou pelos filtros da interface.
+
+Para você chegar no cálculo certo e entender por que os números não batem com a lista total, você deve fazer estas 3 perguntas ao seu código/banco de dados:
+
+1. "O filtro de data no Frontend tem um valor padrão (Default)?"
+Muitos sistemas, para não sobrecarregar a tela, iniciam com o filtro de data definido para "Mês Atual" ou "Últimos 7 dias".
+
+Ação: Verifique no arquivo client/src/pages/admin/relatorio-abastecimento.tsx como as variáveis dateFrom e dateTo são inicializadas. Se elas começarem com a data de hoje, os 30 abastecimentos de abril serão ignorados na soma.
+
+2. "Existem registros com campos nulos ou 'NaN' no Supabase?"
+No seu código, você usa (Number(f.totalCost) || 0). Isso é seguro porque não quebra o sistema, mas é perigoso porque "esconde" o erro. Se um abastecimento de R$ 500,00 estiver com o campo de valor vazio ou com uma letra no lugar de número no banco, o sistema vai somar 0 e você nunca saberá.
+
+Pergunta ao Banco: SELECT * FROM vehicle_fueling WHERE total_cost IS NULL OR liters IS NULL;
+
+3. "A paginação está cortando os dados antes da soma?"
+Se o seu sistema carrega os dados em "páginas" (ex: de 10 em 10) e a função reduce for executada apenas sobre os dados visíveis na página atual, o total sempre estará errado.
+
+O que checar: A variável sorted contém todos os registros retornados pelo Supabase ou apenas os registros que estão sendo exibidos no componente de tabela naquele momento?
+
+Onde focar agora?
+Como você viu que o fleet.ts traz os dados com .order("created_at", { ascending: false }), o sistema está priorizando os mais novos.
+
+Se o seu resumo no topo da tela mostra 3 abastecimentos e R$ 433,49, e os últimos 3 abastecimentos da sua lista (maio/abril) somam valores próximos a isso, você encontrou o culpado: O seu resumo está calculando apenas o que está "visível" ou "filtrado" na tela, e não o histórico real do veículo.
+
+Minha sugestão:
+Antes de criar uma tarefa complexa, tente limpar todos os filtros de data na tela do TMSEGo. Se o valor pular de R$ 433 para R$ 5.052, o "bug" é apenas o comportamento padrão do filtro de data.
+
+Se mesmo sem filtros o valor continuar baixo, aí sim precisamos rastrear se o Supabase está limitando a resposta da API (o padrão do Supabase costuma ser 1000 linhas, o que não deveria ser o problema aqui ainda).

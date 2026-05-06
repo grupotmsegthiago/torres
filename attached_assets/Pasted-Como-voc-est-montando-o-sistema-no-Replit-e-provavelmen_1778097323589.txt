@@ -1,0 +1,45 @@
+Como você está montando o sistema no Replit e provavelmente usando JavaScript (Node.js) ou Python para processar esses dados, o erro geralmente acontece em um destes três lugares: no filtro da consulta (Query), no tipo de dado (String vs Number) ou no loop de repetição.
+
+Para encontrar o "furo" no seu código, verifique estes pontos:
+
+1. O filtro de data está correto?
+Muitas vezes o sistema calcula apenas os "últimos 3" ou "últimos 7 dias" por padrão.
+
+Pergunta para o código: "A minha consulta ao banco de dados está filtrando por uma data específica ou está pegando o histórico completo?"
+
+O que checar: Se você estiver usando SQL, veja se existe um LIMIT 3 ou um WHERE data > ... que está escondendo o resto dos 33 abastecimentos.
+
+2. Você está somando Strings ou Números?
+Se o valor vem do banco de dados como texto (String) e você usa o sinal de +, o sistema pode estar "grudando" os números em vez de somar.
+
+Exemplo do erro: "63" + "433" vira "63433" em vez de 496.
+
+O que checar: Garanta que você está usando parseFloat() ou Number() antes de somar os valores no seu loop.
+
+3. Onde o loop de soma começa e termina?
+Se o seu cálculo de "Total Litros" e "Gasto Total" estiver dentro de uma função, ela pode estar reiniciando a contagem (zerando a variável) no momento errado.
+
+Pergunta para o código: "A variável totalLitros é zerada antes de percorrer a lista inteira ou ela está sendo declarada dentro de um loop que só pega os primeiros itens?"
+
+Sugestão de Código (Lógica para o Replit)
+Se você estiver usando JavaScript no Replit, sua lógica de cálculo deveria ser algo parecido com isto para evitar erros:
+
+JavaScript
+let totalLitros = 0;
+let totalGasto = 0;
+
+// registros é a array que vem do seu banco (Supabase/JSON)
+registros.forEach(abastecimento => {
+    totalLitros += Number(abastecimento.litros);
+    totalGasto += Number(abastecimento.valor);
+});
+
+let mediaGeral = (ultimoKM - primeiroKM) / totalLitros;
+O que você pode me enviar para eu te ajudar mais:
+A Query SQL (se estiver usando Supabase ou banco de dados).
+
+A função de cálculo que você escreveu no Replit.
+
+Como os dados chegam: Eles vêm de um formulário que o motorista preenche?
+
+O erro do seu sistema é que ele está calculando apenas R$ 433,49, mas a sua lista real soma R$ 5.052,23. Tem muita "grana" ficando de fora desse relatório!
