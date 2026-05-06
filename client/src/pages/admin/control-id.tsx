@@ -47,6 +47,7 @@ type FolhaDay = {
   date: string; clockIn: string | null; lunchOut: string | null; lunchIn: string | null;
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
   punches?: FolhaPunch[];
+  extraMin?: number; jornadaDiariaMin?: number;
 };
 type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
@@ -1243,6 +1244,7 @@ function FolhaTab() {
                   <th className="p-2 text-center font-medium text-neutral-600">Volta Almoço</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Saída</th>
                   <th className="p-2 text-right font-medium text-neutral-600">Horas</th>
+                  <th className="p-2 text-right font-medium text-neutral-600">H. Extra</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
                   <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
                 </tr>
@@ -1256,6 +1258,13 @@ function FolhaTab() {
                     <td className="p-2 text-center font-mono text-xs">{d.lunchIn || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.clockOut || "—"}</td>
                     <td className="p-2 text-right font-bold text-blue-600">{d.hoursWorked || "—"}</td>
+                    <td className="p-2 text-right text-xs tabular-nums" data-testid={`text-extra-${d.date}`}>
+                      {d.extraMin && d.extraMin > 0 ? (
+                        <span className="font-semibold text-orange-600">+{Math.floor(d.extraMin / 60)}h {String(d.extraMin % 60).padStart(2, "0")}min</span>
+                      ) : (
+                        <span className="text-neutral-300">—</span>
+                      )}
+                    </td>
                     <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
                     <td className="p-2 text-right no-print">
                       <div className="inline-flex gap-1">
@@ -1269,15 +1278,21 @@ function FolhaTab() {
                     </td>
                   </tr>
                 ))}
-                {stats && (
-                  <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
-                    <td className="p-2" colSpan={5}>Total no mês ({stats.daysWorked} dias)</td>
-                    <td className="p-2 text-right text-blue-700">{stats.hoursWorked.toFixed(2)}h</td>
-                    <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
-                      {stats.horaExtra > 0 && <span className="text-orange-600">+{stats.horaExtra.toFixed(2)}h extra</span>}
-                    </td>
-                  </tr>
-                )}
+                {stats && (() => {
+                  const totalExtraMin = folha.reduce((s, d) => s + (Number(d.extraMin) || 0), 0);
+                  return (
+                    <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
+                      <td className="p-2" colSpan={5}>Total no mês ({stats.daysWorked} dias)</td>
+                      <td className="p-2 text-right text-blue-700">{stats.hoursWorked.toFixed(2)}h</td>
+                      <td className="p-2 text-right text-orange-600 tabular-nums" data-testid="text-total-extra-dia">
+                        {totalExtraMin > 0 ? `+${Math.floor(totalExtraMin / 60)}h ${String(totalExtraMin % 60).padStart(2, "0")}min` : "—"}
+                      </td>
+                      <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
+                        {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{stats.horaExtra.toFixed(2)}h</span>}
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           </Card>

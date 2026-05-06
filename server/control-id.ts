@@ -1285,6 +1285,20 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
 
   if (!punches || punches.length === 0) return [];
 
+  // Jornada diária base p/ cálculo de HE por dia: horas_mensais ÷ 25 dias úteis.
+  // Fallback: 220h / 25 = 8h48min (528 min).
+  const [yyyyJ, mmJ] = monthYear.split("-").map(Number);
+  const monthEndStrJ = new Date(Date.UTC(yyyyJ, mmJ, 0)).toISOString().slice(0, 10);
+  const { data: salRows } = await supabaseAdmin
+    .from("employee_salaries")
+    .select("horas_mensais, effective_date")
+    .eq("employee_id", employeeId)
+    .lte("effective_date", monthEndStrJ)
+    .order("effective_date", { ascending: false })
+    .limit(1);
+  const horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
+  const jornadaDiariaMin = (horasMensais * 60) / 25;
+
   // Agrupa por dia (BRT)
   const dayMap = new Map<string, any[]>();
   for (const p of punches) {
@@ -1324,6 +1338,12 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
         workedMin -= lunchMin;
       }
       entry.hoursWorked = (workedMin / 60).toFixed(2);
+      const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
+      entry.extraMin = Math.round(extraMin);
+      entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+    } else {
+      entry.extraMin = 0;
+      entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
     }
     result.push(entry);
   }
