@@ -140,6 +140,8 @@ export const GLOBAL_QUERY_KEYS = {
   relatorioNf: ["/api/relatorio-nf"],
   relatorioFaturamento: ["/api/relatorio-faturamento"],
   boletimApprovalsActive: ["/api/boletim-approval/active-summary"],
+  boletimAprovacoes: ["/api/boletim/aprovacoes"],
+  billingAlerts: ["/api/billing-alerts"],
 };
 
 type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update" | "client" | "invoice" | "hr" | "jornada-diretoria" | "position-tracking" | "mission-acceptance";
@@ -230,6 +232,9 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.operationalGrid);
     inv(keys.escortBillings);
     inv(keys.boletimOs);
+    inv(keys.boletimAprovacoes);
+    inv(keys.boletimApprovalsActive);
+    inv(keys.billingAlerts);
     inv(keys.vehicles);
     inv(keys.financialDashboard);
     inv(keys.financialTx);
@@ -237,11 +242,15 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.weaponKits);
     inv(keys.vehicleTracking);
     inv(keys.missionUpdates);
+    inv(keys.relatorioNf);
+    inv(keys.relatorioFaturamento);
   }
   if (scope === "mission-cost") {
     inv(keys.serviceOrders);
     inv(keys.escortBillings);
     inv(keys.boletimOs);
+    inv(keys.boletimAprovacoes);
+    inv(keys.billingAlerts);
     inv(keys.financialTx);
     inv(keys.financialResumo);
     inv(keys.financialDashboard);

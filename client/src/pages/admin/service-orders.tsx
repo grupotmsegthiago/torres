@@ -447,8 +447,7 @@ function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderI
       await apiRequest("PATCH", `/api/service-orders/${orderId}/step-adjustments`, { adjustments });
       setEditedSteps({});
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("service-order");
       setSaving(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
