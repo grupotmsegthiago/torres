@@ -241,6 +241,25 @@ export default function RelatorioNFPage() {
       });
   }, [rows, statusFilter, search]);
 
+  const filteredPaid = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return rows
+      .filter(r => r.normalizedStatus === "PAGO")
+      .filter(r => {
+        if (!s) return true;
+        return [r.clientName, r.clientCpfCnpj, r.nfseNumber, r.asaasPaymentId, String(r.sourceId), r.id]
+          .filter(Boolean)
+          .some(x => String(x).toLowerCase().includes(s));
+      })
+      .sort((a, b) => {
+        const da = a.paymentDate ? new Date(a.paymentDate).getTime() : 0;
+        const db = b.paymentDate ? new Date(b.paymentDate).getTime() : 0;
+        return db - da;
+      });
+  }, [rows, search]);
+
+  const totalPaid = useMemo(() => filteredPaid.reduce((s, r) => s + Number(r.value || 0), 0), [filteredPaid]);
+
   const exportXlsx = () => {
     const headers = [
       "Origem", "Cliente", "CPF/CNPJ", "Descrição", "Valor (R$)",
@@ -699,6 +718,120 @@ export default function RelatorioNFPage() {
                   );
                 })}
               </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Tabela de Notas Pagas */}
+        <Card className="overflow-hidden border-emerald-200">
+          <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Banknote className="h-5 w-5 text-emerald-700" />
+              <h2 className="text-sm font-bold text-emerald-900 uppercase tracking-wider">Notas Pagas</h2>
+              <span className="text-xs text-emerald-700">
+                {filteredPaid.length} registro{filteredPaid.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="text-sm font-bold text-emerald-800 tabular-nums" data-testid="text-total-pago">
+              Total Recebido: {fmtBRL(totalPaid)}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-emerald-50/60 border-b border-emerald-200">
+                <tr className="text-xs text-emerald-900">
+                  <th className="text-left px-3 py-2 font-semibold">Origem</th>
+                  <th className="text-left px-3 py-2 font-semibold">Cliente</th>
+                  <th className="text-right px-3 py-2 font-semibold">Valor</th>
+                  <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
+                  <th className="text-left px-3 py-2 font-semibold">Pago em</th>
+                  <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
+                  <th className="text-center px-3 py-2 font-semibold">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-50">
+                {isLoading ? (
+                  <tr><td colSpan={7} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                ) : filteredPaid.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
+                ) : filteredPaid.map(r => (
+                  <tr key={`paid-${r.id}`} className="hover:bg-emerald-50/40" data-testid={`row-paid-${r.id}`}>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                        r.source === "INVOICE"
+                          ? "bg-blue-100 text-blue-700"
+                          : r.source === "BILLING_AVULSO"
+                            ? "bg-sky-100 text-sky-700"
+                            : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {r.source === "INVOICE"
+                          ? `FAT #${r.sourceId}`
+                          : r.source === "BILLING_AVULSO"
+                            ? `OS #${r.sourceId}`
+                            : `BOL #${r.sourceId}`}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-800 max-w-[260px] truncate" title={r.clientName}>
+                        {r.clientFantasia || r.clientName}
+                      </div>
+                      {r.clientCpfCnpj && <div className="text-[11px] text-slate-400">{r.clientCpfCnpj}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-emerald-700 tabular-nums" data-testid={`text-paid-value-${r.id}`}>
+                      {fmtBRL(r.value)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                      {r.dueDate ? fmtDate(r.dueDate) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {r.paymentDate ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                          <CheckCircle2 className="h-3 w-3" /> {fmtDate(r.paymentDate)}
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-700">
+                      {r.nfseNumber || <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white divide-x divide-slate-200 overflow-hidden shadow-sm">
+                        {r.source === "INVOICE" && r.invoiceUrl && (
+                          <a
+                            href={r.invoiceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                            title="Abrir fatura"
+                            data-testid={`button-paid-open-fatura-${r.id}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                        {r.source === "INVOICE" && r.invoiceId && (r.nfseUrl || r.nfseNumber) && (
+                          <button
+                            type="button"
+                            onClick={() => openNfMirror(r.invoiceId!)}
+                            className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                            title="Ver espelho da NF"
+                            data-testid={`button-paid-open-nf-${r.id}`}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {filteredPaid.length > 0 && (
+                <tfoot className="bg-emerald-50 border-t-2 border-emerald-300">
+                  <tr className="text-emerald-900 font-bold">
+                    <td className="px-3 py-2 text-xs uppercase tracking-wider" colSpan={2}>Total</td>
+                    <td className="px-3 py-2 text-right tabular-nums" data-testid="text-total-pago-footer">{fmtBRL(totalPaid)}</td>
+                    <td colSpan={4}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </Card>
