@@ -343,6 +343,16 @@ export default function BalancoGerencialPage() {
       agent.horas_trabalhadas = timesheetHoursInPeriod[agent.id] || 0;
     });
 
+    if (typeof window !== "undefined") {
+      console.log("[balanco-debug] period range:", { startStr, endStr });
+      console.log("[balanco-debug] data.expenseTransactions total:", data.expenseTransactions?.length || 0);
+      const sample = (data.expenseTransactions || []).slice(0, 3);
+      console.log("[balanco-debug] sample tx:", sample);
+      const matchingToday = (data.expenseTransactions || []).filter((t: any) => t.date >= startStr && t.date <= endStr);
+      console.log("[balanco-debug] tx matching period:", matchingToday.length, "first 3:", matchingToday.slice(0, 3));
+      console.log("[balanco-debug] expenseSums:", expenseSums);
+    }
+
     return {
       missions,
       vehicles: Object.values(vehicleMap).sort((a, b) => b.fat_total - a.fat_total),
