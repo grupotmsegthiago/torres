@@ -440,11 +440,9 @@ export function registerFixedCostsRoutes(app: Express) {
         const horas = Math.max(0, workedMin / 60);
         if (!horasMes.has(empId)) horasMes.set(empId, { normais: 0, extras: 0 });
         const slot = horasMes.get(empId)!;
-        // Jornada padrão CLT: 8h/dia. Acima vira HE.
-        const normaisDia = Math.min(8, horas);
-        const extrasDia = Math.max(0, horas - 8);
-        slot.normais += normaisDia;
-        slot.extras += extrasDia;
+        // HE só começa a contar quando ultrapassar 220h no mês (jornada CLT mensal).
+        // Soma tudo em "normais" — a separação acontece no cap mais abaixo.
+        slot.normais += horas;
       }
 
       // Fallback: agentes sem batidas no Control iD usam timesheets manuais (se existirem)
