@@ -1941,8 +1941,11 @@ export function registerAsaasRoutes(app: Express) {
         const horaExtra = Number(b.fat_hora_extra || 0);
         const km = Number(b.fat_km || 0);
         const pedagio = Number(b.despesas_pedagio || 0);
-        const receitas = Number(b.receitas_os || 0);
-        const fat = acionamento + horaExtra + km + pedagio + receitas;
+        const adNoturno = Number(b.fat_adicional_noturno || 0);
+        // FÓRMULA OFICIAL DO BOLETIM DE MEDIÇÃO (deve casar com aprovacao.tsx + boletim-approval.ts)
+        // acionamento + HE + KM + pedágio + adicional_noturno
+        // receitas_os NÃO entra aqui — é cobrança avulsa, lançada à parte se necessário.
+        const fat = acionamento + horaExtra + km + pedagio + adNoturno;
         totalValue += fat;
         billingIds.push(b.id);
 
@@ -1950,7 +1953,7 @@ export function registerAsaasRoutes(app: Express) {
         const route = [b.origem, b.destino].filter(Boolean).join(" → ");
         const dataMissao = b.data_missao ? new Date(b.data_missao).toLocaleDateString("pt-BR") : "";
         osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
-        console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} rec=${receitas} = ${fat}`);
+        console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} adNoturno=${adNoturno} = ${fat}`);
       }
       console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS). Período: ${startDate} a ${endDate}`);
       if (totalValue <= 0) {
