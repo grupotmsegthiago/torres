@@ -1584,7 +1584,16 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio + adNoturno + demaisCustos;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
-  const startTime = os.missionStartedAt ? fmtTime(os.missionStartedAt) : null;
+  const startTimeRaw = (() => {
+    const real = os.hora_chegada_origem || os.missionStartedAt;
+    if (real && os.scheduledDate) {
+      const r = new Date(_eu(real)).getTime();
+      const s = new Date(_eu(os.scheduledDate)).getTime();
+      return r < s ? real : os.scheduledDate;
+    }
+    return real || os.scheduledDate;
+  })();
+  const startTime = startTimeRaw ? fmtTime(startTimeRaw) : null;
   const endTime = os.completedDate ? fmtTime(os.completedDate) : null;
 
   return (
@@ -1744,7 +1753,16 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                 <>
                   <div className="space-y-1">
                     {(() => {
-                      const horaInicial = os.hora_chegada_origem || os.missionStartedAt || os.scheduledDate;
+                      const realInicio = os.hora_chegada_origem || os.missionStartedAt;
+                      // Regra: cobrança parte do agendamento; só usa o real se o agente iniciou ANTES do agendado.
+                      const horaInicial = (() => {
+                        if (realInicio && os.scheduledDate) {
+                          const r = new Date(_eu(realInicio)).getTime();
+                          const s = new Date(_eu(os.scheduledDate)).getTime();
+                          return r < s ? realInicio : os.scheduledDate;
+                        }
+                        return realInicio || os.scheduledDate;
+                      })();
                       const horaFinal = os.hora_fim_missao || os.completedDate;
                       const fmtDtHr = (v: string | null) => {
                         if (!v) return "—";
