@@ -1269,6 +1269,7 @@ function FolhaTab() {
   const [editingDay, setEditingDay] = useState<FolhaDay | null>(null);
   const [viewingDay, setViewingDay] = useState<FolhaDay | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [addDayOpen, setAddDayOpen] = useState(false);
 
   const employee = employees.find(e => String(e.id) === employeeId);
 
@@ -1309,6 +1310,9 @@ function FolhaTab() {
           <>
             <Button variant="outline" size="sm" onClick={openEspelho} className="h-9" data-testid="button-print-individual">
               <Printer className="w-3.5 h-3.5 mr-1" /> Espelho RHID (oficial)
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setAddDayOpen(true)} className="h-9 border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="button-add-day">
+              <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar Dia
             </Button>
           </>
         )}
@@ -1443,6 +1447,14 @@ function FolhaTab() {
       )}
       {batchOpen && (
         <BatchPrintDialog month={month} employees={employees} onClose={() => setBatchOpen(false)} />
+      )}
+      {addDayOpen && employeeId && (
+        <AddDayDialog
+          employeeId={Number(employeeId)}
+          defaultDate={new Date().toISOString().slice(0, 10)}
+          onClose={() => setAddDayOpen(false)}
+          onChanged={() => { refetchFolha(); queryClient.invalidateQueries({ queryKey: ["/api/control-id/folha-stats", employeeId, month] }); }}
+        />
       )}
       {espelhoOpen && employeeId && (
         <EspelhoRhidDialog employeeId={Number(employeeId)} month={month} onClose={() => setEspelhoOpen(false)} />
@@ -2202,6 +2214,98 @@ function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employee
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddDayDialog({ employeeId, defaultDate, onClose, onChanged }: { employeeId: number; defaultDate: string; onClose: () => void; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [date, setDate] = useState(defaultDate);
+  const [entrada, setEntrada] = useState("08:00");
+  const [lunchOut, setLunchOut] = useState("12:00");
+  const [lunchIn, setLunchIn] = useState("13:00");
+  const [saida, setSaida] = useState("18:00");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!date) {
+      toast({ title: "Selecione a data", variant: "destructive" });
+      return;
+    }
+    const slots: { time: string; direction: "in" | "out"; label: string }[] = [
+      { time: `${date}T${entrada}`, direction: "in", label: "Entrada" },
+      { time: `${date}T${lunchOut}`, direction: "out", label: "Início Almoço" },
+      { time: `${date}T${lunchIn}`, direction: "in", label: "Retorno Almoço" },
+      { time: `${date}T${saida}`, direction: "out", label: "Saída" },
+    ];
+    setSaving(true);
+    let okCount = 0;
+    const errs: string[] = [];
+    for (const s of slots) {
+      try {
+        const r = await authFetch("/api/control-id/manual-punch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.message);
+        okCount++;
+      } catch (e: any) {
+        errs.push(`${s.label}: ${e.message}`);
+      }
+    }
+    setSaving(false);
+    if (errs.length === 0) {
+      toast({ title: "Dia adicionado", description: `${okCount} batidas criadas em ${new Date(date + "T12:00:00").toLocaleDateString("pt-BR")}.` });
+      onChanged();
+      onClose();
+    } else {
+      toast({ title: `${okCount} de 4 batidas criadas`, description: errs.join(" · "), variant: "destructive" });
+      onChanged();
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="w-5 h-5 text-emerald-600" /> Adicionar Dia — 4 batidas
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-neutral-600 uppercase mb-1.5 block">Data</label>
+            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9" data-testid="input-add-day-date" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-emerald-700 uppercase mb-1 block">Entrada</label>
+              <Input type="time" value={entrada} onChange={e => setEntrada(e.target.value)} className="h-9" data-testid="input-add-day-entrada" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-amber-700 uppercase mb-1 block">Início Almoço</label>
+              <Input type="time" value={lunchOut} onChange={e => setLunchOut(e.target.value)} className="h-9" data-testid="input-add-day-lunch-out" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-amber-700 uppercase mb-1 block">Retorno Almoço</label>
+              <Input type="time" value={lunchIn} onChange={e => setLunchIn(e.target.value)} className="h-9" data-testid="input-add-day-lunch-in" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-red-700 uppercase mb-1 block">Saída</label>
+              <Input type="time" value={saida} onChange={e => setSaida(e.target.value)} className="h-9" data-testid="input-add-day-saida" />
+            </div>
+          </div>
+          <div className="text-[11px] text-neutral-500">Cada batida será enviada ao RHID quando o funcionário estiver mapeado a um aparelho. Caso contrário, fica salva localmente.</div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-add-day">
+            <Save className="w-3.5 h-3.5 mr-1" /> {saving ? "Salvando..." : "Salvar 4 batidas"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
