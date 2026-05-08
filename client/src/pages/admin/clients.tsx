@@ -428,8 +428,6 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           else if (/^\d+$/.test(form.city.trim())) missing.push("Cidade (deve ser nome, não código numérico — ex.: \"Navegantes\")");
           if (!form.state.trim() || form.state.trim().length !== 2) missing.push("Estado (UF — 2 letras, ex.: SC)");
           if (form.zip.replace(/\D/g, "").length !== 8) missing.push("CEP (8 dígitos)");
-          const isPJ = (form.cnpj || "").replace(/\D/g, "").length === 14;
-          if (isPJ && !form.inscricaoMunicipal.trim()) missing.push("Inscrição Municipal (exigida pela prefeitura para tomador PJ)");
           if (missing.length > 0) {
             toast({
               title: "Faltam dados para emitir NFS-e",
@@ -678,9 +676,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             </div>
             <div className="md:col-span-6">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
-                Inscrição Municipal {form.emiteNf && (form.cnpj || "").replace(/\D/g, "").length === 14 && <span className="text-red-600">*</span>}
+                Inscrição Municipal
               </label>
-              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura" data-testid="input-client-inscricao-municipal" />
+              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura (opcional)" data-testid="input-client-inscricao-municipal" />
               <p className="text-[10px] text-neutral-500 mt-1">Exigida pela prefeitura para emitir NFS-e (tomador PJ)</p>
             </div>
             <div className="md:col-span-6">
@@ -691,7 +689,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           </div>
           {form.emiteNf && (
             <div className="mt-4 p-3 rounded-md border border-amber-300 bg-amber-50 text-[11px] text-amber-900">
-              <b>Para emissão de NFS-e via Asaas</b>, todos os campos marcados com <span className="text-red-600 font-bold">*</span> são obrigatórios: Razão Social, Nome do Tomador, CNPJ/CPF, e-mail, Logradouro, Número, Bairro, Cidade (nome), UF, CEP (8 dígitos) e Inscrição Municipal (para PJ). Sem qualquer um destes, a prefeitura recusa a nota.
+              <b>Para emissão de NFS-e via Asaas</b>, todos os campos marcados com <span className="text-red-600 font-bold">*</span> são obrigatórios: Razão Social, Nome do Tomador, CNPJ/CPF, e-mail, Logradouro, Número, Bairro, Cidade (nome), UF e CEP (8 dígitos). A Inscrição Municipal é opcional.
             </div>
           )}
         </div>
