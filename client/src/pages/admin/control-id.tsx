@@ -1896,6 +1896,48 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [adding, setAdding] = useState(false);
   const [newTime, setNewTime] = useState(`${day.date}T08:00`);
   const [newDir, setNewDir] = useState("unknown");
+  const [addingDay, setAddingDay] = useState(false);
+  const [dayEntrada, setDayEntrada] = useState(`${day.date}T08:00`);
+  const [dayLunchOut, setDayLunchOut] = useState(`${day.date}T12:00`);
+  const [dayLunchIn, setDayLunchIn] = useState(`${day.date}T13:00`);
+  const [daySaida, setDaySaida] = useState(`${day.date}T18:00`);
+  const [savingDay, setSavingDay] = useState(false);
+
+  async function addFullDay() {
+    const slots: { time: string; direction: "in" | "out"; label: string }[] = [
+      { time: dayEntrada, direction: "in", label: "Entrada" },
+      { time: dayLunchOut, direction: "out", label: "Início Almoço" },
+      { time: dayLunchIn, direction: "in", label: "Retorno Almoço" },
+      { time: daySaida, direction: "out", label: "Saída" },
+    ];
+    setSavingDay(true);
+    let okCount = 0;
+    const errs: string[] = [];
+    for (const s of slots) {
+      try {
+        const r = await authFetch("/api/control-id/manual-punch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.message);
+        okCount++;
+      } catch (e: any) {
+        errs.push(`${s.label}: ${e.message}`);
+      }
+    }
+    setSavingDay(false);
+    if (errs.length === 0) {
+      toast({ title: "Dia adicionado", description: `${okCount} batidas criadas (Entrada, Início/Retorno Almoço, Saída).` });
+      setAddingDay(false);
+      onChanged();
+      onClose();
+    } else {
+      toast({ title: `${okCount} de 4 batidas criadas`, description: errs.join(" · "), variant: "destructive" });
+      onChanged();
+    }
+  }
 
   function startEdit(p: FolhaPunch) {
     setEditingId(p.id);
@@ -2041,10 +2083,43 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
               <Button size="sm" onClick={addPunch} className="h-8"><Save className="w-3.5 h-3.5 mr-1" /> Adicionar</Button>
               <Button size="sm" variant="ghost" onClick={() => setAdding(false)} className="h-8">Cancelar</Button>
             </Card>
+          ) : addingDay ? (
+            <Card className="p-3 bg-emerald-50/50 border-emerald-200 space-y-3">
+              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Adicionar dia completo (4 batidas)</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-emerald-700 uppercase">Entrada</label>
+                  <Input type="datetime-local" value={dayEntrada} onChange={e => setDayEntrada(e.target.value)} className="h-8 text-xs" data-testid="input-day-entrada" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-700 uppercase">Início Almoço</label>
+                  <Input type="datetime-local" value={dayLunchOut} onChange={e => setDayLunchOut(e.target.value)} className="h-8 text-xs" data-testid="input-day-lunch-out" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-700 uppercase">Retorno Almoço</label>
+                  <Input type="datetime-local" value={dayLunchIn} onChange={e => setDayLunchIn(e.target.value)} className="h-8 text-xs" data-testid="input-day-lunch-in" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-red-700 uppercase">Saída</label>
+                  <Input type="datetime-local" value={daySaida} onChange={e => setDaySaida(e.target.value)} className="h-8 text-xs" data-testid="input-day-saida" />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="ghost" onClick={() => setAddingDay(false)} className="h-8" disabled={savingDay}>Cancelar</Button>
+                <Button size="sm" onClick={addFullDay} className="h-8 bg-emerald-600 hover:bg-emerald-700" disabled={savingDay} data-testid="button-save-full-day">
+                  <Save className="w-3.5 h-3.5 mr-1" /> {savingDay ? "Salvando..." : "Salvar dia completo"}
+                </Button>
+              </div>
+            </Card>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="w-full">
-              <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar batida manual neste dia
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="flex-1">
+                <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar batida manual
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setAddingDay(true)} className="flex-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="button-add-full-day">
+                <Plus className="w-3.5 h-3.5 mr-1" /> Adicionar dia (4 batidas)
+              </Button>
+            </div>
           )}
         </div>
         <DialogFooter>
