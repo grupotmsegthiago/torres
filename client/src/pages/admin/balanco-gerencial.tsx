@@ -275,11 +275,14 @@ export default function BalancoGerencialPage() {
     // Lançamentos manuais nestas categorias NÃO podem entrar em Operacional, senão dobra.
     const RH_CATS = new Set(["folha de pagamento", "recursos humanos", "vale refeição", "vale refeicao", "vale alimentação", "vale alimentacao", "salário", "salario", "salarios", "salários"]);
     const FIXED_CATS = new Set(["aluguel", "frota (aluguel)", "infraestrutura/tecnologia", "infraestrutura", "tecnologia", "internet", "energia", "telefone", "softwares", "serviços", "servicos"]);
-    // IMPORTANTE: NÃO somar manuais com categoria "Combustível"/"Pedágio"/"Manutenção" aos buckets
-    // nativos. Cada abastecimento (vehicle_fueling) e cada custo de missão (mission_cost) JÁ cria
-    // automaticamente uma financial_transaction com origin_type correspondente. Lançamentos manuais
-    // com a mesma categoria são quase sempre duplicidade, repasse ou despesa mal classificada e
-    // devem aparecer em "Outras · <categoria>" para auditoria, sem inflar o total operacional.
+    // IMPORTANTE: lançamentos manuais com categoria "Combustível"/"Pedágio"/"Manutenção" e SEM
+    // origin_type correspondente são DESCONSIDERADOS — todo abastecimento real (vehicle_fueling) e
+    // todo custo de missão real (mission_cost) já gera financial_transaction automaticamente, então
+    // entradas manuais com essas categorias são duplicidade ou despesa mal classificada e inflavam
+    // os custos totais. Apenas as fontes oficiais (origin_type) contam para Combustível/Pedágio/Manutenção.
+    const FUEL_CATS = new Set(["combustível", "combustivel", "abastecimento"]);
+    const TOLL_CATS = new Set(["pedágio", "pedagio", "pedagios", "pedágios"]);
+    const MAINT_CATS = new Set(["manutenção", "manutencao", "manutenção de viatura", "manutencao de viatura", "manutenção de viaturas", "manutencao de viaturas"]);
 
     periodExpenses.forEach(t => {
       const amt = t.amount;
@@ -287,6 +290,8 @@ export default function BalancoGerencialPage() {
       if (t.origin_type === "fueling") expenseSums.fueling += amt;
       else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
       else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
+      // Ignora manuais "Combustível/Pedágio/Manutenção" sem origem oficial — duplicidade conhecida.
+      else if (FUEL_CATS.has(cat) || TOLL_CATS.has(cat) || MAINT_CATS.has(cat)) { return; }
       else if (t.origin_type === "payroll" || RH_CATS.has(cat)) expenseSums.payroll += amt;
       else if (FIXED_CATS.has(cat)) expenseSums.fixed += amt;
       else {
