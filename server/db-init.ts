@@ -124,6 +124,21 @@ export async function ensureDbSchema() {
     `);
 
     await execSql(`
+      CREATE TABLE IF NOT EXISTS branded_contracts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        entity_type TEXT NOT NULL CHECK (entity_type IN ('client','employee')),
+        entity_id INTEGER NOT NULL,
+        title TEXT NOT NULL DEFAULT 'CONTRATO',
+        fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+        clauses TEXT NOT NULL DEFAULT '',
+        witnesses JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_branded_contracts_entity ON branded_contracts(entity_type, entity_id)`);
+
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_documents (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,

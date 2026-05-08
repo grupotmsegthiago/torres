@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
+import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
   if (val === null || val === undefined) return "R$ 0,00";
@@ -1351,6 +1352,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const canManage = pastaUser?.role === "diretoria" || pastaUser?.role === "admin";
   const [activeTab, setActiveTab] = useState<ClientTab>("CONTRATO");
   const [showContractModal, setShowContractModal] = useState(false);
+  const [showBrandedContract, setShowBrandedContract] = useState(false);
   const [editingSC, setEditingSC] = useState<ServiceContract | null>(null);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [editingPrice, setEditingPrice] = useState<EscortContract | null>(null);
@@ -1691,7 +1693,10 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-neutral-500">Contratos de Prestação de Serviço com validade e controle</p>
-            <Button onClick={() => { setEditingSC(null); setShowContractModal(true); }} className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-service-contract"><Plus size={14} className="mr-1" /> Novo Contrato</Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowBrandedContract(true)} variant="outline" className="text-xs font-black uppercase border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white" data-testid="button-generate-contract-pasta"><FileText size={14} className="mr-1" /> Gerar Contrato</Button>
+              <Button onClick={() => { setEditingSC(null); setShowContractModal(true); }} className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-service-contract"><Plus size={14} className="mr-1" /> Novo Contrato</Button>
+            </div>
           </div>
           {serviceContracts.length === 0 ? (
             <Card className="p-12 border-neutral-200 shadow-sm text-center"><FileText size={40} className="mx-auto text-neutral-300 mb-3" /><p className="text-sm font-bold text-neutral-400 uppercase">Nenhum contrato cadastrado para este cliente</p></Card>
@@ -1865,6 +1870,16 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
       )}
 
       {showContractModal && <ServiceContractModal onClose={() => { setShowContractModal(false); setEditingSC(null); }} editing={editingSC} client={client} />}
+      {showBrandedContract && (
+        <BrandedContractDialog
+          open={showBrandedContract}
+          onClose={() => setShowBrandedContract(false)}
+          entityType="client"
+          entityId={client.id}
+          entityName={client.name}
+          defaults={{ nome: client.name, documento: client.cnpj || "", endereco: client.address || "" }}
+        />
+      )}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}
       {showRouteModal && <RouteFormModal onClose={() => { setShowRouteModal(false); setEditingRoute(null); }} editing={editingRoute} clientId={client.id} clientName={client.name} />}
       {selectedMissionId && <MissionDetailModal osId={selectedMissionId} onClose={() => setSelectedMissionId(null)} />}

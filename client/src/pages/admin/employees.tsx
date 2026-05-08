@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
+import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
@@ -349,6 +350,7 @@ function isDocExpiringSoon(dateStr: string | null): "expired" | "warning" | "ok"
 }
 
 function DocumentsModal({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const [showBrandedContract, setShowBrandedContract] = useState(false);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: docs = [], isLoading } = useQuery<EmployeeDocument[]>({
@@ -491,11 +493,21 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Documentos - {titleCase(employee.name)}</span>
-            <Button variant="outline" size="sm" onClick={generateContract} data-testid="button-generate-contract">
+            <Button variant="outline" size="sm" onClick={() => setShowBrandedContract(true)} data-testid="button-generate-contract">
               <FileText className="w-4 h-4 mr-1" /> Gerar Contrato
             </Button>
           </DialogTitle>
         </DialogHeader>
+        {showBrandedContract && (
+          <BrandedContractDialog
+            open={showBrandedContract}
+            onClose={() => setShowBrandedContract(false)}
+            entityType="employee"
+            entityId={employee.id}
+            entityName={employee.name}
+            defaults={{ nome: employee.name, documento: employee.cpf || "", endereco: employee.address || "", cargo: employee.role || "" }}
+          />
+        )}
         <div className="space-y-4">
           <fieldset className="border border-neutral-200 rounded-lg p-4">
             <legend className="text-xs font-semibold text-neutral-600 px-2">Adicionar Documento</legend>
@@ -2497,6 +2509,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
 }
 
 function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; onClose: () => void; onEdit: () => void }) {
+  const [showBrandedContractPasta, setShowBrandedContractPasta] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const canEdit = user?.role === "diretoria" || user?.role === "admin";
@@ -2966,7 +2979,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   if (!allDocsComplete && isDiretoria) {
                     toast({ title: "Atenção", description: `Gerando contrato com ${missingDocs.length} documento(s) pendente(s) — autorizado pela Diretoria.` });
                   }
-                  generateContract();
+                  setShowBrandedContractPasta(true);
                 }}
                 data-testid="button-generate-contract-pasta"
               >
@@ -3549,6 +3562,16 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           </div>
         )}
       </Card>
+      {showBrandedContractPasta && (
+        <BrandedContractDialog
+          open={showBrandedContractPasta}
+          onClose={() => setShowBrandedContractPasta(false)}
+          entityType="employee"
+          entityId={employee.id}
+          entityName={employee.name}
+          defaults={{ nome: employee.name, documento: employee.cpf || "", endereco: employee.address || "", cargo: employee.role || "" }}
+        />
+      )}
     </div>
   );
 }
