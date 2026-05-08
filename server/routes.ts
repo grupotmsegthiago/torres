@@ -291,8 +291,26 @@ ensureInterTables();
 
 async function syncMissingAutoTransactions() {
   try {
-    const { data: existingTx } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id");
-    const txSet = new Set((existingTx || []).map((t: any) => `${t.origin_type}:${t.origin_id}`));
+    // Pagina pra superar o limite default de 1000 do Supabase REST.
+    // Sem isso, acima de 1000 linhas o set fica incompleto e o sync re-insere
+    // transações já existentes a cada restart (gerando duplicatas).
+    const txSet = new Set<string>();
+    {
+      const PAGE = 1000;
+      let off = 0;
+      while (true) {
+        const { data: page, error } = await supabaseAdmin
+          .from("financial_transactions")
+          .select("origin_type, origin_id")
+          .order("id", { ascending: true })
+          .range(off, off + PAGE - 1);
+        if (error) throw error;
+        if (!page || page.length === 0) break;
+        for (const t of page) txSet.add(`${t.origin_type}:${t.origin_id}`);
+        if (page.length < PAGE) break;
+        off += PAGE;
+      }
+    }
 
     const fuelings = await storage.getVehicleFuelings();
     for (const f of fuelings) {
