@@ -220,24 +220,50 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
             </div>
           </div>
           {!isEdit && (
-            <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
-              <div className="flex items-center gap-4 mb-2">
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700 uppercase">
-                  <input type="radio" name="recurrence" checked={recurrence === "SINGLE"} onChange={() => setRecurrence("SINGLE")} data-testid="radio-single" /> Único
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700 uppercase">
-                  <input type="radio" name="recurrence" checked={recurrence === "INSTALLMENT"} onChange={() => setRecurrence("INSTALLMENT")} data-testid="radio-installment" /> Parcelado
-                </label>
+            <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200">
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button type="button" onClick={() => setRecurrence("SINGLE")} data-testid="radio-single"
+                  className={`py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all border-2 ${recurrence === "SINGLE" ? "bg-neutral-900 text-white border-neutral-900 shadow-sm" : "bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400"}`}>
+                  Único
+                </button>
+                <button type="button" onClick={() => setRecurrence("INSTALLMENT")} data-testid="radio-installment"
+                  className={`py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all border-2 flex items-center justify-center gap-1.5 ${recurrence === "INSTALLMENT" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-neutral-500 border-neutral-200 hover:border-indigo-300"}`}>
+                  <Layers size={13} /> Parcelado
+                </button>
               </div>
-              {recurrence === "INSTALLMENT" && (
-                <div className="flex items-center gap-2">
-                  <Layers size={16} className="text-neutral-500" />
-                  <span className="text-xs font-bold text-neutral-600">Parcelas:</span>
-                  <select className="p-1 border border-neutral-300 rounded text-sm bg-white font-bold" value={installments} onChange={e => setInstallments(parseInt(e.target.value))} data-testid="select-installments">
-                    {[2,3,4,5,6,7,8,9,10,11,12,18,24,36,48,60].map(n => <option key={n} value={n}>{n}x</option>)}
-                  </select>
-                </div>
-              )}
+              {recurrence === "INSTALLMENT" && (() => {
+                const totalNum = parseBRL(amount) || 0;
+                const parcela = totalNum > 0 ? Math.round((totalNum / installments) * 100) / 100 : 0;
+                const baseDate = dueDate ? new Date(dueDate + "T12:00:00") : new Date();
+                const previewDates = Array.from({ length: Math.min(installments, 6) }, (_, i) => {
+                  const d = new Date(baseDate);
+                  d.setMonth(d.getMonth() + i);
+                  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                });
+                return (
+                  <div className="space-y-2 pt-2 border-t border-neutral-200">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">Quantidade de Parcelas:</span>
+                      <select className="px-2 py-1 border-2 border-indigo-300 rounded-md text-sm bg-white font-black text-indigo-700" value={installments} onChange={e => setInstallments(parseInt(e.target.value))} data-testid="select-installments">
+                        {[2,3,4,5,6,7,8,9,10,11,12,18,24,36,48,60].map(n => <option key={n} value={n}>{n}x</option>)}
+                      </select>
+                    </div>
+                    {totalNum > 0 && (
+                      <div className="bg-white p-2 rounded-md border border-indigo-100">
+                        <div className="text-[10px] font-bold text-neutral-500 uppercase mb-1">Resumo:</div>
+                        <div className="text-xs font-black text-indigo-900">
+                          {installments}x de {parcela.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          <span className="text-[10px] font-bold text-neutral-500 ml-1">(total {totalNum.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})</span>
+                        </div>
+                        <div className="text-[10px] text-neutral-600 mt-1.5 leading-relaxed">
+                          <span className="font-bold">Vencimentos:</span> {previewDates.join(" · ")}{installments > 6 && ` · ... +${installments - 6}`}
+                        </div>
+                        <div className="text-[9px] text-neutral-400 mt-0.5">Cada parcela vence 1 mês após a anterior, a partir da data de vencimento informada.</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
           {isEdit && isSeries && (
