@@ -1257,12 +1257,30 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const todayEndIso = `${todayBrt}T23:59:59-03:00`;
   const dutyByEmp = new Map<number, { osNumber: string | null; status: string | null; missionStatus: string | null; scheduledDate: string | null; partnerId: number | null; partnerName: string | null }>();
   if (isCurrentMonth) {
-    const { data: todaySos } = await supabaseAdmin
-      .from("service_orders")
-      .select("id, os_number, status, mission_status, scheduled_date, assigned_employee_id, assigned_employee_2_id")
-      .gte("scheduled_date", todayStartIso)
-      .lte("scheduled_date", todayEndIso)
-      .order("scheduled_date", { ascending: true });
+    // Inclui: (a) OS agendadas para hoje + (b) OS ainda em_andamento de qualquer
+    // dia (missão aberta = funcionário em serviço, mesmo que tenha começado ontem).
+    const [todayRes, openRes] = await Promise.all([
+      supabaseAdmin
+        .from("service_orders")
+        .select("id, os_number, status, mission_status, scheduled_date, assigned_employee_id, assigned_employee_2_id")
+        .gte("scheduled_date", todayStartIso)
+        .lte("scheduled_date", todayEndIso)
+        .order("scheduled_date", { ascending: true }),
+      supabaseAdmin
+        .from("service_orders")
+        .select("id, os_number, status, mission_status, scheduled_date, assigned_employee_id, assigned_employee_2_id")
+        .eq("status", "em_andamento")
+        .order("scheduled_date", { ascending: true }),
+    ]);
+    const seenIds = new Set<number>();
+    const todaySos: any[] = [];
+    for (const so of [...((todayRes.data || []) as any[]), ...((openRes.data || []) as any[])]) {
+      if (seenIds.has(so.id)) continue;
+      seenIds.add(so.id);
+      todaySos.push(so);
+    }
+    todaySos.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
+    {
     const partnerIds = new Set<number>();
     for (const so of (todaySos || []) as any[]) {
       if (so.assigned_employee_id) partnerIds.add(so.assigned_employee_id);
@@ -1290,6 +1308,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
           partnerId: a || null, partnerName: a ? (empNameById.get(a) || null) : null,
         });
       }
+    }
     }
   }
 
