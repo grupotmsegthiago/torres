@@ -531,6 +531,12 @@ export async function ensureDbSchema() {
     await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS nome_fantasia TEXT
     `);
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_number TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_complement TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS bairro TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_estadual TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS billing_alerts (
