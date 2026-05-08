@@ -185,7 +185,7 @@ async function ensureFinancialOriginColumns() {
        direction TEXT,
        source TEXT,
        raw_event JSONB,
-       external_id TEXT NOT NULL,
+       external_id TEXT,
        processed BOOLEAN DEFAULT FALSE,
        created_at TIMESTAMP DEFAULT NOW()
      )`,

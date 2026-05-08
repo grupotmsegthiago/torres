@@ -469,7 +469,7 @@ export const controlIdPunches = pgTable("control_id_punches", {
   direction: text("direction"),                          // in | out | unknown
   source: text("source"),                                // facial | rfid | digital | senha
   rawEvent: jsonb("raw_event"),                          // payload bruto da API
-  externalId: text("external_id").notNull(),             // ID do evento na Control iD (pra dedup)
+  externalId: text("external_id"),                       // ID do evento na Control iD (pra dedup). NULL para batidas manuais que ainda não sincronizaram com RHID.
   processed: boolean("processed").default(false),        // já consolidado em folha?
   createdAt: timestamp("created_at").defaultNow(),
 });

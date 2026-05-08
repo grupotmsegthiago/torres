@@ -537,6 +537,8 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_estadual TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
+    // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
+    await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS billing_alerts (
