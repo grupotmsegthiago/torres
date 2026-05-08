@@ -37,6 +37,29 @@ const fmtHoras = (val: number | null | undefined) => {
   return `${h}h${m.toString().padStart(2, "0")}`;
 };
 
+// Regra unificada: cobrança parte do agendamento; se o agente iniciou ANTES do agendado, usa o início real.
+// Usa timestamps completos (preserva diferença de dias).
+const computeHorasReais = (os: any): number => {
+  const b = os?.billing;
+  const fallback = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
+  const real = os?.hora_chegada_origem || os?.missionStartedAt;
+  const sched = os?.scheduledDate;
+  const startRaw = (() => {
+    if (real && sched) {
+      const r = new Date(_eu(real)).getTime();
+      const s = new Date(_eu(sched)).getTime();
+      return r < s ? real : sched;
+    }
+    return real || sched;
+  })();
+  const endRaw = os?.hora_fim_missao || os?.completedDate;
+  if (!startRaw || !endRaw) return fallback;
+  const startMs = new Date(_eu(startRaw)).getTime();
+  const endMs = new Date(_eu(endRaw)).getTime();
+  if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return fallback;
+  return Math.floor((endMs - startMs) / 60000) / 60;
+};
+
 const computeKm = (os: any) => {
   const b = os.billing;
   const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b?.km_inicial || 0);
@@ -444,7 +467,7 @@ export default function BoletimMedicaoPage() {
         Number(b?.km_total || 0),
         Number(b?.km_franquia || 0),
         Number(b?.km_excedente || 0),
-        fmtHoras(Number(b?.horas_trabalhadas || 0)),
+        fmtHoras(computeHorasReais(os)),
         Number(b?.fat_acionamento || 0),
         Number(b?.fat_hora_extra || 0),
         Number(b?.fat_km || 0),
@@ -1117,7 +1140,7 @@ export default function BoletimMedicaoPage() {
                                     {kmTotal > 0 && <span className="text-neutral-400 text-[10px] ml-0.5">km</span>}
                                   </td>
                                   <td className="px-4 py-3.5 text-right">
-                                    <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
+                                    <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(computeHorasReais(os)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3.5 text-right">
                                     {isOsRecusadaOuCancelada ? (
@@ -1259,7 +1282,7 @@ export default function BoletimMedicaoPage() {
                                           <span><strong className="text-neutral-700">Franquia:</strong> {Number(b.km_franquia || 0).toLocaleString("pt-BR")} / {Number(b.km_faturado || b.km_franquia || 0).toLocaleString("pt-BR")} km</span>
                                           <span className="text-neutral-300">|</span>
                                           <span><strong className="text-neutral-700">KM Excedente:</strong> {Number(b.km_excedente || 0)} km — {fmt(Number(b.fat_km || 0))}</span>
-                                          {Number(b.fat_hora_extra || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Hora Extra:</strong> {fmtHoras(Number(b.horas_trabalhadas || 0))} — {fmt(Number(b.fat_hora_extra || 0))}</span></>)}
+                                          {Number(b.fat_hora_extra || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Hora Extra:</strong> {fmtHoras(computeHorasReais(os))} — {fmt(Number(b.fat_hora_extra || 0))}</span></>)}
                                           {Number(b.despesas_pedagio || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Pedágio:</strong> {fmt(Number(b.despesas_pedagio || 0))}</span></>)}
                                           <span className="text-neutral-300">|</span>
                                           <span><strong className="text-neutral-700">KM Inicial:</strong> {Number(b.km_inicial || 0).toLocaleString("pt-BR")}</span>
