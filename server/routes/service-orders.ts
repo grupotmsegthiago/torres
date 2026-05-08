@@ -873,7 +873,13 @@ import type { Express } from "express";
     if (parsed.data.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      if (kit.status === "em_uso") {
+      // Decisão do usuário: a nova OS pode ser AGENDADA com o mesmo kit que está
+      // em uso agora — o conflito só é bloqueante quando a nova OS já vai iniciar
+      // (status em_andamento). Para OS futura/agendada, deixamos passar; o
+      // bloqueio acontece no momento em que a missão de fato inicia.
+      const newStatus = (parsed.data as any).status || "agendada";
+      const newIsStarting = newStatus === "em_andamento";
+      if (kit.status === "em_uso" && newIsStarting) {
         const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         const newA1 = Number(parsed.data.assignedEmployeeId) || 0;
         const newA2 = Number(parsed.data.assignedEmployee2Id) || 0;
@@ -1120,7 +1126,12 @@ import type { Express } from "express";
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      if (kit.status === "em_uso") {
+      // Mesmo critério da criação: só bloqueia se ESTA OS já vai iniciar agora.
+      // OS agendada para o futuro pode reservar o kit; o bloqueio só efetiva no
+      // momento em que essa OS muda para em_andamento.
+      const newStatus = (parsed.data as any).status || existing?.status || "agendada";
+      const newIsStarting = newStatus === "em_andamento";
+      if (kit.status === "em_uso" && newIsStarting) {
         const allOrders = await storage.getServiceOrders();
         const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         const newA1 = Number(parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId) || 0;
