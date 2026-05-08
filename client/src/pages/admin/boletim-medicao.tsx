@@ -431,7 +431,7 @@ export default function BoletimMedicaoPage() {
       const route = [os.origin, os.destination].filter(Boolean).join(" → ");
       return [
         i + 1,
-        os.osNumber || `TOR-${String(os.id).padStart(4, "0")}`,
+        os.osNumber || "",
         os.clientName || "",
         route.substring(0, 50) || "",
         os.vehiclePlate || "",
