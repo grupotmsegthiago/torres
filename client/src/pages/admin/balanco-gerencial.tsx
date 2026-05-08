@@ -243,7 +243,7 @@ export default function BalancoGerencialPage() {
   const filtered = useMemo(() => {
     if (!data) return {
       missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[],
-      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, other: 0, total: 0 },
+      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0 },
       expensesByVehicle: {} as Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }>,
       periodExpenses: [] as ExpenseTransaction[],
     };
@@ -268,15 +268,22 @@ export default function BalancoGerencialPage() {
       return t.date >= startStr && t.date <= endStr;
     });
 
-    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, other: 0, total: 0 };
+    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0 };
     const expensesByVehicle: Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }> = {};
+
+    // Categorias que JÁ são contabilizadas em outros lugares (RH provisão / Custos Fixos rateados).
+    // Lançamentos manuais nestas categorias NÃO podem entrar em Operacional, senão dobra.
+    const RH_CATS = new Set(["folha de pagamento", "recursos humanos", "vale refeição", "vale refeicao", "vale alimentação", "vale alimentacao", "salário", "salario", "salarios", "salários"]);
+    const FIXED_CATS = new Set(["aluguel", "frota (aluguel)", "infraestrutura/tecnologia", "infraestrutura", "tecnologia", "internet", "energia", "telefone", "softwares", "serviços", "servicos"]);
 
     periodExpenses.forEach(t => {
       const amt = t.amount;
+      const cat = (t.category_name || "").toLowerCase().trim();
       if (t.origin_type === "fueling") expenseSums.fueling += amt;
       else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
       else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
-      else if (t.origin_type === "payroll") expenseSums.payroll += amt;
+      else if (t.origin_type === "payroll" || RH_CATS.has(cat)) expenseSums.payroll += amt;
+      else if (FIXED_CATS.has(cat)) expenseSums.fixed += amt;
       else expenseSums.other += amt;
       expenseSums.total += amt;
 
@@ -374,14 +381,15 @@ export default function BalancoGerencialPage() {
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
-    // Lançamentos de folha (origin_type=payroll) ficam no extrato financeiro mas
-    // NÃO entram no custoTotal para evitar dupla contagem com a Provisão CCT.
-    // O RH é SEMPRE calculado pela Provisão CCT (custo diário × agentes × dias).
-    const despReaisExFolha = despReais - despFin.payroll;
+    // Lançamentos com categoria de RH (folha automática + manuais "Folha de Pagamento",
+    // "Vale Refeição" etc.) e categoria de estrutura ("Aluguel", "Infraestrutura" etc.)
+    // NÃO entram no custoTotal para evitar dupla contagem com a Provisão de RH e os
+    // Custos Fixos rateados — esses já cobrem o mensal completo desses itens.
+    const despReaisOperacional = despReais - despFin.payroll - despFin.fixed;
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * daysInPeriod;
-    const custoTotal = pag + despReaisExFolha + provisaoRH + custosFixosRateados;
+    const custoTotal = pag + despReaisOperacional + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
