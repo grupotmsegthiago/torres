@@ -873,31 +873,8 @@ import type { Express } from "express";
     if (parsed.data.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      // Decisão do usuário: a nova OS pode ser AGENDADA com o mesmo kit que está
-      // em uso agora — o conflito só é bloqueante quando a nova OS já vai iniciar
-      // (status em_andamento). Para OS futura/agendada, deixamos passar; o
-      // bloqueio acontece no momento em que a missão de fato inicia.
-      const newStatus = (parsed.data as any).status || "agendada";
-      const newIsStarting = newStatus === "em_andamento";
-      if (kit.status === "em_uso" && newIsStarting) {
-        const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
-        const newA1 = Number(parsed.data.assignedEmployeeId) || 0;
-        const newA2 = Number(parsed.data.assignedEmployee2Id) || 0;
-        for (const activeWithKit of ordersWithKit) {
-          const curA1 = Number(activeWithKit.assignedEmployeeId) || 0;
-          const curA2 = Number(activeWithKit.assignedEmployee2Id) || 0;
-          const sameTeam = newA1 > 0 && curA1 > 0 && newA1 === curA1 && newA2 === curA2;
-          if (sameTeam) continue;
-          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
-          if (isEmAndamento) {
-            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento) com equipe diferente` });
-          }
-          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
-        }
-        if (ordersWithKit.length === 0) {
-          await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
-        }
-      }
+      // Decisão do usuário: regra de conflito de kit removida — qualquer OS pode
+      // ser criada com qualquer kit, sem bloqueio.
     }
     if (!parsed.data.valorEstimado) {
       try {
@@ -1126,31 +1103,8 @@ import type { Express } from "express";
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      // Mesmo critério da criação: só bloqueia se ESTA OS já vai iniciar agora.
-      // OS agendada para o futuro pode reservar o kit; o bloqueio só efetiva no
-      // momento em que essa OS muda para em_andamento.
-      const newStatus = (parsed.data as any).status || existing?.status || "agendada";
-      const newIsStarting = newStatus === "em_andamento";
-      if (kit.status === "em_uso" && newIsStarting) {
-        const allOrders = await storage.getServiceOrders();
-        const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
-        const newA1 = Number(parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId) || 0;
-        const newA2 = Number(parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id) || 0;
-        for (const activeWithKit of ordersWithKit) {
-          const curA1 = Number(activeWithKit.assignedEmployeeId) || 0;
-          const curA2 = Number(activeWithKit.assignedEmployee2Id) || 0;
-          const sameTeam = newA1 > 0 && curA1 > 0 && newA1 === curA1 && newA2 === curA2;
-          if (sameTeam) continue;
-          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
-          if (isEmAndamento) {
-            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento) com equipe diferente` });
-          }
-          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
-        }
-        if (ordersWithKit.length === 0) {
-          await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
-        }
-      }
+      // Decisão do usuário: regra de conflito de kit removida — qualquer OS pode
+      // trocar/usar qualquer kit, sem bloqueio.
     }
     if (parsed.data.escortContractId && parsed.data.escortContractId !== existing?.escortContractId && !parsed.data.valorEstimado) {
       try {
