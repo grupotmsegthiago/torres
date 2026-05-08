@@ -256,7 +256,7 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     let isLive = false;
     const isFinalized = so.status === "concluida" || so.status === "concluída" || so.missionStatus === "encerrada";
     if (!isCancelledStatus(so.status) && !isFinalized && (so as any).missionStartedAt) {
-      horasMissao = calcHorasElapsedLocal((so as any).missionStartedAt, undefined);
+      horasMissao = calcHorasElapsedLocal((so as any).missionStartedAt, undefined, (so as any).scheduledDate);
       if (horasMissao > 0) {
         const contrato = (so as any).escortContractId && contractById.has((so as any).escortContractId)
           ? contractById.get((so as any).escortContractId)

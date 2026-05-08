@@ -1047,12 +1047,18 @@ export async function ensureCalcMissionRPC() {
         SELECT COALESCE(
           FLOOR(
             EXTRACT(EPOCH FROM (
-              COALESCE(completed_date, (NOW() AT TIME ZONE 'America/Sao_Paulo')::timestamp) - mission_started_at
+              COALESCE(completed_date, (NOW() AT TIME ZONE 'America/Sao_Paulo')::timestamp)
+              - LEAST(
+                  COALESCE(scheduled_date, mission_started_at),
+                  COALESCE(mission_started_at, scheduled_date)
+                )
             )) / 60.0
           ) * 60.0 / 3600.0,
           0
         )
-        FROM service_orders WHERE id = p_os_id;
+        FROM service_orders
+        WHERE id = p_os_id
+          AND mission_started_at IS NOT NULL;
       $$ LANGUAGE sql STABLE;
     `);
     console.log("[db-init] calc_mission_elapsed_hours RPC created OK");

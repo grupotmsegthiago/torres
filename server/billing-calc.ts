@@ -48,13 +48,21 @@ export async function getHorasElapsedFromDB(osId: number): Promise<number> {
 export function calcHorasElapsedLocal(
   missionStartedAt: string | null | undefined,
   completedDate: string | null | undefined,
+  scheduledDate?: string | null,
 ): number {
   if (!missionStartedAt) return 0;
   const parseDate = (v: string) => {
     const s = String(v);
     return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
   };
-  const start = parseDate(missionStartedAt);
+  // Regra: o início para cobrança é o agendamento; se o agente iniciou ANTES do agendamento, usa o início real.
+  const realStart = parseDate(missionStartedAt);
+  const start = scheduledDate
+    ? (() => {
+        const sched = parseDate(scheduledDate);
+        return realStart.getTime() < sched.getTime() ? realStart : sched;
+      })()
+    : realStart;
   const end = completedDate ? parseDate(completedDate) : new Date();
   const diffMs = end.getTime() - start.getTime();
   // Truncar para minutos inteiros (descartar segundos) — hora extra conta só HH:MM

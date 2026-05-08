@@ -449,7 +449,7 @@ import type { Express } from "express";
             })();
             const skipBillingHours = missionNotStartedYet || (o.status === "agendada" && scheduledInFuture);
 
-            const horasCalcRaw = skipBillingHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate);
+            const horasCalcRaw = skipBillingHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate, o.scheduledDate);
 
             const kmTexto = extractKmFromText(o.destination) || extractKmFromText(o.route);
             let kmRota: number | undefined;
