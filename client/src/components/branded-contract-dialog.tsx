@@ -255,23 +255,56 @@ export function BrandedContractDialog({ open, onClose, entityType, entityId, ent
     const node = document.getElementById("branded-contract-printable") as HTMLElement | null;
     if (!node) return;
     try {
-      const canvas = await html2canvas(node, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
-      const imgData = canvas.toDataURL("image/png");
+      const scale = 2;
+      const canvas = await html2canvas(node, { scale, backgroundColor: "#ffffff", useCORS: true });
       const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-      const imgW = pageW;
-      const imgH = (canvas.height * imgW) / canvas.width;
-      let heightLeft = imgH;
-      let position = 0;
-      pdf.addImage(imgData, "PNG", 0, position, imgW, imgH);
-      heightLeft -= pageH;
-      while (heightLeft > 0) {
-        position = heightLeft - imgH;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgW, imgH);
-        heightLeft -= pageH;
+      const pxPerMm = canvas.width / pageW;
+      const pageHpx = pageH * pxPerMm;
+
+      // Coleta posições Y (no canvas) de cada bloco "não-quebrável"
+      const containerRect = node.getBoundingClientRect();
+      const blocks = Array.from(node.querySelectorAll<HTMLElement>("[data-pdf-block]"));
+      const blockBounds = blocks.map(el => {
+        const r = el.getBoundingClientRect();
+        return {
+          top: (r.top - containerRect.top) * scale,
+          bottom: (r.bottom - containerRect.top) * scale,
+        };
+      }).sort((a, b) => a.top - b.top);
+
+      // Escolhe quebras: começa nova página se o próximo bloco não couber inteiro
+      const breaks: number[] = [0];
+      let pageStart = 0;
+      for (const b of blockBounds) {
+        if (b.bottom - pageStart > pageHpx) {
+          // bloco não cabe — começa nova página no topo deste bloco
+          if (b.top > pageStart) {
+            breaks.push(b.top);
+            pageStart = b.top;
+          }
+          // se o bloco for maior que uma página inteira, deixa correr (sem alternativa)
+        }
       }
+      breaks.push(canvas.height);
+
+      const tmp = document.createElement("canvas");
+      const ctx = tmp.getContext("2d")!;
+      for (let i = 0; i < breaks.length - 1; i++) {
+        const sliceY = breaks[i];
+        const sliceH = Math.min(breaks[i + 1] - sliceY, pageHpx);
+        tmp.width = canvas.width;
+        tmp.height = sliceH;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, tmp.width, tmp.height);
+        ctx.drawImage(canvas, 0, sliceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        const imgData = tmp.toDataURL("image/png");
+        const imgHmm = sliceH / pxPerMm;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, 0, pageW, imgHmm);
+      }
+
       const fname = `Contrato_${(currentRecord?.fields?.nome || entityName).replace(/\s+/g, "_")}${isSigned ? "_ASSINADO" : ""}.pdf`;
       pdf.save(fname);
     } catch (err: any) {
@@ -600,7 +633,8 @@ function getPrintStyles() {
     .torres-table td { border: 1px solid #000; padding: 6px 9px; vertical-align: top; }
     .torres-table td.k { background: #000; color: #fff; font-weight: 700; width: 32%; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; }
     .torres-clauses { font-size: 12px; line-height: 1.7; text-align: justify; white-space: pre-wrap; }
-    .torres-clauses p { margin: 0 0 10px; }
+    .torres-clauses p { margin: 0 0 12px; page-break-inside: avoid; break-inside: avoid; }
+    .torres-clauses .clause-block { page-break-inside: avoid; break-inside: avoid; }
     .torres-clauses .clause-title { font-weight: 800; }
     .torres-signatures { margin-top: 50px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
     .torres-sig { text-align: center; font-size: 11px; }
@@ -632,8 +666,8 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
       const trimmed = p.trim();
       if (!trimmed) return null;
       const m = trimmed.match(/^(CLÁUSULA[^:]+:)\s*([\s\S]*)/i);
-      if (m) return <p key={i}><span className="clause-title">{m[1]}</span> {m[2]}</p>;
-      return <p key={i}>{trimmed}</p>;
+      if (m) return <p key={i} data-pdf-block className="clause-block"><span className="clause-title">{m[1]}</span> {m[2]}</p>;
+      return <p key={i} data-pdf-block className="clause-block">{trimmed}</p>;
     }).filter(Boolean);
   };
   return (
@@ -663,7 +697,7 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
             Pelo presente instrumento particular, de um lado <b>{TORRES.razao}</b>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº <b>{TORRES.cnpj}</b>, doravante denominada simplesmente <b>{isEmployee ? "EMPREGADORA" : "CONTRATADA"}</b>, e de outro lado:
           </div>
 
-          <table className="torres-table">
+          <table className="torres-table" data-pdf-block>
             <tbody>
               <tr><td className="k">{isEmployee ? "Nome" : "Nome / Razão Social"}</td><td>{f.nome || "—"}</td></tr>
               <tr><td className="k">{isEmployee ? "CPF" : "CPF / CNPJ"}</td><td>{f.documento || "—"}</td></tr>
@@ -690,12 +724,12 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
             )}
           </div>
 
-          <div className="torres-local">
+          <div className="torres-local" data-pdf-block>
             E por estarem de pleno acordo, firmam o presente em 2 (duas) vias de igual teor.<br />
             São Paulo, {dateBR}.
           </div>
 
-          <div className="torres-signatures">
+          <div className="torres-signatures" data-pdf-block>
             <div className="torres-sig">
               <div className="line"><b>{TORRES.razao}</b><br />CNPJ: {TORRES.cnpj}</div>
             </div>
@@ -711,7 +745,7 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
           </div>
 
           {record.witnesses && record.witnesses.some(w => w.name) && (
-            <div className="torres-witness">
+            <div className="torres-witness" data-pdf-block>
               {record.witnesses.filter(w => w.name).map((w, i) => (
                 <div key={i} className="torres-sig"><div className="line"><b>Testemunha {i + 1}: {w.name}</b><br />CPF: {w.cpf || "—"}</div></div>
               ))}
@@ -719,7 +753,7 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
           )}
 
           {isSigned && (
-            <div className="torres-audit">
+            <div className="torres-audit" data-pdf-block>
               <b>Comprovante de assinatura digital</b><br />
               Assinado por <b>{record.signed_by_name}</b>{record.signed_by_doc ? ` — Doc.: ${record.signed_by_doc}` : ""}<br />
               Data/hora: <b>{fmtDateTimeBR(record.signed_at)}</b> (Brasília — BRT)<br />
