@@ -54,6 +54,63 @@ const TORRES = {
   site: "www.torresseguranca.com.br",
 };
 
+const DEFAULT_WITNESSES = [
+  { name: "Mickael Sória", cpf: "43908058864" },
+  { name: "Babara Sgarla", cpf: "39507443800" },
+];
+
+const DEFAULT_CLAUSES_CLIENT = `CLÁUSULA 1ª - DO OBJETO: O presente contrato tem por objeto a prestação, pela CONTRATADA, de serviços especializados de vigilância patrimonial e/ou escolta armada de cargas em favor do(a) CONTRATANTE {{nome}}, inscrito(a) no CNPJ/CPF {{documento}}, com sede em {{endereco}}, conforme escopo, rotas e periodicidade definidos em ordem de serviço.
+
+CLÁUSULA 2ª - DO PREÇO E FORMA DE PAGAMENTO: Pelos serviços prestados, o(a) CONTRATANTE pagará à CONTRATADA o valor de R$ {{valor}}, conforme tabela de preços vigente anexa, mediante boleto ou PIX emitido pela CONTRATADA, com vencimento conforme política de faturamento acordada.
+
+CLÁUSULA 3ª - DO REAJUSTE: Os valores serão reajustados anualmente pela variação acumulada do IGP-M (FGV) ou, na sua falta, pelo IPCA (IBGE), aplicando-se sempre o índice de menor impacto ao(à) CONTRATANTE.
+
+CLÁUSULA 4ª - DA VIGÊNCIA: O presente contrato vigorará pelo prazo de 12 (doze) meses contados a partir de {{data}}, renovando-se automaticamente por iguais períodos, salvo manifestação em contrário de qualquer das partes, com aviso prévio mínimo de 30 (trinta) dias.
+
+CLÁUSULA 5ª - DAS OBRIGAÇÕES DA CONTRATADA: Caberá à CONTRATADA: (a) executar os serviços com pessoal devidamente treinado, uniformizado e habilitado nos termos da Lei nº 7.102/83 e Portarias da Polícia Federal; (b) manter sigilo absoluto sobre informações do(a) CONTRATANTE; (c) responder por danos diretos comprovadamente causados por culpa ou dolo de seus agentes; (d) manter cobertura de seguro de responsabilidade civil compatível com a operação.
+
+CLÁUSULA 6ª - DAS OBRIGAÇÕES DO(A) CONTRATANTE: Caberá ao(à) CONTRATANTE: (a) fornecer informações operacionais necessárias à correta execução dos serviços; (b) efetuar os pagamentos nas datas pactuadas; (c) comunicar imediatamente quaisquer ocorrências relevantes à CONTRATADA, especialmente para fins de acionamento; (d) manter atualizado o cadastro de contato e e-mail de cobrança junto à CONTRATADA.
+
+CLÁUSULA 7ª - DA MULTA E JUROS: O atraso no pagamento implicará multa moratória de 2% (dois por cento) sobre o valor em atraso, juros de mora de 1% (um por cento) ao mês e correção monetária pelo IGP-M, sem prejuízo de eventual suspensão dos serviços.
+
+CLÁUSULA 8ª - DA RESCISÃO: O presente contrato poderá ser rescindido por qualquer das partes, mediante notificação por escrito com aviso prévio mínimo de 30 (trinta) dias, sem ônus, ressalvado o pagamento dos serviços já prestados. Em caso de rescisão imotivada antes do encerramento da vigência, será devida multa correspondente a 30% do valor remanescente.
+
+CLÁUSULA 9ª - DO SIGILO E LGPD: As partes se obrigam a tratar os dados pessoais e operacionais a que tiverem acesso em estrita observância à Lei Geral de Proteção de Dados (Lei nº 13.709/2018), utilizando-os exclusivamente para a execução deste contrato.
+
+CLÁUSULA 10ª - DA RESPONSABILIDADE CIVIL: A CONTRATADA não se responsabilizará por (i) caso fortuito ou força maior; (ii) prejuízos decorrentes de informações incorretas prestadas pelo(a) CONTRATANTE; (iii) danos a terceiros causados por terceiros estranhos à relação contratual.
+
+CLÁUSULA 11ª - DAS COMUNICAÇÕES: As comunicações entre as partes serão consideradas válidas quando enviadas para os e-mails {{email}} (CONTRATANTE) e contato@torresseguranca.com.br (CONTRATADA), sendo recomendada a confirmação de recebimento.
+
+CLÁUSULA 12ª - DO FORO: Fica eleito o foro da Comarca de São Paulo/SP, com renúncia a qualquer outro, por mais privilegiado que seja, para dirimir quaisquer dúvidas ou questões oriundas deste contrato.`;
+
+const DEFAULT_CLAUSES_EMPLOYEE = `CLÁUSULA 1ª - DAS PARTES: É celebrado o presente contrato individual de trabalho entre {{nome}}, inscrito(a) no CPF {{documento}}, residente em {{endereco}}, doravante denominado(a) EMPREGADO(A), e a EMPREGADORA já qualificada no preâmbulo.
+
+CLÁUSULA 2ª - DA FUNÇÃO: O(A) EMPREGADO(A) será admitido(a) para exercer a função de {{cargo}}, podendo a EMPREGADORA, no exercício do jus variandi, atribuir-lhe outras tarefas compatíveis com sua condição pessoal e qualificação profissional.
+
+CLÁUSULA 3ª - DA REMUNERAÇÃO: Pelos serviços prestados, o(a) EMPREGADO(A) receberá salário mensal de R$ {{valor}}, pago até o 5º (quinto) dia útil do mês subsequente ao trabalhado, mediante depósito em conta bancária.
+
+CLÁUSULA 4ª - DA JORNADA: A jornada de trabalho será de 220 (duzentas e vinte) horas mensais, observada a escala compatível com a atividade de vigilância (12x36 ou conforme escala definida), respeitados os intervalos legais.
+
+CLÁUSULA 5ª - DA VIGÊNCIA: O contrato entra em vigor em {{data}}, por prazo indeterminado, precedido de período de experiência de 90 (noventa) dias nos termos do art. 445, parágrafo único, da CLT.
+
+CLÁUSULA 6ª - DO LOCAL DE TRABALHO: O(A) EMPREGADO(A) poderá ser designado(a) para qualquer posto operacional da EMPREGADORA, em razão da natureza itinerante da atividade de vigilância patrimonial e escolta armada.
+
+CLÁUSULA 7ª - DAS OBRIGAÇÕES DO(A) EMPREGADO(A): Submeter-se às normas internas da EMPREGADORA, manter o porte regular do registro profissional, zelar pelo armamento, uniforme e equipamentos recebidos, manter sigilo sobre operações e clientes, comparecer às reciclagens obrigatórias.
+
+CLÁUSULA 8ª - DA LGPD E DO SIGILO: O(A) EMPREGADO(A) compromete-se a manter sigilo absoluto sobre informações de clientes, rotas, valores transportados e quaisquer dados pessoais a que tiver acesso, sob pena de justa causa e responsabilização cível e criminal.
+
+CLÁUSULA 9ª - DAS PENALIDADES: A inobservância das normas internas e legais sujeitará o(a) EMPREGADO(A) às penalidades de advertência, suspensão e dispensa por justa causa, conforme art. 482 da CLT.
+
+CLÁUSULA 10ª - DO FORO: Fica eleito o foro da Comarca de São Paulo/SP para dirimir quaisquer questões oriundas deste contrato, com renúncia a qualquer outro, por mais privilegiado que seja.`;
+
+function applyTemplate(text: string, fields: Record<string, string>): string {
+  if (!text) return "";
+  return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, k: string) => {
+    const v = fields[k.toLowerCase()];
+    return v && String(v).trim() ? String(v) : `____________`;
+  });
+}
+
 function todayISO() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -133,8 +190,8 @@ export function BrandedContractDialog({ open, onClose, entityType, entityId, ent
       inscricao_estadual: defaults.inscricao_estadual || "",
       inscricao_municipal: defaults.inscricao_municipal || "",
     });
-    setClauses("");
-    setWitnesses([{ name: "", cpf: "" }, { name: "", cpf: "" }]);
+    setClauses(isEmployee ? DEFAULT_CLAUSES_EMPLOYEE : DEFAULT_CLAUSES_CLIENT);
+    setWitnesses(DEFAULT_WITNESSES.map(w => ({ ...w })));
   };
 
   const loadContract = (c: BrandedContractRecord) => {
@@ -569,7 +626,8 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
   const partyLabel = isEmployee ? "EMPREGADO(A)" : "CONTRATANTE";
   const isSigned = !!record.signed_at && !!record.signature_data;
   const formatClauses = (txt: string) => {
-    const paras = (txt || "").split(/\n{2,}/);
+    const rendered = applyTemplate(txt, f);
+    const paras = (rendered || "").split(/\n{2,}/);
     return paras.map((p, i) => {
       const trimmed = p.trim();
       if (!trimmed) return null;
