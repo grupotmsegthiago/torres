@@ -243,7 +243,7 @@ export default function BalancoGerencialPage() {
   const filtered = useMemo(() => {
     if (!data) return {
       missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[],
-      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0 },
+      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0, otherByCategory: {} as Record<string, number> },
       expensesByVehicle: {} as Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }>,
       periodExpenses: [] as ExpenseTransaction[],
     };
@@ -268,7 +268,7 @@ export default function BalancoGerencialPage() {
       return t.date >= startStr && t.date <= endStr;
     });
 
-    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0 };
+    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, fixed: 0, other: 0, total: 0, otherByCategory: {} as Record<string, number> };
     const expensesByVehicle: Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }> = {};
 
     // Categorias que JÁ são contabilizadas em outros lugares (RH provisão / Custos Fixos rateados).
@@ -284,7 +284,11 @@ export default function BalancoGerencialPage() {
       else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
       else if (t.origin_type === "payroll" || RH_CATS.has(cat)) expenseSums.payroll += amt;
       else if (FIXED_CATS.has(cat)) expenseSums.fixed += amt;
-      else expenseSums.other += amt;
+      else {
+        expenseSums.other += amt;
+        const label = (t.category_name?.trim() || "Sem categoria");
+        expenseSums.otherByCategory[label] = (expenseSums.otherByCategory[label] || 0) + amt;
+      }
       expenseSums.total += amt;
 
       if (t.origin_type === "fueling" || t.origin_type === "mission_cost" || t.origin_type === "maintenance") {
@@ -401,6 +405,7 @@ export default function BalancoGerencialPage() {
       desp_manutencao: despFin.maintenance,
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
+      desp_outras_por_categoria: despFin.otherByCategory || {},
       provisaoRH,
       custosFixosMensal,
       custosFixosRateados,
@@ -625,13 +630,23 @@ export default function BalancoGerencialPage() {
               icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
               tipTitle: "Custos Operacionais",
               tipDesc: "Despesas variáveis ligadas diretamente à execução das missões: pagamento variável aos agentes (VRP), combustível, pedágios, manutenção de viaturas e outras despesas registradas no período.",
-              rows: [
-                { label: "VRP (agentes)", value: totals.pag },
-                { label: "Combustível", value: totals.desp_combustivel },
-                { label: "Pedágio", value: totals.desp_pedagio },
-                { label: "Manutenção", value: totals.desp_manutencao },
-                { label: "Outras despesas", value: totals.desp_outras },
-              ].filter(r => r.value > 0),
+              rows: (() => {
+                const baseRows = [
+                  { label: "VRP (agentes)", value: totals.pag },
+                  { label: "Combustível", value: totals.desp_combustivel },
+                  { label: "Pedágio", value: totals.desp_pedagio },
+                  { label: "Manutenção", value: totals.desp_manutencao },
+                ].filter(r => r.value > 0);
+                const outrasMap = totals.desp_outras_por_categoria || {};
+                const outrasRows = Object.entries(outrasMap)
+                  .filter(([_, v]) => Number(v) > 0)
+                  .sort((a, b) => Number(b[1]) - Number(a[1]))
+                  .map(([cat, v]) => ({ label: `Outras · ${cat}`, value: Number(v) }));
+                if (outrasRows.length === 0 && totals.desp_outras > 0) {
+                  outrasRows.push({ label: "Outras despesas", value: totals.desp_outras });
+                }
+                return [...baseRows, ...outrasRows];
+              })(),
             });
             const PERIOD_BASE_DAYS: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
             const PERIOD_FOLHA_LABEL: Record<Period, string> = {
