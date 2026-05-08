@@ -1170,6 +1170,48 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     absByEmp.get(a.employee_id)!.push(a);
   }
 
+  // ── Primeira OS do dia (BRT) por funcionário — fonte para "em serviço" e dupla ──
+  // Janela [todayBrt 00:00 BRT, todayBrt 23:59:59 BRT].
+  const todayStartIso = `${todayBrt}T00:00:00-03:00`;
+  const todayEndIso = `${todayBrt}T23:59:59-03:00`;
+  const dutyByEmp = new Map<number, { osNumber: string | null; status: string | null; missionStatus: string | null; scheduledDate: string | null; partnerId: number | null; partnerName: string | null }>();
+  if (isCurrentMonth) {
+    const { data: todaySos } = await supabaseAdmin
+      .from("service_orders")
+      .select("id, os_number, status, mission_status, scheduled_date, assigned_employee_id, assigned_employee_2_id")
+      .gte("scheduled_date", todayStartIso)
+      .lte("scheduled_date", todayEndIso)
+      .order("scheduled_date", { ascending: true });
+    const partnerIds = new Set<number>();
+    for (const so of (todaySos || []) as any[]) {
+      if (so.assigned_employee_id) partnerIds.add(so.assigned_employee_id);
+      if (so.assigned_employee_2_id) partnerIds.add(so.assigned_employee_2_id);
+    }
+    const { data: partnerEmps } = partnerIds.size > 0
+      ? await supabaseAdmin.from("employees").select("id, name").in("id", Array.from(partnerIds))
+      : { data: [] as any[] };
+    const empNameById = new Map<number, string>();
+    for (const p of (partnerEmps || []) as any[]) empNameById.set(p.id, p.name);
+    for (const so of (todaySos || []) as any[]) {
+      const a = so.assigned_employee_id;
+      const b = so.assigned_employee_2_id;
+      if (a && !dutyByEmp.has(a)) {
+        dutyByEmp.set(a, {
+          osNumber: so.os_number || null, status: so.status || null,
+          missionStatus: so.mission_status || null, scheduledDate: so.scheduled_date || null,
+          partnerId: b || null, partnerName: b ? (empNameById.get(b) || null) : null,
+        });
+      }
+      if (b && !dutyByEmp.has(b)) {
+        dutyByEmp.set(b, {
+          osNumber: so.os_number || null, status: so.status || null,
+          missionStatus: so.mission_status || null, scheduledDate: so.scheduled_date || null,
+          partnerId: a || null, partnerName: a ? (empNameById.get(a) || null) : null,
+        });
+      }
+    }
+  }
+
   const HOURS_LIMIT = 220;
   const OPEN_PUNCH_MIN_GAP_MIN = 30; // se única batida + > 30min atrás → ponto em aberto
 
@@ -1238,6 +1280,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     }
 
     const hoursWorked = +(totalMin / 60).toFixed(2);
+    const duty = dutyByEmp.get(e.id) || null;
     result.push({
       employeeId: e.id,
       name: e.name,
@@ -1253,6 +1296,13 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       openSinceMinutes,
       lastPunchAt,
       absenceType: absToday ? absToday.type : null,
+      onDutyToday: !!duty,
+      dutyOsNumber: duty?.osNumber || null,
+      dutyStatus: duty?.status || null,
+      dutyMissionStatus: duty?.missionStatus || null,
+      dutyScheduledAt: duty?.scheduledDate || null,
+      partnerId: duty?.partnerId || null,
+      partnerName: duty?.partnerName || null,
     });
   }
   return result;

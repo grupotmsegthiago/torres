@@ -935,6 +935,13 @@ type PainelRow = {
   openSinceMinutes: number | null;
   lastPunchAt: string | null;
   absenceType: string | null;
+  onDutyToday?: boolean;
+  dutyOsNumber?: string | null;
+  dutyStatus?: string | null;
+  dutyMissionStatus?: string | null;
+  dutyScheduledAt?: string | null;
+  partnerId?: number | null;
+  partnerName?: string | null;
 };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string; Icon: any }> = {
@@ -1066,11 +1073,39 @@ function PainelMesTab() {
                 const meta = STATUS_BADGE[r.todayStatus] || STATUS_BADGE.MES_PASSADO;
                 const pct = Math.min(100, r.percentUsed);
                 const barColor = pct >= 100 ? "bg-red-600" : pct >= 90 ? "bg-orange-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500";
+                const dutyTime = r.dutyScheduledAt
+                  ? new Date(r.dutyScheduledAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
+                  : null;
                 return (
                   <tr key={r.employeeId} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-painel-${r.employeeId}`}>
                     <td className="p-2">
-                      <div className="font-medium text-neutral-800">{r.name}</div>
-                      <div className="text-[11px] text-neutral-500">{r.role}{!r.mapped && <span className="ml-2 text-neutral-400 italic">· não mapeado</span>}</div>
+                      <div className="font-medium text-neutral-800 flex items-center gap-1.5">
+                        {r.name}
+                        {isCurrentMonth && r.onDutyToday && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 text-[10px] font-bold"
+                            title={`Em serviço · OS ${r.dutyOsNumber || "—"}${dutyTime ? ` às ${dutyTime}` : ""}${r.partnerName ? ` · Dupla: ${r.partnerName}` : " · sem dupla"}`}
+                            data-testid={`badge-duty-${r.employeeId}`}
+                          >
+                            <PlayCircle className="w-2.5 h-2.5" /> EM SERVIÇO
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-neutral-500">
+                        {r.role}{!r.mapped && <span className="ml-2 text-neutral-400 italic">· não mapeado</span>}
+                      </div>
+                      {isCurrentMonth && r.onDutyToday && (
+                        <div className="text-[10px] text-neutral-600 mt-0.5 flex items-center flex-wrap gap-x-2" data-testid={`info-duty-${r.employeeId}`}>
+                          <span><span className="text-neutral-400">OS:</span> <span className="font-mono font-semibold">{r.dutyOsNumber || "—"}</span>{dutyTime && <span className="text-neutral-400"> · {dutyTime}</span>}</span>
+                          <span className="text-neutral-300">|</span>
+                          <span>
+                            <span className="text-neutral-400">+ Dupla:</span>{" "}
+                            {r.partnerName
+                              ? <span className="font-semibold text-neutral-700">{r.partnerName}</span>
+                              : <span className="italic text-neutral-400">sem dupla</span>}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     {isCurrentMonth && (
                       <td className="p-2">
