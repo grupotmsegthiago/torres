@@ -291,18 +291,24 @@ export function BrandedContractDialog({ open, onClose, entityType, entityId, ent
 
       const tmp = document.createElement("canvas");
       const ctx = tmp.getContext("2d")!;
+      let pageIdx = 0;
       for (let i = 0; i < breaks.length - 1; i++) {
-        const sliceY = breaks[i];
-        const sliceH = Math.min(breaks[i + 1] - sliceY, pageHpx);
-        tmp.width = canvas.width;
-        tmp.height = sliceH;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, tmp.width, tmp.height);
-        ctx.drawImage(canvas, 0, sliceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-        const imgData = tmp.toDataURL("image/png");
-        const imgHmm = sliceH / pxPerMm;
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, 0, pageW, imgHmm);
+        let startY = breaks[i];
+        const endY = breaks[i + 1];
+        while (startY < endY) {
+          const sliceH = Math.min(endY - startY, pageHpx);
+          tmp.width = canvas.width;
+          tmp.height = sliceH;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, tmp.width, tmp.height);
+          ctx.drawImage(canvas, 0, startY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+          const imgData = tmp.toDataURL("image/png");
+          const imgHmm = sliceH / pxPerMm;
+          if (pageIdx > 0) pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, 0, pageW, imgHmm);
+          pageIdx++;
+          startY += sliceH;
+        }
       }
 
       const fname = `Contrato_${(currentRecord?.fields?.nome || entityName).replace(/\s+/g, "_")}${isSigned ? "_ASSINADO" : ""}.pdf`;
@@ -661,14 +667,30 @@ function ContractPreview({ record, isEmployee }: { record: BrandedContractRecord
   const isSigned = !!record.signed_at && !!record.signature_data;
   const formatClauses = (txt: string) => {
     const rendered = applyTemplate(txt, f);
-    const paras = (rendered || "").split(/\n{2,}/);
-    return paras.map((p, i) => {
-      const trimmed = p.trim();
-      if (!trimmed) return null;
-      const m = trimmed.match(/^(CLÁUSULA[^:]+:)\s*([\s\S]*)/i);
-      if (m) return <p key={i} data-pdf-block className="clause-block"><span className="clause-title">{m[1]}</span> {m[2]}</p>;
-      return <p key={i} data-pdf-block className="clause-block">{trimmed}</p>;
-    }).filter(Boolean);
+    const paras = (rendered || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+    // Agrupa "CLÁUSULA X" + parágrafos subsequentes (sub-itens 1.1, 1.2…) em um único bloco.
+    const groups: string[][] = [];
+    let cur: string[] = [];
+    for (const p of paras) {
+      const isClauseHead = /^CLÁUSULA\b/i.test(p);
+      if (isClauseHead) {
+        if (cur.length) groups.push(cur);
+        cur = [p];
+      } else {
+        if (cur.length === 0) cur = [p]; else cur.push(p);
+      }
+    }
+    if (cur.length) groups.push(cur);
+
+    return groups.map((g, gi) => (
+      <div key={gi} data-pdf-block className="clause-block">
+        {g.map((p, i) => {
+          const m = p.match(/^(CLÁUSULA[^:]+:)\s*([\s\S]*)/i);
+          if (m) return <p key={i}><span className="clause-title">{m[1]}</span> {m[2]}</p>;
+          return <p key={i}>{p}</p>;
+        })}
+      </div>
+    ));
   };
   return (
     <>
