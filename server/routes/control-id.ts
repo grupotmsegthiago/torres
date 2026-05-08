@@ -422,6 +422,16 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // ─────── DIAGNÓSTICO DE SINCRONIZAÇÃO ───────
+  app.get("/api/control-id/sync-diagnostic", requireAuth, async (_req, res) => {
+    try {
+      const data = await ctrl.buildSyncDiagnostic();
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── SYNC GLOBAL (admin) ───────
   app.post("/api/control-id/sync-all", requireAuth, requireAdminRole, async (_req, res) => {
     try {

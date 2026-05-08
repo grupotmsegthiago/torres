@@ -976,6 +976,18 @@ function PainelMesTab() {
     refetchInterval: 60_000,
   });
 
+  const { data: diag } = useQuery<{
+    unmappedEmployees: { id: number; name: string; role: string }[];
+    orphanPunches: { controlIdUserId: string; deviceId: number; rhidName: string | null; punchCount: number; lastPunchAt: string }[];
+    orphanTotal: number;
+    devices: { id: number; nome: string; lastSyncAt: string | null; lastSyncStatus: string | null; lastSyncMessage: string | null }[];
+  }>({
+    queryKey: ["/api/control-id/sync-diagnostic"],
+    queryFn: async () => (await authFetch("/api/control-id/sync-diagnostic")).json(),
+    refetchInterval: 120_000,
+  });
+  const [showDiag, setShowDiag] = useState(false);
+
   const isCurrentMonth = month === new Date().toISOString().slice(0, 7);
 
   const counts = useMemo(() => {
@@ -1007,6 +1019,89 @@ function PainelMesTab() {
 
   return (
     <div className="space-y-3">
+      {diag && (diag.unmappedEmployees.length > 0 || diag.orphanTotal > 0) && (
+        <Card className="p-3 border-amber-300 bg-amber-50/50">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-amber-800 text-sm font-semibold">
+              <AlertTriangle className="w-4 h-4" />
+              Diagnóstico de sincronização Control iD
+              <span className="ml-2 text-[11px] font-normal text-amber-700">
+                {diag.unmappedEmployees.length} func. ativo(s) sem mapeamento
+                {" · "}
+                {diag.orphanTotal} batida(s) órfã(s) (7 dias)
+                {" — "}
+                não aparecem no painel
+              </span>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowDiag(s => !s)} data-testid="button-toggle-diag">
+              {showDiag ? "Ocultar" : "Detalhes"}
+            </Button>
+          </div>
+          {showDiag && (
+            <div className="grid md:grid-cols-2 gap-3 mt-3 text-xs">
+              <div>
+                <div className="font-semibold text-neutral-700 mb-1">Funcionários ativos sem mapeamento ({diag.unmappedEmployees.length})</div>
+                {diag.unmappedEmployees.length === 0 ? (
+                  <div className="text-neutral-400 italic">Nenhum — todos mapeados.</div>
+                ) : (
+                  <ul className="space-y-0.5 max-h-48 overflow-auto pr-1">
+                    {diag.unmappedEmployees.map(e => (
+                      <li key={e.id} className="flex items-center justify-between border-b border-amber-200/40 py-0.5" data-testid={`diag-unmapped-${e.id}`}>
+                        <span><span className="font-medium">{e.name}</span> <span className="text-neutral-400">· {e.role}</span></span>
+                        <span className="text-neutral-400 text-[10px]">#{e.id}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-[10px] text-neutral-500 mt-1">Solução: aba "Mapping Funcionários" → ligar o RHID userId ao funcionário.</div>
+              </div>
+              <div>
+                <div className="font-semibold text-neutral-700 mb-1">Batidas órfãs no banco — RHID userIds não mapeados ({diag.orphanPunches.length})</div>
+                {diag.orphanPunches.length === 0 ? (
+                  <div className="text-neutral-400 italic">Nenhuma batida órfã nos últimos 7 dias.</div>
+                ) : (
+                  <ul className="space-y-0.5 max-h-48 overflow-auto pr-1">
+                    {diag.orphanPunches.map(o => (
+                      <li key={`${o.deviceId}-${o.controlIdUserId}`} className="flex items-center justify-between border-b border-amber-200/40 py-0.5" data-testid={`diag-orphan-${o.controlIdUserId}`}>
+                        <span>
+                          <span className="font-medium">{o.rhidName || <span className="italic text-neutral-400">sem nome no RHID</span>}</span>{" "}
+                          <span className="text-neutral-400 font-mono text-[10px]">· id {o.controlIdUserId}</span>
+                        </span>
+                        <span className="text-neutral-500 text-[10px]">
+                          <span className="font-bold text-amber-700">{o.punchCount}</span> batida(s) ·{" "}
+                          {new Date(o.lastPunchAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-[10px] text-neutral-500 mt-1">Estas batidas <strong>chegaram</strong> do RHID e estão no banco, mas sem vínculo com funcionário — invisíveis no painel/folha. Crie o mapeamento e elas aparecerão automaticamente.</div>
+              </div>
+              {diag.devices.length > 0 && (
+                <div className="md:col-span-2 border-t border-amber-200 pt-2">
+                  <div className="font-semibold text-neutral-700 mb-1">Último sync por aparelho</div>
+                  <ul className="grid md:grid-cols-2 gap-1">
+                    {diag.devices.map(d => (
+                      <li key={d.id} className="flex items-center justify-between text-[11px] border-b border-amber-200/40 py-0.5">
+                        <span className="font-medium">{d.nome}</span>
+                        <span className={d.lastSyncStatus === "ok" ? "text-emerald-700" : "text-red-700"}>
+                          {d.lastSyncMessage || "—"}
+                          {d.lastSyncAt && (
+                            <span className="text-neutral-400 ml-1">
+                              · {new Date(d.lastSyncAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
       <Card className="p-3 flex flex-wrap gap-2 items-center">
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-painel-month" />
         <Input placeholder="Buscar funcionário..." value={search} onChange={e => setSearch(e.target.value)} className="w-56 h-9 text-sm" data-testid="input-painel-search" />

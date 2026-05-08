@@ -515,6 +515,87 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   return { fetched: events.length, saved, mapped, skipped, message: `${saved} batida(s) nova(s)` };
 }
 
+// ============================ DIAGNÓSTICO DE SINCRONIZAÇÃO ============================
+
+/**
+ * Diagnóstico do pipeline RHID → control_id_punches → painel.
+ * Identifica os 2 problemas mais comuns que silenciosamente "somem" com batidas:
+ *  1) Funcionário ATIVO sem mapeamento em control_id_users_map (não recebe batida nenhuma).
+ *  2) Batidas salvas com employee_id=NULL (RHID userId não está em mapeamento) —
+ *     ficam órfãs no banco e não aparecem no painel/folha.
+ * Retorna também resumo dos últimos syncs por device.
+ */
+export async function buildSyncDiagnostic(): Promise<any> {
+  // ── 1. Funcionários ativos sem mapping ──
+  const { data: emps } = await supabaseAdmin
+    .from("employees").select("id, name, role").eq("status", "ativo").order("name");
+  const empIds = (emps || []).map((e: any) => e.id);
+  const { data: maps } = await supabaseAdmin
+    .from("control_id_users_map")
+    .select("employee_id, control_id_user_id, device_id, ativo")
+    .in("employee_id", empIds);
+  const mappedEmpIds = new Set(((maps || []) as any[]).filter(m => m.ativo).map(m => m.employee_id));
+  const unmappedEmployees = (emps || []).filter((e: any) => !mappedEmpIds.has(e.id));
+
+  // ── 2. Batidas órfãs (employee_id = null) nos últimos 7 dias ──
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000).toISOString();
+  const { data: orphans } = await supabaseAdmin
+    .from("control_id_punches")
+    .select("control_id_user_id, device_id, punch_at")
+    .is("employee_id", null)
+    .gte("punch_at", sevenDaysAgo)
+    .order("punch_at", { ascending: false });
+
+  const orphanByUser = new Map<string, { controlIdUserId: string; deviceId: number; count: number; lastPunchAt: string }>();
+  for (const p of (orphans || []) as any[]) {
+    const key = `${p.device_id}::${p.control_id_user_id}`;
+    const cur = orphanByUser.get(key);
+    if (!cur) {
+      orphanByUser.set(key, { controlIdUserId: p.control_id_user_id, deviceId: p.device_id, count: 1, lastPunchAt: p.punch_at });
+    } else {
+      cur.count++;
+      if (p.punch_at > cur.lastPunchAt) cur.lastPunchAt = p.punch_at;
+    }
+  }
+
+  // Resolve nomes dos userIds órfãos consultando o RHID (cache simples por device)
+  const { data: devices } = await supabaseAdmin
+    .from("control_id_devices").select("*").eq("ativo", true);
+  const personsByDevice = new Map<number, Map<string, string>>();
+  for (const dev of (devices || []) as any[]) {
+    try {
+      const persons = await fetchUsers(dev as DeviceRow);
+      const m = new Map<string, string>();
+      persons.forEach(p => m.set(String(p.id), p.name));
+      personsByDevice.set(dev.id, m);
+    } catch {
+      personsByDevice.set(dev.id, new Map());
+    }
+  }
+
+  const orphanList = Array.from(orphanByUser.values()).map(o => ({
+    controlIdUserId: o.controlIdUserId,
+    deviceId: o.deviceId,
+    rhidName: personsByDevice.get(o.deviceId)?.get(o.controlIdUserId) || null,
+    punchCount: o.count,
+    lastPunchAt: o.lastPunchAt,
+  })).sort((a, b) => b.punchCount - a.punchCount);
+
+  // ── 3. Status por device ──
+  const deviceStatus = ((devices || []) as any[]).map(d => ({
+    id: d.id, nome: d.nome, tipo: d.tipo,
+    lastSyncAt: d.last_sync_at, lastSyncStatus: d.last_sync_status, lastSyncMessage: d.last_sync_message,
+  }));
+
+  return {
+    unmappedEmployees: (unmappedEmployees as any[]).map(e => ({ id: e.id, name: e.name, role: e.role })),
+    orphanPunches: orphanList,
+    orphanTotal: orphanList.reduce((a, b) => a + b.punchCount, 0),
+    devices: deviceStatus,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 // ============================ AUTO-IMPORT PERSONS ↔ EMPLOYEES ============================
 
 function normalizeName(s: string): string {
