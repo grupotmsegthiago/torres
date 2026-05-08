@@ -1558,7 +1558,24 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   })();
   const realFim = fmtToHHMM(os.hora_fim_missao) || fmtToHHMM(os.completedDate) || b?.horario_fim;
   let hCalc = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
-  if (inicioCobranca && realFim) {
+  // Preferir cálculo por timestamps completos (preserva diferença de dias).
+  const startTsRaw = (() => {
+    const real = os.hora_chegada_origem || os.missionStartedAt;
+    if (real && os.scheduledDate) {
+      const r = new Date(_eu(real)).getTime();
+      const s = new Date(_eu(os.scheduledDate)).getTime();
+      return r < s ? real : os.scheduledDate;
+    }
+    return real || os.scheduledDate;
+  })();
+  const endTsRaw = os.hora_fim_missao || os.completedDate;
+  if (startTsRaw && endTsRaw) {
+    const startMs = new Date(_eu(startTsRaw)).getTime();
+    const endMs = new Date(_eu(endTsRaw)).getTime();
+    if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+      hCalc = Math.floor((endMs - startMs) / 60000) / 60;
+    }
+  } else if (inicioCobranca && realFim) {
     let diff = toMin(realFim) - toMin(inicioCobranca);
     if (diff < 0) diff += 24 * 60;
     hCalc = diff / 60;
