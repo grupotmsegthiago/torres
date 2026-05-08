@@ -65,6 +65,46 @@ export function registerBrandedContractRoutes(app: Express) {
     }
   });
 
+  app.post("/api/branded-contracts/:id/sign", requireAuth, async (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.signature_data || !body.signed_by_name) {
+        return res.status(400).json({ message: "Assinatura e nome são obrigatórios" });
+      }
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "";
+      const ua = req.headers["user-agent"] || "";
+      const update = {
+        signature_data: body.signature_data,
+        signed_by_name: body.signed_by_name,
+        signed_by_doc: body.signed_by_doc || "",
+        signed_at: new Date().toISOString(),
+        signed_ip: ip,
+        signed_user_agent: ua,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabaseAdmin.from("branded_contracts").update(update).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/branded-contracts/:id/unsign", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const update = {
+        signature_data: null, signed_at: null, signed_by_name: null,
+        signed_by_doc: null, signed_ip: null, signed_user_agent: null,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabaseAdmin.from("branded_contracts").update(update).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.delete("/api/branded-contracts/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("branded_contracts").delete().eq("id", req.params.id);

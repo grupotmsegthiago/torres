@@ -1877,7 +1877,27 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           entityType="client"
           entityId={client.id}
           entityName={client.name}
-          defaults={{ nome: client.name, documento: client.cnpj || "", endereco: client.address || "" }}
+          defaults={{
+            nome: (client as any).razaoSocial || client.name,
+            documento: client.cnpj || (client as any).cpf || "",
+            endereco: [
+              (client as any).address,
+              (client as any).addressNumber,
+              (client as any).addressComplement,
+            ].filter(Boolean).join(", "),
+            bairro: (client as any).bairro || "",
+            cidade: (client as any).city || "",
+            estado: (client as any).state || "",
+            cep: (client as any).zip || "",
+            inscricao_estadual: (client as any).inscricaoEstadual || "",
+            inscricao_municipal: (client as any).inscricaoMunicipal || "",
+            contato: (client as any).contactPerson || "",
+            email: (client as any).email || (client as any).emailContratual || "",
+            telefone: (client as any).phone || "",
+            valor: priceContracts.find(p => p.client_id === client.id)?.valor_diaria
+              ? `${Number(priceContracts.find(p => p.client_id === client.id)!.valor_diaria).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (diária — conforme tabela vigente)`
+              : "",
+          }}
         />
       )}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}

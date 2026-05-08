@@ -137,6 +137,13 @@ export async function ensureDbSchema() {
       )
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_branded_contracts_entity ON branded_contracts(entity_type, entity_id)`);
+    await execSql(`ALTER TABLE branded_contracts
+      ADD COLUMN IF NOT EXISTS signature_data TEXT,
+      ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS signed_by_name TEXT,
+      ADD COLUMN IF NOT EXISTS signed_by_doc TEXT,
+      ADD COLUMN IF NOT EXISTS signed_ip TEXT,
+      ADD COLUMN IF NOT EXISTS signed_user_agent TEXT`);
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_documents (
