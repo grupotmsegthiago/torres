@@ -275,13 +275,18 @@ export default function BalancoGerencialPage() {
     // Lançamentos manuais nestas categorias NÃO podem entrar em Operacional, senão dobra.
     const RH_CATS = new Set(["folha de pagamento", "recursos humanos", "vale refeição", "vale refeicao", "vale alimentação", "vale alimentacao", "salário", "salario", "salarios", "salários"]);
     const FIXED_CATS = new Set(["aluguel", "frota (aluguel)", "infraestrutura/tecnologia", "infraestrutura", "tecnologia", "internet", "energia", "telefone", "softwares", "serviços", "servicos"]);
+    // Categorias que devem ser consolidadas com os buckets nativos por origin_type,
+    // mesmo quando lançadas manualmente como despesa (evita aparecer duplicado em "Outras").
+    const FUEL_CATS = new Set(["combustível", "combustivel", "abastecimento"]);
+    const TOLL_CATS = new Set(["pedágio", "pedagio", "pedagios", "pedágios"]);
+    const MAINT_CATS = new Set(["manutenção", "manutencao", "manutenção de viatura", "manutencao de viatura", "manutenção de viaturas", "manutencao de viaturas"]);
 
     periodExpenses.forEach(t => {
       const amt = t.amount;
       const cat = (t.category_name || "").toLowerCase().trim();
-      if (t.origin_type === "fueling") expenseSums.fueling += amt;
-      else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
-      else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
+      if (t.origin_type === "fueling" || FUEL_CATS.has(cat)) expenseSums.fueling += amt;
+      else if (t.origin_type === "mission_cost" || TOLL_CATS.has(cat)) expenseSums.mission_cost += amt;
+      else if (t.origin_type === "maintenance" || MAINT_CATS.has(cat)) expenseSums.maintenance += amt;
       else if (t.origin_type === "payroll" || RH_CATS.has(cat)) expenseSums.payroll += amt;
       else if (FIXED_CATS.has(cat)) expenseSums.fixed += amt;
       else {
