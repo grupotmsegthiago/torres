@@ -1994,7 +1994,13 @@ export function registerAsaasRoutes(app: Express) {
         // FÓRMULA OFICIAL DO BOLETIM DE MEDIÇÃO (deve casar com aprovacao.tsx + boletim-approval.ts)
         // acionamento + HE + KM + pedágio + adicional_noturno
         // receitas_os NÃO entra aqui — é cobrança avulsa, lançada à parte se necessário.
-        const fat = acionamento + horaExtra + km + pedagio + adNoturno;
+        // Se houver fat_total congelado no banco, prevalece (mesma lógica do
+        // frontend em relatorio-faturamento.tsx). Isso evita divergências
+        // quando a fórmula muda ou quando fallbacks (ex.: acionamento via
+        // contrato) entram no cálculo do frontend.
+        const fatTotalSalvo = Number(b.fat_total || 0);
+        const fatComponentes = acionamento + horaExtra + km + pedagio + adNoturno;
+        const fat = fatTotalSalvo > 0 ? fatTotalSalvo : fatComponentes;
         totalValue += fat;
         billingIds.push(b.id);
 
@@ -2002,7 +2008,7 @@ export function registerAsaasRoutes(app: Express) {
         const route = [b.origem, b.destino].filter(Boolean).join(" → ");
         const dataMissao = b.data_missao ? new Date(b.data_missao).toLocaleDateString("pt-BR") : "";
         osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
-        console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} adNoturno=${adNoturno} = ${fat}`);
+        console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} adNoturno=${adNoturno} | componentes=${fatComponentes} fat_total=${fatTotalSalvo} → usado=${fat}`);
       }
       console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS). Período: ${startDate} a ${endDate}`);
       if (totalValue <= 0) {
