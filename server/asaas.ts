@@ -756,14 +756,31 @@ export function registerAsaasRoutes(app: Express) {
     const headerToken = (req.headers["asaas-access-token"] || req.headers["x-asaas-access-token"] || req.headers["authorization"] || "") as string;
     const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
     const body: any = req.body || {};
-    const event: string = body?.event || "";
-    const transfer: any = body?.transfer || body?.data || body;
-    const pixKey: string = String(transfer?.pixAddressKey || transfer?.pix_address_key || "").trim().toLowerCase();
-    const operationType: string = String(transfer?.operationType || transfer?.operation_type || "").toUpperCase();
-    const value: number = Number(transfer?.value ?? 0);
-    const transferId: string = transfer?.id || "?";
+    const event: string = String(body?.event || "").toUpperCase();
 
-    console.log(`[asaas-webhook-approve] Recebido: event=${event} id=${transferId} type=${operationType} key=${pixKey} value=${value}`);
+    const candidates = [body?.transfer, body?.data, body?.payload?.transfer, body?.payload, body];
+    let transfer: any = {};
+    for (const c of candidates) {
+      if (c && typeof c === "object" && (c.pixAddressKey || c.pix_address_key || c.id || c.value || c.operationType)) {
+        transfer = c;
+        break;
+      }
+    }
+
+    const pixKeyRaw: string = String(transfer?.pixAddressKey ?? transfer?.pix_address_key ?? body?.pixAddressKey ?? "");
+    const pixKey: string = pixKeyRaw.trim().toLowerCase();
+    const operationType: string = String(transfer?.operationType ?? transfer?.operation_type ?? body?.operationType ?? "").toUpperCase();
+    const value: number = Number(transfer?.value ?? body?.value ?? 0);
+    const transferId: string = String(transfer?.id ?? body?.id ?? "?");
+
+    const expectedKey = TRANSFER_PIX_KEY.toLowerCase();
+    const hex = (s: string) => Buffer.from(s, "utf8").toString("hex");
+
+    console.log(`[asaas-webhook-approve] >>> event=${event} id=${transferId} type=${operationType} value=${value}`);
+    console.log(`[asaas-webhook-approve] >>> pixKeyRecebida(len=${pixKey.length}, hex=${hex(pixKey).slice(0,80)})`);
+    console.log(`[asaas-webhook-approve] >>> pixKeyEsperada(len=${expectedKey.length}, hex=${hex(expectedKey).slice(0,80)})`);
+    console.log(`[asaas-webhook-approve] >>> headers: ${JSON.stringify({ "asaas-access-token-presente": !!req.headers["asaas-access-token"], "x-asaas-access-token-presente": !!req.headers["x-asaas-access-token"], "authorization-presente": !!req.headers["authorization"], "user-agent": req.headers["user-agent"] })}`);
+    console.log(`[asaas-webhook-approve] >>> body raw keys=${Object.keys(body).join(",")}`);
 
     if (!expectedToken) {
       console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
@@ -772,17 +789,28 @@ export function registerAsaasRoutes(app: Express) {
 
     const tokenLimpo = headerToken.replace(/^Bearer\s+/i, "").trim();
     if (tokenLimpo !== expectedToken) {
-      console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido (header não confere com ASAAS_WEBHOOK_TOKEN)`);
+      console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido. recebido(len=${tokenLimpo.length}) esperado(len=${expectedToken.length})`);
       return res.status(401).json({ approved: false, reason: "Token de autenticação inválido" });
     }
 
-    if (operationType !== "PIX") {
+    const APPROVAL_EVENTS = ["TRANSFER_CREATED", "TRANSFER_PENDING", "TRANSFER_AUTHORIZATION_REQUIRED", ""];
+    if (event && !APPROVAL_EVENTS.includes(event)) {
+      console.log(`[asaas-webhook-approve] OK (notificação ${event} ignorada — token válido, sem ação de aprovação).`);
+      return res.status(200).json({ approved: true, message: `Notificação ${event} recebida.` });
+    }
+
+    if (operationType && operationType !== "PIX") {
       console.warn(`[asaas-webhook-approve] BLOQUEADO: operationType=${operationType} (esperado PIX). Cai para autorização manual SMS.`);
       return res.status(403).json({ approved: false, reason: `Operação ${operationType} requer autorização manual via SMS` });
     }
 
-    if (pixKey !== TRANSFER_PIX_KEY.toLowerCase()) {
-      console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" não é a autorizada (${TRANSFER_PIX_KEY}). Cai para autorização manual SMS.`);
+    if (!pixKey) {
+      console.warn(`[asaas-webhook-approve] OK SEM AÇÃO: pixKey vazia no body — provavelmente notificação sem dados de destino.`);
+      return res.status(200).json({ approved: true, message: "Sem chave PIX no body — notificação ignorada." });
+    }
+
+    if (pixKey !== expectedKey) {
+      console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" != "${expectedKey}". Cai para autorização manual SMS.`);
       return res.status(403).json({
         approved: false,
         reason: `Chave PIX de destino não autorizada. Apenas transferências para ${TRANSFER_PIX_KEY} são aprovadas automaticamente.`,
