@@ -824,7 +824,7 @@ export function registerAsaasRoutes(app: Express) {
     }
 
     console.log(`[asaas-webhook-approve] APROVADO automaticamente: id=${transferId} valor=R$${value.toFixed(2)} -> ${TRANSFER_PIX_KEY}`);
-    return res.status(200).json({ approved: true, id: transferId });
+    return res.status(200).json({ approved: true });
   });
 
   app.get("/api/asaas/webhook-config", requireAdminRole, async (req: Request, res: Response) => {
