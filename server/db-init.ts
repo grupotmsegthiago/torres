@@ -488,6 +488,19 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_by_name TEXT`).catch(() => {});
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_at TIMESTAMP`).catch(() => {});
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_reason TEXT`).catch(() => {});
+    // Grandfather: contratos pendentes criados antes da entrada em vigor da regra
+    // recebem bypass automático para não bloquear vigilantes pré-existentes.
+    // Idempotente — após marcados, não são mais alvo do UPDATE.
+    await execSql(`
+      UPDATE employee_probation_contracts
+      SET bypass_diretoria = true,
+          bypass_by_name = 'Sistema (regra retroativa)',
+          bypass_at = NOW(),
+          bypass_reason = 'Funcionário pré-existente — assinatura obrigatória vigora apenas para cadastros a partir de 11/05/2026'
+      WHERE assinatura_status <> 'assinado'
+        AND COALESCE(bypass_diretoria, false) = false
+        AND created_at < '2026-05-11T15:00:00-03:00'
+    `).catch(() => {});
 
     const decimalMigrations = [
       `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,
