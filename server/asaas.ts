@@ -793,44 +793,38 @@ export function registerAsaasRoutes(app: Express) {
 
     if (!expectedToken) {
       console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
-      return res.status(403).json({ approved: false, reason: "Webhook token não configurado no servidor" });
+      return res.status(200).json({ approved: false });
     }
 
     const tokenLimpo = headerToken.replace(/^Bearer\s+/i, "").trim();
     if (tokenLimpo !== expectedToken) {
       console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido. recebido(len=${tokenLimpo.length}) esperado(len=${expectedToken.length})`);
-      return res.status(401).json({ approved: false, reason: "Token de autenticação inválido" });
+      return res.status(401).json({ approved: false });
     }
 
     const APPROVAL_EVENTS = ["TRANSFER_CREATED", "TRANSFER_PENDING", "TRANSFER_AUTHORIZATION_REQUIRED", ""];
     if (event && !APPROVAL_EVENTS.includes(event)) {
-      console.log(`[asaas-webhook-approve] OK (notificação ${event} ignorada — token válido, sem ação de aprovação).`);
-      return res.status(200).json({ approved: true, message: `Notificação ${event} recebida.` });
+      console.log(`[asaas-webhook-approve] OK (notificação ${event} apenas — sem decisão de aprovação).`);
+      return res.status(200).json({ approved: true });
     }
 
     if (operationType && operationType !== "PIX") {
-      console.warn(`[asaas-webhook-approve] BLOQUEADO: operationType=${operationType} (esperado PIX). Cai para autorização manual SMS.`);
-      return res.status(403).json({ approved: false, reason: `Operação ${operationType} requer autorização manual via SMS` });
+      console.warn(`[asaas-webhook-approve] BLOQUEADO: operationType=${operationType} (esperado PIX).`);
+      return res.status(200).json({ approved: false });
     }
 
     if (!pixKey) {
-      console.warn(`[asaas-webhook-approve] OK SEM AÇÃO: pixKey vazia no body — provavelmente notificação sem dados de destino.`);
-      return res.status(200).json({ approved: true, message: "Sem chave PIX no body — notificação ignorada." });
+      console.warn(`[asaas-webhook-approve] OK SEM AÇÃO: pixKey vazia no body.`);
+      return res.status(200).json({ approved: true });
     }
 
     if (pixKey !== expectedKey) {
-      console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" != "${expectedKey}". Cai para autorização manual SMS.`);
-      return res.status(403).json({
-        approved: false,
-        reason: `Chave PIX de destino não autorizada. Apenas transferências para ${TRANSFER_PIX_KEY} são aprovadas automaticamente.`,
-      });
+      console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" != "${expectedKey}".`);
+      return res.status(200).json({ approved: false });
     }
 
     console.log(`[asaas-webhook-approve] APROVADO automaticamente: id=${transferId} valor=R$${value.toFixed(2)} -> ${TRANSFER_PIX_KEY}`);
-    return res.status(200).json({
-      approved: true,
-      message: `Transferência ${transferId} aprovada automaticamente (chave autorizada).`,
-    });
+    return res.status(200).json({ approved: true });
   });
 
   app.get("/api/asaas/webhook-config", requireAdminRole, async (req: Request, res: Response) => {
