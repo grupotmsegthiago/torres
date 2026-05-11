@@ -16,22 +16,40 @@ import { z } from "zod";
 // (ou liberado por bypass_diretoria).
 const LEGACY_CONTRACT_CUTOFF = "2026-05-11";
 
+// Documentos obrigatórios para abertura de OS.
+// Lista alinhada com o checklist visual em client/src/pages/admin/employees.tsx (REQUIRED_DOCS).
+// "*" aplica a todos os funcionários; chaves específicas adicionam itens por papel.
+const COMMON_DOCS = [
+  "RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência",
+  "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista",
+  "Dados Bancários", "ASO",
+  "Antecedente Criminal Polícia Civil",
+  "Antecedente Criminal Polícia Militar",
+  "Certidão de COP",
+];
 const REQUIRED_DOCS: Record<string, string[]> = {
   vigilante: [
-    "RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência",
-    "Fotos 3x4", "Antecedente Criminal Polícia Civil",
-    "ASO", "Certificado Formação Vigilante",
+    ...COMMON_DOCS,
+    "Certificado Formação Vigilante",
   ],
   escolta: [
-    "RG", "CPF", "CTPS", "Comprovante de Residência", "Fotos 3x4",
-    "CNH", "CNV", "ASO", "Certificado Formação Escolta Armada",
+    ...COMMON_DOCS,
+    "CNH", "CNV", "Certidão de Pontuação CNH",
+    "Certificado Formação Vigilante",
+    "Certificado Formação Escolta Armada",
+    "Reciclagem Escolta Armada",
   ],
   motorista: [
-    "RG", "CPF", "CTPS", "Comprovante de Residência",
-    "CNH", "ASO",
+    ...COMMON_DOCS,
+    "CNH", "Certidão de Pontuação CNH",
   ],
   "*": ["RG", "CPF"],
 };
+
+// Dias de carência para ASO após data de admissão (cadastro).
+// Durante esse período o funcionário pode ser escalado mesmo sem ASO,
+// mas o sistema sinaliza alerta e exige upload antes do prazo.
+const ASO_GRACE_DAYS = 15;
 
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
   vigilante: [
@@ -113,14 +131,29 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   // ===== Etapa 1: Documentação (inclui dependentes informados) =====
   const docs = await storage.getEmployeeDocuments(employeeId);
   const itensDoc: OnboardingStage["itens"] = [];
+  // Carência ASO: 15 dias contados a partir de hireDate
+  const hireDateStr = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
+  let asoGraceUntil: string | null = null;
+  if (hireDateStr) {
+    const dt = new Date(hireDateStr + "T00:00:00");
+    dt.setDate(dt.getDate() + ASO_GRACE_DAYS);
+    asoGraceUntil = dt.toISOString().slice(0, 10);
+  }
   for (const tipo of reqDocs) {
     const has = docs.find((d: any) => (d.type || "").toLowerCase() === tipo.toLowerCase());
+    const isASO = tipo === "ASO";
     if (!has) {
-      itensDoc.push({ label: tipo, status: "pendente", detail: "Documento não cadastrado" });
+      if (isASO && asoGraceUntil && asoGraceUntil >= today) {
+        itensDoc.push({ label: tipo, status: "ok", detail: `Em carência — entregar até ${asoGraceUntil} (alerta enviado ao ADM)` });
+      } else if (isASO && asoGraceUntil) {
+        itensDoc.push({ label: tipo, status: "pendente", detail: `Prazo de carência expirou em ${asoGraceUntil} — bloqueado para OS` });
+      } else {
+        itensDoc.push({ label: tipo, status: "pendente", detail: "Documento não cadastrado" });
+      }
     } else if (has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
       itensDoc.push({ label: tipo, status: "vencido", detail: `Venceu em ${String(has.expiryDate).slice(0, 10)}` });
     } else {
-      itensDoc.push({ label: tipo, status: "ok" });
+      itensDoc.push({ label: tipo, status: "ok", detail: has.expiryDate ? `Válido até ${String(has.expiryDate).slice(0, 10)}` : undefined });
     }
   }
   // Dependentes obrigatórios: precisa ter pelo menos 1 cadastrado
