@@ -463,6 +463,14 @@ function AsaasBalanceCard() {
     enabled: isDiretoria,
   });
 
+  const { data: webhookCfg } = useQuery<{ webhookUrl: string; tokenConfigured: boolean; chaveAutorizada: string }>({
+    queryKey: ["/api/asaas/webhook-config"],
+    enabled: isDiretoria,
+    staleTime: 600000,
+  });
+
+  const [webhookOpen, setWebhookOpen] = useState(false);
+
   if (!isDiretoria) return null;
 
   const saldo = Number(status?.balance?.balance ?? status?.balance?.currentBalance ?? 0);
@@ -556,6 +564,9 @@ function AsaasBalanceCard() {
         )}
 
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setWebhookOpen(true)} data-testid="button-webhook-config" className="text-xs font-bold" title="Configurar autorização automática">
+            <KeyRound size={13} className={webhookCfg?.tokenConfigured ? "text-emerald-600" : "text-amber-600"} />
+          </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} data-testid="button-refresh-asaas" className="text-xs font-bold">
             <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
           </Button>
@@ -570,6 +581,59 @@ function AsaasBalanceCard() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={webhookOpen} onOpenChange={setWebhookOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><KeyRound size={18} className="text-emerald-600" /> Autorização Automática (Webhook)</DialogTitle>
+            <DialogDescription>
+              Configurar para liberar transferências PIX para <strong>{webhookCfg?.chaveAutorizada}</strong> sem precisar do Token SMS.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className={`p-3 rounded-lg border-2 ${webhookCfg?.tokenConfigured ? "bg-emerald-50 border-emerald-300" : "bg-amber-50 border-amber-300"}`}>
+              <div className="text-[10px] font-black uppercase mb-1">Status do servidor</div>
+              <div className="flex items-center gap-2 font-bold">
+                {webhookCfg?.tokenConfigured ? (
+                  <><CheckCircle2 size={16} className="text-emerald-600" /><span className="text-emerald-700">Token do webhook configurado</span></>
+                ) : (
+                  <><AlertCircle size={16} className="text-amber-600" /><span className="text-amber-700">Token do webhook NÃO configurado — peça ao administrador para definir o secret <code className="bg-amber-100 px-1 rounded">ASAAS_WEBHOOK_TOKEN</code> no servidor</span></>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black uppercase text-neutral-600 mb-1">Passo 1 · Defina o secret no servidor</div>
+              <div className="text-xs text-neutral-600">Cadastre uma senha forte (32+ caracteres aleatórios) na variável de ambiente <code className="bg-neutral-100 px-1 rounded text-[11px]">ASAAS_WEBHOOK_TOKEN</code>. Essa mesma senha será colada no painel Asaas no passo 3.</div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black uppercase text-neutral-600 mb-1">Passo 2 · URL do Webhook (cole no Asaas)</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-neutral-100 px-2 py-2 rounded font-mono text-[11px] break-all">{webhookCfg?.webhookUrl || "..."}</code>
+                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(webhookCfg?.webhookUrl || ""); toast({ title: "URL copiada" }); }}>Copiar</Button>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black uppercase text-neutral-600 mb-1">Passo 3 · No painel Asaas (Integrações)</div>
+              <ol className="text-xs text-neutral-700 space-y-1 list-decimal list-inside">
+                <li>Cole a URL acima no campo de webhook de saques.</li>
+                <li>Cole o mesmo token (do passo 1) no campo <strong>"Token de autenticação"</strong>.</li>
+                <li>Marque <strong>"Validar também saques via interface"</strong> (recomendado).</li>
+                <li>Salve e confirme com SMS uma última vez.</li>
+              </ol>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-900 leading-relaxed">
+              <strong>Regra de segurança ativa:</strong> o nosso webhook só aprova automaticamente transferências PIX para <code className="bg-blue-100 px-1 rounded">{webhookCfg?.chaveAutorizada}</code>. Qualquer outra chave/CPF/conta cai automaticamente no fluxo manual com Token SMS. Operações TED ou para outras chaves PIX <strong>nunca</strong> são aprovadas pelo webhook.
+            </div>
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" onClick={() => setWebhookOpen(false)}>Fechar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-md">

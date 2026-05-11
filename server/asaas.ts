@@ -752,6 +752,65 @@ export function registerAsaasRoutes(app: Express) {
   const TRANSFER_PIX_KEY = "escolta@torresseguranca.com.br";
   const TRANSFER_RESERVE = 100;
 
+  app.post("/api/asaas/webhook-transfer-approve", async (req: Request, res: Response) => {
+    const headerToken = (req.headers["asaas-access-token"] || req.headers["x-asaas-access-token"] || req.headers["authorization"] || "") as string;
+    const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
+    const body: any = req.body || {};
+    const event: string = body?.event || "";
+    const transfer: any = body?.transfer || body?.data || body;
+    const pixKey: string = String(transfer?.pixAddressKey || transfer?.pix_address_key || "").trim().toLowerCase();
+    const operationType: string = String(transfer?.operationType || transfer?.operation_type || "").toUpperCase();
+    const value: number = Number(transfer?.value ?? 0);
+    const transferId: string = transfer?.id || "?";
+
+    console.log(`[asaas-webhook-approve] Recebido: event=${event} id=${transferId} type=${operationType} key=${pixKey} value=${value}`);
+
+    if (!expectedToken) {
+      console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
+      return res.status(403).json({ approved: false, reason: "Webhook token não configurado no servidor" });
+    }
+
+    const tokenLimpo = headerToken.replace(/^Bearer\s+/i, "").trim();
+    if (tokenLimpo !== expectedToken) {
+      console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido (header não confere com ASAAS_WEBHOOK_TOKEN)`);
+      return res.status(401).json({ approved: false, reason: "Token de autenticação inválido" });
+    }
+
+    if (operationType !== "PIX") {
+      console.warn(`[asaas-webhook-approve] BLOQUEADO: operationType=${operationType} (esperado PIX). Cai para autorização manual SMS.`);
+      return res.status(403).json({ approved: false, reason: `Operação ${operationType} requer autorização manual via SMS` });
+    }
+
+    if (pixKey !== TRANSFER_PIX_KEY.toLowerCase()) {
+      console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" não é a autorizada (${TRANSFER_PIX_KEY}). Cai para autorização manual SMS.`);
+      return res.status(403).json({
+        approved: false,
+        reason: `Chave PIX de destino não autorizada. Apenas transferências para ${TRANSFER_PIX_KEY} são aprovadas automaticamente.`,
+      });
+    }
+
+    console.log(`[asaas-webhook-approve] APROVADO automaticamente: id=${transferId} valor=R$${value.toFixed(2)} -> ${TRANSFER_PIX_KEY}`);
+    return res.status(200).json({
+      approved: true,
+      message: `Transferência ${transferId} aprovada automaticamente (chave autorizada).`,
+    });
+  });
+
+  app.get("/api/asaas/webhook-config", requireAdminRole, async (req: Request, res: Response) => {
+    const user = (req as any).user;
+    if (user?.role !== "diretoria") {
+      return res.status(403).json({ message: "Acesso restrito à diretoria." });
+    }
+    const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const webhookUrl = `${proto}://${host}/api/asaas/webhook-transfer-approve`;
+    res.json({
+      webhookUrl,
+      tokenConfigured: !!process.env.ASAAS_WEBHOOK_TOKEN,
+      chaveAutorizada: TRANSFER_PIX_KEY,
+    });
+  });
+
   app.get("/api/asaas/transfers-pending", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
