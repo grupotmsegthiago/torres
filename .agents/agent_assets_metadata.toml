@@ -72,3 +72,9 @@ id = "NoylSF_LFu_AQAwSUHhsQ"
 uri = "file://Boletim_Medicao_OMEGA_SOLUTIONS_Abril_2026.xlsx"
 type = "table"
 title = "Boletim de Medição - Omega Solutions - Abril/2026 (SEM TRAVAS)"
+
+[[outputs]]
+id = "RxjN8VbRndSGWlMpoPF00"
+uri = "file://exports/Contrato_Experiencia_AMOSTRA.pdf"
+type = "pdf"
+title = "Contrato de Experiência — Amostra (gerado pelo sistema)"
