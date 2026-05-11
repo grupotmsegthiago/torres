@@ -444,15 +444,20 @@ function QuickCategoryModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
 
 function AsaasBalanceCard() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const RESERVA = 100;
   const PIX_KEY = "escolta@torresseguranca.com.br";
+  const isDiretoria = user?.role === "diretoria";
 
   const { data: status, isLoading, refetch } = useQuery<{ connected: boolean; balance?: any; message?: string }>({
     queryKey: ["/api/asaas/status"],
     refetchInterval: 60000,
     staleTime: 30000,
+    enabled: isDiretoria,
   });
+
+  if (!isDiretoria) return null;
 
   const saldo = Number(status?.balance?.balance ?? status?.balance?.currentBalance ?? 0);
   const valorTransferir = Math.max(0, Math.floor((saldo - RESERVA) * 100) / 100);

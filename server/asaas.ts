@@ -727,8 +727,12 @@ export async function emitInvoiceAuto(
 export function registerAsaasRoutes(app: Express) {
   ensureInvoicesTable().catch(e => console.log("[asaas] table check:", e.message));
 
-  app.get("/api/asaas/status", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/asaas/status", requireAdminRole, async (req: Request, res: Response) => {
     try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ connected: false, message: "Acesso restrito à diretoria." });
+      }
       const hasKey = !!process.env.ASAAS_API_KEY;
       if (!hasKey) {
         return res.json({ connected: false, message: "ASAAS_API_KEY não configurada" });
@@ -743,8 +747,12 @@ export function registerAsaasRoutes(app: Express) {
   const TRANSFER_PIX_KEY = "escolta@torresseguranca.com.br";
   const TRANSFER_RESERVE = 100;
 
-  app.post("/api/asaas/transfer-pix-escolta", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/asaas/transfer-pix-escolta", requireAdminRole, async (req: Request, res: Response) => {
     try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode realizar transferências." });
+      }
       if (!process.env.ASAAS_API_KEY) {
         return res.status(400).json({ message: "ASAAS_API_KEY não configurada" });
       }
