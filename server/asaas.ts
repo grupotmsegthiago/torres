@@ -740,6 +740,48 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  const TRANSFER_PIX_KEY = "escolta@torresseguranca.com.br";
+  const TRANSFER_RESERVE = 100;
+
+  app.post("/api/asaas/transfer-pix-escolta", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      if (!process.env.ASAAS_API_KEY) {
+        return res.status(400).json({ message: "ASAAS_API_KEY não configurada" });
+      }
+      const balRes = await asaasRequest("GET", "/finance/balance");
+      const saldo = Number(balRes?.balance ?? balRes?.currentBalance ?? 0);
+      if (!Number.isFinite(saldo) || saldo <= TRANSFER_RESERVE) {
+        return res.status(400).json({
+          message: `Saldo insuficiente. Atual: R$ ${saldo.toFixed(2)}. Mínimo de R$ ${TRANSFER_RESERVE.toFixed(2)} deve permanecer na conta.`,
+          saldo,
+          reserva: TRANSFER_RESERVE,
+        });
+      }
+      const valor = Math.floor((saldo - TRANSFER_RESERVE) * 100) / 100;
+      console.log(`[asaas-transfer] Iniciando transferência: saldo=${saldo} reserva=${TRANSFER_RESERVE} valor=${valor} → ${TRANSFER_PIX_KEY}`);
+      const transferBody = {
+        value: valor,
+        pixAddressKey: TRANSFER_PIX_KEY,
+        pixAddressKeyType: "EMAIL",
+        operationType: "PIX",
+        description: "Transferência automática de saldo",
+      };
+      const transferRes = await asaasRequest("POST", "/transfers", transferBody);
+      console.log(`[asaas-transfer] Sucesso: id=${transferRes?.id} status=${transferRes?.status}`);
+      res.json({
+        success: true,
+        valor,
+        saldoAnterior: saldo,
+        saldoReservado: TRANSFER_RESERVE,
+        chavePix: TRANSFER_PIX_KEY,
+        transfer: transferRes,
+      });
+    } catch (err: any) {
+      console.error(`[asaas-transfer] ERRO:`, err.message);
+      res.status(500).json({ message: err.message || "Erro ao realizar transferência" });
+    }
+  });
+
   app.get("/api/asaas/customers", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const q = req.query.q as string || "";

@@ -16,7 +16,7 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Shield, AlertTriangle, Eye, FileText,
+  Shield, AlertTriangle, Eye, FileText, Send, Banknote,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -439,6 +439,128 @@ function QuickCategoryModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
         </form>
       </div>
     </div>
+  );
+}
+
+function AsaasBalanceCard() {
+  const { toast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const RESERVA = 100;
+  const PIX_KEY = "escolta@torresseguranca.com.br";
+
+  const { data: status, isLoading, refetch } = useQuery<{ connected: boolean; balance?: any; message?: string }>({
+    queryKey: ["/api/asaas/status"],
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+
+  const saldo = Number(status?.balance?.balance ?? status?.balance?.currentBalance ?? 0);
+  const valorTransferir = Math.max(0, Math.floor((saldo - RESERVA) * 100) / 100);
+  const podeTransferir = status?.connected && saldo > RESERVA;
+
+  const transferMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/asaas/transfer-pix-escolta", {}),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      toast({
+        title: "Transferência enviada",
+        description: `${data.valor?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} → PIX ${PIX_KEY}. Reserva mantida: R$ ${RESERVA.toFixed(2)}.`,
+      });
+      setConfirmOpen(false);
+      refetch();
+    },
+    onError: async (err: any) => {
+      let msg = err.message;
+      try { const j = JSON.parse(err.message.split(": ").slice(1).join(": ")); msg = j.message || msg; } catch {}
+      toast({ title: "Erro na transferência", description: msg, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card className="p-3 bg-gradient-to-r from-emerald-50 via-white to-blue-50 border-emerald-200" data-testid="card-asaas-balance">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-sm">
+            <Banknote size={20} />
+          </div>
+          <div>
+            <div className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Saldo Asaas</div>
+            {isLoading ? (
+              <div className="text-sm text-neutral-400 font-bold">Carregando...</div>
+            ) : !status?.connected ? (
+              <div className="text-xs text-red-600 font-bold" data-testid="text-asaas-error">Desconectado: {status?.message || "verifique a chave API"}</div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-emerald-700 font-mono" data-testid="text-asaas-saldo">
+                  {saldo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+                <span className="text-[10px] font-bold text-neutral-500">disponível</span>
+              </div>
+            )}
+            {status?.connected && (
+              <div className="text-[10px] text-neutral-500 mt-0.5">
+                Reserva mínima: <span className="font-bold text-neutral-700">R$ {RESERVA.toFixed(2)}</span> · Transferível: <span className="font-bold text-emerald-700">{valorTransferir.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} data-testid="button-refresh-asaas" className="text-xs font-bold">
+            <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setConfirmOpen(true)}
+            disabled={!podeTransferir || transferMutation.isPending}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase shadow-sm"
+            data-testid="button-transfer-asaas"
+          >
+            <Send size={13} className="mr-1" /> Transferir Saldo (PIX)
+          </Button>
+        </div>
+      </div>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Send size={18} className="text-emerald-600" /> Confirmar Transferência PIX</DialogTitle>
+            <DialogDescription>
+              Saldo atual no Asaas: <span className="font-black text-neutral-900">{saldo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-neutral-600 uppercase">Valor a transferir</span>
+                <span className="text-2xl font-black text-emerald-700 font-mono" data-testid="text-confirm-valor">{valorTransferir.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-neutral-500">Reserva mantida</span>
+                <span className="font-bold text-neutral-700">R$ {RESERVA.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px] border-t border-emerald-200 pt-2">
+                <span className="text-neutral-500">Saldo após transferência</span>
+                <span className="font-bold text-neutral-700">R$ {RESERVA.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3">
+              <div className="text-[10px] font-black text-neutral-500 uppercase mb-1">Chave PIX (destino)</div>
+              <div className="font-mono text-sm font-bold text-neutral-900">{PIX_KEY}</div>
+              <div className="text-[10px] text-neutral-500 mt-1">Tipo: e-mail</div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 leading-relaxed">
+              <strong>Atenção:</strong> a transferência é executada imediatamente no Asaas e não pode ser desfeita pelo sistema. O sistema sempre deixa <strong>R$ {RESERVA.toFixed(2)}</strong> de reserva.
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={transferMutation.isPending}>Cancelar</Button>
+            <Button onClick={() => transferMutation.mutate()} disabled={transferMutation.isPending || !podeTransferir} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-transfer">
+              {transferMutation.isPending ? <><Loader2 size={14} className="mr-1 animate-spin" /> Enviando...</> : <><Send size={14} className="mr-1" /> Confirmar Transferência</>}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -1390,6 +1512,8 @@ export default function FinanceiroPage() {
             )}
           </div>
         </div>
+
+        <AsaasBalanceCard />
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
           <div className="flex overflow-x-auto gap-1">
