@@ -1,0 +1,212 @@
+Como o mecanismo funciona?
+Você solicitará a transferência via API e armazenará o ID ou mais dados do retorno em sua base de dados.
+O Asaas fará um POST cinco segundos após a criação da transferência para a URL configurada com o payload da transferência (os payloads sempre serão os mesmos enviados no retorno da criação).
+Essa requisição pode falhar no máximo três vezes, após a terceira falha a transferência será cancelada automaticamente.
+Você deve verificar se o payload recebido bate com o que possui armazenado.
+Responderá se aprova ou não a transferência.
+Exemplo de requisição que o Asaas irá realizar (Transferência)
+JSON
+
+{
+   "type":"TRANSFER",
+   "transfer":{
+      "object":"transfer",
+      "id":"0bed986c-737d-49bf-a1cc-beca916797c4",
+      "dateCreated":"2022-05-27",
+      "status":"PENDING",
+      "effectiveDate":null,
+      "type":"BANK_ACCOUNT",
+      "value":22,
+      "netValue":22,
+      "transferFee":0,
+      "scheduleDate":"2022-05-27",
+      "confirmedDate":null,
+      "failReason":null,
+      "bankAccount":{
+         "bank":{
+            "code":null,
+            "ispb":"00000000",
+            "name":null
+         },
+         "accountName":"ASAAS GESTAO FINANCEIRA S.A.",
+         "ownerName":"ASAAS GESTAO FINANCEIRA S.A.",
+         "cpfCnpj":"70609293000194",
+         "agency":"4124",
+         "agencyDigit":null,
+         "account":"42142",
+         "accountDigit":"1",
+         "pixAddressKey":null
+      },
+      "transactionReceiptUrl":null,
+      "operationType":"PIX",
+      "description":null
+   }
+}
+Exemplo de requisição que o Asaas irá realizar (Pague Contas)
+JSON
+
+{
+   "type":"BILL",
+   "bill":{
+      "object":"bill",
+      "id":623471,
+      "status":"PENDING",
+      "value":20.0,
+      "discount":0,
+      "interest":0,
+      "fine":0,
+      "identificationField":"23793381286001234107143000012345890460000002000",
+      "dueDate":"2024-01-01",
+      "scheduleDate":"2024-01-01",
+      "paymentDate":null,
+      "fee":0,
+      "description":null,
+      "companyName":null,
+      "transactionReceiptUrl":null,
+      "canBeCancelled":true,
+      "failReasons":null,
+      "bankId":4,
+      "awaitingCriticalActionAuthorization":false,
+      "bank":{
+         "object":"bank",
+         "id":4,
+         "code":"237",
+         "name":"Bradesco"
+      }
+   }
+}
+Exemplo de requisição que o Asaas irá realizar (Pagamento de QRCode)
+JSON
+
+{
+   "type":"PIX_QR_CODE",
+   "pixQrCode":{
+      "id":"aa10c444-3f02-40e7-a248-2d00cff5a45d",
+      "endToEndIdentifier":"E1954055020220714160403012347510",
+      "finality":null,
+      "value":2,
+      "changeValue":null,
+      "refundedValue":0,
+      "effectiveDate":"2022-07-14 13:04:03",
+      "scheduledDate":null,
+      "status":"AWAITING_REQUEST",
+      "type":"DEBIT",
+      "originType":"STATIC_QRCODE",
+      "conciliationIdentifier":null,
+      "description":null,
+      "transactionReceiptUrl":null,
+      "refusalReason":null,
+      "canBeCanceled":true,
+      "originalTransaction":null,
+      "externalAccount":{
+         "ispb":18236120,
+         "ispbName":"NU PAGAMENTOS S.A. - INSTITUI\u00c7\u00c3O DE PAGAMENTO",
+         "name":"John Doe",
+         "cpfCnpj":"***.123.456-**",
+         "addressKey":"john.doe@teste.com",
+         "addressKeyType":"EMAIL"
+      },
+      "qrCode":{
+         "payer":null,
+         "conciliationIdentifier":null,
+         "originalValue":1.00,
+         "dueDate":null,
+         "interest":0,
+         "fine":0,
+         "discount":0,
+         "expirationDate":null
+      },
+      "payment":null
+   }
+}
+Exemplo de requisição que o Asaas irá realizar (Recarga de telefone)
+JSON
+
+{
+   "type":"MOBILE_PHONE_RECHARGE",
+   "mobilePhoneRecharge":{
+      "id":"d29f7fdb-4cf9-4524-a44e-d1f3fd9ec0d3",
+      "value":20,
+      "phoneNumber":"47999999999",
+      "status":"PENDING",
+      "canBeCancelled":true,
+      "operatorName":"Claro"
+   }
+}
+
+Exemplo de requisição que o Asaas irá realizar (Estorno Pix)
+JSON
+
+{
+  "type": "PIX_REFUND",
+  "pixRefund": {
+    "id": "06391ba9-cbf9-4926-8988-374ac5d71cae",
+    "transferId": "f3956d6d-6dbb-4882-8146-9df82288d95b",
+    "endToEndIdentifier": null,
+    "finality": null,
+    "value": 200,
+    "changeValue": null,
+    "refundedValue": 0,
+    "dateCreated": "17/12/2024 15:27:42",
+    "effectiveDate": "17/12/2024 15:27:42",
+    "scheduledDate": null,
+    "status": "AWAITING_REQUEST",
+    "type": "CREDIT_REFUND",
+    "originType": null,
+    "conciliationIdentifier": null,
+    "description": null,
+    "transactionReceiptUrl": null,
+    "chargedFeeValue": 0,
+    "canBeRefunded": false,
+    "refundDisabledReason": "O tipo desta transação não permite que ela seja estornada.",
+    "refusalReason": null,
+    "canBeCanceled": false,
+    "originalTransaction": {
+      "id": "b9852968-7825-4458-b069-d266ce8455c9",
+      "endToEndIdentifier": "6709a838-7422-4198-94ed-76166a70c595",
+      "value": 1000,
+      "effectiveDate": "17/12/2024 15:26:57"
+    },
+    "externalAccount": {
+      "ispb": 19540550,
+      "ispbName": "ASAAS GESTÃO FINANCEIRA INSTITUIÇÃO DE PAGAMENTO S.A.",
+      "name": "John Doe",
+      "agency": "0",
+      "account": "0000000",
+      "accountDigit": "0",
+      "accountType": "CHECKING_ACCOUNT",
+      "cpfCnpj": "***.138.240-**",
+      "addressKey": null,
+      "addressKeyType": null
+    },
+    "qrCode": null,
+    "payment": "pay_e4xnd1cc04w2n33n",
+    "addressKey": null,
+    "addressKeyType": null,
+    "externalReference": null
+  }
+}
+Como validar uma transferência
+Ao receber o POST, você precisará respondê-lo informando se reconhece a transferência como resposta do próprio POST. Para isso é necessário que você retorne um payload com um status.
+
+Os possíveis status são:
+
+APPROVED
+
+REFUSED
+
+Também é possível informar o motivo da recusa, retornando junto do payload o refuseReason, exemplo:
+
+JSON
+
+{ 
+    "status": "REFUSED", 
+    "refuseReason": "Transferência não encontrada no nosso banco" 
+}
+Caso a transferência seja reconhecida e aprovada, é preciso responder da seguinte forma:
+
+JSON
+
+{ 
+    "status": "APPROVED" 
+}

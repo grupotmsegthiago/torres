@@ -793,38 +793,38 @@ export function registerAsaasRoutes(app: Express) {
 
     if (!expectedToken) {
       console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
-      return res.status(200).json({ approved: false });
+      return res.status(200).json({ status: "REFUSED", refuseReason: "Servidor sem ASAAS_WEBHOOK_TOKEN configurado." });
     }
 
     const tokenLimpo = headerToken.replace(/^Bearer\s+/i, "").trim();
     if (tokenLimpo !== expectedToken) {
       console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido. recebido(len=${tokenLimpo.length}) esperado(len=${expectedToken.length})`);
-      return res.status(401).json({ approved: false });
+      return res.status(401).json({ status: "REFUSED", refuseReason: "Token de autenticação do webhook inválido." });
     }
 
     const APPROVAL_EVENTS = ["TRANSFER_CREATED", "TRANSFER_PENDING", "TRANSFER_AUTHORIZATION_REQUIRED", ""];
     if (event && !APPROVAL_EVENTS.includes(event)) {
       console.log(`[asaas-webhook-approve] OK (notificação ${event} apenas — sem decisão de aprovação).`);
-      return res.status(200).json({ approved: true });
+      return res.status(200).json({ status: "APPROVED" });
     }
 
     if (operationType && operationType !== "PIX") {
       console.warn(`[asaas-webhook-approve] BLOQUEADO: operationType=${operationType} (esperado PIX).`);
-      return res.status(200).json({ approved: false });
+      return res.status(200).json({ status: "REFUSED", refuseReason: `Tipo de operação ${operationType} não permitido (somente PIX).` });
     }
 
     if (!pixKey) {
       console.warn(`[asaas-webhook-approve] OK SEM AÇÃO: pixKey vazia no body.`);
-      return res.status(200).json({ approved: true });
+      return res.status(200).json({ status: "APPROVED" });
     }
 
     if (pixKey !== expectedKey) {
       console.warn(`[asaas-webhook-approve] BLOQUEADO: chave PIX "${pixKey}" != "${expectedKey}".`);
-      return res.status(200).json({ approved: false });
+      return res.status(200).json({ status: "REFUSED", refuseReason: `Chave PIX de destino não autorizada.` });
     }
 
     console.log(`[asaas-webhook-approve] APROVADO automaticamente: id=${transferId} valor=R$${value.toFixed(2)} -> ${TRANSFER_PIX_KEY}`);
-    return res.status(200).json({ approved: true });
+    return res.status(200).json({ status: "APPROVED" });
   });
 
   app.get("/api/asaas/webhook-config", requireAdminRole, async (req: Request, res: Response) => {
