@@ -83,19 +83,19 @@ export function registerPendenciasRoutes(app: Express) {
       // ---- Documentos vencendo (próx. 30d) ou vencidos ----
       const { data: docsRaw } = await supabaseAdmin
         .from("employee_documents")
-        .select("id, employee_id, type, expiration_date")
-        .lte("expiration_date", in30)
-        .order("expiration_date", { ascending: true })
+        .select("id, employee_id, type, expiry_date")
+        .lte("expiry_date", in30)
+        .order("expiry_date", { ascending: true })
         .limit(80);
       const documentos = (docsRaw || [])
-        .filter((d: any) => d.expiration_date && (empMap.get(d.employee_id)?.status === "ativo"))
+        .filter((d: any) => d.expiry_date && (empMap.get(d.employee_id)?.status === "ativo"))
         .map((d: any) => ({
           id: d.id,
           employeeId: d.employee_id,
           employeeName: empMap.get(d.employee_id)?.name || "—",
           type: d.type,
-          expirationDate: String(d.expiration_date).slice(0, 10),
-          vencido: String(d.expiration_date).slice(0, 10) < today,
+          expirationDate: String(d.expiry_date).slice(0, 10),
+          vencido: String(d.expiry_date).slice(0, 10) < today,
         }));
 
       const total = holerites.length + probacao.length + definitivo.length + documentos.length;

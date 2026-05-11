@@ -503,6 +503,7 @@ async function ensureSystemSettingsTable() {
   import { registerProbationContractRoutes } from "./routes/probation-contracts";
   import { registerPermanentContractRoutes } from "./routes/permanent-contracts";
   import { registerPendenciasRoutes } from "./routes/pendencias";
+  import { registerOnboardingRoutes } from "./routes/onboarding";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -943,6 +944,7 @@ async function ensureSystemSettingsTable() {
     registerProbationContractRoutes(app);
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);
+    registerOnboardingRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
     registerLeadRoutes(app);

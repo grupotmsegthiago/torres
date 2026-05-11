@@ -859,6 +859,23 @@ import type { Express } from "express";
       return res.status(400).json({ message: `Documentos vencidos: ${expiredDocs.join(", ")} — não é possível criar a OS com documentos vencidos` });
     }
 
+    // Gate de Onboarding (Documentação, Contratos, Treinamento)
+    try {
+      const { assertOnboardingComplete } = await import("./onboarding");
+      for (const empId of employeeIds) {
+        await assertOnboardingComplete(empId);
+      }
+    } catch (gateErr: any) {
+      if (gateErr.code === "ONBOARDING_INCOMPLETE") {
+        return res.status(400).json({
+          message: gateErr.message,
+          code: "ONBOARDING_INCOMPLETE",
+          detail: gateErr.detail,
+        });
+      }
+      throw gateErr;
+    }
+
     const allOrders = await storage.getServiceOrders();
     let maxNum = 0;
     for (const o of allOrders) {
@@ -1105,6 +1122,30 @@ import type { Express } from "express";
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
       // Decisão do usuário: regra de conflito de kit removida — qualquer OS pode
       // trocar/usar qualquer kit, sem bloqueio.
+    }
+
+    // Gate de Onboarding — bloqueia atribuir/trocar funcionário sem onboarding completo
+    {
+      const a1 = parsed.data.assignedEmployeeId;
+      const a2 = parsed.data.assignedEmployee2Id;
+      const newIds: number[] = [];
+      if (a1 !== undefined && a1 !== null && a1 !== existing?.assignedEmployeeId) newIds.push(a1);
+      if (a2 !== undefined && a2 !== null && a2 !== existing?.assignedEmployee2Id) newIds.push(a2);
+      if (newIds.length > 0) {
+        try {
+          const { assertOnboardingComplete } = await import("./onboarding");
+          for (const empId of newIds) await assertOnboardingComplete(empId);
+        } catch (gateErr: any) {
+          if (gateErr.code === "ONBOARDING_INCOMPLETE") {
+            return res.status(400).json({
+              message: gateErr.message,
+              code: "ONBOARDING_INCOMPLETE",
+              detail: gateErr.detail,
+            });
+          }
+          throw gateErr;
+        }
+      }
     }
     if (parsed.data.escortContractId && parsed.data.escortContractId !== existing?.escortContractId && !parsed.data.valorEstimado) {
       try {

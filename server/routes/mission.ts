@@ -2818,6 +2818,21 @@ Responda APENAS com JSON: {"km_lido": number}`;
         return res.status(403).json({ message: "Você não está designado para esta missão" });
       }
 
+      // Gate de Onboarding — agente só aceita missão se Documentação, Contratos e Treinamento estiverem 100% OK
+      try {
+        const { assertOnboardingComplete } = await import("./onboarding");
+        await assertOnboardingComplete(emp.id);
+      } catch (gateErr: any) {
+        if (gateErr.code === "ONBOARDING_INCOMPLETE") {
+          return res.status(400).json({
+            message: gateErr.message,
+            code: "ONBOARDING_INCOMPLETE",
+            detail: gateErr.detail,
+          });
+        }
+        throw gateErr;
+      }
+
       let { data: acceptance } = await supabaseAdmin
         .from("mission_acceptances").select("*")
         .eq("service_order_id", osId)

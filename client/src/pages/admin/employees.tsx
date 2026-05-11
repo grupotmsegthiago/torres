@@ -1416,10 +1416,11 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
-type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "aceites" | "dependentes";
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "treinamento" | "aceites" | "dependentes";
 const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "documentos", label: "Documentos", icon: FileText },
   { key: "contrato", label: "Contrato", icon: ClipboardList },
+  { key: "treinamento", label: "Treinamento", icon: Shield },
   { key: "dependentes", label: "Dependentes", icon: Users },
   { key: "multas", label: "Multas", icon: Ban },
   { key: "disciplinar", label: "Disciplinar", icon: Shield },
@@ -1429,6 +1430,287 @@ const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "salarios", label: "Salários", icon: DollarSign },
   { key: "aceites", label: "Missões", icon: Shield },
 ];
+
+interface OnboardingItem { label: string; status: "ok" | "pendente" | "vencido"; detail?: string; }
+interface OnboardingStage { key: "documentacao" | "contratos" | "treinamento"; label: string; status: "ok" | "pendente" | "vencido"; pendencias: string[]; itens: OnboardingItem[]; }
+interface OnboardingResult { employeeId: number; employeeName: string; role: string | null; status: "ok" | "pendente"; apto: boolean; stages: OnboardingStage[]; pendencias: string[]; computedAt: string; }
+
+function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; onJumpToTab?: (tab: PastaTab) => void }) {
+  const { data, isLoading } = useQuery<OnboardingResult>({
+    queryKey: ["/api/employees", employeeId, "onboarding"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employeeId}/onboarding`); return r.json(); },
+    refetchInterval: 30000,
+  });
+  if (isLoading || !data) {
+    return <div className="mb-4 p-4 rounded-lg border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">Carregando status do onboarding...</div>;
+  }
+  const apto = data.apto;
+  const total = data.stages.length;
+  const okCount = data.stages.filter(s => s.status === "ok").length;
+  const stageColor = (s: OnboardingStage["status"]) =>
+    s === "ok" ? "bg-emerald-500 border-emerald-500 text-white" :
+    s === "vencido" ? "bg-red-500 border-red-500 text-white" :
+    "bg-amber-400 border-amber-400 text-white";
+  const stageBadge = (s: OnboardingStage["status"]) =>
+    s === "ok" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    s === "vencido" ? "bg-red-50 text-red-700 border-red-200" :
+    "bg-amber-50 text-amber-700 border-amber-200";
+  const tabFor: Record<OnboardingStage["key"], PastaTab> = {
+    documentacao: "documentos",
+    contratos: "contrato",
+    treinamento: "treinamento",
+  };
+
+  return (
+    <div className={`mb-4 rounded-xl border-2 ${apto ? "border-emerald-300 bg-emerald-50/30" : "border-amber-300 bg-amber-50/40"} p-4`} data-testid="onboarding-timeline">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {apto ? (
+            <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-white" />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-white" />
+            </div>
+          )}
+          <div>
+            <div className="text-sm font-bold text-neutral-900">
+              {apto ? "Apto a entrar em OS" : "Funcionário NÃO pode entrar em OS"}
+            </div>
+            <div className="text-[11px] text-neutral-600">
+              {apto
+                ? "Todas as etapas do onboarding estão concluídas."
+                : `Etapas concluídas: ${okCount} de ${total} — corrija as pendências abaixo para liberar.`}
+            </div>
+          </div>
+        </div>
+        <div className="text-[10px] uppercase tracking-wider font-bold text-neutral-500">
+          Onboarding
+        </div>
+      </div>
+
+      {/* Timeline horizontal */}
+      <div className="relative flex items-start justify-between gap-2 mb-3">
+        <div className="absolute left-[14%] right-[14%] top-4 h-0.5 bg-neutral-200" />
+        {data.stages.map((s, idx) => (
+          <button
+            key={s.key}
+            onClick={() => onJumpToTab && onJumpToTab(tabFor[s.key])}
+            className="relative z-10 flex-1 flex flex-col items-center gap-1.5 group"
+            data-testid={`onboarding-stage-${s.key}`}
+          >
+            <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center font-bold text-sm shadow-sm ${stageColor(s.status)} group-hover:scale-110 transition-transform`}>
+              {s.status === "ok" ? <CheckCircle2 className="w-5 h-5" /> : (idx + 1)}
+            </div>
+            <div className="text-center">
+              <div className="text-[11px] font-bold text-neutral-800">{s.label}</div>
+              <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${stageBadge(s.status)}`}>
+                {s.status === "ok" ? "OK" : s.status === "vencido" ? "Vencido" : "Pendente"}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Pendências detalhadas por etapa */}
+      {!apto && (
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+          {data.stages.map(s => (
+            <div key={s.key} className={`p-3 rounded-lg border ${s.status === "ok" ? "border-emerald-200 bg-white" : s.status === "vencido" ? "border-red-200 bg-white" : "border-amber-200 bg-white"}`}>
+              <div className="text-[11px] font-bold text-neutral-800 mb-1.5 flex items-center justify-between">
+                <span>{s.label}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase border ${stageBadge(s.status)}`}>
+                  {s.status === "ok" ? "OK" : s.status === "vencido" ? "Vencido" : "Pendente"}
+                </span>
+              </div>
+              {s.status === "ok" ? (
+                <div className="text-[11px] text-emerald-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Tudo em ordem
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  {s.itens.filter(i => i.status !== "ok").slice(0, 6).map((i, idx) => (
+                    <li key={idx} className="text-[11px] text-neutral-700 flex items-start gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0 ${i.status === "vencido" ? "bg-red-500" : "bg-amber-500"}`} />
+                      <span>
+                        <span className="font-semibold">{i.label}</span>
+                        {i.detail && <span className="text-neutral-500"> — {i.detail}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {s.status !== "ok" && onJumpToTab && (
+                <button
+                  onClick={() => onJumpToTab(tabFor[s.key])}
+                  className="mt-2 text-[10px] font-bold text-neutral-700 hover:text-neutral-900 underline"
+                  data-testid={`onboarding-fix-${s.key}`}
+                >
+                  Corrigir →
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TRAINING_TYPES = [
+  "Formação de Vigilante",
+  "Especialização Escolta Armada",
+  "Reciclagem",
+  "NR-09 (Riscos Ambientais)",
+  "NR-10 (Elétrica)",
+  "Curso Direção Defensiva",
+  "Outro",
+];
+
+function TreinamentoTab({ employeeId }: { employeeId: number }) {
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ type: "Formação de Vigilante", completedAt: "", expiryDate: "", certificateUrl: "", instructor: "", cargaHoraria: "", notes: "" });
+  const { data: trainings = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/employees", employeeId, "trainings"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employeeId}/trainings`); return r.json(); },
+  });
+  const createT = useMutation({
+    mutationFn: async () => {
+      const payload: any = { type: form.type, completedAt: form.completedAt };
+      if (form.expiryDate) payload.expiryDate = form.expiryDate;
+      if (form.certificateUrl) payload.certificateUrl = form.certificateUrl;
+      if (form.instructor) payload.instructor = form.instructor;
+      if (form.cargaHoraria) payload.cargaHoraria = Number(form.cargaHoraria);
+      if (form.notes) payload.notes = form.notes;
+      const r = await apiRequest("POST", `/api/employees/${employeeId}/trainings`, payload);
+      if (!r.ok) throw new Error((await r.json()).message || "Erro");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employeeId, "trainings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employeeId, "onboarding"] });
+      setShowForm(false);
+      setForm({ type: "Formação de Vigilante", completedAt: "", expiryDate: "", certificateUrl: "", instructor: "", cargaHoraria: "", notes: "" });
+      toast({ title: "Treinamento registrado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+  const delT = useMutation({
+    mutationFn: async (id: number) => { const r = await apiRequest("DELETE", `/api/trainings/${id}`); if (!r.ok) throw new Error((await r.json()).message); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employeeId, "trainings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employeeId, "onboarding"] });
+      toast({ title: "Treinamento removido" });
+    },
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-neutral-900">Treinamentos e Certificações</h3>
+          <p className="text-[11px] text-neutral-500">Cursos de formação, reciclagens e capacitações obrigatórias.</p>
+        </div>
+        <Button size="sm" onClick={() => setShowForm(s => !s)} data-testid="button-add-training">
+          <Plus className="w-3.5 h-3.5 mr-1" /> {showForm ? "Cancelar" : "Novo"}
+        </Button>
+      </div>
+      {showForm && (
+        <Card className="p-4 border-neutral-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Tipo *</label>
+              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full h-9 border border-neutral-300 rounded px-3 text-sm" data-testid="select-training-type">
+                {TRAINING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Carga Horária (h)</label>
+              <Input type="number" value={form.cargaHoraria} onChange={(e) => setForm({ ...form, cargaHoraria: e.target.value })} placeholder="40" data-testid="input-training-carga" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Realizado em *</label>
+              <Input type="date" value={form.completedAt} onChange={(e) => setForm({ ...form, completedAt: e.target.value })} data-testid="input-training-completed" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Validade (vencimento)</label>
+              <Input type="date" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} data-testid="input-training-expiry" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Instrutor / Instituição</label>
+              <Input value={form.instructor} onChange={(e) => setForm({ ...form, instructor: e.target.value })} data-testid="input-training-instructor" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Link do Certificado</label>
+              <Input value={form.certificateUrl} onChange={(e) => setForm({ ...form, certificateUrl: e.target.value })} placeholder="https://..." data-testid="input-training-cert" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Observações</label>
+              <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-training-notes" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-3">
+            <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancelar</Button>
+            <Button size="sm" onClick={() => createT.mutate()} disabled={createT.isPending || !form.completedAt} data-testid="button-save-training">
+              {createT.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </Card>
+      )}
+      {isLoading ? (
+        <div className="text-xs text-neutral-500 py-6 text-center">Carregando...</div>
+      ) : trainings.length === 0 ? (
+        <div className="text-xs text-neutral-500 py-8 text-center border border-dashed border-neutral-300 rounded">Nenhum treinamento registrado</div>
+      ) : (
+        <div className="overflow-x-auto border border-neutral-200 rounded">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 text-neutral-600 uppercase text-[10px]">
+              <tr>
+                <th className="px-3 py-2 text-left">Tipo</th>
+                <th className="px-3 py-2 text-left">Realizado</th>
+                <th className="px-3 py-2 text-left">Validade</th>
+                <th className="px-3 py-2 text-left">Carga</th>
+                <th className="px-3 py-2 text-left">Instrutor</th>
+                <th className="px-3 py-2 text-left">Cert</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {trainings.map(t => {
+                const expired = t.expiryDate && String(t.expiryDate) < today;
+                return (
+                  <tr key={t.id} className="border-t border-neutral-100" data-testid={`row-training-${t.id}`}>
+                    <td className="px-3 py-2 font-semibold text-neutral-800">{t.type}</td>
+                    <td className="px-3 py-2">{t.completedAt}</td>
+                    <td className="px-3 py-2">
+                      {t.expiryDate ? (
+                        <span className={expired ? "text-red-600 font-bold" : ""}>
+                          {t.expiryDate}{expired && <span className="ml-1 text-[9px] px-1 py-0.5 bg-red-100 text-red-700 rounded font-bold uppercase">Vencido</span>}
+                        </span>
+                      ) : "-"}
+                    </td>
+                    <td className="px-3 py-2">{t.cargaHoraria ? `${t.cargaHoraria}h` : "-"}</td>
+                    <td className="px-3 py-2">{t.instructor || "-"}</td>
+                    <td className="px-3 py-2">
+                      {t.certificateUrl ? <a href={t.certificateUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Abrir</a> : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => { if (confirm("Remover treinamento?")) delT.mutate(t.id); }} className="text-red-600 hover:text-red-800" data-testid={`button-delete-training-${t.id}`}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const ABSENCE_TYPES = ["Falta", "Atestado Médico", "Licença", "Suspensão", "Outro"];
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -2869,6 +3151,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
     contrato: 0,
+    treinamento: 0,
     dependentes: dependents.length,
     multas: fines.length,
     disciplinar: disciplinary.length,
@@ -2917,6 +3200,8 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           </Button>
         </div>
       </div>
+
+      <OnboardingTimeline employeeId={employee.id} onJumpToTab={(t) => setTab(t)} />
 
       <div className="flex gap-1 border-b border-neutral-200 mb-4 overflow-x-auto">
         {PASTA_TABS.map((t) => (
@@ -3062,6 +3347,10 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               </table>
             )}
           </div>
+        )}
+
+        {tab === "treinamento" && (
+          <TreinamentoTab employeeId={employee.id} />
         )}
 
         {tab === "contrato" && (

@@ -457,6 +457,24 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_ip TEXT`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_user_agent TEXT`).catch(() => {});
 
+    // ===== Treinamentos do funcionário (onboarding) =====
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS employee_trainings (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        completed_at DATE NOT NULL,
+        expiry_date DATE,
+        certificate_url TEXT,
+        instructor TEXT,
+        carga_horaria INTEGER,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_trainings_employee ON employee_trainings (employee_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_trainings_type ON employee_trainings (type)`).catch(() => {});
+
     // ===== Contratos de Experiência (45 dias para vigilantes) =====
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_probation_contracts (
