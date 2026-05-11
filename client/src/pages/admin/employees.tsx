@@ -1432,8 +1432,9 @@ const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
 ];
 
 interface OnboardingItem { label: string; status: "ok" | "pendente" | "vencido"; detail?: string; }
-interface OnboardingStage { key: "documentacao" | "contratos" | "treinamento"; label: string; status: "ok" | "pendente" | "vencido"; pendencias: string[]; itens: OnboardingItem[]; }
+interface OnboardingStage { key: "documentacao" | "contratos" | "treinamento" | "holerites"; label: string; status: "ok" | "pendente" | "vencido"; blocking?: boolean; pendencias: string[]; itens: OnboardingItem[]; }
 interface OnboardingResult { employeeId: number; employeeName: string; role: string | null; status: "ok" | "pendente"; apto: boolean; stages: OnboardingStage[]; pendencias: string[]; computedAt: string; }
+interface OnboardingSummary { employeeId: number; apto: boolean; stages: { key: "documentacao" | "contratos" | "treinamento" | "holerites"; status: "ok" | "pendente" | "vencido"; blocking: boolean; count: number }[]; }
 
 function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; onJumpToTab?: (tab: PastaTab) => void }) {
   const { data, isLoading } = useQuery<OnboardingResult>({
@@ -1459,6 +1460,7 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
     documentacao: "documentos",
     contratos: "contrato",
     treinamento: "treinamento",
+    holerites: "holerite",
   };
 
   return (
@@ -3914,10 +3916,46 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Dependentes do Funcionário</h3>
                 <span className="text-[10px] text-neutral-500">({dependents.filter((d: any) => d.deduzIr).length} para IRRF · R$ 189,59/dependente)</span>
               </div>
-              <Button size="sm" onClick={() => setShowDepForm(!showDepForm)} data-testid="button-add-dependent">
-                <Plus className="w-3.5 h-3.5 mr-1" /> {showDepForm ? "Cancelar" : "Adicionar Dependente"}
-              </Button>
+              <div className="flex items-center gap-2">
+                {dependents.length === 0 && !((employee as any).dependentesDeclarados) && (
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    const r = await apiRequest("POST", `/api/employees/${employee.id}/dependentes/declarar-sem`);
+                    if (r.ok) {
+                      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "onboarding"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/onboarding-summary"] });
+                      toast({ title: "Declarado: sem dependentes" });
+                    }
+                  }} data-testid="button-declare-no-dependents">
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Não tenho dependentes
+                  </Button>
+                )}
+                {((employee as any).dependentesDeclarados) && dependents.length === 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Sem dependentes (declarado)
+                  </span>
+                )}
+                <Button size="sm" onClick={() => {
+                  if ((employee as any).dependentesDeclarados) {
+                    apiRequest("POST", `/api/employees/${employee.id}/dependentes/limpar-declaracao`).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                    });
+                  }
+                  setShowDepForm(!showDepForm);
+                }} data-testid="button-add-dependent">
+                  <Plus className="w-3.5 h-3.5 mr-1" /> {showDepForm ? "Cancelar" : "Adicionar Dependente"}
+                </Button>
+              </div>
             </div>
+
+            {dependents.length === 0 && !((employee as any).dependentesDeclarados) && (
+              <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  <strong>Obrigatório:</strong> informe os dependentes do funcionário ou clique em <strong>"Não tenho dependentes"</strong> para declarar a ausência. O funcionário não pode ser escalado em OS sem essa informação.
+                </span>
+              </div>
+            )}
 
             {showDepForm && (
               <fieldset className="border border-neutral-200 rounded-lg p-3 bg-neutral-50/50">
@@ -4159,6 +4197,7 @@ export default function EmployeesPage() {
   const [editItem, setEditItem] = useState<Employee | undefined>();
   const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
   const [pastaEmployee, setPastaEmployee] = useState<Employee | null>(null);
+  const [onboardingDetailEmp, setOnboardingDetailEmp] = useState<Employee | null>(null);
   const [docAlertOpen, setDocAlertOpen] = useState(false);
   const [empPage, setEmpPage] = useState(1);
   const [searchEmp, setSearchEmp] = useState("");
@@ -4168,6 +4207,12 @@ export default function EmployeesPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: onboardingSummary = [] } = useQuery<OnboardingSummary[]>({
+    queryKey: ["/api/onboarding-summary"],
+    queryFn: async () => { const r = await authFetch("/api/onboarding-summary"); const j = await r.json(); return Array.isArray(j) ? j : []; },
+    refetchInterval: 60000,
+  });
+  const onboardingByEmp = new Map<number, OnboardingSummary>((Array.isArray(onboardingSummary) ? onboardingSummary : []).map(s => [s.employeeId, s]));
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -4343,25 +4388,27 @@ export default function EmployeesPage() {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Docs</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Onboarding</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginated.map((e) => {
-                      const missingDocs: string[] = [];
-                      if (!e.photoUrl) missingDocs.push("Foto");
-                      if (!e.cnhNumber) missingDocs.push("CNH");
-                      if (!e.cnhExpiry) missingDocs.push("Val. CNH");
-                      if (!(e as any).cnvNumber) missingDocs.push("CNV");
-                      if (!(e as any).cnvExpiry) missingDocs.push("Val. CNV");
-                      if (!(e as any).vestNumber) missingDocs.push("Colete");
-                      if (!(e as any).vestExpiry) missingDocs.push("Val. Colete");
-                      if (!e.rg) missingDocs.push("RG");
-                      if (!e.phone) missingDocs.push("Telefone");
-                      if (!e.address) missingDocs.push("Endereço");
-                      if (!e.hireDate) missingDocs.push("Admissão");
+                      const ob = onboardingByEmp.get(e.id);
+                      const stageMap: Record<string, { key: string; status: "ok" | "pendente" | "vencido"; count: number; blocking: boolean }> = {};
+                      (ob?.stages || []).forEach(s => { stageMap[s.key] = s; });
+                      const flagDefs: { key: "documentacao" | "contratos" | "treinamento" | "holerites"; label: string }[] = [
+                        { key: "documentacao", label: "Doc" },
+                        { key: "contratos", label: "Cont" },
+                        { key: "treinamento", label: "Trein" },
+                        { key: "holerites", label: "Hol" },
+                      ];
+                      const flagCls = (st?: "ok" | "pendente" | "vencido") =>
+                        st === "ok" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        st === "vencido" ? "bg-red-50 text-red-700 border-red-200" :
+                        st === "pendente" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-neutral-50 text-neutral-400 border-neutral-200";
                       return (
                       <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(e)} data-testid={`row-employee-${e.id}`}>
                         <td className="p-3">
@@ -4380,16 +4427,20 @@ export default function EmployeesPage() {
                         <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
                         <td className="p-3 text-neutral-600">{e.role}</td>
                         <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
-                        <td className="p-3">
-                          {missingDocs.length === 0 ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 font-semibold border border-emerald-100" data-testid={`docs-ok-${e.id}`}>
-                              <CheckCircle2 className="w-3 h-3" /> OK
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold border border-amber-100 cursor-help" title={missingDocs.join(", ")} data-testid={`docs-missing-${e.id}`}>
-                              <AlertTriangle className="w-3 h-3" /> {missingDocs.length}
-                            </span>
-                          )}
+                        <td className="p-3" onClick={(ev) => { ev.stopPropagation(); setOnboardingDetailEmp(e); }}>
+                          <div className="flex flex-wrap gap-1 cursor-pointer" data-testid={`onboarding-flags-${e.id}`} title="Clique para ver detalhes">
+                            {flagDefs.map(f => {
+                              const st = stageMap[f.key]?.status;
+                              const cnt = stageMap[f.key]?.count || 0;
+                              return (
+                                <span key={f.key} className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border font-semibold ${flagCls(st)}`} data-testid={`flag-${f.key}-${e.id}`}>
+                                  {st === "ok" ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                                  {f.label}
+                                  {st !== "ok" && cnt > 0 && <span className="ml-0.5">({cnt})</span>}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </td>
                         <td className="p-3">
                           <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide inline-block w-fit ${
@@ -4441,6 +4492,30 @@ export default function EmployeesPage() {
 
       {accessEmployee && (
         <CreateAccessModal employee={accessEmployee} open={!!accessEmployee} onClose={() => setAccessEmployee(null)} />
+      )}
+
+      {onboardingDetailEmp && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setOnboardingDetailEmp(null)} data-testid="modal-onboarding-detail">
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200 sticky top-0 bg-white">
+              <div>
+                <h2 className="text-base font-bold text-neutral-900">Pendências de Onboarding</h2>
+                <p className="text-xs text-neutral-500">{onboardingDetailEmp.name} — {onboardingDetailEmp.matricula}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => { const emp = onboardingDetailEmp; setOnboardingDetailEmp(null); setPastaEmployee(emp); }} data-testid="button-open-pasta-from-modal">
+                  <FolderOpen className="w-4 h-4 mr-1" /> Abrir Pasta
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setOnboardingDetailEmp(null)} data-testid="button-close-onboarding-modal">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="p-5">
+              <OnboardingTimeline employeeId={onboardingDetailEmp.id} />
+            </div>
+          </div>
+        </div>
       )}
     </AdminLayout>
   );

@@ -267,6 +267,7 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_protection TEXT`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dependentes_declarados BOOLEAN DEFAULT FALSE`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);

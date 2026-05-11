@@ -131,6 +131,7 @@ export const employees = pgTable("employees", {
   ammoCount: integer("ammo_count").default(0),
   blockType: text("block_type"),
   blockReason: text("block_reason"),
+  dependentesDeclarados: boolean("dependentes_declarados").default(false),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

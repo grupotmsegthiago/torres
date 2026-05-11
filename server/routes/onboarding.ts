@@ -5,11 +5,17 @@ import { storage } from "../storage";
 import { z } from "zod";
 
 /**
- * Onboarding em 3 etapas: Documentação → Contratos → Treinamento.
- * Um funcionário só pode ser escalado em OS quando todas estiverem OK.
+ * Onboarding em 4 etapas: Documentação → Contratos → Treinamento → Holerites.
+ * Etapas bloqueantes p/ entrar em OS: Documentação, Contratos e Treinamento.
+ * Holerites é informativa (alerta de pendência sem impedir escala).
  */
 
-// Documentos obrigatórios por papel (case-insensitive). "*" aplica a todos.
+// Cutoff de "contratos legados". Contratos criados ANTES desta data são
+// considerados OK por autorização da Diretoria (regra de transição).
+// A partir desta data, todo contrato novo precisa ser efetivamente assinado
+// (ou liberado por bypass_diretoria).
+const LEGACY_CONTRACT_CUTOFF = "2026-05-11";
+
 const REQUIRED_DOCS: Record<string, string[]> = {
   vigilante: [
     "RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência",
@@ -27,7 +33,6 @@ const REQUIRED_DOCS: Record<string, string[]> = {
   "*": ["RG", "CPF"],
 };
 
-// Treinamentos obrigatórios (e validade em meses para "vencido?").
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
   vigilante: [
     { type: "Formação de Vigilante", validityMonths: 24 },
@@ -55,10 +60,27 @@ function todayBRT(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
+function ymBRT(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(d).slice(0, 7);
+}
+
+function lastNMonths(n: number): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = 1; i <= n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(ymBRT(d));
+  }
+  return out;
+}
+
+export type OnboardingStageKey = "documentacao" | "contratos" | "treinamento" | "holerites";
+
 export interface OnboardingStage {
-  key: "documentacao" | "contratos" | "treinamento";
+  key: OnboardingStageKey;
   label: string;
   status: "ok" | "pendente" | "vencido";
+  blocking: boolean;
   pendencias: string[];
   itens: { label: string; status: "ok" | "pendente" | "vencido"; detail?: string }[];
 }
@@ -70,14 +92,10 @@ export interface OnboardingResult {
   status: "ok" | "pendente";
   apto: boolean;
   stages: OnboardingStage[];
-  pendencias: string[]; // lista plana p/ exibir em mensagens
+  pendencias: string[];
   computedAt: string;
 }
 
-/**
- * Calcula o status de onboarding para um funcionário.
- * Não depende de cache — consulta sempre os dados frescos.
- */
 export async function computeOnboarding(employeeId: number): Promise<OnboardingResult> {
   const emp = await storage.getEmployee(employeeId);
   if (!emp) throw new Error(`Funcionário ${employeeId} não encontrado`);
@@ -85,7 +103,6 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   const today = todayBRT();
   const roles = rolesForEmployee(emp.role);
 
-  // Resolve listas únicas
   const reqDocs = Array.from(new Set(roles.flatMap(r => REQUIRED_DOCS[r] || [])));
   const reqTrainings = Array.from(
     new Map(
@@ -93,7 +110,7 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
     ).values()
   );
 
-  // ===== Etapa 1: Documentação =====
+  // ===== Etapa 1: Documentação (inclui dependentes informados) =====
   const docs = await storage.getEmployeeDocuments(employeeId);
   const itensDoc: OnboardingStage["itens"] = [];
   for (const tipo of reqDocs) {
@@ -106,6 +123,20 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
       itensDoc.push({ label: tipo, status: "ok" });
     }
   }
+  // Dependentes obrigatórios: precisa ter pelo menos 1 cadastrado
+  // OU declaração explícita "sem dependentes" (employees.dependentes_declarados=true).
+  const { data: depRows } = await supabaseAdmin
+    .from("employee_dependents")
+    .select("id")
+    .eq("employee_id", employeeId);
+  const declaradoSem = (emp as any).dependentesDeclarados === true || (emp as any).dependentes_declarados === true;
+  if ((depRows || []).length > 0) {
+    itensDoc.push({ label: "Dependentes", status: "ok", detail: `${depRows!.length} cadastrado(s)` });
+  } else if (declaradoSem) {
+    itensDoc.push({ label: "Dependentes", status: "ok", detail: "Sem dependentes (declarado)" });
+  } else {
+    itensDoc.push({ label: "Dependentes", status: "pendente", detail: "Informe os dependentes ou declare 'sem dependentes' na aba Dependentes" });
+  }
   const docPend = itensDoc.filter(i => i.status !== "ok").map(i => `${i.label}${i.detail ? " — " + i.detail : ""}`);
   const docStatus: OnboardingStage["status"] =
     itensDoc.some(i => i.status === "vencido") ? "vencido" :
@@ -114,7 +145,6 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   // ===== Etapa 2: Contratos =====
   const itensCon: OnboardingStage["itens"] = [];
   if (/vigilan|escolt/.test((emp.role || "").toLowerCase())) {
-    // Probation
     const { data: probRows } = await supabaseAdmin
       .from("employee_probation_contracts")
       .select("id, assinatura_status, bypass_diretoria, end_date, start_date, created_at")
@@ -122,26 +152,31 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
       .order("created_at", { ascending: false })
       .limit(5);
     const prob = (probRows || [])[0];
+    const probLegacy = prob && String(prob.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
     if (!prob) {
       itensCon.push({ label: "Contrato de Experiência (45d)", status: "pendente", detail: "Não emitido" });
+    } else if (probLegacy) {
+      itensCon.push({ label: "Contrato de Experiência (45d)", status: "ok", detail: "OK por autorização (contrato pré-existente)" });
     } else if (prob.assinatura_status === "assinado" || prob.bypass_diretoria) {
       itensCon.push({ label: "Contrato de Experiência (45d)", status: "ok", detail: prob.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
     } else {
       itensCon.push({ label: "Contrato de Experiência (45d)", status: "pendente", detail: "Aguardando assinatura" });
     }
-    // Permanent — só obrigatório se a experiência já venceu
     const probEnd = prob?.end_date ? String(prob.end_date).slice(0, 10) : null;
     const expExpirou = probEnd && probEnd < today;
     if (expExpirou) {
       const { data: permRows } = await supabaseAdmin
         .from("employee_permanent_contracts")
-        .select("id, assinatura_status, bypass_diretoria")
+        .select("id, assinatura_status, bypass_diretoria, created_at")
         .eq("employee_id", employeeId)
         .order("created_at", { ascending: false })
         .limit(1);
       const perm = (permRows || [])[0];
+      const permLegacy = perm && String(perm.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
       if (!perm) {
         itensCon.push({ label: "Contrato Definitivo (CLT)", status: "pendente", detail: "Não emitido" });
+      } else if (permLegacy) {
+        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: "OK por autorização (contrato pré-existente)" });
       } else if (perm.assinatura_status === "assinado" || perm.bypass_diretoria) {
         itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: perm.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
       } else {
@@ -173,7 +208,6 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
         itensTr.push({ label: req.type, status: "pendente", detail: "Não realizado" });
         continue;
       }
-      // Pega o mais recente — se tiver expiry_date, valida; senão calcula via validityMonths
       const last = matches[0];
       const completed = String(last.completed_at).slice(0, 10);
       let expiry = last.expiry_date ? String(last.expiry_date).slice(0, 10) : null;
@@ -194,12 +228,43 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
     itensTr.some(i => i.status === "vencido") ? "vencido" :
     itensTr.some(i => i.status === "pendente") ? "pendente" : "ok";
 
+  // ===== Etapa 4: Holerites (últimos 3 meses) — informativa =====
+  const itensHl: OnboardingStage["itens"] = [];
+  const meses = lastNMonths(3);
+  const { data: payRows } = await supabaseAdmin
+    .from("employee_payslips")
+    .select("id, month, year, assinado_em, assinatura_status")
+    .eq("employee_id", employeeId);
+  const pay = payRows || [];
+  const hireDate = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
+  for (const ym of meses) {
+    if (hireDate && ym < hireDate.slice(0, 7)) continue;
+    const [y, m] = ym.split("-").map(Number);
+    const found = pay.find((p: any) => Number(p.year) === y && Number(p.month) === m);
+    if (!found) {
+      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "Não emitido" });
+    } else if (!found.assinado_em && found.assinatura_status !== "assinado") {
+      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "Aguardando assinatura" });
+    } else {
+      itensHl.push({ label: `Holerite ${ym}`, status: "ok", detail: "Assinado" });
+    }
+  }
+  if (itensHl.length === 0) {
+    itensHl.push({ label: "Holerites", status: "ok", detail: "Sem referências aplicáveis" });
+  }
+  const hlPend = itensHl.filter(i => i.status !== "ok").map(i => `${i.label}${i.detail ? " — " + i.detail : ""}`);
+  const hlStatus: OnboardingStage["status"] =
+    itensHl.some(i => i.status === "vencido") ? "vencido" :
+    itensHl.some(i => i.status === "pendente") ? "pendente" : "ok";
+
   const stages: OnboardingStage[] = [
-    { key: "documentacao", label: "Documentação", status: docStatus, pendencias: docPend, itens: itensDoc },
-    { key: "contratos", label: "Contratos", status: conStatus, pendencias: conPend, itens: itensCon },
-    { key: "treinamento", label: "Treinamento", status: trStatus, pendencias: trPend, itens: itensTr },
+    { key: "documentacao", label: "Documentação", status: docStatus, blocking: true, pendencias: docPend, itens: itensDoc },
+    { key: "contratos", label: "Contratos", status: conStatus, blocking: true, pendencias: conPend, itens: itensCon },
+    { key: "treinamento", label: "Treinamento", status: trStatus, blocking: true, pendencias: trPend, itens: itensTr },
+    { key: "holerites", label: "Holerites", status: hlStatus, blocking: false, pendencias: hlPend, itens: itensHl },
   ];
-  const apto = stages.every(s => s.status === "ok");
+  // "apto" considera apenas etapas bloqueantes
+  const apto = stages.filter(s => s.blocking).every(s => s.status === "ok");
 
   return {
     employeeId,
@@ -213,10 +278,6 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   };
 }
 
-/**
- * Lança erro com mensagem amigável caso onboarding esteja incompleto.
- * Usado pelos endpoints de criação de OS e aceite de missão.
- */
 export async function assertOnboardingComplete(employeeId: number): Promise<void> {
   const r = await computeOnboarding(employeeId);
   if (!r.apto) {
@@ -239,7 +300,6 @@ const trainingSchema = z.object({
 });
 
 export function registerOnboardingRoutes(app: Express) {
-  // Status de onboarding de um funcionário
   app.get("/api/employees/:id/onboarding", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -250,7 +310,45 @@ export function registerOnboardingRoutes(app: Express) {
     }
   });
 
-  // Treinamentos — listar
+  // Resumo em batch p/ a listagem de funcionários
+  app.get("/api/onboarding-summary", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const all = await storage.getEmployees();
+      const out = await Promise.all(
+        all.filter((e: any) => e.status !== "inativo").map(async (e: any) => {
+          try {
+            const r = await computeOnboarding(e.id);
+            return {
+              employeeId: e.id,
+              apto: r.apto,
+              stages: r.stages.map(s => ({ key: s.key, status: s.status, blocking: s.blocking, count: s.pendencias.length })),
+            };
+          } catch {
+            return { employeeId: e.id, apto: false, stages: [] };
+          }
+        })
+      );
+      res.json(out);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Declarar "sem dependentes" (atende à exigência de informar dependentes)
+  app.post("/api/employees/:id/dependentes/declarar-sem", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: true }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/employees/:id/dependentes/limpar-declaracao", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: false }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+
   app.get("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
     const { data } = await supabaseAdmin
@@ -266,7 +364,6 @@ export function registerOnboardingRoutes(app: Express) {
     })));
   });
 
-  // Treinamentos — criar
   app.post("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
     const parsed = trainingSchema.safeParse(req.body);
@@ -285,7 +382,6 @@ export function registerOnboardingRoutes(app: Express) {
     res.json(data);
   });
 
-  // Treinamentos — remover
   app.delete("/api/trainings/:id", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
     const { error } = await supabaseAdmin.from("employee_trainings").delete().eq("id", id);
