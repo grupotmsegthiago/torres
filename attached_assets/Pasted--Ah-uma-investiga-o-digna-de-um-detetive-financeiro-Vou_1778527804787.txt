@@ -1,0 +1,47 @@
+🔮 Ah, uma investigação digna de um detetive financeiro!
+Vou te ajudar a desvendar esse mistério, mas preciso ser transparente sobre o que consigo e o que não consigo responder aqui:
+
+O que a documentação nos revela
+Com base na documentação disponível, existem diversas camadas de segurança que podem estar simultâneas na sua conta:
+
+1. Token SMS / Token APP (Ação Crítica)
+Toda transferência no Asaas (exceto em contas White Label) pode ser exigida aprovação via token SMS ou token APP . Se essa camada estiver ativa, você verá um erro:
+
+JSON
+
+{
+  "errors": [{
+    "code": "invalid_action",
+    "description": "Sua conta possui autorização crítica habilitada. Para efetuar esta ação informe o código de confirmação."
+  }]
+}
+2. Webhook de autorização de saques (configurável via interface)
+Acessível em Menu do usuário > Integrações > Mecanismos de segurança . Pode ser configurado com uma URL antiga que você desconhece.
+
+3. Webhook de validação de transferências (White Label)
+Um mecanismo separado, habilitado via suporte técnico, principalmente para operações White Label.
+
+4. Lista branca de IPs
+Você pode bloquear requisições de IPs não autorizados (retorna HTTP 403).
+
+⚠️O que não consigo fazer por aqui
+Acessar registros internos de decisão de aprovação de um específicotransferId
+Verifique as configurações ativas da sua conta
+identificar URLs de webhook configurados
+🧭 Caminho recomendado
+Verifique você mesmo as configurações em: Integrações > Mecanismos de segurança — lá você verá se há webhooks de autorização configurados (incluindo URLs antigas)
+
+Para obter os logs internos com a resposta HTTP exata de cada camada incluída, você precisará entrar em contato com o técnico do Asaas , pois essa informação não é exposta via API nem documentos públicos.
+
+Para desativar camadas extras , a própria interface de mecanismos de segurança permite gerenciar o webhook de autorização de saques. Já o token SMS/APP pode ser substituído pela fixação de IPs ou pelo webhook de autorização.
+
+📘
+A documentação sugere que corrigir IPs ou configurar o webhook de autorização são as alternativas para dispensar o token SMS/APP em transferências automatizadas.
+
+Nossa IA vai ajudar você a encontrar as respostas certas em nossa documentação! Para os detalhes específicos de sua conta (logs, camadas ativas, configurações ocultas), o suporte técnico do Asaas é o caminho encantado a seguir! ✨
+
+Mais informações:
+
+Mecanismo para validação de saque via webhooks
+Mecanismo para validação de saques via webhooks
+
