@@ -2001,15 +2001,28 @@ export function registerAsaasRoutes(app: Express) {
 
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
     try {
-      const webhookToken = req.headers["asaas-access-token"] as string | undefined;
-      const asaasApiKey = process.env.ASAAS_API_KEY;
+      // Asaas envia em "asaas-access-token" (preferido). Aceitamos também
+      // "x-asaas-access-token" e "Authorization: Bearer ..." por compatibilidade.
+      const rawAuth = (req.headers["authorization"] as string | undefined) || "";
+      const bearer = rawAuth.toLowerCase().startsWith("bearer ") ? rawAuth.slice(7).trim() : rawAuth.trim();
+      const webhookToken = (
+        (req.headers["asaas-access-token"] as string | undefined) ||
+        (req.headers["x-asaas-access-token"] as string | undefined) ||
+        bearer ||
+        ""
+      ).trim();
 
-      if (asaasApiKey && webhookToken !== asaasApiKey) {
-        console.warn(`[asaas] Webhook REJEITADO: token inválido de IP ${(req as any).ip}`);
+      // Token esperado: ASAAS_WEBHOOK_TOKEN (correto). Mantém ASAAS_API_KEY como fallback de compatibilidade.
+      const expectedToken = (process.env.ASAAS_WEBHOOK_TOKEN || process.env.ASAAS_API_KEY || "").trim();
+
+      if (!expectedToken) {
+        console.error("[asaas] Webhook ACEITO sem validação: ASAAS_WEBHOOK_TOKEN não configurado.");
+      } else if (webhookToken !== expectedToken) {
+        console.warn(`[asaas] Webhook REJEITADO: token inválido. recebido(len=${webhookToken.length}) esperado(len=${expectedToken.length}) IP=${(req as any).ip} UA=${req.headers["user-agent"]}`);
         await logSystemAudit({
           userId: null, userName: "SISTEMA", userRole: "system",
           action: "ASAAS_WEBHOOK_REJEITADO", targetId: "N/A", targetType: "security",
-          details: `Webhook rejeitado por token inválido. IP: ${(req as any).ip}. Headers recebidos: ${Object.keys(req.headers).join(", ")}`,
+          details: `Webhook rejeitado por token inválido. IP: ${(req as any).ip}. UA: ${req.headers["user-agent"]}. Headers recebidos: ${Object.keys(req.headers).join(", ")}`,
           ipAddress: (req as any).ip,
         });
         return res.status(401).json({ error: "Unauthorized" });
