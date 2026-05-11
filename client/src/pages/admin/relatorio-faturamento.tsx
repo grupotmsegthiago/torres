@@ -84,6 +84,32 @@ export default function RelatorioFaturamentoPage() {
   const [sendEmail, setSendEmail] = useState("");
   const [sendLoading, setSendLoading] = useState(false);
   const [osModalLoading, setOsModalLoading] = useState(false);
+  const [mismatchData, setMismatchData] = useState<null | {
+    backendTotal: number;
+    frontendTotal: number;
+    diff: number;
+    osCount: number;
+    startDate: string;
+    endDate: string;
+    breakdown: Array<{
+      billingId: string;
+      serviceOrderId: number;
+      osRef: string;
+      status: string;
+      dataMissao: string | null;
+      route: string;
+      fatAcionamento: number;
+      fatHoraExtra: number;
+      fatKm: number;
+      despesasPedagio: number;
+      fatAdicionalNoturno: number;
+      fatTotalSalvo: number;
+      fatComponentes: number;
+      fatUsado: number;
+      suspeito: boolean;
+    }>;
+  }>(null);
+  const [zerandoIds, setZerandoIds] = useState<Set<string>>(new Set());
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -168,7 +194,70 @@ export default function RelatorioFaturamentoPage() {
       invalidateRelatedQueries("billing");
       handleGenerate();
     },
-    onError: (err: Error) => toast({ title: "Erro ao gerar fatura", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      // apiRequest joga Error("<status>: <body>"). Tenta extrair JSON estruturado
+      // (caso TOTAL_MISMATCH) e abrir tela de conferência ao invés do toast.
+      const raw = err.message || "";
+      const jsonStart = raw.indexOf("{");
+      if (jsonStart >= 0) {
+        try {
+          const parsed = JSON.parse(raw.slice(jsonStart));
+          if (parsed?.code === "TOTAL_MISMATCH" && Array.isArray(parsed.breakdown)) {
+            setFaturaDialog(false);
+            setMismatchData({
+              backendTotal: Number(parsed.backendTotal) || 0,
+              frontendTotal: Number(parsed.frontendTotal) || 0,
+              diff: Number(parsed.diff) || 0,
+              osCount: Number(parsed.osCount) || parsed.breakdown.length,
+              startDate: String(parsed.startDate || ""),
+              endDate: String(parsed.endDate || ""),
+              breakdown: parsed.breakdown,
+            });
+            return;
+          }
+        } catch {}
+      }
+      toast({ title: "Erro ao gerar fatura", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const zerarFatTotalMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/zerar-fat-total`);
+    },
+    onSuccess: (_resp, billingId) => {
+      // Atualiza dialog removendo a OS corrigida e recalculando totais.
+      setMismatchData(prev => {
+        if (!prev) return prev;
+        const restantes = prev.breakdown.filter(r => r.billingId !== billingId);
+        const novoBackend = restantes.reduce((s, r) => {
+          const usado = r.fatTotalSalvo > 0 ? r.fatTotalSalvo : r.fatComponentes;
+          return s + usado;
+        }, 0);
+        return {
+          ...prev,
+          backendTotal: Number(novoBackend.toFixed(2)),
+          diff: Number(Math.abs(novoBackend - prev.frontendTotal).toFixed(2)),
+          osCount: restantes.length,
+          breakdown: restantes,
+        };
+      });
+      setZerandoIds(prev => {
+        const next = new Set(prev);
+        next.delete(billingId);
+        return next;
+      });
+      invalidateRelatedQueries("billing");
+      toast({ title: "Valor zerado", description: "fat_total da OS foi zerado. Recalcule a OS para gerar valor correto." });
+    },
+    onError: (err: Error, billingId) => {
+      setZerandoIds(prev => {
+        const next = new Set(prev);
+        next.delete(billingId);
+        return next;
+      });
+      toast({ title: "Erro ao zerar", description: err.message, variant: "destructive" });
+    },
   });
 
   const openSendDialog = () => {
@@ -1949,6 +2038,112 @@ export default function RelatorioFaturamentoPage() {
           isLiveOs={isLiveOs}
         />
       )}
+
+      <Dialog open={!!mismatchData} onOpenChange={(o) => { if (!o) setMismatchData(null); }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-wide">
+              <AlertTriangle className="w-5 h-5 text-amber-600" /> Conferência de Faturamento — Divergência de Valor
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              O backend somou um valor diferente do que está aparecendo na grade. Isso geralmente acontece quando há OS com valor "fat_total" antigo/corrompido no banco. Revise as OS abaixo, identifique as suspeitas e zere o valor congelado para que o sistema recalcule a partir dos componentes.
+            </DialogDescription>
+          </DialogHeader>
+
+          {mismatchData && (
+            <>
+              <div className="grid grid-cols-3 gap-3 py-2">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Total na Grade (Frontend)</p>
+                  <p className="text-lg font-black font-mono text-blue-900" data-testid="text-mismatch-frontend">{fmt(mismatchData.frontendTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Total Calculado pelo Backend</p>
+                  <p className="text-lg font-black font-mono text-amber-900" data-testid="text-mismatch-backend">{fmt(mismatchData.backendTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-red-300 bg-red-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-red-600">Diferença</p>
+                  <p className="text-lg font-black font-mono text-red-900" data-testid="text-mismatch-diff">{fmt(mismatchData.diff)}</p>
+                  <p className="text-[10px] text-red-700">{mismatchData.osCount} OS no período</p>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto rounded-lg border border-gray-200">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr className="text-left">
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600">OS</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600">Data</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600">Status</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600 text-right">Componentes</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600 text-right">fat_total Salvo</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600 text-right">Usado na Soma</th>
+                      <th className="px-2 py-2 font-bold uppercase tracking-wide text-gray-600 text-center">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mismatchData.breakdown.map((r) => {
+                      const naGrade = rowsData.some((rd: any) => rd.billingId === r.billingId);
+                      const isZerando = zerandoIds.has(r.billingId);
+                      const podeZerar = r.fatTotalSalvo > 0 && !["FATURADO", "FATURADA", "PAGO"].includes(String(r.status).toUpperCase());
+                      return (
+                        <tr key={r.billingId} className={`border-t border-gray-100 ${r.suspeito ? "bg-red-50" : !naGrade ? "bg-amber-50/50" : ""}`} data-testid={`row-mismatch-${r.billingId}`}>
+                          <td className="px-2 py-1.5 font-mono font-bold">{r.osRef}</td>
+                          <td className="px-2 py-1.5 font-mono">{r.dataMissao ? new Date(r.dataMissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</td>
+                          <td className="px-2 py-1.5">
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-[10px] font-bold uppercase">{r.status || "—"}</span>
+                            {!naGrade && <span className="ml-1 inline-block px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-bold uppercase">Fora da grade</span>}
+                            {r.suspeito && <span className="ml-1 inline-block px-1.5 py-0.5 rounded bg-red-200 text-red-900 text-[10px] font-bold uppercase">Suspeito</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-gray-700">{fmt(r.fatComponentes)}</td>
+                          <td className={`px-2 py-1.5 text-right font-mono font-bold ${r.suspeito ? "text-red-700" : "text-gray-800"}`}>{fmt(r.fatTotalSalvo)}</td>
+                          <td className={`px-2 py-1.5 text-right font-mono font-black ${r.suspeito ? "text-red-700" : "text-gray-900"}`} data-testid={`text-fatusado-${r.billingId}`}>{fmt(r.fatUsado)}</td>
+                          <td className="px-2 py-1.5 text-center">
+                            {podeZerar ? (
+                              <button
+                                disabled={isZerando}
+                                onClick={() => {
+                                  if (!window.confirm(`Zerar fat_total congelado da OS ${r.osRef}?\n\nValor atual: ${fmt(r.fatTotalSalvo)}\nDepois disso a OS usará a soma dos componentes (${fmt(r.fatComponentes)}). Esta ação fica registrada na auditoria.`)) return;
+                                  setZerandoIds(prev => { const n = new Set(prev); n.add(r.billingId); return n; });
+                                  zerarFatTotalMutation.mutate(r.billingId);
+                                }}
+                                className="text-[10px] font-bold uppercase bg-red-600 hover:bg-red-700 text-white rounded px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                                data-testid={`btn-zerar-${r.billingId}`}
+                              >
+                                {isZerando ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                                Zerar
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-[11px] text-blue-900 leading-relaxed">
+                <strong className="font-black uppercase tracking-wider text-[10px]">Como corrigir:</strong> linhas em <span className="bg-red-100 px-1 rounded">vermelho</span> têm fat_total acima de R$ 1.000.000 — quase certamente valores corrompidos. Linhas em <span className="bg-amber-100 px-1 rounded">amarelo</span> são OS que o backend está somando mas não aparecem na sua grade (rascunho/em aberto). Clique em "Zerar" nas suspeitas e tente gerar a fatura novamente.
+              </div>
+            </>
+          )}
+
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" onClick={() => setMismatchData(null)} className="text-xs font-bold uppercase" data-testid="button-close-mismatch">
+              Fechar
+            </Button>
+            <Button
+              onClick={() => { setMismatchData(null); handleGenerate(); }}
+              className="text-xs font-black uppercase gap-2 bg-blue-600 hover:bg-blue-700"
+              data-testid="button-recarregar-mismatch"
+            >
+              <RefreshCw size={14} /> Recarregar Lista
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

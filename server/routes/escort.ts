@@ -1594,6 +1594,28 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/escort/billings/:id/zerar-fat-total", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id,status,fat_total,client_name,service_order_id").eq("id", req.params.id).single();
+      if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      const st = String(billing.status || "").toUpperCase();
+      if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
+        return res.status(400).json({ message: "Não é possível zerar fat_total de OS já faturada/paga. Libere o refaturamento primeiro." });
+      }
+      const valorAnterior = Number(billing.fat_total || 0);
+      const { error } = await supabaseAdmin.from("escort_billings").update({ fat_total: 0 }).eq("id", req.params.id);
+      if (error) throw error;
+      await logSystemAudit({
+        userId: user.id, userName: user.name, userRole: user.role,
+        action: "ZERAR_FAT_TOTAL", targetId: req.params.id, targetType: "escort_billing",
+        details: `OS #${billing.service_order_id} (${billing.client_name}) — fat_total zerado (anterior: R$${valorAnterior.toFixed(2)}). Próxima geração de fatura usará a soma dos componentes.`,
+        ipAddress: req.ip,
+      });
+      res.json({ ok: true, valorAnterior });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/escort/billings/pendentes", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("escort_billings").select("*").eq("status", "A_VERIFICAR").order("created_at", { ascending: false });

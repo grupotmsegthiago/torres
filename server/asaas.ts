@@ -2215,6 +2215,7 @@ export function registerAsaasRoutes(app: Express) {
       const osDescriptions: string[] = [];
       let totalValue = 0;
       const billingIds: string[] = [];
+      const breakdown: any[] = [];
 
       for (const b of billings) {
         const acionamento = Number(b.fat_acionamento || 0);
@@ -2239,6 +2240,23 @@ export function registerAsaasRoutes(app: Express) {
         const route = [b.origem, b.destino].filter(Boolean).join(" → ");
         const dataMissao = b.data_missao ? new Date(b.data_missao).toLocaleDateString("pt-BR") : "";
         osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
+        breakdown.push({
+          billingId: b.id,
+          serviceOrderId: b.service_order_id,
+          osRef,
+          status: b.status,
+          dataMissao: b.data_missao,
+          route,
+          fatAcionamento: acionamento,
+          fatHoraExtra: horaExtra,
+          fatKm: km,
+          despesasPedagio: pedagio,
+          fatAdicionalNoturno: adNoturno,
+          fatTotalSalvo,
+          fatComponentes,
+          fatUsado: fat,
+          suspeito: fat > 1_000_000 || fat < 0,
+        });
         console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} adNoturno=${adNoturno} | componentes=${fatComponentes} fat_total=${fatTotalSalvo} → usado=${fat}`);
       }
       console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS). Período: ${startDate} a ${endDate}`);
@@ -2247,9 +2265,21 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       if (expectedTotal && Math.abs(totalValue - Number(expectedTotal)) > 0.01) {
-        const msg = `BLOQUEADO: Soma do backend (R$${totalValue.toFixed(2)}) difere do frontend (R$${Number(expectedTotal).toFixed(2)}). Diferença: R$${Math.abs(totalValue - Number(expectedTotal)).toFixed(2)}`;
+        const diff = Math.abs(totalValue - Number(expectedTotal));
+        const msg = `BLOQUEADO: Soma do backend (R$${totalValue.toFixed(2)}) difere do frontend (R$${Number(expectedTotal).toFixed(2)}). Diferença: R$${diff.toFixed(2)}`;
         console.error(`[billing-audit] ${msg}`);
-        return res.status(400).json({ message: msg });
+        gerarFaturaLocks.delete(clientId);
+        return res.status(400).json({
+          message: msg,
+          code: "TOTAL_MISMATCH",
+          backendTotal: Number(totalValue.toFixed(2)),
+          frontendTotal: Number(Number(expectedTotal).toFixed(2)),
+          diff: Number(diff.toFixed(2)),
+          osCount: billings.length,
+          startDate,
+          endDate,
+          breakdown: breakdown.sort((a, b) => (b.fatUsado || 0) - (a.fatUsado || 0)),
+        });
       }
 
       if (splits && Array.isArray(splits) && splits.length > 0) {
