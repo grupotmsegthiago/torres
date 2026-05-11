@@ -435,6 +435,11 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     const errMsg = data?.errors?.[0]?.description || data?.message || `Asaas API error ${resp.status}`;
     throw new Error(errMsg);
   }
+  // Asaas sometimes returns 200 OK with errors[] in body (validation failures)
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    const errMsg = data.errors[0]?.description || data.errors[0]?.code || "Erro de validação Asaas";
+    throw new Error(errMsg);
+  }
   return data;
 }
 
@@ -766,16 +771,17 @@ export function registerAsaasRoutes(app: Express) {
         });
       }
       const valor = Math.floor((saldo - TRANSFER_RESERVE) * 100) / 100;
-      console.log(`[asaas-transfer] Iniciando transferência: saldo=${saldo} reserva=${TRANSFER_RESERVE} valor=${valor} → ${TRANSFER_PIX_KEY}`);
+      console.log(`[asaas-transfer] Iniciando: saldo=${saldo} reserva=${TRANSFER_RESERVE} valor=${valor} -> ${TRANSFER_PIX_KEY}`);
       const transferBody = {
         value: valor,
+        operationType: "PIX",
         pixAddressKey: TRANSFER_PIX_KEY,
         pixAddressKeyType: "EMAIL",
-        operationType: "PIX",
-        description: "Transferência automática de saldo",
+        description: "Transferencia automatica de saldo",
       };
+      console.log(`[asaas-transfer] Body:`, JSON.stringify(transferBody));
       const transferRes = await asaasRequest("POST", "/transfers", transferBody);
-      console.log(`[asaas-transfer] Sucesso: id=${transferRes?.id} status=${transferRes?.status}`);
+      console.log(`[asaas-transfer] Resposta:`, JSON.stringify(transferRes).slice(0, 500));
       res.json({
         success: true,
         valor,

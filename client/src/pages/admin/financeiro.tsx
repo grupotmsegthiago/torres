@@ -475,8 +475,17 @@ function AsaasBalanceCard() {
       refetch();
     },
     onError: async (err: any) => {
-      let msg = err.message;
-      try { const j = JSON.parse(err.message.split(": ").slice(1).join(": ")); msg = j.message || msg; } catch {}
+      let msg = err?.message || "Erro desconhecido";
+      const colonIdx = msg.indexOf(": ");
+      if (colonIdx > 0 && /^\d{3}$/.test(msg.slice(0, colonIdx))) {
+        const body = msg.slice(colonIdx + 2);
+        try {
+          const j = JSON.parse(body);
+          msg = j.message || j.error || body;
+        } catch {
+          msg = body;
+        }
+      }
       toast({ title: "Erro na transferência", description: msg, variant: "destructive" });
     },
   });
