@@ -1,0 +1,68 @@
+Detalhes
+Não é possível remover notificações enquanto a fila de sincronização estiver ativa.
+Não é possivel reenviar notificação.
+https://www.torresseguranca.com.br/api/asaas/webhook-transfer-approve
+Penalização aplicada
+Data da requisição
+11/05/2026 09:57
+Webhook
+Torres
+Status
+status code: 401, reason phrase: Unauthorized
+Explicação do erro
+A sua aplicação está avisando que o Asaas não tem autorização para acessar esse recurso. Verifique as permissões de acesso no seu sistema e Firewall, caso tenha configurado um AccessToken para esse Webhook, verifique se a validação esta correta.
+Conteúdo enviado
+{
+  "dateCreated": "2026-05-11 09:57:18",
+  "transfer": {
+    "object": "transfer",
+    "id": "06c85cd0-f85c-49a9-a9dc-d8606c79383b",
+    "value": 537.53,
+    "netValue": 537.53,
+    "transferFee": 0.0,
+    "dateCreated": "2026-05-11",
+    "status": "PENDING",
+    "effectiveDate": null,
+    "confirmedDate": null,
+    "endToEndIdentifier": null,
+    "transactionReceiptUrl": null,
+    "operationType": "PIX",
+    "failReason": null,
+    "walletId": null,
+    "description": "Transferencia automatica de saldo",
+    "externalReference": null,
+    "authorized": true,
+    "scheduleDate": "2026-05-11",
+    "type": "BANK_ACCOUNT",
+    "bankAccount": {
+      "bank": {
+        "code": "348",
+        "name": "BANCO XP S.A.",
+        "ispb": "33264668"
+      },
+      "accountName": null,
+      "ownerName": "TORRES VIGILANCIA PATRIMONIAL LTDA",
+      "cpfCnpj": "36.982.392/0001-89",
+      "type": "CHECKING_ACCOUNT",
+      "agency": "********",
+      "agencyDigit": "********",
+      "account": "********",
+      "accountDigit": "********",
+      "pixAddressKey": "escolta@torresseguranca.com.br"
+    },
+    "recurring": null,
+    "canBeCancelled": true
+  },
+  "id": "evt_e633de3138cfbe837b624a32f8b242a7\u00261328580060",
+  "event": "TRANSFER_CREATED",
+  "account": "********"
+}
+
+Copiar
+Conteúdo da resposta
+{
+  "approved": false,
+  "reason": "Token de autenticação inválido"
+}
+
+Copiar
