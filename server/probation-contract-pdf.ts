@@ -78,9 +78,10 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
 
   const F_NORMAL = "Helvetica";
   const F_BOLD = "Helvetica-Bold";
-  const SZ = 8;
+  const SZ = 8.5;
   const SZ_TITLE = 12;
-  const LG = 1.5;
+  const LG = 2;
+  const PARA_GAP = 0.45;
 
   doc.fillColor("#000000").strokeColor("#000000");
 
@@ -105,10 +106,10 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   doc.moveDown(0.4);
 
   // ===== Helper de parágrafo =====
-  function para(text: string) {
+  function para(text: string, opts: { align?: "left"|"center"|"justify"; gap?: number } = {}) {
     doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000");
-    doc.text(text, LM, doc.y, { align: "justify", lineGap: LG, width: W });
-    doc.moveDown(0.25);
+    doc.text(text, LM, doc.y, { align: opts.align || "justify", lineGap: LG, width: W });
+    doc.moveDown(opts.gap ?? PARA_GAP);
   }
 
   // ===== Cabeçalho qualificativo =====
@@ -118,9 +119,11 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
 
   para(`2 - O local de trabalho situa-se ${data.localTrabalho || "O MESMO DA EMPRESA"}, podendo a Empregadora, a qualquer tempo, transferir o Empregado a título temporário ou definitivo, tanto no âmbito da unidade para a qual foi admitido, como para outras, em qualquer localidade deste Estado ou de outro dentro do País, em conformidade com o parágrafo 1º do artigo 469 da Consolidação das Leis do Trabalho.`);
 
-  para(`3 - O horário de trabalho do empregado será o seguinte: ${data.jornada || "A jornada de trabalho será flexível"}.`);
+  para(`3 - O horário de trabalho do empregado será o seguinte:`, { gap: 0.15 });
+  para(data.jornada || "A jornada de trabalho será flexível", { align: "center" });
 
-  para(`4 - O Empregado perceberá a remuneração de: ${fmtBrl(Number(data.remuneracao))}.`);
+  para(`4 - O Empregado perceberá a remuneração de:`, { gap: 0.15 });
+  para(fmtBrl(Number(data.remuneracao)), { align: "center" });
 
   para(`5 - O prazo deste contrato é de ${data.durationDays} dias, com inicio em ${fmtDateBr(data.startDate)} e término em ${fmtDateBr(data.endDate)}.`);
 
@@ -134,10 +137,10 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
 
   para(`Tendo assim contratado, assinam o presente instrumento, em duas vias, na presença da testemunha abaixo.`);
 
-  doc.moveDown(0.2);
+  doc.moveDown(0.4);
   doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000")
     .text(`${data.cidadeContrato.toUpperCase()}, ${fmtDateExtenso(data.startDate)}.`, LM, doc.y, { width: W });
-  doc.moveDown(0.6);
+  doc.moveDown(1.2);
 
   // ===== Bloco assinaturas (compacto, 2 colunas) =====
   const colW = (W - 20) / 2;
@@ -160,27 +163,27 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   doc.text("____________________________________", colRx, yAss, { width: colW, align: "center" });
   doc.text(data.employeeName.toUpperCase(), colRx, yAss + 10, { width: colW, align: "center" });
 
-  yAss = yAss + 32;
+  yAss = yAss + 38;
   doc.text("____________________________________", colLx, yAss, { width: colW, align: "center" });
   doc.text("Testemunha", colLx, yAss + 10, { width: colW, align: "center" });
   doc.text("____________________________________", colRx, yAss, { width: colW, align: "center" });
   doc.text("Responsável quando for menor", colRx, yAss + 10, { width: colW, align: "center" });
 
-  doc.y = yAss + 28;
+  doc.y = yAss + 36;
 
   // ===== Prorrogação (na mesma página, compacta) =====
   doc.moveTo(LM, doc.y).lineTo(LM + W, doc.y).strokeColor("#000000").lineWidth(0.5).stroke();
-  doc.moveDown(0.4);
+  doc.moveDown(0.6);
 
   doc.font(F_BOLD).fontSize(10).fillColor("#000000")
     .text("PRORROGAÇÃO DE CONTRATO DE EXPERIÊNCIA", LM, doc.y, { width: W, align: "center" });
-  doc.moveDown(0.3);
+  doc.moveDown(0.5);
 
   doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000")
     .text("Por mútuo acordo, o presente contrato de experiência fica prorrogado até ____/____/______.", LM, doc.y, { width: W, align: "justify", lineGap: LG });
-  doc.moveDown(0.3);
+  doc.moveDown(0.5);
   doc.text("____________________, ___ de __________________ de ________", LM, doc.y, { width: W });
-  doc.moveDown(0.8);
+  doc.moveDown(1.4);
 
   let yP = doc.y;
   doc.text("____________________________________", colLx, yP, { width: colW, align: "center" });
@@ -188,7 +191,7 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   doc.text("____________________________________", colRx, yP, { width: colW, align: "center" });
   doc.text(data.employeeName.toUpperCase(), colRx, yP + 10, { width: colW, align: "center" });
 
-  yP = yP + 32;
+  yP = yP + 38;
   doc.text("____________________________________", colLx, yP, { width: colW, align: "center" });
   doc.text("Testemunha", colLx, yP + 10, { width: colW, align: "center" });
   doc.text("____________________________________", colRx, yP, { width: colW, align: "center" });
