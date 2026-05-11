@@ -551,6 +551,12 @@ export const employeeProbationContracts = pgTable("employee_probation_contracts"
   assinaturaTermo: text("assinatura_termo"),
   assinaturaIp: text("assinatura_ip"),
   assinaturaUserAgent: text("assinatura_user_agent"),
+  // Liberação excepcional pela Diretoria sem assinatura
+  bypassDiretoria: boolean("bypass_diretoria").default(false),
+  bypassBy: integer("bypass_by"),
+  bypassByName: text("bypass_by_name"),
+  bypassAt: timestamp("bypass_at"),
+  bypassReason: text("bypass_reason"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

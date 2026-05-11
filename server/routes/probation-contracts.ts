@@ -257,6 +257,94 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
+  // ===== Verifica se usuário tem contrato pendente bloqueando acesso =====
+  app.get("/api/mobile/contract-gate", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.json({ blocked: false, pendingContracts: [] });
+      const { data } = await supabaseAdmin
+        .from("employee_probation_contracts")
+        .select("id, start_date, end_date, funcao, assinatura_status, bypass_diretoria")
+        .eq("employee_id", employeeId)
+        .neq("assinatura_status", "assinado")
+        .neq("bypass_diretoria", true);
+      const pending = data || [];
+      res.json({ blocked: pending.length > 0, pendingContracts: toCamelArray(pending) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ===== DIRETORIA: libera funcionário sem assinatura =====
+  app.post("/api/probation-contracts/:id/bypass", requireAuth, async (req: any, res) => {
+    try {
+      if (req.user.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas a Diretoria pode liberar contrato sem assinatura" });
+      }
+      const id = Number(req.params.id);
+      const reason = String(req.body?.reason || "").trim();
+      if (!reason || reason.length < 5) {
+        return res.status(400).json({ message: "Motivo da liberação obrigatório (mínimo 5 caracteres)" });
+      }
+
+      const { data: rows } = await supabaseAdmin
+        .from("employee_probation_contracts")
+        .select("id, assinatura_status, bypass_diretoria")
+        .eq("id", id)
+        .limit(1);
+      if (!rows?.length) return res.status(404).json({ message: "Contrato não encontrado" });
+      if (rows[0].assinatura_status === "assinado") {
+        return res.status(400).json({ message: "Contrato já foi assinado — bypass desnecessário" });
+      }
+      if (rows[0].bypass_diretoria) {
+        return res.status(400).json({ message: "Contrato já estava liberado" });
+      }
+
+      const { data: updated, error } = await supabaseAdmin
+        .from("employee_probation_contracts")
+        .update({
+          bypass_diretoria: true,
+          bypass_by: req.user.id,
+          bypass_by_name: req.user.name || req.user.username || "Diretoria",
+          bypass_at: new Date().toISOString(),
+          bypass_reason: reason,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(toCamelObj(updated));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ===== DIRETORIA: revoga liberação =====
+  app.post("/api/probation-contracts/:id/bypass-revoke", requireAuth, async (req: any, res) => {
+    try {
+      if (req.user.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas a Diretoria pode revogar a liberação" });
+      }
+      const id = Number(req.params.id);
+      const { data: updated, error } = await supabaseAdmin
+        .from("employee_probation_contracts")
+        .update({
+          bypass_diretoria: false,
+          bypass_by: null,
+          bypass_by_name: null,
+          bypass_at: null,
+          bypass_reason: null,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(toCamelObj(updated));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ===== ADMIN: evidências =====
   app.get("/api/probation-contracts/:id/signature", requireAuth, requireAdminRole, async (req, res) => {
     try {

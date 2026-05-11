@@ -483,6 +483,11 @@ export async function ensureDbSchema() {
     `).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_employee ON employee_probation_contracts (employee_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_status ON employee_probation_contracts (assinatura_status)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_diretoria BOOLEAN DEFAULT FALSE`).catch(() => {});
+    await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_by INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_by_name TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_at TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_reason TEXT`).catch(() => {});
 
     const decimalMigrations = [
       `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,

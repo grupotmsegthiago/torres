@@ -26,11 +26,20 @@ export default function MobileContratosPage() {
   const [signing, setSigning] = useState<any | null>(null);
   const [viewing, setViewing] = useState<any | null>(null);
 
-  const pendentes = contratos.filter(c => c.assinaturaStatus !== "assinado");
-  const assinados = contratos.filter(c => c.assinaturaStatus === "assinado");
+  const pendentes = contratos.filter(c => c.assinaturaStatus !== "assinado" && !c.bypassDiretoria);
+  const assinados = contratos.filter(c => c.assinaturaStatus === "assinado" || c.bypassDiretoria);
+  const isBlocking = pendentes.length > 0;
 
   return (
-    <MobileLayout title="Meus Contratos">
+    <MobileLayout>
+      {isBlocking && (
+        <div className="bg-red-600 text-white px-4 py-3 text-center">
+          <p className="text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1">
+            <AlertCircle className="w-4 h-4" /> Acesso bloqueado
+          </p>
+          <p className="text-[11px] mt-1 opacity-90">Você precisa assinar o contrato abaixo antes de usar o aplicativo.</p>
+        </div>
+      )}
       <div className="px-4 py-4 space-y-4">
         {isLoading ? (
           <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>

@@ -129,11 +129,13 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
-function MobileProtectedRoute({ component: Component, skipSelfieCheck }: { component: React.ComponentType; skipSelfieCheck?: boolean }) {
+function MobileProtectedRoute({ component: Component, skipSelfieCheck, skipContractCheck }: { component: React.ComponentType; skipSelfieCheck?: boolean; skipContractCheck?: boolean }) {
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [selfieChecked, setSelfieChecked] = useState(false);
   const [selfieOk, setSelfieOk] = useState(false);
+  const [contractChecked, setContractChecked] = useState(false);
+  const [contractOk, setContractOk] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -169,7 +171,27 @@ function MobileProtectedRoute({ component: Component, skipSelfieCheck }: { compo
     }
   }, [user, skipSelfieCheck, setLocation]);
 
-  if (isLoading || (!selfieChecked && user)) {
+  useEffect(() => {
+    if (user && user.role === "funcionario" && !skipContractCheck) {
+      apiRequest("GET", "/api/mobile/contract-gate")
+        .then(r => r.ok ? r.json() : { blocked: false })
+        .then(data => {
+          if (data.blocked) {
+            setLocation("/mobile/contratos");
+            setContractOk(false);
+          } else {
+            setContractOk(true);
+          }
+          setContractChecked(true);
+        })
+        .catch(() => { setContractOk(true); setContractChecked(true); });
+    } else if (user) {
+      setContractOk(true);
+      setContractChecked(true);
+    }
+  }, [user, skipContractCheck, setLocation]);
+
+  if (isLoading || (!selfieChecked && user) || (!contractChecked && user)) {
     return <LazyFallback />;
   }
 
@@ -178,6 +200,9 @@ function MobileProtectedRoute({ component: Component, skipSelfieCheck }: { compo
   }
 
   if (!selfieOk && !skipSelfieCheck) {
+    return null;
+  }
+  if (!contractOk && !skipContractCheck) {
     return null;
   }
 
@@ -245,7 +270,7 @@ function Router() {
         <Route path="/mobile/controle-condutor">{() => <MobileProtectedRoute component={MobileControleCondutorPage} />}</Route>
         <Route path="/mobile/resumo-financeiro">{() => <MobileProtectedRoute component={MobileResumoFinanceiroPage} skipSelfieCheck />}</Route>
         <Route path="/mobile/holerites">{() => <MobileProtectedRoute component={MobileHoleritesPage} />}</Route>
-        <Route path="/mobile/contratos">{() => <MobileProtectedRoute component={MobileContratosPage} />}</Route>
+        <Route path="/mobile/contratos">{() => <MobileProtectedRoute component={MobileContratosPage} skipContractCheck />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
         <Route path="/admin/inter-extrato">{() => <ProtectedRoute component={InterExtratoPage} />}</Route>
