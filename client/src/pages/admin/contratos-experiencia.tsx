@@ -5,10 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Loader2, ShieldCheck, AlertCircle, Calendar, Eye, Unlock, Lock } from "lucide-react";
-import { useState } from "react";
+import { FileText, Loader2, ShieldCheck, AlertCircle, Calendar, Eye, Unlock, Lock, FileEdit, RotateCcw } from "lucide-react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -25,6 +25,8 @@ export default function ContratosExperienciaPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const isDiretoria = user?.role === "diretoria";
+  const isAdmin = user?.role === "admin" || user?.role === "diretoria";
+  const [tplOpen, setTplOpen] = useState(false);
 
   const revokeMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -61,6 +63,16 @@ export default function ContratosExperienciaPage() {
           </h1>
           <p className="text-sm text-neutral-500 mt-1">Contratos de 45 dias gerados automaticamente para vigilantes</p>
         </div>
+
+        {isAdmin && (
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setTplOpen(true)} data-testid="button-edit-template">
+              <FileEdit className="w-4 h-4 mr-2" /> Modelo do Contrato
+            </Button>
+          </div>
+        )}
+
+        <TemplateEditorDialog open={tplOpen} onClose={() => setTplOpen(false)} canEdit={isAdmin} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <SummaryCard title="Total" value={contratos.length} color="text-neutral-800" />
@@ -250,6 +262,140 @@ function EvidenceDialog({ id, onClose }: { id: number; onClose: () => void }) {
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const TPL_FIELDS: { key: string; label: string; rows: number }[] = [
+  { key: "cabecalho", label: "Cabeçalho / Qualificação das partes", rows: 6 },
+  { key: "clausula1", label: "Cláusula 1 — Função", rows: 3 },
+  { key: "clausula2", label: "Cláusula 2 — Local de trabalho", rows: 4 },
+  { key: "clausula3Titulo", label: "Cláusula 3 — Título (horário)", rows: 2 },
+  { key: "jornadaPadrao", label: "Cláusula 3 — Jornada padrão", rows: 2 },
+  { key: "clausula4Titulo", label: "Cláusula 4 — Título (remuneração)", rows: 2 },
+  { key: "clausula5", label: "Cláusula 5 — Prazo", rows: 2 },
+  { key: "clausula6", label: "Cláusula 6 — Descontos", rows: 3 },
+  { key: "clausula7", label: "Cláusula 7 — Regulamento e segurança", rows: 3 },
+  { key: "clausula8", label: "Cláusula 8 — Continuidade após experiência", rows: 2 },
+  { key: "clausula9", label: "Cláusula 9 — Rescisão antecipada", rows: 3 },
+  { key: "fechamento", label: "Fechamento", rows: 2 },
+  { key: "prorrogacaoTitulo", label: "Prorrogação — Título", rows: 1 },
+  { key: "prorrogacaoTexto", label: "Prorrogação — Texto", rows: 2 },
+  { key: "prorrogacaoLinhaData", label: "Prorrogação — Linha de data", rows: 1 },
+];
+
+const PLACEHOLDERS = [
+  "{{empresa_nome}}", "{{empresa_endereco}}", "{{empresa_cidade}}", "{{empresa_estado}}", "{{empresa_cnpj}}",
+  "{{empregado_nome}}", "{{empregado_endereco}}", "{{empregado_bairro}}", "{{empregado_cidade}}", "{{empregado_estado}}",
+  "{{ctps_numero}}", "{{ctps_serie}}",
+  "{{funcao}}", "{{remuneracao}}", "{{data_inicio}}", "{{data_fim}}", "{{duracao}}",
+  "{{cidade_contrato}}", "{{data_extenso}}", "{{jornada}}", "{{local_trabalho}}",
+];
+
+function TemplateEditorDialog({ open, onClose, canEdit }: { open: boolean; onClose: () => void; canEdit: boolean }) {
+  const { toast } = useToast();
+  const [tpl, setTpl] = useState<Record<string, string> | null>(null);
+  const [defaults, setDefaults] = useState<Record<string, string> | null>(null);
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/probation-contracts-template"],
+    queryFn: async () => {
+      const r = await authFetch("/api/probation-contracts-template");
+      return r.json();
+    },
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (data?.template) {
+      setTpl({ ...data.template });
+      setDefaults({ ...data.default });
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("PUT", "/api/probation-contracts-template", { template: tpl });
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/probation-contracts-template"] });
+      toast({ title: "Modelo salvo", description: "Será aplicado a todos os próximos PDFs." });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><FileEdit className="w-5 h-5 text-indigo-600" /> Modelo do Contrato de Experiência</DialogTitle>
+        </DialogHeader>
+
+        {isLoading || !tpl ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
+        ) : (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+              <p className="font-bold mb-1">Como funciona</p>
+              <p>O texto abaixo é o padrão usado em <b>todos</b> os contratos gerados. Use os marcadores entre chaves para inserir dados do funcionário automaticamente.</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {PLACEHOLDERS.map(p => (
+                  <code key={p} className="bg-white px-1.5 py-0.5 rounded border border-amber-300 font-mono text-[10px]">{p}</code>
+                ))}
+              </div>
+            </div>
+
+            {TPL_FIELDS.map(f => (
+              <div key={f.key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-neutral-700">{f.label}</label>
+                  {canEdit && defaults && tpl[f.key] !== defaults[f.key] && (
+                    <button
+                      type="button"
+                      className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1"
+                      onClick={() => setTpl({ ...tpl, [f.key]: defaults[f.key] })}
+                      data-testid={`button-reset-${f.key}`}
+                    >
+                      <RotateCcw className="w-3 h-3" /> restaurar padrão
+                    </button>
+                  )}
+                </div>
+                <Textarea
+                  value={tpl[f.key] || ""}
+                  onChange={(e) => setTpl({ ...tpl, [f.key]: e.target.value })}
+                  rows={f.rows}
+                  disabled={!canEdit}
+                  className="text-xs font-mono"
+                  data-testid={`textarea-${f.key}`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          {canEdit && defaults && (
+            <Button
+              variant="outline"
+              onClick={() => setTpl({ ...defaults })}
+              disabled={saveMutation.isPending}
+              data-testid="button-reset-all"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" /> Restaurar tudo
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending}>Cancelar</Button>
+          {canEdit && (
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !tpl} data-testid="button-save-template">
+              {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Salvar modelo
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

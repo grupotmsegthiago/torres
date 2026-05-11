@@ -25,6 +25,42 @@ export interface ProbationContractData {
   signatureIp?: string | null;
 }
 
+export interface ProbationContractTemplate {
+  cabecalho: string;
+  clausula1: string;
+  clausula2: string;
+  clausula3Titulo: string;
+  jornadaPadrao: string;
+  clausula4Titulo: string;
+  clausula5: string;
+  clausula6: string;
+  clausula7: string;
+  clausula8: string;
+  clausula9: string;
+  fechamento: string;
+  prorrogacaoTitulo: string;
+  prorrogacaoTexto: string;
+  prorrogacaoLinhaData: string;
+}
+
+export const DEFAULT_PROBATION_TEMPLATE: ProbationContractTemplate = {
+  cabecalho: `Pelo presente instrumento particular de Contrato de Experiência, a empresa {{empresa_nome}} com sede à {{empresa_endereco}} Cidade {{empresa_cidade}} Estado {{empresa_estado}}, inscrita no CNPJ do MF sob Nº {{empresa_cnpj}}, denominada Empregadora, E O SR.(A) {{empregado_nome}}, DOMICILIADO À {{empregado_endereco}}, NO BAIRRO {{empregado_bairro}}, NA CIDADE DE {{empregado_cidade}}/{{empregado_estado}}, PORTADOR DA CTPS Nº/SÉRIE {{ctps_numero}}/{{ctps_serie}} DORAVANTE CHAMADO EMPREGADO, FICA JUSTO E ACERTADO O PRESENTE CONTRATO INDIVIDUAL DE TRABALHO, REGIDO PELAS SEGUINTES CLAUSULAS:`,
+  clausula1: `1 - O Empregado trabalhará para a Empregadora na função de {{funcao}} e mais as funções que vierem a ser objeto de ordens verbais, cartas ou avisos, segundo as necessidades da Empregadora desde que compatíveis com suas atribuições.`,
+  clausula2: `2 - O local de trabalho situa-se {{local_trabalho}}, podendo a Empregadora, a qualquer tempo, transferir o Empregado a título temporário ou definitivo, tanto no âmbito da unidade para a qual foi admitido, como para outras, em qualquer localidade deste Estado ou de outro dentro do País, em conformidade com o parágrafo 1º do artigo 469 da Consolidação das Leis do Trabalho.`,
+  clausula3Titulo: `3 - O horário de trabalho do empregado será o seguinte:`,
+  jornadaPadrao: `A jornada de trabalho será flexível`,
+  clausula4Titulo: `4 - O Empregado perceberá a remuneração de:`,
+  clausula5: `5 - O prazo deste contrato é de {{duracao}} dias, com inicio em {{data_inicio}} e término em {{data_fim}}.`,
+  clausula6: `6 - Além dos descontos previstos na Lei, reserva-se a Empregadora o direito de descontar do Empregado as importâncias correspondentes aos danos causados por ele, com fundamento no parágrafo 1º do artigo 462 da Consolidação das Leis de Trabalho.`,
+  clausula7: `7 - O Empregado fica ciente do Regulamento da Empresa e das Normas de Segurança que regulam suas atividades na Empregadora e se compromete a usar os equipamentos de segurança fornecidos, sob a pena de ser punido por falta grave, nos termos da Legislação vigente e demais disposições inerentes à segurança e medicina do trabalho.`,
+  clausula8: `8 - Permanecendo o Empregado a serviço da Empregadora após o término da experiência, continuarão em vigor as cláusulas constantes deste contrato.`,
+  clausula9: `9 - A rescisão do presente contrato, sem justa causa, por parte da empregadora ou do empregado, antes do término do contrato, implicará em indenização, e por metade, a indenização que teria direito até o término do contrato, conforme art. 479 e 480 da CLT.`,
+  fechamento: `Tendo assim contratado, assinam o presente instrumento, em duas vias, na presença da testemunha abaixo.`,
+  prorrogacaoTitulo: `PRORROGAÇÃO DE CONTRATO DE EXPERIÊNCIA`,
+  prorrogacaoTexto: `Por mútuo acordo, o presente contrato de experiência fica prorrogado até ____/____/______.`,
+  prorrogacaoLinhaData: `____________________, ___ de __________________ de ________`,
+};
+
 const COMPANY = {
   name: "TORRES VIGILANCIA PATRIMONIAL LTDA",
   address: "AV RAIMUNDO PEREIRA DE MAGALHAES, 5720 PIRITUBA",
@@ -62,7 +98,15 @@ function loadLogo(): Buffer | null {
   return null;
 }
 
-export function generateProbationContractPDF(res: Response, data: ProbationContractData) {
+function applyTemplate(tpl: string, vars: Record<string, string>): string {
+  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] ?? `{{${k}}}`));
+}
+
+export function generateProbationContractPDF(
+  res: Response,
+  data: ProbationContractData,
+  template: ProbationContractTemplate = DEFAULT_PROBATION_TEMPLATE
+) {
   const doc = new PDFDocument({
     size: "A4",
     margins: { top: 30, bottom: 25, left: 40, right: 40 },
@@ -82,6 +126,31 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   const SZ_TITLE = 12;
   const LG = 2;
   const PARA_GAP = 0.45;
+
+  const vars: Record<string, string> = {
+    empresa_nome: COMPANY.name,
+    empresa_endereco: COMPANY.address,
+    empresa_cidade: COMPANY.city,
+    empresa_estado: COMPANY.state,
+    empresa_cnpj: COMPANY.cnpj,
+    empregado_nome: data.employeeName.toUpperCase(),
+    empregado_endereco: data.employeeAddress.toUpperCase(),
+    empregado_bairro: data.employeeNeighborhood.toUpperCase(),
+    empregado_cidade: data.employeeCity.toUpperCase(),
+    empregado_estado: data.employeeState.toUpperCase(),
+    ctps_numero: data.ctpsNumber,
+    ctps_serie: data.ctpsSerie,
+    funcao: data.funcao.toUpperCase(),
+    remuneracao: fmtBrl(Number(data.remuneracao)),
+    data_inicio: fmtDateBr(data.startDate),
+    data_fim: fmtDateBr(data.endDate),
+    duracao: String(data.durationDays),
+    cidade_contrato: data.cidadeContrato.toUpperCase(),
+    data_extenso: fmtDateExtenso(data.startDate),
+    jornada: data.jornada || template.jornadaPadrao,
+    local_trabalho: data.localTrabalho || "O MESMO DA EMPRESA",
+  };
+  const sub = (s: string) => applyTemplate(s, vars);
 
   doc.fillColor("#000000").strokeColor("#000000");
 
@@ -105,50 +174,37 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
     .text("CONTRATO DE EXPERIÊNCIA", LM, doc.y, { width: W, align: "center" });
   doc.moveDown(0.4);
 
-  // ===== Helper de parágrafo =====
   function para(text: string, opts: { align?: "left"|"center"|"justify"; gap?: number } = {}) {
     doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000");
     doc.text(text, LM, doc.y, { align: opts.align || "justify", lineGap: LG, width: W });
     doc.moveDown(opts.gap ?? PARA_GAP);
   }
 
-  // ===== Cabeçalho qualificativo =====
-  para(`Pelo presente instrumento particular de Contrato de Experiência, a empresa ${COMPANY.name} com sede à ${COMPANY.address} Cidade ${COMPANY.city} Estado ${COMPANY.state}, inscrita no CNPJ do MF sob Nº ${COMPANY.cnpj}, denominada Empregadora, E O SR.(A) ${data.employeeName.toUpperCase()}, DOMICILIADO À ${data.employeeAddress.toUpperCase()}, NO BAIRRO ${data.employeeNeighborhood.toUpperCase()}, NA CIDADE DE ${data.employeeCity.toUpperCase()}/${data.employeeState.toUpperCase()}, PORTADOR DA CTPS Nº/SÉRIE ${data.ctpsNumber}/${data.ctpsSerie} DORAVANTE CHAMADO EMPREGADO, FICA JUSTO E ACERTADO O PRESENTE CONTRATO INDIVIDUAL DE TRABALHO, REGIDO PELAS SEGUINTES CLAUSULAS:`);
-
-  para(`1 - O Empregado trabalhará para a Empregadora na função de ${data.funcao.toUpperCase()} e mais as funções que vierem a ser objeto de ordens verbais, cartas ou avisos, segundo as necessidades da Empregadora desde que compatíveis com suas atribuições.`);
-
-  para(`2 - O local de trabalho situa-se ${data.localTrabalho || "O MESMO DA EMPRESA"}, podendo a Empregadora, a qualquer tempo, transferir o Empregado a título temporário ou definitivo, tanto no âmbito da unidade para a qual foi admitido, como para outras, em qualquer localidade deste Estado ou de outro dentro do País, em conformidade com o parágrafo 1º do artigo 469 da Consolidação das Leis do Trabalho.`);
-
-  para(`3 - O horário de trabalho do empregado será o seguinte:`, { gap: 0.15 });
-  para(data.jornada || "A jornada de trabalho será flexível", { align: "center" });
-
-  para(`4 - O Empregado perceberá a remuneração de:`, { gap: 0.15 });
-  para(fmtBrl(Number(data.remuneracao)), { align: "center" });
-
-  para(`5 - O prazo deste contrato é de ${data.durationDays} dias, com inicio em ${fmtDateBr(data.startDate)} e término em ${fmtDateBr(data.endDate)}.`);
-
-  para(`6 - Além dos descontos previstos na Lei, reserva-se a Empregadora o direito de descontar do Empregado as importâncias correspondentes aos danos causados por ele, com fundamento no parágrafo 1º do artigo 462 da Consolidação das Leis de Trabalho.`);
-
-  para(`7 - O Empregado fica ciente do Regulamento da Empresa e das Normas de Segurança que regulam suas atividades na Empregadora e se compromete a usar os equipamentos de segurança fornecidos, sob a pena de ser punido por falta grave, nos termos da Legislação vigente e demais disposições inerentes à segurança e medicina do trabalho.`);
-
-  para(`8 - Permanecendo o Empregado a serviço da Empregadora após o término da experiência, continuarão em vigor as cláusulas constantes deste contrato.`);
-
-  para(`9 - A rescisão do presente contrato, sem justa causa, por parte da empregadora ou do empregado, antes do término do contrato, implicará em indenização, e por metade, a indenização que teria direito até o término do contrato, conforme art. 479 e 480 da CLT.`);
-
-  para(`Tendo assim contratado, assinam o presente instrumento, em duas vias, na presença da testemunha abaixo.`);
+  para(sub(template.cabecalho));
+  para(sub(template.clausula1));
+  para(sub(template.clausula2));
+  para(sub(template.clausula3Titulo), { gap: 0.15 });
+  para(sub(vars.jornada), { align: "center" });
+  para(sub(template.clausula4Titulo), { gap: 0.15 });
+  para(vars.remuneracao, { align: "center" });
+  para(sub(template.clausula5));
+  para(sub(template.clausula6));
+  para(sub(template.clausula7));
+  para(sub(template.clausula8));
+  para(sub(template.clausula9));
+  para(sub(template.fechamento));
 
   doc.moveDown(0.4);
   doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000")
-    .text(`${data.cidadeContrato.toUpperCase()}, ${fmtDateExtenso(data.startDate)}.`, LM, doc.y, { width: W });
+    .text(`${vars.cidade_contrato}, ${vars.data_extenso}.`, LM, doc.y, { width: W });
   doc.moveDown(1.2);
 
-  // ===== Bloco assinaturas (compacto, 2 colunas) =====
+  // ===== Bloco assinaturas =====
   const colW = (W - 20) / 2;
   const colLx = LM;
   const colRx = LM + colW + 20;
   let yAss = doc.y;
 
-  // Assinatura digital embutida (se houver) acima da linha do empregado
   if (data.signatureDrawing && /^data:image\//i.test(data.signatureDrawing)) {
     try {
       const base64 = data.signatureDrawing.split(",")[1];
@@ -161,7 +217,7 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   doc.text("____________________________________", colLx, yAss, { width: colW, align: "center" });
   doc.text(COMPANY.name, colLx, yAss + 10, { width: colW, align: "center" });
   doc.text("____________________________________", colRx, yAss, { width: colW, align: "center" });
-  doc.text(data.employeeName.toUpperCase(), colRx, yAss + 10, { width: colW, align: "center" });
+  doc.text(vars.empregado_nome, colRx, yAss + 10, { width: colW, align: "center" });
 
   yAss = yAss + 38;
   doc.text("____________________________________", colLx, yAss, { width: colW, align: "center" });
@@ -171,25 +227,25 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
 
   doc.y = yAss + 36;
 
-  // ===== Prorrogação (na mesma página, compacta) =====
+  // ===== Prorrogação =====
   doc.moveTo(LM, doc.y).lineTo(LM + W, doc.y).strokeColor("#000000").lineWidth(0.5).stroke();
   doc.moveDown(0.6);
 
   doc.font(F_BOLD).fontSize(10).fillColor("#000000")
-    .text("PRORROGAÇÃO DE CONTRATO DE EXPERIÊNCIA", LM, doc.y, { width: W, align: "center" });
+    .text(sub(template.prorrogacaoTitulo), LM, doc.y, { width: W, align: "center" });
   doc.moveDown(0.5);
 
   doc.font(F_NORMAL).fontSize(SZ).fillColor("#000000")
-    .text("Por mútuo acordo, o presente contrato de experiência fica prorrogado até ____/____/______.", LM, doc.y, { width: W, align: "justify", lineGap: LG });
+    .text(sub(template.prorrogacaoTexto), LM, doc.y, { width: W, align: "justify", lineGap: LG });
   doc.moveDown(0.5);
-  doc.text("____________________, ___ de __________________ de ________", LM, doc.y, { width: W });
+  doc.text(sub(template.prorrogacaoLinhaData), LM, doc.y, { width: W });
   doc.moveDown(1.4);
 
   let yP = doc.y;
   doc.text("____________________________________", colLx, yP, { width: colW, align: "center" });
   doc.text(COMPANY.name, colLx, yP + 10, { width: colW, align: "center" });
   doc.text("____________________________________", colRx, yP, { width: colW, align: "center" });
-  doc.text(data.employeeName.toUpperCase(), colRx, yP + 10, { width: colW, align: "center" });
+  doc.text(vars.empregado_nome, colRx, yP + 10, { width: colW, align: "center" });
 
   yP = yP + 38;
   doc.text("____________________________________", colLx, yP, { width: colW, align: "center" });
@@ -197,7 +253,7 @@ export function generateProbationContractPDF(res: Response, data: ProbationContr
   doc.text("____________________________________", colRx, yP, { width: colW, align: "center" });
   doc.text("Responsável quando for menor", colRx, yP + 10, { width: colW, align: "center" });
 
-  // ===== Evidência da assinatura digital (rodapé compacto, mesma página) =====
+  // ===== Evidência da assinatura digital =====
   if (data.signedAt) {
     const evY = yP + 30;
     if (evY < doc.page.height - doc.page.margins.bottom - 50) {

@@ -2,7 +2,18 @@ import type { Express } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
-import { generateProbationContractPDF, type ProbationContractData } from "../probation-contract-pdf";
+import { generateProbationContractPDF, type ProbationContractData, type ProbationContractTemplate, DEFAULT_PROBATION_TEMPLATE } from "../probation-contract-pdf";
+
+async function loadProbationTemplate(): Promise<ProbationContractTemplate> {
+  try {
+    const { data } = await supabaseAdmin.from("system_settings").select("value").eq("key", "probation_contract_template").limit(1);
+    if (data && data.length && data[0].value) {
+      const parsed = JSON.parse(data[0].value);
+      return { ...DEFAULT_PROBATION_TEMPLATE, ...parsed };
+    }
+  } catch (e) { /* fallback default */ }
+  return DEFAULT_PROBATION_TEMPLATE;
+}
 
 const PROBATION_DAYS = 45;
 const VIGILANTE_BASE_SALARY = 2565.31;
@@ -250,10 +261,41 @@ export function registerProbationContractRoutes(app: Express) {
         signedAt: contract.assinado_em,
         signatureIp: contract.assinatura_ip,
       };
-      generateProbationContractPDF(res, data);
+      const template = await loadProbationTemplate();
+      generateProbationContractPDF(res, data, template);
     } catch (err: any) {
       console.error("[probation-pdf]", err);
       if (!res.headersSent) res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ===== Modelo do contrato (editável pela diretoria/admin) =====
+  app.get("/api/probation-contracts-template", requireAuth, async (_req, res) => {
+    try {
+      const template = await loadProbationTemplate();
+      res.json({ template, default: DEFAULT_PROBATION_TEMPLATE });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/probation-contracts-template", requireAdminRole, async (req: any, res) => {
+    try {
+      const incoming = req.body?.template;
+      if (!incoming || typeof incoming !== "object") {
+        return res.status(400).json({ message: "Template inválido" });
+      }
+      const merged: ProbationContractTemplate = { ...DEFAULT_PROBATION_TEMPLATE, ...incoming };
+      const value = JSON.stringify(merged);
+      const { data: existing } = await supabaseAdmin.from("system_settings").select("id").eq("key", "probation_contract_template").limit(1);
+      if (!existing?.length) {
+        await supabaseAdmin.from("system_settings").insert({ key: "probation_contract_template", value });
+      } else {
+        await supabaseAdmin.from("system_settings").update({ value, updated_at: new Date().toISOString() }).eq("key", "probation_contract_template");
+      }
+      res.json({ template: merged });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
