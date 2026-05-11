@@ -11,9 +11,19 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
+
+const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmtDate(d?: string | null) {
+  if (!d) return "—";
+  const iso = String(d).split("T")[0];
+  const [y, m, day] = iso.split("-");
+  if (!y || !m || !day) return iso;
+  return `${day}/${m}/${y}`;
+}
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
@@ -2571,6 +2581,50 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     queryKey: ["/api/employees", employee.id, "dependents"],
     queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/dependents`); return r.json(); },
   });
+  const { data: probationContracts = [], isLoading: loadingProb } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "probation-contracts"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/probation-contracts`); return r.json(); },
+  });
+  const isVigilanteRole = (employee.role || "").toLowerCase().includes("vigilante") || (employee.role || "").toLowerCase().includes("escolta");
+  const createProbationMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/probation-contracts", { employeeId: employee.id });
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "probation-contracts"] });
+      toast({ title: "Contrato de Experiência criado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+  const [probBypassDialog, setProbBypassDialog] = useState<any | null>(null);
+  const [probBypassReason, setProbBypassReason] = useState("");
+  const probBypassMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const r = await apiRequest("POST", `/api/probation-contracts/${id}/bypass`, { reason });
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "probation-contracts"] });
+      setProbBypassDialog(null); setProbBypassReason("");
+      toast({ title: "Acesso liberado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+  const probRevokeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await apiRequest("POST", `/api/probation-contracts/${id}/bypass-revoke`, {});
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "probation-contracts"] });
+      toast({ title: "Liberação revogada" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
 
   const [showDepForm, setShowDepForm] = useState(false);
   const [depForm, setDepForm] = useState({ name: "", birthDate: "", parentesco: "filho", cpf: "", deduzIr: true, certidaoData: "", certidaoFileName: "", notes: "" });
@@ -2967,6 +3021,85 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
         {tab === "contrato" && (
           <div className="space-y-4">
+            {/* ===== Contrato de Experiência (45 dias) — vigilantes ===== */}
+            {isVigilanteRole && (
+              <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Contrato de Experiência (45 dias)</h3>
+                  {probationContracts.length === 0 && canEdit && (
+                    <Button size="sm" variant="outline" onClick={() => createProbationMutation.mutate()} disabled={createProbationMutation.isPending} data-testid="button-create-probation">
+                      {createProbationMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Gerar
+                    </Button>
+                  )}
+                </div>
+                {loadingProb ? (
+                  <div className="text-xs text-neutral-500">Carregando...</div>
+                ) : probationContracts.length === 0 ? (
+                  <p className="text-xs text-neutral-500 italic">Nenhum contrato de experiência emitido. {canEdit ? "Clique em Gerar para criar." : ""}</p>
+                ) : (
+                  probationContracts.map((c: any) => {
+                    const status = c.assinaturaStatus === "assinado" ? "assinado" : (c.bypassDiretoria ? "liberado" : "pendente");
+                    const startD = c.startDate?.split("T")[0] || c.startDate;
+                    const endD = c.endDate?.split("T")[0] || c.endDate;
+                    return (
+                      <div key={c.id} className="bg-white border border-neutral-200 rounded-md p-3 space-y-2" data-testid={`row-probation-${c.id}`}>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge className={
+                            status === "assinado" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                            status === "liberado" ? "bg-amber-100 text-amber-800 border-amber-200" :
+                            "bg-red-100 text-red-800 border-red-200"
+                          }>
+                            {status === "assinado" ? "ASSINADO" : status === "liberado" ? "LIBERADO PELA DIRETORIA" : "PENDENTE DE ASSINATURA"}
+                          </Badge>
+                          <span className="text-neutral-600"><Calendar className="w-3 h-3 inline mr-0.5" /> {fmtDate(startD)} → {fmtDate(endD)} ({c.durationDays || 45} dias)</span>
+                          <span className="text-neutral-600 font-medium">{c.funcao}</span>
+                          <span className="text-neutral-600">{BRL(c.remuneracao)}</span>
+                        </div>
+                        {status === "liberado" && c.bypassReason && (
+                          <p className="text-[10px] text-amber-700 italic">Motivo: {c.bypassReason}{c.bypassByName ? ` — por ${c.bypassByName}` : ""}</p>
+                        )}
+                        {status === "assinado" && c.assinadoEm && (
+                          <p className="text-[10px] text-emerald-700">Assinado em {new Date(c.assinadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => window.open(`/api/probation-contracts/${c.id}/pdf`, "_blank")} data-testid={`button-prob-pdf-${c.id}`}>
+                            <FileText className="w-3.5 h-3.5 mr-1" /> Ver PDF
+                          </Button>
+                          {isDiretoria && status === "pendente" && (
+                            <Button size="sm" variant="outline" className="text-amber-700 border-amber-300" onClick={() => setProbBypassDialog(c)} data-testid={`button-prob-bypass-${c.id}`}>
+                              Liberar acesso
+                            </Button>
+                          )}
+                          {isDiretoria && status === "liberado" && (
+                            <Button size="sm" variant="outline" className="text-red-700 border-red-300" onClick={() => probRevokeMutation.mutate(c.id)} disabled={probRevokeMutation.isPending} data-testid={`button-prob-revoke-${c.id}`}>
+                              Revogar liberação
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Dialog motivo bypass */}
+            <Dialog open={!!probBypassDialog} onOpenChange={(o) => !o && setProbBypassDialog(null)}>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Liberar acesso sem assinatura</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <p className="text-xs text-neutral-600">Esta ação fica registrada no histórico do contrato. Informe o motivo (mínimo 5 caracteres):</p>
+                  <Textarea value={probBypassReason} onChange={(e) => setProbBypassReason(e.target.value)} rows={3} placeholder="Ex.: contrato físico já assinado, será digitalizado posteriormente..." data-testid="textarea-prob-bypass-reason" />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setProbBypassDialog(null); setProbBypassReason(""); }}>Cancelar</Button>
+                    <Button onClick={() => probBypassMutation.mutate({ id: probBypassDialog.id, reason: probBypassReason })} disabled={probBypassReason.trim().length < 5 || probBypassMutation.isPending} data-testid="button-prob-bypass-confirm">
+                      {probBypassMutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Liberar
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold text-neutral-700">Contrato de Trabalho</h3>
               <Button

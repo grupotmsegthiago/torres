@@ -134,6 +134,21 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
+  // ===== ADMIN: lista contratos de um funcionário =====
+  app.get("/api/employees/:id/probation-contracts", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.id);
+      const { data } = await supabaseAdmin
+        .from("employee_probation_contracts")
+        .select("*")
+        .eq("employee_id", employeeId)
+        .order("created_at", { ascending: false });
+      res.json(toCamelArray(data || []));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ===== ADMIN: cria manualmente para um funcionário =====
   app.post("/api/probation-contracts", requireAuth, requireAdminRole, async (req, res) => {
     try {
