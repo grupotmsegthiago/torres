@@ -1352,6 +1352,17 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       ? (absByEmp.get(e.id) || []).find(a => a.start_date <= todayBrt && a.end_date >= todayBrt)
       : null;
 
+    // Turnos que cruzam a meia-noite (vigilância 12x36, 24h, etc.):
+    // se a última batida do dia anterior ficou em número ímpar (entrada sem saída)
+    // e ainda não houve batida hoje, o ponto continua "EM ABERTO" carregado de ontem.
+    const yesterdayBrt = (() => {
+      const d = new Date(todayBrt + "T00:00:00");
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const yesterdayPunches = isCurrentMonth ? (dayMap.get(yesterdayBrt) || []) : [];
+    const yesterdayOpen = yesterdayPunches.length > 0 && yesterdayPunches.length % 2 === 1;
+
     let todayStatus: string;
     let openSinceMinutes: number | null = null;
     if (!isCurrentMonth) {
@@ -1360,23 +1371,43 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       todayStatus = "NAO_MAPEADO";
     } else if (absToday) {
       todayStatus = "AUSENCIA";
+    } else if (todayPunches.length === 0 && yesterdayOpen) {
+      todayStatus = "EM_ABERTO";
+      const lastMs = new Date(yesterdayPunches[yesterdayPunches.length - 1].punch_at).getTime();
+      openSinceMinutes = Math.round((Date.now() - lastMs) / 60000);
     } else if (todayPunches.length === 0) {
       todayStatus = "NAO_BATEU";
     } else if (todayPunches.length === 1) {
       const lastMs = new Date(todayPunches[0].punch_at).getTime();
       const gap = (Date.now() - lastMs) / 60000;
-      if (gap > OPEN_PUNCH_MIN_GAP_MIN) {
+      // Se ontem ficou em aberto e a única batida de hoje é a saída,
+      // o turno foi fechado — não é "em aberto".
+      if (yesterdayOpen) {
+        todayStatus = "COMPLETO";
+      } else if (gap > OPEN_PUNCH_MIN_GAP_MIN) {
         todayStatus = "EM_ABERTO";
         openSinceMinutes = Math.round(gap);
       } else {
         todayStatus = "EM_ANDAMENTO";
       }
     } else if (todayPunches.length % 2 === 1) {
-      todayStatus = "EM_ABERTO";
-      const lastMs = new Date(todayPunches[todayPunches.length - 1].punch_at).getTime();
-      openSinceMinutes = Math.round((Date.now() - lastMs) / 60000);
+      // Se ontem ficou em aberto, a paridade efetiva inverte: ímpar de hoje = completo.
+      if (yesterdayOpen) {
+        todayStatus = "COMPLETO";
+      } else {
+        todayStatus = "EM_ABERTO";
+        const lastMs = new Date(todayPunches[todayPunches.length - 1].punch_at).getTime();
+        openSinceMinutes = Math.round((Date.now() - lastMs) / 60000);
+      }
     } else {
-      todayStatus = "COMPLETO";
+      // Par hoje + ontem em aberto = ainda há um turno aberto que cruzou.
+      if (yesterdayOpen) {
+        todayStatus = "EM_ABERTO";
+        const lastMs = new Date(todayPunches[todayPunches.length - 1].punch_at).getTime();
+        openSinceMinutes = Math.round((Date.now() - lastMs) / 60000);
+      } else {
+        todayStatus = "COMPLETO";
+      }
     }
 
     const hoursWorked = +(totalMin / 60).toFixed(2);
