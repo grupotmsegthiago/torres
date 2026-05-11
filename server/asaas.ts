@@ -767,7 +767,16 @@ export function registerAsaasRoutes(app: Express) {
       }
     }
 
-    const pixKeyRaw: string = String(transfer?.pixAddressKey ?? transfer?.pix_address_key ?? body?.pixAddressKey ?? "");
+    const pixKeyRaw: string = String(
+      transfer?.pixAddressKey
+      ?? transfer?.pix_address_key
+      ?? transfer?.bankAccount?.pixAddressKey
+      ?? transfer?.bankAccount?.pix_address_key
+      ?? transfer?.bank_account?.pixAddressKey
+      ?? body?.pixAddressKey
+      ?? body?.transfer?.bankAccount?.pixAddressKey
+      ?? ""
+    );
     const pixKey: string = pixKeyRaw.trim().toLowerCase();
     const operationType: string = String(transfer?.operationType ?? transfer?.operation_type ?? body?.operationType ?? "").toUpperCase();
     const value: number = Number(transfer?.value ?? body?.value ?? 0);
