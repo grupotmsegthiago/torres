@@ -11,6 +11,7 @@
  */
 import crypto from "node:crypto";
 import { supabaseAdmin } from "./supabase";
+import { computeWorkedHours, ymdBRT as ymdBRTcanon } from "./lib/hours-calc";
 
 // ============================ CRIPTOGRAFIA ============================
 
@@ -1318,30 +1319,19 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const result: any[] = [];
   for (const e of emps as any[]) {
     const list = (byEmp.get(e.id) || []).sort((a, b) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
+
+    // ─── Cálculo CANÔNICO de horas (server/lib/hours-calc.ts) ───
+    // Mesma fonte usada por relatorio-horas, fixed-costs e folha.
+    const calc = computeWorkedHours(list);
+    const totalMin = calc.totalMinutes;
+    const daysWorked = calc.daysWorked;
+
+    // dayMap ainda é necessário para o status de hoje (em aberto, completo, etc.)
     const dayMap = new Map<string, any[]>();
     for (const p of list) {
-      const dt = new Date(p.punch_at);
-      const dayKey = new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+      const dayKey = ymdBRTcanon(p.punch_at);
       if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
       dayMap.get(dayKey)!.push(p);
-    }
-
-    let totalMin = 0;
-    let daysWorked = 0;
-    for (const [, dp] of Array.from(dayMap.entries())) {
-      const sorted = (dp as any[]).sort((a, b) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
-      if (sorted.length < 2) continue;
-      const inMs = new Date(sorted[0].punch_at).getTime();
-      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
-      let workedMin = (outMs - inMs) / 60000;
-      if (sorted.length >= 4) {
-        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
-        workedMin -= lunchMin;
-      }
-      if (workedMin > 0) {
-        totalMin += workedMin;
-        daysWorked++;
-      }
     }
 
     const todayPunches = isCurrentMonth ? (dayMap.get(todayBrt) || []) : [];

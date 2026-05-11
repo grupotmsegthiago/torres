@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { requireAuth, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
+import { computeWorkedHours } from "../lib/hours-calc";
 
 const BRT_OFFSET_MS = 3 * 60 * 60 * 1000;
 
@@ -215,37 +216,23 @@ export function registerRelatorioHorasRoutes(app: Express) {
             .lt("punch_at", endISO)
             .order("punch_at", { ascending: true });
 
-          const byEmpDay = new Map<string, string[]>();
+          // Usa o cálculo CANÔNICO (server/lib/hours-calc.ts) — pareia
+          // batidas globalmente (turnos cruzando meia-noite contam correto).
+          const byEmp = new Map<number, any[]>();
           for (const p of punches || []) {
             if (!p.employee_id) continue;
-            const k = `${p.employee_id}|${ymdBRT(p.punch_at)}`;
-            if (!byEmpDay.has(k)) byEmpDay.set(k, []);
-            byEmpDay.get(k)!.push(p.punch_at);
+            if (!byEmp.has(p.employee_id)) byEmp.set(p.employee_id, []);
+            byEmp.get(p.employee_id)!.push(p);
           }
-
-          for (const [key, list] of Array.from(byEmpDay.entries())) {
-            const [empIdStr] = key.split("|");
-            const empId = Number(empIdStr);
-            const sorted = list.sort();
-            const seen = new Set<string>();
-            const clean: Date[] = [];
-            for (const ts of sorted) {
-              const minute = ts.slice(0, 16);
-              if (seen.has(minute)) continue;
-              seen.add(minute);
-              clean.push(new Date(ts));
-            }
-            let dayMin = 0;
-            for (let i = 0; i + 1 < clean.length; i += 2) {
-              const diff = (clean[i + 1].getTime() - clean[i].getTime()) / 60000;
-              if (diff > 0) dayMin += diff;
-            }
-            if (dayMin <= 0) continue;
+          for (const [empId, pl] of Array.from(byEmp.entries())) {
+            const calc = computeWorkedHours(pl);
+            if (calc.totalMinutes <= 0) continue;
             const emp = ensureEmp(empId);
-            emp.totalHorasPonto += dayMin / 60;
-            emp.diasComPonto += 1;
-            const [, dayStr] = key.split("|");
-            if (dayStr) emp._diasSet.add(dayStr);
+            emp.totalHorasPonto += calc.totalHours;
+            emp.diasComPonto += calc.daysWorked;
+            for (const day of Array.from(calc.perDayMinutes.keys())) {
+              emp._diasSet.add(day);
+            }
           }
         }
       }
