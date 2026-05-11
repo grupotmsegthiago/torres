@@ -502,6 +502,40 @@ export async function ensureDbSchema() {
         AND created_at < '2026-05-11T15:00:00-03:00'
     `).catch(() => {});
 
+    // ===== Contratos Definitivos (CLT, prazo indeterminado) =====
+    // Gerado automaticamente quando o Contrato de Experiência (45d) vence
+    // estando assinado. Mesmo padrão de assinatura/bypass do probation.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS employee_permanent_contracts (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        probation_contract_id INTEGER,
+        start_date DATE NOT NULL,
+        funcao TEXT NOT NULL,
+        remuneracao DECIMAL(10,2) NOT NULL,
+        local_trabalho TEXT DEFAULT 'O MESMO DA EMPRESA',
+        jornada TEXT DEFAULT 'A jornada de trabalho será flexível',
+        cidade_contrato TEXT DEFAULT 'SAO PAULO',
+        assinatura_status TEXT NOT NULL DEFAULT 'pendente',
+        assinado_em TIMESTAMP,
+        assinatura_facial_foto TEXT,
+        assinatura_desenho TEXT,
+        assinatura_termo TEXT,
+        assinatura_ip TEXT,
+        assinatura_user_agent TEXT,
+        bypass_diretoria BOOLEAN DEFAULT FALSE,
+        bypass_by INTEGER,
+        bypass_by_name TEXT,
+        bypass_at TIMESTAMP,
+        bypass_reason TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_permanent_employee ON employee_permanent_contracts (employee_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_permanent_status ON employee_permanent_contracts (assinatura_status)`).catch(() => {});
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uq_permanent_per_probation ON employee_permanent_contracts (probation_contract_id) WHERE probation_contract_id IS NOT NULL`).catch(() => {});
+
     const decimalMigrations = [
       `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,
       `ALTER TABLE employee_payslips ALTER COLUMN net_salary TYPE DECIMAL(10,2) USING net_salary::DECIMAL(10,2)`,

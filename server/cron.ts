@@ -7,6 +7,7 @@ import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
+import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -290,6 +291,23 @@ export function initCronJobs() {
         interReconcileRunning = false;
       }
     });
+
+    // ============================================================
+    // CRON: Contratos Definitivos (CLT) — verifica diariamente quais
+    // experiências assinadas já venceram e gera o contrato definitivo
+    // pendente de assinatura. Roda às 03:10 BRT.
+    // ============================================================
+    cron.schedule("10 3 * * *", async () => {
+      try {
+        const { syncDuePermanentContracts } = await import("./routes/permanent-contracts");
+        const r = await syncDuePermanentContracts();
+        if (r.scanned > 0 || r.created > 0) {
+          log(`CRON Contrato-Definitivo: scanned=${r.scanned} created=${r.created} errors=${r.errors}`, "cron");
+        }
+      } catch (e: any) {
+        log(`CRON Contrato-Definitivo: Erro: ${e.message}`, "cron");
+      }
+    }, { timezone: "America/Sao_Paulo" });
 
     cron.schedule("0 2 * * *", async () => {
     log("CRON: Iniciando monitoramento de frota (multas PRF)", "cron");
@@ -1012,7 +1030,123 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
+  // ============================================================
+  // CRON: Lembrete Holerites — todo 5º dia útil do mês às 09:00 BRT
+  // verifica funcionários ATIVOS sem holerite emitido OU sem assinatura
+  // do mês ANTERIOR e notifica a Diretoria por e-mail.
+  // ============================================================
+  cron.schedule("0 9 * * 1-5", async () => {
+    try {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const [yStr, mStr] = today.split("-");
+      const year = Number(yStr); const month = Number(mStr);
+      const { from, to } = monthRange(year, month);
+      const holidaySet = await loadHolidaySet(from, to);
+      // Quantos dias úteis do início do mês até hoje?
+      const elapsed = countBusinessDays(from, today, holidaySet);
+      if (elapsed !== 5) return; // só dispara exatamente no 5º dia útil
+      log(`CRON LembreteHolerite: Hoje é o 5º dia útil — verificando holerites do mês anterior`, "cron");
+      await sendPayslipReminderToDiretoria(year, month);
+    } catch (err: any) {
+      log(`CRON LembreteHolerite: Erro: ${err.message}`, "cron");
+    }
+  }, { timezone: "America/Sao_Paulo" });
+
   log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | CobrançaVencidos (seg-sex 09:00 BRT)", "cron");
+}
+
+const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+/**
+ * Verifica funcionários ativos sem holerite emitido OU com holerite pendente
+ * de assinatura referente ao mês anterior, e envia e-mail à Diretoria.
+ * `year`/`month` referem-se ao mês CORRENTE (a verificação é do anterior).
+ */
+async function sendPayslipReminderToDiretoria(year: number, month: number) {
+  // Mês de referência = anterior ao corrente
+  let refYear = year, refMonth = month - 1;
+  if (refMonth === 0) { refMonth = 12; refYear -= 1; }
+
+  // Funcionários ativos
+  const { data: emps } = await supabaseAdmin
+    .from("employees")
+    .select("id, name, role, status, matricula")
+    .eq("status", "ativo");
+  const employees = emps || [];
+  if (employees.length === 0) {
+    log(`CRON LembreteHolerite: Nenhum funcionário ativo`, "cron");
+    return;
+  }
+
+  // Holerites do mês de referência
+  const { data: psRows } = await supabaseAdmin
+    .from("employee_payslips")
+    .select("id, employee_id, assinatura_status")
+    .eq("year", refYear)
+    .eq("month", refMonth);
+  const psByEmp = new Map<number, any>();
+  for (const r of psRows || []) psByEmp.set(r.employee_id, r);
+
+  const semHolerite: any[] = [];
+  const naoAssinados: any[] = [];
+  for (const e of employees) {
+    const ps = psByEmp.get(e.id);
+    if (!ps) semHolerite.push(e);
+    else if (ps.assinatura_status !== "assinado") naoAssinados.push({ ...e, payslipId: ps.id });
+  }
+
+  if (semHolerite.length === 0 && naoAssinados.length === 0) {
+    log(`CRON LembreteHolerite: Tudo em dia para ${MONTHS_PT[refMonth-1]}/${refYear}`, "cron");
+    return;
+  }
+
+  const transporter = getCronMailTransporter();
+  if (!transporter) {
+    log(`CRON LembreteHolerite: Pendências encontradas (${semHolerite.length} sem holerite, ${naoAssinados.length} sem assinatura) mas SMTP não configurado`, "cron");
+    return;
+  }
+  const recipients = getDiretoriaRecipients();
+  if (recipients.length === 0) {
+    log(`CRON LembreteHolerite: Sem destinatários da Diretoria configurados`, "cron");
+    return;
+  }
+
+  const monthLabel = `${MONTHS_PT[refMonth-1]}/${refYear}`;
+  const row = (e: any) => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">${e.matricula || "—"}</td><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">${e.name}</td><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#64748b;">${e.role || "—"}</td></tr>`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:20px;">
+      <div style="background:#1e293b;color:#fff;padding:18px;border-radius:10px 10px 0 0;">
+        <h1 style="margin:0;font-size:20px;">Lembrete — Holerites ${monthLabel}</h1>
+        <p style="margin:6px 0 0;font-size:13px;opacity:0.85;">Hoje é o 5º dia útil. Pendências detectadas:</p>
+      </div>
+      <div style="background:#f9fafb;padding:18px;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 10px 10px;">
+        ${semHolerite.length > 0 ? `
+          <h2 style="margin:0 0 8px;color:#b91c1c;font-size:15px;">Sem holerite emitido (${semHolerite.length})</h2>
+          <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin-bottom:16px;">
+            <thead><tr style="background:#fef2f2;"><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#7f1d1d;">Matrícula</th><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#7f1d1d;">Funcionário</th><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#7f1d1d;">Cargo</th></tr></thead>
+            <tbody>${semHolerite.map(row).join("")}</tbody>
+          </table>
+        ` : ""}
+        ${naoAssinados.length > 0 ? `
+          <h2 style="margin:0 0 8px;color:#a16207;font-size:15px;">Holerite emitido mas pendente de assinatura (${naoAssinados.length})</h2>
+          <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+            <thead><tr style="background:#fef3c7;"><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#78350f;">Matrícula</th><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#78350f;">Funcionário</th><th style="padding:8px 10px;font-size:11px;text-transform:uppercase;text-align:left;color:#78350f;">Cargo</th></tr></thead>
+            <tbody>${naoAssinados.map(row).join("")}</tbody>
+          </table>
+        ` : ""}
+        <p style="margin-top:16px;font-size:11px;color:#64748b;">Lembrete automático disparado pelo sistema às 09:00 BRT do 5º dia útil. Acesse Gestão de Holerites para emitir/conferir.</p>
+      </div>
+    </div>`;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_USER || process.env.EMAIL_USER,
+    to: recipients.join(","),
+    bcc: process.env.SMTP_BCC ? process.env.SMTP_BCC.split(/[,;]+/).map(s => s.trim()).filter(Boolean) : undefined,
+    subject: `Lembrete — Holerites ${monthLabel}: ${semHolerite.length + naoAssinados.length} pendência(s)`,
+    html,
+  });
+  log(`CRON LembreteHolerite: E-mail enviado — ${semHolerite.length} sem holerite, ${naoAssinados.length} sem assinatura (ref. ${monthLabel})`, "cron");
 }
 
 function getCronMailTransporter() {

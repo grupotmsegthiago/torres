@@ -2,80 +2,85 @@ import type { Express } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
-import { generateProbationContractPDF, type ProbationContractData, type ProbationContractTemplate, DEFAULT_PROBATION_TEMPLATE } from "../probation-contract-pdf";
+import {
+  generatePermanentContractPDF,
+  type PermanentContractData,
+  type PermanentContractTemplate,
+  DEFAULT_PERMANENT_TEMPLATE,
+} from "../permanent-contract-pdf";
 
-async function loadProbationTemplate(): Promise<ProbationContractTemplate> {
+async function loadPermanentTemplate(): Promise<PermanentContractTemplate> {
   try {
-    const { data } = await supabaseAdmin.from("system_settings").select("value").eq("key", "probation_contract_template").limit(1);
+    const { data } = await supabaseAdmin
+      .from("system_settings")
+      .select("value")
+      .eq("key", "permanent_contract_template")
+      .limit(1);
     if (data && data.length && data[0].value) {
       const parsed = JSON.parse(data[0].value);
-      return { ...DEFAULT_PROBATION_TEMPLATE, ...parsed };
+      return { ...DEFAULT_PERMANENT_TEMPLATE, ...parsed };
     }
-  } catch (e) { /* fallback default */ }
-  return DEFAULT_PROBATION_TEMPLATE;
+  } catch (_e) { /* fallback default */ }
+  return DEFAULT_PERMANENT_TEMPLATE;
 }
 
-const PROBATION_DAYS = 45;
-const VIGILANTE_BASE_SALARY = 2565.31;
-
 function todayBrtIso(): string {
-  // YYYY-MM-DD em horário BRT
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
   return fmt.format(new Date());
 }
 
-function addDaysIso(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
-export function isVigilante(role: string | null | undefined): boolean {
-  if (!role) return false;
-  const r = role.toLowerCase();
-  return r.includes("vigilante") || r.includes("escolta");
+function isoLessOrEqual(a: string, b: string): boolean {
+  // YYYY-MM-DD comparison
+  return a <= b;
 }
 
 /**
- * Cria automaticamente um Contrato de Experiência de 45 dias para o funcionário,
- * se for vigilante e ainda não tiver contrato ativo.
- * Retorna { created, contractId, error }
+ * Cria automaticamente o Contrato Definitivo (CLT prazo indeterminado) quando o
+ * Contrato de Experiência foi assinado E sua data de término já passou.
+ * Idempotente — se já existir um contrato definitivo para o mesmo probation, retorna o existente.
  */
-export async function autoCreateProbationContract(employee: any): Promise<{ created: boolean; contractId?: number; error?: string }> {
+export async function autoCreatePermanentContractFromProbation(probation: any): Promise<{ created: boolean; contractId?: number; error?: string }> {
   try {
-    if (!isVigilante(employee.role)) return { created: false };
+    if (!probation?.id) return { created: false };
+    if (probation.assinatura_status !== "assinado") return { created: false };
 
-    // Já existe contrato para este funcionário?
+    const today = todayBrtIso();
+    const probationEnd = typeof probation.end_date === "string"
+      ? probation.end_date.split("T")[0]
+      : probation.end_date;
+    if (!probationEnd) return { created: false };
+    // Só gera se a experiência já venceu
+    if (!isoLessOrEqual(probationEnd, today)) return { created: false };
+
     const { data: existing } = await supabaseAdmin
-      .from("employee_probation_contracts")
+      .from("employee_permanent_contracts")
       .select("id")
-      .eq("employee_id", employee.id)
+      .eq("probation_contract_id", probation.id)
       .limit(1);
-    if (existing && existing.length > 0) return { created: false, contractId: existing[0].id };
+    if (existing && existing.length > 0) {
+      return { created: false, contractId: existing[0].id };
+    }
 
-    const startIso = employee.hireDate || employee.hire_date || todayBrtIso();
-    const start = typeof startIso === "string" ? startIso.split("T")[0] : todayBrtIso();
-    const end = addDaysIso(start, PROBATION_DAYS - 1);
+    // Início do contrato definitivo = dia seguinte ao fim do probatório
+    const [y, m, d] = probationEnd.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    const startIso = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,"0")}-${String(dt.getUTCDate()).padStart(2,"0")}`;
 
-    const payload = {
-      employee_id: employee.id,
-      start_date: start,
-      end_date: end,
-      duration_days: PROBATION_DAYS,
-      funcao: employee.role || "VIGILANTE DE ESCOLTA ARMADA",
-      remuneracao: String(VIGILANTE_BASE_SALARY),
-      local_trabalho: "O MESMO DA EMPRESA",
-      jornada: "A jornada de trabalho será flexível",
-      cidade_contrato: "SAO PAULO",
+    const payload: any = {
+      employee_id: probation.employee_id,
+      probation_contract_id: probation.id,
+      start_date: startIso,
+      funcao: probation.funcao,
+      remuneracao: String(probation.remuneracao),
+      local_trabalho: probation.local_trabalho || "O MESMO DA EMPRESA",
+      jornada: probation.jornada || "A jornada de trabalho será flexível",
+      cidade_contrato: probation.cidade_contrato || "SAO PAULO",
       assinatura_status: "pendente",
     };
 
     const { data, error } = await supabaseAdmin
-      .from("employee_probation_contracts")
+      .from("employee_permanent_contracts")
       .insert(payload)
       .select()
       .single();
@@ -87,9 +92,31 @@ export async function autoCreateProbationContract(employee: any): Promise<{ crea
   }
 }
 
+/**
+ * Roda diariamente: para todo probation assinado e vencido, garante que exista
+ * o Contrato Definitivo correspondente.
+ */
+export async function syncDuePermanentContracts(): Promise<{ scanned: number; created: number; errors: number }> {
+  const today = todayBrtIso();
+  const { data: probations } = await supabaseAdmin
+    .from("employee_probation_contracts")
+    .select("id, employee_id, end_date, funcao, remuneracao, local_trabalho, jornada, cidade_contrato, assinatura_status")
+    .eq("assinatura_status", "assinado")
+    .lte("end_date", today);
+
+  let created = 0; let errors = 0;
+  const list = probations || [];
+  for (const p of list) {
+    const r = await autoCreatePermanentContractFromProbation(p);
+    if (r.created) created++;
+    if (r.error) errors++;
+  }
+  return { scanned: list.length, created, errors };
+}
+
 async function loadContractWithEmployee(id: number) {
   const { data: rows } = await supabaseAdmin
-    .from("employee_probation_contracts")
+    .from("employee_permanent_contracts")
     .select("*")
     .eq("id", id)
     .limit(1);
@@ -104,17 +131,16 @@ async function loadContractWithEmployee(id: number) {
   return { contract: c, employee: emp };
 }
 
-export function registerProbationContractRoutes(app: Express) {
-  // ===== ADMIN: lista contratos (paginada simples) =====
-  app.get("/api/probation-contracts", requireAuth, requireAdminRole, async (_req, res) => {
+export function registerPermanentContractRoutes(app: Express) {
+  // ===== ADMIN: lista geral =====
+  app.get("/api/permanent-contracts", requireAuth, requireAdminRole, async (_req, res) => {
     try {
       const { data, error } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("*")
         .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ message: error.message });
 
-      // Enriquece com nome do funcionário
       const empIds = Array.from(new Set((data || []).map((c: any) => c.employee_id)));
       let empMap: Record<number, any> = {};
       if (empIds.length > 0) {
@@ -134,12 +160,12 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== ADMIN: lista contratos de um funcionário =====
-  app.get("/api/employees/:id/probation-contracts", requireAuth, requireAdminRole, async (req, res) => {
+  // ===== ADMIN: lista por funcionário =====
+  app.get("/api/employees/:id/permanent-contracts", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const employeeId = Number(req.params.id);
       const { data } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("*")
         .eq("employee_id", employeeId)
         .order("created_at", { ascending: false });
@@ -149,34 +175,23 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== ADMIN: cria manualmente para um funcionário =====
-  app.post("/api/probation-contracts", requireAuth, requireAdminRole, async (req, res) => {
+  // ===== ADMIN: dispara verificação manual (gera todos pendentes hoje) =====
+  app.post("/api/permanent-contracts/sync-due", requireAuth, requireAdminRole, async (_req, res) => {
     try {
-      const employeeId = Number(req.body.employeeId);
-      if (!employeeId) return res.status(400).json({ message: "employeeId obrigatório" });
-      const { data: empRows } = await supabaseAdmin.from("employees").select("*").eq("id", employeeId).limit(1);
-      if (!empRows || !empRows[0]) return res.status(404).json({ message: "Funcionário não encontrado" });
-      const result = await autoCreateProbationContract(toCamelObj(empRows[0]));
-      if (result.error) return res.status(500).json({ message: result.error });
-      if (!result.created && !result.contractId) return res.status(400).json({ message: "Funcionário não é vigilante" });
-      const { data: contract } = await supabaseAdmin
-        .from("employee_probation_contracts")
-        .select("*")
-        .eq("id", result.contractId!)
-        .single();
-      res.status(201).json(toCamelObj(contract));
+      const r = await syncDuePermanentContracts();
+      res.json(r);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  // ===== MOBILE: meus contratos =====
-  app.get("/api/mobile/my-probation-contracts", requireAuth, async (req: any, res) => {
+  // ===== MOBILE: meus contratos definitivos =====
+  app.get("/api/mobile/my-permanent-contracts", requireAuth, async (req: any, res) => {
     try {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.json([]);
       const { data } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("*")
         .eq("employee_id", employeeId)
         .order("created_at", { ascending: false });
@@ -186,8 +201,8 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== Funcionário assina contrato =====
-  app.post("/api/probation-contracts/:id/sign", requireAuth, async (req: any, res) => {
+  // ===== Funcionário assina =====
+  app.post("/api/permanent-contracts/:id/sign", requireAuth, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
       const { facialFoto, assinaturaDesenho, termoAceito, termoTexto } = req.body || {};
@@ -203,7 +218,7 @@ export function registerProbationContractRoutes(app: Express) {
       }
 
       const { data: rows } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("*")
         .eq("id", id)
         .limit(1);
@@ -220,13 +235,13 @@ export function registerProbationContractRoutes(app: Express) {
       const ua = (req.headers["user-agent"] as string) || "";
 
       const { data: updated, error } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .update({
           assinatura_status: "assinado",
           assinado_em: new Date().toISOString(),
           assinatura_facial_foto: facialFoto,
           assinatura_desenho: assinaturaDesenho,
-          assinatura_termo: termoTexto || "Declaro que li e estou de acordo com todas as cláusulas do presente Contrato de Experiência, reconhecendo a validade jurídica desta assinatura eletrônica nos termos da MP 2.200-2/2001.",
+          assinatura_termo: termoTexto || "Declaro que li e estou de acordo com todas as cláusulas do presente Contrato Individual de Trabalho por Prazo Indeterminado, reconhecendo a validade jurídica desta assinatura eletrônica nos termos da MP 2.200-2/2001 e Lei 14.063/2020.",
           assinatura_ip: ip,
           assinatura_user_agent: ua,
         })
@@ -237,13 +252,13 @@ export function registerProbationContractRoutes(app: Express) {
 
       res.json(toCamelObj(updated));
     } catch (err: any) {
-      console.error("[sign-probation]", err);
+      console.error("[sign-permanent]", err);
       res.status(500).json({ message: err.message });
     }
   });
 
-  // ===== PDF do contrato (admin ou o próprio funcionário) =====
-  app.get("/api/probation-contracts/:id/pdf", requireAuth, async (req: any, res) => {
+  // ===== PDF =====
+  app.get("/api/permanent-contracts/:id/pdf", requireAuth, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
       const result = await loadContractWithEmployee(id);
@@ -255,7 +270,7 @@ export function registerProbationContractRoutes(app: Express) {
       const isOwner = req.user.employeeId && req.user.employeeId === contract.employee_id;
       if (!isAdmin && !isOwner) return res.status(403).json({ message: "Acesso negado" });
 
-      const data: ProbationContractData = {
+      const data: PermanentContractData = {
         employeeName: employee.name || "",
         employeeAddress: employee.address || "ENDEREÇO NÃO INFORMADO",
         employeeNeighborhood: "—",
@@ -266,8 +281,6 @@ export function registerProbationContractRoutes(app: Express) {
         funcao: contract.funcao,
         remuneracao: Number(contract.remuneracao),
         startDate: typeof contract.start_date === "string" ? contract.start_date.split("T")[0] : contract.start_date,
-        endDate: typeof contract.end_date === "string" ? contract.end_date.split("T")[0] : contract.end_date,
-        durationDays: contract.duration_days || PROBATION_DAYS,
         cidadeContrato: contract.cidade_contrato || "SAO PAULO",
         localTrabalho: contract.local_trabalho,
         jornada: contract.jornada,
@@ -276,37 +289,44 @@ export function registerProbationContractRoutes(app: Express) {
         signedAt: contract.assinado_em,
         signatureIp: contract.assinatura_ip,
       };
-      const template = await loadProbationTemplate();
-      generateProbationContractPDF(res, data, template);
+      const template = await loadPermanentTemplate();
+      generatePermanentContractPDF(res, data, template);
     } catch (err: any) {
-      console.error("[probation-pdf]", err);
+      console.error("[permanent-pdf]", err);
       if (!res.headersSent) res.status(500).json({ message: err.message });
     }
   });
 
-  // ===== Modelo do contrato (editável pela diretoria/admin) =====
-  app.get("/api/probation-contracts-template", requireAuth, async (_req, res) => {
+  // ===== Modelo do contrato (editável) =====
+  app.get("/api/permanent-contracts-template", requireAuth, async (_req, res) => {
     try {
-      const template = await loadProbationTemplate();
-      res.json({ template, default: DEFAULT_PROBATION_TEMPLATE });
+      const template = await loadPermanentTemplate();
+      res.json({ template, default: DEFAULT_PERMANENT_TEMPLATE });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  app.put("/api/probation-contracts-template", requireAdminRole, async (req: any, res) => {
+  app.put("/api/permanent-contracts-template", requireAdminRole, async (req: any, res) => {
     try {
       const incoming = req.body?.template;
       if (!incoming || typeof incoming !== "object") {
         return res.status(400).json({ message: "Template inválido" });
       }
-      const merged: ProbationContractTemplate = { ...DEFAULT_PROBATION_TEMPLATE, ...incoming };
+      const merged: PermanentContractTemplate = { ...DEFAULT_PERMANENT_TEMPLATE, ...incoming };
       const value = JSON.stringify(merged);
-      const { data: existing } = await supabaseAdmin.from("system_settings").select("id").eq("key", "probation_contract_template").limit(1);
+      const { data: existing } = await supabaseAdmin
+        .from("system_settings")
+        .select("id")
+        .eq("key", "permanent_contract_template")
+        .limit(1);
       if (!existing?.length) {
-        await supabaseAdmin.from("system_settings").insert({ key: "probation_contract_template", value });
+        await supabaseAdmin.from("system_settings").insert({ key: "permanent_contract_template", value });
       } else {
-        await supabaseAdmin.from("system_settings").update({ value, updated_at: new Date().toISOString() }).eq("key", "probation_contract_template");
+        await supabaseAdmin
+          .from("system_settings")
+          .update({ value, updated_at: new Date().toISOString() })
+          .eq("key", "permanent_contract_template");
       }
       res.json({ template: merged });
     } catch (err: any) {
@@ -314,39 +334,8 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== Verifica se usuário tem contrato pendente bloqueando acesso =====
-  // Bloqueia tanto Contrato de Experiência (45d) quanto Contrato Definitivo (CLT).
-  app.get("/api/mobile/contract-gate", requireAuth, async (req: any, res) => {
-    try {
-      const employeeId = req.user?.employeeId;
-      if (!employeeId) return res.json({ blocked: false, pendingContracts: [] });
-
-      const { data: probations } = await supabaseAdmin
-        .from("employee_probation_contracts")
-        .select("id, start_date, end_date, funcao, assinatura_status, bypass_diretoria")
-        .eq("employee_id", employeeId)
-        .neq("assinatura_status", "assinado")
-        .neq("bypass_diretoria", true);
-
-      const { data: permanents } = await supabaseAdmin
-        .from("employee_permanent_contracts")
-        .select("id, start_date, funcao, assinatura_status, bypass_diretoria")
-        .eq("employee_id", employeeId)
-        .neq("assinatura_status", "assinado")
-        .neq("bypass_diretoria", true);
-
-      const pendingProbation = (probations || []).map((c: any) => ({ ...c, contract_kind: "probation" }));
-      const pendingPermanent = (permanents || []).map((c: any) => ({ ...c, contract_kind: "permanent" }));
-      const pending = [...pendingProbation, ...pendingPermanent];
-
-      res.json({ blocked: pending.length > 0, pendingContracts: toCamelArray(pending) });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // ===== DIRETORIA: libera funcionário sem assinatura =====
-  app.post("/api/probation-contracts/:id/bypass", requireAuth, async (req: any, res) => {
+  // ===== DIRETORIA: bypass / revoga bypass =====
+  app.post("/api/permanent-contracts/:id/bypass", requireAuth, async (req: any, res) => {
     try {
       if (req.user.role !== "diretoria") {
         return res.status(403).json({ message: "Apenas a Diretoria pode liberar contrato sem assinatura" });
@@ -356,9 +345,8 @@ export function registerProbationContractRoutes(app: Express) {
       if (!reason || reason.length < 5) {
         return res.status(400).json({ message: "Motivo da liberação obrigatório (mínimo 5 caracteres)" });
       }
-
       const { data: rows } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("id, assinatura_status, bypass_diretoria")
         .eq("id", id)
         .limit(1);
@@ -369,9 +357,8 @@ export function registerProbationContractRoutes(app: Express) {
       if (rows[0].bypass_diretoria) {
         return res.status(400).json({ message: "Contrato já estava liberado" });
       }
-
       const { data: updated, error } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .update({
           bypass_diretoria: true,
           bypass_by: req.user.id,
@@ -389,15 +376,14 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== DIRETORIA: revoga liberação =====
-  app.post("/api/probation-contracts/:id/bypass-revoke", requireAuth, async (req: any, res) => {
+  app.post("/api/permanent-contracts/:id/bypass-revoke", requireAuth, async (req: any, res) => {
     try {
       if (req.user.role !== "diretoria") {
         return res.status(403).json({ message: "Apenas a Diretoria pode revogar a liberação" });
       }
       const id = Number(req.params.id);
       const { data: updated, error } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .update({
           bypass_diretoria: false,
           bypass_by: null,
@@ -415,12 +401,12 @@ export function registerProbationContractRoutes(app: Express) {
     }
   });
 
-  // ===== ADMIN: evidências =====
-  app.get("/api/probation-contracts/:id/signature", requireAuth, requireAdminRole, async (req, res) => {
+  // ===== ADMIN: evidências de assinatura =====
+  app.get("/api/permanent-contracts/:id/signature", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const id = Number(req.params.id);
       const { data: rows } = await supabaseAdmin
-        .from("employee_probation_contracts")
+        .from("employee_permanent_contracts")
         .select("id, employee_id, assinatura_status, assinado_em, assinatura_facial_foto, assinatura_desenho, assinatura_termo, assinatura_ip, assinatura_user_agent")
         .eq("id", id)
         .limit(1);

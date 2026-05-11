@@ -5,11 +5,79 @@ import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Users, Car, FileText, Fuel, Wrench, Route, Clock, AlertTriangle, ShieldAlert, Receipt, Gavel, Activity } from "lucide-react";
+import { Building2, Users, Car, FileText, Fuel, Wrench, Route, Clock, AlertTriangle, ShieldAlert, Receipt, Gavel, Activity, ClipboardList, DollarSign, ShieldCheck, FileWarning } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import AlertasDashboard from "@/components/admin/AlertasDashboard";
 import type { Client, Employee, Vehicle, ServiceOrder, Trip, VehicleFueling, VehicleMaintenance, Timesheet } from "@shared/schema";
+
+const MONTHS_PT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const fmtBR = (iso: string) => { const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; };
+
+function PendenciasCard() {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/pendencias"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    refetchInterval: 60000,
+  });
+  if (isLoading || !data) return null;
+  if (data.total === 0) return null;
+
+  const sections: { key: string; label: string; icon: any; color: string; href: string; payload: any; render: (it: any) => string }[] = [
+    { key: "holerites", label: "Holerites pendentes de assinatura", icon: DollarSign, color: "amber", href: "/admin/holerites", payload: data.holerites, render: (it: any) => `${it.employeeName} — ${MONTHS_PT[it.month-1]}/${it.year}` },
+    { key: "probacao", label: "Contratos de Experiência pendentes", icon: ShieldCheck, color: "indigo", href: "/admin/contratos-experiencia", payload: data.probacao, render: (it: any) => `${it.employeeName} — início ${fmtBR(it.startDate)} (${it.funcao})` },
+    { key: "definitivo", label: "Contratos Definitivos pendentes", icon: ShieldCheck, color: "emerald", href: "/admin/employees", payload: data.definitivo, render: (it: any) => `${it.employeeName} — início ${fmtBR(it.startDate)} (${it.funcao})` },
+    { key: "documentos", label: "Documentos vencendo / vencidos", icon: FileWarning, color: "red", href: "/admin/employees", payload: data.documentos, render: (it: any) => `${it.employeeName} — ${it.type} (${it.vencido ? "VENCIDO" : "vence"} ${fmtBR(it.expirationDate)})` },
+  ];
+
+  return (
+    <Card className="p-4 mb-6 bg-white border-neutral-200" data-testid="card-pendencias">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-9 h-9 rounded-lg bg-neutral-900 flex items-center justify-center">
+          <ClipboardList className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-neutral-900">Quadro de Pendências</h2>
+          <p className="text-[11px] text-neutral-500">{data.total} item(ns) aguardando ação</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {sections.map((s) => {
+          const count = s.payload?.count || 0;
+          const items = s.payload?.items || [];
+          const Icon = s.icon;
+          const colorMap: Record<string, string> = {
+            amber: "border-amber-200 bg-amber-50/40 text-amber-800",
+            indigo: "border-indigo-200 bg-indigo-50/40 text-indigo-800",
+            emerald: "border-emerald-200 bg-emerald-50/40 text-emerald-800",
+            red: "border-red-200 bg-red-50/40 text-red-800",
+          };
+          return (
+            <div key={s.key} className={`rounded-lg border p-3 ${colorMap[s.color]}`} data-testid={`pendencia-${s.key}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wide flex items-center gap-1"><Icon className="w-3.5 h-3.5" /> {s.label}</span>
+                <Badge className="bg-white/80 text-neutral-900 border border-neutral-300 text-xs">{count}</Badge>
+              </div>
+              {count === 0 ? (
+                <p className="text-[11px] text-neutral-500 italic">Sem pendências</p>
+              ) : (
+                <ul className="space-y-1 text-[11px] text-neutral-700">
+                  {items.slice(0, 5).map((it: any) => (
+                    <li key={it.id} className="truncate" data-testid={`pendencia-${s.key}-item-${it.id}`}>• {s.render(it)}</li>
+                  ))}
+                  {count > 5 && (
+                    <li className="text-[10px] text-neutral-500 italic">+ {count - 5} outro(s)</li>
+                  )}
+                </ul>
+              )}
+              <Link href={s.href} className="block mt-2 text-[11px] font-bold text-blue-700 hover:underline" data-testid={`pendencia-${s.key}-link`}>Resolver &rarr;</Link>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 function StatCard({ title, value, icon: Icon, color }: { title: string; value: number | string; icon: any; color: string }) {
   return (
@@ -73,6 +141,9 @@ export default function DashboardPage() {
       </div>
 
       <AlertasDashboard />
+
+      <PendenciasCard />
+
 
       {user?.role === "funcionario" && activeMission && (
         <Alert className="mb-6 border-amber-300 bg-amber-50" data-testid="alert-active-mission">

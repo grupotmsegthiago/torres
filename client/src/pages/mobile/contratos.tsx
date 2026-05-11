@@ -8,9 +8,15 @@ import { FileText, CheckCircle2, ShieldCheck, Camera, Eraser, Loader2, FileX, Al
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const TERMO_TEXTO = `DECLARAÇÃO DE CIÊNCIA E ACEITE — CONTRATO DE EXPERIÊNCIA
+const TERMO_PROBATION = `DECLARAÇÃO DE CIÊNCIA E ACEITE — CONTRATO DE EXPERIÊNCIA
 
 Declaro, para os devidos fins, que LI INTEGRALMENTE o presente Contrato de Experiência de 45 dias e estou CIENTE e DE ACORDO com todas as suas cláusulas, incluindo função, jornada, remuneração, prazo, local de trabalho e demais condições.
+
+Confirmo a autenticidade desta assinatura digital realizada por mim, mediante reconhecimento facial (selfie) e assinatura manuscrita, conforme a Lei 14.063/2020, MP 2.200-2/2001 e o art. 219 do Código Civil, reconhecendo seu pleno valor jurídico equivalente à assinatura física.`;
+
+const TERMO_PERMANENT = `DECLARAÇÃO DE CIÊNCIA E ACEITE — CONTRATO DE TRABALHO POR PRAZO INDETERMINADO
+
+Declaro, para os devidos fins, que LI INTEGRALMENTE o presente Contrato Individual de Trabalho por Prazo Indeterminado, em sequência ao Contrato de Experiência já cumprido, e estou CIENTE e DE ACORDO com todas as suas cláusulas, incluindo função, jornada, remuneração, local de trabalho, regras de rescisão e demais condições previstas na CLT.
 
 Confirmo a autenticidade desta assinatura digital realizada por mim, mediante reconhecimento facial (selfie) e assinatura manuscrita, conforme a Lei 14.063/2020, MP 2.200-2/2001 e o art. 219 do Código Civil, reconhecendo seu pleno valor jurídico equivalente à assinatura física.`;
 
@@ -22,7 +28,14 @@ function fmtDate(d: string | null) {
 }
 
 export default function MobileContratosPage() {
-  const { data: contratos = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/mobile/my-probation-contracts"] });
+  const { data: probContratos = [], isLoading: loadProb } = useQuery<any[]>({ queryKey: ["/api/mobile/my-probation-contracts"] });
+  const { data: permContratos = [], isLoading: loadPerm } = useQuery<any[]>({ queryKey: ["/api/mobile/my-permanent-contracts"] });
+  const isLoading = loadProb || loadPerm;
+
+  const contratos = [
+    ...probContratos.map((c: any) => ({ ...c, kind: "probation" as const })),
+    ...permContratos.map((c: any) => ({ ...c, kind: "permanent" as const })),
+  ];
   const [signing, setSigning] = useState<any | null>(null);
   const [viewing, setViewing] = useState<any | null>(null);
 
@@ -79,11 +92,13 @@ export default function MobileContratosPage() {
 
 function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onView?: () => void }) {
   const isAssinado = c.assinaturaStatus === "assinado";
+  const isPermanent = c.kind === "permanent";
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid={`card-contrato-${c.id}`}>
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid={`card-contrato-${c.kind}-${c.id}`}>
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-black text-neutral-800 flex items-center gap-1">
-          <FileText className="w-4 h-4 text-indigo-600" /> Contrato de Experiência ({c.durationDays} dias)
+          <FileText className={`w-4 h-4 ${isPermanent ? "text-emerald-600" : "text-indigo-600"}`} />
+          {isPermanent ? "Contrato Definitivo (CLT)" : `Contrato de Experiência (${c.durationDays} dias)`}
         </p>
         {isAssinado ? (
           <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
@@ -101,8 +116,14 @@ function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onVi
         <span className="text-neutral-700 font-medium text-right uppercase">{c.funcao}</span>
         <span className="text-neutral-400 flex items-center gap-1"><Calendar className="w-3 h-3" />Início</span>
         <span className="text-neutral-700 font-medium text-right">{fmtDate(c.startDate)}</span>
-        <span className="text-neutral-400 flex items-center gap-1"><Calendar className="w-3 h-3" />Término</span>
-        <span className="text-neutral-700 font-medium text-right">{fmtDate(c.endDate)}</span>
+        {!isPermanent && <>
+          <span className="text-neutral-400 flex items-center gap-1"><Calendar className="w-3 h-3" />Término</span>
+          <span className="text-neutral-700 font-medium text-right">{fmtDate(c.endDate)}</span>
+        </>}
+        {isPermanent && <>
+          <span className="text-neutral-400">Prazo</span>
+          <span className="text-neutral-700 font-medium text-right">Indeterminado</span>
+        </>}
         <span className="text-neutral-400">Remuneração</span>
         <span className="text-emerald-700 font-bold text-right">{BRL(c.remuneracao)}</span>
       </div>
@@ -120,7 +141,7 @@ function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onVi
       )}
 
       {!isAssinado && onSign && (
-        <Button onClick={onSign} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-contrato-${c.id}`}>
+        <Button onClick={onSign} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-contrato-${c.kind}-${c.id}`}>
           <ShieldCheck className="w-4 h-4 mr-1" /> Assinar contrato
         </Button>
       )}
@@ -138,11 +159,14 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function PdfViewer({ contrato, onClose }: { contrato: any; onClose: () => void }) {
-  const url = `/api/probation-contracts/${contrato.id}/pdf`;
+  const isPermanent = contrato.kind === "permanent";
+  const url = isPermanent
+    ? `/api/permanent-contracts/${contrato.id}/pdf`
+    : `/api/probation-contracts/${contrato.id}/pdf`;
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 text-white">
-        <h3 className="font-black text-sm">Contrato de Experiência</h3>
+        <h3 className="font-black text-sm">{isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}</h3>
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-viewer"><X className="w-5 h-5" /></button>
       </div>
       <iframe src={url} className="flex-1 w-full" title="Contrato" />
@@ -158,12 +182,20 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
   const [facialFoto, setFacialFoto] = useState<string | null>(null);
   const [assinaturaDesenho, setAssinaturaDesenho] = useState<string | null>(null);
 
+  const isPermanent = contrato.kind === "permanent";
+  const TERMO_TEXTO = isPermanent ? TERMO_PERMANENT : TERMO_PROBATION;
+  const endpoint = isPermanent
+    ? `/api/permanent-contracts/${contrato.id}/sign`
+    : `/api/probation-contracts/${contrato.id}/sign`;
+  const queryKey = isPermanent ? "/api/mobile/my-permanent-contracts" : "/api/mobile/my-probation-contracts";
+
   const submitMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", `/api/probation-contracts/${contrato.id}/sign`, {
+    mutationFn: async () => apiRequest("POST", endpoint, {
       facialFoto, assinaturaDesenho, termoAceito, termoTexto: TERMO_TEXTO,
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mobile/my-probation-contracts"] });
+      queryClient.invalidateQueries({ queryKey: [queryKey] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mobile/contract-gate"] });
       toast({ title: "Contrato assinado!", description: "Sua assinatura foi registrada com sucesso." });
       onClose();
     },
@@ -174,7 +206,7 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-neutral-900 text-white">
         <div>
-          <h3 className="font-black text-sm">Assinatura — Contrato de Experiência</h3>
+          <h3 className="font-black text-sm">Assinatura — {isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}</h3>
           <p className="text-[10px] text-neutral-400">Etapa {step} de 3</p>
         </div>
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-signature"><X className="w-5 h-5" /></button>
@@ -184,6 +216,7 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
         {step === 1 && (
           <Step1Termo
             contrato={contrato}
+            termoTexto={TERMO_TEXTO}
             aceito={termoAceito}
             setAceito={setTermoAceito}
             onNext={() => setStep(2)}
@@ -211,8 +244,12 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
   );
 }
 
-function Step1Termo({ contrato, aceito, setAceito, onNext }: any) {
+function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
   const [pdfChecked, setPdfChecked] = useState(false);
+  const isPermanent = contrato.kind === "permanent";
+  const pdfUrl = isPermanent
+    ? `/api/permanent-contracts/${contrato.id}/pdf`
+    : `/api/probation-contracts/${contrato.id}/pdf`;
   return (
     <div className="space-y-4">
       <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-200">
@@ -222,17 +259,23 @@ function Step1Termo({ contrato, aceito, setAceito, onNext }: any) {
           <span className="text-neutral-900 font-bold text-right uppercase">{contrato.funcao}</span>
           <span className="text-neutral-500">Início</span>
           <span className="text-neutral-900 font-bold text-right">{fmtDate(contrato.startDate)}</span>
-          <span className="text-neutral-500">Término</span>
-          <span className="text-neutral-900 font-bold text-right">{fmtDate(contrato.endDate)}</span>
-          <span className="text-neutral-500">Duração</span>
-          <span className="text-neutral-900 font-bold text-right">{contrato.durationDays} dias</span>
+          {!isPermanent && <>
+            <span className="text-neutral-500">Término</span>
+            <span className="text-neutral-900 font-bold text-right">{fmtDate(contrato.endDate)}</span>
+            <span className="text-neutral-500">Duração</span>
+            <span className="text-neutral-900 font-bold text-right">{contrato.durationDays} dias</span>
+          </>}
+          {isPermanent && <>
+            <span className="text-neutral-500">Prazo</span>
+            <span className="text-neutral-900 font-bold text-right">Indeterminado</span>
+          </>}
           <span className="text-neutral-500 border-t border-neutral-200 pt-1 mt-1">Remuneração</span>
           <span className="text-emerald-700 font-black text-right border-t border-neutral-200 pt-1 mt-1 text-sm">{BRL(contrato.remuneracao)}</span>
         </div>
       </div>
 
       <Button
-        onClick={() => { window.open(`/api/probation-contracts/${contrato.id}/pdf`, "_blank"); setPdfChecked(true); }}
+        onClick={() => { window.open(pdfUrl, "_blank"); setPdfChecked(true); }}
         variant="outline"
         className="w-full h-11"
         data-testid="button-ler-pdf-completo"
@@ -244,7 +287,7 @@ function Step1Termo({ contrato, aceito, setAceito, onNext }: any) {
         <p className="text-[11px] font-black uppercase text-amber-700 mb-2 flex items-center gap-1">
           <AlertCircle className="w-3.5 h-3.5" /> Termo de aceite
         </p>
-        <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-line">{TERMO_TEXTO}</p>
+        <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-line">{termoTexto}</p>
       </div>
 
       <label className="flex items-start gap-2 p-3 bg-white border border-neutral-300 rounded-xl cursor-pointer active:bg-neutral-50">

@@ -2626,6 +2626,51 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
 
+  // ===== Contrato Definitivo (CLT, prazo indeterminado) =====
+  const { data: permanentContracts = [], isLoading: loadingPerm } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "permanent-contracts"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/permanent-contracts`); return r.json(); },
+  });
+  const [permBypassDialog, setPermBypassDialog] = useState<any | null>(null);
+  const [permBypassReason, setPermBypassReason] = useState("");
+  const permBypassMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const r = await apiRequest("POST", `/api/permanent-contracts/${id}/bypass`, { reason });
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "permanent-contracts"] });
+      setPermBypassDialog(null); setPermBypassReason("");
+      toast({ title: "Acesso liberado" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+  const permRevokeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await apiRequest("POST", `/api/permanent-contracts/${id}/bypass-revoke`, {});
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "permanent-contracts"] });
+      toast({ title: "Liberação revogada" });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+  const syncPermMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", `/api/permanent-contracts/sync-due`, {});
+      if (!r.ok) throw new Error((await r.json()).message);
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "permanent-contracts"] });
+      toast({ title: "Verificação concluída", description: `${data.created} contrato(s) gerado(s)` });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
   const [showDepForm, setShowDepForm] = useState(false);
   const [depForm, setDepForm] = useState({ name: "", birthDate: "", parentesco: "filho", cpf: "", deduzIr: true, certidaoData: "", certidaoFileName: "", notes: "" });
   const handleCertidaoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3083,7 +3128,86 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               </div>
             )}
 
-            {/* Dialog motivo bypass */}
+            {/* ===== Contrato Definitivo (CLT prazo indeterminado) — gerado quando experiência vence ===== */}
+            {isVigilanteRole && (
+              <div className="border border-emerald-200 bg-emerald-50/40 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-emerald-800 flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Contrato Definitivo (CLT — prazo indeterminado)</h3>
+                  {canEdit && (
+                    <Button size="sm" variant="outline" onClick={() => syncPermMutation.mutate()} disabled={syncPermMutation.isPending} data-testid="button-sync-permanent">
+                      {syncPermMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Verificar agora
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[10px] text-emerald-700 italic">Gerado automaticamente quando o Contrato de Experiência (45d) for assinado e vencer. Verificação diária às 03:10 BRT.</p>
+                {loadingPerm ? (
+                  <div className="text-xs text-neutral-500">Carregando...</div>
+                ) : permanentContracts.length === 0 ? (
+                  <p className="text-xs text-neutral-500 italic">Nenhum contrato definitivo gerado ainda.</p>
+                ) : (
+                  permanentContracts.map((c: any) => {
+                    const status = c.assinaturaStatus === "assinado" ? "assinado" : (c.bypassDiretoria ? "liberado" : "pendente");
+                    const startD = c.startDate?.split("T")[0] || c.startDate;
+                    return (
+                      <div key={c.id} className="bg-white border border-neutral-200 rounded-md p-3 space-y-2" data-testid={`row-permanent-${c.id}`}>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge className={
+                            status === "assinado" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                            status === "liberado" ? "bg-amber-100 text-amber-800 border-amber-200" :
+                            "bg-red-100 text-red-800 border-red-200"
+                          }>
+                            {status === "assinado" ? "ASSINADO" : status === "liberado" ? "LIBERADO PELA DIRETORIA" : "PENDENTE DE ASSINATURA"}
+                          </Badge>
+                          <span className="text-neutral-600"><Calendar className="w-3 h-3 inline mr-0.5" /> Início {fmtDate(startD)}</span>
+                          <span className="text-neutral-600 font-medium">{c.funcao}</span>
+                          <span className="text-neutral-600">{BRL(c.remuneracao)}</span>
+                        </div>
+                        {status === "liberado" && c.bypassReason && (
+                          <p className="text-[10px] text-amber-700 italic">Motivo: {c.bypassReason}{c.bypassByName ? ` — por ${c.bypassByName}` : ""}</p>
+                        )}
+                        {status === "assinado" && c.assinadoEm && (
+                          <p className="text-[10px] text-emerald-700">Assinado em {new Date(c.assinadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => window.open(`/api/permanent-contracts/${c.id}/pdf`, "_blank")} data-testid={`button-perm-pdf-${c.id}`}>
+                            <FileText className="w-3.5 h-3.5 mr-1" /> Ver PDF
+                          </Button>
+                          {isDiretoria && status === "pendente" && (
+                            <Button size="sm" variant="outline" className="text-amber-700 border-amber-300" onClick={() => setPermBypassDialog(c)} data-testid={`button-perm-bypass-${c.id}`}>
+                              Liberar acesso
+                            </Button>
+                          )}
+                          {isDiretoria && status === "liberado" && (
+                            <Button size="sm" variant="outline" className="text-red-700 border-red-300" onClick={() => permRevokeMutation.mutate(c.id)} disabled={permRevokeMutation.isPending} data-testid={`button-perm-revoke-${c.id}`}>
+                              Revogar liberação
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Dialog motivo bypass — definitivo */}
+            <Dialog open={!!permBypassDialog} onOpenChange={(o) => !o && setPermBypassDialog(null)}>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Liberar acesso — Contrato Definitivo</DialogTitle></DialogHeader>
+                <div className="space-y-3">
+                  <p className="text-xs text-neutral-600">Esta ação fica registrada no histórico. Informe o motivo (mínimo 5 caracteres):</p>
+                  <Textarea value={permBypassReason} onChange={(e) => setPermBypassReason(e.target.value)} rows={3} placeholder="Ex.: contrato físico já assinado, será digitalizado posteriormente..." data-testid="textarea-perm-bypass-reason" />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setPermBypassDialog(null); setPermBypassReason(""); }}>Cancelar</Button>
+                    <Button onClick={() => permBypassMutation.mutate({ id: permBypassDialog.id, reason: permBypassReason })} disabled={permBypassReason.trim().length < 5 || permBypassMutation.isPending} data-testid="button-perm-bypass-confirm">
+                      {permBypassMutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Liberar
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Dialog motivo bypass — experiência */}
             <Dialog open={!!probBypassDialog} onOpenChange={(o) => !o && setProbBypassDialog(null)}>
               <DialogContent>
                 <DialogHeader><DialogTitle>Liberar acesso sem assinatura</DialogTitle></DialogHeader>
