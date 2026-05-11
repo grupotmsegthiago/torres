@@ -752,6 +752,25 @@ export function registerAsaasRoutes(app: Express) {
   const TRANSFER_PIX_KEY = "escolta@torresseguranca.com.br";
   const TRANSFER_RESERVE = 100;
 
+  app.get("/api/asaas/transfers-pending", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Acesso restrito à diretoria." });
+      }
+      if (!process.env.ASAAS_API_KEY) {
+        return res.json({ pending: [], count: 0, total: 0 });
+      }
+      const result = await asaasRequest("GET", "/transfers?status=PENDING&limit=20");
+      const pending = Array.isArray(result?.data) ? result.data : [];
+      const total = pending.reduce((s: number, t: any) => s + Number(t?.value || 0), 0);
+      res.json({ pending, count: pending.length, total });
+    } catch (err: any) {
+      console.error(`[asaas-pending] erro:`, err.message);
+      res.json({ pending: [], count: 0, total: 0, error: err.message });
+    }
+  });
+
   app.post("/api/asaas/transfer-pix-escolta", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;

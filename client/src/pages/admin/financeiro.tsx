@@ -16,7 +16,7 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Shield, AlertTriangle, Eye, FileText, Send, Banknote,
+  Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -457,6 +457,12 @@ function AsaasBalanceCard() {
     enabled: isDiretoria,
   });
 
+  const { data: pendingData, refetch: refetchPending } = useQuery<{ pending: any[]; count: number; total: number }>({
+    queryKey: ["/api/asaas/transfers-pending"],
+    refetchInterval: 30000,
+    enabled: isDiretoria,
+  });
+
   if (!isDiretoria) return null;
 
   const saldo = Number(status?.balance?.balance ?? status?.balance?.currentBalance ?? 0);
@@ -467,12 +473,19 @@ function AsaasBalanceCard() {
     mutationFn: async () => apiRequest("POST", "/api/asaas/transfer-pix-escolta", {}),
     onSuccess: async (res: any) => {
       const data = await res.json();
+      const valorFmt = data.valor?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const status = data.transfer?.status;
+      const precisaSms = status === "PENDING" || status === "AWAITING_AUTHORIZATION";
       toast({
-        title: "Transferência enviada",
-        description: `${data.valor?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} → PIX ${PIX_KEY}. Reserva mantida: R$ ${RESERVA.toFixed(2)}.`,
+        title: precisaSms ? "⚠️ Aguardando autorização SMS no Asaas" : "Transferência enviada",
+        description: precisaSms
+          ? `${valorFmt} foi solicitada. Abra o app/painel Asaas e clique em "Autorizar" via Token SMS para concluir.`
+          : `${valorFmt} → PIX ${PIX_KEY}. Reserva mantida: R$ ${RESERVA.toFixed(2)}.`,
+        duration: precisaSms ? 12000 : 6000,
       });
       setConfirmOpen(false);
       refetch();
+      refetchPending();
     },
     onError: async (err: any) => {
       let msg = err?.message || "Erro desconhecido";
@@ -518,6 +531,30 @@ function AsaasBalanceCard() {
             )}
           </div>
         </div>
+
+        {(pendingData?.count ?? 0) > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-amber-100 border-2 border-amber-300 rounded-lg shadow-sm" data-testid="pending-asaas-warning">
+            <KeyRound size={16} className="text-amber-700 flex-shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-black text-amber-900 uppercase leading-tight">
+                {pendingData!.count} transferência{pendingData!.count > 1 ? "s" : ""} aguardando autorização SMS
+              </div>
+              <div className="text-[10px] text-amber-700 font-bold">
+                Total: {pendingData!.total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · Abra o app Asaas e toque em "Autorizar"
+              </div>
+            </div>
+            <a
+              href="https://www.asaas.com/transferencias"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black uppercase rounded shadow-sm whitespace-nowrap"
+              data-testid="link-asaas-authorize"
+            >
+              <ExternalLink size={11} /> Asaas
+            </a>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading} data-testid="button-refresh-asaas" className="text-xs font-bold">
             <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
