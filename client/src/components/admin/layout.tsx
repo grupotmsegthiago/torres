@@ -176,7 +176,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/control-id", label: "Ponto Control iD", icon: Clock },
           { path: "/admin/relatorio-horas", label: "Relatório de Horas", icon: Clock },
           { path: "/admin/holerites", label: "Holerites", icon: Receipt, adminOnly: true },
-          { path: "/admin/contratos-experiencia", label: "Contratos Experiência", icon: FileText, adminOnly: true },
         ],
       },
     ],
