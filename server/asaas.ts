@@ -758,9 +758,11 @@ export function registerAsaasRoutes(app: Express) {
       if (user?.role !== "diretoria") {
         return res.status(403).json({ message: "Somente a diretoria pode realizar transferências." });
       }
-      if (!process.env.ASAAS_API_KEY) {
+      const apiKey = process.env.ASAAS_API_KEY;
+      if (!apiKey) {
         return res.status(400).json({ message: "ASAAS_API_KEY não configurada" });
       }
+
       const balRes = await asaasRequest("GET", "/finance/balance");
       const saldo = Number(balRes?.balance ?? balRes?.currentBalance ?? 0);
       if (!Number.isFinite(saldo) || saldo <= TRANSFER_RESERVE) {
@@ -770,8 +772,9 @@ export function registerAsaasRoutes(app: Express) {
           reserva: TRANSFER_RESERVE,
         });
       }
-      const valor = Math.floor((saldo - TRANSFER_RESERVE) * 100) / 100;
-      console.log(`[asaas-transfer] Iniciando: saldo=${saldo} reserva=${TRANSFER_RESERVE} valor=${valor} -> ${TRANSFER_PIX_KEY}`);
+
+      const valor = Math.round((saldo - TRANSFER_RESERVE) * 100) / 100;
+
       const transferBody = {
         value: valor,
         operationType: "PIX",
@@ -779,20 +782,70 @@ export function registerAsaasRoutes(app: Express) {
         pixAddressKeyType: "EMAIL",
         description: "Transferencia automatica de saldo",
       };
-      console.log(`[asaas-transfer] Body:`, JSON.stringify(transferBody));
-      const transferRes = await asaasRequest("POST", "/transfers", transferBody);
-      console.log(`[asaas-transfer] Resposta:`, JSON.stringify(transferRes).slice(0, 500));
-      res.json({
+
+      const url = `${ASAAS_API_URL}/transfers`;
+      console.log(`[asaas-transfer] >>> POST ${url}`);
+      console.log(`[asaas-transfer] >>> Body:`, JSON.stringify(transferBody));
+
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "access_token": apiKey,
+          "User-Agent": "TorresVP/1.0",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(transferBody),
+      });
+      const text = await resp.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { data = { rawText: text }; }
+      console.log(`[asaas-transfer] <<< HTTP ${resp.status} body:`, text.slice(0, 1000));
+
+      const errorsArr: any[] = Array.isArray(data?.errors) ? data.errors : [];
+      const hasErrors = !resp.ok || errorsArr.length > 0;
+
+      if (hasErrors) {
+        const detalhes = errorsArr.map((e: any) => {
+          const code = e?.code ? `[${e.code}] ` : "";
+          const field = e?.field ? `(${e.field}) ` : "";
+          return `${code}${field}${e?.description || JSON.stringify(e)}`;
+        });
+        const mensagemBase = detalhes.length > 0
+          ? detalhes.join(" | ")
+          : (data?.message || `HTTP ${resp.status}`);
+
+        let dica = "";
+        const msgLower = mensagemBase.toLowerCase();
+        if (msgLower.includes("string did not match") || msgLower.includes("expected pattern")) {
+          dica = " — Possível causa: a chave PIX de destino precisa ser cadastrada como 'Conta de transferência' no painel Asaas (Transferências → Cadastrar nova conta) antes de poder receber via API. Tente cadastrar manualmente uma vez no painel.";
+        } else if (msgLower.includes("not authorized") || msgLower.includes("permiss")) {
+          dica = " — Verifique se a sua conta Asaas tem 'Transferência via API' habilitada (em Integrações).";
+        } else if (msgLower.includes("saldo") || msgLower.includes("balance")) {
+          dica = " — O Asaas pode ter um saldo bloqueado/em liberação diferente do disponível.";
+        }
+
+        return res.status(400).json({
+          message: `Asaas recusou a transferência: ${mensagemBase}${dica}`,
+          asaasStatus: resp.status,
+          asaasErrors: errorsArr,
+          asaasResponse: data,
+          requestBody: transferBody,
+        });
+      }
+
+      console.log(`[asaas-transfer] SUCESSO id=${data?.id} status=${data?.status}`);
+      return res.json({
         success: true,
         valor,
         saldoAnterior: saldo,
         saldoReservado: TRANSFER_RESERVE,
         chavePix: TRANSFER_PIX_KEY,
-        transfer: transferRes,
+        transfer: data,
       });
     } catch (err: any) {
-      console.error(`[asaas-transfer] ERRO:`, err.message);
-      res.status(500).json({ message: err.message || "Erro ao realizar transferência" });
+      console.error(`[asaas-transfer] EXCEÇÃO:`, err?.message, err?.stack);
+      return res.status(500).json({ message: err?.message || "Erro ao realizar transferência" });
     }
   });
 
