@@ -150,6 +150,13 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Assinar e baixar</p>
             </div>
           </Link>
+          <Link href="/mobile/contratos">
+            <div className="bg-white rounded-2xl border border-indigo-200 p-4 text-center active:bg-indigo-50 transition-colors" data-testid="link-contratos">
+              <FileText className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Contratos</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Experiência (45 dias)</p>
+            </div>
+          </Link>
           <Link href="/mobile/checklist">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-checklist">
               <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />

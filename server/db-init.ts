@@ -457,6 +457,33 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_ip TEXT`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS assinatura_user_agent TEXT`).catch(() => {});
 
+    // ===== Contratos de Experiência (45 dias para vigilantes) =====
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS employee_probation_contracts (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        duration_days INTEGER NOT NULL DEFAULT 45,
+        funcao TEXT NOT NULL,
+        remuneracao DECIMAL(10,2) NOT NULL,
+        local_trabalho TEXT DEFAULT 'O MESMO DA EMPRESA',
+        jornada TEXT DEFAULT 'A jornada de trabalho será flexível',
+        cidade_contrato TEXT DEFAULT 'SAO PAULO',
+        assinatura_status TEXT NOT NULL DEFAULT 'pendente',
+        assinado_em TIMESTAMP,
+        assinatura_facial_foto TEXT,
+        assinatura_desenho TEXT,
+        assinatura_termo TEXT,
+        assinatura_ip TEXT,
+        assinatura_user_agent TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_employee ON employee_probation_contracts (employee_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_status ON employee_probation_contracts (assinatura_status)`).catch(() => {});
+
     const decimalMigrations = [
       `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,
       `ALTER TABLE employee_payslips ALTER COLUMN net_salary TYPE DECIMAL(10,2) USING net_salary::DECIMAL(10,2)`,

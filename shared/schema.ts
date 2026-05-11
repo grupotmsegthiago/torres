@@ -530,6 +530,35 @@ export const insertEmployeeDocumentSchema = createInsertSchema(employeeDocuments
 export type InsertEmployeeDocument = z.infer<typeof insertEmployeeDocumentSchema>;
 export type EmployeeDocument = typeof employeeDocuments.$inferSelect;
 
+// Contrato de Experiência (45 dias) — gerado automaticamente quando vigilante é cadastrado.
+// Funcionário precisa assinar com facial + assinatura digital, igual ao holerite.
+export const employeeProbationContracts = pgTable("employee_probation_contracts", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  durationDays: integer("duration_days").notNull().default(45),
+  funcao: text("funcao").notNull(),
+  remuneracao: decimal("remuneracao", { precision: 10, scale: 2 }).notNull(),
+  localTrabalho: text("local_trabalho").notNull().default("O MESMO DA EMPRESA"),
+  jornada: text("jornada").notNull().default("A jornada de trabalho será flexível"),
+  cidadeContrato: text("cidade_contrato").notNull().default("SAO PAULO"),
+  // Assinatura digital (mesmo padrão do holerite)
+  assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
+  assinadoEm: timestamp("assinado_em"),
+  assinaturaFacialFoto: text("assinatura_facial_foto"),
+  assinaturaDesenho: text("assinatura_desenho"),
+  assinaturaTermo: text("assinatura_termo"),
+  assinaturaIp: text("assinatura_ip"),
+  assinaturaUserAgent: text("assinatura_user_agent"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeProbationContractSchema = createInsertSchema(employeeProbationContracts).omit({ id: true, createdAt: true });
+export type InsertEmployeeProbationContract = z.infer<typeof insertEmployeeProbationContractSchema>;
+export type EmployeeProbationContract = typeof employeeProbationContracts.$inferSelect;
+
 // Dependentes do funcionário (filhos para abatimento de IRRF + outros)
 export const employeeDependents = pgTable("employee_dependents", {
   id: serial("id").primaryKey(),

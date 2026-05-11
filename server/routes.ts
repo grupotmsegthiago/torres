@@ -500,6 +500,7 @@ async function ensureSystemSettingsTable() {
   import { registerControlIdRoutes } from "./routes/control-id";
   import { registerRelatorioHorasRoutes } from "./routes/relatorio-horas";
   import { registerBrandedContractRoutes } from "./routes/branded-contracts";
+  import { registerProbationContractRoutes } from "./routes/probation-contracts";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -937,6 +938,7 @@ async function ensureSystemSettingsTable() {
     registerHRRoutes(app);
     registerEscortRoutes(app);
     registerMobileRoutes(app);
+    registerProbationContractRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
     registerLeadRoutes(app);

@@ -6,6 +6,7 @@ import type { Express } from "express";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
   import { calcularFolha } from "../lib/payroll";
+import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
   import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 
   export function registerEmployeeRoutes(app: Express) {
@@ -117,7 +118,16 @@ import type { Express } from "express";
       }
     }
 
-    res.status(201).json({ ...data, autoUserCreated, autoUserError });
+    // Auto-criação do Contrato de Experiência (45 dias) se for vigilante
+    let probationContractId: number | null = null;
+    let probationContractError: string | null = null;
+    if (isVigilante(data.role)) {
+      const r = await autoCreateProbationContract(data);
+      if (r.error) probationContractError = r.error;
+      if (r.contractId) probationContractId = r.contractId;
+    }
+
+    res.status(201).json({ ...data, autoUserCreated, autoUserError, probationContractId, probationContractError });
   });
 
   app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
