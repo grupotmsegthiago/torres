@@ -1175,6 +1175,14 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
           </div>
 
           {currentMesLabel && (
+            <div className="flex print:hidden items-center gap-2 mb-2 px-2 py-1.5 rounded border border-blue-300 bg-blue-50 w-fit" data-testid="screen-badge-mes-atual">
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+              <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">
+                Mês atual: {currentMesLabel} / {ano}
+              </span>
+            </div>
+          )}
+          {currentMesLabel && (
             <div className="hidden print:flex items-center gap-2 mb-2 px-2 py-1.5 rounded border border-blue-300 bg-blue-50 w-fit" data-testid="print-badge-mes-atual">
               <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
               <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">
