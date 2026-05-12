@@ -1319,7 +1319,7 @@ ${empNames}`
   });
 
   const syncDocToEmployee = async (docType: string, employeeId: number, documentNumber?: string | null, expiryDate?: string | null) => {
-    if (docType !== "CNH" && docType !== "CNV") return;
+    if (docType !== "CNH" && docType !== "CNV" && docType !== "PIS/PASEP/NIS") return;
     try {
       const emp = await storage.getEmployee(employeeId);
       if (!emp) return;
@@ -1330,6 +1330,8 @@ ${empNames}`
       } else if (docType === "CNV") {
         if (documentNumber && !emp.cnvNumber) syncFields.cnvNumber = documentNumber;
         if (expiryDate && !emp.cnvExpiry) syncFields.cnvExpiry = expiryDate;
+      } else if (docType === "PIS/PASEP/NIS") {
+        if (documentNumber) syncFields.pis = documentNumber;
       }
       if (Object.keys(syncFields).length > 0) {
         await storage.updateEmployee(employeeId, syncFields);
