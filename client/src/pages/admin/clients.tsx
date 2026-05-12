@@ -1600,65 +1600,34 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             </div>
             {clientPrices.length === 0 ? (
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
-            ) : clientPrices.map(cp => (
-              <Card key={cp.id} className="border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`}>
-                <div className="divide-y divide-neutral-100">
-                  {cp.name && (
-                    <div className="px-4 py-2.5 bg-neutral-50">
-                      <span className="text-xs font-black text-neutral-700 uppercase tracking-widest">{cp.name}</span>
+            ) : (
+              <Card className="border-neutral-200 shadow-sm overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-neutral-100 border-b border-neutral-200 text-[10px] font-black text-neutral-500 uppercase tracking-widest">
+                  <div className="col-span-5">Tabela</div>
+                  <div className="col-span-2 text-right">Acionamento</div>
+                  <div className="col-span-2 text-right">Franquia</div>
+                  <div className="col-span-3 text-right">Excedente</div>
+                </div>
+                <div className="divide-y divide-neutral-100 max-h-[70vh] overflow-y-auto">
+                  {clientPrices.map(cp => (
+                    <div
+                      key={cp.id}
+                      onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }}
+                      className="grid grid-cols-12 gap-2 px-4 py-2.5 hover:bg-neutral-50 cursor-pointer items-center text-xs"
+                      data-testid={`row-price-${cp.id}`}
+                    >
+                      <div className="col-span-5 font-bold text-neutral-800 truncate">{cp.name || "(sem nome)"}</div>
+                      <div className="col-span-2 text-right font-mono font-bold text-emerald-700">{fmt(Number(cp.valor_acionamento || 0))}</div>
+                      <div className="col-span-2 text-right font-mono text-neutral-600">{cp.franquia_km || 0}km · {cp.franquia_horas || 0}h</div>
+                      <div className="col-span-3 text-right font-mono text-neutral-500">{fmt(Number(cp.valor_km_extra || 0))}/km · {fmt(Number(cp.valor_hora_extra || 0))}/h</div>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">KM Carregado</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_carregado))}/km</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">KM Vazio</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_vazio))}/km</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Estadia</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_estadia))}/h</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">VRP</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.vrp_base))}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Franquia KM</span>
-                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_minima_km} km</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Diária</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_diaria || 0))}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">R$/KM Acionamento</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_acionamento || 0))}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Franquia Horas</span>
-                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_horas || 0}h</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Franquia KM</span>
-                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_km || 0} km</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Hora Extra</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_extra || 0))} <span className="text-[9px] font-normal text-neutral-400">({(cp as any).hora_extra_fracionada !== false ? "fracionada" : "hora cheia"})</span></span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">KM Extra</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_extra || 0))}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
-                    <span className="text-xs font-semibold text-neutral-500">Cancelamento</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_cancelamento || 0))}</span>
-                  </div>
+                  ))}
+                </div>
+                <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
+                  {clientPrices.length} {clientPrices.length === 1 ? "tabela" : "tabelas"} · clique pra editar
                 </div>
               </Card>
-            ))}
+            )}
           </div>
 
           <div>
