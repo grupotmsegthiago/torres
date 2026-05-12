@@ -84,6 +84,22 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 - **BCC Email Formatting:** Always use an array for BCC recipients in `nodemailer` to avoid silent failures with Office365/Outlook.
 - **Critical Business Rules:** Always read `SYSTEM_BRAIN.md` before starting any task to understand core business rules that must not be violated.
 
+## SEO da Landing Pública
+
+A landing pública em `/` é otimizada para Google. Endpoints SEO em `server/index.ts`:
+- `GET /robots.txt` — permite `/`, bloqueia `/admin`, `/mobile`, `/api`
+- `GET /sitemap.xml` — lista a home com `lastmod` em BRT
+- Middleware adiciona header `X-Robots-Tag: noindex, nofollow` em qualquer resposta de `/admin*`, `/mobile*`, `/api*`
+
+A URL canônica é `https://torresvigilancia.com.br`. Pra apontar pra outra URL pública (ex: subdomínio Replit em testes), defina a env var `PUBLIC_SITE_URL` (sem barra final). Sem ela, o sitemap usa o host da requisição como fallback.
+
+Pós-deploy, lembrar de:
+1. Cadastrar o domínio no [Google Search Console](https://search.google.com/search-console) e enviar o sitemap (`https://torresvigilancia.com.br/sitemap.xml`)
+2. Validar o JSON-LD no [Rich Results Test](https://search.google.com/test/rich-results)
+3. Cadastrar a empresa no [Google Meu Negócio](https://www.google.com/business/) com o mesmo endereço dos dados estruturados (Av. Raimundo Pereira de Magalhães, 5720 — Pirituba/SP)
+
+Dados estruturados (`<script type="application/ld+json">` em `client/index.html`) declaram a empresa como `SecurityService` com CNPJ, Alvará PF nº 1.016, endereço, área de atendimento (SP capital, Campinas, Estado de SP) e catálogo de serviços.
+
 ## Pointers
 
 - **Supabase Docs:** [https://supabase.com/docs](https://supabase.com/docs)

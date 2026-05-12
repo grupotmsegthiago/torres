@@ -44,12 +44,75 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
+// SEO: rotas internas nunca devem ser indexadas (defesa em profundidade).
+// Registrado ANTES das rotas /api/* pra valer pra todas elas.
+app.use((req, res, next) => {
+  const p = req.path;
+  if (p.startsWith("/admin") || p.startsWith("/mobile") || p.startsWith("/api")) {
+    res.set("X-Robots-Tag", "noindex, nofollow");
+  }
+  next();
+});
+
 // ─── /api/version (público, sem cache) ───
 // Cliente PWA chama no boot pra detectar mismatch e disparar hard reset.
 // Lê constants em runtime — qualquer require/import do APP_VERSION reflete aqui.
 app.get("/api/version", (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT });
+});
+
+// ─── SEO: robots.txt + sitemap.xml + noindex em rotas internas ───
+// Registrados ANTES do Vite/static pra não serem capturados pelo catch-all do SPA.
+const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL || "https://torresvigilancia.com.br";
+
+function siteBaseUrl(req: Request): string {
+  if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, "");
+  const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "torresvigilancia.com.br";
+  return `${proto}://${host}`.replace(/\/$/, "");
+}
+
+app.get("/robots.txt", (req, res) => {
+  const base = siteBaseUrl(req);
+  const body = [
+    "User-agent: *",
+    "Allow: /",
+    "Disallow: /admin",
+    "Disallow: /admin/",
+    "Disallow: /mobile",
+    "Disallow: /mobile/",
+    "Disallow: /api",
+    "Disallow: /api/",
+    "",
+    `Sitemap: ${base}/sitemap.xml`,
+    "",
+  ].join("\n");
+  res.type("text/plain; charset=utf-8").send(body);
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const base = siteBaseUrl(req);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const urls = [
+    { loc: `${base}/`, priority: "1.0", changefreq: "weekly" },
+    { loc: `${base}/#servicos`, priority: "0.8", changefreq: "monthly" },
+    { loc: `${base}/#diferenciais`, priority: "0.6", changefreq: "monthly" },
+    { loc: `${base}/#sobre`, priority: "0.6", changefreq: "monthly" },
+    { loc: `${base}/#cotacao`, priority: "0.9", changefreq: "weekly" },
+    { loc: `${base}/#contato`, priority: "0.7", changefreq: "monthly" },
+  ];
+  const body =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    urls
+      .map(
+        (u) =>
+          `  <url>\n    <loc>${u.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${u.changefreq}</changefreq>\n    <priority>${u.priority}</priority>\n  </url>`,
+      )
+      .join("\n") +
+    `\n</urlset>\n`;
+  res.type("application/xml; charset=utf-8").send(body);
 });
 
 setupAuth(app);

@@ -146,7 +146,11 @@ function HeroSection() {
       data-testid="section-hero"
     >
       <div className="absolute inset-0">
-        <img src={imgTeam} alt="" className="w-full h-full object-cover object-top" />
+        <img
+          src={imgTeam}
+          alt="Equipe de vigilantes Torres em operação de segurança patrimonial em São Paulo"
+          className="w-full h-full object-cover object-top"
+        />
         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-black/40" />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60" />
       </div>
@@ -161,18 +165,19 @@ function HeroSection() {
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 mb-8">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-white/50 text-xs font-medium tracking-wider uppercase" data-testid="text-hero-badge">
-                Autorizada pela Policia Federal
+                Autorizada pela Policia Federal — Alvará nº 1.016
               </span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-white leading-[1.05] tracking-tight" data-testid="text-hero-title">
-              Garanta a segurança dos seus ativos
-              <span className="block text-white/40 mt-2">com nossa equipe de especialistas</span>
+              Vigilância Patrimonial e Escolta Armada
+              <span className="block text-white/40 mt-2">em São Paulo, Campinas e todo Estado de SP</span>
             </h1>
 
             <p className="mt-8 text-base sm:text-lg text-white/35 max-w-lg leading-relaxed" data-testid="text-hero-subtitle">
-              Especialistas em Vigilância Patrimonial, Escolta Armada, Central de
-              Monitoramento e Gestão de Facilities com cobertura em todo o território nacional.
+              Empresa de segurança privada autorizada pela Polícia Federal, especializada
+              em Vigilância Patrimonial, Escolta Armada de cargas, Central de Monitoramento 24h
+              e Gestão de Facilities — com sede em Pirituba, São Paulo.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4 flex-wrap">
@@ -531,7 +536,11 @@ function EscortCalculator() {
   return (
     <section id="cotacao" className="relative py-24 sm:py-32 overflow-hidden" data-testid="section-quote">
       <div className="absolute inset-0">
-        <img src={imgEscortRoad} alt="" className="w-full h-full object-cover" />
+        <img
+          src={imgEscortRoad}
+          alt="Escolta armada de cargas Torres em rodovia no Estado de São Paulo"
+          className="w-full h-full object-cover"
+        />
         <div className="absolute inset-0 bg-black/80" />
       </div>
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
