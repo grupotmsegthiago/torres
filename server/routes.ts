@@ -110,6 +110,7 @@ async function ensureFinancialOriginColumns() {
     // ─── Fluxo Aprovação Simone(ADM) → Mickael(diretoria) + Comprovante ───
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS fornecedor_id INTEGER",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS comprovante_url TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS comprovante_path TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS comprovante_anexado_em TIMESTAMP",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS solicitado_por TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_por TEXT",
@@ -137,6 +138,8 @@ async function ensureFinancialOriginColumns() {
      )`,
     "CREATE INDEX IF NOT EXISTS idx_fornecedores_nome ON fornecedores(LOWER(nome))",
     "CREATE INDEX IF NOT EXISTS idx_fornecedores_ativo ON fornecedores(ativo)",
+    "ALTER TABLE fornecedores ALTER COLUMN cnpj_cpf SET NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_fornecedores_cnpj_cpf ON fornecedores(REGEXP_REPLACE(cnpj_cpf, '[^0-9]', '', 'g'))",
     "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",
@@ -326,13 +329,13 @@ async function ensureComprovantesBucket() {
     const exists = (buckets || []).some((b: any) => b.name === "comprovantes");
     if (!exists) {
       const { error } = await supabaseAdmin.storage.createBucket("comprovantes", {
-        public: true,
-        fileSizeLimit: 10 * 1024 * 1024,
+        public: false,
+        fileSizeLimit: 5 * 1024 * 1024,
       });
       if (error && !/already exists/i.test(error.message || "")) {
         console.warn("[storage] createBucket comprovantes:", error.message);
       } else {
-        console.log("[storage] Bucket 'comprovantes' criado (public)");
+        console.log("[storage] Bucket 'comprovantes' criado (private)");
       }
     }
   } catch (e: any) {

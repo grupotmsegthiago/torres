@@ -43,10 +43,20 @@ export function registerFornecedoresRoutes(app: Express) {
       const user = (req as any).user;
       const { nome, cnpj_cpf, categoria, email, telefone, chave_pix, banco, agencia, conta, tipo_conta, observacoes, ativo } = req.body;
       if (!nome || !String(nome).trim()) return res.status(400).json({ message: "Nome é obrigatório" });
+      const cleanDoc = String(cnpj_cpf || "").replace(/\D/g, "");
+      if (!cleanDoc || (cleanDoc.length !== 11 && cleanDoc.length !== 14)) {
+        return res.status(400).json({ message: "CPF ou CNPJ é obrigatório (11 ou 14 dígitos)" });
+      }
+      const { data: dup } = await supabaseAdmin
+        .from("fornecedores")
+        .select("id")
+        .eq("cnpj_cpf", cleanDoc)
+        .maybeSingle();
+      if (dup) return res.status(409).json({ message: "Já existe um fornecedor com este CPF/CNPJ" });
 
       const payload = {
         nome: String(nome).trim().toUpperCase(),
-        cnpj_cpf: cnpj_cpf || null,
+        cnpj_cpf: cleanDoc,
         categoria: categoria || null,
         email: email || null,
         telefone: telefone || null,
@@ -88,7 +98,20 @@ export function registerFornecedoresRoutes(app: Express) {
 
       const payload: any = {};
       if (nome !== undefined) payload.nome = String(nome).trim().toUpperCase();
-      if (cnpj_cpf !== undefined) payload.cnpj_cpf = cnpj_cpf || null;
+      if (cnpj_cpf !== undefined) {
+        const cleanDoc = String(cnpj_cpf || "").replace(/\D/g, "");
+        if (!cleanDoc || (cleanDoc.length !== 11 && cleanDoc.length !== 14)) {
+          return res.status(400).json({ message: "CPF ou CNPJ inválido (11 ou 14 dígitos)" });
+        }
+        const { data: dup } = await supabaseAdmin
+          .from("fornecedores")
+          .select("id")
+          .eq("cnpj_cpf", cleanDoc)
+          .neq("id", req.params.id)
+          .maybeSingle();
+        if (dup) return res.status(409).json({ message: "Já existe outro fornecedor com este CPF/CNPJ" });
+        payload.cnpj_cpf = cleanDoc;
+      }
       if (categoria !== undefined) payload.categoria = categoria || null;
       if (email !== undefined) payload.email = email || null;
       if (telefone !== undefined) payload.telefone = telefone || null;

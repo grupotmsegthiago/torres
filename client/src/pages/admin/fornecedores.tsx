@@ -243,15 +243,24 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
           </h3>
           <button onClick={onClose} data-testid="button-close-form"><X size={20} className="text-neutral-400 hover:text-neutral-600" /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (!nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; } saveMutation.mutate(); }} className="p-6 space-y-4">
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if (!nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+          const clean = (cnpjCpf || "").replace(/\D/g, "");
+          if (clean.length !== 11 && clean.length !== 14) {
+            toast({ title: "CPF ou CNPJ obrigatório", description: "Informe 11 (CPF) ou 14 (CNPJ) dígitos", variant: "destructive" });
+            return;
+          }
+          saveMutation.mutate();
+        }} className="p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nome / Razão Social *</label>
               <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={nome} onChange={e => setNome(e.target.value)} data-testid="input-nome" />
             </div>
             <div>
-              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ / CPF</label>
-              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white" value={cnpjCpf} onChange={e => setCnpjCpf(e.target.value)} data-testid="input-cnpj-cpf" />
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ / CPF *</label>
+              <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white" value={cnpjCpf} onChange={e => setCnpjCpf(e.target.value)} data-testid="input-cnpj-cpf" />
             </div>
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Categoria</label>

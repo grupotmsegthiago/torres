@@ -131,6 +131,25 @@ import type { Express } from "express";
     }
   });
 
+  // Gera URL assinada (60s) para download do comprovante
+  app.get("/api/financial/transactions/:id/comprovante-url", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: tx, error: txErr } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("comprovante_path, comprovante_url")
+        .eq("id", req.params.id)
+        .single();
+      if (txErr || !tx) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const path = tx.comprovante_path || tx.comprovante_url;
+      if (!path) return res.status(404).json({ message: "Comprovante não anexado" });
+      const { data, error } = await supabaseAdmin.storage.from("comprovantes").createSignedUrl(path, 60);
+      if (error || !data?.signedUrl) return res.status(500).json({ message: error?.message || "Falha ao gerar URL" });
+      res.json({ url: data.signedUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Lista de lançamentos PAID sem comprovante anexado
   app.get("/api/financial/comprovantes-pendentes", requireAuth, requireAdminRole, async (req, res) => {
     try {
@@ -191,6 +210,14 @@ import type { Express } from "express";
         }
         const { data, error } = await supabaseAdmin.from("financial_transactions").insert(payloads).select();
         if (error) throw error;
+        for (const row of data || []) {
+          await logFinancialAudit("financial_transactions", String(row.id), "INSERT", [
+            { field: "description", old: null, new_val: row.description },
+            { field: "amount", old: null, new_val: row.amount },
+            { field: "type", old: null, new_val: row.type },
+            { field: "status", old: null, new_val: row.status },
+          ], user.name, user.id, "Criação manual (parcelado)");
+        }
         res.json(data);
       } else {
         const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
@@ -202,6 +229,12 @@ import type { Express } from "express";
           ...baseExtras,
         }).select().single();
         if (error) throw error;
+        await logFinancialAudit("financial_transactions", String(data.id), "INSERT", [
+          { field: "description", old: null, new_val: data.description },
+          { field: "amount", old: null, new_val: data.amount },
+          { field: "type", old: null, new_val: data.type },
+          { field: "status", old: null, new_val: data.status },
+        ], user.name, user.id, "Criação manual");
         res.json(data);
       }
     } catch (err: any) {
@@ -292,7 +325,13 @@ import type { Express } from "express";
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(cleanBase64, "base64");
-      const ext = String(fileName).split(".").pop() || "bin";
+      if (buffer.length > 5 * 1024 * 1024) {
+        return res.status(400).json({ message: "Arquivo excede 5 MB" });
+      }
+      const ext = String(fileName).split(".").pop()?.toLowerCase() || "bin";
+      if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) {
+        return res.status(400).json({ message: "Apenas PDF, JPG ou PNG" });
+      }
       const safeName = `${req.params.id}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
       const storagePath = `${existing.id}/${safeName}`;
 
@@ -304,14 +343,13 @@ import type { Express } from "express";
         });
       if (upErr) throw upErr;
 
-      const { data: urlData } = supabaseAdmin.storage.from("comprovantes").getPublicUrl(storagePath);
-      const publicUrl = urlData?.publicUrl || null;
       const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
 
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")
         .update({
-          comprovante_url: publicUrl,
+          comprovante_url: storagePath,
+          comprovante_path: storagePath,
           comprovante_anexado_em: nowBrt,
         })
         .eq("id", req.params.id)
@@ -320,7 +358,7 @@ import type { Express } from "express";
       if (error) throw error;
 
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
-        [{ field: "comprovante_url", old: existing.comprovante_url, new_val: publicUrl }],
+        [{ field: "comprovante_path", old: existing.comprovante_path, new_val: storagePath }],
         user.name, user.id, "Comprovante anexado");
 
       res.json(data);
@@ -419,6 +457,15 @@ import type { Express } from "express";
         return res.status(400).json({ message: "Lançamento ainda não foi aprovado pela diretoria" });
       }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
+      // Comprovante obrigatório para EXPENSE manual ao marcar como PAID
+      if (
+        newStatus === "PAID" &&
+        existing.type === "EXPENSE" &&
+        (!existing.origin_type || existing.origin_type === "manual") &&
+        !existing.comprovante_url
+      ) {
+        return res.status(400).json({ message: "Anexe o comprovante antes de marcar como pago." });
+      }
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE", [{ field: "status", old: existing.status, new_val: newStatus }], user.name, user.id);
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         status: newStatus,

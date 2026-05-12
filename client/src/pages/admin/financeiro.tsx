@@ -799,20 +799,48 @@ export default function FinanceiroPage() {
     onError: (err: Error) => toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" }),
   });
 
-  const handleUploadComprovante = (id: string) => {
+  const handleUploadComprovante = (id: string, onDone?: () => void) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*,application/pdf";
+    input.accept = "image/jpeg,image/jpg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf";
     input.onchange = async (e: any) => {
       const file: File | undefined = e.target.files?.[0];
       if (!file) return;
-      if (file.size > 8 * 1024 * 1024) {
-        toast({ title: "Arquivo muito grande", description: "Máximo 8 MB", variant: "destructive" });
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      const extOk = /\.(jpe?g|png|pdf)$/i.test(file.name);
+      if (!allowed.includes(file.type) && !extOk) {
+        toast({ title: "Formato inválido", description: "Apenas PDF, JPG ou PNG", variant: "destructive" });
         return;
       }
-      uploadComprovanteMutation.mutate({ id, file });
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: "Arquivo muito grande", description: "Máximo 5 MB", variant: "destructive" });
+        return;
+      }
+      uploadComprovanteMutation.mutate({ id, file }, { onSuccess: () => onDone?.() });
     };
     input.click();
+  };
+
+  const openComprovante = async (id: string) => {
+    try {
+      const res = await apiRequest("GET", `/api/financial/transactions/${id}/comprovante-url`);
+      const json = await res.json();
+      if (json?.url) window.open(json.url, "_blank", "noopener,noreferrer");
+      else throw new Error(json?.message || "Falha ao abrir");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleTogglePago = (t: FinancialTransaction) => {
+    const goingToPaid = t.status !== "PAID";
+    const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual");
+    if (goingToPaid && isManualExpense && !t.comprovante_url) {
+      toast({ title: "Comprovante obrigatório", description: "Anexe o comprovante antes de marcar como pago." });
+      handleUploadComprovante(t.id, () => toggleMutation.mutate(t.id));
+      return;
+    }
+    toggleMutation.mutate(t.id);
   };
 
   const handleRecusar = (id: string) => {
@@ -907,8 +935,18 @@ export default function FinanceiroPage() {
     return list;
   }, [periodFilteredTransactions, activeStep, statusFilter, searchTerm]);
 
+  // Lançamentos manuais (sem origem automática de missão) e fora do fluxo de aprovação/recusa.
+  // Aplicado a todos os totais e cards das abas Pagar/Receber para consistência com a tabela.
+  const manualOperationalTx = useMemo(() => {
+    return periodFilteredTransactions.filter(t =>
+      (!t.origin_type || t.origin_type === "manual") &&
+      t.status !== "AGUARDANDO_APROVACAO" &&
+      t.status !== "RECUSADA"
+    );
+  }, [periodFilteredTransactions]);
+
   const summaryPagar = useMemo(() => {
-    const expenses = periodFilteredTransactions.filter(t => t.type === "EXPENSE");
+    const expenses = manualOperationalTx.filter(t => t.type === "EXPENSE");
     return {
       total: expenses.reduce((a, t) => a + Number(t.amount), 0),
       paid: expenses.filter(t => t.status === "PAID").reduce((a, t) => a + Number(t.amount), 0),
@@ -916,10 +954,10 @@ export default function FinanceiroPage() {
       count: expenses.length,
       paidCount: expenses.filter(t => t.status === "PAID").length,
     };
-  }, [periodFilteredTransactions]);
+  }, [manualOperationalTx]);
 
   const summaryReceber = useMemo(() => {
-    const incomes = periodFilteredTransactions.filter(t => t.type === "INCOME");
+    const incomes = manualOperationalTx.filter(t => t.type === "INCOME");
     return {
       total: incomes.reduce((a, t) => a + Number(t.amount), 0),
       paid: incomes.filter(t => t.status === "PAID").reduce((a, t) => a + Number(t.amount), 0),
@@ -927,17 +965,17 @@ export default function FinanceiroPage() {
       count: incomes.length,
       paidCount: incomes.filter(t => t.status === "PAID").length,
     };
-  }, [periodFilteredTransactions]);
+  }, [manualOperationalTx]);
 
   const overduePagar = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
-    return periodFilteredTransactions.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
-  }, [periodFilteredTransactions]);
+    return manualOperationalTx.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
+  }, [manualOperationalTx]);
 
   const overdueReceber = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
-    return periodFilteredTransactions.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
-  }, [periodFilteredTransactions]);
+    return manualOperationalTx.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
+  }, [manualOperationalTx]);
 
   const handleDelete = (id: string) => {
     if (!isDiretoria) return;
@@ -1079,7 +1117,7 @@ export default function FinanceiroPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => toggleMutation.mutate(t.id)} data-testid={`button-toggle-${t.id}`}
+                    <button onClick={() => handleTogglePago(t)} data-testid={`button-toggle-${t.id}`}
                       className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
                         t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
                       }`}>
@@ -1092,9 +1130,9 @@ export default function FinanceiroPage() {
                   <td className="px-4 py-3 text-right">
                     {t.type === "EXPENSE" && t.status === "PAID" && (
                       t.comprovante_url ? (
-                        <a href={t.comprovante_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-200 hover:bg-green-200" data-testid={`link-comprovante-${t.id}`}>
+                        <button onClick={() => openComprovante(t.id)} className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-200 hover:bg-green-200" data-testid={`link-comprovante-${t.id}`}>
                           <FileText size={10} /> Compr.
-                        </a>
+                        </button>
                       ) : (
                         <button onClick={() => handleUploadComprovante(t.id)} disabled={uploadComprovanteMutation.isPending} className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 animate-pulse" data-testid={`button-upload-comp-${t.id}`}>
                           <Send size={10} /> Anexar

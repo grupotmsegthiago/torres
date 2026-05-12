@@ -1187,7 +1187,7 @@ async function sendComprovantesPendentesEmail() {
       log(`CRON Comprovantes: ${semComp.length} pendentes / ${pendApro.length} aguardando — SMTP não configurado`, "cron");
       return;
     }
-    const recipients = getDiretoriaRecipients();
+    const recipients = await getAprovacaoRecipients();
     if (recipients.length === 0) return;
 
     const fmtMoney = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -1257,6 +1257,23 @@ const DIRETORIA_EMAIL_DEFAULT = "diretoria@torresseguranca.com.br";
 function getDiretoriaRecipients(): string[] {
   const raw = process.env.DIRETORIA_EMAIL || DIRETORIA_EMAIL_DEFAULT;
   return raw.split(/[,;]+/).map(s => s.trim()).filter(s => /.+@.+\..+/.test(s));
+}
+
+// Resolve destinatários do fluxo de aprovação: Simone (admin) + Mickael (diretoria)
+// via tabela users; faz fallback para getDiretoriaRecipients() se nada encontrado.
+async function getAprovacaoRecipients(): Promise<string[]> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("users")
+      .select("name, email, role")
+      .or("role.eq.diretoria,name.ilike.%simone%,name.ilike.%mickael%");
+    const emails = (data || [])
+      .map((u: any) => String(u?.email || "").trim())
+      .filter((e: string) => /.+@.+\..+/.test(e));
+    const unique = Array.from(new Set(emails));
+    if (unique.length > 0) return unique;
+  } catch (e) { /* fallback abaixo */ }
+  return getDiretoriaRecipients();
 }
 
 
