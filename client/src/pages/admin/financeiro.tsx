@@ -2,7 +2,7 @@ import { parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,10 @@ import {
   Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer,
+} from "recharts";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -743,6 +747,8 @@ interface RelatorioAnualData {
 
 const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MESES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const CHART_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c", "#6b7280"];
+const MAX_SERIES = 5;
 
 function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   ano: number;
@@ -753,6 +759,12 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   const isFornecedor = tipo === "fornecedor";
   const anoAtual = new Date().getFullYear();
   const anosOpts = Array.from({ length: 5 }, (_, i) => anoAtual - i);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [chartType, setChartType] = useState<"bar" | "line">("bar");
+
+  useEffect(() => {
+    setHighlightedId(null);
+  }, [ano, tipo]);
 
   const { data: relAnual, isLoading } = useQuery<RelatorioAnualData>({
     queryKey: ["/api/financeiro/relatorio-anual", { ano, tipo }],
@@ -763,9 +775,6 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     },
   });
 
-  // varPct já vem com sinal correto do servidor:
-  //   positivo = boa notícia (verde) para o tipo selecionado
-  //   negativo = má notícia (vermelho)
   const corVar = (varPct: number | null): string => {
     if (varPct === null || varPct === 0) return "text-neutral-400";
     return varPct > 0 ? "text-green-600" : "text-red-600";
@@ -781,9 +790,53 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     return `${varPct.toFixed(1).replace(".", ",")}%`;
   };
 
+  const { top5, seriesKeys, seriesColors, seriesIdMap, chartData } = useMemo(() => {
+    if (!relAnual || relAnual.linhas.length === 0) {
+      return { top5: [], seriesKeys: [], seriesColors: [], seriesIdMap: {} as Record<string, string>, chartData: [] };
+    }
+    const sorted = [...relAnual.linhas].sort((a, b) => b.total - a.total);
+    const top5 = sorted.slice(0, MAX_SERIES);
+    const rest = sorted.slice(MAX_SERIES);
+    const hasOthers = rest.length > 0;
+    const seriesKeys = [...top5.map(l => l.nome), ...(hasOthers ? ["Outros"] : [])];
+    const seriesColors = CHART_COLORS.slice(0, seriesKeys.length);
+    const seriesIdMap: Record<string, string> = {};
+    for (const l of top5) seriesIdMap[l.nome] = l.id;
+
+    const chartData = MESES_CURTOS.map((mes, idx) => {
+      const pt: Record<string, string | number> = { mes };
+      for (const l of top5) {
+        pt[l.nome] = l.meses[idx]?.valor ?? 0;
+      }
+      if (hasOthers) {
+        pt["Outros"] = rest.reduce((sum, l) => sum + (l.meses[idx]?.valor ?? 0), 0);
+      }
+      return pt;
+    });
+
+    return { top5, seriesKeys, seriesColors, seriesIdMap, chartData };
+  }, [relAnual]);
+
+  const handleSeriesClick = (seriesName: string) => {
+    const id = seriesIdMap[seriesName];
+    if (!id) return;
+    const newId = highlightedId === id ? null : id;
+    setHighlightedId(newId);
+    if (newId) {
+      setTimeout(() => {
+        document.querySelector(`[data-testid="row-anual-${newId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+    }
+  };
+
+  const fmtAxisCurrency = (v: number) => {
+    if (v >= 1_000_000) return `R$${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `R$${(v / 1_000).toFixed(0)}k`;
+    return `R$${v}`;
+  };
+
   const exportCSV = () => {
     if (!relAnual) return;
-    // Mesma forma da grade: para cada mês uma coluna de Valor e uma de Var %.
     const header = ["Nome"];
     for (const m of MESES_FULL) {
       header.push(`${m} (R$)`);
@@ -818,13 +871,41 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   };
 
   const handlePrint = () => {
-    // Dica de orientação A4 paisagem para o navegador
     const styleEl = document.createElement("style");
     styleEl.id = "rel-anual-print-style";
     styleEl.innerHTML = "@page { size: A4 landscape; margin: 10mm; }";
     document.head.appendChild(styleEl);
     window.print();
     setTimeout(() => { styleEl.remove(); }, 1000);
+  };
+
+  const customTooltipFormatter = (value: number, name: string) => [
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value),
+    name,
+  ];
+
+  const renderLegend = (props: any) => {
+    const { payload } = props;
+    return (
+      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center pt-2">
+        {(payload as any[]).map((entry: any, idx: number) => {
+          const isOthers = entry.value === "Outros";
+          return (
+            <span
+              key={`legend-${idx}`}
+              onClick={() => !isOthers && handleSeriesClick(entry.value)}
+              style={{ cursor: isOthers ? "default" : "pointer", color: entry.color }}
+              className={`flex items-center gap-1 text-[11px] font-bold select-none ${isOthers ? "opacity-50 italic" : "hover:opacity-80"}`}
+              title={isOthers ? "Soma dos demais — sem linha na tabela" : `Clique para destacar na tabela`}
+            >
+              <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: entry.color, flexShrink: 0 }} />
+              {entry.value}
+              {isOthers && <span className="text-[9px] text-neutral-400 ml-0.5 not-italic">(agrupado)</span>}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -878,53 +959,137 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
           Nenhum dado para {ano}.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse" data-testid="table-relatorio-anual">
-            <thead>
-              <tr className="bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider">
-                <th className="px-2 py-2 sticky left-0 bg-neutral-900 z-10 min-w-[180px]">{isFornecedor ? "Fornecedor" : "Cliente"}</th>
-                {MESES_CURTOS.map(m => <th key={m} className="px-2 py-2 text-right min-w-[90px]">{m}</th>)}
-                <th className="px-2 py-2 text-right bg-neutral-800 min-w-[110px]">Total Anual</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {relAnual.linhas.map(l => (
-                <tr key={l.id} className="hover:bg-neutral-50" data-testid={`row-anual-${l.id}`}>
-                  <td className="px-2 py-2 text-[11px] font-black uppercase sticky left-0 bg-white z-10">{l.nome}</td>
-                  {l.meses.map(m => (
-                    <td key={m.mes} className="px-2 py-2 text-right">
-                      <div className="text-[11px] font-mono font-bold text-neutral-800">
-                        {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-300">—</span>}
+        <>
+          <div className="mb-6 print:hidden" data-testid="chart-relatorio-anual">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={14} className="text-neutral-500" />
+                <span className="text-[10px] font-black text-neutral-500 uppercase">
+                  Top {Math.min(MAX_SERIES, relAnual.linhas.length)} {isFornecedor ? "Fornecedores" : "Clientes"} — clique na legenda para destacar na tabela
+                </span>
+              </div>
+              <div className="flex bg-neutral-100 p-0.5 rounded-md">
+                <button
+                  onClick={() => setChartType("bar")}
+                  data-testid="button-chart-bar"
+                  className={`px-2.5 py-1 text-[10px] font-black uppercase rounded ${chartType === "bar" ? "bg-white shadow text-neutral-900" : "text-neutral-400"}`}
+                >
+                  Barras
+                </button>
+                <button
+                  onClick={() => setChartType("line")}
+                  data-testid="button-chart-line"
+                  className={`px-2.5 py-1 text-[10px] font-black uppercase rounded ${chartType === "line" ? "bg-white shadow text-neutral-900" : "text-neutral-400"}`}
+                >
+                  Linhas
+                </button>
+              </div>
+            </div>
+
+            <ResponsiveContainer width="100%" height={280}>
+              {chartType === "bar" ? (
+                <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
+                  <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                  <Legend content={renderLegend} />
+                  {seriesKeys.map((key, idx) => (
+                    <Bar
+                      key={key}
+                      dataKey={key}
+                      stackId="a"
+                      fill={seriesColors[idx]}
+                      opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.3 : 1}
+                      style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
+                      onClick={() => handleSeriesClick(key)}
+                    />
+                  ))}
+                </BarChart>
+              ) : (
+                <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
+                  <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                  <Legend content={renderLegend} />
+                  {seriesKeys.map((key, idx) => (
+                    <Line
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      stroke={seriesColors[idx]}
+                      strokeWidth={highlightedId && seriesIdMap[key] === highlightedId ? 3 : 2}
+                      dot={{ r: 3 }}
+                      opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.25 : 1}
+                      style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
+                      onClick={() => handleSeriesClick(key)}
+                    />
+                  ))}
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse" data-testid="table-relatorio-anual">
+              <thead>
+                <tr className="bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider">
+                  <th className="px-2 py-2 sticky left-0 bg-neutral-900 z-10 min-w-[180px]">{isFornecedor ? "Fornecedor" : "Cliente"}</th>
+                  {MESES_CURTOS.map(m => <th key={m} className="px-2 py-2 text-right min-w-[90px]">{m}</th>)}
+                  <th className="px-2 py-2 text-right bg-neutral-800 min-w-[110px]">Total Anual</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {relAnual.linhas.map(l => {
+                  const isHighlighted = highlightedId === l.id;
+                  const isOtherDimmed = highlightedId !== null && !isHighlighted;
+                  return (
+                    <tr
+                      key={l.id}
+                      data-testid={`row-anual-${l.id}`}
+                      onClick={() => setHighlightedId(highlightedId === l.id ? null : l.id)}
+                      className={`cursor-pointer transition-colors ${isHighlighted ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : isOtherDimmed ? "opacity-40 hover:opacity-70" : "hover:bg-neutral-50"}`}
+                    >
+                      <td className={`px-2 py-2 text-[11px] font-black uppercase sticky left-0 z-10 ${isHighlighted ? "bg-blue-50" : "bg-white"}`}>
+                        {l.nome}
+                      </td>
+                      {l.meses.map(m => (
+                        <td key={m.mes} className="px-2 py-2 text-right">
+                          <div className="text-[11px] font-mono font-bold text-neutral-800">
+                            {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-300">—</span>}
+                          </div>
+                          <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
+                            {fmtVar(m.varPct)}
+                          </div>
+                        </td>
+                      ))}
+                      <td className={`px-2 py-2 text-right ${isHighlighted ? "bg-blue-100" : "bg-neutral-50"}`}>
+                        <div className="text-xs font-mono font-black text-neutral-900">{formatCurrency(l.total)}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-neutral-900 text-white" data-testid="row-total-geral">
+                  <td className="px-2 py-3 text-xs font-black uppercase sticky left-0 bg-neutral-900 z-10">Total Geral</td>
+                  {relAnual.totalGeral.map(m => (
+                    <td key={m.mes} className="px-2 py-3 text-right">
+                      <div className="text-[11px] font-mono font-black">
+                        {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-500">—</span>}
                       </div>
-                      <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
+                      <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
                         {fmtVar(m.varPct)}
                       </div>
                     </td>
                   ))}
-                  <td className="px-2 py-2 text-right bg-neutral-50">
-                    <div className="text-xs font-mono font-black text-neutral-900">{formatCurrency(l.total)}</div>
+                  <td className="px-2 py-3 text-right bg-black">
+                    <div className="text-xs font-mono font-black">{formatCurrency(relAnual.totalAno)}</div>
                   </td>
                 </tr>
-              ))}
-              <tr className="bg-neutral-900 text-white" data-testid="row-total-geral">
-                <td className="px-2 py-3 text-xs font-black uppercase sticky left-0 bg-neutral-900 z-10">Total Geral</td>
-                {relAnual.totalGeral.map(m => (
-                  <td key={m.mes} className="px-2 py-3 text-right">
-                    <div className="text-[11px] font-mono font-black">
-                      {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-500">—</span>}
-                    </div>
-                    <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {fmtVar(m.varPct)}
-                    </div>
-                  </td>
-                ))}
-                <td className="px-2 py-3 text-right bg-black">
-                  <div className="text-xs font-mono font-black">{formatCurrency(relAnual.totalAno)}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
