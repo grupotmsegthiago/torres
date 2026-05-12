@@ -3066,8 +3066,24 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     reader.readAsDataURL(file);
   };
   const createDoc = useMutation({
-    mutationFn: async () => { await apiRequest("POST", "/api/employee-documents", { employeeId: employee.id, ...docForm }); },
+    mutationFn: async () => {
+      if (docRequiresExpiry(docForm.type) && !docForm.expiryDate) {
+        throw new Error("Data de validade é obrigatória para este tipo de documento");
+      }
+      const payload = {
+        employeeId: employee.id,
+        type: docForm.type,
+        documentNumber: docForm.documentNumber || null,
+        expiryDate: docForm.expiryDate || null,
+        issueDate: docForm.issueDate || null,
+        notes: docForm.notes || null,
+        fileData: docForm.fileData || null,
+        fileName: docForm.fileName || null,
+      };
+      await apiRequest("POST", "/api/employee-documents", payload);
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employee-documents", employee.id] }); setDocForm({ type: "CNH", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" }); setShowDocForm(false); toast({ title: "Documento salvo" }); },
+    onError: (e: Error) => { toast({ title: "Erro ao salvar documento", description: e.message, variant: "destructive" }); },
   });
   const deleteDoc = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-documents/${id}`); },
