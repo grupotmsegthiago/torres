@@ -192,7 +192,6 @@ const menuSections: MenuSection[] = [
         adminOnly: true,
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
-          { path: "/admin/fornecedores", label: "Fornecedores", icon: Building2 },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
@@ -209,6 +208,15 @@ const menuSections: MenuSection[] = [
     items: [
       { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet },
       { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark },
+    ],
+  },
+  {
+    title: "CADASTROS",
+    icon: Building2,
+    iconColor: "text-cyan-400",
+    adminOnly: true,
+    items: [
+      { path: "/admin/fornecedores", label: "Fornecedores", icon: Building2, adminOnly: true },
     ],
   },
   {

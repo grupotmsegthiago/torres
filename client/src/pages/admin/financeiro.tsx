@@ -1143,9 +1143,14 @@ export default function FinanceiroPage() {
                           <FileText size={10} /> Compr.
                         </button>
                       ) : (
-                        <button onClick={() => handleUploadComprovante(t.id)} disabled={uploadComprovanteMutation.isPending} className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 animate-pulse" data-testid={`button-upload-comp-${t.id}`}>
-                          <Send size={10} /> Anexar
-                        </button>
+                        <span className="inline-flex items-center gap-1 mr-1" data-testid={`badge-comprovante-pendente-${t.id}`}>
+                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-600 text-white border border-red-700 animate-pulse">
+                            Comprovante pendente
+                          </span>
+                          <button onClick={() => handleUploadComprovante(t.id)} disabled={uploadComprovanteMutation.isPending} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" data-testid={`button-upload-comp-${t.id}`}>
+                            <Send size={10} /> Anexar
+                          </button>
+                        </span>
                       )
                     )}
                     {t.origin_type && t.origin_type !== "manual" ? (

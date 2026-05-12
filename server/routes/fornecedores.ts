@@ -144,7 +144,7 @@ export function registerFornecedoresRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/fornecedores/:id", requireAuth, requireDiretoria, async (req, res) => {
+  app.delete("/api/fornecedores/:id", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const user = (req as any).user;
       // Soft delete (ativo = false). Evita FK em transactions.
