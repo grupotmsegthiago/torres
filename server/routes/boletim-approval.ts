@@ -778,43 +778,63 @@ export function registerBoletimApprovalRoutes(app: Express) {
         const periodLabel = `${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}`;
         const description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;
 
-        const { data: invInserted, error: invErr } = await supabaseAdmin.from("invoices").insert({
-          client_id: approval.client_id,
-          client_name: approval.client_name,
-          description,
-          value: totalCalc,
-          due_date: "PENDENTE",
-          billing_type: "BOLETO",
-          status: "AGUARDANDO_FATURAMENTO",
-          external_reference: `BOLETIM-${approval.id}`,
-          notes: `Aprovado por ${nome || "Cliente"} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Billing IDs: ${billingIds.join(", ")}`,
-        }).select().single();
+        // ─── Emissão atômica (Asaas + NFS-e) ──────────────────────────────
+        // Cria a invoice + dispara cobrança/NF na mesma transação lógica:
+        // se a emissão falhar, a invoice é REMOVIDA do banco (sem órfãs).
+        let invInserted: any = null;
+        if (approval.client_id) {
+          const { data: invIns, error: invErr } = await supabaseAdmin.from("invoices").insert({
+            client_id: approval.client_id,
+            client_name: approval.client_name,
+            description,
+            value: totalCalc,
+            due_date: "PENDENTE",
+            billing_type: "BOLETO",
+            status: "AGUARDANDO_FATURAMENTO",
+            external_reference: `BOLETIM-${approval.id}`,
+            notes: `Aprovado por ${nome || "Cliente"} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Billing IDs: ${billingIds.join(", ")}`,
+          }).select().single();
 
-        if (invErr) console.error("[boletim-approval] Erro ao criar fatura pendente:", invErr.message);
-        else console.log(`[boletim-approval] Fatura pendente criada para ${approval.client_name} — R$${totalCalc.toFixed(2)}`);
+          if (invErr) {
+            console.error("[boletim-approval] Erro ao criar fatura pendente:", invErr.message);
+          } else {
+            invInserted = invIns;
+            try {
+              const { data: cli } = await supabaseAdmin.from("clients")
+                .select("payment_terms_days, billing_type")
+                .eq("id", approval.client_id).single();
+              const prazo = Number(cli?.payment_terms_days) > 0 ? Number(cli?.payment_terms_days) : 30;
+              const due = new Date(Date.now() + prazo * 24 * 60 * 60 * 1000);
+              const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
+              const billingType = (cli?.billing_type as string) || "BOLETO";
 
-        // ─── Emissão automática (Asaas + NFS-e) ───────────────────────────
-        // Lê prazo de pagamento do cliente (fallback 30 dias) e dispara cobrança+NF.
-        if (invInserted && approval.client_id) {
-          try {
-            const { data: cli } = await supabaseAdmin.from("clients")
-              .select("payment_terms_days, billing_type")
-              .eq("id", approval.client_id).single();
-            const prazo = Number(cli?.payment_terms_days) > 0 ? Number(cli?.payment_terms_days) : 30;
-            const due = new Date(Date.now() + prazo * 24 * 60 * 60 * 1000);
-            // Formata em America/Sao_Paulo (YYYY-MM-DD)
-            const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
-            const billingType = (cli?.billing_type as string) || "BOLETO";
+              autoEmitResult = await emitInvoiceAuto(invInserted.id, {
+                dueDate,
+                billingType,
+                actorName: `Auto: aprovação cliente (${nome || approval.client_name})`,
+              });
+              console.log(`[boletim-approval] Auto-emissão: ${autoEmitResult.success ? "OK" : "FALHA"} — ${autoEmitResult.message}`);
+            } catch (autoErr: any) {
+              console.error("[boletim-approval] Auto-emissão falhou:", autoErr.message);
+              autoEmitResult = { success: false, message: autoErr.message, nfEmitted: false };
+            }
 
-            autoEmitResult = await emitInvoiceAuto(invInserted.id, {
-              dueDate,
-              billingType,
-              actorName: `Auto: aprovação cliente (${nome || approval.client_name})`,
-            });
-            console.log(`[boletim-approval] Auto-emissão: ${autoEmitResult.success ? "OK" : "FALHA"} — ${autoEmitResult.message}`);
-          } catch (autoErr: any) {
-            console.error("[boletim-approval] Auto-emissão falhou:", autoErr.message);
-            autoEmitResult = { success: false, message: autoErr.message, nfEmitted: false };
+            // Rollback da invoice órfã: se a emissão NÃO gerou cobrança no Asaas
+            // (sem asaas_payment_id), apaga a invoice para não poluir relatórios.
+            // A NFS-e que falha após o pagamento ser criado NÃO é considerada órfã
+            // (a cobrança Asaas está válida e a NF pode ser reemitida).
+            const isOrphan = !autoEmitResult || (!autoEmitResult.success && !autoEmitResult.paymentId);
+            if (isOrphan) {
+              try {
+                await supabaseAdmin.from("invoices").delete().eq("id", invInserted.id);
+                console.log(`[boletim-approval] Fatura órfã #${invInserted.id} removida (emissão falhou: ${autoEmitResult?.message || "sem retorno"})`);
+                invInserted = null;
+              } catch (rbErr: any) {
+                console.error(`[boletim-approval] Falha ao remover fatura órfã #${invInserted.id}:`, rbErr.message);
+              }
+            } else {
+              console.log(`[boletim-approval] Fatura #${invInserted.id} emitida para ${approval.client_name} — R$${totalCalc.toFixed(2)}`);
+            }
           }
         }
       } catch (invCreateErr: any) {

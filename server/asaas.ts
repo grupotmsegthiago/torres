@@ -3028,90 +3028,10 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        // BOL — uma linha por boletim (valor = soma das billings DO PERÍODO)
-        for (const { ap, bills } of bolGroups.values()) {
-          const apStatus = String(ap.status || "").toUpperCase();
-          if (apStatus === "RECUSADO" || apStatus === "REJEITADO") continue;
-          const ns = normalizeBoletimStatus(ap);
-          const valorPeriodo = bills.reduce((s, b) => s + billingValor(b), 0);
-          const cli = clientMap.get(ap.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
-          const earliest = bills.map(b => b.data_missao).sort()[0];
-          rows.push({
-            id: `BOL-${ap.id}`,
-            source: "BOLETIM",
-            sourceId: ap.id,
-            clientId: ap.client_id,
-            clientName: cli?.name || ap.client_name,
-            clientFantasia: cli?.fantasia || null,
-            clientCpfCnpj: cli?.cpfCnpj || null,
-            description: `Boletim de medição — período ${ap.period_start} a ${ap.period_end}`,
-            value: valorPeriodo,
-            netValue: null,
-            dueDate: null,
-            paymentDate: null,
-            createdAt: earliest || ap.created_at,
-            updatedAt: ap.approved_at || ap.sent_at || ap.created_at,
-            asaasPaymentId: null,
-            invoiceUrl: null,
-            nfseUrl: null,
-            nfseNumber: null,
-            osCount: bills.length,
-            osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
-            rawStatus: null,
-            rawNfseStatus: null,
-            rawBoletimStatus: ap.status,
-            normalizedStatus: ns,
-            invoiceId: null,
-            approvalToken: ap.token,
-            approvalUrl: ap.token ? `/aprovacao/${ap.token}` : null,
-            reminderCount: 0,
-            lastReminderSentAt: null,
-          });
-        }
-
-        // BIL avulso — uma linha por billing sem boletim/invoice
-        // Exclui billings ainda não verificados (A_VERIFICAR) — só mostra
-        // billings já aprovados ou faturados que ficaram sem boletim/invoice.
-        const avulsosFiltrados = avulsos.filter((b: any) => {
-          const st = String(b.status || "").toUpperCase();
-          return st !== "A_VERIFICAR" && st !== "PENDENTE" && st !== "ENVIADA_APROVACAO";
-        });
-        for (const b of avulsosFiltrados) {
-          const cli = clientMap.get(b.client_id);
-          const lbl = osLabel(b);
-          const dataFmt = (b.data_missao || "").split("T")[0];
-          rows.push({
-            id: `BIL-${b.id}`,
-            source: "BILLING_AVULSO",
-            sourceId: b.id,
-            clientId: b.client_id,
-            clientName: cli?.name || b.client_name || "—",
-            clientFantasia: cli?.fantasia || null,
-            clientCpfCnpj: cli?.cpfCnpj || null,
-            description: `${lbl} — missão de ${dataFmt} (sem boletim)`,
-            value: billingValor(b),
-            netValue: null,
-            dueDate: null,
-            paymentDate: null,
-            createdAt: b.data_missao || b.created_at,
-            updatedAt: b.created_at,
-            asaasPaymentId: null,
-            invoiceUrl: null,
-            nfseUrl: null,
-            nfseNumber: null,
-            osCount: 1,
-            osList: b.service_order_id ? [{ id: b.service_order_id, osNumber: lbl }] : [],
-            rawStatus: b.status,
-            rawNfseStatus: null,
-            rawBoletimStatus: null,
-            normalizedStatus: "AGUARDANDO_BOLETIM" as const,
-            invoiceId: null,
-            approvalToken: null,
-            approvalUrl: null,
-            reminderCount: 0,
-            lastReminderSentAt: null,
-          });
-        }
+        // BOL e BIL_AVULSO removidos do Relatório de NF: este relatório agora
+        // mostra exclusivamente FATURAS reais (invoices). Boletins de medição
+        // e billings sem fatura aparecem nas suas próprias telas (Boletim de
+        // Medição e Relatório de OS), sem poluir a visão de NF.
 
         const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "AGUARDANDO_PAGAMENTO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
         const totals: Record<string, { count: number; value: number }> = {};
