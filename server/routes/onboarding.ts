@@ -50,7 +50,11 @@ const REQUIRED_DOCS: Record<string, string[]> = {
 // Durante esse período o funcionário pode ser escalado mesmo sem ASO,
 // mas o sistema sinaliza alerta e exige upload antes do prazo.
 const ASO_GRACE_DAYS = 15;
-const ONBOARDING_GRACE_DAYS = 15;
+// Trava global de onboarding: até esta data (BRT, inclusive) o bloqueio
+// está em carência para TODOS os agentes — nenhuma OS é barrada por
+// pendência de documentação/treinamento. A partir do dia seguinte a
+// validação volta a bloquear normalmente.
+const ONBOARDING_BLOCK_START_DATE = "2026-05-26";
 
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
   vigilante: [
@@ -316,19 +320,12 @@ export async function assertOnboardingComplete(employeeId: number): Promise<void
   const r = await computeOnboarding(employeeId);
   if (r.apto) return;
 
-  // Carência de ONBOARDING_GRACE_DAYS dias contados a partir da data de admissão.
-  // Dentro da carência o agente pode ser alocado em OS mesmo com pendências —
-  // o bloqueio só passa a valer após o vencimento da carência.
-  const emp = await storage.getEmployee(employeeId);
-  const hireDateStr = emp?.hireDate ? String(emp.hireDate).slice(0, 10) : null;
-  if (hireDateStr) {
-    const dt = new Date(hireDateStr + "T00:00:00");
-    dt.setDate(dt.getDate() + ONBOARDING_GRACE_DAYS);
-    const graceUntil = dt.toISOString().slice(0, 10);
-    if (graceUntil >= todayBRT()) {
-      console.log(`[onboarding-grace] ${r.employeeName} (id=${employeeId}) em carência até ${graceUntil} — bloqueio liberado.`);
-      return;
-    }
+  // Trava global: enquanto a data de hoje (BRT) for <= ONBOARDING_BLOCK_START_DATE,
+  // ninguém é bloqueado por pendência de onboarding.
+  const today = todayBRT();
+  if (today <= ONBOARDING_BLOCK_START_DATE) {
+    console.log(`[onboarding-grace] ${r.employeeName} (id=${employeeId}) — trava global ativa até ${ONBOARDING_BLOCK_START_DATE} (hoje=${today}). Bloqueio liberado.`);
+    return;
   }
 
   const top = r.pendencias.slice(0, 6).join(" • ");
