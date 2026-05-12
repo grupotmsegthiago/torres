@@ -402,42 +402,65 @@ export async function createRhidPerson(deviceId: number, fields: Record<string, 
   if (device.tipo !== "rhid_cloud") throw new Error("Criação de pessoa suportada apenas em RHID Cloud");
 
   const token = await getOrLoginToken(device as DeviceRow);
-  const candidatos = [
-    "/customerdb/person.svc",
-    "/customerdb/person.svc/c",
-    "/customerdb/person.svc/a",
-  ];
-  let lastStatus = 0;
-  let lastBody = "";
+  // Endpoint oficial conforme Swagger RHID v2: POST /v2/api.svc/person
+  // Body é um ARRAY de PersonDTO. Resposta: { status, success: [PersonDTO...], errors: [...] }
+  // IMPORTANTE: a API do RHID exige TODOS os campos numéricos preenchidos (nem null nem undefined).
+  // Campos não usados devem ir como 0 (números) ou false (booleanos) ou [] (arrays).
+  const url = joinUrl(device.base_url, "/api.svc/person");
+  const fullPayload = {
+    name: fields.name,
+    cpf: fields.cpf,
+    pis: fields.pis,                                           // OBRIGATÓRIO e único no RHID
+    registration: fields.registration,
+    idCompany: fields.idCompany ?? 1,                          // Torres: empresa #1
+    idDepartment: fields.idDepartment ?? 1,                    // Torres: depto #1
+    status: fields.status ?? 0,                                // 0 = ativo
+    isAdmin: fields.isAdmin ?? false,
+    getTemplates: fields.getTemplates ?? false,
+    numberOfTemplates: fields.numberOfTemplates ?? 0,
+    code: fields.code ?? 0,
+    password: fields.password ?? 0,
+    rfid: fields.rfid ?? 0,
+    barCode: fields.barCode ?? 0,
+    linkedDeviceIds: fields.linkedDeviceIds ?? [],
+    templates: fields.templates ?? [],
+  };
+  const body = JSON.stringify([fullPayload]);
   let curToken = token;
-  for (const path of candidatos) {
-    const url = joinUrl(device.base_url, path);
-    let r = await tryFetch(url, {
+  let r = await tryFetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${curToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body,
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    curToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
       method: "POST",
       headers: { "Authorization": `Bearer ${curToken}`, "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(fields),
+      body,
       timeoutMs: 20000,
     });
-    if (r.status === 401 || r.status === 403) {
-      curToken = await loginDevice(device as DeviceRow);
-      r = await tryFetch(url, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${curToken}`, "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify(fields),
-        timeoutMs: 20000,
-      });
-    }
-    if (r.ok) {
-      console.log(`[RHID] POST person OK via ${path}`);
-      return await r.json().catch(() => ({}));
-    }
-    lastStatus = r.status;
-    lastBody = await r.text().catch(() => "");
-    console.warn(`[RHID] POST person ${path} -> HTTP ${r.status}; tentando próximo`);
-    if (r.status !== 404 && r.status !== 405) break;
   }
-  const trecho = lastBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
-  throw new Error(`RHID POST person falhou: HTTP ${lastStatus} ${trecho}`);
+  if (!r.ok) {
+    const txt = (await r.text().catch(() => "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new Error(`RHID POST person falhou: HTTP ${r.status} ${txt}`);
+  }
+  const json = await r.json().catch(() => ({} as any));
+  // Formato esperado: { status: "OK", success: [PersonDTO...], errors: [{obj, reason}...] }
+  if (Array.isArray(json?.errors) && json.errors.length > 0) {
+    const e0 = json.errors[0];
+    throw new Error(`RHID rejeitou pessoa: ${e0?.reason || JSON.stringify(e0)}`);
+  }
+  const created = Array.isArray(json?.success) && json.success.length > 0 ? json.success[0] : null;
+  if (created && (created.id ?? created.Id)) {
+    console.log(`[RHID] POST person OK id=${created.id ?? created.Id}`);
+    return created;
+  }
+  // Alguns retornos podem vir como objeto direto
+  if (json?.id ?? json?.Id) return json;
+  console.warn(`[RHID] POST person sem id no retorno: ${JSON.stringify(json).slice(0, 200)}`);
+  return json;
 }
 
 /**
@@ -455,7 +478,7 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
   punchesBackfilled: number;
 }> {
   const { data: emp } = await supabaseAdmin
-    .from("employees").select("id, name, cpf, matricula, status")
+    .from("employees").select("id, name, cpf, pis, matricula, status")
     .eq("id", employeeId).maybeSingle();
   if (!emp) throw new Error(`Funcionário #${employeeId} não encontrado`);
   if (!emp.cpf) throw new Error("Funcionário sem CPF cadastrado");
@@ -463,6 +486,10 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
 
   const cpfDigits = String(emp.cpf).replace(/\D/g, "");
   if (cpfDigits.length !== 11) throw new Error("CPF inválido");
+  const pisDigits = String((emp as any).pis || "").replace(/\D/g, "");
+  if (pisDigits.length !== 11) {
+    throw new Error("Funcionário sem PIS válido. Cadastre o PIS (11 dígitos) antes de registrar no Control iD.");
+  }
 
   // Acha device alvo (default: primeiro rhid_cloud)
   let device: any = null;
@@ -510,8 +537,8 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
     const created = await createRhidPerson(targetDeviceId, {
       name: emp.name,
       cpf: Number(cpfDigits),
+      pis: Number(pisDigits),
       registration: emp.matricula || String(employeeId),
-      excluded: false,
     });
     const newId = created?.id ?? created?.Id ?? created?.PersonId;
     if (!newId) {
