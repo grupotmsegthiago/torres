@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   Building2, Plus, Edit, Trash2, Search, Loader2, Save, X,
   Mail, Phone, KeyRound, Landmark, FileText, CheckCircle2, AlertCircle,
+  MapPin, Briefcase, Users, BadgeCheck, AlertTriangle,
 } from "lucide-react";
 
 interface Fornecedor {
@@ -200,6 +201,37 @@ export default function FornecedoresPage() {
   );
 }
 
+interface CnpjData {
+  cnpj: string;
+  razao_social: string;
+  nome_fantasia: string | null;
+  situacao: string | null;
+  email: string | null;
+  telefone: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  municipio: string | null;
+  uf: string | null;
+  cep: string | null;
+  atividade: string | null;
+  natureza_juridica: string | null;
+  capital_social: number | null;
+  abertura: string | null;
+  socios: { nome: string; qualificacao: string }[];
+  source: string;
+}
+
+function formatCnpj(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+}
+
 function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null; onClose: () => void }) {
   const { toast } = useToast();
   const isEdit = !!editing;
@@ -215,6 +247,57 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
   const [tipoConta, setTipoConta] = useState(editing?.tipo_conta || "");
   const [observacoes, setObservacoes] = useState(editing?.observacoes || "");
   const [ativo, setAtivo] = useState(editing?.ativo ?? true);
+  const [cnpjData, setCnpjData] = useState<CnpjData | null>(null);
+  const [cnpjLoading, setCnpjLoading] = useState(false);
+
+  const cleanCnpj = cnpjCpf.replace(/\D/g, "");
+  const canSearch = cleanCnpj.length === 14;
+
+  const handleCnpjSearch = async () => {
+    if (!canSearch) return;
+    setCnpjLoading(true);
+    setCnpjData(null);
+    try {
+      const res = await authFetch(`/api/cnpj/${cleanCnpj}`);
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: "CNPJ não encontrado", description: err.message, variant: "destructive" });
+        return;
+      }
+      const data: CnpjData = await res.json();
+      setCnpjData(data);
+      // Auto-preencher campos em branco
+      if (!nome.trim()) setNome(data.razao_social);
+      if (!email.trim() && data.email) setEmail(data.email);
+      if (!telefone.trim() && data.telefone) setTelefone(data.telefone);
+      toast({ title: "Dados preenchidos!", description: `${data.razao_social} — ${data.situacao || ""}` });
+    } catch (e: any) {
+      toast({ title: "Erro ao consultar CNPJ", description: e.message, variant: "destructive" });
+    } finally {
+      setCnpjLoading(false);
+    }
+  };
+
+  const applyFromCnpj = () => {
+    if (!cnpjData) return;
+    setNome(cnpjData.razao_social);
+    if (cnpjData.email) setEmail(cnpjData.email);
+    if (cnpjData.telefone) setTelefone(cnpjData.telefone);
+    const addr = [
+      cnpjData.logradouro, cnpjData.numero,
+      cnpjData.complemento, cnpjData.bairro,
+      cnpjData.municipio && cnpjData.uf ? `${cnpjData.municipio}/${cnpjData.uf}` : cnpjData.municipio,
+      cnpjData.cep ? `CEP ${cnpjData.cep}` : null,
+    ].filter(Boolean).join(", ");
+    const obs = [
+      cnpjData.atividade ? `Atividade: ${cnpjData.atividade}` : null,
+      cnpjData.natureza_juridica ? `Natureza: ${cnpjData.natureza_juridica}` : null,
+      cnpjData.abertura ? `Abertura: ${cnpjData.abertura}` : null,
+      addr ? `Endereço: ${addr}` : null,
+    ].filter(Boolean).join("\n");
+    setObservacoes(obs);
+    toast({ title: "Todos os campos aplicados!" });
+  };
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -234,9 +317,11 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
 
+  const situacaoAtiva = (cnpjData?.situacao || "").toUpperCase().includes("ATIV");
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-fornecedor-form">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
           <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest" data-testid="text-form-title">
             {isEdit ? "Editar Fornecedor" : "Novo Fornecedor"}
@@ -253,14 +338,116 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
           }
           saveMutation.mutate();
         }} className="p-6 space-y-4">
+
+          {/* CNPJ com busca */}
+          <div>
+            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ / CPF *</label>
+            <div className="flex gap-2">
+              <input
+                required
+                type="text"
+                className="flex-1 p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white"
+                value={cnpjCpf}
+                onChange={e => {
+                  setCnpjCpf(formatCnpj(e.target.value));
+                  setCnpjData(null);
+                }}
+                placeholder="00.000.000/0000-00"
+                data-testid="input-cnpj-cpf"
+              />
+              <button
+                type="button"
+                onClick={handleCnpjSearch}
+                disabled={!canSearch || cnpjLoading}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-xs font-black uppercase hover:bg-violet-700 disabled:opacity-40 transition-colors whitespace-nowrap"
+                data-testid="button-buscar-cnpj"
+              >
+                {cnpjLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                Buscar
+              </button>
+            </div>
+            <p className="text-[9px] text-neutral-400 mt-1">Digite o CNPJ (14 dígitos) e clique em Buscar para preencher automaticamente</p>
+          </div>
+
+          {/* Card de resultado CNPJ */}
+          {cnpjData && (
+            <div className={`rounded-xl border p-4 space-y-3 ${situacaoAtiva ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`} data-testid="card-cnpj-result">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    {situacaoAtiva
+                      ? <BadgeCheck size={15} className="text-emerald-600 flex-shrink-0" />
+                      : <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />}
+                    <span className={`text-[10px] font-black uppercase ${situacaoAtiva ? "text-emerald-700" : "text-amber-700"}`}>
+                      {cnpjData.situacao || "Situação desconhecida"}
+                    </span>
+                  </div>
+                  <p className="font-black text-sm text-neutral-900 uppercase">{cnpjData.razao_social}</p>
+                  {cnpjData.nome_fantasia && <p className="text-xs text-neutral-500 italic">{cnpjData.nome_fantasia}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={applyFromCnpj}
+                  className="flex-shrink-0 text-[10px] font-black uppercase bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 transition-colors"
+                  data-testid="button-apply-cnpj"
+                >
+                  Aplicar tudo
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-neutral-700">
+                {cnpjData.atividade && (
+                  <div className="flex items-start gap-1.5 md:col-span-2">
+                    <Briefcase size={11} className="text-neutral-400 mt-0.5 flex-shrink-0" />
+                    <span>{cnpjData.atividade}</span>
+                  </div>
+                )}
+                {(cnpjData.logradouro || cnpjData.municipio) && (
+                  <div className="flex items-start gap-1.5 md:col-span-2">
+                    <MapPin size={11} className="text-neutral-400 mt-0.5 flex-shrink-0" />
+                    <span>
+                      {[cnpjData.logradouro, cnpjData.numero, cnpjData.bairro, cnpjData.municipio, cnpjData.uf].filter(Boolean).join(", ")}
+                      {cnpjData.cep ? ` — CEP ${cnpjData.cep}` : ""}
+                    </span>
+                  </div>
+                )}
+                {cnpjData.email && (
+                  <div className="flex items-center gap-1.5">
+                    <Mail size={11} className="text-neutral-400 flex-shrink-0" />
+                    <span>{cnpjData.email}</span>
+                  </div>
+                )}
+                {cnpjData.telefone && (
+                  <div className="flex items-center gap-1.5">
+                    <Phone size={11} className="text-neutral-400 flex-shrink-0" />
+                    <span>{cnpjData.telefone}</span>
+                  </div>
+                )}
+                {cnpjData.abertura && (
+                  <div className="flex items-center gap-1.5">
+                    <FileText size={11} className="text-neutral-400 flex-shrink-0" />
+                    <span>Abertura: {cnpjData.abertura}</span>
+                  </div>
+                )}
+                {cnpjData.capital_social != null && cnpjData.capital_social > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <Landmark size={11} className="text-neutral-400 flex-shrink-0" />
+                    <span>Capital: R$ {cnpjData.capital_social.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                {cnpjData.socios?.length > 0 && (
+                  <div className="flex items-start gap-1.5 md:col-span-2">
+                    <Users size={11} className="text-neutral-400 mt-0.5 flex-shrink-0" />
+                    <span>{cnpjData.socios.map(s => s.nome).join(", ")}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nome / Razão Social *</label>
               <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={nome} onChange={e => setNome(e.target.value)} data-testid="input-nome" />
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ / CPF *</label>
-              <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white" value={cnpjCpf} onChange={e => setCnpjCpf(e.target.value)} data-testid="input-cnpj-cpf" />
             </div>
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Categoria</label>
@@ -273,7 +460,7 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Mail size={11} /> E-mail</label>
               <input type="email" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={email} onChange={e => setEmail(e.target.value)} data-testid="input-email" />
             </div>
-            <div>
+            <div className="md:col-span-2">
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Phone size={11} /> Telefone</label>
               <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={telefone} onChange={e => setTelefone(e.target.value)} data-testid="input-telefone" />
             </div>
@@ -312,7 +499,7 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
 
           <div>
             <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><FileText size={11} /> Observações</label>
-            <textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" rows={2} value={observacoes} onChange={e => setObservacoes(e.target.value)} data-testid="textarea-observacoes" />
+            <textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" rows={3} value={observacoes} onChange={e => setObservacoes(e.target.value)} data-testid="textarea-observacoes" />
           </div>
 
           {isEdit && (

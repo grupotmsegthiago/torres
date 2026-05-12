@@ -11,6 +11,81 @@ import type { Express } from "express";
   };
 
   export function registerConsultaRoutes(app: Express) {
+    // ====================== CNPJ LOOKUP (BrasilAPI + ReceitaWS fallback) ======================
+
+  app.get("/api/cnpj/:cnpj", requireAuth, async (req, res) => {
+    const cnpj = String(req.params.cnpj).replace(/\D/g, "");
+    if (cnpj.length !== 14) return res.status(400).json({ message: "CNPJ inválido — informe 14 dígitos" });
+
+    // Tentativa 1: BrasilAPI (gratuita, sem token)
+    try {
+      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, {
+        headers: { "User-Agent": "Torres-ERP/1.0" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        return res.json({
+          cnpj: d.cnpj,
+          razao_social: (d.razao_social || "").toUpperCase().trim(),
+          nome_fantasia: (d.nome_fantasia || "").toUpperCase().trim() || null,
+          situacao: d.descricao_situacao_cadastral || d.situacao_cadastral || null,
+          email: d.email ? String(d.email).toLowerCase().trim() : null,
+          telefone: d.ddd_telefone_1 ? String(d.ddd_telefone_1).trim() : null,
+          logradouro: d.logradouro || null,
+          numero: d.numero || null,
+          complemento: d.complemento || null,
+          bairro: d.bairro || null,
+          municipio: d.municipio || null,
+          uf: d.uf || null,
+          cep: d.cep || null,
+          atividade: d.cnae_fiscal_descricao || null,
+          natureza_juridica: d.natureza_juridica || null,
+          capital_social: d.capital_social ? Number(d.capital_social) : null,
+          abertura: d.data_inicio_atividade || null,
+          socios: (d.qsa || []).map((s: any) => ({ nome: s.nome_socio, qualificacao: s.qualificacao_socio })),
+          source: "brasilapi",
+        });
+      }
+    } catch (_) { /* fallback */ }
+
+    // Tentativa 2: ReceitaWS (fallback)
+    try {
+      const r = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.status === "OK") {
+          return res.json({
+            cnpj,
+            razao_social: (d.nome || "").toUpperCase().trim(),
+            nome_fantasia: (d.fantasia || "").toUpperCase().trim() || null,
+            situacao: d.situacao || null,
+            email: d.email ? String(d.email).toLowerCase().trim() : null,
+            telefone: d.telefone || null,
+            logradouro: d.logradouro || null,
+            numero: d.numero || null,
+            complemento: d.complemento || null,
+            bairro: d.bairro || null,
+            municipio: d.municipio || null,
+            uf: d.uf || null,
+            cep: d.cep || null,
+            atividade: d.atividade_principal?.[0]?.text || null,
+            natureza_juridica: d.natureza_juridica || null,
+            capital_social: d.capital_social ? Number(String(d.capital_social).replace(/\D/g, "")) : null,
+            abertura: d.abertura || null,
+            socios: (d.qsa || []).map((s: any) => ({ nome: s.nome, qualificacao: s.qual })),
+            source: "receitaws",
+          });
+        }
+        return res.status(404).json({ message: d.message || "CNPJ não encontrado na Receita Federal" });
+      }
+    } catch (_) { /* nenhuma fonte disponível */ }
+
+    return res.status(503).json({ message: "Serviço de consulta CNPJ temporariamente indisponível" });
+  });
+
     // ====================== DATAJUD (CNJ) LOOKUP ======================
 
   const DATAJUD_API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
