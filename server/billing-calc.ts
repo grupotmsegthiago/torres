@@ -235,8 +235,7 @@ export function calcularEscolta(dados: {
     const horaExtraFracionada = contrato.hora_extra_fracionada !== false;
     if (horaExtraFracionada) {
       const minutosExcedentes = Math.round(horasExcedentes * 60);
-      const valorMinuto = Math.floor(valorHoraExtra / 60 * 100) / 100;
-      fat_hora_extra = minutosExcedentes * valorMinuto;
+      fat_hora_extra = Math.round((minutosExcedentes / 60) * valorHoraExtra * 100) / 100;
     } else {
       fat_hora_extra = Math.ceil(horasExcedentes) * valorHoraExtra;
     }

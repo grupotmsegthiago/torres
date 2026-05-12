@@ -1610,13 +1610,13 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const horasExtrasCalcRaw = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
   const horasExtrasCalc = horaExtraFracionada ? horasExtrasCalcRaw : Math.ceil(horasExtrasCalcRaw);
   const minutosExtrasCalc = Math.round(horasExtrasCalc * 60);
-  const valorMinutoContract = Math.floor(valorHoraExtraContract / 60 * 100) / 100;
+  const valorMinutoContract = Math.round(valorHoraExtraContract / 60 * 100) / 100;
   const horaExtraValorCalc = horaExtraFracionada
-    ? minutosExtrasCalc * valorMinutoContract
+    ? Math.round((minutosExtrasCalc / 60) * valorHoraExtraContract * 100) / 100
     : Math.ceil(horasExtrasCalcRaw) * valorHoraExtraContract;
 
   const acionamento = Number(b?.fat_acionamento || 0);
-  const horaExtra = horaExtraValorCalc > 0 ? horaExtraValorCalc : Number(b?.fat_hora_extra || 0);
+  const horaExtra = Number(b?.fat_hora_extra || 0) > 0 ? Number(b.fat_hora_extra) : horaExtraValorCalc;
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
   const receitasOsVal = Number(b?.receitas_os || 0);
