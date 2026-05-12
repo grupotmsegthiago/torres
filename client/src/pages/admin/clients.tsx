@@ -1358,6 +1358,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const [priceSearch, setPriceSearch] = useState("");
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState<EscortRoute | null>(null);
+  const [routeSearch, setRouteSearch] = useState("");
   const [osPeriod, setOsPeriod] = useState<"FORTNIGHT" | "MONTH">("MONTH");
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
@@ -1660,22 +1661,57 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             </div>
             {clientRoutes.length === 0 ? (
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><Route size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhuma rota cadastrada para este cliente</p></Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {clientRoutes.map(r => (
-                  <Card key={r.id} className="p-4 border-neutral-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setEditingRoute(r); setShowRouteModal(true); }} data-testid={`card-route-${r.id}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-black text-neutral-800 uppercase">{r.name}</h4>
-                      {r.is_noturno && <Moon size={14} className="text-indigo-600" />}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-neutral-600">
-                      <Navigation size={12} className="text-green-600" /><span>{r.origin}</span><ChevronRight size={12} className="text-neutral-400" /><span>{r.destination}</span>
-                    </div>
-                    <p className="text-[10px] font-mono font-bold text-neutral-500 mt-1">{r.estimated_km} km · {r.estimated_hours}h</p>
-                  </Card>
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              const q = routeSearch.trim().toLowerCase();
+              const filtered = q
+                ? clientRoutes.filter(r => `${r.name} ${r.origin} ${r.destination}`.toLowerCase().includes(q))
+                : clientRoutes;
+              return (
+                <Card className="border-neutral-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-2.5 bg-white border-b border-neutral-200 flex items-center gap-2">
+                    <Search size={14} className="text-neutral-400" />
+                    <input
+                      type="text"
+                      value={routeSearch}
+                      onChange={e => setRouteSearch(e.target.value)}
+                      placeholder="Buscar por origem, destino, nome…"
+                      className="flex-1 text-xs font-semibold bg-transparent outline-none placeholder:text-neutral-400 placeholder:font-normal"
+                      data-testid="input-route-search"
+                    />
+                    {routeSearch && (
+                      <button onClick={() => setRouteSearch("")} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 uppercase" data-testid="button-clear-route-search">limpar</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-neutral-100 border-b border-neutral-200 text-[10px] font-black text-neutral-500 uppercase tracking-widest">
+                    <div className="col-span-7">Rota</div>
+                    <div className="col-span-3 text-right">Origem → Destino</div>
+                    <div className="col-span-2 text-right">KM · Horas</div>
+                  </div>
+                  <div className="divide-y divide-neutral-100 max-h-[60vh] overflow-y-auto">
+                    {filtered.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-xs font-semibold text-neutral-400">Nenhuma rota encontrada para "{routeSearch}"</div>
+                    ) : filtered.map(r => (
+                      <div
+                        key={r.id}
+                        onClick={() => { setEditingRoute(r); setShowRouteModal(true); }}
+                        className="grid grid-cols-12 gap-2 px-4 py-2.5 hover:bg-neutral-50 cursor-pointer items-center text-xs"
+                        data-testid={`row-route-${r.id}`}
+                      >
+                        <div className="col-span-7 font-bold text-neutral-800 truncate flex items-center gap-1.5">
+                          {r.is_noturno && <Moon size={12} className="text-indigo-600 shrink-0" />}
+                          <span className="truncate">{r.name}</span>
+                        </div>
+                        <div className="col-span-3 text-right text-[11px] font-bold text-neutral-600 truncate">{r.origin} <ChevronRight size={10} className="inline text-neutral-400" /> {r.destination}</div>
+                        <div className="col-span-2 text-right font-mono text-neutral-500">{r.estimated_km}km · {r.estimated_hours}h</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
+                    {q ? `${filtered.length} de ${clientRoutes.length}` : `${clientRoutes.length} ${clientRoutes.length === 1 ? "rota" : "rotas"}`} · clique pra editar
+                  </div>
+                </Card>
+              );
+            })()}
           </div>
         </div>
       )}
