@@ -343,7 +343,7 @@ function normalizeEvent(raw: any): ControlIdEvent {
 /**
  * Busca cadastro de usuários do aparelho — pra ajudar o admin a fazer mapping.
  */
-export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string }>> {
+export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string; cpf?: string }>> {
   if (device.tipo === "rhid_cloud") {
     return fetchUsersRhid(device);
   }
@@ -363,7 +363,7 @@ export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string;
   return [];
 }
 
-async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string }>> {
+async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string; cpf?: string }>> {
   const token = await getOrLoginToken(device);
 
   const personUrl = joinUrl(device.base_url, "/customerdb/person.svc/a");
@@ -386,7 +386,157 @@ async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; na
     id: String(p.id || p.Id || p.PersonId || ""),
     name: String(p.name || p.Name || p.PersonName || ""),
     matricula: p.registration || p.Registration || p.pis || p.Pis || undefined,
+    cpf: p.cpf != null ? String(p.cpf).replace(/\D/g, "") : undefined,
   }));
+}
+
+// ============================ CRIAR PESSOA NO RHID ============================
+
+/**
+ * Cria um funcionário no RHID Cloud (POST em person.svc).
+ * Retorna o objeto criado contendo o `id` gerado pelo RHID.
+ */
+export async function createRhidPerson(deviceId: number, fields: Record<string, any>): Promise<any> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  if (device.tipo !== "rhid_cloud") throw new Error("Criação de pessoa suportada apenas em RHID Cloud");
+
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, `/customerdb/person.svc/`);
+  let r = await tryFetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(fields),
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    const newToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(fields),
+      timeoutMs: 20000,
+    });
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`RHID POST person falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return await r.json().catch(() => ({}));
+}
+
+/**
+ * Cadastra um funcionário do nosso sistema no Control iD/RHID:
+ *   - Se já tem mapping ativo: retorna o existente (idempotente).
+ *   - Se já existe no RHID com mesmo CPF: reaproveita e cria só o mapping.
+ *   - Caso contrário: cria a pessoa no RHID (sem foto) e cria o mapping.
+ *   - Faz backfill de batidas órfãs com o user_id resultante.
+ */
+export async function registerEmployeeInRhid(employeeId: number, deviceId?: number): Promise<{
+  status: "created" | "linked_existing" | "already_mapped";
+  rhidPersonId: string;
+  deviceId: number;
+  mappingId: number;
+  punchesBackfilled: number;
+}> {
+  const { data: emp } = await supabaseAdmin
+    .from("employees").select("id, name, cpf, matricula, status")
+    .eq("id", employeeId).maybeSingle();
+  if (!emp) throw new Error(`Funcionário #${employeeId} não encontrado`);
+  if (!emp.cpf) throw new Error("Funcionário sem CPF cadastrado");
+  if (!emp.name) throw new Error("Funcionário sem nome cadastrado");
+
+  const cpfDigits = String(emp.cpf).replace(/\D/g, "");
+  if (cpfDigits.length !== 11) throw new Error("CPF inválido");
+
+  // Acha device alvo (default: primeiro rhid_cloud)
+  let device: any = null;
+  if (deviceId) {
+    const { data } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+    device = data;
+  } else {
+    const { data } = await supabaseAdmin.from("control_id_devices").select("*").eq("tipo", "rhid_cloud").order("id").limit(1).maybeSingle();
+    device = data;
+  }
+  if (!device) throw new Error("Nenhum aparelho Control iD configurado");
+  const targetDeviceId = Number(device.id);
+
+  // Já tem mapping ativo nesse device?
+  const { data: existingMap } = await supabaseAdmin
+    .from("control_id_users_map")
+    .select("*")
+    .eq("device_id", targetDeviceId)
+    .eq("employee_id", employeeId)
+    .eq("ativo", true)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingMap) {
+    return {
+      status: "already_mapped",
+      rhidPersonId: String(existingMap.control_id_user_id),
+      deviceId: targetDeviceId,
+      mappingId: Number(existingMap.id),
+      punchesBackfilled: 0,
+    };
+  }
+
+  // Procura no RHID se já existe pessoa com mesmo CPF
+  const persons = await fetchUsers(device as DeviceRow);
+  const existingPerson = persons.find(p => p.cpf && p.cpf === cpfDigits);
+
+  let rhidPersonId: string;
+  let status: "created" | "linked_existing";
+
+  if (existingPerson) {
+    rhidPersonId = String(existingPerson.id);
+    status = "linked_existing";
+  } else {
+    const created = await createRhidPerson(targetDeviceId, {
+      name: emp.name,
+      cpf: Number(cpfDigits),
+      registration: emp.matricula || String(employeeId),
+      excluded: false,
+    });
+    const newId = created?.id ?? created?.Id ?? created?.PersonId;
+    if (!newId) {
+      // Algumas instâncias do RHID não devolvem o id no POST — busca por CPF
+      const refetched = await fetchUsers(device as DeviceRow);
+      const found = refetched.find(p => p.cpf && p.cpf === cpfDigits);
+      if (!found) throw new Error("Pessoa criada no RHID mas id não retornado");
+      rhidPersonId = String(found.id);
+    } else {
+      rhidPersonId = String(newId);
+    }
+    status = "created";
+  }
+
+  // Cria mapping
+  const { data: mapping, error: mapErr } = await supabaseAdmin.from("control_id_users_map").insert({
+    device_id: targetDeviceId,
+    employee_id: employeeId,
+    control_id_user_id: rhidPersonId,
+    control_id_user_name: emp.name,
+    matricula: emp.matricula || null,
+    ativo: true,
+  }).select().single();
+  if (mapErr) throw new Error(`Erro ao salvar mapping: ${mapErr.message}`);
+
+  // Backfill de batidas órfãs
+  const { data: backfilled } = await supabaseAdmin.from("control_id_punches")
+    .update({ employee_id: employeeId })
+    .eq("device_id", targetDeviceId)
+    .eq("control_id_user_id", rhidPersonId)
+    .is("employee_id", null)
+    .select("id");
+
+  return {
+    status,
+    rhidPersonId,
+    deviceId: targetDeviceId,
+    mappingId: Number(mapping.id),
+    punchesBackfilled: (backfilled || []).length,
+  };
 }
 
 // ============================ TESTE DE CONEXÃO ============================

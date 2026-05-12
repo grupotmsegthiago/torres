@@ -2802,6 +2802,67 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   );
 }
 
+function CadastrarControlIdButton({ employee }: { employee: Employee }) {
+  const { toast } = useToast();
+  const { data: mappings } = useQuery<any[]>({
+    queryKey: ["/api/control-id/mappings"],
+  });
+  const jaCadastrado = (mappings || []).some((m: any) => Number(m.employee_id) === employee.id && m.ativo);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/control-id/employees/${employee.id}/register`, {});
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const titles: Record<string, string> = {
+        created: "Cadastrado no Control iD",
+        linked_existing: "Vinculado a usuário existente do Control iD",
+        already_mapped: "Funcionário já estava cadastrado",
+      };
+      const desc = data.punchesBackfilled > 0
+        ? `${data.punchesBackfilled} batida(s) órfã(s) atribuída(s) ao funcionário. Foto continua pendente.`
+        : "Cadastro feito. Foto continua pendente — registrar no aparelho.";
+      toast({ title: titles[data.status] || "Cadastro concluído", description: desc });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/mappings"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Falha ao cadastrar no Control iD", description: err?.message || String(err), variant: "destructive" });
+    },
+  });
+
+  if (employee.status !== "ativo") return null;
+
+  if (jaCadastrado) {
+    return (
+      <Button variant="outline" size="sm" disabled className="bg-emerald-50 border-emerald-200 text-emerald-700" data-testid="button-controlid-ja-cadastrado">
+        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Control iD OK
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        if (!employee.cpf) {
+          toast({ title: "CPF obrigatório", description: "Cadastre o CPF do funcionário antes de enviar para o Control iD.", variant: "destructive" });
+          return;
+        }
+        if (confirm(`Cadastrar ${titleCase(employee.name)} no Control iD/RHID?\n\nNome, CPF e matrícula serão enviados. A foto precisará ser cadastrada manualmente no aparelho depois.`)) {
+          mutation.mutate();
+        }
+      }}
+      disabled={mutation.isPending}
+      data-testid="button-cadastrar-controlid"
+    >
+      {mutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <ScanLine className="w-3.5 h-3.5 mr-1" />}
+      Cadastrar no Control iD
+    </Button>
+  );
+}
+
 function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; onClose: () => void; onEdit: () => void }) {
   const [showBrandedContractPasta, setShowBrandedContractPasta] = useState(false);
   const { toast } = useToast();
@@ -3197,6 +3258,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           </div>
         </div>
         <div className="flex gap-2">
+          <CadastrarControlIdButton employee={employee} />
           <Button variant="outline" size="sm" onClick={onEdit} data-testid="button-edit-from-pasta">
             <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
           </Button>

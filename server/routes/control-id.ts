@@ -145,6 +145,18 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // Cadastrar funcionário do sistema no Control iD/RHID (cria pessoa + mapping; foto fica pendente)
+  app.post("/api/control-id/employees/:employeeId/register", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.employeeId);
+      const deviceId = req.body?.deviceId ? Number(req.body.deviceId) : undefined;
+      const r = await ctrl.registerEmployeeInRhid(employeeId, deviceId);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Listar usuários cadastrados no aparelho (pra ajudar mapping)
   app.get("/api/control-id/devices/:id/users", requireAuth, requireAdminRole, async (req, res) => {
     try {
