@@ -389,18 +389,14 @@ import type { Express } from "express";
       if (existing.origin_type && existing.origin_type !== "manual") {
         return res.status(403).json({ message: "Lançamentos automáticos não podem ser editados manualmente" });
       }
-      // Invariantes do fluxo de aprovação:
+      // Invariante do fluxo de aprovação:
       // - AGUARDANDO_APROVACAO/RECUSADA só mudam status pelas rotas /aprovar e /recusar (diretoria)
-      // - Mudança para PAID em EXPENSE manual exige comprovante anexado
+      // O comprovante NÃO é exigido para marcar como PAGO aqui — fica sinalizado
+      // pelo badge "COMPROVANTE PENDENTE", sino do header e e-mail diário.
       const newStatus = req.body?.status;
       if ((existing.status === "AGUARDANDO_APROVACAO" || existing.status === "RECUSADA")
           && newStatus && newStatus !== existing.status) {
         return res.status(403).json({ message: "Status só pode ser alterado pelo fluxo de aprovação da Diretoria." });
-      }
-      if (newStatus === "PAID" && existing.status !== "PAID"
-          && existing.type === "EXPENSE" && (!existing.origin_type || existing.origin_type === "manual")
-          && !existing.comprovante_url) {
-        return res.status(400).json({ message: "Anexe o comprovante antes de marcar como PAGO." });
       }
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope } = req.body;
 
@@ -483,15 +479,8 @@ import type { Express } from "express";
         return res.status(400).json({ message: "Lançamento ainda não foi aprovado pela diretoria" });
       }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
-      // Comprovante obrigatório para EXPENSE manual ao marcar como PAID
-      if (
-        newStatus === "PAID" &&
-        existing.type === "EXPENSE" &&
-        (!existing.origin_type || existing.origin_type === "manual") &&
-        !existing.comprovante_url
-      ) {
-        return res.status(400).json({ message: "Anexe o comprovante antes de marcar como pago." });
-      }
+      // O comprovante NÃO é mais obrigatório aqui — pode ser anexado depois
+      // via botão "Anexar". O badge "COMPROVANTE PENDENTE" sinaliza a falta.
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE", [{ field: "status", old: existing.status, new_val: newStatus }], user.name, user.id);
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         status: newStatus,
