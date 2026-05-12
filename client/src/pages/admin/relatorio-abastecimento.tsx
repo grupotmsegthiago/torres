@@ -20,6 +20,28 @@ const fuelLabel: Record<string, string> = {
   gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
 };
 
+function getFuelStatus(kmL: number, fuelType: string): {
+  label: string;
+  textColor: string;
+  badgeBg: string;
+  badgeText: string;
+} {
+  const ft = (fuelType || "").toLowerCase();
+  if (ft === "etanol") {
+    if (kmL >= 12) return { label: "Ótimo", textColor: "text-emerald-700", badgeBg: "bg-emerald-100", badgeText: "text-emerald-700" };
+    if (kmL >= 11) return { label: "Bom", textColor: "text-green-600", badgeBg: "bg-green-100", badgeText: "text-green-700" };
+    return { label: "Ruim", textColor: "text-red-600", badgeBg: "bg-red-100", badgeText: "text-red-700" };
+  }
+  if (ft === "gasolina") {
+    if (kmL >= 15) return { label: "Ótimo", textColor: "text-emerald-700", badgeBg: "bg-emerald-100", badgeText: "text-emerald-700" };
+    if (kmL >= 14) return { label: "Bom", textColor: "text-green-600", badgeBg: "bg-green-100", badgeText: "text-green-700" };
+    return { label: "Ruim", textColor: "text-red-600", badgeBg: "bg-red-100", badgeText: "text-red-700" };
+  }
+  if (kmL >= 10) return { label: "Bom", textColor: "text-green-600", badgeBg: "bg-green-100", badgeText: "text-green-700" };
+  if (kmL >= 7) return { label: "Regular", textColor: "text-amber-600", badgeBg: "bg-amber-100", badgeText: "text-amber-700" };
+  return { label: "Ruim", textColor: "text-red-600", badgeBg: "bg-red-100", badgeText: "text-red-700" };
+}
+
 type SortField = "date" | "plate" | "cost" | "station";
 type SortDir = "asc" | "desc";
 
@@ -589,27 +611,40 @@ export default function RelatorioAbastecimentoPage() {
                               <span className="text-[10px] text-red-500">faltou registrar?</span>
                             </div>
                           ) : kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
-                            <div
-                              className="flex flex-col items-end leading-tight"
-                              title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${kmInfo.totalLiters.toFixed(2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${kmL.toFixed(1)} km/L é enganosa — a real combinada é ${kmLCombined.toFixed(1)} km/L.`}
-                              data-testid={`text-kml-${f.id}`}
-                            >
-                              <span className={`font-bold text-sm flex items-center gap-1 ${kmLCombined >= 10 ? "text-green-600" : kmLCombined >= 7 ? "text-amber-600" : "text-red-600"}`}>
-                                <AlertTriangle className="w-3 h-3 text-amber-500" />
-                                {kmLCombined.toFixed(1)} km/L
-                              </span>
-                              <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
-                              <span className="text-[10px] text-amber-600">combinado de {kmInfo.segments} abast.</span>
-                            </div>
+                            (() => {
+                              const st = getFuelStatus(kmLCombined, f.fuelType);
+                              return (
+                                <div
+                                  className="flex flex-col items-end leading-tight"
+                                  title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${kmInfo.totalLiters.toFixed(2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${kmL.toFixed(1)} km/L é enganosa — a real combinada é ${kmLCombined.toFixed(1)} km/L.`}
+                                  data-testid={`text-kml-${f.id}`}
+                                >
+                                  <span className={`font-bold text-sm flex items-center gap-1 ${st.textColor}`}>
+                                    <AlertTriangle className="w-3 h-3 text-amber-500" />
+                                    {kmLCombined.toFixed(1)} km/L
+                                  </span>
+                                  <span className={`text-[10px] font-semibold px-1 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
+                                  <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
+                                  <span className="text-[10px] text-amber-600">combinado de {kmInfo.segments} abast.</span>
+                                </div>
+                              );
+                            })()
                           ) : (
-                            <span
-                              className={`font-bold text-sm inline-flex items-center gap-1 ${kmL >= 10 ? "text-green-600" : kmL >= 7 ? "text-amber-600" : "text-red-600"}`}
-                              title={kmLSuspect ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
-                              data-testid={`text-kml-${f.id}`}
-                            >
-                              {kmLSuspect && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-                              {kmL.toFixed(1)} km/L
-                            </span>
+                            (() => {
+                              const st = getFuelStatus(kmL, f.fuelType);
+                              return (
+                                <div className="flex flex-col items-end leading-tight" data-testid={`text-kml-${f.id}`}>
+                                  <span
+                                    className={`font-bold text-sm inline-flex items-center gap-1 ${st.textColor}`}
+                                    title={kmLSuspect ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                                  >
+                                    {kmLSuspect && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                                    {kmL.toFixed(1)} km/L
+                                  </span>
+                                  <span className={`text-[10px] font-semibold px-1 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
+                                </div>
+                              );
+                            })()
                           )
                         ) : <span className="text-xs text-neutral-300">-</span>}
                       </td>
@@ -743,25 +778,39 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
               <div className="bg-emerald-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-emerald-600">Média KM/L</p>
                 {kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
-                  <>
-                    <p
-                      className={`font-bold text-lg flex items-center justify-center gap-1 ${kmLCombined >= 10 ? "text-green-700" : kmLCombined >= 7 ? "text-amber-700" : "text-red-700"}`}
-                      title={`Combinada de ${kmInfo.segments} abastecimentos: ${kmInfo.totalDist} km / ${kmInfo.totalLiters.toFixed(2)}L. Média individual ${kmL!.toFixed(1)} indica tanque parcial.`}
-                    >
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                      {kmLCombined.toFixed(1)} km/L
-                    </p>
-                    <p className="text-[10px] text-amber-700 mt-0.5">combinado de {kmInfo.segments} abast.</p>
-                    <p className="text-[10px] text-neutral-400 line-through">{kmL!.toFixed(1)} individual</p>
-                  </>
+                  (() => {
+                    const st = getFuelStatus(kmLCombined, fueling.fuelType);
+                    return (
+                      <>
+                        <p
+                          className={`font-bold text-lg flex items-center justify-center gap-1 ${st.textColor}`}
+                          title={`Combinada de ${kmInfo.segments} abastecimentos: ${kmInfo.totalDist} km / ${kmInfo.totalLiters.toFixed(2)}L. Média individual ${kmL!.toFixed(1)} indica tanque parcial.`}
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                          {kmLCombined.toFixed(1)} km/L
+                        </p>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
+                        <p className="text-[10px] text-amber-700 mt-0.5">combinado de {kmInfo.segments} abast.</p>
+                        <p className="text-[10px] text-neutral-400 line-through">{kmL!.toFixed(1)} individual</p>
+                      </>
+                    );
+                  })()
                 ) : (
-                  <p
-                    className={`font-bold text-lg inline-flex items-center justify-center gap-1 ${kmL ? (kmL >= 10 ? "text-green-700" : kmL >= 7 ? "text-amber-700" : "text-red-700") : "text-neutral-400"}`}
-                    title={kmLSuspect && kmL ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
-                  >
-                    {kmLSuspect && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
-                    {kmL ? `${kmL.toFixed(1)} km/L` : "-"}
-                  </p>
+                  (() => {
+                    const st = kmL ? getFuelStatus(kmL, fueling.fuelType) : null;
+                    return (
+                      <>
+                        <p
+                          className={`font-bold text-lg inline-flex items-center justify-center gap-1 ${st ? st.textColor : "text-neutral-400"}`}
+                          title={kmLSuspect && kmL ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                        >
+                          {kmLSuspect && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
+                          {kmL ? `${kmL.toFixed(1)} km/L` : "-"}
+                        </p>
+                        {st && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>}
+                      </>
+                    );
+                  })()
                 )}
               </div>
             </div>
