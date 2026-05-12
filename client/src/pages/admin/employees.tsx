@@ -3382,12 +3382,23 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold text-neutral-700">Documentos Arquivados</h3>
-              <Button size="sm" onClick={() => setShowDocForm(!showDocForm)} data-testid="button-add-doc-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+              <Button size="sm" onClick={() => {
+                if (!showDocForm) {
+                  const available = DOC_TYPES.filter((t) => t === "Outro" || DOCS_WITH_EXPIRY.has(t) || !docs.some((d: any) => d.type === t));
+                  const firstAvail = available[0] || "Outro";
+                  setDocForm(prev => ({ ...prev, type: firstAvail }));
+                }
+                setShowDocForm(!showDocForm);
+              }} data-testid="button-add-doc-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
             </div>
             {showDocForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
                 <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-doc-type-pasta">
-                  {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {DOC_TYPES.filter((t) => {
+                    if (t === "Outro") return true;
+                    if (DOCS_WITH_EXPIRY.has(t)) return true;
+                    return !docs.some((d: any) => d.type === t);
+                  }).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Nº do documento" data-testid="input-doc-number-pasta" />
                 <div className="grid grid-cols-2 gap-2">
