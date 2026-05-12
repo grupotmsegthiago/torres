@@ -62,10 +62,8 @@ app.get("/api/version", (_req, res) => {
   res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT });
 });
 
-// ─── SEO: robots.txt + sitemap.xml + noindex em rotas internas ───
+// ─── SEO: robots.txt + sitemap.xml ───
 // Registrados ANTES do Vite/static pra não serem capturados pelo catch-all do SPA.
-const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL || "https://torresvigilancia.com.br";
-
 function siteBaseUrl(req: Request): string {
   if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, "");
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
