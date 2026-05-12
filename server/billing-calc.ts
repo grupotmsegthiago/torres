@@ -254,7 +254,7 @@ export function calcularEscolta(dados: {
   if (isNoturno) {
     fat_adicional_noturno = (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
   }
-  const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_pedagio + despesas_outras;
+  const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_pedagio + despesas_outras + receitas_os;
 
   let pag_vrp = n(contrato.vrp_base);
   let pag_periculosidade = 0;

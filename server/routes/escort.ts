@@ -1457,7 +1457,7 @@ import type { Express } from "express";
             despesas_pedagio: Number(existing.despesas_pedagio || 0),
             despesas_combustivel: Number(existing.despesas_combustivel || 0),
             despesas_outras: Number(existing.despesas_outras || 0),
-            receitas_os: 0,
+            receitas_os: Number(existing.receitas_os || 0),
             contrato,
           });
 
@@ -1557,7 +1557,7 @@ import type { Express } from "express";
               horario_agendado: existing.horario_agendado || undefined,
               despesas_pedagio: pedagio, despesas_combustivel: Number(existing.despesas_combustivel || 0),
               despesas_outras: despOutras,
-              receitas_os: 0, contrato,
+              receitas_os: Number(existing.receitas_os || 0), contrato,
             });
             Object.assign(updateData, {
               km_inicial: kmI, km_final: Math.max(kmI, kmF),
@@ -1596,7 +1596,8 @@ import type { Express } from "express";
         const estadia = Number(data.fat_estadia || 0);
         const pernoite = Number(data.fat_pernoite || 0);
         const despOutras = Number(data.despesas_outras || 0);
-        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras;
+        const receitasOs = Number(data.receitas_os || 0);
+        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras + receitasOs;
         const pagTotal = Number(data.pag_total || 0);
         const resultado = fatTotal - pagTotal;
         await supabaseAdmin.from("escort_billings").update({
@@ -1616,7 +1617,8 @@ import type { Express } from "express";
         const estadia = Number(data?.fat_estadia || 0);
         const pernoite = Number(data?.fat_pernoite || 0);
         const despOutras = Number(data?.despesas_outras || 0);
-        const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras;
+        const receitasOs = Number(data?.receitas_os || 0);
+        const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras + receitasOs;
         await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id).then(() => {});
       }
 
@@ -1683,7 +1685,7 @@ import type { Express } from "express";
                 despesas_pedagio: Number(billing.despesas_pedagio || 0),
                 despesas_combustivel: Number(billing.despesas_combustivel || 0),
                 despesas_outras: Number(billing.despesas_outras || 0),
-                receitas_os: 0,
+                receitas_os: Number(billing.receitas_os || 0),
                 contrato,
               });
               updateData.fat_total = resultado.fat_total;
@@ -1711,7 +1713,7 @@ import type { Express } from "express";
                 const n = (v: any) => Number(v) || 0;
                 const totalCalc = n(resultado.fat_acionamento) + n(resultado.fat_hora_extra) + n(resultado.fat_km) +
                   n(resultado.despesas?.pedagio) + n(resultado.fat_adicional_noturno) + n(resultado.fat_estadia) +
-                  n(resultado.fat_pernoite) + n(resultado.despesas?.outras);
+                  n(resultado.fat_pernoite) + n(resultado.despesas?.outras) + n(resultado.receitas_os);
                 await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", billing.service_order_id);
               }
               console.log(`[REVISAR] Recalculado billing ${req.params.id} antes de aprovar. fat_total=${resultado.fat_total}`);

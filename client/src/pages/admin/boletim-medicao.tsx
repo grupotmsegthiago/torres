@@ -1619,9 +1619,10 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const horaExtra = horaExtraValorCalc > 0 ? horaExtraValorCalc : Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
+  const receitasOsVal = Number(b?.receitas_os || 0);
   const adNoturno = Number(b?.fat_adicional_noturno || 0);
   const demaisCustos = Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0);
-  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + adNoturno + demaisCustos;
+  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOsVal + adNoturno + demaisCustos;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
   const startTimeRaw = (() => {
@@ -1850,7 +1851,9 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
                   {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
-                  <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />
+                  {pedagio > 0 && <FieldRow label="Pedágio (Despesa)" value={fmt(pedagio)} bold />}
+                  {receitasOsVal > 0 && <FieldRow label="Pedágio (Reembolso Cliente)" value={fmt(receitasOsVal)} bold />}
+                  {pedagio === 0 && receitasOsVal === 0 && <FieldRow label="Valor do Pedágio" value={fmt(0)} bold />}
                   {demaisCustos > 0 && <FieldRow label="Demais Custos" value={fmt(demaisCustos)} bold />}
                   {adNoturno > 0 && <FieldRow label="Adicional Noturno" value={fmt(adNoturno)} accent="violet" bold />}
                 </div>
