@@ -144,10 +144,11 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
     dt.setDate(dt.getDate() + ASO_GRACE_DAYS);
     asoGraceUntil = dt.toISOString().slice(0, 10);
   }
+  const empPhotoUrl = (emp as any).photoUrl || (emp as any).photo_url;
   for (const tipo of reqDocs) {
     let has = docs.find((d: any) => (d.type || "").toLowerCase() === tipo.toLowerCase());
     // Foto cadastral do funcionário (avatar) também vale como "Fotos 3x4"
-    if (!has && tipo === "Fotos 3x4" && (emp as any).photoUrl) {
+    if (!has && tipo === "Fotos 3x4" && empPhotoUrl) {
       has = { type: tipo, expiryDate: null, _fromAvatar: true };
     }
     const isASO = tipo === "ASO";
