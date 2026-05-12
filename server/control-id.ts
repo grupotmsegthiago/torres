@@ -425,7 +425,7 @@ export async function createRhidPerson(deviceId: number, fields: Record<string, 
     registration: fields.registration,
     idCompany: fields.idCompany ?? 1,                          // Torres: empresa #1
     idDepartment: fields.idDepartment ?? 1,                    // Torres: depto #1
-    status: fields.status ?? 0,                                // 0 = ativo
+    status: fields.status ?? 1,                                // 1 = ativo
     isAdmin: fields.isAdmin ?? false,
     getTemplates: fields.getTemplates ?? false,
     numberOfTemplates: fields.numberOfTemplates ?? 0,
@@ -472,6 +472,35 @@ export async function createRhidPerson(deviceId: number, fields: Record<string, 
   if (json?.id ?? json?.Id) return json;
   console.warn(`[RHID] POST person sem id no retorno: ${JSON.stringify(json).slice(0, 200)}`);
   return json;
+}
+
+/**
+ * Atualiza uma pessoa existente no RHID Cloud via PUT /api.svc/person (objeto único, não array).
+ * Descobre o formato correto em produção: PUT com objeto único retorna 200; com array retorna 400.
+ */
+export async function updateRhidPerson(deviceId: number, personId: string | number, fields: Record<string, any>): Promise<void> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, "/api.svc/person");
+  // Busca dados atuais para não sobrescrever campos não fornecidos
+  const getR = await tryFetch(joinUrl(device.base_url, `/api.svc/person/${personId}`), {
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+    timeoutMs: 10000,
+  });
+  const current = getR.ok ? await getR.json().catch(() => ({})) : {};
+  const payload = { ...current, ...fields, id: Number(personId) };
+  const r = await tryFetch(url, {
+    method: "PUT",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(payload),
+    timeoutMs: 15000,
+  });
+  if (!r.ok) {
+    const txt = (await r.text().catch(() => "")).slice(0, 200);
+    throw new Error(`RHID PUT person falhou: HTTP ${r.status} ${txt}`);
+  }
+  console.log(`[RHID] PUT person id=${personId} OK`);
 }
 
 /**
@@ -544,6 +573,15 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
   if (existingPerson) {
     rhidPersonId = String(existingPerson.id);
     status = "linked_existing";
+    // Ativa pessoa se estiver inativa (status=0) no RHID
+    if ((existingPerson as any).status === 0 || (existingPerson as any).status === false) {
+      try {
+        await updateRhidPerson(targetDeviceId, rhidPersonId, { status: 1 });
+        console.log(`[RHID] Pessoa id=${rhidPersonId} reativada automaticamente`);
+      } catch (e) {
+        console.warn(`[RHID] Não foi possível reativar pessoa id=${rhidPersonId}:`, e);
+      }
+    }
   } else {
     const created = await createRhidPerson(targetDeviceId, {
       name: emp.name,
