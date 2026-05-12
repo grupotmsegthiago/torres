@@ -308,6 +308,147 @@ export function registerInterRoutes(app: Express) {
     res.json(filtered);
   });
 
+  // === RELATÓRIO ANUAL POR FORNECEDOR / CLIENTE ===
+  // Retorna grade Jan–Dez com valor pago/faturado por mês e variação % vs mês anterior.
+  // Apenas diretoria. Para fornecedor: financial_transactions PAID (excluindo missão).
+  // Para cliente: invoices RECEIVED/PARTIAL/CONFIRMED/PAID. Usa payment_date (BRT).
+  app.get("/api/financeiro/relatorio-anual", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const ano = Number(req.query.ano) || new Date().getFullYear();
+      const tipo = String(req.query.tipo || "fornecedor");
+      if (!["fornecedor", "cliente"].includes(tipo)) {
+        return res.status(400).json({ message: "tipo deve ser 'fornecedor' ou 'cliente'" });
+      }
+      const inicio = `${ano}-01-01`;
+      const fim = `${ano}-12-31`;
+      const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
+      const MISSION_ORIGINS = ["mission_cost", "fueling", "service_order"];
+
+      type Linha = { id: string; nome: string; meses: { mes: number; valor: number; varPct: number | null }[]; total: number };
+      const buckets = new Map<string, { nome: string; meses: number[] }>();
+      const totalMeses = Array.from({ length: 12 }, () => 0);
+
+      const addToBucket = (key: string, nome: string, mesIdx: number, valor: number) => {
+        if (!buckets.has(key)) buckets.set(key, { nome, meses: Array.from({ length: 12 }, () => 0) });
+        const b = buckets.get(key)!;
+        b.meses[mesIdx] += valor;
+        if (!b.nome && nome) b.nome = nome;
+        totalMeses[mesIdx] += valor;
+      };
+
+      if (tipo === "fornecedor") {
+        // Pagina para superar o limite default 1000 do Supabase REST
+        const PAGE = 1000;
+        let off = 0;
+        while (true) {
+          const { data, error } = await supabaseAdmin
+            .from("financial_transactions")
+            .select("amount, payment_date, fornecedor_id, entity_name, category_name, origin_type")
+            .in("type", ["DESPESA", "EXPENSE"])
+            .in("status", ["PAID", "PAGO"])
+            .gte("payment_date", inicio)
+            .lte("payment_date", fim)
+            .order("payment_date", { ascending: true })
+            .range(off, off + PAGE - 1);
+          if (error) throw new Error(error.message);
+          const rows = data || [];
+          for (const r of rows) {
+            const cat = String(r.category_name || "").toUpperCase();
+            if (MISSION_CATEGORIES.includes(cat)) continue;
+            if (r.origin_type && MISSION_ORIGINS.includes(String(r.origin_type))) continue;
+            if (!r.payment_date) continue;
+            const mesIdx = Number(String(r.payment_date).slice(5, 7)) - 1;
+            if (mesIdx < 0 || mesIdx > 11) continue;
+            const key = r.fornecedor_id ? `f:${r.fornecedor_id}` : `n:${(r.entity_name || "SEM FORNECEDOR").toUpperCase().trim()}`;
+            const nome = (r.entity_name || "SEM FORNECEDOR").toUpperCase().trim();
+            addToBucket(key, nome, mesIdx, Number(r.amount || 0));
+          }
+          if (rows.length < PAGE) break;
+          off += PAGE;
+        }
+
+        // Resolve nomes via tabela fornecedores (caso entity_name esteja vazio)
+        const fornIds = Array.from(buckets.keys()).filter(k => k.startsWith("f:")).map(k => Number(k.slice(2)));
+        if (fornIds.length > 0) {
+          const { data: forns } = await supabaseAdmin.from("fornecedores").select("id, nome").in("id", fornIds);
+          const fmap = new Map((forns || []).map((f: any) => [f.id, f.nome]));
+          for (const id of fornIds) {
+            const b = buckets.get(`f:${id}`)!;
+            const nm = fmap.get(id);
+            if (nm) b.nome = String(nm).toUpperCase().trim();
+          }
+        }
+      } else {
+        // Cliente — invoices
+        const PAGE = 1000;
+        let off = 0;
+        // Apenas pagamentos efetivamente confirmados/recebidos (Asaas: RECEIVED/CONFIRMED, Inter/manual: PAID).
+        // Exclui PARTIAL para não inflar receita com cobranças não totalmente quitadas.
+        const RECEIVED_STATUSES = ["RECEIVED", "CONFIRMED", "PAID"];
+        while (true) {
+          const { data, error } = await supabaseAdmin
+            .from("invoices")
+            .select("client_id, client_name, value, payment_date, status")
+            .in("status", RECEIVED_STATUSES)
+            .gte("payment_date", inicio)
+            .lte("payment_date", fim)
+            .order("payment_date", { ascending: true })
+            .range(off, off + PAGE - 1);
+          if (error) throw new Error(error.message);
+          const rows = data || [];
+          for (const r of rows) {
+            if (!r.payment_date) continue;
+            const mesIdx = Number(String(r.payment_date).slice(5, 7)) - 1;
+            if (mesIdx < 0 || mesIdx > 11) continue;
+            const key = r.client_id ? `c:${r.client_id}` : `n:${(r.client_name || "SEM CLIENTE").toUpperCase().trim()}`;
+            const nome = (r.client_name || "SEM CLIENTE").toUpperCase().trim();
+            addToBucket(key, nome, mesIdx, Number(r.value || 0));
+          }
+          if (rows.length < PAGE) break;
+          off += PAGE;
+        }
+      }
+
+      // Sinal da % depende do tipo (regra de negócio):
+      //  - Fornecedor (Contas a Pagar): pagar MENOS que o mês anterior é boa notícia → % positiva.
+      //    varPct = ((prev - v) / |prev|) * 100  → negativa quando pagamos mais.
+      //  - Cliente (Contas a Receber): faturar MAIS é boa notícia → % positiva.
+      //    varPct = ((v - prev) / |prev|) * 100  → negativa quando faturamos menos.
+      const calcVarPct = (meses: number[]) => {
+        const out: { mes: number; valor: number; varPct: number | null }[] = [];
+        let prev: number | null = null;
+        for (let i = 0; i < 12; i++) {
+          const v = meses[i];
+          let varPct: number | null = null;
+          if (prev !== null && prev !== 0) {
+            const delta = tipo === "fornecedor" ? (prev - v) : (v - prev);
+            varPct = (delta / Math.abs(prev)) * 100;
+          }
+          out.push({ mes: i + 1, valor: v, varPct });
+          if (v !== 0 || prev !== null) prev = v;
+        }
+        return out;
+      };
+
+      const linhas: Linha[] = Array.from(buckets.entries())
+        .map(([id, b]) => ({
+          id,
+          nome: b.nome,
+          meses: calcVarPct(b.meses),
+          total: b.meses.reduce((a, x) => a + x, 0),
+        }))
+        .filter(l => l.total > 0)
+        .sort((a, b) => b.total - a.total);
+
+      const totalGeral = calcVarPct(totalMeses);
+      const totalAno = totalMeses.reduce((a, x) => a + x, 0);
+
+      res.json({ ano, tipo, linhas, totalGeral, totalAno });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // === WEBHOOK SETUP (admin) ===
   app.post("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (req, res) => {
     try {

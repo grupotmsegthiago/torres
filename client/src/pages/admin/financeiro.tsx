@@ -733,6 +733,203 @@ function AsaasBalanceCard() {
   );
 }
 
+interface RelatorioAnualData {
+  ano: number;
+  tipo: string;
+  totalAno: number;
+  linhas: { id: string; nome: string; meses: { mes: number; valor: number; varPct: number | null }[]; total: number }[];
+  totalGeral: { mes: number; valor: number; varPct: number | null }[];
+}
+
+const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MESES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
+  ano: number;
+  tipo: "fornecedor" | "cliente";
+  onAnoChange: (a: number) => void;
+  onTipoChange: (t: "fornecedor" | "cliente") => void;
+}) {
+  const isFornecedor = tipo === "fornecedor";
+  const anoAtual = new Date().getFullYear();
+  const anosOpts = Array.from({ length: 5 }, (_, i) => anoAtual - i);
+
+  const { data: relAnual, isLoading } = useQuery<RelatorioAnualData>({
+    queryKey: ["/api/financeiro/relatorio-anual", { ano, tipo }],
+    queryFn: async () => {
+      const res = await authFetch(`/api/financeiro/relatorio-anual?ano=${ano}&tipo=${tipo}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+
+  // varPct já vem com sinal correto do servidor:
+  //   positivo = boa notícia (verde) para o tipo selecionado
+  //   negativo = má notícia (vermelho)
+  const corVar = (varPct: number | null): string => {
+    if (varPct === null || varPct === 0) return "text-neutral-400";
+    return varPct > 0 ? "text-green-600" : "text-red-600";
+  };
+  const fmtVar = (varPct: number | null): string => {
+    if (varPct === null) return "—";
+    if (varPct === 0) return "0%";
+    const sign = varPct > 0 ? "+" : "";
+    return `${sign}${varPct.toFixed(1)}%`;
+  };
+  const fmtVarCsv = (varPct: number | null): string => {
+    if (varPct === null) return "";
+    return `${varPct.toFixed(1).replace(".", ",")}%`;
+  };
+
+  const exportCSV = () => {
+    if (!relAnual) return;
+    // Mesma forma da grade: para cada mês uma coluna de Valor e uma de Var %.
+    const header = ["Nome"];
+    for (const m of MESES_FULL) {
+      header.push(`${m} (R$)`);
+      header.push(`${m} (Var %)`);
+    }
+    header.push("Total Anual");
+    const lines: string[][] = [header];
+    for (const l of relAnual.linhas) {
+      const row = [l.nome];
+      for (const m of l.meses) {
+        row.push(m.valor.toFixed(2).replace(".", ","));
+        row.push(fmtVarCsv(m.varPct));
+      }
+      row.push(l.total.toFixed(2).replace(".", ","));
+      lines.push(row);
+    }
+    const totalRow = ["TOTAL GERAL"];
+    for (const m of relAnual.totalGeral) {
+      totalRow.push(m.valor.toFixed(2).replace(".", ","));
+      totalRow.push(fmtVarCsv(m.varPct));
+    }
+    totalRow.push(relAnual.totalAno.toFixed(2).replace(".", ","));
+    lines.push(totalRow);
+    const csv = lines.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `RELATORIO_ANUAL_${tipo.toUpperCase()}_${ano}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrint = () => {
+    // Dica de orientação A4 paisagem para o navegador
+    const styleEl = document.createElement("style");
+    styleEl.id = "rel-anual-print-style";
+    styleEl.innerHTML = "@page { size: A4 landscape; margin: 10mm; }";
+    document.head.appendChild(styleEl);
+    window.print();
+    setTimeout(() => { styleEl.remove(); }, 1000);
+  };
+
+  return (
+    <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm" data-testid="panel-relatorio-anual">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
+        <div className="flex items-center gap-3">
+          <div className="flex bg-neutral-100 p-1 rounded-lg">
+            <button onClick={() => onTipoChange("fornecedor")} data-testid="button-tipo-fornecedor"
+              className={`px-3 py-1.5 text-xs font-black uppercase rounded-md ${isFornecedor ? "bg-neutral-900 text-white" : "text-neutral-500"}`}>
+              Por Fornecedor
+            </button>
+            <button onClick={() => onTipoChange("cliente")} data-testid="button-tipo-cliente"
+              className={`px-3 py-1.5 text-xs font-black uppercase rounded-md ${!isFornecedor ? "bg-green-700 text-white" : "text-neutral-500"}`}>
+              Por Cliente
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black text-neutral-500 uppercase">Ano</label>
+            <select value={ano} onChange={e => onAnoChange(Number(e.target.value))} data-testid="select-ano-relatorio"
+              className="px-3 py-1.5 border-2 border-neutral-200 rounded-md text-xs font-black bg-white">
+              {anosOpts.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV} disabled={!relAnual} data-testid="button-csv-anual" className="text-xs font-bold uppercase">
+            <Download size={14} className="mr-1" /> CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePrint} data-testid="button-print-anual" className="text-xs font-bold uppercase">
+            <Printer size={14} className="mr-1" /> Imprimir
+          </Button>
+        </div>
+      </div>
+
+      <div className="hidden print:block mb-3">
+        <h2 className="text-base font-black uppercase">
+          Relatório Anual {isFornecedor ? "Por Fornecedor (Contas a Pagar)" : "Por Cliente (Contas a Receber)"} — {ano}
+        </h2>
+      </div>
+
+      <div className="text-[10px] text-neutral-500 mb-2 font-bold uppercase">
+        {isFornecedor
+          ? "Verde = pagamos MENOS que o mês anterior (boa notícia, % positiva). Vermelho = pagamos MAIS (% negativa)."
+          : "Verde = faturamos MAIS que o mês anterior (boa notícia, % positiva). Vermelho = faturamos MENOS (% negativa)."}
+      </div>
+
+      {isLoading ? (
+        <div className="p-12 text-center text-neutral-400"><Loader2 className="animate-spin inline mr-2" size={16} /> Carregando…</div>
+      ) : !relAnual || relAnual.linhas.length === 0 ? (
+        <div className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm" data-testid="empty-relatorio-anual">
+          Nenhum dado para {ano}.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse" data-testid="table-relatorio-anual">
+            <thead>
+              <tr className="bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider">
+                <th className="px-2 py-2 sticky left-0 bg-neutral-900 z-10 min-w-[180px]">{isFornecedor ? "Fornecedor" : "Cliente"}</th>
+                {MESES_CURTOS.map(m => <th key={m} className="px-2 py-2 text-right min-w-[90px]">{m}</th>)}
+                <th className="px-2 py-2 text-right bg-neutral-800 min-w-[110px]">Total Anual</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {relAnual.linhas.map(l => (
+                <tr key={l.id} className="hover:bg-neutral-50" data-testid={`row-anual-${l.id}`}>
+                  <td className="px-2 py-2 text-[11px] font-black uppercase sticky left-0 bg-white z-10">{l.nome}</td>
+                  {l.meses.map(m => (
+                    <td key={m.mes} className="px-2 py-2 text-right">
+                      <div className="text-[11px] font-mono font-bold text-neutral-800">
+                        {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-300">—</span>}
+                      </div>
+                      <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
+                        {fmtVar(m.varPct)}
+                      </div>
+                    </td>
+                  ))}
+                  <td className="px-2 py-2 text-right bg-neutral-50">
+                    <div className="text-xs font-mono font-black text-neutral-900">{formatCurrency(l.total)}</div>
+                  </td>
+                </tr>
+              ))}
+              <tr className="bg-neutral-900 text-white" data-testid="row-total-geral">
+                <td className="px-2 py-3 text-xs font-black uppercase sticky left-0 bg-neutral-900 z-10">Total Geral</td>
+                {relAnual.totalGeral.map(m => (
+                  <td key={m.mes} className="px-2 py-3 text-right">
+                    <div className="text-[11px] font-mono font-black">
+                      {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-500">—</span>}
+                    </div>
+                    <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
+                      {fmtVar(m.varPct)}
+                    </div>
+                  </td>
+                ))}
+                <td className="px-2 py-3 text-right bg-black">
+                  <div className="text-xs font-mono font-black">{formatCurrency(relAnual.totalAno)}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FinanceiroPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -755,6 +952,9 @@ export default function FinanceiroPage() {
   const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
   const [viewBoletim, setViewBoletim] = useState<any>(null);
   const [dreOsId, setDreOsId] = useState<string | null>(null);
+  const [relatorioSubTab, setRelatorioSubTab] = useState<"VISAO" | "ANUAL">("VISAO");
+  const [relatorioAnualTipo, setRelatorioAnualTipo] = useState<"fornecedor" | "cliente">("fornecedor");
+  const [relatorioAno, setRelatorioAno] = useState<number>(new Date().getFullYear());
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
     queryKey: ["/api/financial/transactions"],
@@ -1305,6 +1505,21 @@ export default function FinanceiroPage() {
     const autoCount = resumo?.lancamentos_auto ?? transactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
     return (
       <div className="space-y-4" data-testid="panel-relatorio">
+        {user?.role === "diretoria" && (
+          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-1 flex gap-1">
+            <button onClick={() => setRelatorioSubTab("VISAO")} data-testid="subtab-relatorio-visao"
+              className={`flex-1 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide ${relatorioSubTab === "VISAO" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"}`}>
+              Visão Geral
+            </button>
+            <button onClick={() => setRelatorioSubTab("ANUAL")} data-testid="subtab-relatorio-anual"
+              className={`flex-1 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide ${relatorioSubTab === "ANUAL" ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"}`}>
+              Relatório Anual (Jan–Dez)
+            </button>
+          </div>
+        )}
+        {relatorioSubTab === "ANUAL" && user?.role === "diretoria" ? (
+          renderRelatorioAnual()
+        ) : (
         <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
           <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} /> Relatório de Controle Financeiro</h4>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -1383,9 +1598,19 @@ export default function FinanceiroPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   };
+
+  const renderRelatorioAnual = () => (
+    <RelatorioAnualPanel
+      ano={relatorioAno}
+      tipo={relatorioAnualTipo}
+      onAnoChange={setRelatorioAno}
+      onTipoChange={setRelatorioAnualTipo}
+    />
+  );
 
   const renderFechamento = () => {
     const todayStr = new Date().toISOString().split("T")[0];
