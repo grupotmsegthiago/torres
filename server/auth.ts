@@ -62,6 +62,16 @@ export const requireDiretoria: RequestHandler = (req, res, next) => {
   return res.status(403).json({ message: "Acesso restrito à Diretoria/Admin" });
 };
 
+// Estrito: somente role === "diretoria" (Mickael). Usado em fluxos de
+// aprovação financeira em que o ADM (Simone) NÃO pode atuar.
+export const requireDiretoriaStrict: RequestHandler = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Não autorizado" });
+  }
+  if (req.user.role === "diretoria") return next();
+  return res.status(403).json({ message: "Acesso restrito à Diretoria" });
+};
+
 export function setupAuth(app: Express) {
   app.use(authenticateToken);
 }

@@ -26,6 +26,7 @@ import { isInterConfigured, getInterClient } from "../services/inter/client";
 import * as cobranca from "../services/inter/cobranca";
 import * as banking from "../services/inter/banking";
 import { logSystemAudit } from "../audit";
+import { logFinancialAudit } from "./_helpers";
 
 export function registerInterRoutes(app: Express) {
   console.log("[inter] Rotas Banco Inter registradas (cobrança + extrato + saldo + pagamentos + webhook)");
@@ -196,8 +197,21 @@ export function registerInterRoutes(app: Express) {
 
   app.post("/api/inter/pagamento/boleto", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const user = (req as any).user;
+      const txId = String(req.body?.transactionId || "");
       const storagePath = await uploadComprovantePagamento(req);
       const out = await banking.pagarBoleto(req.body);
+      // Marca o lançamento como PAID (BRT) e registra audit log unificado
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      await supabaseAdmin
+        .from("financial_transactions")
+        .update({ status: "PAID", payment_date: nowBrt.slice(0, 10) })
+        .eq("id", txId);
+      await logFinancialAudit("financial_transactions", txId, "UPDATE", [
+        { field: "status", old: "PENDING", new_val: "PAID" },
+        { field: "comprovante_path", old: null, new_val: storagePath },
+        { field: "pagamento_inter", old: null, new_val: { tipo: "boleto", codigo: out.codigoTransacao, valor: req.body.valorPagar } },
+      ], user?.name || "?", user?.id, "Pagamento Boleto Inter");
       await supabaseAdmin.from("inter_pagamentos").insert({
         tipo: "boleto",
         codigo_transacao_inter: out.codigoTransacao,
@@ -223,9 +237,21 @@ export function registerInterRoutes(app: Express) {
 
   app.post("/api/inter/pix", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const user = (req as any).user;
+      const txId = String(req.body?.transactionId || "");
       const storagePath = await uploadComprovantePagamento(req);
       const out = await banking.realizarPix(req.body);
       const codigo = out.endToEndId || out.idempotenteId || out.codigoSolicitacao;
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      await supabaseAdmin
+        .from("financial_transactions")
+        .update({ status: "PAID", payment_date: nowBrt.slice(0, 10) })
+        .eq("id", txId);
+      await logFinancialAudit("financial_transactions", txId, "UPDATE", [
+        { field: "status", old: "PENDING", new_val: "PAID" },
+        { field: "comprovante_path", old: null, new_val: storagePath },
+        { field: "pagamento_inter", old: null, new_val: { tipo: "pix", codigo, valor: req.body.valor } },
+      ], user?.name || "?", user?.id, "Pagamento PIX Inter");
       await supabaseAdmin.from("inter_pagamentos").insert({
         tipo: "pix",
         codigo_transacao_inter: codigo,

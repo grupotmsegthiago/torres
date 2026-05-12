@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict } from "../auth";
   import { logSystemAudit } from "../audit";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
@@ -117,7 +117,7 @@ import type { Express } from "express";
   });
 
   // Lista somente lançamentos AGUARDANDO_APROVACAO (Mickael / diretoria visualiza)
-  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireDiretoria, async (req, res) => {
+  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")
@@ -172,6 +172,9 @@ import type { Express } from "express";
       const user = req.user!;
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id } = req.body;
       if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
+      if (type === "EXPENSE" && !fornecedor_id) {
+        return res.status(400).json({ message: "Selecione um Fornecedor cadastrado para Despesa." });
+      }
 
       // Regra: ADM (Simone) cria → AGUARDANDO_APROVACAO; Diretoria (Mickael) cria → mantém status enviado.
       // EXPENSE manual sempre passa pelo fluxo de aprovação quando criado por admin não-diretoria.
@@ -243,7 +246,7 @@ import type { Express } from "express";
   });
 
   // Aprovar lançamento (apenas diretoria — Mickael)
-  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireDiretoria, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const user = req.user!;
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
@@ -277,7 +280,7 @@ import type { Express } from "express";
   });
 
   // Recusar lançamento (apenas diretoria — Mickael) com motivo obrigatório
-  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireDiretoria, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const user = req.user!;
       const motivo = String(req.body?.motivo || "").trim();

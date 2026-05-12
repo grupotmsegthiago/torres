@@ -202,6 +202,10 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   });
 
   const handleSubmit = () => {
+    if (type === "EXPENSE" && !fornecedorId) {
+      toast({ title: "Fornecedor obrigatório", description: "Selecione um fornecedor cadastrado para Despesa.", variant: "destructive" });
+      return;
+    }
     if (isEdit && isSeries) {
       setShowScopeDialog(true);
     } else {
@@ -339,7 +343,9 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                 ))}
               </select>
               {!fornecedorId && (
-                <input type="text" className="w-full mt-2 p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Ou informe um favorecido livre" value={entityName} onChange={e => setEntityName(e.target.value)} data-testid="input-entity" />
+                <p className="mt-2 text-[10px] font-bold text-red-600 uppercase" data-testid="text-fornecedor-required">
+                  Selecione um fornecedor cadastrado (obrigatório para Despesa).
+                </p>
               )}
             </div>
           ) : (
