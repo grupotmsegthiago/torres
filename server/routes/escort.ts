@@ -24,9 +24,32 @@ import type { Express } from "express";
 
   app.post("/api/financial/categories", requireAdminRole, async (req, res) => {
     try {
-      const { name, type, group, recurrence_type, tag, scope, is_deduction } = req.body;
+      const { name, type, group, recurrence_type, tag, scope, is_deduction, parent_name } = req.body;
       if (!name || !type || !group) return res.status(400).json({ message: "name, type e group são obrigatórios" });
-      const { data, error } = await supabaseAdmin.from("financial_categories").insert({ name, type, group, recurrence_type: recurrence_type || "VARIAVEL", tag: tag || "OPERACIONAL", scope: scope || "EMPRESA", is_deduction: is_deduction || false }).select().single();
+      const { data, error } = await supabaseAdmin.from("financial_categories").insert({
+        name, type, group,
+        recurrence_type: recurrence_type || "VARIAVEL",
+        tag: tag || "OPERACIONAL",
+        scope: scope || "EMPRESA",
+        is_deduction: is_deduction || false,
+        parent_name: parent_name || null,
+      }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/financial/categories/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { name, parent_name, type, group } = req.body;
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (parent_name !== undefined) updates.parent_name = parent_name;
+      if (type !== undefined) updates.type = type;
+      if (group !== undefined) updates.group = group;
+      const { data, error } = await supabaseAdmin.from("financial_categories").update(updates).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);
     } catch (err: any) {

@@ -107,6 +107,7 @@ interface FinancialCategory {
   recurrence_type: string | null;
   tag: string | null;
   scope: string | null;
+  parent_name: string | null;
 }
 
 interface FinancialAccount {
@@ -220,6 +221,12 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   };
 
   const filteredCategories = categories.filter(c => c.type === type);
+  const groupedCategories = filteredCategories.reduce((acc, c) => {
+    const parent = c.parent_name || "Outros";
+    if (!acc[parent]) acc[parent] = [];
+    acc[parent].push(c);
+    return acc;
+  }, {} as Record<string, FinancialCategory[]>);
   const remainingInstallments = isSeries ? (editingTransaction.installment_total! - editingTransaction.installment_number! + 1) : 0;
 
   return (
@@ -325,7 +332,13 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               </div>
               <select required className="w-full p-2.5 border border-neutral-200 rounded-lg text-xs bg-white uppercase font-bold" value={categoryId} onChange={e => setCategoryId(e.target.value)} data-testid="select-category">
                 <option value="">Selecione...</option>
-                {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {Object.entries(groupedCategories).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([parent, cats]) => (
+                  <optgroup key={parent} label={parent}>
+                    {cats.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </div>
             <div>
@@ -424,12 +437,11 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       )}
 
       {showCategoryModal && (
-        <QuickCategoryModal
+        <CategoryManagerModal
           initialType={type}
           onClose={() => setShowCategoryModal(false)}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] });
-            setShowCategoryModal(false);
           }}
         />
       )}
@@ -437,66 +449,269 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   );
 }
 
-function QuickCategoryModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
+function CategoryManagerModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess?: () => void;
   initialType?: TransactionType;
 }) {
   const { toast } = useToast();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<TransactionType>(initialType);
-  const [group, setGroup] = useState("CUSTOS_VARIAVEIS");
-
-  const saveMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/financial/categories", {
-      name, type, group, recurrence_type: "VARIAVEL", tag: "OPERACIONAL", scope: "EMPRESA", is_deduction: group === "DEDUCOES",
-    }),
-    onSuccess: () => {
-      toast({ title: "Categoria criada" });
-      onSuccess();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
+  const { data: allCategories = [], refetch } = useQuery<FinancialCategory[]>({
+    queryKey: ["/api/financial/categories"],
   });
 
+  const [selectedParent, setSelectedParent] = useState<string | null>(null);
+  const [newParentName, setNewParentName] = useState("");
+  const [newSubName, setNewSubName] = useState("");
+  const [newSubGroup, setNewSubGroup] = useState("DESPESAS_FIXAS");
+  const [newSubType, setNewSubType] = useState<TransactionType>(initialType);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Derive parent categories from data
+  const parents = Array.from(new Set(
+    allCategories.filter(c => c.parent_name).map(c => c.parent_name as string)
+  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const subcategories = allCategories
+    .filter(c => c.parent_name === selectedParent)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+  const createParentMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/financial/categories", {
+      name: newParentName.trim(), type: newSubType, group: newSubGroup,
+      parent_name: newParentName.trim(), recurrence_type: "VARIAVEL",
+      tag: "OPERACIONAL", scope: "EMPRESA", is_deduction: false,
+    }),
+    onSuccess: async () => {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] });
+      setSelectedParent(newParentName.trim());
+      setNewParentName("");
+      toast({ title: "Grupo criado" });
+      onSuccess?.();
+    },
+    onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const createSubMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/financial/categories", {
+      name: newSubName.trim(), type: newSubType, group: newSubGroup,
+      parent_name: selectedParent, recurrence_type: "VARIAVEL",
+      tag: "OPERACIONAL", scope: "EMPRESA", is_deduction: false,
+    }),
+    onSuccess: async () => {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] });
+      setNewSubName("");
+      toast({ title: "Subcategoria criada" });
+      onSuccess?.();
+    },
+    onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/financial/categories/${id}`),
+    onSuccess: async () => {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] });
+      setConfirmDeleteId(null);
+      toast({ title: "Categoria removida" });
+      onSuccess?.();
+    },
+    onError: (e: Error) => toast({ title: "Erro ao remover", description: e.message, variant: "destructive" }),
+  });
+
+  const GROUP_OPTIONS = [
+    { value: "CUSTOS_VARIAVEIS", label: "Custos Variáveis" },
+    { value: "DESPESAS_FIXAS", label: "Despesas Fixas" },
+    { value: "RECEITA_BRUTA", label: "Receita" },
+    { value: "DEDUCOES", label: "Impostos/Deduções" },
+    { value: "INVESTIMENTOS", label: "Investimentos" },
+    { value: "NAO_OPERACIONAL", label: "Não Operacional" },
+  ];
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-category">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-neutral-200">
-        <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
-          <h3 className="font-bold text-neutral-800 text-sm flex items-center gap-2"><Tag size={16} className="text-green-600" /> Nova Categoria</h3>
-          <button onClick={onClose} data-testid="button-close-category"><X size={18} className="text-neutral-400 hover:text-neutral-600" /></button>
-        </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; saveMutation.mutate(); }} className="p-4 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-neutral-500 uppercase mb-1 block">Nome</label>
-            <input autoFocus type="text" required className="w-full p-2 border border-neutral-200 rounded-lg text-sm" placeholder="Ex: Material de Escritório" value={name} onChange={e => setName(e.target.value)} data-testid="input-category-name" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-neutral-500 uppercase mb-1 block">Tipo</label>
-              <select className="w-full p-2 border border-neutral-200 rounded-lg text-xs bg-white" value={type} onChange={e => setType(e.target.value as TransactionType)} data-testid="select-category-type">
-                <option value="EXPENSE">Despesa</option>
-                <option value="INCOME">Receita</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-neutral-500 uppercase mb-1 block">Grupo DRE</label>
-              <select className="w-full p-2 border border-neutral-200 rounded-lg text-xs bg-white" value={group} onChange={e => setGroup(e.target.value)} data-testid="select-category-group">
-                <option value="CUSTOS_VARIAVEIS">Custos Variáveis</option>
-                <option value="DESPESAS_FIXAS">Despesas Fixas</option>
-                <option value="RECEITA_BRUTA">Receita</option>
-                <option value="DEDUCOES">Impostos/Deduções</option>
-                <option value="INVESTIMENTOS">Investimentos</option>
-                <option value="NAO_OPERACIONAL">Não Operacional</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" disabled={saveMutation.isPending} data-testid="button-save-category"
-            className="w-full py-2.5 bg-neutral-900 hover:bg-black text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors">
-            {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar e Usar
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-category-manager">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-neutral-200">
+        <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 flex-shrink-0">
+          <h3 className="font-black text-neutral-800 text-sm flex items-center gap-2 uppercase tracking-wider">
+            <Tag size={16} className="text-green-600" /> Gerenciar Categorias
+          </h3>
+          <button onClick={onClose} data-testid="button-close-category-manager">
+            <X size={18} className="text-neutral-400 hover:text-neutral-600" />
           </button>
-        </form>
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left panel: parent categories */}
+          <div className="w-48 border-r border-neutral-100 flex flex-col bg-neutral-50 flex-shrink-0">
+            <div className="p-3 border-b border-neutral-100">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">Grupos</p>
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={newParentName}
+                  onChange={e => setNewParentName(e.target.value)}
+                  placeholder="Novo grupo..."
+                  className="flex-1 min-w-0 px-2 py-1.5 border border-neutral-200 rounded-lg text-xs bg-white"
+                  data-testid="input-new-parent"
+                  onKeyDown={e => { if (e.key === "Enter" && newParentName.trim()) { e.preventDefault(); createParentMutation.mutate(); } }}
+                />
+                <button
+                  type="button"
+                  disabled={!newParentName.trim() || createParentMutation.isPending}
+                  onClick={() => createParentMutation.mutate()}
+                  className="px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-black disabled:opacity-40"
+                  data-testid="button-add-parent"
+                >
+                  {createParentMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              {parents.map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSelectedParent(p)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                    selectedParent === p
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-700 hover:bg-neutral-200"
+                  }`}
+                  data-testid={`button-parent-${p}`}
+                >
+                  {p}
+                  <span className={`ml-1 text-[10px] ${selectedParent === p ? "text-neutral-300" : "text-neutral-400"}`}>
+                    ({allCategories.filter(c => c.parent_name === p).length})
+                  </span>
+                </button>
+              ))}
+              {parents.length === 0 && (
+                <p className="text-[10px] text-neutral-400 italic p-2">Nenhum grupo ainda</p>
+              )}
+            </div>
+          </div>
+
+          {/* Right panel: subcategories */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {selectedParent ? (
+              <>
+                <div className="p-3 border-b border-neutral-100 bg-white">
+                  <p className="text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-2">
+                    Subcategorias de <span className="text-neutral-700">{selectedParent}</span>
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <input
+                      type="text"
+                      value={newSubName}
+                      onChange={e => setNewSubName(e.target.value)}
+                      placeholder="Nome da subcategoria..."
+                      className="flex-1 min-w-[140px] px-2 py-1.5 border border-neutral-200 rounded-lg text-xs bg-white"
+                      data-testid="input-new-subcategory"
+                      onKeyDown={e => { if (e.key === "Enter" && newSubName.trim()) { e.preventDefault(); createSubMutation.mutate(); } }}
+                    />
+                    <select
+                      value={newSubType}
+                      onChange={e => setNewSubType(e.target.value as TransactionType)}
+                      className="px-2 py-1.5 border border-neutral-200 rounded-lg text-xs bg-white"
+                      data-testid="select-sub-type"
+                    >
+                      <option value="EXPENSE">Despesa</option>
+                      <option value="INCOME">Receita</option>
+                    </select>
+                    <select
+                      value={newSubGroup}
+                      onChange={e => setNewSubGroup(e.target.value)}
+                      className="px-2 py-1.5 border border-neutral-200 rounded-lg text-xs bg-white"
+                      data-testid="select-sub-group"
+                    >
+                      {GROUP_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!newSubName.trim() || createSubMutation.isPending}
+                      onClick={() => createSubMutation.mutate()}
+                      className="px-3 py-1.5 bg-neutral-900 hover:bg-black text-white rounded-lg text-xs font-black flex items-center gap-1 disabled:opacity-40"
+                      data-testid="button-add-subcategory"
+                    >
+                      {createSubMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                  {subcategories.length === 0 && (
+                    <div className="text-center py-8">
+                      <Tag size={28} className="mx-auto text-neutral-200 mb-2" />
+                      <p className="text-xs text-neutral-400 font-bold">Nenhuma subcategoria neste grupo</p>
+                      <p className="text-[10px] text-neutral-400">Use o formulário acima para adicionar</p>
+                    </div>
+                  )}
+                  {subcategories.map(c => (
+                    <div key={c.id}
+                      className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-neutral-100 hover:border-neutral-200 group"
+                      data-testid={`row-category-${c.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-bold text-neutral-800 uppercase block truncate">{c.name}</span>
+                        <span className="text-[10px] text-neutral-400">
+                          {GROUP_OPTIONS.find(g => g.value === c.group)?.label || c.group}
+                          {" · "}
+                          {c.type === "EXPENSE" ? "Despesa" : "Receita"}
+                        </span>
+                      </div>
+                      {confirmDeleteId === c.id ? (
+                        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                          <span className="text-[10px] text-red-600 font-bold">Confirmar?</span>
+                          <button
+                            type="button"
+                            onClick={() => deleteMutation.mutate(c.id)}
+                            disabled={deleteMutation.isPending}
+                            className="px-2 py-1 bg-red-600 text-white rounded text-[10px] font-black"
+                            data-testid={`button-confirm-delete-${c.id}`}
+                          >
+                            {deleteMutation.isPending ? <Loader2 size={10} className="animate-spin" /> : "Sim"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 bg-neutral-200 text-neutral-600 rounded text-[10px] font-black"
+                            data-testid={`button-cancel-delete-${c.id}`}
+                          >
+                            Não
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(c.id)}
+                          className="ml-2 p-1.5 rounded-md text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                          data-testid={`button-delete-${c.id}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-center p-8">
+                <div>
+                  <Tag size={40} className="mx-auto text-neutral-200 mb-3" />
+                  <p className="text-sm font-bold text-neutral-500">Selecione um grupo à esquerda</p>
+                  <p className="text-xs text-neutral-400 mt-1">ou crie um novo grupo para começar</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-3 border-t border-neutral-100 bg-neutral-50 flex-shrink-0">
+          <p className="text-[10px] text-neutral-400 text-center">
+            {allCategories.length} categoria(s) cadastrada(s) · {parents.length} grupo(s)
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -1310,6 +1525,7 @@ export default function FinanceiroPage() {
   const [editingTransaction, setEditingTransaction] = useState<FinancialTransaction | null>(null);
   const [closingNotes, setClosingNotes] = useState("");
   const [closingConfirmed, setClosingConfirmed] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [calcResult, setCalcResult] = useState<any>(null);
   const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
   const [viewBoletim, setViewBoletim] = useState<any>(null);
@@ -2401,6 +2617,9 @@ export default function FinanceiroPage() {
             <Button variant="outline" size="sm" onClick={() => { invalidateRelatedQueries("financial"); queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] }); queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] }); }} data-testid="button-refresh" className="text-xs font-bold uppercase">
               <RefreshCw size={14} />
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowCategoryManager(true)} data-testid="button-manage-categories" className="text-xs font-bold uppercase">
+              <Tag size={14} className="mr-1" /> Categorias
+            </Button>
             {(activeStep === "PAGAR" || activeStep === "RECEBER") && (
               <Button onClick={() => { setEditingTransaction(null); setIsFormOpen(true); }} data-testid="button-new-transaction" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase">
                 <Plus size={14} className="mr-1" /> Novo Lançamento
@@ -2513,6 +2732,13 @@ export default function FinanceiroPage() {
             categories={categories}
             accounts={accounts}
             fornecedores={fornecedores}
+          />
+        )}
+
+        {showCategoryManager && (
+          <CategoryManagerModal
+            onClose={() => setShowCategoryManager(false)}
+            onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] })}
           />
         )}
 

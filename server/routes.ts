@@ -322,6 +322,83 @@ async function ensureFinancialOriginColumns() {
 ensureFinancialOriginColumns();
 ensureInterTables();
 ensureComprovantesBucket();
+ensureCategoryHierarchy();
+
+async function ensureCategoryHierarchy() {
+  try {
+    const migrations = [
+      "ALTER TABLE financial_categories ADD COLUMN IF NOT EXISTS parent_name TEXT",
+      // Map existing categories to parent groups (case-insensitive name match)
+      `UPDATE financial_categories SET parent_name = 'Escritório'
+         WHERE parent_name IS NULL AND LOWER(name) IN (
+           'material de escritório','serviços de ti','telecomunicações',
+           'energia e água','energia e agua','marketing','advocacia/contábil',
+           'aluguel e condomínio','aluguel e condominio'
+         )`,
+      `UPDATE financial_categories SET parent_name = 'Carros'
+         WHERE parent_name IS NULL AND LOWER(name) IN (
+           'combustível','combustivel','manutenção veicular','manutencao veicular','peças e pneus','pecas e pneus'
+         )`,
+      `UPDATE financial_categories SET parent_name = 'Funcionários'
+         WHERE parent_name IS NULL AND LOWER(name) IN (
+           'equipamentos','uniformes e epi','uniformes','alimentação','alimentacao','viagem/hospedagem'
+         )`,
+      `UPDATE financial_categories SET parent_name = 'Armamento'
+         WHERE parent_name IS NULL AND LOWER(name) IN (
+           'armamento e munição','armamento e municao','armamento'
+         )`,
+    ];
+    for (const q of migrations) {
+      await supabaseAdmin.rpc("exec_sql", { query: q });
+    }
+
+    // Seed new subcategories that may not exist yet
+    const seedCategories = [
+      { name: "Aluguel Casa", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Escritório", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "TI", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Telefones", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Energia / Água", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Marketing", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Jurídico", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Material de Escritório", parent_name: "Escritório", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Aluguel Carros", parent_name: "Carros", type: "EXPENSE", group: "CUSTOS_VARIAVEIS" },
+      { name: "Combustível", parent_name: "Carros", type: "EXPENSE", group: "CUSTOS_VARIAVEIS" },
+      { name: "Manutenção", parent_name: "Carros", type: "EXPENSE", group: "CUSTOS_VARIAVEIS" },
+      { name: "Equipamentos", parent_name: "Funcionários", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Uniformes", parent_name: "Funcionários", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Seguros", parent_name: "Funcionários", type: "EXPENSE", group: "DESPESAS_FIXAS" },
+      { name: "Armas", parent_name: "Armamento", type: "EXPENSE", group: "CUSTOS_VARIAVEIS" },
+      { name: "Munições", parent_name: "Armamento", type: "EXPENSE", group: "CUSTOS_VARIAVEIS" },
+    ];
+
+    // Fetch existing names to avoid duplicates
+    const { data: existing } = await supabaseAdmin.from("financial_categories").select("name");
+    const existingNames = new Set((existing || []).map((c: any) => c.name.toLowerCase()));
+
+    for (const cat of seedCategories) {
+      if (!existingNames.has(cat.name.toLowerCase())) {
+        await supabaseAdmin.from("financial_categories").insert({
+          ...cat,
+          recurrence_type: "VARIAVEL",
+          tag: "OPERACIONAL",
+          scope: "EMPRESA",
+          is_deduction: false,
+        });
+      } else {
+        // Update parent_name for existing categories that match
+        await supabaseAdmin.from("financial_categories")
+          .update({ parent_name: cat.parent_name })
+          .ilike("name", cat.name)
+          .is("parent_name", null);
+      }
+    }
+
+    console.log("[categories] Hierarquia de categorias garantida");
+  } catch (err: any) {
+    console.warn("[categories] ensureCategoryHierarchy:", err?.message);
+  }
+}
 
 async function ensureComprovantesBucket() {
   try {
