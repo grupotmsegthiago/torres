@@ -957,6 +957,9 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     );
   };
 
+  const isCurrentYear = ano === currentBRTYear;
+  const currentMesLabel = isCurrentYear ? MESES_CURTOS[currentBRTMonth] : null;
+
   return (
     <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm" data-testid="panel-relatorio-anual">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
@@ -1038,10 +1041,29 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
               </div>
             </div>
 
-            {(() => {
-              const isCurrentYear = ano === currentBRTYear;
-              const currentMesLabel = isCurrentYear ? MESES_CURTOS[currentBRTMonth] : null;
+            {currentMesLabel && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  marginBottom: 8,
+                  padding: "3px 10px",
+                  background: "#eff6ff",
+                  border: "1.5px dashed #2563eb",
+                  borderRadius: 6,
+                }}
+                data-testid="badge-mes-atual"
+              >
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+                <span style={{ fontSize: 10, fontWeight: 900, color: "#2563eb", letterSpacing: 0.8, textTransform: "uppercase" as const }}>
+                  Mês atual: {currentMesLabel} / {ano}
+                </span>
+              </div>
+            )}
 
+            {(() => {
               const renderXTick = ({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => {
                 const isCurrent = payload.value === currentMesLabel;
                 return (
@@ -1131,12 +1153,34 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
             })()}
           </div>
 
+          {currentMesLabel && (
+            <div className="hidden print:flex items-center gap-2 mb-2 px-2 py-1.5 rounded border border-blue-300 bg-blue-50 w-fit" data-testid="print-badge-mes-atual">
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+              <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">
+                Mês atual: {currentMesLabel} / {ano}
+              </span>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse" data-testid="table-relatorio-anual">
               <thead>
                 <tr className="bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider">
                   <th className="px-2 py-2 sticky left-0 bg-neutral-900 z-10 min-w-[180px]">{isFornecedor ? "Fornecedor" : "Cliente"}</th>
-                  {MESES_CURTOS.map(m => <th key={m} className="px-2 py-2 text-right min-w-[90px]">{m}</th>)}
+                  {MESES_CURTOS.map(m => {
+                    const isCurMes = m === currentMesLabel;
+                    return (
+                      <th
+                        key={m}
+                        className={`px-2 py-2 text-right min-w-[90px] ${isCurMes ? "bg-blue-700 text-white" : ""}`}
+                      >
+                        {m}
+                        {isCurMes && (
+                          <span className="block text-[8px] font-black tracking-widest opacity-80 leading-none mt-0.5">ATUAL</span>
+                        )}
+                      </th>
+                    );
+                  })}
                   <th className="px-2 py-2 text-right bg-neutral-800 min-w-[110px]">Total Anual</th>
                 </tr>
               </thead>
@@ -1154,16 +1198,19 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                       <td className={`px-2 py-2 text-[11px] font-black uppercase sticky left-0 z-10 ${isHighlighted ? "bg-blue-50" : "bg-white"}`}>
                         {l.nome}
                       </td>
-                      {l.meses.map(m => (
-                        <td key={m.mes} className="px-2 py-2 text-right">
-                          <div className="text-[11px] font-mono font-bold text-neutral-800">
-                            {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-300">—</span>}
-                          </div>
-                          <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
-                            {fmtVar(m.varPct)}
-                          </div>
-                        </td>
-                      ))}
+                      {l.meses.map(m => {
+                        const isCurMes = m.mes === currentMesLabel;
+                        return (
+                          <td key={m.mes} className={`px-2 py-2 text-right ${isCurMes ? "bg-blue-50 border-x border-blue-200" : ""}`}>
+                            <div className="text-[11px] font-mono font-bold text-neutral-800">
+                              {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-300">—</span>}
+                            </div>
+                            <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
+                              {fmtVar(m.varPct)}
+                            </div>
+                          </td>
+                        );
+                      })}
                       <td className={`px-2 py-2 text-right ${isHighlighted ? "bg-blue-100" : "bg-neutral-50"}`}>
                         <div className="text-xs font-mono font-black text-neutral-900">{formatCurrency(l.total)}</div>
                       </td>
@@ -1172,16 +1219,19 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                 })}
                 <tr className="bg-neutral-900 text-white" data-testid="row-total-geral">
                   <td className="px-2 py-3 text-xs font-black uppercase sticky left-0 bg-neutral-900 z-10">Total Geral</td>
-                  {relAnual.totalGeral.map(m => (
-                    <td key={m.mes} className="px-2 py-3 text-right">
-                      <div className="text-[11px] font-mono font-black">
-                        {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-500">—</span>}
-                      </div>
-                      <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
-                        {fmtVar(m.varPct)}
-                      </div>
-                    </td>
-                  ))}
+                  {relAnual.totalGeral.map(m => {
+                    const isCurMes = m.mes === currentMesLabel;
+                    return (
+                      <td key={m.mes} className={`px-2 py-3 text-right ${isCurMes ? "bg-blue-900" : ""}`}>
+                        <div className="text-[11px] font-mono font-black">
+                          {m.valor > 0 ? formatCurrency(m.valor) : <span className="text-neutral-500">—</span>}
+                        </div>
+                        <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
+                          {fmtVar(m.varPct)}
+                        </div>
+                      </td>
+                    );
+                  })}
                   <td className="px-2 py-3 text-right bg-black">
                     <div className="text-xs font-mono font-black">{formatCurrency(relAnual.totalAno)}</div>
                   </td>
