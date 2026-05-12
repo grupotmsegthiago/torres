@@ -19,8 +19,9 @@ import {
   Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound, TrendingUp,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip,
   Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import html2canvas from "html2canvas";
@@ -1115,7 +1116,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                       <XAxis dataKey="mes" tick={renderXTick} axisLine={false} tickLine={false} />
                       <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
-                      <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                      <RechartTooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
                       <Legend content={renderLegend} />
                       {currentMesLabel && (
                         <ReferenceLine
@@ -1143,7 +1144,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                       <XAxis dataKey="mes" tick={renderXTick} axisLine={false} tickLine={false} />
                       <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
-                      <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                      <RechartTooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
                       <Legend content={renderLegend} />
                       {currentMesLabel && (
                         <ReferenceLine
@@ -1205,7 +1206,14 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                       >
                         {m}
                         {isCurMes && (
-                          <span className="block text-[8px] font-black tracking-widest opacity-80 leading-none mt-0.5">ATUAL</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="block text-[8px] font-black tracking-widest opacity-80 leading-none mt-0.5 cursor-help">ATUAL</span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[200px] text-center text-xs">
+                              Este é o mês em andamento — dados ainda incompletos
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </th>
                     );
