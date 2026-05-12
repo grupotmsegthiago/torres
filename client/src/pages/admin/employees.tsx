@@ -3197,7 +3197,10 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     ]},
   ];
 
-  const getDocStatus = (docType: string) => docs.some((d: any) => d.type === docType);
+  const getDocStatus = (docType: string) => {
+    if (docType === "Fotos 3x4" && employee.photoUrl) return true;
+    return docs.some((d: any) => d.type === docType);
+  };
 
   const MANDATORY_DOC_TYPES = REQUIRED_DOCS
     .filter(g => g.group !== "Dependentes (se necessário)")

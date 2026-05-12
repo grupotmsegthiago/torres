@@ -145,7 +145,11 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
     asoGraceUntil = dt.toISOString().slice(0, 10);
   }
   for (const tipo of reqDocs) {
-    const has = docs.find((d: any) => (d.type || "").toLowerCase() === tipo.toLowerCase());
+    let has = docs.find((d: any) => (d.type || "").toLowerCase() === tipo.toLowerCase());
+    // Foto cadastral do funcionário (avatar) também vale como "Fotos 3x4"
+    if (!has && tipo === "Fotos 3x4" && (emp as any).photoUrl) {
+      has = { type: tipo, expiryDate: null, _fromAvatar: true };
+    }
     const isASO = tipo === "ASO";
     if (!has) {
       if (isASO && asoGraceUntil && asoGraceUntil >= today) {
@@ -157,6 +161,8 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
       }
     } else if (has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
       itensDoc.push({ label: tipo, status: "vencido", detail: `Venceu em ${String(has.expiryDate).slice(0, 10)}` });
+    } else if ((has as any)._fromAvatar) {
+      itensDoc.push({ label: tipo, status: "ok", detail: "Foto cadastral do sistema" });
     } else {
       itensDoc.push({ label: tipo, status: "ok", detail: has.expiryDate ? `Válido até ${String(has.expiryDate).slice(0, 10)}` : undefined });
     }
