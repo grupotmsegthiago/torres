@@ -33,6 +33,7 @@ const UsersPage = lazy(() => import("@/pages/admin/users"));
 const ProfilePage = lazy(() => import("@/pages/admin/profile"));
 const AuditPage = lazy(() => import("@/pages/admin/audit"));
 const FinanceiroPage = lazy(() => import("@/pages/admin/financeiro"));
+const FornecedoresPage = lazy(() => import("@/pages/admin/fornecedores"));
 const BoletimMedicaoPage = lazy(() => import("@/pages/admin/boletim-medicao"));
 const RelatorioFaturamentoPage = lazy(() => import("@/pages/admin/relatorio-faturamento"));
 const RelatorioAbastecimentoPage = lazy(() => import("@/pages/admin/relatorio-abastecimento"));
@@ -244,6 +245,7 @@ function Router() {
         <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
         <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>
         <Route path="/admin/financeiro">{() => <ProtectedRoute component={FinanceiroPage} />}</Route>
+        <Route path="/admin/fornecedores">{() => <ProtectedRoute component={FornecedoresPage} />}</Route>
         <Route path="/admin/balanco-gerencial">{() => <ProtectedRoute component={BalancoGerencialPage} />}</Route>
         <Route path="/admin/custos-fixos">{() => <ProtectedRoute component={CustosFixosPage} />}</Route>
         <Route path="/admin/faturas">{() => <ProtectedRoute component={FaturasPage} />}</Route>

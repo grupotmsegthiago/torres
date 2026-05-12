@@ -21,9 +21,25 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type TransactionType = "INCOME" | "EXPENSE";
-type TransactionStatus = "PENDING" | "PAID" | "CANCELLED";
-type Step = "PAGAR" | "RECEBER" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO";
+type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
+type Step = "PAGAR" | "RECEBER" | "AGUARDANDO" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO";
 type StatusFilter = "ALL" | "PENDING" | "PAID" | "OVERDUE";
+
+interface Fornecedor {
+  id: number;
+  nome: string;
+  cnpj_cpf: string | null;
+  categoria: string | null;
+  email: string | null;
+  telefone: string | null;
+  chave_pix: string | null;
+  banco: string | null;
+  agencia: string | null;
+  conta: string | null;
+  tipo_conta: string | null;
+  observacoes: string | null;
+  ativo: boolean;
+}
 type ViewPeriod = "DAY" | "WEEK" | "MONTH" | "CUSTOM" | "ALL";
 
 interface FinancialTransaction {
@@ -49,6 +65,14 @@ interface FinancialTransaction {
   origin_id: string | null;
   created_at: string;
   created_by: string | null;
+  fornecedor_id: number | null;
+  comprovante_url: string | null;
+  comprovante_anexado_em: string | null;
+  solicitado_por: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
+  recusado_motivo: string | null;
+  recusado_em: string | null;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -94,19 +118,21 @@ const formatCurrency = (val: number | null | undefined) => {
 };
 const fmt = formatCurrency;
 
-const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; description: string; number: number }[] = [
+const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; description: string; number: number; diretoriaOnly?: boolean }[] = [
   { id: "PAGAR", label: "Contas a Pagar", icon: ArrowDownCircle, description: "Despesas e pagamentos", number: 1 },
   { id: "RECEBER", label: "Contas a Receber", icon: ArrowUpCircle, description: "Valores a receber", number: 2 },
-  { id: "CONFERENCIA", label: "Conferência", icon: ClipboardCheck, description: "Revisar pendências", number: 3 },
-  { id: "RELATORIO", label: "Relatório", icon: BarChart3, description: "Controle financeiro", number: 4 },
-  { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 5 },
+  { id: "AGUARDANDO", label: "Aguardando Aprovação", icon: AlertTriangle, description: "Lançamentos pendentes de aprovação da diretoria", number: 3, diretoriaOnly: true },
+  { id: "CONFERENCIA", label: "Conferência", icon: ClipboardCheck, description: "Revisar pendências", number: 4 },
+  { id: "RELATORIO", label: "Relatório", icon: BarChart3, description: "Controle financeiro", number: 5 },
+  { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 6 },
 ];
 
-function TransactionFormModal({ onClose, editingTransaction, categories, accounts }: {
+function TransactionFormModal({ onClose, editingTransaction, categories, accounts, fornecedores }: {
   onClose: () => void;
   editingTransaction: FinancialTransaction | null;
   categories: FinancialCategory[];
   accounts: FinancialAccount[];
+  fornecedores: Fornecedor[];
 }) {
   const { toast } = useToast();
   const isEdit = !!editingTransaction;
@@ -120,6 +146,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [categoryId, setCategoryId] = useState(editingTransaction?.category_id || "");
   const [accountId, setAccountId] = useState(editingTransaction?.account_id || "");
   const [entityName, setEntityName] = useState(editingTransaction?.entity_name || "");
+  const [fornecedorId, setFornecedorId] = useState<string>(editingTransaction?.fornecedor_id ? String(editingTransaction.fornecedor_id) : "");
   const [status, setStatus] = useState<TransactionStatus>(editingTransaction?.status || "PENDING");
   const [notes, setNotes] = useState(editingTransaction?.notes || "");
   const [recurrence, setRecurrence] = useState<"SINGLE" | "INSTALLMENT">(
@@ -137,12 +164,15 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
     const descFinal = isEdit && isSeries
       ? `${description} (${editingTransaction.installment_number}/${editingTransaction.installment_total})`
       : description;
+    const fornecedor = fornecedores.find(f => String(f.id) === fornecedorId);
     return {
       description: descFinal, amount: parseBRL(amount), type, status, due_date: dueDate,
       payment_date: status === "PAID" ? dueDate : null,
       category_id: categoryId || null, category_name: cat?.name || null,
       account_id: accountId || null, account_name: acc?.name || null,
-      entity_name: entityName || null, notes: notes || null,
+      entity_name: (fornecedor?.nome || entityName || "").toUpperCase().trim() || null,
+      fornecedor_id: fornecedorId ? Number(fornecedorId) : null,
+      notes: notes || null,
       ...(!isEdit && recurrence === "INSTALLMENT" ? { installments } : {}),
       ...(isEdit && isSeries && scope ? { update_scope: scope } : {}),
     };
@@ -296,10 +326,28 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               </select>
             </div>
           </div>
-          <div>
-            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Building2 size={12} /> Favorecido/Pagador</label>
-            <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Nome do fornecedor ou cliente" value={entityName} onChange={e => setEntityName(e.target.value)} data-testid="input-entity" />
-          </div>
+          {type === "EXPENSE" ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-black text-neutral-400 uppercase flex items-center gap-1"><Building2 size={12} /> Fornecedor</label>
+                <a href="/admin/fornecedores" target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-green-600 hover:text-green-700 uppercase" data-testid="link-novo-fornecedor">+ Novo</a>
+              </div>
+              <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={fornecedorId} onChange={e => { setFornecedorId(e.target.value); const f = fornecedores.find(x => String(x.id) === e.target.value); if (f) setEntityName(f.nome); }} data-testid="select-fornecedor">
+                <option value="">Selecione um fornecedor cadastrado…</option>
+                {fornecedores.filter(f => f.ativo).map(f => (
+                  <option key={f.id} value={f.id}>{f.nome}{f.cnpj_cpf ? ` — ${f.cnpj_cpf}` : ""}</option>
+                ))}
+              </select>
+              {!fornecedorId && (
+                <input type="text" className="w-full mt-2 p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Ou informe um favorecido livre" value={entityName} onChange={e => setEntityName(e.target.value)} data-testid="input-entity" />
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Building2 size={12} /> Pagador</label>
+              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Nome do cliente/pagador" value={entityName} onChange={e => setEntityName(e.target.value)} data-testid="input-entity" />
+            </div>
+          )}
           <div>
             <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Status</label>
             <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white uppercase font-bold" value={status} onChange={e => setStatus(e.target.value as TransactionStatus)} data-testid="select-status">
@@ -715,6 +763,67 @@ export default function FinanceiroPage() {
     queryKey: ["/api/financial/accounts"],
   });
 
+  const { data: fornecedores = [] } = useQuery<Fornecedor[]>({
+    queryKey: ["/api/fornecedores"],
+    queryFn: async () => {
+      const res = await authFetch("/api/fornecedores?ativos=true");
+      if (!res.ok) throw new Error("Erro ao carregar fornecedores");
+      return res.json();
+    },
+  });
+
+  const aprovarMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("PATCH", `/api/financial/transactions/${id}/aprovar`),
+    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Lançamento aprovado" }); },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const recusarMutation = useMutation({
+    mutationFn: ({ id, motivo }: { id: string; motivo: string }) => apiRequest("PATCH", `/api/financial/transactions/${id}/recusar`, { motivo }),
+    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Lançamento recusado" }); },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const uploadComprovanteMutation = useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const fileBase64 = btoa(binary);
+      return apiRequest("POST", `/api/financial/transactions/${id}/comprovante`, {
+        fileBase64, fileName: file.name, contentType: file.type || "application/octet-stream",
+      });
+    },
+    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Comprovante anexado" }); },
+    onError: (err: Error) => toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" }),
+  });
+
+  const handleUploadComprovante = (id: string) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*,application/pdf";
+    input.onchange = async (e: any) => {
+      const file: File | undefined = e.target.files?.[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) {
+        toast({ title: "Arquivo muito grande", description: "Máximo 8 MB", variant: "destructive" });
+        return;
+      }
+      uploadComprovanteMutation.mutate({ id, file });
+    };
+    input.click();
+  };
+
+  const handleRecusar = (id: string) => {
+    const motivo = prompt("Motivo da recusa:")?.trim();
+    if (!motivo) return;
+    recusarMutation.mutate({ id, motivo });
+  };
+
+  const aguardandoAprovacao = useMemo(() => transactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [transactions]);
+  const recusados = useMemo(() => transactions.filter(t => t.status === "RECUSADA"), [transactions]);
+
   const { data: resumo } = useQuery<any>({ queryKey: ["/api/financial/resumo"] });
 
   const { data: escortContracts = [] } = useQuery<any[]>({ queryKey: ["/api/escort/contracts"] });
@@ -780,6 +889,13 @@ export default function FinanceiroPage() {
     const typeFilter = activeStep === "PAGAR" ? "EXPENSE" : activeStep === "RECEBER" ? "INCOME" : null;
     if (!typeFilter && activeStep !== "CONFERENCIA" && activeStep !== "RELATORIO") return [];
     let list = typeFilter ? periodFilteredTransactions.filter(t => t.type === typeFilter) : periodFilteredTransactions;
+    // Em PAGAR/RECEBER esconder lançamentos automáticos de missão (Mission/Combustível/OS)
+    // — eles aparecem em Conferência/Relatório, mas o operacional ADM não os manuseia aqui.
+    if (typeFilter) {
+      list = list.filter(t => !t.origin_type || t.origin_type === "manual");
+      // Ocultar AGUARDANDO_APROVACAO e RECUSADA das abas operacionais (ficam em sua própria aba)
+      list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
+    }
     const todayStr = new Date().toISOString().split("T")[0];
     if (statusFilter === "PENDING") list = list.filter(t => t.status === "PENDING");
     else if (statusFilter === "PAID") list = list.filter(t => t.status === "PAID");
@@ -974,6 +1090,17 @@ export default function FinanceiroPage() {
                     {formatCurrency(Number(t.amount))}
                   </td>
                   <td className="px-4 py-3 text-right">
+                    {t.type === "EXPENSE" && t.status === "PAID" && (
+                      t.comprovante_url ? (
+                        <a href={t.comprovante_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-200 hover:bg-green-200" data-testid={`link-comprovante-${t.id}`}>
+                          <FileText size={10} /> Compr.
+                        </a>
+                      ) : (
+                        <button onClick={() => handleUploadComprovante(t.id)} disabled={uploadComprovanteMutation.isPending} className="inline-flex items-center gap-1 px-2 py-0.5 mr-1 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 animate-pulse" data-testid={`button-upload-comp-${t.id}`}>
+                          <Send size={10} /> Anexar
+                        </button>
+                      )
+                    )}
                     {t.origin_type && t.origin_type !== "manual" ? (
                       <span className="text-[9px] font-bold text-neutral-400 uppercase italic" data-testid={`text-auto-locked-${t.id}`}>Automático</span>
                     ) : (
@@ -1632,20 +1759,95 @@ export default function FinanceiroPage() {
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
           <div className="flex overflow-x-auto gap-1">
-            {STEPS.map(step => (
-              <button key={step.id} onClick={() => setActiveStep(step.id)} data-testid={`tab-${step.id.toLowerCase()}`}
-                className={`flex items-center gap-2 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap ${
-                  activeStep === step.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
-                }`}>
-                <step.icon size={16} />
-                <span className="hidden md:inline">{step.label}</span>
-                <span className="md:hidden">{step.number}</span>
-              </button>
-            ))}
+            {STEPS.filter(s => !s.diretoriaOnly || user?.role === "diretoria").map(step => {
+              const isAguardando = step.id === "AGUARDANDO";
+              const count = isAguardando ? aguardandoAprovacao.length : 0;
+              return (
+                <button key={step.id} onClick={() => setActiveStep(step.id)} data-testid={`tab-${step.id.toLowerCase()}`}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap ${
+                    activeStep === step.id ? "bg-neutral-900 text-white shadow-sm" : isAguardando && count > 0 ? "bg-amber-100 text-amber-800 hover:bg-amber-200" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                  }`}>
+                  <step.icon size={16} />
+                  <span className="hidden md:inline">{step.label}</span>
+                  <span className="md:hidden">{step.number}</span>
+                  {isAguardando && count > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-red-600 text-white text-[10px] font-black" data-testid="badge-aguardando-count">{count}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
+        {activeStep === "AGUARDANDO" && user?.role === "diretoria" && (
+          <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden" data-testid="table-aguardando">
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-700" />
+              <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Aguardando aprovação da diretoria — {aguardandoAprovacao.length} lançamento(s)</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-neutral-900 text-white text-[10px] font-black uppercase tracking-widest">
+                    <th className="px-4 py-3">Solicitado em</th>
+                    <th className="px-4 py-3">Vencimento</th>
+                    <th className="px-4 py-3">Descrição</th>
+                    <th className="px-4 py-3">Fornecedor</th>
+                    <th className="px-4 py-3">Categoria</th>
+                    <th className="px-4 py-3">Solicitante</th>
+                    <th className="px-4 py-3 text-right">Valor</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {aguardandoAprovacao.length === 0 ? (
+                    <tr><td colSpan={8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
+                  ) : aguardandoAprovacao.map(t => (
+                    <tr key={t.id} className="hover:bg-amber-50/50" data-testid={`row-aguardando-${t.id}`}>
+                      <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(t.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                      <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-700">{new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-neutral-800 uppercase">{t.description}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-neutral-700 uppercase">{t.entity_name || "—"}</td>
+                      <td className="px-4 py-3 text-[10px] font-bold text-neutral-700 uppercase">{t.category_name || "—"}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-neutral-600">{t.solicitado_por || "—"}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => aprovarMutation.mutate(t.id)} disabled={aprovarMutation.isPending}
+                            className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-aprovar-${t.id}`}>
+                            <CheckCircle2 size={12} /> Aprovar
+                          </button>
+                          <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
+                            className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
+                            <X size={12} /> Recusar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {recusados.length > 0 && (
+              <div className="border-t border-neutral-200 p-4 bg-red-50/50">
+                <h4 className="text-[10px] font-black text-red-700 uppercase mb-2">Recusados Recentes ({recusados.length})</h4>
+                <div className="space-y-1">
+                  {recusados.slice(0, 10).map(t => (
+                    <div key={t.id} className="text-xs flex justify-between items-center bg-white p-2 rounded border border-red-100" data-testid={`row-recusado-${t.id}`}>
+                      <div>
+                        <span className="font-bold uppercase">{t.description}</span>
+                        <span className="ml-2 text-neutral-500">— {t.entity_name || "—"}</span>
+                        {t.recusado_motivo && <span className="ml-2 text-red-600 italic">"{t.recusado_motivo}"</span>}
+                      </div>
+                      <span className="font-mono font-black text-red-600">{formatCurrency(Number(t.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {activeStep === "CONFERENCIA" && renderConferencia()}
         {activeStep === "RELATORIO" && renderRelatorio()}
         {activeStep === "FECHAMENTO" && renderFechamento()}
@@ -1656,6 +1858,7 @@ export default function FinanceiroPage() {
             editingTransaction={editingTransaction}
             categories={categories}
             accounts={accounts}
+            fornecedores={fornecedores}
           />
         )}
 

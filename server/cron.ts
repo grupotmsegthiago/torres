@@ -1021,6 +1021,12 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
+  // CRON: Lembrete comprovantes/aprovações pendentes — 09:00 BRT diário
+  cron.schedule("0 9 * * *", async () => {
+    log("CRON Comprovantes: verificando pendências financeiras", "cron");
+    await sendComprovantesPendentesEmail();
+  }, { timezone: "America/Sao_Paulo" });
+
   cron.schedule("0 9 * * 1-5", async () => {
     try {
       log("CRON CobrançaVencidos: Verificando faturas vencidas para envio de lembrete diário", "cron");
@@ -1147,6 +1153,90 @@ async function sendPayslipReminderToDiretoria(year: number, month: number) {
     html,
   });
   log(`CRON LembreteHolerite: E-mail enviado — ${semHolerite.length} sem holerite, ${naoAssinados.length} sem assinatura (ref. ${monthLabel})`, "cron");
+}
+
+// ============================================================
+// CRON: Lembrete diário 09:00 BRT — comprovantes de pagamento faltando
+// + lançamentos AGUARDANDO_APROVACAO há mais de 1 dia
+// ============================================================
+async function sendComprovantesPendentesEmail() {
+  try {
+    const { data: pagosSemComp } = await supabaseAdmin
+      .from("financial_transactions")
+      .select("id, description, amount, payment_date, entity_name, created_by, solicitado_por")
+      .eq("type", "EXPENSE")
+      .eq("status", "PAID")
+      .is("comprovante_url", null)
+      .order("payment_date", { ascending: true })
+      .limit(200);
+
+    const { data: aguardando } = await supabaseAdmin
+      .from("financial_transactions")
+      .select("id, description, amount, due_date, entity_name, solicitado_por, created_at")
+      .eq("status", "AGUARDANDO_APROVACAO")
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    const semComp = (pagosSemComp || []);
+    const pendApro = (aguardando || []);
+
+    if (semComp.length === 0 && pendApro.length === 0) return;
+
+    const transporter = getCronMailTransporter();
+    if (!transporter) {
+      log(`CRON Comprovantes: ${semComp.length} pendentes / ${pendApro.length} aguardando — SMTP não configurado`, "cron");
+      return;
+    }
+    const recipients = getDiretoriaRecipients();
+    if (recipients.length === 0) return;
+
+    const fmtMoney = (v: number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const fmtDate = (d: string | null) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+    const totalSemComp = semComp.reduce((s, t: any) => s + Number(t.amount || 0), 0);
+    const totalAprov = pendApro.reduce((s, t: any) => s + Number(t.amount || 0), 0);
+
+    const rowsSem = semComp.slice(0, 50).map((t: any) =>
+      `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${fmtDate(t.payment_date)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;">${(t.description || "").toUpperCase()}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;">${(t.entity_name || "—").toUpperCase()}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-family:monospace;">${fmtMoney(Number(t.amount))}</td></tr>`
+    ).join("");
+
+    const rowsApro = pendApro.slice(0, 50).map((t: any) =>
+      `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${fmtDate(t.due_date)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;">${(t.description || "").toUpperCase()}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;">${(t.entity_name || "—").toUpperCase()}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;">${(t.solicitado_por || "—")}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-family:monospace;">${fmtMoney(Number(t.amount))}</td></tr>`
+    ).join("");
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;padding:20px;color:#111;">
+        <h2 style="margin:0 0 4px;">Lembrete Financeiro — ${new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</h2>
+        <p style="margin:0 0 16px;color:#555;font-size:13px;">Torres Vigilância Patrimonial — Pendências de Contas a Pagar</p>
+
+        ${pendApro.length > 0 ? `
+        <h3 style="background:#fde68a;color:#92400e;padding:8px 12px;border-radius:6px;margin:16px 0 8px;">Aguardando Aprovação Diretoria — ${pendApro.length} (${fmtMoney(totalAprov)})</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="background:#f3f4f6;"><th style="padding:6px 8px;text-align:left;">Vencimento</th><th style="padding:6px 8px;text-align:left;">Descrição</th><th style="padding:6px 8px;text-align:left;">Favorecido</th><th style="padding:6px 8px;text-align:left;">Solicitante</th><th style="padding:6px 8px;text-align:right;">Valor</th></tr></thead>
+          <tbody>${rowsApro}</tbody>
+        </table>` : ""}
+
+        ${semComp.length > 0 ? `
+        <h3 style="background:#fecaca;color:#991b1b;padding:8px 12px;border-radius:6px;margin:24px 0 8px;">Pagamentos Sem Comprovante Anexado — ${semComp.length} (${fmtMoney(totalSemComp)})</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="background:#f3f4f6;"><th style="padding:6px 8px;text-align:left;">Pagamento</th><th style="padding:6px 8px;text-align:left;">Descrição</th><th style="padding:6px 8px;text-align:left;">Favorecido</th><th style="padding:6px 8px;text-align:right;">Valor</th></tr></thead>
+          <tbody>${rowsSem}</tbody>
+        </table>
+        <p style="margin:12px 0 0;font-size:11px;color:#666;">Anexe o comprovante em <strong>Financeiro &rarr; Contas a Pagar</strong>.</p>` : ""}
+
+        <p style="margin:24px 0 0;font-size:10px;color:#999;text-align:center;">E-mail automático — Sistema de Gestão Torres</p>
+      </div>`;
+
+    await transporter.sendMail({
+      from: process.env.SMTP_USER || process.env.EMAIL_USER,
+      to: recipients.join(","),
+      bcc: process.env.SMTP_BCC ? process.env.SMTP_BCC.split(/[,;]+/).map(s => s.trim()).filter(Boolean) : undefined,
+      subject: `Financeiro — ${pendApro.length} aguardando aprovação · ${semComp.length} sem comprovante`,
+      html,
+    });
+    log(`CRON Comprovantes: e-mail enviado — ${pendApro.length} aprovação · ${semComp.length} sem comprovante`, "cron");
+  } catch (e: any) {
+    log(`CRON Comprovantes: erro: ${e.message}`, "cron");
+  }
 }
 
 function getCronMailTransporter() {

@@ -192,6 +192,7 @@ const menuSections: MenuSection[] = [
         adminOnly: true,
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
+          { path: "/admin/fornecedores", label: "Fornecedores", icon: Building2 },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },

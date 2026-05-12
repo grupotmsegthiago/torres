@@ -107,6 +107,36 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conciliado_em TIMESTAMP",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conciliado_ref TEXT",
     "CREATE INDEX IF NOT EXISTS idx_financial_origin ON financial_transactions(origin_type, origin_id)",
+    // ─── Fluxo Aprovação Simone(ADM) → Mickael(diretoria) + Comprovante ───
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS fornecedor_id INTEGER",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS comprovante_url TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS comprovante_anexado_em TIMESTAMP",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS solicitado_por TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_por TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMP",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS recusado_motivo TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS recusado_em TIMESTAMP",
+    "CREATE INDEX IF NOT EXISTS idx_financial_status ON financial_transactions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_financial_fornecedor ON financial_transactions(fornecedor_id)",
+    `CREATE TABLE IF NOT EXISTS fornecedores (
+       id SERIAL PRIMARY KEY,
+       nome TEXT NOT NULL,
+       cnpj_cpf TEXT,
+       categoria TEXT,
+       email TEXT,
+       telefone TEXT,
+       chave_pix TEXT,
+       banco TEXT,
+       agencia TEXT,
+       conta TEXT,
+       tipo_conta TEXT,
+       observacoes TEXT,
+       ativo BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP DEFAULT NOW(),
+       created_by TEXT
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_fornecedores_nome ON fornecedores(LOWER(nome))",
+    "CREATE INDEX IF NOT EXISTS idx_fornecedores_ativo ON fornecedores(ativo)",
     "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",
@@ -288,6 +318,27 @@ async function ensureFinancialOriginColumns() {
 }
 ensureFinancialOriginColumns();
 ensureInterTables();
+ensureComprovantesBucket();
+
+async function ensureComprovantesBucket() {
+  try {
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+    const exists = (buckets || []).some((b: any) => b.name === "comprovantes");
+    if (!exists) {
+      const { error } = await supabaseAdmin.storage.createBucket("comprovantes", {
+        public: true,
+        fileSizeLimit: 10 * 1024 * 1024,
+      });
+      if (error && !/already exists/i.test(error.message || "")) {
+        console.warn("[storage] createBucket comprovantes:", error.message);
+      } else {
+        console.log("[storage] Bucket 'comprovantes' criado (public)");
+      }
+    }
+  } catch (e: any) {
+    console.warn("[storage] ensureComprovantesBucket skipped:", e?.message);
+  }
+}
 
 async function syncMissingAutoTransactions() {
   try {
@@ -504,6 +555,7 @@ async function ensureSystemSettingsTable() {
   import { registerPermanentContractRoutes } from "./routes/permanent-contracts";
   import { registerPendenciasRoutes } from "./routes/pendencias";
   import { registerOnboardingRoutes } from "./routes/onboarding";
+  import { registerFornecedoresRoutes } from "./routes/fornecedores";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -945,6 +997,7 @@ async function ensureSystemSettingsTable() {
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);
     registerOnboardingRoutes(app);
+    registerFornecedoresRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
     registerLeadRoutes(app);

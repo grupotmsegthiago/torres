@@ -89,16 +89,58 @@ import type { Express } from "express";
   });
 
   // Financial Transactions
+  // Origens consideradas "lançamentos automáticos de missão" (não aparecem em Contas a Pagar/Receber manual)
+  const MISSION_ORIGINS = ["mission_cost", "fueling", "service_order", "escort_billing", "maintenance"];
+
   app.get("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
-      const { type, status, from, to, search } = req.query;
+      const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
       let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
       if (type) query = query.eq("type", type as string);
       if (status) query = query.eq("status", status as string);
       if (from) query = query.gte("due_date", from as string);
       if (to) query = query.lte("due_date", to as string);
       if (search) query = query.or(`description.ilike.%${search}%,entity_name.ilike.%${search}%,category_name.ilike.%${search}%`);
+      if (String(exclude_mission) === "true") {
+        // Apenas manuais (sem origem automática de missão)
+        query = query.or(`origin_type.is.null,origin_type.eq.manual`);
+      }
+      if (String(only_mission) === "true") {
+        query = query.in("origin_type", MISSION_ORIGINS);
+      }
       const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Lista somente lançamentos AGUARDANDO_APROVACAO (Mickael / diretoria visualiza)
+  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("*")
+        .eq("status", "AGUARDANDO_APROVACAO")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Lista de lançamentos PAID sem comprovante anexado
+  app.get("/api/financial/comprovantes-pendentes", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("*")
+        .eq("type", "EXPENSE")
+        .eq("status", "PAID")
+        .is("comprovante_url", null)
+        .order("payment_date", { ascending: false });
       if (error) throw error;
       res.json(data || []);
     } catch (err: any) {
@@ -109,8 +151,21 @@ import type { Express } from "express";
   app.post("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id } = req.body;
       if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
+
+      // Regra: ADM (Simone) cria → AGUARDANDO_APROVACAO; Diretoria (Mickael) cria → mantém status enviado.
+      // EXPENSE manual sempre passa pelo fluxo de aprovação quando criado por admin não-diretoria.
+      const isDiretoria = user.role === "diretoria";
+      const effectiveStatus = (() => {
+        if (type === "EXPENSE" && !isDiretoria) return "AGUARDANDO_APROVACAO";
+        return status || "PENDING";
+      })();
+
+      const baseExtras: any = {
+        fornecedor_id: fornecedor_id || null,
+        solicitado_por: user.name,
+      };
 
       if (installments && installments > 1) {
         const installmentGroup = crypto.randomUUID();
@@ -122,15 +177,16 @@ import type { Express } from "express";
           payloads.push({
             description: `${description} (${i + 1}/${installments})`,
             amount: Math.round((amount / installments) * 100) / 100,
-            type, status: status || "PENDING",
+            type, status: effectiveStatus,
             due_date: d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
-            payment_date: status === "PAID" ? d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null,
+            payment_date: effectiveStatus === "PAID" ? d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null,
             category_id, category_name, account_id, account_name,
             entity_type, entity_name, notes,
             installment_group: installmentGroup,
             installment_number: i + 1,
             installment_total: installments,
             created_by: user.name,
+            ...baseExtras,
           });
         }
         const { data, error } = await supabaseAdmin.from("financial_transactions").insert(payloads).select();
@@ -138,15 +194,138 @@ import type { Express } from "express";
         res.json(data);
       } else {
         const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
-          description, amount, type, status: status || "PENDING",
-          due_date, payment_date, category_id, category_name,
+          description, amount, type, status: effectiveStatus,
+          due_date, payment_date: effectiveStatus === "PAID" ? (payment_date || due_date) : null,
+          category_id, category_name,
           account_id, account_name, entity_type, entity_name, notes,
           created_by: user.name,
+          ...baseExtras,
         }).select().single();
         if (error) throw error;
         res.json(data);
       }
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Aprovar lançamento (apenas diretoria — Mickael)
+  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (existing.status !== "AGUARDANDO_APROVACAO") {
+        return res.status(400).json({ message: `Status atual (${existing.status}) não permite aprovação` });
+      }
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({
+          status: "PENDING",
+          aprovado_por: user.name,
+          aprovado_em: nowBrt,
+          recusado_motivo: null,
+          recusado_em: null,
+        })
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "status", old: "AGUARDANDO_APROVACAO", new_val: "PENDING" }],
+        user.name, user.id, "Aprovação diretoria");
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Recusar lançamento (apenas diretoria — Mickael) com motivo obrigatório
+  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const user = req.user!;
+      const motivo = String(req.body?.motivo || "").trim();
+      if (!motivo) return res.status(400).json({ message: "Motivo da recusa é obrigatório" });
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (existing.status !== "AGUARDANDO_APROVACAO") {
+        return res.status(400).json({ message: `Status atual (${existing.status}) não permite recusa` });
+      }
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({
+          status: "RECUSADA",
+          recusado_motivo: motivo,
+          recusado_em: nowBrt,
+        })
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [
+          { field: "status", old: "AGUARDANDO_APROVACAO", new_val: "RECUSADA" },
+          { field: "recusado_motivo", old: null, new_val: motivo },
+        ],
+        user.name, user.id, "Recusa diretoria");
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Anexar comprovante (upload base64 → Supabase Storage bucket "comprovantes")
+  app.post("/api/financial/transactions/:id/comprovante", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { fileBase64, fileName, contentType } = req.body || {};
+      if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
+
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+
+      const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(cleanBase64, "base64");
+      const ext = String(fileName).split(".").pop() || "bin";
+      const safeName = `${req.params.id}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const storagePath = `${existing.id}/${safeName}`;
+
+      const { error: upErr } = await supabaseAdmin.storage
+        .from("comprovantes")
+        .upload(storagePath, buffer, {
+          contentType: contentType || "application/octet-stream",
+          upsert: true,
+        });
+      if (upErr) throw upErr;
+
+      const { data: urlData } = supabaseAdmin.storage.from("comprovantes").getPublicUrl(storagePath);
+      const publicUrl = urlData?.publicUrl || null;
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({
+          comprovante_url: publicUrl,
+          comprovante_anexado_em: nowBrt,
+        })
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "comprovante_url", old: existing.comprovante_url, new_val: publicUrl }],
+        user.name, user.id, "Comprovante anexado");
+
+      res.json(data);
+    } catch (err: any) {
+      console.error("[comprovante-upload]", err);
       res.status(500).json({ message: err.message });
     }
   });
@@ -235,6 +414,10 @@ import type { Express } from "express";
       const user = req.user!;
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      // Lançamentos AGUARDANDO_APROVACAO ou RECUSADA não podem ser marcados como pagos sem aprovação
+      if (existing.status === "AGUARDANDO_APROVACAO" || existing.status === "RECUSADA") {
+        return res.status(400).json({ message: "Lançamento ainda não foi aprovado pela diretoria" });
+      }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE", [{ field: "status", old: existing.status, new_val: newStatus }], user.name, user.id);
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
