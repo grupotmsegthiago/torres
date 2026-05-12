@@ -1130,6 +1130,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 
       <form onSubmit={async (e) => {
         e.preventDefault();
+        if (!form.motherName?.trim()) {
+          toast({ title: "Campo obrigatório", description: "O nome da mãe é obrigatório", variant: "destructive" });
+          return;
+        }
         if (form.status === "bloqueado_definitivo") {
           if (!form.blockType) {
             toast({ title: "Campo obrigatório", description: "Selecione o tipo de bloqueio (Criminal, Processo ou Ambos)", variant: "destructive" });
@@ -1282,8 +1286,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               </select>
             </div>
             <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome da Mãe</label>
-              <Input value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} data-testid="input-employee-mother" />
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome da Mãe <span className="text-red-500">*</span></label>
+              <Input value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} required data-testid="input-employee-mother" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome do Pai</label>
