@@ -1161,14 +1161,19 @@ async function sendPayslipReminderToDiretoria(year: number, month: number) {
 // ============================================================
 async function sendComprovantesPendentesEmail() {
   try {
-    const { data: pagosSemComp } = await supabaseAdmin
+    const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
+    const { data: pagosSemCompRaw } = await supabaseAdmin
       .from("financial_transactions")
-      .select("id, description, amount, payment_date, entity_name, created_by, solicitado_por")
+      .select("id, description, amount, payment_date, entity_name, created_by, solicitado_por, category_name, origin_type")
       .eq("type", "EXPENSE")
       .eq("status", "PAID")
       .is("comprovante_url", null)
+      .or("origin_type.is.null,origin_type.eq.manual")
       .order("payment_date", { ascending: true })
       .limit(200);
+    const pagosSemComp = (pagosSemCompRaw || []).filter((t: any) =>
+      !MISSION_CATEGORIES.includes(String(t.category_name || "").toUpperCase())
+    );
 
     const { data: aguardando } = await supabaseAdmin
       .from("financial_transactions")

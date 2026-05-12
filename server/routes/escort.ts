@@ -153,15 +153,21 @@ import type { Express } from "express";
   // Lista de lançamentos PAID sem comprovante anexado
   app.get("/api/financial/comprovantes-pendentes", requireAuth, requireAdminRole, async (req, res) => {
     try {
+      const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")
         .select("*")
         .eq("type", "EXPENSE")
         .eq("status", "PAID")
         .is("comprovante_url", null)
+        .or("origin_type.is.null,origin_type.eq.manual")
         .order("payment_date", { ascending: false });
       if (error) throw error;
-      res.json(data || []);
+      const filtered = (data || []).filter((t: any) => {
+        const cat = String(t.category_name || "").toUpperCase();
+        return !MISSION_CATEGORIES.includes(cat);
+      });
+      res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -378,6 +384,19 @@ import type { Express } from "express";
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (existing.origin_type && existing.origin_type !== "manual") {
         return res.status(403).json({ message: "Lançamentos automáticos não podem ser editados manualmente" });
+      }
+      // Invariantes do fluxo de aprovação:
+      // - AGUARDANDO_APROVACAO/RECUSADA só mudam status pelas rotas /aprovar e /recusar (diretoria)
+      // - Mudança para PAID em EXPENSE manual exige comprovante anexado
+      const newStatus = req.body?.status;
+      if ((existing.status === "AGUARDANDO_APROVACAO" || existing.status === "RECUSADA")
+          && newStatus && newStatus !== existing.status) {
+        return res.status(403).json({ message: "Status só pode ser alterado pelo fluxo de aprovação da Diretoria." });
+      }
+      if (newStatus === "PAID" && existing.status !== "PAID"
+          && existing.type === "EXPENSE" && (!existing.origin_type || existing.origin_type === "manual")
+          && !existing.comprovante_url) {
+        return res.status(400).json({ message: "Anexe o comprovante antes de marcar como PAGO." });
       }
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope } = req.body;
 

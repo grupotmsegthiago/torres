@@ -923,6 +923,11 @@ export default function FinanceiroPage() {
     const typeFilter = activeStep === "PAGAR" ? "EXPENSE" : activeStep === "RECEBER" ? "INCOME" : null;
     if (!typeFilter && activeStep !== "CONFERENCIA" && activeStep !== "RELATORIO") return [];
     let list = typeFilter ? periodFilteredTransactions.filter(t => t.type === typeFilter) : periodFilteredTransactions;
+    // CONFERÊNCIA/RELATÓRIO também ocultam AGUARDANDO/RECUSADA — esses só
+    // existem na aba específica da diretoria; não devem poluir o operacional.
+    if (!typeFilter) {
+      list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
+    }
     // Em PAGAR/RECEBER esconder lançamentos automáticos de missão (Mission/Combustível/OS)
     // — eles aparecem em Conferência/Relatório, mas o operacional ADM não os manuseia aqui.
     if (typeFilter) {
@@ -1161,6 +1166,10 @@ export default function FinanceiroPage() {
                     )}
                     {t.origin_type && t.origin_type !== "manual" ? (
                       <span className="text-[9px] font-bold text-neutral-400 uppercase italic" data-testid={`text-auto-locked-${t.id}`}>Automático</span>
+                    ) : (t.status === "AGUARDANDO_APROVACAO" || t.status === "RECUSADA") && !isDiretoria ? (
+                      <span className="text-[9px] font-bold text-amber-600 uppercase italic" data-testid={`text-aguardando-locked-${t.id}`}>
+                        {t.status === "RECUSADA" ? "Recusada" : "Aguardando aprovação"}
+                      </span>
                     ) : (
                       <div className="flex justify-end gap-1">
                         <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`button-edit-${t.id}`}><Edit size={14} /></button>
