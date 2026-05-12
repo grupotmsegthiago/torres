@@ -1431,10 +1431,10 @@ const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "aceites", label: "Missões", icon: Shield },
 ];
 
-interface OnboardingItem { label: string; status: "ok" | "pendente" | "vencido"; detail?: string; }
-interface OnboardingStage { key: "documentacao" | "contratos" | "treinamento" | "holerites"; label: string; status: "ok" | "pendente" | "vencido"; blocking?: boolean; pendencias: string[]; itens: OnboardingItem[]; }
+interface OnboardingItem { label: string; status: "ok" | "pendente" | "vencido" | "neutro"; detail?: string; }
+interface OnboardingStage { key: "documentacao" | "contratos" | "treinamento" | "holerites"; label: string; status: "ok" | "pendente" | "vencido" | "neutro"; blocking?: boolean; pendencias: string[]; itens: OnboardingItem[]; }
 interface OnboardingResult { employeeId: number; employeeName: string; role: string | null; status: "ok" | "pendente"; apto: boolean; stages: OnboardingStage[]; pendencias: string[]; computedAt: string; }
-interface OnboardingSummary { employeeId: number; apto: boolean; stages: { key: "documentacao" | "contratos" | "treinamento" | "holerites"; status: "ok" | "pendente" | "vencido"; blocking: boolean; count: number }[]; }
+interface OnboardingSummary { employeeId: number; apto: boolean; stages: { key: "documentacao" | "contratos" | "treinamento" | "holerites"; status: "ok" | "pendente" | "vencido" | "neutro"; blocking: boolean; count: number }[]; }
 
 function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; onJumpToTab?: (tab: PastaTab) => void }) {
   const { data, isLoading } = useQuery<OnboardingResult>({
@@ -1447,15 +1447,19 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
   }
   const apto = data.apto;
   const total = data.stages.length;
-  const okCount = data.stages.filter(s => s.status === "ok").length;
+  const concluidoCount = data.stages.filter(s => s.status === "ok" || s.status === "neutro").length;
   const stageColor = (s: OnboardingStage["status"]) =>
     s === "ok" ? "bg-emerald-500 border-emerald-500 text-white" :
     s === "vencido" ? "bg-red-500 border-red-500 text-white" :
+    s === "neutro" ? "bg-neutral-300 border-neutral-300 text-white" :
     "bg-amber-400 border-amber-400 text-white";
   const stageBadge = (s: OnboardingStage["status"]) =>
     s === "ok" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
     s === "vencido" ? "bg-red-50 text-red-700 border-red-200" :
+    s === "neutro" ? "bg-neutral-100 text-neutral-500 border-neutral-200" :
     "bg-amber-50 text-amber-700 border-amber-200";
+  const stageLabel = (s: OnboardingStage["status"]) =>
+    s === "ok" ? "OK" : s === "vencido" ? "Vencido" : s === "neutro" ? "Não avaliado" : "Pendente";
   const tabFor: Record<OnboardingStage["key"], PastaTab> = {
     documentacao: "documentos",
     contratos: "contrato",
@@ -1483,7 +1487,7 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
             <div className="text-[11px] text-neutral-600">
               {apto
                 ? "Todas as etapas do onboarding estão concluídas."
-                : `Etapas concluídas: ${okCount} de ${total} — corrija as pendências abaixo para liberar.`}
+                : `Etapas concluídas: ${concluidoCount} de ${total} — corrija as pendências abaixo para liberar.`}
             </div>
           </div>
         </div>
@@ -1503,12 +1507,12 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
             data-testid={`onboarding-stage-${s.key}`}
           >
             <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center font-bold text-sm shadow-sm ${stageColor(s.status)} group-hover:scale-110 transition-transform`}>
-              {s.status === "ok" ? <CheckCircle2 className="w-5 h-5" /> : (idx + 1)}
+              {s.status === "ok" ? <CheckCircle2 className="w-5 h-5" /> : s.status === "neutro" ? <span className="text-base leading-none">–</span> : (idx + 1)}
             </div>
             <div className="text-center">
               <div className="text-[11px] font-bold text-neutral-800">{s.label}</div>
               <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${stageBadge(s.status)}`}>
-                {s.status === "ok" ? "OK" : s.status === "vencido" ? "Vencido" : "Pendente"}
+                {stageLabel(s.status)}
               </span>
             </div>
           </button>
@@ -1519,16 +1523,21 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
       {!apto && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
           {data.stages.map(s => (
-            <div key={s.key} className={`p-3 rounded-lg border ${s.status === "ok" ? "border-emerald-200 bg-white" : s.status === "vencido" ? "border-red-200 bg-white" : "border-amber-200 bg-white"}`}>
+            <div key={s.key} className={`p-3 rounded-lg border ${s.status === "ok" ? "border-emerald-200 bg-white" : s.status === "vencido" ? "border-red-200 bg-white" : s.status === "neutro" ? "border-neutral-200 bg-white" : "border-amber-200 bg-white"}`}>
               <div className="text-[11px] font-bold text-neutral-800 mb-1.5 flex items-center justify-between">
                 <span>{s.label}</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase border ${stageBadge(s.status)}`}>
-                  {s.status === "ok" ? "OK" : s.status === "vencido" ? "Vencido" : "Pendente"}
+                  {stageLabel(s.status)}
                 </span>
               </div>
               {s.status === "ok" ? (
                 <div className="text-[11px] text-emerald-700 flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> Tudo em ordem
+                </div>
+              ) : s.status === "neutro" ? (
+                <div className="text-[11px] text-neutral-500 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />
+                  {s.itens[0]?.detail || "Sem dados para avaliar"}
                 </div>
               ) : (
                 <ul className="space-y-1">
@@ -4461,7 +4470,7 @@ export default function EmployeesPage() {
                   <tbody>
                     {paginated.map((e) => {
                       const ob = onboardingByEmp.get(e.id);
-                      const stageMap: Record<string, { key: string; status: "ok" | "pendente" | "vencido"; count: number; blocking: boolean }> = {};
+                      const stageMap: Record<string, { key: string; status: "ok" | "pendente" | "vencido" | "neutro"; count: number; blocking: boolean }> = {};
                       (ob?.stages || []).forEach(s => { stageMap[s.key] = s; });
                       const flagDefs: { key: "documentacao" | "contratos" | "treinamento" | "holerites"; label: string }[] = [
                         { key: "documentacao", label: "Doc" },
@@ -4469,10 +4478,11 @@ export default function EmployeesPage() {
                         { key: "treinamento", label: "Trein" },
                         { key: "holerites", label: "Hol" },
                       ];
-                      const flagCls = (st?: "ok" | "pendente" | "vencido") =>
+                      const flagCls = (st?: "ok" | "pendente" | "vencido" | "neutro") =>
                         st === "ok" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
                         st === "vencido" ? "bg-red-50 text-red-700 border-red-200" :
                         st === "pendente" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        st === "neutro" ? "bg-neutral-100 text-neutral-500 border-neutral-200" :
                         "bg-neutral-50 text-neutral-400 border-neutral-200";
                       return (
                       <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(e)} data-testid={`row-employee-${e.id}`}>
@@ -4499,9 +4509,9 @@ export default function EmployeesPage() {
                               const cnt = stageMap[f.key]?.count || 0;
                               return (
                                 <span key={f.key} className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border font-semibold ${flagCls(st)}`} data-testid={`flag-${f.key}-${e.id}`}>
-                                  {st === "ok" ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                                  {st === "ok" ? <CheckCircle2 className="w-3 h-3" /> : st === "neutro" ? <span className="w-3 h-3 inline-flex items-center justify-center leading-none">–</span> : <AlertTriangle className="w-3 h-3" />}
                                   {f.label}
-                                  {st !== "ok" && cnt > 0 && <span className="ml-0.5">({cnt})</span>}
+                                  {st !== "ok" && st !== "neutro" && cnt > 0 && <span className="ml-0.5">({cnt})</span>}
                                 </span>
                               );
                             })}

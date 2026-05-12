@@ -102,10 +102,10 @@ export type OnboardingStageKey = "documentacao" | "contratos" | "treinamento" | 
 export interface OnboardingStage {
   key: OnboardingStageKey;
   label: string;
-  status: "ok" | "pendente" | "vencido";
+  status: "ok" | "pendente" | "vencido" | "neutro";
   blocking: boolean;
   pendencias: string[];
-  itens: { label: string; status: "ok" | "pendente" | "vencido"; detail?: string }[];
+  itens: { label: string; status: "ok" | "pendente" | "vencido" | "neutro"; detail?: string }[];
 }
 
 export interface OnboardingResult {
@@ -294,13 +294,16 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
       itensHl.push({ label: `Holerite ${ym}`, status: "ok", detail: "Assinado" });
     }
   }
+  let hlNeutro = false;
   if (itensHl.length === 0) {
-    itensHl.push({ label: "Holerites", status: "ok", detail: "Sem referências aplicáveis" });
+    itensHl.push({ label: "Holerites", status: "neutro", detail: "Sem holerites a emitir ainda" });
+    hlNeutro = true;
   }
-  const hlPend = itensHl.filter(i => i.status !== "ok").map(i => `${i.label}${i.detail ? " — " + i.detail : ""}`);
+  const hlPend = itensHl.filter(i => i.status === "pendente" || i.status === "vencido").map(i => `${i.label}${i.detail ? " — " + i.detail : ""}`);
   const hlStatus: OnboardingStage["status"] =
     itensHl.some(i => i.status === "vencido") ? "vencido" :
-    itensHl.some(i => i.status === "pendente") ? "pendente" : "ok";
+    itensHl.some(i => i.status === "pendente") ? "pendente" :
+    hlNeutro ? "neutro" : "ok";
 
   const stages: OnboardingStage[] = [
     { key: "documentacao", label: "Documentação", status: docStatus, blocking: true, pendencias: docPend, itens: itensDoc },
