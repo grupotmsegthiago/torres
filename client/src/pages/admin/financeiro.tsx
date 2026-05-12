@@ -2,7 +2,7 @@ import { parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from "recharts";
+import html2canvas from "html2canvas";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -759,8 +760,11 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   const isFornecedor = tipo === "fornecedor";
   const anoAtual = new Date().getFullYear();
   const anosOpts = Array.from({ length: 5 }, (_, i) => anoAtual - i);
+  const { toast } = useToast();
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [chartType, setChartType] = useState<"bar" | "line">("bar");
+  const [isExportingPng, setIsExportingPng] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setHighlightedId(null);
@@ -879,6 +883,30 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     setTimeout(() => { styleEl.remove(); }, 1000);
   };
 
+  const exportPNG = async () => {
+    if (!chartRef.current) return;
+    setIsExportingPng(true);
+    try {
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      const tipoLabel = tipo === "fornecedor" ? "FORNECEDOR" : "CLIENTE";
+      const chartLabel = chartType === "bar" ? "BARRAS" : "LINHAS";
+      a.download = `GRAFICO_ANUAL_${tipoLabel}_${chartLabel}_${ano}.png`;
+      a.click();
+    } catch {
+      toast({ title: "Erro ao exportar gráfico", description: "Não foi possível gerar a imagem PNG. Tente novamente.", variant: "destructive" });
+    } finally {
+      setIsExportingPng(false);
+    }
+  };
+
   const customTooltipFormatter = (value: number, name: string) => [
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value),
     name,
@@ -934,6 +962,9 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
           <Button variant="outline" size="sm" onClick={exportCSV} disabled={!relAnual} data-testid="button-csv-anual" className="text-xs font-bold uppercase">
             <Download size={14} className="mr-1" /> CSV
           </Button>
+          <Button variant="outline" size="sm" onClick={exportPNG} disabled={!relAnual || isExportingPng} data-testid="button-png-anual" className="text-xs font-bold uppercase">
+            {isExportingPng ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Download size={14} className="mr-1" />} PNG
+          </Button>
           <Button variant="outline" size="sm" onClick={handlePrint} data-testid="button-print-anual" className="text-xs font-bold uppercase">
             <Printer size={14} className="mr-1" /> Imprimir
           </Button>
@@ -960,7 +991,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
         </div>
       ) : (
         <>
-          <div className="mb-6 print:hidden" data-testid="chart-relatorio-anual">
+          <div className="mb-6 print:hidden" data-testid="chart-relatorio-anual" ref={chartRef}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <BarChart3 size={14} className="text-neutral-500" />
