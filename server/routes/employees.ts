@@ -16,7 +16,7 @@ import { syncEmployeeStatusToRhid } from "../control-id";
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
-    const EMP_LIST_COLS = "id,name,role,cpf,matricula,phone,email,status,hire_date,cnh_expiry,cnv_expiry,vacation_expiry,block_type,block_reason,photo_url,created_at";
+    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,created_at";
 
     let data: any[];
     try {

@@ -469,6 +469,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
           <tr><td>Telefone</td><td>${esc(employee.phone)}</td></tr>
           <tr><td>E-mail</td><td>${esc(employee.email)}</td></tr>
           <tr><td>PIS</td><td>${esc(employee.pis)}</td></tr>
+          <tr><td>CTPS</td><td>${esc((employee as any).ctpsNumber)}${(employee as any).ctpsSerie ? ` / Série ${esc((employee as any).ctpsSerie)}` : ""}</td></tr>
           <tr><td>Matrícula</td><td>${esc(employee.matricula)}</td></tr>
           <tr><td>Cargo</td><td>${esc(employee.role)}</td></tr>
           <tr><td>Categoria</td><td>${employee.category ? esc(employee.category) : "Mensalista"}</td></tr>
@@ -683,6 +684,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     cnhExpiry: "",
     cnvNumber: "",
     cnvExpiry: "",
+    ctpsNumber: "",
+    ctpsSerie: "",
     pis: "",
     role: "Vigilante",
     category: "Mensalista",
@@ -724,6 +727,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         cnhExpiry: e.cnhExpiry || "",
         cnvNumber: e.cnvNumber || "",
         cnvExpiry: e.cnvExpiry || "",
+        ctpsNumber: e.ctpsNumber || "",
+        ctpsSerie: e.ctpsSerie || "",
         pis: e.pis || "",
         role: e.role || "Vigilante",
         category: e.category || "Mensalista",
@@ -1341,6 +1346,14 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">PIS</label>
               <Input value={form.pis} onChange={(e) => setForm({ ...form, pis: e.target.value })} data-testid="input-employee-pis" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CTPS (Número)</label>
+              <Input value={form.ctpsNumber} onChange={(e) => setForm({ ...form, ctpsNumber: e.target.value })} placeholder="Ex: 1234567" data-testid="input-employee-ctps-number" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CTPS (Série)</label>
+              <Input value={form.ctpsSerie} onChange={(e) => setForm({ ...form, ctpsSerie: e.target.value })} placeholder="Ex: 001-1" data-testid="input-employee-ctps-serie" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Categoria</label>
@@ -3654,6 +3667,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Categoria</span><span>{employee.category || "Mensalista"}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Admissão</span><span>{employee.hireDate || "-"}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Pagamento</span><span>{employee.paymentMethod || "PIX"}</span></div>
+                {(employee as any).ctpsNumber && <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">CTPS</span><span className="font-mono">{(employee as any).ctpsNumber}{(employee as any).ctpsSerie ? ` / ${(employee as any).ctpsSerie}` : ""}</span></div>}
               </div>
               {allDocsComplete && <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Documentação completa — contrato liberado para geração.</p>}
             </div>
