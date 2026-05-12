@@ -96,6 +96,10 @@ import type { Express } from "express";
     try {
       const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
       let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
+      // Apenas diretoria enxerga AGUARDANDO_APROVACAO/RECUSADA na listagem geral.
+      if (req.user?.role !== "diretoria") {
+        query = query.not("status", "in", "(AGUARDANDO_APROVACAO,RECUSADA)");
+      }
       if (type) query = query.eq("type", type as string);
       if (status) query = query.eq("status", status as string);
       if (from) query = query.gte("due_date", from as string);

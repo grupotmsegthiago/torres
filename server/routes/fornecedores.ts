@@ -75,7 +75,12 @@ export function registerFornecedoresRoutes(app: Express) {
         .insert(payload)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        if (String((error as any).code) === "23505") {
+          return res.status(409).json({ message: "Já existe um fornecedor com este CPF/CNPJ" });
+        }
+        throw error;
+      }
 
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
@@ -129,7 +134,12 @@ export function registerFornecedoresRoutes(app: Express) {
         .eq("id", req.params.id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        if (String((error as any).code) === "23505") {
+          return res.status(409).json({ message: "Já existe outro fornecedor com este CPF/CNPJ" });
+        }
+        throw error;
+      }
 
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,

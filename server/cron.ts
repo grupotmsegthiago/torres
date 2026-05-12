@@ -1267,18 +1267,23 @@ function getDiretoriaRecipients(): string[] {
 // Resolve destinatários do fluxo de aprovação: Simone (admin) + Mickael (diretoria)
 // via tabela users; faz fallback para getDiretoriaRecipients() se nada encontrado.
 async function getAprovacaoRecipients(): Promise<string[]> {
+  // Destinatários OBRIGATÓRIOS (Simone administrativa + Mickael diretoria).
+  // Podem ser sobrescritos por env APROVACAO_EMAILS=email1,email2.
+  const REQUIRED = (process.env.APROVACAO_EMAILS_REQUIRED ||
+    "simone@torresseguranca.com.br,mickael@torresseguranca.com.br")
+    .split(",").map(s => s.trim()).filter(e => /.+@.+\..+/.test(e));
+  const collected = new Set<string>(REQUIRED);
   try {
     const { data } = await supabaseAdmin
       .from("users")
       .select("name, email, role")
       .or("role.eq.diretoria,name.ilike.%simone%,name.ilike.%mickael%");
-    const emails = (data || [])
-      .map((u: any) => String(u?.email || "").trim())
-      .filter((e: string) => /.+@.+\..+/.test(e));
-    const unique = Array.from(new Set(emails));
-    if (unique.length > 0) return unique;
-  } catch (e) { /* fallback abaixo */ }
-  return getDiretoriaRecipients();
+    for (const u of (data || [])) {
+      const e = String((u as any)?.email || "").trim();
+      if (/.+@.+\..+/.test(e)) collected.add(e);
+    }
+  } catch (e) { /* mantém apenas os obrigatórios */ }
+  return Array.from(collected);
 }
 
 
