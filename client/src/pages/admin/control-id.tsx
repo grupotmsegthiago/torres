@@ -980,7 +980,7 @@ function PainelMesTab() {
     unmappedEmployees: { id: number; name: string; role: string }[];
     orphanPunches: { controlIdUserId: string; deviceId: number; rhidName: string | null; punchCount: number; lastPunchAt: string }[];
     orphanTotal: number;
-    devices: { id: number; nome: string; lastSyncAt: string | null; lastSyncStatus: string | null; lastSyncMessage: string | null }[];
+    devices: { id: number; nome: string; lastSyncAt: string | null; lastSyncStatus: string | null; lastSyncMessage: string | null; lastEventAt: string | null }[];
   }>({
     queryKey: ["/api/control-id/sync-diagnostic"],
     queryFn: async () => (await authFetch("/api/control-id/sync-diagnostic")).json(),
@@ -1017,8 +1017,36 @@ function PainelMesTab() {
     });
   }, [rows, filter, search]);
 
+  // Detecta atraso RHID: última batida registrada no banco há mais de 2h
+  const rhidDelayMinutes = useMemo(() => {
+    if (!diag || !isCurrentMonth) return null;
+    const d = diag.devices[0];
+    if (!d?.lastEventAt) return null;
+    return Math.round((Date.now() - new Date(d.lastEventAt).getTime()) / 60000);
+  }, [diag, isCurrentMonth]);
+  const rhidDelayed = rhidDelayMinutes !== null && rhidDelayMinutes > 120;
+
   return (
     <div className="space-y-3">
+      {/* Banner de atraso RHID Cloud — aparece quando a batida mais recente tem >2h */}
+      {isCurrentMonth && rhidDelayed && rhidDelayMinutes !== null && (
+        <Card className="p-3 border-orange-400 bg-orange-50/60" data-testid="banner-rhid-delay">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-orange-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <span className="font-semibold text-orange-800">RHID Cloud possivelmente atrasado</span>
+              <span className="text-orange-700 ml-2 text-[12px]">
+                A última batida registrada foi há{" "}
+                <strong>{rhidDelayMinutes >= 60
+                  ? `${Math.floor(rhidDelayMinutes / 60)}h${rhidDelayMinutes % 60 > 0 ? `${rhidDelayMinutes % 60}min` : ""}`
+                  : `${rhidDelayMinutes}min`}</strong>.
+                {" "}Batidas recentes do biométrico podem ainda não ter chegado ao RHID Cloud — o painel reflete apenas o que o RHID entregou. Aguarde a sincronização do dispositivo físico com a nuvem RHID.
+              </span>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {diag && (diag.unmappedEmployees.length > 0 || diag.orphanTotal > 0) && (
         <Card className="p-3 border-amber-300 bg-amber-50/50">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1209,6 +1237,11 @@ function PainelMesTab() {
                         </span>
                         {r.todayStatus === "EM_ABERTO" && r.openSinceMinutes != null && (
                           <div className="text-[10px] text-amber-700 mt-0.5">há {fmtSinceMin(r.openSinceMinutes)} sem fechar</div>
+                        )}
+                        {r.todayStatus === "EM_ABERTO" && (r.openSinceMinutes ?? 0) > 720 && rhidDelayed && (
+                          <div className="text-[10px] text-orange-600 mt-0.5 flex items-center gap-0.5" title="Possível atraso no RHID Cloud — batida de fechamento pode ainda não ter chegado">
+                            <AlertTriangle className="w-2.5 h-2.5" /> RHID pode estar atrasado
+                          </div>
                         )}
                         {r.todayStatus === "AUSENCIA" && r.absenceType && (
                           <div className="text-[10px] text-purple-700 mt-0.5">{r.absenceType}</div>

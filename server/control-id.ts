@@ -849,11 +849,22 @@ export async function buildSyncDiagnostic(): Promise<any> {
     lastPunchAt: o.lastPunchAt,
   })).sort((a, b) => b.punchCount - a.punchCount);
 
-  // ── 3. Status por device ──
-  const deviceStatus = ((devices || []) as any[]).map(d => ({
-    id: d.id, nome: d.nome, tipo: d.tipo,
-    lastSyncAt: d.last_sync_at, lastSyncStatus: d.last_sync_status, lastSyncMessage: d.last_sync_message,
-  }));
+  // ── 3. Status por device — inclui a batida mais recente do banco para detectar atraso RHID ──
+  const deviceStatusPromises = ((devices || []) as any[]).map(async (d) => {
+    const { data: lastP } = await supabaseAdmin
+      .from("control_id_punches")
+      .select("punch_at")
+      .eq("device_id", d.id)
+      .order("punch_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return {
+      id: d.id, nome: d.nome, tipo: d.tipo,
+      lastSyncAt: d.last_sync_at, lastSyncStatus: d.last_sync_status, lastSyncMessage: d.last_sync_message,
+      lastEventAt: lastP?.punch_at || null,
+    };
+  });
+  const deviceStatus = await Promise.all(deviceStatusPromises);
 
   return {
     unmappedEmployees: (unmappedEmployees as any[]).map(e => ({ id: e.id, name: e.name, role: e.role })),
@@ -1581,11 +1592,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     // Turnos que cruzam a meia-noite (vigilância 12x36, 24h, etc.):
     // se a última batida do dia anterior ficou em número ímpar (entrada sem saída)
     // e ainda não houve batida hoje, o ponto continua "EM ABERTO" carregado de ontem.
-    const yesterdayBrt = (() => {
-      const d = new Date(todayBrt + "T00:00:00");
-      d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    })();
+    const yesterdayBrt = new Date(Date.now() - 3 * 3600000 - 24 * 3600000).toISOString().slice(0, 10);
     const yesterdayPunches = isCurrentMonth ? (dayMap.get(yesterdayBrt) || []) : [];
     const yesterdayOpen = yesterdayPunches.length > 0 && yesterdayPunches.length % 2 === 1;
 
