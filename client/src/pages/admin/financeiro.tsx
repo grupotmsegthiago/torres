@@ -16,7 +16,7 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound,
+  Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound, TrendingUp,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
@@ -742,8 +742,8 @@ interface RelatorioAnualData {
   ano: number;
   tipo: string;
   totalAno: number;
-  linhas: { id: string; nome: string; meses: { mes: number; valor: number; varPct: number | null }[]; total: number }[];
-  totalGeral: { mes: number; valor: number; varPct: number | null }[];
+  linhas: { id: string; nome: string; meses: { mes: number; valor: number; varPct: number | null; varPctYoY: number | null }[]; total: number }[];
+  totalGeral: { mes: number; valor: number; varPct: number | null; varPctYoY: number | null }[];
 }
 
 const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -765,15 +765,16 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   const [chartType, setChartType] = useState<"bar" | "line">("bar");
   const [isExportingPng, setIsExportingPng] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
+  const [compareYoY, setCompareYoY] = useState(false);
 
   useEffect(() => {
     setHighlightedId(null);
   }, [ano, tipo]);
 
   const { data: relAnual, isLoading } = useQuery<RelatorioAnualData>({
-    queryKey: ["/api/financeiro/relatorio-anual", { ano, tipo }],
+    queryKey: ["/api/financeiro/relatorio-anual", { ano, tipo, compareYoY }],
     queryFn: async () => {
-      const res = await authFetch(`/api/financeiro/relatorio-anual?ano=${ano}&tipo=${tipo}`);
+      const res = await authFetch(`/api/financeiro/relatorio-anual?ano=${ano}&tipo=${tipo}&compareYoY=${compareYoY ? "1" : "0"}`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -862,10 +863,12 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
 
   const exportCSV = () => {
     if (!relAnual) return;
+    // Para cada mês: Valor, Var % mês anterior, e (se YoY ativo) Var % vs ano anterior.
     const header = ["Nome"];
-    for (const m of MESES_FULL) {
-      header.push(`${m} (R$)`);
-      header.push(`${m} (Var %)`);
+    for (let i = 0; i < 12; i++) {
+      header.push(`${MESES_FULL[i]} (R$)`);
+      header.push(`${MESES_FULL[i]} (Var % mês ant.)`);
+      if (compareYoY) header.push(`${MESES_FULL[i]} (Var % vs ${ano - 1})`);
     }
     header.push("Total Anual");
     const lines: string[][] = [header];
@@ -874,6 +877,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
       for (const m of l.meses) {
         row.push(m.valor.toFixed(2).replace(".", ","));
         row.push(fmtVarCsv(m.varPct));
+        if (compareYoY) row.push(fmtVarCsv(m.varPctYoY));
       }
       row.push(l.total.toFixed(2).replace(".", ","));
       lines.push(row);
@@ -882,6 +886,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     for (const m of relAnual.totalGeral) {
       totalRow.push(m.valor.toFixed(2).replace(".", ","));
       totalRow.push(fmtVarCsv(m.varPct));
+      if (compareYoY) totalRow.push(fmtVarCsv(m.varPctYoY));
     }
     totalRow.push(relAnual.totalAno.toFixed(2).replace(".", ","));
     lines.push(totalRow);
@@ -890,7 +895,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `RELATORIO_ANUAL_${tipo.toUpperCase()}_${ano}.csv`;
+    a.download = `RELATORIO_ANUAL_${tipo.toUpperCase()}_${ano}${compareYoY ? `_vs_${ano - 1}` : ""}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -963,7 +968,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
   return (
     <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm" data-testid="panel-relatorio-anual">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex bg-neutral-100 p-1 rounded-lg">
             <button onClick={() => onTipoChange("fornecedor")} data-testid="button-tipo-fornecedor"
               className={`px-3 py-1.5 text-xs font-black uppercase rounded-md ${isFornecedor ? "bg-neutral-900 text-white" : "text-neutral-500"}`}>
@@ -981,6 +986,14 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
               {anosOpts.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
+          <button
+            onClick={() => setCompareYoY(v => !v)}
+            data-testid="button-toggle-yoy"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase border-2 transition-colors ${compareYoY ? "bg-blue-700 text-white border-blue-700" : "bg-white text-neutral-600 border-neutral-300 hover:border-neutral-400"}`}
+          >
+            <TrendingUp size={12} />
+            Comparar com {ano - 1}
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCSV} disabled={!relAnual} data-testid="button-csv-anual" className="text-xs font-bold uppercase">
@@ -998,13 +1011,21 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
       <div className="hidden print:block mb-3">
         <h2 className="text-base font-black uppercase">
           Relatório Anual {isFornecedor ? "Por Fornecedor (Contas a Pagar)" : "Por Cliente (Contas a Receber)"} — {ano}
+          {compareYoY ? ` vs ${ano - 1}` : ""}
         </h2>
       </div>
 
-      <div className="text-[10px] text-neutral-500 mb-2 font-bold uppercase">
-        {isFornecedor
-          ? "Verde = pagamos MENOS que o mês anterior (boa notícia, % positiva). Vermelho = pagamos MAIS (% negativa)."
-          : "Verde = faturamos MAIS que o mês anterior (boa notícia, % positiva). Vermelho = faturamos MENOS (% negativa)."}
+      <div className="text-[10px] text-neutral-500 mb-2 font-bold uppercase flex flex-wrap gap-x-4 gap-y-1">
+        <span>
+          {isFornecedor
+            ? "Verde = pagamos MENOS (% positiva). Vermelho = pagamos MAIS (% negativa)."
+            : "Verde = faturamos MAIS (% positiva). Vermelho = faturamos MENOS (% negativa)."}
+        </span>
+        {compareYoY && (
+          <span className="text-blue-600">
+            YoY: comparação com o mesmo mês de {ano - 1}.
+          </span>
+        )}
       </div>
 
       {isLoading ? (
@@ -1172,7 +1193,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                     return (
                       <th
                         key={m}
-                        className={`px-2 py-2 text-right min-w-[90px] ${isCurMes ? "bg-blue-700 text-white" : ""}`}
+                        className={`px-2 py-2 text-right ${compareYoY ? "min-w-[110px]" : "min-w-[90px]"} ${isCurMes ? "bg-blue-700 text-white" : ""}`}
                       >
                         {m}
                         {isCurMes && (
@@ -1208,6 +1229,11 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                             <div className={`text-[9px] font-black ${corVar(m.varPct)}`} data-testid={`var-${l.id}-${m.mes}`}>
                               {fmtVar(m.varPct)}
                             </div>
+                            {compareYoY && (
+                              <div className={`text-[9px] font-black ${corVar(m.varPctYoY)}`} data-testid={`yoy-${l.id}-${m.mes}`} title={`vs ${ano - 1}`}>
+                                <span className="text-neutral-400 mr-0.5">YoY</span>{fmtVar(m.varPctYoY)}
+                              </div>
+                            )}
                           </td>
                         );
                       })}
@@ -1229,6 +1255,11 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
                         <div className={`text-[9px] font-black ${m.varPct === null || m.varPct === 0 ? "text-neutral-300" : m.varPct > 0 ? "text-green-400" : "text-red-400"}`}>
                           {fmtVar(m.varPct)}
                         </div>
+                        {compareYoY && (
+                          <div className={`text-[9px] font-black ${m.varPctYoY === null || m.varPctYoY === 0 ? "text-neutral-300" : m.varPctYoY > 0 ? "text-green-400" : "text-red-400"}`} data-testid={`yoy-total-${m.mes}`} title={`vs ${ano - 1}`}>
+                            <span className="text-neutral-500 mr-0.5">YoY</span>{fmtVar(m.varPctYoY)}
+                          </div>
+                        )}
                       </td>
                     );
                   })}
