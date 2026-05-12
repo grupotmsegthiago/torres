@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, RefreshCw, CreditCard, Send, FileText, Calendar,
-  AlertCircle, CheckCircle2, History, Banknote, Zap,
+  AlertCircle, CheckCircle2, History, Banknote, Zap, Paperclip,
 } from "lucide-react";
 
 interface FinTx {
@@ -237,28 +237,59 @@ export default function ContasAPagarPage() {
 }
 
 function PayDialog({ tx, onClose, onSuccess }: { tx: FinTx; onClose: () => void; onSuccess: () => void }) {
+  const { toast } = useToast();
   const [metodo, setMetodo] = useState<"pix" | "boleto">("pix");
-  // PIX
   const [pixChave, setPixChave] = useState("");
   const [pixNome, setPixNome] = useState("");
   const [pixCpfCnpj, setPixCpfCnpj] = useState("");
-  // Boleto
   const [codBarras, setCodBarras] = useState("");
   const [boletoCpfCnpj, setBoletoCpfCnpj] = useState("");
   const [vencBoleto, setVencBoleto] = useState(new Date().toISOString().slice(0, 10));
   const [descricao, setDescricao] = useState(tx.description || "");
 
+  // Comprovante obrigatório antes de confirmar pagamento
+  const [comprovanteFile, setComprovanteFile] = useState<File | null>(null);
+  const [comprovantePayload, setComprovantePayload] = useState<{ b64: string; name: string; type: string } | null>(null);
+
+  const onPickComprovante = async (file: File) => {
+    const allowed = ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowed.includes(file.type) && !/\.(pdf|jpe?g|png)$/i.test(file.name)) {
+      toast({ title: "Formato inválido", description: "Apenas PDF, JPG ou PNG", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 5 MB", variant: "destructive" });
+      return;
+    }
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    setComprovantePayload({ b64: btoa(bin), name: file.name, type: file.type || "application/octet-stream" });
+    setComprovanteFile(file);
+  };
+
+  const comprovantePayloadFor = () => ({
+    transactionId: tx.id,
+    comprovanteBase64: comprovantePayload!.b64,
+    comprovanteFileName: comprovantePayload!.name,
+    comprovanteContentType: comprovantePayload!.type,
+  });
+
   const mPix = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/inter/pix", {
+      ...comprovantePayloadFor(),
       valor: Number(tx.amount),
       descricao,
       destinatario: { tipo: "CHAVE", chave: pixChave, nome: pixNome, cpfCnpj: pixCpfCnpj },
     }),
     onSuccess,
+    onError: (e: Error) => toast({ title: "Erro no PIX", description: e.message, variant: "destructive" }),
   });
 
   const mBoleto = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/inter/pagamento/boleto", {
+      ...comprovantePayloadFor(),
       codBarraLinhaDigitavel: codBarras.replace(/\D/g, ""),
       valorPagar: Number(tx.amount),
       dataPagamento: new Date().toISOString().slice(0, 10),
@@ -266,9 +297,19 @@ function PayDialog({ tx, onClose, onSuccess }: { tx: FinTx; onClose: () => void;
       cpfCnpjBeneficiario: boletoCpfCnpj.replace(/\D/g, ""),
     }),
     onSuccess,
+    onError: (e: Error) => toast({ title: "Erro no boleto", description: e.message, variant: "destructive" }),
   });
 
   const isLoading = mPix.isPending || mBoleto.isPending;
+  const canSubmit = !!comprovantePayload && (metodo === "pix" ? !!pixChave : !!codBarras);
+
+  const onConfirm = () => {
+    if (!comprovantePayload) {
+      toast({ title: "Comprovante obrigatório", description: "Anexe o comprovante (PDF/JPG/PNG) antes de confirmar.", variant: "destructive" });
+      return;
+    }
+    metodo === "pix" ? mPix.mutate() : mBoleto.mutate();
+  };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -333,13 +374,28 @@ function PayDialog({ tx, onClose, onSuccess }: { tx: FinTx; onClose: () => void;
             <Label className="text-xs">Descrição</Label>
             <Textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2} data-testid="input-descricao" />
           </div>
+
+          <div className="border-t pt-3">
+            <Label className="text-xs flex items-center gap-1"><Paperclip className="w-3 h-3" /> Comprovante (obrigatório — PDF/JPG/PNG, &lt;=5MB)</Label>
+            <Input
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
+              onChange={e => { const f = e.target.files?.[0]; if (f) onPickComprovante(f); }}
+              data-testid="input-comprovante"
+            />
+            {comprovanteFile && (
+              <p className="text-[11px] mt-1 text-emerald-700 font-medium" data-testid="text-comprovante-name">
+                Anexado: {comprovanteFile.name} ({(comprovanteFile.size / 1024).toFixed(0)} KB)
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading} data-testid="button-cancel">Cancelar</Button>
           <Button
-            onClick={() => (metodo === "pix" ? mPix.mutate() : mBoleto.mutate())}
-            disabled={isLoading || (metodo === "pix" ? !pixChave : !codBarras)}
+            onClick={onConfirm}
+            disabled={isLoading || !canSubmit}
             data-testid="button-confirm-pay"
           >
             {isLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}

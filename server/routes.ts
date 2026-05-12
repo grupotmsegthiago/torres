@@ -326,16 +326,16 @@ ensureComprovantesBucket();
 async function ensureComprovantesBucket() {
   try {
     const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-    const exists = (buckets || []).some((b: any) => b.name === "comprovantes");
+    const exists = (buckets || []).some((b: any) => b.name === "comprovantes-pagamento");
     if (!exists) {
-      const { error } = await supabaseAdmin.storage.createBucket("comprovantes", {
+      const { error } = await supabaseAdmin.storage.createBucket("comprovantes-pagamento", {
         public: false,
         fileSizeLimit: 5 * 1024 * 1024,
       });
       if (error && !/already exists/i.test(error.message || "")) {
-        console.warn("[storage] createBucket comprovantes:", error.message);
+        console.warn("[storage] createBucket comprovantes-pagamento:", error.message);
       } else {
-        console.log("[storage] Bucket 'comprovantes' criado (private)");
+        console.log("[storage] Bucket 'comprovantes-pagamento' criado (private)");
       }
     }
   } catch (e: any) {

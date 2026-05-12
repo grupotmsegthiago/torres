@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
-  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
@@ -227,6 +227,36 @@ const menuSections: MenuSection[] = [
 const rootItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
 ];
+
+// Sino de notificações: pendências de comprovante de pagamento
+// (lançamentos PAID/EXPENSE manuais sem comprovante anexado).
+const PendingComprovanteBell = memo(function PendingComprovanteBell() {
+  const { data } = useQuery<any[]>({
+    queryKey: ["/api/financial/comprovantes-pendentes"],
+    refetchInterval: 60_000,
+    retry: false,
+  });
+  const count = Array.isArray(data) ? data.length : 0;
+  if (!count) return null;
+  return (
+    <Link href="/admin/financeiro">
+      <button
+        type="button"
+        title={`${count} pagamento(s) sem comprovante anexado`}
+        className="relative inline-flex items-center justify-center w-9 h-9 rounded-full hover:bg-amber-50 transition"
+        data-testid="button-bell-comprovantes"
+      >
+        <Bell className="w-5 h-5 text-amber-600" />
+        <span
+          className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center"
+          data-testid="badge-comprovantes-pendentes"
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      </button>
+    </Link>
+  );
+});
 
 function prefetchRoute(path: string) {
   const keys = PREFETCH_MAP[path];
@@ -511,6 +541,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Menu className="w-5 h-5" />
           </Button>
           <span className="font-bold text-sm flex-1">TORRES - Área Interna</span>
+          <PendingComprovanteBell />
           {isDiretoria && <SystemStatusBadge compact />}
         </header>
 

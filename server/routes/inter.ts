@@ -170,8 +170,33 @@ export function registerInterRoutes(app: Express) {
   });
 
   // === PAGAMENTOS ===
+  // Helper: exige comprovante (PDF/JPG/PNG <=5MB) e o vincula ao lançamento
+  // financeiro informado, fazendo upload para o bucket privado antes do pagamento.
+  async function uploadComprovantePagamento(req: any): Promise<string> {
+    const { transactionId, comprovanteBase64, comprovanteFileName, comprovanteContentType } = req.body || {};
+    if (!transactionId) throw new Error("transactionId é obrigatório (lançamento financeiro)");
+    if (!comprovanteBase64 || !comprovanteFileName) throw new Error("Comprovante é obrigatório (PDF, JPG ou PNG)");
+    const ext = String(comprovanteFileName).split(".").pop()?.toLowerCase() || "";
+    if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) throw new Error("Apenas PDF, JPG ou PNG");
+    const buffer = Buffer.from(String(comprovanteBase64).replace(/^data:[^;]+;base64,/, ""), "base64");
+    if (buffer.length > 5 * 1024 * 1024) throw new Error("Comprovante excede 5 MB");
+    const safeName = `${transactionId}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const storagePath = `${transactionId}/${safeName}`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("comprovantes-pagamento")
+      .upload(storagePath, buffer, { contentType: comprovanteContentType || "application/octet-stream", upsert: true });
+    if (upErr) throw upErr;
+    const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+    await supabaseAdmin
+      .from("financial_transactions")
+      .update({ comprovante_url: storagePath, comprovante_path: storagePath, comprovante_anexado_em: nowBrt })
+      .eq("id", transactionId);
+    return storagePath;
+  }
+
   app.post("/api/inter/pagamento/boleto", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const storagePath = await uploadComprovantePagamento(req);
       const out = await banking.pagarBoleto(req.body);
       await supabaseAdmin.from("inter_pagamentos").insert({
         tipo: "boleto",
@@ -198,6 +223,7 @@ export function registerInterRoutes(app: Express) {
 
   app.post("/api/inter/pix", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const storagePath = await uploadComprovantePagamento(req);
       const out = await banking.realizarPix(req.body);
       const codigo = out.endToEndId || out.idempotenteId || out.codigoSolicitacao;
       await supabaseAdmin.from("inter_pagamentos").insert({
@@ -234,17 +260,26 @@ export function registerInterRoutes(app: Express) {
     res.json(data || []);
   });
 
-  // Lista despesas pendentes (financial_transactions tipo DESPESA) — usado em Contas a Pagar
+  // Lista despesas pendentes (financial_transactions tipo DESPESA) — usado em Contas a Pagar.
+  // Exclui lançamentos de origem automática (mission/fueling/etc) e categorias
+  // de missão (CUSTOS DE MISSÃO, COMBUSTÍVEL) — esses já são tratados em
+  // Conferência. Também esconde itens AGUARDANDO_APROVACAO/RECUSADA.
   app.get("/api/financeiro/contas-a-pagar", requireAuth, requireDiretoria, async (_req, res) => {
+    const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
     const { data, error } = await supabaseAdmin
       .from("financial_transactions")
       .select("*")
-      .eq("type", "DESPESA")
+      .in("type", ["DESPESA", "EXPENSE"])
       .in("status", ["PENDING", "PENDENTE"])
+      .or("origin_type.is.null,origin_type.eq.manual")
       .order("due_date", { ascending: true })
       .limit(500);
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data || []);
+    const filtered = (data || []).filter((t: any) => {
+      const cat = String(t.category_name || "").toUpperCase();
+      return !MISSION_CATEGORIES.includes(cat);
+    });
+    res.json(filtered);
   });
 
   // === WEBHOOK SETUP (admin) ===

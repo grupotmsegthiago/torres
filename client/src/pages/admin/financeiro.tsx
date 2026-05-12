@@ -921,6 +921,11 @@ export default function FinanceiroPage() {
     // — eles aparecem em Conferência/Relatório, mas o operacional ADM não os manuseia aqui.
     if (typeFilter) {
       list = list.filter(t => !t.origin_type || t.origin_type === "manual");
+      // Excluir categorias de missão (já visíveis em Conferência)
+      list = list.filter(t => {
+        const cat = String(t.category_name || "").toUpperCase();
+        return !["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"].includes(cat);
+      });
       // Ocultar AGUARDANDO_APROVACAO e RECUSADA das abas operacionais (ficam em sua própria aba)
       list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
     }
@@ -935,14 +940,18 @@ export default function FinanceiroPage() {
     return list;
   }, [periodFilteredTransactions, activeStep, statusFilter, searchTerm]);
 
-  // Lançamentos manuais (sem origem automática de missão) e fora do fluxo de aprovação/recusa.
-  // Aplicado a todos os totais e cards das abas Pagar/Receber para consistência com a tabela.
+  // Lançamentos manuais (sem origem automática de missão), excluindo categorias
+  // de missão e fora do fluxo de aprovação/recusa. Aplicado a todos os totais e
+  // cards das abas Pagar/Receber para consistência com a tabela.
+  const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
   const manualOperationalTx = useMemo(() => {
-    return periodFilteredTransactions.filter(t =>
-      (!t.origin_type || t.origin_type === "manual") &&
-      t.status !== "AGUARDANDO_APROVACAO" &&
-      t.status !== "RECUSADA"
-    );
+    return periodFilteredTransactions.filter(t => {
+      const cat = String(t.category_name || "").toUpperCase();
+      return (!t.origin_type || t.origin_type === "manual") &&
+        !MISSION_CATEGORIES.includes(cat) &&
+        t.status !== "AGUARDANDO_APROVACAO" &&
+        t.status !== "RECUSADA";
+    });
   }, [periodFilteredTransactions]);
 
   const summaryPagar = useMemo(() => {

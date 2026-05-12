@@ -117,7 +117,7 @@ import type { Express } from "express";
   });
 
   // Lista somente lançamentos AGUARDANDO_APROVACAO (Mickael / diretoria visualiza)
-  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")
@@ -142,7 +142,7 @@ import type { Express } from "express";
       if (txErr || !tx) return res.status(404).json({ message: "Lançamento não encontrado" });
       const path = tx.comprovante_path || tx.comprovante_url;
       if (!path) return res.status(404).json({ message: "Comprovante não anexado" });
-      const { data, error } = await supabaseAdmin.storage.from("comprovantes").createSignedUrl(path, 60);
+      const { data, error } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path, 60);
       if (error || !data?.signedUrl) return res.status(500).json({ message: error?.message || "Falha ao gerar URL" });
       res.json({ url: data.signedUrl });
     } catch (err: any) {
@@ -336,7 +336,7 @@ import type { Express } from "express";
       const storagePath = `${existing.id}/${safeName}`;
 
       const { error: upErr } = await supabaseAdmin.storage
-        .from("comprovantes")
+        .from("comprovantes-pagamento")
         .upload(storagePath, buffer, {
           contentType: contentType || "application/octet-stream",
           upsert: true,
