@@ -945,28 +945,84 @@ export default function FuelingPage() {
     return map;
   }, [serviceOrders, periodRange.from, periodRange.to]);
 
-  // % álcool vs gasolina por veículo (peso = litros) no período filtrado
+  // % álcool vs gasolina por veículo (peso = litros) + km/L médio por combustível
   const fuelTypeShareByVehicle = useMemo(() => {
-    const map = new Map<number, { litAlcool: number; litGasolina: number; total: number; pctAlcool: number; pctGasolina: number }>();
+    type Entry = {
+      litAlcool: number; litGasolina: number; total: number;
+      pctAlcool: number; pctGasolina: number;
+      kmAlcool: number; kmGasolina: number;
+      litConsumedAlcool: number; litConsumedGasolina: number;
+      kmLAlcool: number; kmLGasolina: number;
+    };
+    const map = new Map<number, Entry>();
+    const empty = (): Entry => ({
+      litAlcool: 0, litGasolina: 0, total: 0, pctAlcool: 0, pctGasolina: 0,
+      kmAlcool: 0, kmGasolina: 0, litConsumedAlcool: 0, litConsumedGasolina: 0,
+      kmLAlcool: 0, kmLGasolina: 0,
+    });
+    // 1) Soma de litros por tipo (mantém percentual)
     for (const f of filteredFuelings) {
       const ft = String((f as any).fuelType || "").toLowerCase();
       if (ft !== "etanol" && ft !== "alcool" && ft !== "álcool" && ft !== "gasolina") continue;
       const lit = Number(f.liters || 0);
       if (lit <= 0) continue;
-      const cur = map.get(f.vehicleId) || { litAlcool: 0, litGasolina: 0, total: 0, pctAlcool: 0, pctGasolina: 0 };
+      const cur = map.get(f.vehicleId) || empty();
       if (ft === "gasolina") cur.litGasolina += lit;
       else cur.litAlcool += lit;
       map.set(f.vehicleId, cur);
     }
+    // 2) Para km/L por tipo: agrupa por veículo, ordena por km, atribui o segmento
+    //    (dist entre fills consecutivos) ao tipo do tanque consumido (= fueling anterior)
+    const byVeh = new Map<number, VehicleFueling[]>();
+    for (const f of filteredFuelings) {
+      if (!byVeh.has(f.vehicleId)) byVeh.set(f.vehicleId, []);
+      byVeh.get(f.vehicleId)!.push(f);
+    }
+    byVeh.forEach((arr, vid) => {
+      const sorted = [...arr].sort((a, b) => a.km - b.km);
+      const cur = map.get(vid) || empty();
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const cf = sorted[i];
+        const dist = cf.km - prev.km;
+        const lit = Number(cf.liters) || 0;
+        if (dist <= 0 || lit <= 0) continue;
+        const kmL = dist / lit;
+        // Filtra outliers (tanque parcial / hodômetro errado)
+        if (kmL < 4 || kmL > 25) continue;
+        const ft = String((prev as any).fuelType || "").toLowerCase();
+        if (ft === "etanol" || ft === "alcool" || ft === "álcool") {
+          cur.kmAlcool += dist; cur.litConsumedAlcool += lit;
+        } else if (ft === "gasolina") {
+          cur.kmGasolina += dist; cur.litConsumedGasolina += lit;
+        }
+      }
+      map.set(vid, cur);
+    });
     map.forEach(v => {
       v.total = v.litAlcool + v.litGasolina;
       if (v.total > 0) {
         v.pctAlcool = (v.litAlcool / v.total) * 100;
         v.pctGasolina = (v.litGasolina / v.total) * 100;
       }
+      v.kmLAlcool = v.litConsumedAlcool > 0 ? v.kmAlcool / v.litConsumedAlcool : 0;
+      v.kmLGasolina = v.litConsumedGasolina > 0 ? v.kmGasolina / v.litConsumedGasolina : 0;
     });
     return map;
   }, [filteredFuelings]);
+
+  // Helper: avalia eficiência por tipo de combustível (mesmos thresholds do relatorio-abastecimento)
+  const getFuelGrade = (kmL: number, fuelType: "alcool" | "gasolina"): { label: string; cls: string } | null => {
+    if (kmL <= 0) return null;
+    if (fuelType === "alcool") {
+      if (kmL >= 12) return { label: "ÓTIMO", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" };
+      if (kmL >= 11) return { label: "BOM", cls: "bg-green-100 text-green-700 border-green-300" };
+      return { label: "RUIM", cls: "bg-red-100 text-red-700 border-red-300" };
+    }
+    if (kmL >= 15) return { label: "ÓTIMO", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" };
+    if (kmL >= 14) return { label: "BOM", cls: "bg-green-100 text-green-700 border-green-300" };
+    return { label: "RUIM", cls: "bg-red-100 text-red-700 border-red-300" };
+  };
 
   const getVehicle = (id: number) => vehicles.find(v => v.id === id);
   const getDriver = (id: number | null) => id ? employees.find(e => e.id === id)?.name : null;
@@ -1198,8 +1254,14 @@ export default function FuelingPage() {
                         </div>
                         {(() => {
                           const fs = fuelTypeShareByVehicle.get(pv.vehicle.id);
+                          const gradeA = fs ? getFuelGrade(fs.kmLAlcool, "alcool") : null;
+                          const gradeG = fs ? getFuelGrade(fs.kmLGasolina, "gasolina") : null;
+                          const tipParts: string[] = [];
+                          if (fs && fs.total > 0) tipParts.push(`Álcool ${fs.litAlcool.toFixed(1)}L · Gasolina ${fs.litGasolina.toFixed(1)}L`);
+                          if (fs && fs.kmLAlcool > 0) tipParts.push(`Média Álcool: ${fs.kmLAlcool.toFixed(2)} km/L`);
+                          if (fs && fs.kmLGasolina > 0) tipParts.push(`Média Gasolina: ${fs.kmLGasolina.toFixed(2)} km/L`);
                           return (
-                            <div className="text-center min-w-[110px] shrink-0" data-testid={`fuel-share-${pv.vehicle.id}`} title={fs && fs.total > 0 ? `Álcool ${fs.litAlcool.toFixed(1)}L · Gasolina ${fs.litGasolina.toFixed(1)}L` : "sem abastecimentos"}>
+                            <div className="text-center min-w-[140px] shrink-0" data-testid={`fuel-share-${pv.vehicle.id}`} title={tipParts.join(" · ") || "sem abastecimentos"}>
                               <p className="text-xs text-neutral-400">Álcool / Gasolina</p>
                               {fs && fs.total > 0 ? (
                                 <>
@@ -1212,6 +1274,28 @@ export default function FuelingPage() {
                                     <span className="text-neutral-300 mx-1">/</span>
                                     <span className="text-blue-700">{fs.pctGasolina.toFixed(0)}%</span>
                                   </p>
+                                  {(gradeA || gradeG) && (
+                                    <div className="flex items-center justify-center gap-1 mt-1">
+                                      {gradeA ? (
+                                        <span
+                                          className={`inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded border ${gradeA.cls}`}
+                                          title={`Álcool: ${fs.kmLAlcool.toFixed(2)} km/L (${gradeA.label})`}
+                                          data-testid={`grade-alcool-${pv.vehicle.id}`}
+                                        >
+                                          A:{gradeA.label}
+                                        </span>
+                                      ) : <span className="text-[9px] text-neutral-300">A:—</span>}
+                                      {gradeG ? (
+                                        <span
+                                          className={`inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded border ${gradeG.cls}`}
+                                          title={`Gasolina: ${fs.kmLGasolina.toFixed(2)} km/L (${gradeG.label})`}
+                                          data-testid={`grade-gasolina-${pv.vehicle.id}`}
+                                        >
+                                          G:{gradeG.label}
+                                        </span>
+                                      ) : <span className="text-[9px] text-neutral-300">G:—</span>}
+                                    </div>
+                                  )}
                                 </>
                               ) : (
                                 <p className="text-xs text-neutral-300 mt-1">-</p>
