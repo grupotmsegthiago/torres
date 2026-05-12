@@ -366,23 +366,34 @@ export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string;
 async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string; cpf?: string }>> {
   const token = await getOrLoginToken(device);
 
-  const personUrl = joinUrl(device.base_url, "/customerdb/person.svc/a");
-  let personRes = await tryFetch(personUrl, {
-    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
-    timeoutMs: 20000,
-  });
-  if (personRes.status === 401 || personRes.status === 403) {
-    const newToken = await loginDevice(device);
-    personRes = await tryFetch(personUrl, {
-      headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
+  // Endpoint correto conforme swagger RHID v2: GET /api.svc/person?start=0&length=N
+  // Resposta: { records: PersonDTO[], total }
+  // ATENÇÃO: a API do RHID rejeita length>200 com HTTP 500. Paginar de 100 em 100.
+  const PAGE = 100;
+  let curToken = token;
+  const persons: any[] = [];
+  for (let start = 0, page = 0; page < 200; start += PAGE, page++) {
+    const personUrl = joinUrl(device.base_url, `/api.svc/person?start=${start}&length=${PAGE}`);
+    let personRes = await tryFetch(personUrl, {
+      headers: { "Authorization": `Bearer ${curToken}`, "Accept": "application/json" },
       timeoutMs: 20000,
     });
+    if (personRes.status === 401 || personRes.status === 403) {
+      curToken = await loginDevice(device);
+      personRes = await tryFetch(personUrl, {
+        headers: { "Authorization": `Bearer ${curToken}`, "Accept": "application/json" },
+        timeoutMs: 20000,
+      });
+    }
+    if (!personRes.ok) throw new Error(`RHID persons falhou: HTTP ${personRes.status}`);
+    const personData = await personRes.json();
+    const batch = Array.isArray(personData) ? personData : (personData?.records || personData?.data || []);
+    if (batch.length === 0) break;
+    persons.push(...batch);
+    if (batch.length < PAGE) break;
   }
-  if (!personRes.ok) throw new Error(`RHID persons falhou: HTTP ${personRes.status}`);
-  const personData = await personRes.json();
-  const persons = Array.isArray(personData) ? personData : (personData?.data || personData?.records || []);
 
-  return persons.filter((p: any) => !p.excluded).map((p: any) => ({
+  return persons.map((p: any) => ({
     id: String(p.id || p.Id || p.PersonId || ""),
     name: String(p.name || p.Name || p.PersonName || ""),
     matricula: p.registration || p.Registration || p.pis || p.Pis || undefined,
