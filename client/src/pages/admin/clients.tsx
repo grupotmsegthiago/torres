@@ -1355,6 +1355,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const [editingSC, setEditingSC] = useState<ServiceContract | null>(null);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [editingPrice, setEditingPrice] = useState<EscortContract | null>(null);
+  const [priceSearch, setPriceSearch] = useState("");
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState<EscortRoute | null>(null);
   const [osPeriod, setOsPeriod] = useState<"FORTNIGHT" | "MONTH">("MONTH");
@@ -1600,34 +1601,56 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             </div>
             {clientPrices.length === 0 ? (
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
-            ) : (
-              <Card className="border-neutral-200 shadow-sm overflow-hidden">
-                <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-neutral-100 border-b border-neutral-200 text-[10px] font-black text-neutral-500 uppercase tracking-widest">
-                  <div className="col-span-5">Tabela</div>
-                  <div className="col-span-2 text-right">Acionamento</div>
-                  <div className="col-span-2 text-right">Franquia</div>
-                  <div className="col-span-3 text-right">Excedente</div>
-                </div>
-                <div className="divide-y divide-neutral-100 max-h-[70vh] overflow-y-auto">
-                  {clientPrices.map(cp => (
-                    <div
-                      key={cp.id}
-                      onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }}
-                      className="grid grid-cols-12 gap-2 px-4 py-2.5 hover:bg-neutral-50 cursor-pointer items-center text-xs"
-                      data-testid={`row-price-${cp.id}`}
-                    >
-                      <div className="col-span-5 font-bold text-neutral-800 truncate">{cp.name || "(sem nome)"}</div>
-                      <div className="col-span-2 text-right font-mono font-bold text-emerald-700">{fmt(Number(cp.valor_acionamento || 0))}</div>
-                      <div className="col-span-2 text-right font-mono text-neutral-600">{cp.franquia_km || 0}km · {cp.franquia_horas || 0}h</div>
-                      <div className="col-span-3 text-right font-mono text-neutral-500">{fmt(Number(cp.valor_km_extra || 0))}/km · {fmt(Number(cp.valor_hora_extra || 0))}/h</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
-                  {clientPrices.length} {clientPrices.length === 1 ? "tabela" : "tabelas"} · clique pra editar
-                </div>
-              </Card>
-            )}
+            ) : (() => {
+              const q = priceSearch.trim().toLowerCase();
+              const filtered = q
+                ? clientPrices.filter(cp => (cp.name || "").toLowerCase().includes(q))
+                : clientPrices;
+              return (
+                <Card className="border-neutral-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-2.5 bg-white border-b border-neutral-200 flex items-center gap-2">
+                    <Search size={14} className="text-neutral-400" />
+                    <input
+                      type="text"
+                      value={priceSearch}
+                      onChange={e => setPriceSearch(e.target.value)}
+                      placeholder="Buscar por origem, destino, nome…"
+                      className="flex-1 text-xs font-semibold bg-transparent outline-none placeholder:text-neutral-400 placeholder:font-normal"
+                      data-testid="input-price-search"
+                    />
+                    {priceSearch && (
+                      <button onClick={() => setPriceSearch("")} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 uppercase" data-testid="button-clear-price-search">limpar</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-neutral-100 border-b border-neutral-200 text-[10px] font-black text-neutral-500 uppercase tracking-widest">
+                    <div className="col-span-5">Tabela</div>
+                    <div className="col-span-2 text-right">Acionamento</div>
+                    <div className="col-span-2 text-right">Franquia</div>
+                    <div className="col-span-3 text-right">Excedente</div>
+                  </div>
+                  <div className="divide-y divide-neutral-100 max-h-[60vh] overflow-y-auto">
+                    {filtered.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-xs font-semibold text-neutral-400">Nenhuma tabela encontrada para "{priceSearch}"</div>
+                    ) : filtered.map(cp => (
+                      <div
+                        key={cp.id}
+                        onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }}
+                        className="grid grid-cols-12 gap-2 px-4 py-2.5 hover:bg-neutral-50 cursor-pointer items-center text-xs"
+                        data-testid={`row-price-${cp.id}`}
+                      >
+                        <div className="col-span-5 font-bold text-neutral-800 truncate">{cp.name || "(sem nome)"}</div>
+                        <div className="col-span-2 text-right font-mono font-bold text-emerald-700">{fmt(Number(cp.valor_acionamento || 0))}</div>
+                        <div className="col-span-2 text-right font-mono text-neutral-600">{cp.franquia_km || 0}km · {cp.franquia_horas || 0}h</div>
+                        <div className="col-span-3 text-right font-mono text-neutral-500">{fmt(Number(cp.valor_km_extra || 0))}/km · {fmt(Number(cp.valor_hora_extra || 0))}/h</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
+                    {q ? `${filtered.length} de ${clientPrices.length}` : `${clientPrices.length} ${clientPrices.length === 1 ? "tabela" : "tabelas"}`} · clique pra editar
+                  </div>
+                </Card>
+              );
+            })()}
           </div>
 
           <div>
