@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import {
   Building2, Plus, Edit, Trash2, Search, Loader2, Save, X,
   Mail, Phone, KeyRound, Landmark, FileText, CheckCircle2, AlertCircle,
-  MapPin, Briefcase, Users, BadgeCheck, AlertTriangle,
+  MapPin, Briefcase, Users, BadgeCheck, AlertTriangle, Tag,
 } from "lucide-react";
+import { CategoryManagerModal, type FinancialCategory } from "@/components/admin/CategoryManagerModal";
 
 interface Fornecedor {
   id: number;
@@ -30,13 +31,6 @@ interface Fornecedor {
   updated_at?: string;
 }
 
-const CATEGORIAS = [
-  "COMBUSTÍVEL", "MANUTENÇÃO VEICULAR", "PEÇAS E PNEUS", "MATERIAL DE ESCRITÓRIO",
-  "SERVIÇOS DE TI", "TELECOMUNICAÇÕES", "ALIMENTAÇÃO", "VIAGEM/HOSPEDAGEM",
-  "EQUIPAMENTOS", "UNIFORMES E EPI", "ARMAMENTO E MUNIÇÃO", "TERCEIRIZADOS",
-  "ALUGUEL E CONDOMÍNIO", "ENERGIA E ÁGUA", "IMPOSTOS E TAXAS", "ADVOCACIA/CONTÁBIL",
-  "MARKETING", "OUTROS",
-];
 
 export default function FornecedoresPage() {
   const { toast } = useToast();
@@ -249,6 +243,19 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
   const [ativo, setAtivo] = useState(editing?.ativo ?? true);
   const [cnpjData, setCnpjData] = useState<CnpjData | null>(null);
   const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+
+  // Categorias hierárquicas (mesma fonte do módulo Financeiro)
+  const { data: financialCategories = [] } = useQuery<FinancialCategory[]>({
+    queryKey: ["/api/financial/categories"],
+  });
+  const expenseCategories = financialCategories.filter(c => c.type === "EXPENSE");
+  const groupedCategories = expenseCategories.reduce((acc, c) => {
+    const parent = c.parent_name || "Outros";
+    if (!acc[parent]) acc[parent] = [];
+    acc[parent].push(c);
+    return acc;
+  }, {} as Record<string, FinancialCategory[]>);
 
   const cleanCnpj = cnpjCpf.replace(/\D/g, "");
   const canSearch = cleanCnpj.length === 14;
@@ -450,10 +457,44 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
               <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={nome} onChange={e => setNome(e.target.value)} data-testid="input-nome" />
             </div>
             <div>
-              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Categoria</label>
-              <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm uppercase font-bold bg-white" value={categoria} onChange={e => setCategoria(e.target.value)} data-testid="select-categoria">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-black text-neutral-400 uppercase flex items-center gap-1">
+                  <Tag size={11} /> Categoria
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryModal(true)}
+                  className="text-[9px] font-black text-green-600 hover:text-green-700 uppercase"
+                  data-testid="button-new-category"
+                >
+                  + Nova
+                </button>
+              </div>
+              <select
+                className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm uppercase font-bold bg-white"
+                value={categoria}
+                onChange={e => setCategoria(e.target.value)}
+                data-testid="select-categoria"
+              >
                 <option value="">Selecione...</option>
-                {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                {Object.entries(groupedCategories)
+                  .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+                  .map(([parent, cats]) => (
+                    <optgroup key={parent} label={parent}>
+                      {cats
+                        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+                        .map(c => (
+                          <option key={c.id} value={c.name}>{c.name}</option>
+                        ))}
+                    </optgroup>
+                  ))}
+                {/* Compatibilidade: se a categoria atual não está mais cadastrada,
+                    ainda exibe pra não perder o valor salvo */}
+                {categoria && !expenseCategories.some(c => c.name === categoria) && (
+                  <optgroup label="Categoria atual (não cadastrada)">
+                    <option value={categoria}>{categoria}</option>
+                  </optgroup>
+                )}
               </select>
             </div>
             <div>
@@ -516,6 +557,15 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
           </button>
         </form>
       </div>
+      {showCategoryModal && (
+        <CategoryManagerModal
+          initialType="EXPENSE"
+          onClose={() => setShowCategoryModal(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] });
+          }}
+        />
+      )}
     </div>
   );
 }
