@@ -1175,10 +1175,13 @@ async function sendComprovantesPendentesEmail() {
       !MISSION_CATEGORIES.includes(String(t.category_name || "").toUpperCase())
     );
 
+    // Aguardando aprovação há MAIS DE 1 DIA (criados antes de "agora - 24h" em BRT).
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: aguardando } = await supabaseAdmin
       .from("financial_transactions")
       .select("id, description, amount, due_date, entity_name, solicitado_por, created_at")
       .eq("status", "AGUARDANDO_APROVACAO")
+      .lt("created_at", cutoff)
       .order("created_at", { ascending: true })
       .limit(200);
 
@@ -1231,10 +1234,12 @@ async function sendComprovantesPendentesEmail() {
         <p style="margin:24px 0 0;font-size:10px;color:#999;text-align:center;">E-mail automático — Sistema de Gestão Torres</p>
       </div>`;
 
+    const extraBcc = process.env.SMTP_BCC ? process.env.SMTP_BCC.split(/[,;]+/).map(s => s.trim()).filter(Boolean) : [];
+    const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || process.env.EMAIL_USER;
     await transporter.sendMail({
-      from: process.env.SMTP_USER || process.env.EMAIL_USER,
-      to: recipients.join(","),
-      bcc: process.env.SMTP_BCC ? process.env.SMTP_BCC.split(/[,;]+/).map(s => s.trim()).filter(Boolean) : undefined,
+      from: fromAddr,
+      to: fromAddr,
+      bcc: Array.from(new Set([...recipients, ...extraBcc])),
       subject: `Financeiro — ${pendApro.length} aguardando aprovação · ${semComp.length} sem comprovante`,
       html,
     });
