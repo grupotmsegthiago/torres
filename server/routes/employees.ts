@@ -7,6 +7,7 @@ import type { Express } from "express";
   import OpenAI from "openai";
   import { calcularFolha } from "../lib/payroll";
 import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
+import { syncEmployeeStatusToRhid } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 
   export function registerEmployeeRoutes(app: Express) {
@@ -146,6 +147,10 @@ import { autoCreateProbationContract, isVigilante } from "./probation-contracts"
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
+    // Sincroniza status com RHID se mudou (fire-and-forget, não bloqueia resposta)
+    if (parsed.data.status && (parsed.data.status === "ativo" || parsed.data.status === "inativo")) {
+      syncEmployeeStatusToRhid(Number(req.params.id), parsed.data.status).catch(() => {});
+    }
     res.json(data);
   });
 

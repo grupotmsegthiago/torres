@@ -424,7 +424,7 @@ export async function createRhidPerson(deviceId: number, fields: Record<string, 
     pis: fields.pis,                                           // OBRIGATÓRIO e único no RHID
     registration: fields.registration,
     idCompany: fields.idCompany ?? 1,                          // Torres: empresa #1
-    idDepartment: fields.idDepartment ?? 1,                    // Torres: depto #1
+    idDepartment: fields.idDepartment ?? 5,                    // Torres: depto TORRES ESCOLTA (id=5)
     status: fields.status ?? 1,                                // 1 = ativo
     isAdmin: fields.isAdmin ?? false,
     getTemplates: fields.getTemplates ?? false,
@@ -501,6 +501,32 @@ export async function updateRhidPerson(deviceId: number, personId: string | numb
     throw new Error(`RHID PUT person falhou: HTTP ${r.status} ${txt}`);
   }
   console.log(`[RHID] PUT person id=${personId} OK`);
+}
+
+/**
+ * Sincroniza o status ativo/inativo do nosso sistema com o RHID Cloud.
+ * Busca o mapping do funcionário e atualiza o campo status (1=ativo, 0=inativo).
+ * Silencioso se não houver mapping (funcionário não cadastrado no RHID ainda).
+ */
+export async function syncEmployeeStatusToRhid(employeeId: number, ourStatus: string): Promise<void> {
+  try {
+    // Busca mapping ativo para esse funcionário
+    const { data: mappings } = await supabaseAdmin
+      .from("control_id_users_map")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .eq("ativo", true)
+      .order("id", { ascending: false })
+      .limit(1);
+    if (!mappings || mappings.length === 0) return; // sem mapping, nada a fazer
+    const map = mappings[0];
+    const rhidStatus = ourStatus === "ativo" ? 1 : 0;
+    await updateRhidPerson(Number(map.device_id), map.control_id_user_id, { status: rhidStatus });
+    console.log(`[RHID] Funcionário #${employeeId} status sincronizado: ${ourStatus} → rhid status=${rhidStatus}`);
+  } catch (e: any) {
+    // Nunca bloqueia o fluxo principal — só loga
+    console.warn(`[RHID] Falha ao sincronizar status do funcionário #${employeeId}:`, e.message);
+  }
 }
 
 /**
@@ -1035,37 +1061,6 @@ export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean }
 
 // ============================ WRITE BACK PARA RHID ============================
 
-/**
- * Atualiza um funcionário no RHID Cloud (PATCH em person.svc).
- */
-export async function updateRhidPerson(deviceId: number, rhidPersonId: string, fields: Record<string, any>): Promise<any> {
-  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
-  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
-  if (device.tipo !== "rhid_cloud") throw new Error("Update suportado apenas em RHID Cloud");
-
-  const token = await getOrLoginToken(device as DeviceRow);
-  const url = joinUrl(device.base_url, `/customerdb/person.svc/${rhidPersonId}`);
-  let r = await tryFetch(url, {
-    method: "PUT",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(fields),
-    timeoutMs: 20000,
-  });
-  if (r.status === 401 || r.status === 403) {
-    const newToken = await loginDevice(device as DeviceRow);
-    r = await tryFetch(url, {
-      method: "PUT",
-      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(fields),
-      timeoutMs: 20000,
-    });
-  }
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`RHID PUT person falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
-  }
-  return await r.json().catch(() => ({}));
-}
 
 /**
  * Cria uma batida manual no RHID Cloud (POST em afd.svc).
