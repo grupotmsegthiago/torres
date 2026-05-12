@@ -402,27 +402,42 @@ export async function createRhidPerson(deviceId: number, fields: Record<string, 
   if (device.tipo !== "rhid_cloud") throw new Error("Criação de pessoa suportada apenas em RHID Cloud");
 
   const token = await getOrLoginToken(device as DeviceRow);
-  const url = joinUrl(device.base_url, `/customerdb/person.svc/`);
-  let r = await tryFetch(url, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify(fields),
-    timeoutMs: 20000,
-  });
-  if (r.status === 401 || r.status === 403) {
-    const newToken = await loginDevice(device as DeviceRow);
-    r = await tryFetch(url, {
+  const candidatos = [
+    "/customerdb/person.svc",
+    "/customerdb/person.svc/c",
+    "/customerdb/person.svc/a",
+  ];
+  let lastStatus = 0;
+  let lastBody = "";
+  let curToken = token;
+  for (const path of candidatos) {
+    const url = joinUrl(device.base_url, path);
+    let r = await tryFetch(url, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${newToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+      headers: { "Authorization": `Bearer ${curToken}`, "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(fields),
       timeoutMs: 20000,
     });
+    if (r.status === 401 || r.status === 403) {
+      curToken = await loginDevice(device as DeviceRow);
+      r = await tryFetch(url, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${curToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(fields),
+        timeoutMs: 20000,
+      });
+    }
+    if (r.ok) {
+      console.log(`[RHID] POST person OK via ${path}`);
+      return await r.json().catch(() => ({}));
+    }
+    lastStatus = r.status;
+    lastBody = await r.text().catch(() => "");
+    console.warn(`[RHID] POST person ${path} -> HTTP ${r.status}; tentando próximo`);
+    if (r.status !== 404 && r.status !== 405) break;
   }
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`RHID POST person falhou: HTTP ${r.status} ${txt.slice(0, 200)}`);
-  }
-  return await r.json().catch(() => ({}));
+  const trecho = lastBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+  throw new Error(`RHID POST person falhou: HTTP ${lastStatus} ${trecho}`);
 }
 
 /**
