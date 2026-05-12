@@ -16,7 +16,7 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound, TrendingUp,
+  Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound, TrendingUp, Info,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1393,10 +1393,10 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
           {currentMesLabel && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex print:hidden items-center gap-2 mb-2 px-2 py-1.5 rounded border border-blue-300 bg-blue-50 w-fit cursor-help" data-testid="screen-badge-mes-atual">
-                  <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+                <div className="flex print:hidden items-center gap-2 mb-2 px-2.5 py-1.5 rounded-md border-2 border-blue-500 bg-blue-50 w-fit cursor-help shadow-sm ring-2 ring-blue-200 animate-pulse" data-testid="screen-badge-mes-atual">
+                  <Info size={13} className="text-blue-700 flex-shrink-0" />
                   <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">
-                    Mês atual: {currentMesLabel} / {ano}
+                    Mês atual: {currentMesLabel} / {ano} — dados incompletos
                   </span>
                 </div>
               </TooltipTrigger>
