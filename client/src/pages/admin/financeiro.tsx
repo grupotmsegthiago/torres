@@ -21,7 +21,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import html2canvas from "html2canvas";
 
@@ -794,9 +794,16 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     return `${varPct.toFixed(1).replace(".", ",")}%`;
   };
 
-  const { top5, seriesKeys, seriesColors, seriesIdMap, chartData } = useMemo(() => {
+  const { top5, seriesKeys, seriesColors, seriesIdMap, chartData, currentBRTMonth, currentBRTYear } = useMemo(() => {
+    const brtPartsEarly = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "numeric",
+    }).formatToParts(new Date());
+    const earlyYear = parseInt(brtPartsEarly.find(p => p.type === "year")!.value, 10);
+    const earlyMonth = parseInt(brtPartsEarly.find(p => p.type === "month")!.value, 10) - 1;
     if (!relAnual || relAnual.linhas.length === 0) {
-      return { top5: [], seriesKeys: [], seriesColors: [], seriesIdMap: {} as Record<string, string>, chartData: [] };
+      return { top5: [], seriesKeys: [], seriesColors: [], seriesIdMap: {} as Record<string, string>, chartData: [], currentBRTMonth: earlyMonth, currentBRTYear: earlyYear };
     }
     const sorted = [...relAnual.linhas].sort((a, b) => b.total - a.total);
     const top5 = sorted.slice(0, MAX_SERIES);
@@ -832,7 +839,7 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
       })
       .map(({ pt }) => pt);
 
-    return { top5, seriesKeys, seriesColors, seriesIdMap, chartData };
+    return { top5, seriesKeys, seriesColors, seriesIdMap, chartData, currentBRTMonth, currentBRTYear };
   }, [relAnual, ano]);
 
   const handleSeriesClick = (seriesName: string) => {
@@ -1031,49 +1038,97 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
               </div>
             </div>
 
-            <ResponsiveContainer width="100%" height={280}>
-              {chartType === "bar" ? (
-                <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
-                  <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
-                  <Legend content={renderLegend} />
-                  {seriesKeys.map((key, idx) => (
-                    <Bar
-                      key={key}
-                      dataKey={key}
-                      stackId="a"
-                      fill={seriesColors[idx]}
-                      opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.3 : 1}
-                      style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
-                      onClick={() => handleSeriesClick(key)}
-                    />
-                  ))}
-                </BarChart>
-              ) : (
-                <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
-                  <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
-                  <Legend content={renderLegend} />
-                  {seriesKeys.map((key, idx) => (
-                    <Line
-                      key={key}
-                      type="monotone"
-                      dataKey={key}
-                      stroke={seriesColors[idx]}
-                      strokeWidth={highlightedId && seriesIdMap[key] === highlightedId ? 3 : 2}
-                      dot={{ r: 3 }}
-                      opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.25 : 1}
-                      style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
-                      onClick={() => handleSeriesClick(key)}
-                    />
-                  ))}
-                </LineChart>
-              )}
-            </ResponsiveContainer>
+            {(() => {
+              const isCurrentYear = ano === currentBRTYear;
+              const currentMesLabel = isCurrentYear ? MESES_CURTOS[currentBRTMonth] : null;
+
+              const renderXTick = ({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => {
+                const isCurrent = payload.value === currentMesLabel;
+                return (
+                  <g transform={`translate(${x},${y})`}>
+                    {isCurrent && (
+                      <text x={0} y={-4} textAnchor="middle" fontSize={8} fontWeight={900} fill="#2563eb" letterSpacing={0.5}>
+                        ATUAL
+                      </text>
+                    )}
+                    <text
+                      x={0}
+                      y={8}
+                      textAnchor="middle"
+                      fontSize={10}
+                      fontWeight={isCurrent ? 900 : 700}
+                      fill={isCurrent ? "#2563eb" : "#737373"}
+                    >
+                      {payload.value}
+                    </text>
+                  </g>
+                );
+              };
+
+              return (
+                <ResponsiveContainer width="100%" height={280}>
+                  {chartType === "bar" ? (
+                    <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                      <XAxis dataKey="mes" tick={renderXTick} axisLine={false} tickLine={false} />
+                      <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
+                      <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                      <Legend content={renderLegend} />
+                      {currentMesLabel && (
+                        <ReferenceLine
+                          x={currentMesLabel}
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          strokeDasharray="4 3"
+                          strokeOpacity={0.5}
+                        />
+                      )}
+                      {seriesKeys.map((key, idx) => (
+                        <Bar
+                          key={key}
+                          dataKey={key}
+                          stackId="a"
+                          fill={seriesColors[idx]}
+                          opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.3 : 1}
+                          style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
+                          onClick={() => handleSeriesClick(key)}
+                        />
+                      ))}
+                    </BarChart>
+                  ) : (
+                    <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                      <XAxis dataKey="mes" tick={renderXTick} axisLine={false} tickLine={false} />
+                      <YAxis tickFormatter={fmtAxisCurrency} tick={{ fontSize: 10, fontWeight: 700, fill: "#737373" }} axisLine={false} tickLine={false} width={70} />
+                      <Tooltip formatter={customTooltipFormatter} contentStyle={{ fontSize: 11, fontWeight: 700, borderRadius: 8 }} />
+                      <Legend content={renderLegend} />
+                      {currentMesLabel && (
+                        <ReferenceLine
+                          x={currentMesLabel}
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          strokeDasharray="4 3"
+                          strokeOpacity={0.5}
+                        />
+                      )}
+                      {seriesKeys.map((key, idx) => (
+                        <Line
+                          key={key}
+                          type="monotone"
+                          dataKey={key}
+                          stroke={seriesColors[idx]}
+                          strokeWidth={highlightedId && seriesIdMap[key] === highlightedId ? 3 : 2}
+                          dot={{ r: 3 }}
+                          opacity={highlightedId && seriesIdMap[key] && seriesIdMap[key] !== highlightedId ? 0.25 : 1}
+                          style={{ cursor: seriesIdMap[key] ? "pointer" : "default" }}
+                          onClick={() => handleSeriesClick(key)}
+                        />
+                      ))}
+                    </LineChart>
+                  )}
+                </ResponsiveContainer>
+              );
+            })()}
           </div>
 
           <div className="overflow-x-auto">
