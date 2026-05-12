@@ -325,6 +325,13 @@ export function registerInterRoutes(app: Express) {
 
       const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
       const MISSION_ORIGINS = ["mission_cost", "fueling", "service_order"];
+      // Categorias de RH/Folha nunca devem aparecer no relatório por Fornecedor
+      const HR_CATEGORIES = [
+        "FOLHA DE PAGAMENTO", "VALE REFEIÇÃO", "VALE REFEICAO",
+        "HOLERITE", "PROVISÃO SALÁRIO", "PROVISAO SALARIO",
+        "ADIANTAMENTO SALARIAL", "DÉCIMO TERCEIRO", "DECIMO TERCEIRO",
+        "FÉRIAS", "FERIAS", "RESCISÃO", "RESCISAO",
+      ];
 
       type BucketMap = Map<string, { nome: string; meses: number[] }>;
 
@@ -344,6 +351,7 @@ export function registerInterRoutes(app: Express) {
 
         if (tipo === "fornecedor") {
           // Pagina para superar o limite default 1000 do Supabase REST
+          // Exclui categorias de RH (folha, vale refeição etc.) — não são gastos com fornecedores
           const PAGE = 1000;
           let off = 0;
           while (true) {
@@ -361,6 +369,7 @@ export function registerInterRoutes(app: Express) {
             for (const r of rows) {
               const cat = String(r.category_name || "").toUpperCase();
               if (MISSION_CATEGORIES.includes(cat)) continue;
+              if (HR_CATEGORIES.includes(cat)) continue;
               if (r.origin_type && MISSION_ORIGINS.includes(String(r.origin_type))) continue;
               if (!r.payment_date) continue;
               const mesIdx = Number(String(r.payment_date).slice(5, 7)) - 1;
@@ -373,7 +382,7 @@ export function registerInterRoutes(app: Express) {
             off += PAGE;
           }
 
-          // Resolve nomes via tabela fornecedores (caso entity_name esteja vazio)
+          // Resolve nomes via tabela fornecedores (nome oficial sobrescreve entity_name)
           const fornIds = Array.from(buckets.keys()).filter(k => k.startsWith("f:")).map(k => Number(k.slice(2)));
           if (fornIds.length > 0) {
             const { data: forns } = await supabaseAdmin.from("fornecedores").select("id, nome").in("id", fornIds);
