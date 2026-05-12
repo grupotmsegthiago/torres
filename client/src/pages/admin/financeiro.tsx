@@ -807,19 +807,33 @@ function RelatorioAnualPanel({ ano, tipo, onAnoChange, onTipoChange }: {
     const seriesIdMap: Record<string, string> = {};
     for (const l of top5) seriesIdMap[l.nome] = l.id;
 
-    const chartData = MESES_CURTOS.map((mes, idx) => {
-      const pt: Record<string, string | number> = { mes };
-      for (const l of top5) {
-        pt[l.nome] = l.meses[idx]?.valor ?? 0;
-      }
-      if (hasOthers) {
-        pt["Outros"] = rest.reduce((sum, l) => sum + (l.meses[idx]?.valor ?? 0), 0);
-      }
-      return pt;
-    });
+    const brtParts = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "numeric",
+    }).formatToParts(new Date());
+    const currentBRTYear = parseInt(brtParts.find(p => p.type === "year")!.value, 10);
+    const currentBRTMonth = parseInt(brtParts.find(p => p.type === "month")!.value, 10) - 1;
+
+    const chartData = MESES_CURTOS
+      .map((mes, idx) => {
+        const pt: Record<string, string | number> = { mes };
+        for (const l of top5) {
+          pt[l.nome] = l.meses[idx]?.valor ?? 0;
+        }
+        if (hasOthers) {
+          pt["Outros"] = rest.reduce((sum, l) => sum + (l.meses[idx]?.valor ?? 0), 0);
+        }
+        return { pt, idx };
+      })
+      .filter(({ pt, idx }) => {
+        if (ano < currentBRTYear || idx <= currentBRTMonth) return true;
+        return seriesKeys.some(key => (pt[key] as number) !== 0);
+      })
+      .map(({ pt }) => pt);
 
     return { top5, seriesKeys, seriesColors, seriesIdMap, chartData };
-  }, [relAnual]);
+  }, [relAnual, ano]);
 
   const handleSeriesClick = (seriesName: string) => {
     const id = seriesIdMap[seriesName];
