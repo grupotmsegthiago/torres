@@ -27,11 +27,11 @@ export interface PunchInput {
 }
 
 export interface WorkedHoursResult {
-  /** Total em minutos (todos os dias somados). */
+  /** Total em minutos (todos os dias somados, JÁ COM CLAMP de 16h por par). */
   totalMinutes: number;
   /** Total em horas (totalMinutes / 60). */
   totalHours: number;
-  /** Minutos trabalhados por dia BRT (yyyy-mm-dd). */
+  /** Minutos trabalhados por dia BRT (yyyy-mm-dd) — JÁ COM CLAMP de 16h por par. */
   perDayMinutes: Map<string, number>;
   /** Quantos dias distintos têm jornada > 0. */
   daysWorked: number;
@@ -39,9 +39,17 @@ export interface WorkedHoursResult {
   hasOpenShift: boolean;
   /** Timestamp da última batida ímpar (entrada sem saída), ou null. */
   openShiftSince: Date | null;
-  /** Pares (entrada, saida) já casados — necessário pra cruzamentos com OS. */
+  /** Pares (entrada, saida) — duração REAL, sem clamp (job de diárias usa). */
   pairs: Array<{ entrada: Date; saida: Date }>;
+  /** Minutos descartados por exceder o teto de 16h por par. */
+  cappedMinutes: number;
+  /** Quantos pares tiveram a duração truncada (>16h). */
+  pairsTruncated: number;
 }
+
+/** Teto por par (regra Thiago): par >16h só conta 16h no total de horas;
+ *  o excesso vira diária automática (ver server/jobs/diarias-jornada-longa.ts). */
+export const MAX_PAIR_MINUTES = 16 * 60;
 
 /** Converte um timestamp para a data BRT yyyy-mm-dd. */
 export function ymdBRT(iso: string | Date): string {
@@ -81,6 +89,8 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
   const perDayMinutes = new Map<string, number>();
   const pairs: Array<{ entrada: Date; saida: Date }> = [];
   let totalMinutes = 0;
+  let cappedMinutes = 0;
+  let pairsTruncated = 0;
 
   // 3) Itera em pares (entrada, saída).
   let i = 0;
@@ -89,11 +99,18 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
     const saida = clean[i + 1];
     const diffMin = (saida.getTime() - entrada.getTime()) / 60000;
     if (diffMin <= 0) continue;
-    pairs.push({ entrada, saida });
+    pairs.push({ entrada, saida }); // pair real, sem clamp (diárias usam isso)
+    // Aplica teto de 16h pro acúmulo de horas trabalhadas.
+    let countedMin = diffMin;
+    if (diffMin > MAX_PAIR_MINUTES) {
+      cappedMinutes += diffMin - MAX_PAIR_MINUTES;
+      countedMin = MAX_PAIR_MINUTES;
+      pairsTruncated++;
+    }
     // 4) Atribui ao dia BRT da entrada.
     const dayKey = ymdBRT(entrada);
-    perDayMinutes.set(dayKey, (perDayMinutes.get(dayKey) || 0) + diffMin);
-    totalMinutes += diffMin;
+    perDayMinutes.set(dayKey, (perDayMinutes.get(dayKey) || 0) + countedMin);
+    totalMinutes += countedMin;
   }
 
   // 5) Sobrou uma batida ímpar = ponto em aberto.
@@ -113,6 +130,8 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
     hasOpenShift,
     openShiftSince,
     pairs,
+    cappedMinutes: Math.round(cappedMinutes),
+    pairsTruncated,
   };
 }
 
