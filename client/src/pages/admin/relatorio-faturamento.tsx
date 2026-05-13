@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { authFetch, apiRequest, invalidateRelatedQueries, queryClient } from "@/lib/queryClient";
@@ -731,6 +732,7 @@ export default function RelatorioFaturamentoPage() {
         totalGeral: fatTotal,
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
+        invoiceId: b.invoice_id || null,
         osStatus: b._so_status || "",
         osMissionStatus: b._so_mission_status || "",
         osCancellationReason: b._so_cancellation_reason || "",
@@ -1451,8 +1453,26 @@ export default function RelatorioFaturamentoPage() {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       {isExpanded ? <ChevronDown size={14} className="text-gray-600 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
                       <span className="text-xs font-black text-black shrink-0">{r.id}</span>
-                      {(r.status === "FATURADO" || r.status === "FATURADA") && (
-                        <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-faturado-${i}`}>Faturada</span>
+                      {(r.status === "FATURADO" || r.status === "FATURADA" || r.status === "PAGO") && (
+                        r.invoiceId ? (
+                          <Link
+                            href={`/admin/relatorio-nf?invoiceId=${r.invoiceId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[9px] font-mono font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-300 hover:bg-indigo-100 hover:text-indigo-900 px-1.5 py-0.5 rounded shrink-0 transition-colors"
+                            title={`Ver fatura #${r.invoiceId} no Relatório de NFs`}
+                            data-testid={`link-invoice-${i}`}
+                          >
+                            FAT #{r.invoiceId} ↗
+                          </Link>
+                        ) : (
+                          <span
+                            className="text-[9px] font-black uppercase bg-red-50 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0"
+                            title="OS marcada como faturada, mas sem fatura vinculada no Asaas. Pode ter sido baixa manual incorreta."
+                            data-testid={`alert-no-invoice-${i}`}
+                          >
+                            ⚠ SEM FATURA
+                          </span>
+                        )
                       )}
                       {(() => {
                         const badges = getRelatorioBadges(r.osStatus, r.status, (r as any).osMissionStatus);
