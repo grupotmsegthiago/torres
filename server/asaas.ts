@@ -3753,6 +3753,136 @@ export function registerAsaasRoutes(app: Express) {
     });
 
     // ============================================================
+    // POST /api/relatorio-nf/auto-link-bulk
+    // Roda a heurística de sugestão (mesma de suggest-os-link) em
+    // TODAS as invoices recebidas e, quando o conjunto sugerido bate
+    // com o valor da fatura (±5%), aplica o vínculo automaticamente.
+    // Body: { invoiceIds: number[] } (opcional — se ausente, pega
+    // todas invoices sem billings vinculadas).
+    // ============================================================
+    app.post("/api/relatorio-nf/auto-link-bulk", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        let invoiceIds: number[] = Array.isArray(req.body?.invoiceIds)
+          ? req.body.invoiceIds.map((x: any) => Number(x)).filter((x: number) => Number.isFinite(x))
+          : [];
+
+        // Se não vieram ids, pega todas invoices sem nenhum escort_billing apontando
+        if (invoiceIds.length === 0) {
+          const { data: allInvs } = await supabaseAdmin
+            .from("invoices").select("id, client_id, value").limit(5000);
+          const ids = (allInvs || []).map((i: any) => i.id);
+          if (ids.length > 0) {
+            const { data: linkedBills } = await supabaseAdmin
+              .from("escort_billings").select("invoice_id").in("invoice_id", ids).limit(50000);
+            const withLink = new Set((linkedBills || []).map((b: any) => b.invoice_id));
+            invoiceIds = (allInvs || [])
+              .filter((i: any) => i.client_id && Number(i.value || 0) > 0 && !withLink.has(i.id))
+              .map((i: any) => i.id);
+          }
+        }
+
+        if (invoiceIds.length === 0) {
+          return res.json({ processed: 0, linked: 0, perInvoice: [], message: "Nenhuma fatura órfã encontrada." });
+        }
+
+        // Heurística reutilizada (resumo do que suggest-os-link faz)
+        const valorOf = (b: any) => {
+          const v = Number(b.fat_total || 0);
+          if (v > 0) return v;
+          return Number(b.fat_acionamento || b.valor_franquia || 0)
+               + Number(b.fat_hora_extra || 0)
+               + Number(b.fat_km || b.valor_km_extra || 0)
+               + Number(b.despesas_pedagio || 0)
+               + Number(b.receitas_os || 0);
+        };
+
+        const results: { invoiceId: number; clientName: string; value: number; linked: number; reason?: string }[] = [];
+        let totalLinked = 0;
+
+        const { data: invs } = await supabaseAdmin
+          .from("invoices")
+          .select("id, client_id, client_name, value, description")
+          .in("id", invoiceIds);
+
+        for (const inv of (invs || [])) {
+          const target = Number(inv.value || 0);
+          if (!inv.client_id || target <= 0) {
+            results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: "sem cliente ou valor zerado" });
+            continue;
+          }
+
+          // extrai período da descrição
+          const m = String(inv.description || "").match(/(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
+          if (!m) {
+            results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: "sem período na descrição" });
+            continue;
+          }
+          const [d1, m1, y1] = m[1].split("/");
+          const [d2, m2, y2] = m[2].split("/");
+          const periodStart = `${y1}-${m1}-${d1}`;
+          const periodEnd = `${y2}-${m2}-${d2}`;
+
+          const { data: orphans } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, client_id, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status")
+            .eq("client_id", inv.client_id)
+            .is("invoice_id", null)
+            .neq("status", "CANCELADO")
+            .neq("status", "REJEITADA")
+            .gte("data_missao", periodStart)
+            .lte("data_missao", periodEnd)
+            .limit(500);
+
+          const inPeriod = (orphans || []);
+          const sum = inPeriod.reduce((s, b) => s + valorOf(b), 0);
+          const matches = target > 0 && Math.abs(sum - target) / target < 0.05;
+          if (!matches || inPeriod.length === 0) {
+            results.push({
+              invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0,
+              reason: inPeriod.length === 0 ? "nenhuma OS órfã no período" : `soma R$${sum.toFixed(2)} ≠ alvo R$${target.toFixed(2)}`,
+            });
+            continue;
+          }
+
+          const ids = inPeriod.map((b: any) => b.id);
+          const { error } = await supabaseAdmin
+            .from("escort_billings")
+            .update({ invoice_id: inv.id, status: "FATURADO" })
+            .in("id", ids);
+          if (error) {
+            results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: error.message });
+            continue;
+          }
+
+          totalLinked += ids.length;
+          results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: ids.length });
+        }
+
+        await logSystemAudit({
+          userId: user?.id, userName: user?.name, userRole: user?.role,
+          action: "RELATORIO_NF_AUTOLINK_BULK",
+          targetId: invoiceIds.join(","),
+          targetType: "invoice",
+          details: `Auto-vínculo em lote: ${invoiceIds.length} fatura(s) processada(s), ${totalLinked} OS vinculadas. Sucessos: ${results.filter(r => r.linked > 0).length}/${invoiceIds.length}.`,
+          ipAddress: (req as any).ip,
+        });
+
+        console.log(`[auto-link-bulk] ${invoiceIds.length} fatura(s) processada(s) por ${user?.email}: ${totalLinked} OS vinculada(s)`);
+        res.json({
+          processed: invoiceIds.length,
+          linked: totalLinked,
+          successful: results.filter(r => r.linked > 0).length,
+          perInvoice: results,
+          message: `${totalLinked} OS vinculadas em ${results.filter(r => r.linked > 0).length} de ${invoiceIds.length} faturas processadas.`,
+        });
+      } catch (err: any) {
+        console.error("[auto-link-bulk] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
     // GET /api/auditoria-faturamento — Auditoria de Ciclo
     // Cruza service_orders, escort_billings, invoices e clients pra
     // dar a "visão de dono" do ciclo: o que está dentro do prazo da

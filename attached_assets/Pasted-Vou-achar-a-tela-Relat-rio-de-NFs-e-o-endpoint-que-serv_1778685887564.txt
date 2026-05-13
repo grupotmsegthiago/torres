@@ -1,0 +1,133 @@
+Vou achar a tela Relatório de NFs e o endpoint que serve as faturas:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+8 actions
+
+Achei o ponto exato (linha 3174-3175): osCount: 0, osList: [] hardcoded em extraInvoices. Vou ver invoiceIsTorres rapidamente e fazer a busca reversa em batch:
+
+
+
+
+
+
+
+
+
+4 actions
+
+Vou fazer a busca reversa em batch e popular osList/osCount no extraInvoices loop:
+
+
+
+
+
+
+
+3 actions
+
+Backend OK. Vou testar com base real e checar se a tela já mostra osList (provavelmente sim porque o tipo já existe):
+
+
+
+
+
+
+
+3 actions
+
+Confirmado: 15 das 22 faturas do período tinham OS vinculadas que sumiam por falta da busca reversa. Agora vão aparecer.
+
+
+
+Ran rm
+
+Pronto, a correção da busca reversa de OS no Relatório de NFs foi mergeada.
+
+Resumo do que mudou agora
+
+O problema apontado nas screenshots — faturas no Relatório de NFs aparecendo sem o número da OS na coluna "OS Vinculadas" — era específico do caminho extraInvoices no backend. Esse caminho cobre dois cenários:
+
+Faturas criadas no período mas com missões fora do período de filtro
+
+Faturas em aberto (PENDING/OVERDUE) de qualquer época, que ficam sempre visíveis
+
+Nesses casos o sistema tinha osCount: 0 e osList: [] chumbado, sem nem tentar buscar o vínculo.
+
+Correção implementada
+
+Antes do loop de extraInvoices, agora rodo uma única query reversa em escort_billings WHERE invoice_id IN (...todos os ids extras), agrupando por invoice_id. Cada fatura passa a receber sua lista real de OS (com nome TOR-XXX), independentemente de a missão estar ou não no período filtrado.
+
+Validação na base de testes (período 01/04 → hoje):
+
+22 faturas no período
+
+15 vão passar a mostrar OS que antes ficavam vazias (TM SEGURANCA → 3 OS, TRANSMMCM → 2 OS, TORA TRANSPORTES → 1 OS, OMEGA → 1 OS, etc.)
+
+7 são realmente órfãs (criadas direto no Asaas sem escort_billing no Torres) — pra essas o botão "Vincular OS" que já existia continua aparecendo
+
+Frontend não precisou mudar — a renderização da coluna osList já estava pronta nas duas tabelas (desktop linhas 753-770, mobile 1069-1086) e o botão de vínculo manual também já existia. Era só plugar o backend para alimentar o campo.
+
+Quando você abrir agora o Relatório de NFs e olhar as linhas que apareciam vazias ontem, vai ver os números TOR-XXX correspondentes. Só ficarão sem OS as faturas que efetivamente entraram pela API do Asaas sem nenhum billing local — e essas terão o botão de vincular pra você anexar manualmente.
+
+
+
+Checkpoint made
+
+just now
+
+
+
+Worked for 2 minutes
+
+
+
+veja que umas tem TOR-XXX vinculada e outras não, preciso que todas tenha
+
+Analisando a sua nova imagem, o problema agora está 100% mapeado. Você tem dois cenários na mesma tela:
+
+Linhas com TOR-XXX: O vínculo funcionou (a "busca reversa" do Replit achou a OS no banco).
+
+Linhas Vazias: São faturas que existem no Asaas, mas o banco de dados da Torres não sabe quais serviços pertencem a elas. Elas são "faturas órfãs".
+
+Para que todas tenham um número TOR-XXX, precisamos forçar o sistema a criar esse vínculo onde ele não existe. O Replit precisa agir agora no vínculo manual e na inteligência de sugestão.
+
+🛠️ O que o Replit deve fazer para resolver as linhas vazias:
+Envie esta instrução final para ele:
+
+"O ajuste da busca reversa ajudou, mas ainda tenho muitas linhas sem TOR-XXX. Para que todas tenham uma OS vinculada, apliquem o seguinte:
+
+Sugestão Inteligente (Auto-Match): Para as faturas que estão vazias, o sistema deve sugerir automaticamente as OS do mesmo cliente que tenham o valor exato da fatura e estejam com status 'Aprovado'. Mostrem um botão pequeno: 🔗 'Vincular às OS sugeridas?'.
+
+Criação de OS Retroativa: Se uma fatura veio do Asaas mas não existe nenhuma OS correspondente no sistema (ex: faturamento avulso), permitam que eu clique em um botão '+ Criar OS de Ajuste' para que o sistema gere um número TOR-XXX fictício apenas para controle financeiro e a linha não fique vazia.
+
+Campo de Edição Direta: Na coluna de OS Vinculadas, permitam que eu clique no espaço vazio e digite o número da OS (ex: 200) para amarrar o faturamento à missão manualmente de forma rápida.
+
+Obrigação de Vínculo: Adicionem um aviso no topo da tela: 'Você tem X faturas sem OS vinculada. Vincule-as para garantir a auditoria.'"
+
+💡 Como você limpa essa tela agora:
+Enquanto ele implementa a automação, note que nas linhas vazias da sua imagem deve haver um botão de "Vincular" ou uma corrente 🔗.
+
+Clique nesse ícone.
+
+Selecione as medições (OS) que compõem aquele valor.
+
+Salve.
+
+Assim que você fizer isso, o número TOR-XXX aparecerá na linha e o seu relatório de auditoria ficará "verde". O objetivo é que, ao final do dia, nenhuma linha da coluna "OS Vinculadas" esteja em branco.
+
+Podemos cobrar essa "Sugestão Inteligente" dele para acelerar seu trabalho? Isso evitaria que você tenha que procurar OS por OS manualmente.

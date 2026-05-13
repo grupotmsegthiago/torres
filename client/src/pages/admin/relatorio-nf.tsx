@@ -292,6 +292,31 @@ export default function RelatorioNFPage() {
     onError: (e: any) => toast({ title: "Erro ao vincular", description: e?.message, variant: "destructive" }),
   });
 
+  // Auto-vínculo em lote: roda a heurística pra todas as faturas da
+  // listagem atual que estão sem nenhuma OS vinculada e aplica
+  // automaticamente quando a soma das OS órfãs do período bate com
+  // o valor da fatura (±5%).
+  const autoLinkBulkMutation = useMutation({
+    mutationFn: async (invoiceIds: number[]) => {
+      const r = await authFetch(`/api/relatorio-nf/auto-link-bulk`, {
+        method: "POST",
+        body: JSON.stringify({ invoiceIds }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: data.linked > 0 ? "Auto-vínculo concluído" : "Nenhum vínculo automático possível",
+        description: data.message || `${data.linked} OS vinculadas em ${data.successful || 0}/${data.processed} faturas.`,
+        variant: data.linked > 0 ? "default" : "destructive",
+      });
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro no auto-vínculo", description: e?.message, variant: "destructive" }),
+  });
+
   const openCleanupModal = async () => {
     setCleanupModal({ loading: true, orphans: [], totalValue: 0 });
     try {
@@ -538,6 +563,46 @@ export default function RelatorioNFPage() {
             )}
           </div>
         </div>
+
+        {/* Banner de faturas sem OS vinculada — visível só se houver órfãs no período filtrado */}
+        {(() => {
+          const orphans = filtered.filter(r =>
+            r.source === "INVOICE" &&
+            (!r.osList || r.osList.length === 0) &&
+            r.normalizedStatus !== "NF_CANCELADA"
+          );
+          if (orphans.length === 0) return null;
+          const orphanIds = orphans.map(r => r.sourceId).filter(Boolean) as number[];
+          return (
+            <div
+              className="text-xs bg-amber-50 border border-amber-300 rounded-md px-3 py-2 flex flex-wrap items-center gap-2 justify-between"
+              data-testid="banner-faturas-sem-os"
+            >
+              <div className="flex items-center gap-2 text-amber-900">
+                <Link2 className="h-4 w-4 flex-shrink-0" />
+                <span>
+                  <strong>{orphans.length}</strong> fatura(s) sem OS vinculada na visão atual.
+                  Para garantir auditoria, vincule cada uma manualmente ou tente o vínculo automático
+                  (período + valor compatível ±5%).
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-400 text-amber-800 hover:bg-amber-100 h-7"
+                disabled={autoLinkBulkMutation.isPending || orphanIds.length === 0}
+                onClick={() => {
+                  if (!confirm(`Tentar vincular automaticamente as OS de ${orphanIds.length} fatura(s) sem vínculo? O sistema só aplica quando a soma das OS órfãs do mesmo cliente no período bate com o valor da fatura (±5%).`)) return;
+                  autoLinkBulkMutation.mutate(orphanIds);
+                }}
+                data-testid="button-auto-link-bulk"
+              >
+                <Link2 className={`h-3.5 w-3.5 mr-1 ${autoLinkBulkMutation.isPending ? "animate-pulse" : ""}`} />
+                {autoLinkBulkMutation.isPending ? "Vinculando…" : `Vincular sugestões automáticas (${orphanIds.length})`}
+              </Button>
+            </div>
+          );
+        })()}
 
         {/* Last sync badge */}
         {lastSync && (lastSync.completedAt || lastSync.startedAt) && (
