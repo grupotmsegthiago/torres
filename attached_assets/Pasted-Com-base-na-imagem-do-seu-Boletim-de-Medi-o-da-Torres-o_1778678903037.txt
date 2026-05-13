@@ -1,0 +1,57 @@
+Com base na imagem do seu "Boletim de Medição" da Torres, os dados estão realmente divergentes e confusos, o que é um problema crítico para um sistema financeiro.
+
+Para te ajudar a falar com o suporte do Replit (ou os desenvolvedores que usam Replit para hospedar seu sistema), estruturei abaixo os pontos de erro exatos que você deve apresentar para provar que o cálculo lógico está quebrado.
+
+📝 Resumo das Inconsistências (Para enviar ao Replit)
+Título do Problema: Divergência Crítica de Valores e Contagem de OS no Módulo de Faturamento.
+
+Descrição: O sistema apresenta três valores totais diferentes para o mesmo período e cliente, sem uma lógica matemática que os sustente:
+
+Valor no Histórico de Envio (Banner Azul): R$ 39.102,19 (referente a 37 OS).
+
+Valor no Alerta de Faturamento (Banner Roxo): R$ 36.872,88 (referente a 35 OS).
+
+Valor no Card de Resumo (Card Preto): R$ 39.244,69 (referente a 36 OS).
+
+🔍 Onde está o erro (Análise Técnica)
+Ao analisar a imagem, notei onde a lógica do sistema está falhando. Você pode usar estes pontos para cobrar os desenvolvedores:
+
+1. A conta "Aprovadas" vs "Total" não bate:
+
+O card verde diz: 34 Aprovadas (R$ 35.123,38).
+
+O card preto diz: 36 OS Total p/ Faturamento (R$ 39.244,69).
+
+O Erro: Geralmente, só se fatura o que está aprovado. Por que o "Total para faturamento" (36 OS) é maior que as "Aprovadas" (34 OS)? Se ele está somando as Canceladas ou Recusadas, o nome do campo está errado e induz ao erro fiscal.
+
+2. O valor de faturamento ignora as regras de exibição:
+
+O banner roxo diz que existem 35 OS prontas para fatura por R$ 36.872,88.
+
+Nenhum outro lugar da tela repete esse número de 35 ou esse valor de 36 mil. É um terceiro cálculo "fantasma" que não aparece na listagem abaixo.
+
+3. Divergência no Histórico:
+
+Diz que em 29/04 foi enviado um boletim de R$ 39.102,19 (37 OS). Porém, a soma atual das OS listadas (Aprovadas + Canceladas + Recusadas) resulta em valores totalmente diferentes do que foi "congelado" no envio. O sistema parece não travar o valor no momento do envio ao cliente.
+
+💡 Qual valor está certo? (Provavelmente nenhum)
+Se formos pela lógica estrita de faturamento (apenas o que o cliente aceitou):
+
+O valor correto deveria ser o das Aprovadas: R$ 35.123,38.
+
+No entanto, se o seu contrato prevê cobrar taxas de cancelamento (como a TOR-0018 que aparece com erro na tabela), o sistema deveria somar Aprovadas + Taxas de Cancelamento. Atualmente, ele está somando tudo de forma aleatória.
+
+📧 Sugestão de mensagem para o suporte/desenvolvedor:
+"Olá, equipe. Preciso de um ajuste urgente na lógica de cálculo do sistema Torres. Conforme o print anexo, o sistema perdeu a integridade dos dados:
+
+O banner roxo aponta 35 OS (R$ 36.872,88).
+
+O card preto de faturamento aponta 36 OS (R$ 39.244,69).
+
+O histórico de envio mostra R$ 39.102,19.
+
+E as OS efetivamente aprovadas somam apenas R$ 35.123,38.
+
+Não há consistência entre o que o sistema diz que vai faturar e o que está aprovado na lista. Preciso que a regra de soma seja unificada: Total para Faturamento deve ser rigorosamente igual à soma das OS Aprovadas (ou Aprovadas + Canceladas com ônus). Atualmente, o sistema está gerando valores que não conferem com a realidade, o que impede o faturamento e gera desconfiança no cliente."
+
+Dica Extra: Peça para eles verificarem a função de "Recalcular Todos", pois o sistema pode estar mantendo valores em cache (memória antiga) que não condizem com as alterações feitas nas OS individualmente.

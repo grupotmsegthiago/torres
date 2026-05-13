@@ -73,7 +73,7 @@ type RelatorioResponse = {
 };
 
 const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: string; icon: any }> = {
-  AGUARDANDO_BOLETIM: { label: "Sem boletim",       cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
+  AGUARDANDO_BOLETIM: { label: "Sem fatura",        cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
   AUTORIZADO:         { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
@@ -339,7 +339,7 @@ export default function RelatorioNFPage() {
   // Cards de resumo
   const cards: Array<{ key: NormalizedStatus | "TOTAL"; label: string; icon: any; cls: string; }> = [
     { key: "TOTAL",              label: "Total no período",  icon: Receipt,        cls: "from-slate-700 to-slate-900 text-white" },
-    { key: "AGUARDANDO_BOLETIM", label: "Sem boletim",       icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
+    { key: "AGUARDANDO_BOLETIM", label: "Sem fatura",        icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
     { key: "AUTORIZADO",         label: "NF processando",    icon: Hourglass,      cls: "from-blue-500 to-blue-700 text-white" },
     { key: "AGUARDANDO_PAGAMENTO", label: "Aguard. pagto (s/ NF)", icon: Banknote, cls: "from-indigo-500 to-indigo-700 text-white" },
@@ -417,7 +417,7 @@ export default function RelatorioNFPage() {
                 <SelectTrigger className="h-9" data-testid="select-status"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="AGUARDANDO_BOLETIM">Sem boletim</SelectItem>
+                  <SelectItem value="AGUARDANDO_BOLETIM">Sem fatura</SelectItem>
                   <SelectItem value="PENDENTE_APROVACAO">Aguardando aprovação</SelectItem>
                   <SelectItem value="AUTORIZADO">NF processando</SelectItem>
                   <SelectItem value="AGUARDANDO_PAGAMENTO">Aguard. pagto (sem NF)</SelectItem>

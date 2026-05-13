@@ -363,44 +363,60 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     nfReconcileState.lastError = null;
 
     const force = opts?.force === true;
-    const limit = opts?.limit ?? 80;
+    const pageSize = 100;
+    // Hard cap de segurança pra não rodar indefinidamente. Cobre toda a base
+    // operacional típica; pode ser sobrescrito via opts.limit.
+    const maxTotal = opts?.limit ?? 10000;
 
     try {
-      const { data: invoices, error } = await supabaseAdmin.from("invoices")
-        .select("*")
-        .not("asaas_payment_id", "is", null)
-        .order("updated_at", { ascending: true, nullsFirst: true } as any)
-        .limit(limit);
-      if (error) throw error;
+      // Pagina por TODAS as invoices com asaas_payment_id (não cap em 80).
+      // A skip logic abaixo evita gastar chamada Asaas com NFs já finalizadas;
+      // mesmo assim, todas são percorridas pra garantir 100% de cobertura.
+      let offset = 0;
+      let totalSeen = 0;
+      while (totalSeen < maxTotal) {
+        const { data: invoices, error } = await supabaseAdmin.from("invoices")
+          .select("*")
+          .not("asaas_payment_id", "is", null)
+          .order("updated_at", { ascending: true, nullsFirst: true } as any)
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!invoices || invoices.length === 0) break;
 
-      for (const inv of (invoices || [])) {
-        try {
-          if (!force) {
-            const payTerminal = ["RECEIVED", "CONFIRMED"].includes(String(inv.status || "").toUpperCase());
-            const nfStatusUp = String(inv.nfse_status || "").toUpperCase();
-            const numIsFinal = inv.nfse_number && !String(inv.nfse_number).startsWith("inv_");
-            const isCanceled = ["CANCELED", "CANCELLED"].includes(nfStatusUp);
-            // NF é considerada "completa" quando está AUTHORIZED/SYNCHRONIZED com
-            // número final (não inv_*) e URL do PDF, OU quando foi cancelada.
-            // Caso contrário continua reconciliando para baixar nº/URL pendentes.
-            const nfTerminal = isCanceled || (
-              ["AUTHORIZED", "SYNCHRONIZED"].includes(nfStatusUp) && numIsFinal && !!inv.nfse_url
-            );
-            const recentlyUpdated = inv.updated_at && (Date.now() - new Date(inv.updated_at).getTime() < 8 * 60 * 1000);
-            if (payTerminal && nfTerminal) continue;
-            if (recentlyUpdated && nfTerminal) continue;
+        for (const inv of invoices) {
+          try {
+            if (!force) {
+              const payTerminal = ["RECEIVED", "CONFIRMED"].includes(String(inv.status || "").toUpperCase());
+              const nfStatusUp = String(inv.nfse_status || "").toUpperCase();
+              const numIsFinal = inv.nfse_number && !String(inv.nfse_number).startsWith("inv_");
+              const isCanceled = ["CANCELED", "CANCELLED"].includes(nfStatusUp);
+              // NF é considerada "completa" quando está AUTHORIZED/SYNCHRONIZED com
+              // número final (não inv_*) e URL do PDF, OU quando foi cancelada.
+              // Caso contrário continua reconciliando para baixar nº/URL pendentes.
+              const nfTerminal = isCanceled || (
+                ["AUTHORIZED", "SYNCHRONIZED"].includes(nfStatusUp) && numIsFinal && !!inv.nfse_url
+              );
+              const recentlyUpdated = inv.updated_at && (Date.now() - new Date(inv.updated_at).getTime() < 8 * 60 * 1000);
+              if (payTerminal && nfTerminal) continue;
+              if (recentlyUpdated && nfTerminal) continue;
+            }
+            const r = await reconcileInvoiceFromAsaas(inv);
+            nfReconcileState.processed += 1;
+            if (r.updated) {
+              nfReconcileState.updated += 1;
+              console.log(`[reconcile] invoice #${inv.id} atualizada:`, JSON.stringify(r.changes));
+            }
+          } catch (e: any) {
+            nfReconcileState.errors += 1;
+            nfReconcileState.lastError = e?.message || String(e);
           }
-          const r = await reconcileInvoiceFromAsaas(inv);
-          nfReconcileState.processed += 1;
-          if (r.updated) {
-            nfReconcileState.updated += 1;
-            console.log(`[reconcile] invoice #${inv.id} atualizada:`, JSON.stringify(r.changes));
-          }
-        } catch (e: any) {
-          nfReconcileState.errors += 1;
-          nfReconcileState.lastError = e?.message || String(e);
         }
+
+        totalSeen += invoices.length;
+        if (invoices.length < pageSize) break;
+        offset += pageSize;
       }
+      console.log(`[reconcile] paginação concluída: ${totalSeen} invoices percorridas`);
     } catch (e: any) {
       nfReconcileState.errors += 1;
       nfReconcileState.lastError = e?.message || String(e);
@@ -3032,6 +3048,115 @@ export function registerAsaasRoutes(app: Express) {
         // mostra exclusivamente FATURAS reais (invoices). Boletins de medição
         // e billings sem fatura aparecem nas suas próprias telas (Boletim de
         // Medição e Relatório de OS), sem poluir a visão de NF.
+
+        // ============================================================
+        // SEM-FATURA: billings APROVADA/FATURADO sem invoice associada
+        // (ex.: TM SEG aprovou 67 missões mas nenhuma fatura foi gerada).
+        // Agrupadas por cliente + mês de missão, vão pro bucket
+        // AGUARDANDO_BOLETIM ("Sem fatura") pra ficarem visíveis e o
+        // financeiro saber que precisa emitir.
+        // ============================================================
+        const APROVADA_OU_FATURADA = new Set(["APROVADA", "APROVADO", "FATURADO", "FATURADA"]);
+
+        // Busca TODAS billings APROVADA sem invoice, independente do filtro
+        // de data — mesma lógica de "invoices em aberto sempre aparecem":
+        // dívida pendente de faturamento não pode sumir só porque o usuário
+        // mudou o período.
+        const { data: aprovadasGlobais } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, client_name, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, service_order_id, invoice_id")
+          .in("status", Array.from(APROVADA_OU_FATURADA))
+          .is("invoice_id", null)
+          .limit(5000);
+
+        // Une com as billings do período (cobre o caso de invoice_id apontar
+        // pra fatura deletada/inválida — não cai no filtro is.null acima).
+        const semFatBillings = new Map<string, any>();
+        for (const b of (aprovadasGlobais || [])) semFatBillings.set(String(b.id), b);
+        for (const b of validBillings) {
+          const st = String(b.status || "").toUpperCase();
+          if (!APROVADA_OU_FATURADA.has(st)) continue;
+          const inv = b.invoice_id ? invoiceMap.get(b.invoice_id) : null;
+          if (inv && invoiceIsTorres(inv)) continue;
+          if (billingToApproval.has(String(b.id))) continue;
+          semFatBillings.set(String(b.id), b);
+        }
+
+        // Carrega clientes adicionais que apareceram só via aprovadasGlobais
+        const extraCids = Array.from(new Set(
+          Array.from(semFatBillings.values()).map((b: any) => b.client_id).filter((id: any) => id && !clientMap.has(id))
+        )) as number[];
+        if (extraCids.length > 0) {
+          const { data: extraClients } = await supabaseAdmin
+            .from("clients")
+            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf")
+            .in("id", extraCids);
+          for (const c of (extraClients || [])) {
+            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false });
+          }
+        }
+        // Carrega OS numbers das billings novas
+        const extraSoIds = Array.from(new Set(
+          Array.from(semFatBillings.values()).map((b: any) => b.service_order_id).filter((id: any) => id && !osNumMap.has(id))
+        )) as number[];
+        if (extraSoIds.length > 0) {
+          const { data: extraSos } = await supabaseAdmin
+            .from("service_orders")
+            .select("id, os_number")
+            .in("id", extraSoIds);
+          for (const so of (extraSos || [])) osNumMap.set(so.id, so.os_number);
+        }
+
+        const semFatGroups = new Map<string, { clientId: number; ym: string; bills: any[] }>();
+        for (const b of semFatBillings.values()) {
+          if (!b.client_id) continue;
+          // Se a billing tem invoice_id mas não foi resolvida (invoice deletada),
+          // ainda agrupamos como "sem fatura".
+          const ym = String(b.data_missao || "").slice(0, 7) || "sem-data";
+          const key = `${b.client_id}:${ym}`;
+          const g = semFatGroups.get(key) || { clientId: b.client_id, ym, bills: [] };
+          g.bills.push(b);
+          semFatGroups.set(key, g);
+        }
+
+        for (const { clientId, ym, bills } of semFatGroups.values()) {
+          const cli = clientMap.get(clientId);
+          const total = bills.reduce((s, b) => s + billingValor(b), 0);
+          const earliest = bills.map(b => b.data_missao).filter(Boolean).sort()[0];
+          const ymLabel = ym && ym !== "sem-data" ? ym.split("-").reverse().join("/") : "sem data";
+          rows.push({
+            id: `SEMFAT-${clientId}-${ym}`,
+            source: "INVOICE",
+            sourceId: 0,
+            clientId,
+            clientName: cli?.name || bills[0].client_name || "Cliente",
+            clientFantasia: cli?.fantasia || null,
+            clientCpfCnpj: cli?.cpfCnpj || null,
+            description: `${bills.length} OS aprovada(s) em ${ymLabel} sem fatura emitida`,
+            value: total,
+            netValue: null,
+            dueDate: null,
+            paymentDate: null,
+            createdAt: earliest || new Date().toISOString(),
+            updatedAt: null,
+            asaasPaymentId: null,
+            invoiceUrl: null,
+            nfseUrl: null,
+            nfseNumber: null,
+            osCount: bills.length,
+            osList: Array.from(new Map(bills.filter((b: any) => b.service_order_id).map((b: any) => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
+            rawStatus: "AGUARDANDO_FATURAMENTO",
+            rawNfseStatus: null,
+            nfseErrorMessage: null,
+            rawBoletimStatus: null,
+            normalizedStatus: "AGUARDANDO_BOLETIM" as const,
+            invoiceId: null,
+            approvalToken: null,
+            approvalUrl: null,
+            reminderCount: 0,
+            lastReminderSentAt: null,
+          });
+        }
 
         const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "AGUARDANDO_PAGAMENTO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
         const totals: Record<string, { count: number; value: number }> = {};
