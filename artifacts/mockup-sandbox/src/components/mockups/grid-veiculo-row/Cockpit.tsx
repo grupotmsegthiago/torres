@@ -4,18 +4,21 @@ export function Cockpit() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 font-sans">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-        <div className="grid grid-cols-[200px_1fr_1fr_1fr_auto] items-stretch divide-x divide-slate-100 dark:divide-slate-800">
+        <div className="grid grid-cols-[220px_1fr_1fr_1fr_auto] items-stretch divide-x divide-slate-100 dark:divide-slate-800">
           {/* Bloco 1: identidade */}
-          <div className="p-3 flex items-center gap-2.5">
-            <div className="relative">
-              <div className="w-9 h-9 rounded-md bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                POLO
-              </div>
+          <div className="p-2.5 flex items-center gap-2.5">
+            <div className="relative shrink-0">
+              <img
+                src="/__mockup/images/polo-branco.png"
+                alt="VW Polo Track branco"
+                className="w-16 h-16 rounded-md object-cover bg-slate-100 dark:bg-slate-800 ring-1 ring-slate-200 dark:ring-slate-700"
+              />
               <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-900" />
             </div>
             <div className="min-w-0">
               <div className="font-mono font-bold text-slate-900 dark:text-white text-sm leading-tight">UEB7H08</div>
-              <div className="text-[10px] text-slate-500 truncate">TOR-0174 · KIT</div>
+              <div className="text-[10px] text-slate-500 truncate">VW Polo Track</div>
+              <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold truncate">TOR-0174 · KIT</div>
             </div>
           </div>
 
