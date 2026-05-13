@@ -3468,6 +3468,150 @@ export function registerAsaasRoutes(app: Express) {
       }
     });
 
+    // ============================================================
+    // Heurística de recuperação de vínculo OS↔Fatura
+    // GET sugere candidatos, POST efetiva a vinculação.
+    // ============================================================
+    app.get("/api/relatorio-nf/suggest-os-link/:invoiceId", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const invoiceId = Number(req.params.invoiceId);
+        if (!Number.isFinite(invoiceId)) return res.status(400).json({ message: "invoiceId inválido" });
+
+        const { data: inv } = await supabaseAdmin
+          .from("invoices")
+          .select("id, client_id, client_name, value, due_date, description, created_at")
+          .eq("id", invoiceId)
+          .single();
+        if (!inv) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        // Busca billings ÓRFÃS (invoice_id null) do mesmo cliente
+        const { data: orphans } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, client_name, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, service_order_id, invoice_id")
+          .eq("client_id", inv.client_id)
+          .is("invoice_id", null)
+          .neq("status", "CANCELADO")
+          .neq("status", "REJEITADA")
+          .order("data_missao", { ascending: false })
+          .limit(500);
+
+        const valorOf = (b: any) => {
+          const v = Number(b.fat_total || 0);
+          if (v > 0) return v;
+          return Number(b.fat_acionamento || b.valor_franquia || 0)
+               + Number(b.fat_hora_extra || 0)
+               + Number(b.fat_km || b.valor_km_extra || 0)
+               + Number(b.despesas_pedagio || 0)
+               + Number(b.receitas_os || 0);
+        };
+
+        // Carrega os números de OS pra mostrar no UI
+        const soIds = Array.from(new Set((orphans || []).map((b: any) => b.service_order_id).filter(Boolean))) as number[];
+        const osNumMap = new Map<number, string>();
+        if (soIds.length > 0) {
+          const { data: sos } = await supabaseAdmin.from("service_orders").select("id, os_number").in("id", soIds);
+          for (const so of (sos || [])) osNumMap.set(so.id, so.os_number);
+        }
+
+        // Extrai o período da descrição (formato comum: "...01/05/2026 a 31/05/2026...")
+        const periodMatch = String(inv.description || "").match(/(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
+        let periodStart: string | null = null;
+        let periodEnd: string | null = null;
+        if (periodMatch) {
+          const [d1, m1, y1] = periodMatch[1].split("/");
+          const [d2, m2, y2] = periodMatch[2].split("/");
+          periodStart = `${y1}-${m1}-${d1}`;
+          periodEnd = `${y2}-${m2}-${d2}`;
+        }
+
+        const candidates = (orphans || []).map((b: any) => {
+          const valor = valorOf(b);
+          const inPeriod = periodStart && periodEnd && b.data_missao
+            && b.data_missao >= periodStart && b.data_missao <= periodEnd;
+          // Score: períodos batendo +100, OS preenchida +20, valor proporcional
+          let score = 0;
+          if (inPeriod) score += 100;
+          if (b.service_order_id) score += 20;
+          return {
+            id: b.id,
+            serviceOrderId: b.service_order_id,
+            osNumber: b.service_order_id ? (osNumMap.get(b.service_order_id) || `OS#${b.service_order_id}`) : null,
+            dataMissao: b.data_missao,
+            valor,
+            status: b.status,
+            inPeriod: !!inPeriod,
+            score,
+          };
+        }).sort((a, b) => b.score - a.score || (b.dataMissao || "").localeCompare(a.dataMissao || ""));
+
+        // Sugere automaticamente as do período cujo somatório bata com o valor da fatura (±5%)
+        const target = Number(inv.value || 0);
+        const inPeriodOnes = candidates.filter(c => c.inPeriod);
+        const sumInPeriod = inPeriodOnes.reduce((s, c) => s + c.valor, 0);
+        const matchByPeriod = target > 0 && Math.abs(sumInPeriod - target) / target < 0.05;
+
+        res.json({
+          invoice: { id: inv.id, clientId: inv.client_id, clientName: inv.client_name, value: target, dueDate: inv.due_date, description: inv.description },
+          period: periodStart && periodEnd ? { start: periodStart, end: periodEnd } : null,
+          candidates,
+          autoSuggest: {
+            matchByPeriod,
+            suggestedIds: matchByPeriod ? inPeriodOnes.map(c => c.id) : [],
+            sumInPeriod,
+            targetValue: target,
+          },
+        });
+      } catch (err: any) {
+        console.error("[suggest-os-link] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    app.post("/api/relatorio-nf/link-os", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        const invoiceId = Number(req.body?.invoiceId);
+        const billingIds: number[] = Array.isArray(req.body?.billingIds)
+          ? req.body.billingIds.map((x: any) => Number(x)).filter((x: number) => Number.isFinite(x))
+          : [];
+        if (!Number.isFinite(invoiceId) || billingIds.length === 0) {
+          return res.status(400).json({ message: "invoiceId e billingIds obrigatórios" });
+        }
+
+        const { data: inv } = await supabaseAdmin
+          .from("invoices")
+          .select("id, client_id, client_name")
+          .eq("id", invoiceId)
+          .single();
+        if (!inv) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        // Só billings ÓRFÃS do mesmo cliente
+        const { data: bills } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, invoice_id, status")
+          .in("id", billingIds);
+        const safeIds: number[] = [];
+        for (const b of (bills || [])) {
+          if (b.client_id !== inv.client_id) continue;
+          if (b.invoice_id) continue; // protege quem já tem vínculo
+          safeIds.push(b.id);
+        }
+        if (safeIds.length === 0) return res.json({ linked: 0, skipped: billingIds.length });
+
+        const { error } = await supabaseAdmin
+          .from("escort_billings")
+          .update({ invoice_id: invoiceId, status: "FATURADO" })
+          .in("id", safeIds);
+        if (error) throw error;
+
+        console.log(`[link-os] ${safeIds.length} billing(s) vinculada(s) à invoice ${invoiceId} (${inv.client_name}) por ${user?.email}: [${safeIds.join(", ")}]`);
+        res.json({ linked: safeIds.length, skipped: billingIds.length - safeIds.length, linkedIds: safeIds });
+      } catch (err: any) {
+        console.error("[link-os] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 

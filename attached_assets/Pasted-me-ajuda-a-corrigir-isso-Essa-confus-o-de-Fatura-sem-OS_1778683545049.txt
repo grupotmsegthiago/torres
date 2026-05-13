@@ -1,0 +1,40 @@
+me ajuda a corrigir isso
+
+Essa confusão de "Fatura sem OS" é o que está gerando a maior parte da "sujeira" visual no seu sistema. Para corrigir isso e deixar tudo sob controle, vamos agir em duas frentes: visual (para você saber a origem) e lógica (para o sistema parar de mostrar o que não deve).
+
+Vou instruir o Replit a aplicar as seguintes correções agora mesmo:
+
+1. Implementação dos Logotipos (Asaas vs. Torres)
+Em cada linha da sua tabela de faturamento, o Replit deve adicionar uma coluna chamada "Origem":
+
+Ícone Asaas (Azul/Verde): Aparece se a fatura foi encontrada via API (asaas_payment_id preenchido). Significa que o dinheiro está registrado no banco oficial.
+
+Ícone Torres (Cinza/Alerta): Aparece se a fatura existe apenas no banco de dados local. Se você vir isso, saberá que é um registro manual ou um "resto" de teste que precisa ser apagado.
+
+2. Correção da "Fatura sem OS" (O Diagnóstico)
+Para as faturas que aparecem sem OS (como as que você notou da NC TRANS, INTEC, TORA), o Replit vai aplicar uma Heurística de Recuperação:
+
+O Problema: Muitas vezes a fatura existe no Asaas, mas o vínculo com as missões (OS) foi quebrado no seu banco de dados (o campo invoice_id na tabela de missões ficou vazio).
+
+A Solução: Vou pedir para o Replit criar um botão "Vincular OS Automaticamente". Ele vai olhar o cliente e o valor da fatura e tentar achar missões "órfãs" daquele mesmo cliente para reatachar o vínculo.
+
+3. A "Limpeza Pesada" de Registros Órfãos
+As faturas 24 e 27 que você mencionou como sujeira serão tratadas assim:
+
+Se o sistema rodar a sincronização e o Asaas retornar que elas não existem ou foram deletadas no painel deles, o sistema Torres deve auto-arquivar essas linhas. Elas sumirão da sua vista principal.
+
+📧 Mensagem para o Replit executar a correção:
+"Precisamos finalizar a integridade da tela de faturamento. Por favor, apliquem:
+
+Identificação Visual: Adicionem o logotipo do Asaas nas linhas que possuem asaas_payment_id. Nas faturas que não possuem (apenas sistema Torres), coloquem um ícone de alerta cinza.
+
+Reparo de Vínculo (OS sumidas): Implementem a lógica de diagnóstico que você sugeriu. Se uma fatura entrar pelo caminho extraInvoices (sem OS), o backend deve tentar buscar no banco se existem escort_billings daquele cliente com valor similar para sugerir o vínculo.
+
+Sincronização Agressiva (60 dias): Rodem um script de reconciliação total com o Asaas para os últimos 60 dias. Se uma fatura (como a 24 ou 27) não for encontrada no Asaas, marquem-na como 'CANCELADA_SISTEMA' e ocultem da tela.
+
+Coluna Período: Garantam que a coluna de período (extraída da descrição) apareça ao lado do logotipo da origem.
+
+Ambiente de Produção: Autorizo rodar o SQL de diagnóstico para as faturas da LCE, MCM e INTEC para restaurar os vínculos de OS que sumiram."
+
+O que muda para você agora:
+Ao abrir o sistema após esses ajustes, você verá a logo do Asaas em tudo que for real. Se aparecer uma linha sem logo ou com o ícone da Torres, você saberá na hora: "Isso aqui é lixo, posso deletar". A MCM deve voltar com o logo do Asaas e o status de Pago.

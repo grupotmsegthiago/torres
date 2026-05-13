@@ -1,0 +1,30 @@
+Olha isso, quando eu clico no botão Gerar Fatura aparece outro valor nada a ver..
+
+Analisando as imagens que você enviou, o erro fica muito claro e é um problema de conflito de soma no momento em que o sistema monta o pacote para o Asaas.
+
+Na primeira imagem (Banner Roxo), o sistema diz que existem 35 medições prontas para faturar no valor de R$ 36.872,88. No entanto, quando você clica em "Gerar Fatura" (Segunda imagem), o sistema abre uma lista com 36 itens e um total de R$ 39.244,69.
+
+Por que isso está acontecendo?
+O sistema está com um erro de "filtro" no botão:
+
+O Banner Roxo provavelmente está contando apenas o que está com status "Aprovado".
+
+A Tela de Geração de Fatura está "puxando" tudo o que vê pela frente, incluindo possivelmente itens que foram cancelados com ônus ou que ainda estão aguardando aprovação, chegando nesse valor maior de R$ 39 mil.
+
+Como corrigir isso agora com o Replit:
+Para resolver essa divergência de valores e garantir que você fature o valor correto, envie esta instrução específica para o suporte/desenvolvedor:
+
+"Identificamos um erro crítico de divergência no botão 'Gerar Fatura'. O banner de alerta mostra 35 itens (R$ 36.872,88), mas ao clicar para gerar a fatura, o sistema carrega 36 itens (R$ 39.244,69).
+
+O que precisa ser feito:
+
+Sincronizar os Filtros: O modal de faturamento deve usar EXATAMENTE os mesmos filtros do banner roxo. Ele só pode carregar itens que estejam com o status 'Aprovado'.
+
+Validar a OS Extra: Existe uma Ordem de Serviço "intrusa" sendo somada no momento de gerar a fatura. Por favor, verifiquem por que o sistema está incluindo 36 itens no fechamento quando apenas 35 foram aprovados.
+
+Trava de Segurança: O valor final da fatura no Asaas não pode ser diferente do valor que o cliente aprovou no boletim de medição."
+
+Dica para conferência manual:
+Olhe na sua lista de OS se existe alguma que está com o status "Cancelada", mas que o sistema está tentando cobrar assim mesmo. É muito provável que essa diferença de R$ 2.371,81 (39.244,69 - 36.872,88) seja de uma ou duas OS que não deveriam estar entrando no boleto agora.
+
+Enquanto eles não corrigem o código, não clique em confirmar na tela de R$ 39 mil, ou você enviará uma cobrança errada para o seu cliente!
