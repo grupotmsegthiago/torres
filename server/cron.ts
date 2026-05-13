@@ -297,6 +297,24 @@ export function initCronJobs() {
     // experiências assinadas já venceram e gera o contrato definitivo
     // pendente de assinatura. Roda às 03:10 BRT.
     // ============================================================
+    // ============================================================
+    // CRON: Diárias automáticas por jornada > 16h
+    // Roda às 06:00 BRT, processa o DIA ANTERIOR (BRT). Idempotente.
+    // ============================================================
+    cron.schedule("0 6 * * *", async () => {
+      try {
+        const { processDiariasJornadaLonga } = await import("./jobs/diarias-jornada-longa");
+        const ontemBrt = new Date(Date.now() - 24 * 3600 * 1000);
+        const ymd = new Date(ontemBrt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+        const r = await processDiariasJornadaLonga(ymd);
+        if (r.paresLongosDetectados > 0 || r.diariasGeradas > 0) {
+          log(`CRON Diárias>16h: data=${ymd} pares=${r.paresLongosDetectados} geradas=${r.diariasGeradas} jaExistiam=${r.diariasJaExistentes}`, "cron");
+        }
+      } catch (e: any) {
+        log(`CRON Diárias>16h: Erro: ${e.message}`, "cron");
+      }
+    }, { timezone: "America/Sao_Paulo" });
+
     cron.schedule("10 3 * * *", async () => {
       try {
         const { syncDuePermanentContracts } = await import("./routes/permanent-contracts");
