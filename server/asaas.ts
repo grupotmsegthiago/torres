@@ -288,9 +288,11 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
 
     const updates: Record<string, any> = {};
     let changed = false;
+    let livePayment: any = null;
 
     try {
       const payment = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+      livePayment = payment;
       if (payment?.status && payment.status !== invoice.status) { updates.status = payment.status; changed = true; }
       if (payment?.netValue && Number(payment.netValue) !== Number(invoice.net_value || 0)) { updates.net_value = payment.netValue; changed = true; }
       if (payment?.invoiceUrl && payment.invoiceUrl !== invoice.invoice_url) { updates.invoice_url = payment.invoiceUrl; changed = true; }
@@ -299,6 +301,48 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       if (payment?.paymentDate && payment.paymentDate !== invoice.payment_date) { updates.payment_date = payment.paymentDate; changed = true; }
     } catch (e: any) {
       console.log(`[reconcile] payment fetch invoice #${invoice.id} (${invoice.asaas_payment_id}): ${e.message}`);
+    }
+
+    // PIX órfão: cobrança original continua PENDING/OVERDUE no Asaas, mas o
+    // cliente pagou via PIX direto na chave da empresa. O Asaas cria automa-
+    // ticamente uma cobrança paralela RECEIVED ("Cobrança gerada automatica-
+    // mente a partir de Pix recebido"). Aqui detectamos esse caso e relinka-
+    // mos a fatura com a cobrança paga.
+    const liveStatus = String(livePayment?.status || "").toUpperCase();
+    const stillOpen = ["PENDING", "OVERDUE", "AWAITING_RISK_ANALYSIS"].includes(liveStatus);
+    const customerId = livePayment?.customer;
+    const targetValue = Number(livePayment?.value || invoice.value || 0);
+    if (stillOpen && customerId && targetValue > 0) {
+      try {
+        const search = await asaasRequest("GET", `/payments?customer=${encodeURIComponent(customerId)}&status=RECEIVED&limit=50`);
+        const candidates = (search?.data || []).filter((p: any) => {
+          if (!p?.id || p.id === invoice.asaas_payment_id) return false;
+          if (Math.abs(Number(p.value || 0) - targetValue) > 0.01) return false;
+          const desc = String(p.description || "").toLowerCase();
+          return desc.includes("pix recebido") || desc.includes("pix recebida");
+        });
+        // Não pode estar já vinculada a outra invoice nossa
+        const free: any[] = [];
+        for (const c of candidates) {
+          const { data: linked } = await supabaseAdmin.from("invoices")
+            .select("id").eq("asaas_payment_id", c.id).limit(1);
+          if (!linked || linked.length === 0) free.push(c);
+        }
+        if (free.length === 1) {
+          const pix = free[0];
+          console.log(`[reconcile] PIX órfão detectado p/ invoice #${invoice.id}: ${invoice.asaas_payment_id} (PENDING) → ${pix.id} (RECEIVED, R$${pix.value}, pago em ${pix.paymentDate})`);
+          updates.asaas_payment_id = pix.id;
+          updates.status = pix.status;
+          if (pix.netValue) updates.net_value = pix.netValue;
+          if (pix.paymentDate) updates.payment_date = pix.paymentDate;
+          if (pix.invoiceUrl) updates.invoice_url = pix.invoiceUrl;
+          changed = true;
+        } else if (free.length > 1) {
+          console.log(`[reconcile] invoice #${invoice.id} tem ${free.length} candidatos PIX órfãos — pulando auto-relink (precisa decisão manual): ${free.map((c: any) => c.id).join(", ")}`);
+        }
+      } catch (e: any) {
+        console.log(`[reconcile] busca PIX órfão p/ invoice #${invoice.id}: ${e.message}`);
+      }
     }
 
     if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
