@@ -1003,6 +1003,27 @@ export default function RelatorioNFPage() {
                         {r.clientFantasia || r.clientName}
                       </div>
                       {r.clientCpfCnpj && <div className="text-[11px] text-slate-400">{r.clientCpfCnpj}</div>}
+                      <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-x-1 gap-y-0.5 items-center" data-testid={`paid-os-list-${r.id}`}>
+                        {r.osList && r.osList.length > 0 ? (
+                          <>
+                            {r.osList.map((o, idx) => (
+                              <span key={o.id} className="inline-flex items-center">
+                                <Link
+                                  href={`/admin/service-orders?os=${o.id}`}
+                                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                  data-testid={`link-paid-os-${o.id}`}
+                                  title={`Abrir ${o.osNumber}`}
+                                >
+                                  {o.osNumber}
+                                </Link>
+                                {idx < r.osList.length - 1 && <span className="text-slate-300 mx-0.5">·</span>}
+                              </span>
+                            ))}
+                          </>
+                        ) : r.osCount > 0 ? (
+                          <span className="text-slate-400">{r.osCount} OS</span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-right font-semibold text-emerald-700 tabular-nums" data-testid={`text-paid-value-${r.id}`}>
                       {fmtBRL(r.value)}
