@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ShieldCheck, AlertTriangle, FileText, CheckCircle2, Clock, DollarSign, RefreshCw, ExternalLink, Receipt, Wrench } from "lucide-react";
+import { ShieldCheck, AlertTriangle, FileText, CheckCircle2, Clock, DollarSign, RefreshCw, ExternalLink, Receipt, Wrench, CalendarRange } from "lucide-react";
 
 type Row = {
   tipo: "BILLING" | "OS_ESQUECIDA";
@@ -88,7 +88,52 @@ export default function AuditoriaFaturamentoPage() {
   const [to, setTo] = useState(today);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"todas" | "atrasadas" | "esquecidas" | "divergentes" | "pendentes" | "pagas" | "falsas">("todas");
+  const [clientId, setClientId] = useState<string>("all");
   const { toast } = useToast();
+
+  // Lista de clientes pra alimentar o seletor.
+  const { data: clients = [] } = useQuery<Array<{ id: number; name: string; billingCycle?: string | null }>>({
+    queryKey: ["/api/clients"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const clientsSorted = useMemo(
+    () => [...clients].sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR")),
+    [clients]
+  );
+  const selectedClient = useMemo(
+    () => clientsSorted.find(c => String(c.id) === clientId),
+    [clientsSorted, clientId]
+  );
+
+  // "Aplicar ciclo do cliente" — ajusta De/Até pro período corrente do
+  // ciclo do cliente selecionado (quinzenal: 01-15 ou 16-fim do mês de
+  // hoje; mensal: 01-fim do mês de hoje).
+  const aplicarCicloDoCliente = () => {
+    if (!selectedClient) return;
+    const ciclo = String(selectedClient.billingCycle || "mensal").toLowerCase();
+    const [y, m, d] = today.split("-").map(Number);
+    const lastDay = new Date(y, m, 0).getDate(); // último dia do mês corrente
+    const mm = String(m).padStart(2, "0");
+    const yyyy = String(y);
+    const isQuinz = ciclo === "quinzenal" || ciclo === "quinzena";
+    if (isQuinz) {
+      if (d <= 15) {
+        setFrom(`${yyyy}-${mm}-01`);
+        setTo(`${yyyy}-${mm}-15`);
+      } else {
+        setFrom(`${yyyy}-${mm}-16`);
+        setTo(`${yyyy}-${mm}-${String(lastDay).padStart(2, "0")}`);
+      }
+    } else {
+      setFrom(`${yyyy}-${mm}-01`);
+      setTo(`${yyyy}-${mm}-${String(lastDay).padStart(2, "0")}`);
+    }
+    setFilter("esquecidas");
+    toast({
+      title: `Ciclo ${isQuinz ? "quinzenal" : "mensal"} aplicado`,
+      description: `Mostrando OS sem faturar de ${selectedClient.name} no período corrente.`,
+    });
+  };
 
   const reconcileMutation = useMutation({
     mutationFn: async (ids?: number[]) => {
@@ -122,6 +167,7 @@ export default function AuditoriaFaturamentoPage() {
 
   const filteredRows = useMemo(() => {
     let out = rows;
+    if (clientId !== "all") out = out.filter(r => String(r.clientId) === clientId);
     if (filter === "atrasadas") out = out.filter(r => r.atraso);
     else if (filter === "esquecidas") out = out.filter(r => r.esquecida);
     else if (filter === "divergentes") out = out.filter(r => r.divergenciaPct > 5);
@@ -138,7 +184,21 @@ export default function AuditoriaFaturamentoPage() {
       );
     }
     return out;
-  }, [rows, filter, search]);
+  }, [rows, filter, search, clientId]);
+
+  // Resumo de OS sem faturar do cliente selecionado no período.
+  const resumoCliente = useMemo(() => {
+    if (clientId === "all" || !selectedClient) return null;
+    const linhasCliente = rows.filter(r => String(r.clientId) === clientId);
+    const semFaturar = linhasCliente.filter(r => r.esquecida || (!r.invoiceId && r.stage !== "PAGO" && r.stage !== "CANCELADA"));
+    const valorPerdido = semFaturar.reduce((s, r) => s + (r.valorOperacional || r.valorBilling || 0), 0);
+    return {
+      total: linhasCliente.length,
+      semFaturar: semFaturar.length,
+      valorPerdido,
+      ciclo: String(selectedClient.billingCycle || "mensal").toLowerCase(),
+    };
+  }, [rows, clientId, selectedClient]);
 
   return (
     <AdminLayout>
@@ -194,36 +254,104 @@ export default function AuditoriaFaturamentoPage() {
 
         {/* Filtros de período + busca */}
         <Card>
-          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">De</label>
-              <Input type="date" value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
+          <CardContent className="pt-6 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground">De</label>
+                <Input type="date" value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Até</label>
+                <Input type="date" value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs text-muted-foreground">Cliente</label>
+                <Select value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger data-testid="select-client">
+                    <SelectValue placeholder="Todos os clientes" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[400px]">
+                    <SelectItem value="all">Todos os clientes</SelectItem>
+                    {clientsSorted.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)} data-testid={`option-client-${c.id}`}>
+                        {c.name} {c.billingCycle ? `· ${c.billingCycle}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Buscar</label>
+                <Input placeholder="OS, cliente, fat#, asaas..." value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Até</label>
-              <Input type="date" value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Filtro rápido</label>
-              <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
-                <SelectTrigger data-testid="select-filter"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todas">Todas</SelectItem>
-                  <SelectItem value="atrasadas">Só atrasadas</SelectItem>
-                  <SelectItem value="esquecidas">Só esquecidas (sem boletim)</SelectItem>
-                  <SelectItem value="divergentes">Só divergência de valor &gt;5%</SelectItem>
-                  <SelectItem value="pendentes">Pendentes / Aprovadas (não viraram boleto)</SelectItem>
-                  <SelectItem value="pagas">Só pagas</SelectItem>
-                  <SelectItem value="falsas">Só FATURADAS FALSAS (sem invoice válida)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Buscar</label>
-              <Input placeholder="OS, cliente, fat#, asaas..." value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search" />
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div className="md:col-span-2">
+                <label className="text-xs text-muted-foreground">Filtro rápido</label>
+                <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+                  <SelectTrigger data-testid="select-filter"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="atrasadas">Só atrasadas</SelectItem>
+                    <SelectItem value="esquecidas">Só esquecidas (sem boletim)</SelectItem>
+                    <SelectItem value="divergentes">Só divergência de valor &gt;5%</SelectItem>
+                    <SelectItem value="pendentes">Pendentes / Aprovadas (não viraram boleto)</SelectItem>
+                    <SelectItem value="pagas">Só pagas</SelectItem>
+                    <SelectItem value="falsas">Só FATURADAS FALSAS (sem invoice válida)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-3 flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full md:w-auto"
+                  disabled={!selectedClient}
+                  onClick={aplicarCicloDoCliente}
+                  data-testid="button-aplicar-ciclo"
+                  title={selectedClient ? `Aplicar ciclo ${selectedClient.billingCycle || "mensal"} de ${selectedClient.name}` : "Selecione um cliente primeiro"}
+                >
+                  <CalendarRange className="h-4 w-4 mr-2" />
+                  {selectedClient
+                    ? `Aplicar ciclo (${selectedClient.billingCycle || "mensal"}) de ${selectedClient.name}`
+                    : "Aplicar ciclo do cliente (selecione um cliente)"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Resumo do cliente selecionado: foco em "OS deixadas pra trás" */}
+        {resumoCliente && selectedClient && (
+          <Card className={resumoCliente.semFaturar > 0
+            ? "border-red-300 dark:border-red-700 bg-red-50/60 dark:bg-red-950/20"
+            : "border-emerald-300 dark:border-emerald-700 bg-emerald-50/60 dark:bg-emerald-950/20"}>
+            <CardContent className="pt-6 flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  Cliente · ciclo <b>{resumoCliente.ciclo}</b> · período {fmtDate(from)} → {fmtDate(to)}
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-cliente-resumo">{selectedClient.name}</div>
+                <div className="text-sm mt-1">
+                  {resumoCliente.total} OS no período · <b className={resumoCliente.semFaturar > 0 ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"} data-testid="text-cliente-sem-faturar">{resumoCliente.semFaturar} sem faturar</b>
+                </div>
+              </div>
+              <div className="text-right">
+                {resumoCliente.semFaturar > 0 ? (
+                  <>
+                    <div className="text-xs text-muted-foreground">Valor que ficou de fora</div>
+                    <div className="text-2xl font-bold text-red-700 dark:text-red-300" data-testid="text-cliente-valor-perdido">{fmt(resumoCliente.valorPerdido)}</div>
+                    <div className="text-xs text-red-700 dark:text-red-300 mt-1">⚠ Incluir na próxima fatura</div>
+                  </>
+                ) : (
+                  <div className="text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="h-4 w-4" /> Tudo faturado no período
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Saúde do faturamento */}
         {totals && (
