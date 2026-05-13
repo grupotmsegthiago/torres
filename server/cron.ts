@@ -861,6 +861,20 @@ export function initCronJobs() {
     }
   });
 
+  // ============================================================
+  // CRON: Vencimentos do dia (contas a pagar e a receber)
+  // Roda diariamente às 07h BRT
+  // Destinatários: adm@grupotmseg.com.br + diretoria@torresseguranca.com.br
+  // ============================================================
+  cron.schedule("0 7 * * *", async () => {
+    try {
+      log("CRON Vencimentos: disparando e-mail diário", "cron");
+      await sendVencimentosDoDiaEmail();
+    } catch (err: any) {
+      log(`CRON Vencimentos: erro: ${err.message}`, "cron");
+    }
+  }, { timezone: "America/Sao_Paulo" });
+
   cron.schedule("0 7 * * *", async () => {
     try {
       const { data: vehicles } = await supabaseAdmin.from("vehicles")
@@ -1249,6 +1263,11 @@ async function sendComprovantesPendentesEmail() {
   }
 }
 
+export { sendVencimentosDoDiaEmail } from "./email-vencimentos";
+
+// (implementação extraída para ./email-vencimentos.ts pra permitir testes
+// isolados sem subir o servidor inteiro). O bloco abaixo é mantido apenas
+// como referência morta — não é exportado.
 function getCronMailTransporter() {
   const host = process.env.SMTP_HOST || "smtp.office365.com";
   const port = parseInt(process.env.SMTP_PORT || "587");
