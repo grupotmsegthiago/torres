@@ -3404,6 +3404,70 @@ export function registerAsaasRoutes(app: Express) {
       }
     });
 
+    // ============================================================
+    // Limpeza de invoices órfãs (sem asaas_payment_id) — diretoria
+    // GET retorna preview, POST executa.
+    // ============================================================
+    app.get("/api/relatorio-nf/orphan-invoices", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const { data: invs } = await supabaseAdmin
+          .from("invoices")
+          .select("id, client_id, client_name, value, description, status, due_date, created_at, asaas_payment_id, nfse_number, invoice_url")
+          .is("asaas_payment_id", null)
+          .order("id", { ascending: false })
+          .limit(500);
+        const orphans = (invs || []).filter((i: any) => {
+          const st = String(i.status || "").toUpperCase();
+          // Não conta as já recebidas em dinheiro (foram baixadas manualmente)
+          if (st === "RECEIVED_IN_CASH") return false;
+          return true;
+        });
+        const total = orphans.reduce((s: number, i: any) => s + Number(i.value || 0), 0);
+        res.json({ count: orphans.length, totalValue: total, invoices: orphans });
+      } catch (err: any) {
+        console.error("[orphan-invoices] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    app.post("/api/relatorio-nf/cleanup-orphans", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        if (user?.role !== "diretoria") {
+          return res.status(403).json({ message: "Somente a diretoria pode limpar registros órfãos." });
+        }
+        const ids: number[] = Array.isArray(req.body?.ids)
+          ? req.body.ids.map((x: any) => Number(x)).filter((x: number) => Number.isFinite(x))
+          : [];
+        if (ids.length === 0) return res.status(400).json({ message: "ids obrigatórios" });
+
+        // Segurança extra: só apaga se a invoice de fato não tem asaas_payment_id
+        const { data: toDelete } = await supabaseAdmin
+          .from("invoices")
+          .select("id, asaas_payment_id, status, value, client_name")
+          .in("id", ids);
+        const safeIds: number[] = [];
+        for (const inv of (toDelete || [])) {
+          if (inv.asaas_payment_id) continue; // protege quem tem vínculo
+          const st = String(inv.status || "").toUpperCase();
+          if (st === "RECEIVED_IN_CASH") continue;
+          safeIds.push(inv.id);
+        }
+        if (safeIds.length === 0) return res.json({ deleted: 0, skipped: ids.length });
+
+        // Desvincula billings que apontavam pra essas invoices
+        await supabaseAdmin.from("escort_billings").update({ invoice_id: null }).in("invoice_id", safeIds);
+        const { error } = await supabaseAdmin.from("invoices").delete().in("id", safeIds);
+        if (error) throw error;
+
+        console.log(`[cleanup-orphans] ${safeIds.length} invoice(s) órfã(s) deletada(s) por ${user.email}: [${safeIds.join(", ")}]`);
+        res.json({ deleted: safeIds.length, skipped: ids.length - safeIds.length, deletedIds: safeIds });
+      } catch (err: any) {
+        console.error("[cleanup-orphans] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 

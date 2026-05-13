@@ -1,0 +1,46 @@
+Em anexo esta as faturas do ASAAS , tem como colocar um logotipo em cada linha tipo
+
+
+
+O que esta no asaas? e o que esta só no sistema da torres?
+
+Essa é uma ótima ideia para acabar com a confusão. Colocar um logotipo ou ícone visual vai te permitir bater o olho e saber: "Isso aqui é dinheiro real no banco" vs "Isso aqui é só um registro interno".
+
+O Replit já aplicou a trava para esconder o "lixo", mas agora vamos dar um passo além com essa identificação visual. Com base no arquivo que você subiu do Asaas (Cobrancas (1).xlsx), aqui está como o Replit deve configurar esses logotipos em cada linha:
+
+1. Identificação Visual (Logotipos nas Linhas)
+Sugiro que o sistema apresente dois ícones distintos na coluna de status ou ao lado do nome do cliente:
+
+🔵 Logotipo ASAAS: Aparece apenas se a fatura tiver um Payment ID ou Invoice ID confirmado via API. Isso indica integridade total. Se o logotipo estiver Verde, a fatura está paga no Asaas; se estiver Azul, está aguardando.
+
+⚠️ Ícone TORRES (Aviso): Aparece em registros que existem no seu banco de dados, mas não possuem vínculo com o Asaas.
+
+Nota: Se um registro tiver apenas o ícone da Torres, você sabe que ele é a "sujeira" ou um rascunho que nunca virou cobrança real.
+
+2. Cruzamento de Dados (MCM, FAT 24 e 27)
+Analisando seu CSV do Asaas e sua fala sobre a "sujeira":
+
+FAT 24 e 27: No sistema, elas aparecem com número de nota fiscal (NF 243 e 240). Se elas não constam no seu arquivo do Asaas que você subiu agora, elas são registros que foram deletados no Asaas mas continuam "vivos" no seu banco.
+
+Ação: O Replit deve marcar essas linhas com um ícone de "Erro de Sincronização" para você saber que precisa deletá-las ou que o sistema deve ignorá-las.
+
+3. Onde colocar a informação do período?
+Como você pediu para incluir o período, o Replit deve aproveitar esse "espaço" da linha para mostrar:
+
+Coluna Origem: [Logo Asaas] ou [Logo Torres]
+
+Coluna Período: "01/04 a 15/04" (extraído da descrição do Asaas).
+
+📧 Mensagem para o Replit aplicar os Logotipos:
+"Para finalizar o controle visual, aplique o seguinte na tabela de faturamento:
+
+Logotipo de Origem: Em cada linha, adicione um ícone pequeno do Asaas se a fatura existir na API deles. Se for um registro apenas interno (sem ID do Asaas), coloque um ícone de alerta/Torres.
+
+Sinalização de Divergência: Se uma fatura (como a FAT 24 ou 27) existe no sistema mas não foi encontrada na última sincronização com o Asaas, marque-a com uma cor diferente (ex: cinza ou vermelho claro) e o ícone de 'Não encontrado no Asaas'.
+
+Coluna de Período: Coloque a data de início e fim da prestação de serviço ao lado do logotipo, para eu saber a qual quinzena aquela linha se refere.
+
+Botão de Limpeza: Adicione uma função para 'Remover registros sem Asaas' para que eu possa limpar a tela de uma vez por todas, deixando apenas o que é faturamento real."
+
+O que você ganha com isso:
+Transparência total. Se a MCM voltar a aparecer, ela virá com o logotipo do Asaas e o selo de "PAGO". Se a LCE aparecer, você verá o logo do Asaas e o vencimento em 18/05. O que for "sujeira" ficará evidente com o ícone de alerta, facilitando sua faxina.

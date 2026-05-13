@@ -238,6 +238,38 @@ export default function RelatorioNFPage() {
   });
 
   const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
+  const [cleanupModal, setCleanupModal] = useState<{ loading: boolean; orphans: Array<{ id: number; client_name: string; value: number; description: string | null; status: string; due_date: string | null; nfse_number: string | null }>; totalValue: number } | null>(null);
+
+  const openCleanupModal = async () => {
+    setCleanupModal({ loading: true, orphans: [], totalValue: 0 });
+    try {
+      const r = await authFetch(`/api/relatorio-nf/orphan-invoices`);
+      const json = await r.json();
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      setCleanupModal({ loading: false, orphans: json.invoices || [], totalValue: Number(json.totalValue || 0) });
+    } catch (e: any) {
+      toast({ title: "Erro ao buscar órfãs", description: e?.message, variant: "destructive" });
+      setCleanupModal(null);
+    }
+  };
+
+  const cleanupMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const r = await authFetch(`/api/relatorio-nf/cleanup-orphans`, {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Limpeza concluída", description: `${data.deleted} fatura(s) removida(s)${data.skipped ? `; ${data.skipped} ignorada(s) por terem vínculo` : ""}.` });
+      setCleanupModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro ao limpar", description: e?.message, variant: "destructive" }),
+  });
 
   const receiveInCashMutation = useMutation({
     mutationFn: async (payload: { invoiceId: number; method: string; paymentDate: string; value: number; notes: string }) => {
@@ -447,6 +479,11 @@ export default function RelatorioNFPage() {
             <Button variant="outline" size="sm" onClick={exportXlsx} disabled={!filtered.length} data-testid="button-export-excel">
               <Download className="h-3.5 w-3.5 mr-1" /> Exportar Excel
             </Button>
+            {isDiretoria && (
+              <Button variant="outline" size="sm" onClick={openCleanupModal} className="text-amber-700 border-amber-300 hover:bg-amber-50" data-testid="button-cleanup-orphans">
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Limpar órfãs
+              </Button>
+            )}
           </div>
         </div>
 
@@ -612,19 +649,43 @@ export default function RelatorioNFPage() {
                   return (
                     <tr key={r.id} className={rowBg} data-testid={`row-${r.id}`}>
                       <td className="px-3 py-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                          r.source === "INVOICE"
-                            ? "bg-blue-100 text-blue-700"
-                            : r.source === "BILLING_AVULSO"
-                              ? "bg-sky-100 text-sky-700"
-                              : "bg-amber-100 text-amber-700"
-                        }`}>
-                          {r.source === "INVOICE"
-                            ? `FAT #${r.sourceId}`
-                            : r.source === "BILLING_AVULSO"
-                              ? `OS #${r.sourceId}`
-                              : `BOL #${r.sourceId}`}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                            r.source === "INVOICE"
+                              ? "bg-blue-100 text-blue-700"
+                              : r.source === "BILLING_AVULSO"
+                                ? "bg-sky-100 text-sky-700"
+                                : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {r.source === "INVOICE"
+                              ? `FAT #${r.sourceId}`
+                              : r.source === "BILLING_AVULSO"
+                                ? `OS #${r.sourceId}`
+                                : `BOL #${r.sourceId}`}
+                          </span>
+                          {/* Selo de origem: Asaas (real) vs Só Torres (interno) */}
+                          {r.source === "INVOICE" && r.asaasPaymentId ? (
+                            <span
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                                isPago
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                  : "bg-blue-50 text-blue-700 border-blue-300"
+                              }`}
+                              title={`No Asaas — ID ${r.asaasPaymentId}`}
+                              data-testid={`badge-asaas-${r.id}`}
+                            >
+                              <Banknote className="h-2.5 w-2.5" /> Asaas
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-amber-50 text-amber-800 border-amber-300"
+                              title="Sem vínculo com o Asaas — registro só interno (boletim, OS sem fatura ou cobrança órfã)"
+                              data-testid={`badge-torres-${r.id}`}
+                            >
+                              <AlertTriangle className="h-2.5 w-2.5" /> Só Torres
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="font-medium text-slate-800 max-w-[260px] truncate" title={r.clientName} data-testid={`text-client-${r.id}`}>
@@ -1383,6 +1444,80 @@ export default function RelatorioNFPage() {
             >
               {emitirFaturaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Emitindo…</> : <><Send className="h-4 w-4 mr-1" /> Emitir agora</>}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Limpar registros órfãos (sem asaas_payment_id) */}
+      <Dialog open={!!cleanupModal} onOpenChange={open => { if (!open && !cleanupMutation.isPending) setCleanupModal(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-800"><Trash2 className="h-5 w-5" /> Limpar registros sem Asaas</DialogTitle>
+            <DialogDescription>
+              Estas faturas existem só no banco da Torres — sem ID do Asaas. Provavelmente são rascunhos antigos ou cobranças que foram apagadas no Asaas. Faturas pagas manualmente em dinheiro/PIX são preservadas.
+            </DialogDescription>
+          </DialogHeader>
+          {cleanupModal?.loading ? (
+            <div className="py-8 text-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
+          ) : cleanupModal && cleanupModal.orphans.length === 0 ? (
+            <div className="py-8 text-center text-emerald-700 font-medium">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+              Nenhum registro órfão encontrado. Sistema limpo!
+            </div>
+          ) : cleanupModal && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm bg-amber-50 border border-amber-200 rounded p-2">
+                <span><strong>{cleanupModal.orphans.length}</strong> fatura(s) órfã(s)</span>
+                <span>Total: <strong>{fmtBRL(cleanupModal.totalValue)}</strong></span>
+              </div>
+              <div className="max-h-[400px] overflow-y-auto border border-slate-200 rounded">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr className="text-slate-600">
+                      <th className="text-left px-2 py-1.5">#</th>
+                      <th className="text-left px-2 py-1.5">Cliente</th>
+                      <th className="text-right px-2 py-1.5">Valor</th>
+                      <th className="text-left px-2 py-1.5">Vencimento</th>
+                      <th className="text-left px-2 py-1.5">Status</th>
+                      <th className="text-left px-2 py-1.5">Nº NF</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {cleanupModal.orphans.map(o => (
+                      <tr key={o.id} className="hover:bg-amber-50/40" data-testid={`orphan-row-${o.id}`}>
+                        <td className="px-2 py-1.5 font-mono">#{o.id}</td>
+                        <td className="px-2 py-1.5 max-w-[280px] truncate" title={o.client_name}>{o.client_name}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmtBRL(o.value)}</td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">{fmtDate(o.due_date)}</td>
+                        <td className="px-2 py-1.5">{o.status}</td>
+                        <td className="px-2 py-1.5">{o.nfse_number || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                A operação desvincula primeiro as medições (escort_billings) que apontavam pra essas faturas e depois apaga as invoices. Isso é irreversível.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCleanupModal(null)} disabled={cleanupMutation.isPending} data-testid="button-cancel-cleanup">Cancelar</Button>
+            {cleanupModal && cleanupModal.orphans.length > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (!cleanupModal) return;
+                  if (window.confirm(`Apagar ${cleanupModal.orphans.length} fatura(s) órfã(s)? Total ${fmtBRL(cleanupModal.totalValue)}. Operação não pode ser desfeita.`)) {
+                    cleanupMutation.mutate(cleanupModal.orphans.map(o => o.id));
+                  }
+                }}
+                disabled={cleanupMutation.isPending}
+                data-testid="button-confirm-cleanup"
+              >
+                {cleanupMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Apagando…</> : <><Trash2 className="h-4 w-4 mr-1" /> Apagar todas</>}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
