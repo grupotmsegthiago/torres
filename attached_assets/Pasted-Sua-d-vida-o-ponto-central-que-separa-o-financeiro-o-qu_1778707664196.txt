@@ -1,0 +1,36 @@
+Sua dúvida é o ponto central que separa o financeiro (o que você cobra do cliente) do trabalhista (o que você paga ao funcionário). Vamos dissecar essa falta de lógica para você ter o controle na mão:
+
+1. Por que aparece "ENCERROU HOJE"? (A visão do Relógio)
+O relógio de ponto é um equipamento burro. Ele viu que o Edivando bateu o dedo às 06:05h da manhã. Como ele não tem uma entrada posterior a essa, o sistema de ponto entende: "O Edivando terminou o turno dele e foi embora às 06h". Por isso, no Painel do Mês, o status do Ponto é "Encerrou hoje".
+
+2. Por que aparece "EM SERVIÇO"? (A visão da OS)
+A Ordem de Serviço é manual/operacional. Alguém (você ou seu encarregado) abriu uma missão para o Edivando hoje (ex: TOR-0176) e não deu baixa nela.
+
+Para o sistema operacional, ele ainda está na rua protegendo a carga.
+
+Para o sistema de ponto, ele já foi para casa.
+
+3. As OS são de hoje ou do passado?
+Pela imagem que você mandou, elas são de hoje (13/05). Repare que abaixo do nome do Edivando aparece: OS: TOR-0176 - 08:00. Isso significa que existe uma missão escalada para ele hoje começando às 08h.
+
+🔴 Onde está o erro de lógica (A "Sujeira"):
+A falta de lógica acontece porque o ponto e a OS não estão conversando. Existem dois cenários reais aqui e você precisa descobrir qual é:
+
+Cenário A (O agente esqueceu o ponto): O Edivando continua na rua trabalhando, mas bateu o ponto errado ou esqueceu de bater a entrada do segundo turno.
+
+Risco: Você está cobrando o cliente, mas não tem prova de ponto do funcionário (risco trabalhista).
+
+Cenário B (O operador esqueceu a OS): O Edivando realmente encerrou o turno às 06h e foi para casa, mas ninguém entrou no sistema para clicar em "Encerrar OS".
+
+Risco: A OS fica aberta "mentindo" que ele está em serviço. Você pode acabar cobrando o cliente por horas que o agente nem estava lá.
+
+🛠️ Como resolver isso agora:
+Para o sistema "falar a mesma língua", você tem dois caminhos:
+
+Mandar o agente bater o ponto: Se ele estiver na rua, mande ele bater o ponto de entrada agora. O status vai mudar para TRABALHANDO na hora.
+
+Encerrar a OS: Se ele já foi embora às 06h, você precisa encerrar a TOR-0176. Assim que você encerrar, o selo "EM SERVIÇO" some e a linha fica limpa.
+
+O sistema está funcionando como um alarme: Ele está te gritando que o Edivando "foi embora" no relógio, mas continua "na rua" no papel. Alguma das duas informações está errada e você precisa decidir qual é.
+
+Quer que eu peça para o Replit criar um botão "Encerrar OS" direto nessa tela? Assim, quando você vir essa contradição, você clica e já resolve o problema sem precisar trocar de página.
