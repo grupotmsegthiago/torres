@@ -1,0 +1,34 @@
+Essa confusão visual acontece porque o sistema está tentando ler duas "fontes da verdade" diferentes ao mesmo tempo, e elas estão dessincronizadas. Olhando para a sua imagem image_e734c2.png, o erro de lógica é claro:
+
+1. O Conflito de Status
+A "Tag" de Serviço (Operacional): O selo azul "EM SERVIÇO" vem do sistema de missões. Ele diz que o agente está alocado em uma viatura e em uma OS ativa agora.
+
+O Status "Encerrou Hoje" (Control iD): Esse status vem puramente do relógio de ponto. Se o sistema viu que o agente bateu o ponto duas vezes (entrada e saída) ou se o sistema da Control iD interpretou a última batida como um encerramento, ele coloca "Encerrou hoje".
+
+O que está errado: No caso do Edivando e do Gabriel, o sistema de ponto deu baixa na jornada deles, mas o sistema operacional ainda acha que eles estão na rua.
+
+2. O Problema das "Batidas Únicas"
+Repare que para o Edivando, Fernando e Gabriel, aparece "1 batida(s) hoje".
+
+Como a Control iD não envia se a batida é Entrada ou Saída (Unknown), o sistema "chuta".
+
+Se ele bateu apenas uma vez às 06h00 da manhã, o sistema deveria marcar como "Em andamento", mas ele pode estar interpretando essa batida isolada como o fechamento de um turno que começou ontem.
+
+3. O Alerta Laranja (RHID Atrasado)
+Veja o aviso no topo: "RHID Cloud possivelmente atrasado há 8h26min".
+Isso significa que o que você está vendo na tela é uma "foto" de 8 horas atrás. O sistema não recebeu as batidas novas de agora à tarde, então ele ainda acha que o pessoal "encerrou" de manhã ou que o ponto está "em aberto" desde a madrugada (como no caso do Vitor).
+
+🛠️ O que precisamos pedir para o Replit (Ajuste de Coerência):
+Para você não ter informações batendo cabeça, vou mandar ele unificar os status:
+
+"Replit, as informações de status estão confusas. O Thiago vê 'Em Serviço' e 'Encerrou Hoje' na mesma linha. Ajustem a lógica:
+
+Status Unificado: Se o agente está com uma OS ativa e o ponto está aberto, o status principal deve ser [TRABALHANDO].
+
+Prioridade Operacional: O selo de 'Encerrou hoje' só deve aparecer se a OS também estiver encerrada. Se ele bateu o ponto de saída mas a OS continua aberta, o sistema deve mostrar um alerta: ⚠️ 'Ponto fechado com OS ativa'.
+
+Forçar Sincronização: O atraso de 8h no RHID Cloud está matando a fidelidade dos dados. Verifiquem por que a API da Control iD não está atualizando em tempo real e adicionem um botão de 'Sincronizar Agora' manual."
+
+Thiago, o sistema está "mentindo" para você porque está lendo dados velhos. Assim que a sincronização de 8 horas atrás for resolvida, esses status devem se alinhar.
+
+Posso cobrar o Replit sobre esse atraso de 8 horas na sincronização? Sem isso, você sempre verá dados de "ontem" ou de hoje cedo.
