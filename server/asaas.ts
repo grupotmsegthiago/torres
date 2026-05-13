@@ -2239,11 +2239,16 @@ export function registerAsaasRoutes(app: Express) {
       const fromDate = `${startDate}T00:00:00`;
       const toDate = `${endDate}T23:59:59`;
 
+      // FONTE ÚNICA DE VERDADE: somente APROVADA. O banner roxo do
+      // frontend ("X medições prontas para fatura") usa o mesmo filtro.
+      // Antes excluía só CANCELADA/RECUSADA/etc — mas isso deixava entrar
+      // A_VERIFICAR / PENDENTE / ENVIADA_APROVACAO no totalizador, gerando
+      // divergência de valor entre banner e modal "Gerar Fatura".
       let query = supabaseAdmin
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .not("status", "in", '("RECUSADA","CANCELADA","CANCELADO","FATURADA","FATURADO","PAGO","REJEITADA")')
+        .eq("status", "APROVADA")
         .gte("data_missao", fromDate)
         .lte("data_missao", toDate);
 

@@ -802,6 +802,9 @@ export default function RelatorioFaturamentoPage() {
   }, [rowsData]);
 
   const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+  // approvedTotal (fonte única de verdade p/ faturamento) já é declarado
+  // na linha ~149 a partir de approvedBillings (status === "APROVADA"),
+  // com a mesma fórmula que o banner roxo e o backend usam.
 
   const openFaturaDialog = () => {
     const cd = clients.find((c: any) => c.id.toString() === selectedClient);
@@ -823,7 +826,7 @@ export default function RelatorioFaturamentoPage() {
       setBillingSplits([{
         cnpj: cd?.cnpj || "",
         razao_social: cd?.name || "",
-        valor: grandTotal.toFixed(2),
+        valor: approvedTotal.toFixed(2),
         label: "Principal",
         save_profile: false,
       }]);
@@ -832,7 +835,7 @@ export default function RelatorioFaturamentoPage() {
   };
 
   const splitsTotal = useMemo(() => billingSplits.reduce((s, sp) => s + (Number(sp.valor) || 0), 0), [billingSplits]);
-  const splitsRemainder = grandTotal - splitsTotal;
+  const splitsRemainder = approvedTotal - splitsTotal;
   const splitsValid = billingSplits.length > 0 && billingSplits.every(sp => sp.cnpj && sp.razao_social && Number(sp.valor) > 0) && Math.abs(splitsRemainder) < 0.01;
 
   const updateSplit = (index: number, field: string, value: string | boolean) => {
@@ -846,7 +849,7 @@ export default function RelatorioFaturamentoPage() {
   };
   const fillRemainder = (index: number) => {
     const otherSum = billingSplits.reduce((s, sp, i) => i === index ? s : s + (Number(sp.valor) || 0), 0);
-    const remainder = Math.max(0, grandTotal - otherSum);
+    const remainder = Math.max(0, approvedTotal - otherSum);
     updateSplit(index, "valor", remainder.toFixed(2));
   };
 
@@ -1759,8 +1762,8 @@ export default function RelatorioFaturamentoPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Valor Total Aprovado</p>
-                  <p className="text-xl font-black font-mono text-indigo-800" data-testid="text-fatura-total">{fmt(grandTotal)}</p>
-                  <p className="text-[10px] text-indigo-500">{approvedBillings.length} OS no período</p>
+                  <p className="text-xl font-black font-mono text-indigo-800" data-testid="text-fatura-total">{fmt(approvedTotal)}</p>
+                  <p className="text-[10px] text-indigo-500">{approvedBillings.length} OS aprovada{approvedBillings.length === 1 ? "" : "s"}</p>
                 </div>
               </div>
             </div>
@@ -1911,7 +1914,7 @@ export default function RelatorioFaturamentoPage() {
                   dueDate: faturaDueDate,
                   startDate,
                   endDate,
-                  expectedTotal: grandTotal,
+                  expectedTotal: approvedTotal,
                   splits: billingSplits.length > 1 ? billingSplits.map(sp => ({
                     cnpj: sp.cnpj,
                     razao_social: sp.razao_social,
@@ -1927,7 +1930,7 @@ export default function RelatorioFaturamentoPage() {
               data-testid="button-confirm-fatura"
             >
               {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-              {billingSplits.length > 1 ? `GERAR ${billingSplits.length} FATURAS` : "GERAR FATURA"} {fmt(grandTotal)}
+              {billingSplits.length > 1 ? `GERAR ${billingSplits.length} FATURAS` : "GERAR FATURA"} {fmt(approvedTotal)}
             </Button>
           </DialogFooter>
         </DialogContent>
