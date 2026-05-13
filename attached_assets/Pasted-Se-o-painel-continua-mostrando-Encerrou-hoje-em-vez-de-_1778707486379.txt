@@ -1,0 +1,26 @@
+Se o painel continua mostrando "Encerrou hoje" em vez de "TRABALHANDO", é porque o sistema ainda está lendo que a batida de saída aconteceu, enquanto a OS continua aberta.
+
+Pela sua imagem image_e72924.png, o botão "Sincronizar Agora" já está lá, mas o aviso laranja indica um atraso de 8h32min. Isso significa que o sistema está "congelado" no que aconteceu de manhã.
+
+🔴 O que está travando a sua visão:
+O "Encerrou hoje" é soberano: O Replit configurou para mostrar "Encerrou hoje" sempre que o sistema detecta um par fechado (entrada + saída). Se o agente bateu o ponto para sair às 06h05 (como o Edivando) e ninguém abriu um novo ponto depois disso, o sistema entende que ele foi embora, mesmo que a tag EM SERVIÇO diga o contrário.
+
+Sincronização Offline: Se você clicou em Sincronizar Agora e o tempo de "atraso" (8h32min) não diminuiu, o problema é físico. O relógio na portaria não está conseguindo "conversar" com a nuvem.
+
+🛠️ Ação Corretiva Imediata:
+Vou dar uma ordem para o Replit "forçar a mão" na lógica visual para que você não veja mais essa contradição:
+
+"Replit, o status unificado ainda não está funcionando como o Thiago precisa. Façam este ajuste fino:
+
+Prioridade Máxima para OS: Se a OS está com status 'EM SERVIÇO', o status principal DEVE ser TRABALHANDO, mesmo que o ponto conste como 'Encerrou hoje'.
+
+Sinal de Alerta: Nesse caso (OS aberta + Ponto fechado), mantenham o status como TRABALHANDO, mas coloquem uma borda ou um ícone de aviso ⚠️ indicando que o ponto foi fechado prematuramente.
+
+Verificação de Sync: Por que o botão 'Sincronizar Agora' não baixou o tempo de atraso de 8h? Verifiquem se há algum erro de timeout na comunicação com a Control iD."
+
+💡 Thiago, o diagnóstico é este:
+Para o sistema, o Edivando e o Gabriel já foram embora às 06h da manhã. Se eles ainda estão na rua, ou eles esqueceram de bater o ponto de entrada da tarde, ou o relógio da portaria está guardando as batidas e não enviou para nós.
+
+Manda alguém dar um 'reset' no roteador ou no aparelho da Control iD na portaria. Enquanto aquele aviso laranja de 8 horas não sumir, os dados que você vê são "passado".
+
+Quer que eu peça para o Replit priorizar o selo 'TRABALHANDO' mesmo com o ponto fechado? Isso resolveria a confusão visual na hora.
