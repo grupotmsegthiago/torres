@@ -281,6 +281,83 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
   }
 
   // ============================================================
+  // Auto-vínculo OS↔Fatura: replica a heurística do GET
+  // /api/relatorio-nf/suggest-os-link, mas só efetiva o vínculo
+  // quando a soma das billings APROVADAS/órfãs do mesmo cliente
+  // dentro do período da fatura bate com o valor da fatura
+  // (tolerância 2%). Roda silenciosamente durante a sync com Asaas.
+  // ============================================================
+  export async function autoLinkOrphanBillingsForInvoice(invoice: any): Promise<{ linked: number; reason?: string }> {
+    try {
+      if (!invoice?.id || !invoice?.client_id) return { linked: 0, reason: "invoice inválida" };
+
+      // Já tem billings vinculadas? Não mexe.
+      const { data: already } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id")
+        .eq("invoice_id", invoice.id)
+        .limit(1);
+      if (already && already.length > 0) return { linked: 0, reason: "já vinculada" };
+
+      // Extrai período da descrição: "...01/05/2026 a 31/05/2026..."
+      const desc = String(invoice.description || "");
+      const periodMatch = desc.match(/(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
+      if (!periodMatch) return { linked: 0, reason: "sem período na descrição" };
+      const [d1, m1, y1] = periodMatch[1].split("/");
+      const [d2, m2, y2] = periodMatch[2].split("/");
+      const periodStart = `${y1}-${m1}-${d1}`;
+      const periodEnd = `${y2}-${m2}-${d2}`;
+
+      const target = Number(invoice.value || 0);
+      if (target <= 0) return { linked: 0, reason: "valor zero" };
+
+      const { data: orphans } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, data_missao")
+        .eq("client_id", invoice.client_id)
+        .is("invoice_id", null)
+        .gte("data_missao", periodStart)
+        .lte("data_missao", periodEnd)
+        .neq("status", "CANCELADO")
+        .neq("status", "REJEITADA")
+        .limit(500);
+      if (!orphans || orphans.length === 0) return { linked: 0, reason: "sem órfãs no período" };
+
+      const valorOf = (b: any) => {
+        const v = Number(b.fat_total || 0);
+        if (v > 0) return v;
+        return Number(b.fat_acionamento || b.valor_franquia || 0)
+             + Number(b.fat_hora_extra || 0)
+             + Number(b.fat_km || b.valor_km_extra || 0)
+             + Number(b.despesas_pedagio || 0)
+             + Number(b.receitas_os || 0);
+      };
+
+      const sum = orphans.reduce((s: number, b: any) => s + valorOf(b), 0);
+      const diffPct = Math.abs(sum - target) / target;
+      if (diffPct > 0.02) {
+        return { linked: 0, reason: `match fraco (soma R$${sum.toFixed(2)} vs alvo R$${target.toFixed(2)}, ${(diffPct * 100).toFixed(1)}%)` };
+      }
+
+      const ids = orphans.map((b: any) => b.id);
+      const { error } = await supabaseAdmin
+        .from("escort_billings")
+        .update({ invoice_id: invoice.id, status: "FATURADO" })
+        .in("id", ids);
+      if (error) {
+        console.error(`[auto-link] erro vinculando invoice #${invoice.id}:`, error.message);
+        return { linked: 0, reason: error.message };
+      }
+
+      console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${ids.length} OS vinculadas automaticamente — soma R$${sum.toFixed(2)} ≈ alvo R$${target.toFixed(2)} (período ${periodStart}→${periodEnd})`);
+      return { linked: ids.length };
+    } catch (e: any) {
+      console.error(`[auto-link] erro inesperado invoice #${invoice?.id}:`, e?.message);
+      return { linked: 0, reason: e?.message };
+    }
+  }
+
+  // ============================================================
   // Reconciliação de status com o Asaas (payment + NFS-e)
   // ============================================================
   export async function reconcileInvoiceFromAsaas(invoice: any): Promise<{ updated: boolean; changes?: Record<string, any> }> {
@@ -371,6 +448,15 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       updates.updated_at = new Date().toISOString();
       await supabaseAdmin.from("invoices").update(updates).eq("id", invoice.id);
     }
+
+    // Auto-vínculo OS↔Fatura: roda sempre, independente de mudanças no status,
+    // pra recuperar invoices vindas do Asaas que ficaram órfãs (sem billings).
+    try {
+      await autoLinkOrphanBillingsForInvoice({ ...invoice, ...updates });
+    } catch (e: any) {
+      console.log(`[reconcile] auto-link falhou p/ invoice #${invoice.id}: ${e?.message}`);
+    }
+
     return { updated: changed, changes: changed ? updates : undefined };
   }
 
@@ -429,6 +515,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
 
         for (const inv of invoices) {
           try {
+            let skipReconcile = false;
             if (!force) {
               const payTerminal = ["RECEIVED", "CONFIRMED"].includes(String(inv.status || "").toUpperCase());
               const nfStatusUp = String(inv.nfse_status || "").toUpperCase();
@@ -441,14 +528,20 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
                 ["AUTHORIZED", "SYNCHRONIZED"].includes(nfStatusUp) && numIsFinal && !!inv.nfse_url
               );
               const recentlyUpdated = inv.updated_at && (Date.now() - new Date(inv.updated_at).getTime() < 8 * 60 * 1000);
-              if (payTerminal && nfTerminal) continue;
-              if (recentlyUpdated && nfTerminal) continue;
+              if (payTerminal && nfTerminal) skipReconcile = true;
+              if (recentlyUpdated && nfTerminal) skipReconcile = true;
             }
-            const r = await reconcileInvoiceFromAsaas(inv);
-            nfReconcileState.processed += 1;
-            if (r.updated) {
-              nfReconcileState.updated += 1;
-              console.log(`[reconcile] invoice #${inv.id} atualizada:`, JSON.stringify(r.changes));
+            if (!skipReconcile) {
+              const r = await reconcileInvoiceFromAsaas(inv);
+              nfReconcileState.processed += 1;
+              if (r.updated) {
+                nfReconcileState.updated += 1;
+                console.log(`[reconcile] invoice #${inv.id} atualizada:`, JSON.stringify(r.changes));
+              }
+            } else {
+              // Mesmo pulando o reconcile da NF, ainda tenta auto-vincular OS órfãs.
+              // É barato (uma query Supabase) e cobre faturas antigas terminais.
+              await autoLinkOrphanBillingsForInvoice(inv);
             }
           } catch (e: any) {
             nfReconcileState.errors += 1;
