@@ -2262,22 +2262,10 @@ Responda APENAS com JSON: {"km_lido": number}`;
     }
     const updates: any = { missionStatus: nextStep };
 
-    if (!so.missionStartedAt && ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep)) {
-      const nowBRT = nowBRTString();
-      if (so.scheduledDate) {
-        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toISOString();
-        const nowMs = new Date().getTime();
-        const schedMs = new Date(scheduledStr).getTime();
-        const diffMin = (schedMs - nowMs) / 60000;
-        if (diffMin > 0 && diffMin <= 30) {
-          updates.missionStartedAt = scheduledStr;
-        } else {
-          updates.missionStartedAt = nowBRT;
-        }
-      } else {
-        updates.missionStartedAt = nowBRT;
-      }
-    }
+    // REMOVIDO: auto-set de missionStartedAt em checkout_armamento/viatura/saida/em_transito_origem.
+    // Esses passos acontecem ANTES do agente sair pra rota — chegar na origem ou pegar viatura
+    // não é "início de cobrança". O missionStartedAt agora só é setado no clique de "iniciar_missao"
+    // (bloco abaixo), respeitando o horário real do clique sem snap pro agendado.
 
     if (currentStep === "iniciar_missao" && req.body.timestamp) {
       const ts = req.body.timestamp;
@@ -2388,9 +2376,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
         const toBRTe = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
         const scheduledTime = so.scheduledDate ? toBRTe(new Date(so.scheduledDate)) : undefined;
         const encStepLogs = (so.stepLogs || []) as any[];
-        const checkinChegada = [...encStepLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && l.timestamp);
-        const chegadaOrigemTime = checkinChegada ? toBRTe(new Date(checkinChegada.timestamp)) : undefined;
-        const startTime = chegadaOrigemTime || (so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt as string)) : undefined);
+        // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino" (saiu pra rota).
+        // Chegar na origem (checkin_chegada_km) NÃO conta como início.
+        const inicioMissaoLog = [...encStepLogs].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && l.timestamp);
+        const inicioMissaoTime = inicioMissaoLog ? toBRTe(new Date(inicioMissaoLog.timestamp)) : undefined;
+        const startTime = inicioMissaoTime || (so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt as string)) : undefined);
         const completedDateVal = updated.completedDate || so.completedDate;
         const endTime = completedDateVal ? toBRTe(new Date(completedDateVal as string)) : undefined;
 

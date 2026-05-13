@@ -271,11 +271,14 @@ import type { Express } from "express";
         }
         return null;
       };
-      const horaChegadaOrigemISO = (so as any).hora_chegada_origem || getLogTimeBilling(["checkin_chegada_km", "em_transito_origem"]);
-      const chegadaOrigemTime = horaChegadaOrigemISO ? toBRT(new Date(horaChegadaOrigemISO)) : undefined;
+      // INICIO REAL DA COBRANÇA = quando o agente SAIU PRA ROTA (iniciou missão/viagem/deslocamento),
+      // NÃO quando ele chegou na origem. Chegar na origem antes do agendamento (esperando carregar)
+      // não conta como início — só conta a partir do clique em "Iniciar Missão" / "Em Trânsito Destino".
+      const horaInicioMissaoISO = getLogTimeBilling(["iniciar_missao", "em_transito_destino"]);
+      const inicioMissaoTime = horaInicioMissaoISO ? toBRT(new Date(horaInicioMissaoISO)) : undefined;
       const horaFimMissaoISO = (so as any).hora_fim_missao || so.completedDate || getLogTimeBilling(["encerrada", "finalizada", "checkout_km_final"]);
       const fimMissaoTime = horaFimMissaoISO ? toBRT(new Date(horaFimMissaoISO)) : endTime;
-      const billingStartTime = chegadaOrigemTime || startTime;
+      const billingStartTime = inicioMissaoTime || startTime;
 
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
@@ -427,8 +430,10 @@ import type { Express } from "express";
           const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
 
           const updatedLogs = (updatedSo.stepLogs || []) as any[];
-          const checkinEntry = [...updatedLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && l.timestamp);
-          const stTime = checkinEntry ? toBRT(new Date(checkinEntry.timestamp)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
+          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino" (saiu pra rota).
+          // Chegada na origem (checkin_chegada_km) NÃO conta como início de cobrança.
+          const inicioMissaoEntry = [...updatedLogs].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && l.timestamp);
+          const stTime = inicioMissaoEntry ? toBRT(new Date(inicioMissaoEntry.timestamp)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
 
           const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
           const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
@@ -1531,8 +1536,9 @@ import type { Express } from "express";
           const kmIni = Number((data as any).kmSaida || bill.km_inicial || 0);
           const kmFin = Number((data as any).kmRetorno || bill.km_final || 0);
           const toBRTx = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const horaChegadaOrigemAR = (data as any).hora_chegada_origem || (existing as any)?.hora_chegada_origem;
-          const horarioInicio = horaChegadaOrigemAR ? toBRTx(new Date(horaChegadaOrigemAR)) : (data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null));
+          // INICIO REAL = missionStartedAt (setado no clique de "iniciar_missao").
+          // hora_chegada_origem NÃO entra mais — chegar na origem não é início de cobrança.
+          const horarioInicio = data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null);
           const horaFimMissaoAR = (data as any).hora_fim_missao || (existing as any)?.hora_fim_missao || data.completedDate;
           const horarioFim = horaFimMissaoAR ? toBRTx(new Date(horaFimMissaoAR)) : (bill.horario_fim || null);
           const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
@@ -1657,8 +1663,9 @@ import type { Express } from "express";
           const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
           const sTime = data.scheduledDate ? toBRT(new Date(data.scheduledDate)) : undefined;
           const stepLogsArr = (data.stepLogs || []) as any[];
-          const checkinEntry = [...stepLogsArr].reverse().find((l: any) => l.step === "checkin_chegada_km" && (l.timestamp || l.completedAt));
-          const stTime = data.missionStartedAt ? toBRT(new Date(data.missionStartedAt as string)) : (checkinEntry ? toBRT(new Date(checkinEntry.timestamp || checkinEntry.completedAt)) : undefined);
+          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino". Chegada na origem não conta.
+          const inicioEntry = [...stepLogsArr].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
+          const stTime = data.missionStartedAt ? toBRT(new Date(data.missionStartedAt as string)) : (inicioEntry ? toBRT(new Date(inicioEntry.timestamp || inicioEntry.completedAt)) : undefined);
           const cdValid = data.completedDate && new Date(data.completedDate as string).getFullYear() > 2000;
           const eTime = cdValid ? toBRT(new Date(data.completedDate as string)) : undefined;
 

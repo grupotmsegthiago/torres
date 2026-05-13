@@ -1,0 +1,156 @@
+Pasted-No-calculo-da-OS-preciso-entender-a-l-gica-do-sistema-p_1778679779332.txt
+
+6 minutes ago
+
+
+
+Deciding on timer start logic
+
+O usuário pediu pra verificar a regra de cálculo de início da OS, não pra mexer ainda. Vou auditar o código atual e mostrar o que encontrei.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+11 actions
+
+Vou verificar de onde vem o horario_inicio (a "chegada real" do agente) — se vem do evento certo (INICIO DE MISSÃO/VIAGEM) ou se vem da chegada na origem (que conforme a regra do usuário não deveria contar).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+7 actions
+
+Auditei a regra de início de cobrança. Resposta direta: a fórmula matemática está correta, mas o evento que dispara o "início real" está errado — está usando "chegada na origem" em vez de "início de missão/viagem/deslocamento" como você descreveu.
+
+✅ O que está certo
+
+server/billing-calc.ts linhas 151-160 — função calcularInicioCobranca:
+
+// Regra: usa o MENOR entre agendado e chegada real
+
+if (minReal <= minAg) return chegadaReal; // agente chegou ANTES do agendado → usa o real
+
+return agendado; // agente chegou DEPOIS → usa o agendado
+
+
+
+Confere com sua regra exatamente:
+
+Agendado 08:00, agente inicia 07:30 → cobra desde 07:30 ✓
+
+Agendado 08:00, agente inicia 08:00 → cobra desde 08:00 ✓
+
+Agendado 08:00, agente inicia 08:30 → cobra desde 08:00 ✓ (cliente não paga atraso da equipe)
+
+⚠️ O que está ERRADO (e provavelmente custa dinheiro pra você)
+
+Problema 1 — fonte do "início real": o sistema está pegando como "chegada real" o evento checkin_chegada_km / em_transito_origem (= chegou na origem do cliente), e não os eventos iniciar_missao / INICIO DE VIAGEM que você descreveu. Veja:
+
+server/routes/service-orders.ts:274-278:const horaChegadaOrigemISO = ... getLogTimeBilling(["checkin_chegada_km", "em_transito_origem"]);
+
+const billingStartTime = chegadaOrigemTime || startTime; // ← prioriza chegada na origem
+
+
+
+server/routes/mission.ts:2391-2393 — mesma coisa no fluxo de encerramento.
+
+Impacto: se o agente chega na origem às 06:00 esperando carregar carga até 08:00 (agendamento), e o agente está em "checkin_chegada_km" desde 06:00 → o sistema começa a contar desde 06:00, não desde 08:00. Você está cobrando 2h a mais sem necessidade — pode até atrasar pagamento porque o cliente vai contestar.
+
+Problema 2 — janela de 30min sobrescreve o início real: server/routes/mission.ts:2265-2280 — se o agente faz checkout (armamento/viatura/saída) faltando ≤30min pro agendado, o sistema força missionStartedAt = scheduledDate (agendado), descartando o horário real do clique. Isso quebra a regra "se iniciou antes, paga desde o real" nessa janela específica.
+
+🔍 Sobre a TOR-0007 (R$ 480,00 / 00:00h) que você apontou
+
+00:00h significa que horario_inicio === horario_fim (provavelmente o agente clicou "iniciar" e "finalizar" no mesmo minuto, ou um dos dois ficou em branco e o calc devolveu 0). Como tem só franquia (sem extras), o valor R$ 480 é exatamente a franquia do contrato dela — bate. Não é bug de cálculo, é dado de campo zerado no app do agente. Se quer que eu confirme, posso puxar os step_logs dessa OS específica.
+
+Quer que eu corrija?
+
+Os fixes seriam:
+
+Trocar fonte do "início real" de checkin_chegada_km/em_transito_origem → iniciar_missao (ou outro step que represente "saiu pra rota"). Preciso saber qual nome de step você usa pro evento "INICIO DE VIAGEM/DESLOCAMENTO" no app — vou olhar os step_logs reais pra confirmar antes.
+
+Remover a janela de 30min que sobrescreve o início real pelo agendado (linhas 2265-2280 do mission.ts).
+
+Confirma se quer que eu aplique os 2 fixes? Como envolve mudar regra de cobrança, prefiro sua aprovação antes de mexer.
+
+
+
+Checkpoint made
+
+4 minutes ago
+
+
+
+Worked for 1 minute
+
+
+
+verifica se esta certo, segue o retorno do replit
+
+O retorno do Replit confirma que a lógica matemática está correta, mas a origem do dado está errada. Isso explica por que seus valores não geram confiança: o sistema está usando o "evento errado" para disparar o cronômetro.
+
+Aqui está o que você precisa entender sobre o diagnóstico que o Replit deu:
+
+1. O que está CORRETO (A conta matemática)
+O Replit confirmou que a regra de prioridade que você pediu está escrita no código (server/billing-calc.ts):
+
+Se o agente chega antes do agendado → Usa o horário do agente.
+
+Se o agente chega depois do agendado → Usa o horário agendado.
+
+Conclusão: A fórmula de "quem ganha a disputa do horário" está certa.
+
+2. O que está ERRADO (O gatilho do cronômetro)
+Aqui está o "pulo do gato" que está sujando seus valores. O Replit descobriu dois problemas graves:
+
+Evento de Início Errado: Você quer que a cobrança comece no "Início de Missão/Viagem". Mas o código hoje está configurado para começar quando o agente clica em "Chegada na Origem" (checkin_chegada_km).
+
+Exemplo do prejuízo: Se o agente chega no cliente às 06:00 para um agendamento de 08:00, o sistema já está contando desde as 06:00. Isso gera horas extras indevidas que o seu cliente certamente vai contestar.
+
+A "Trava dos 30 minutos": Existe uma linha de código (mission.ts) que apaga o horário real do agente se ele iniciar a missão faltando menos de 30 minutos para o agendamento. Isso joga o início direto para o horário agendado, ignorando os minutos de trabalho antecipado do funcionário.
+
+3. Sobre a OS TOR-0007 (00:00h - R$ 480,00)
+O Replit explicou o que vimos na imagem: o valor de R$ 480,00 está "certo" porque é o valor seco da sua franquia. Porém, o tempo está 00:00h porque o agente provavelmente clicou em "Iniciar" e "Finalizar" quase ao mesmo tempo no App, ou esqueceu de um dos passos. O sistema, na dúvida, cobrou o mínimo (a franquia).
+
+✅ O que você deve responder para o Replit?
+Para resolver isso de vez e os valores passarem a bater com o que você prometeu ao seu cliente, responda o seguinte:
+
+"Sim, por favor, aplique as correções conforme sugerido:
+
+Corrigir o Gatilho: Alterem a fonte do 'início real'. Parem de usar checkin_chegada_km e passem a usar apenas os eventos de 'iniciar_missao' ou 'inicio_viagem'. A contagem só deve valer quando ele efetivamente sair para a rota, e não quando ele chega para esperar o carregamento.
+
+Remover a Trava de 30min: Removam as linhas 2265-2280 do mission.ts. Se o agente iniciou 10 ou 15 minutos antes, eu quero que esses minutos apareçam no cálculo, sem que o sistema force o horário agendado.
+
+Ajuste nos Cards: Após os fixes, por favor, validem se o valor do 'Total p/ Faturamento' no card preto passará a somar apenas as OS Aprovadas + Canceladas com ônus, para acabar com a confusão de valores da tela principal."
+
+Por que fazer isso?
+Isso vai garantir que o "Boletim de Medição" que você envia ao cliente seja incontestável, pois o tempo de viagem será exatamente o que o agente operou, respeitando o teto do agendamento.
