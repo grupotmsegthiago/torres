@@ -936,6 +936,11 @@ type PainelRow = {
   todayPunchCount: number;
   openSinceMinutes: number | null;
   lastPunchAt: string | null;
+  lastPunchSource?: string | null;
+  lastPunchOrigin?: "CONTROLID" | "APP" | null;
+  penultPunchAt?: string | null;
+  penultPunchSource?: string | null;
+  penultPunchOrigin?: "CONTROLID" | "APP" | null;
   absenceType: string | null;
   onDutyToday?: boolean;
   dutyOsNumber?: string | null;
@@ -1303,7 +1308,49 @@ function PainelMesTab() {
                         )}
                       </td>
                     )}
-                    <td className="p-2 text-xs text-neutral-600">{r.lastPunchAt ? formatDateTime(r.lastPunchAt) : <span className="text-neutral-300">—</span>}</td>
+                    <td className="p-2 text-xs text-neutral-600">
+                      {r.lastPunchAt ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span data-testid={`text-last-punch-${r.employeeId}`}>{formatDateTime(r.lastPunchAt)}</span>
+                            {r.lastPunchOrigin && (
+                              <span
+                                className={`inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-bold border ${
+                                  r.lastPunchOrigin === "APP"
+                                    ? "bg-violet-50 text-violet-700 border-violet-300"
+                                    : "bg-sky-50 text-sky-700 border-sky-300"
+                                }`}
+                                title={r.lastPunchSource ? `Última batida via ${r.lastPunchOrigin === "APP" ? "App/Manual" : "Control iD"} (${r.lastPunchSource})` : ""}
+                                data-testid={`badge-last-origin-${r.employeeId}`}
+                              >
+                                {r.lastPunchOrigin === "APP" ? "APP" : "ControliD"}
+                              </span>
+                            )}
+                          </div>
+                          {r.penultPunchAt && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                              <span className="text-neutral-300">↑ ant.</span>
+                              <span data-testid={`text-penult-punch-${r.employeeId}`}>{formatDateTime(r.penultPunchAt)}</span>
+                              {r.penultPunchOrigin && (
+                                <span
+                                  className={`inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-semibold border ${
+                                    r.penultPunchOrigin === "APP"
+                                      ? "bg-violet-50 text-violet-600 border-violet-200"
+                                      : "bg-sky-50 text-sky-600 border-sky-200"
+                                  }`}
+                                  title={r.penultPunchSource ? `Penúltima batida via ${r.penultPunchOrigin === "APP" ? "App/Manual" : "Control iD"} (${r.penultPunchSource})` : ""}
+                                  data-testid={`badge-penult-origin-${r.employeeId}`}
+                                >
+                                  {r.penultPunchOrigin === "APP" ? "APP" : "ControliD"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-neutral-300">—</span>
+                      )}
+                    </td>
                     <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{r.hoursWorked.toFixed(2)}h</td>
                     <td className="p-2">
                       <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">

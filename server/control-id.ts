@@ -1473,7 +1473,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
 
   const { data: punches } = await supabaseAdmin
     .from("control_id_punches")
-    .select("employee_id, punch_at")
+    .select("employee_id, punch_at, source, device_id")
     .in("employee_id", empIds)
     .gte("punch_at", monthStart.toISOString())
     .lt("punch_at", monthEnd.toISOString())
@@ -1582,7 +1582,23 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     }
 
     const todayPunches = isCurrentMonth ? (dayMap.get(todayBrt) || []) : [];
-    const lastPunchAt = list.length > 0 ? list[list.length - 1].punch_at : null;
+    const lastPunch = list.length > 0 ? list[list.length - 1] : null;
+    const penultPunch = list.length > 1 ? list[list.length - 2] : null;
+    const lastPunchAt = lastPunch?.punch_at || null;
+    const penultPunchAt = penultPunch?.punch_at || null;
+    // Origem da batida:
+    //   source = "manual"           → APP/Manual (criada via sistema)
+    //   demais (com device_id)      → CONTROLID (relógio físico, com ou sem source preenchido)
+    const punchOrigin = (p: any | null): "CONTROLID" | "APP" | null => {
+      if (!p) return null;
+      if (p.source === "manual") return "APP";
+      if (p.device_id) return "CONTROLID";
+      return null;
+    };
+    const lastPunchOrigin = punchOrigin(lastPunch);
+    const lastPunchSource = lastPunch?.source || null;
+    const penultPunchOrigin = punchOrigin(penultPunch);
+    const penultPunchSource = penultPunch?.source || null;
 
     // ausência ativa hoje?
     const absToday = isCurrentMonth
@@ -1677,6 +1693,11 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       todayPunchCount: todayPunches.length,
       openSinceMinutes,
       lastPunchAt,
+      lastPunchSource,
+      lastPunchOrigin,
+      penultPunchAt,
+      penultPunchSource,
+      penultPunchOrigin,
       absenceType: absToday ? absToday.type : null,
       onDutyToday: !!duty,
       dutyOsNumber: duty?.osNumber || null,
