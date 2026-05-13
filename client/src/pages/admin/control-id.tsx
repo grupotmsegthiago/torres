@@ -1178,9 +1178,9 @@ function PainelMesTab() {
           {syncNowMutation.isPending ? "Sincronizando..." : "Sincronizar Agora"}
         </Button>
         <span className="ml-auto text-[11px] text-neutral-500">{rows.length} funcionário(s) ativo(s) · atualiza a cada 60s</span>
-        {syncDiag?.devices && syncDiag.devices.length > 0 && (
+        {diag?.devices && diag.devices.length > 0 && (
           <div className="basis-full flex flex-wrap gap-x-4 gap-y-1 text-[11px] pt-1 border-t border-neutral-100" data-testid="sync-status-bar">
-            {syncDiag.devices.map(d => {
+            {diag.devices.map(d => {
               const ageMin = d.lastSyncAt ? Math.round((Date.now() - new Date(d.lastSyncAt).getTime()) / 60000) : null;
               const isOk = d.lastSyncStatus === "ok";
               const isStale = ageMin !== null && ageMin > 10;
