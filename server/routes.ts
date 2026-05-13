@@ -612,6 +612,7 @@ async function ensureSystemSettingsTable() {
   import { registerClientRoutes } from "./routes/clients";
   import { registerEmployeeRoutes } from "./routes/employees";
   import { registerVehicleRoutes } from "./routes/vehicles";
+  import { registerNotificationRoutes } from "./routes/notifications";
   import { registerServiceOrderRoutes } from "./routes/service-orders";
   import { registerFleetRoutes } from "./routes/fleet";
   import { registerConsultaRoutes } from "./routes/consultas";
@@ -1065,6 +1066,7 @@ async function ensureSystemSettingsTable() {
     registerClientRoutes(app);
     registerEmployeeRoutes(app);
     registerVehicleRoutes(app);
+    registerNotificationRoutes(app);
     registerServiceOrderRoutes(app);
     registerFleetRoutes(app);
     registerConsultaRoutes(app);

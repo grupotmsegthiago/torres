@@ -4,6 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
+  import { notifyVehicleMaintenance } from "../notifications";
 
 
   export function registerVehicleRoutes(app: Express) {
@@ -31,8 +32,14 @@ import type { Express } from "express";
   app.patch("/api/vehicles/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertVehicleSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
-    const data = await storage.updateVehicle(Number(req.params.id), parsed.data);
+    const id = Number(req.params.id);
+    const previous = await storage.getVehicle(id);
+    const data = await storage.updateVehicle(id, parsed.data);
     if (!data) return res.status(404).json({ message: "Veículo não encontrado" });
+    if (previous && previous.status !== "manutenção" && data.status === "manutenção") {
+      const reason = (req.body?.maintenanceReason as string) || "marcado manualmente como em manutenção";
+      notifyVehicleMaintenance({ id: data.id, plate: data.plate, model: data.model, km: data.km }, reason).catch((e) => console.error("[notify-maint] async err:", e?.message));
+    }
     res.json(data);
   });
 
@@ -43,16 +50,26 @@ import type { Express } from "express";
     if (initialKm !== undefined) updates.initialKm = Number(initialKm);
     updates.lastKmUpdate = new Date();
     const vehicle = await storage.getVehicle(Number(req.params.id));
+    let triggeredAutoMaint = false;
+    let kmRodadosCalc = 0;
     if (vehicle && km !== undefined) {
       const lastOilKm = (vehicle as any).lastOilChangeKm || 0;
       const kmRodados = Number(km) - lastOilKm;
+      kmRodadosCalc = kmRodados;
       if (kmRodados >= 9000 && vehicle.status !== "manutenção") {
         updates.status = "manutenção";
+        triggeredAutoMaint = true;
         console.log(`[auto-maint] Vehicle ${vehicle.plate} reached ${kmRodados} km since last oil change, auto-set to manutenção`);
       }
     }
     const data = await storage.updateVehicle(Number(req.params.id), updates);
     if (!data) return res.status(404).json({ message: "Veículo não encontrado" });
+    if (triggeredAutoMaint) {
+      notifyVehicleMaintenance(
+        { id: data.id, plate: data.plate, model: data.model, km: data.km },
+        `troca de óleo necessária — ${kmRodadosCalc.toLocaleString("pt-BR")} km desde a última troca`
+      ).catch((e) => console.error("[notify-maint] async err:", e?.message));
+    }
     res.json(data);
   });
 

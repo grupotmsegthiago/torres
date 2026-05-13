@@ -657,6 +657,25 @@ export async function ensureDbSchema() {
     `);
 
     await execSql(`
+      CREATE TABLE IF NOT EXISTS system_notifications (
+        id SERIAL PRIMARY KEY,
+        type TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'critical',
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        target_role TEXT NOT NULL DEFAULT 'all',
+        require_ack BOOLEAN NOT NULL DEFAULT TRUE,
+        related_type TEXT,
+        related_id INTEGER,
+        acked_by_user_ids INTEGER[] NOT NULL DEFAULT '{}'::int[],
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_sysnotif_created ON system_notifications(created_at DESC)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_sysnotif_target ON system_notifications(target_role, expires_at)`);
+
+    await execSql(`
       CREATE TABLE IF NOT EXISTS system_audit_logs (
         id SERIAL PRIMARY KEY,
         user_id INTEGER,

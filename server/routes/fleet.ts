@@ -6,6 +6,7 @@ import type { Express } from "express";
   import * as ticketlog from "../ticketlog";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
+  import { notifyVehicleMaintenance } from "../notifications";
 
   async function runAiValidation(fuelingId: number) {
     const fueling = await storage.getVehicleFueling(fuelingId);
@@ -200,8 +201,20 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
       if (maintStatus === "realizada" && (vehicle as any).status === "manutenção") {
         updates.status = "em_uso";
       }
+      let willTriggerMaint = false;
+      if ((maintStatus === "agendada" || maintStatus === "em_andamento") && (vehicle as any).status !== "manutenção") {
+        updates.status = "manutenção";
+        willTriggerMaint = true;
+      }
       if (Object.keys(updates).length > 0) {
         await storage.updateVehicle(vehicle.id, updates);
+      }
+      if (willTriggerMaint) {
+        const reason = `${parsed.data.type || "manutenção"}${parsed.data.description ? ` — ${parsed.data.description}` : ""}`;
+        notifyVehicleMaintenance(
+          { id: vehicle.id, plate: vehicle.plate, model: vehicle.model, km: parsed.data.km || vehicle.km },
+          reason
+        ).catch((e) => console.error("[notify-maint] async err:", e?.message));
       }
     }
 

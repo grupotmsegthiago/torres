@@ -966,6 +966,25 @@ export const billingAlerts = pgTable("billing_alerts", {
 
 export type BillingAlert = typeof billingAlerts.$inferSelect;
 
+export const systemNotifications = pgTable("system_notifications", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  severity: text("severity").notNull().default("critical"),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  targetRole: text("target_role").notNull().default("all"),
+  requireAck: boolean("require_ack").notNull().default(true),
+  relatedType: text("related_type"),
+  relatedId: integer("related_id"),
+  ackedByUserIds: integer("acked_by_user_ids").array().notNull().default(sql`'{}'::int[]`),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export type SystemNotification = typeof systemNotifications.$inferSelect;
+export const insertSystemNotificationSchema = createInsertSchema(systemNotifications).omit({ id: true, createdAt: true, ackedByUserIds: true });
+export type InsertSystemNotification = z.infer<typeof insertSystemNotificationSchema>;
+
 export const companyDocuments = pgTable("company_documents", {
   id: serial("id").primaryKey(),
   docType: text("doc_type").notNull(),
