@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, Link2,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -241,81 +241,12 @@ export default function RelatorioNFPage() {
   const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
   const [cleanupModal, setCleanupModal] = useState<{ loading: boolean; orphans: Array<{ id: number; client_name: string; value: number; description: string | null; status: string; due_date: string | null; nfse_number: string | null }>; totalValue: number } | null>(null);
 
-  // ----- Vincular OS automaticamente -----
-  type LinkOsCandidate = { id: number; serviceOrderId: number | null; osNumber: string | null; dataMissao: string | null; valor: number; status: string; inPeriod: boolean; score: number };
-  const [linkOsModal, setLinkOsModal] = useState<{
-    loading: boolean;
-    invoiceId: number;
-    invoice: { id: number; clientName: string; value: number; dueDate: string | null; description: string | null } | null;
-    period: { start: string; end: string } | null;
-    candidates: LinkOsCandidate[];
-    selected: Set<number>;
-    autoSuggest: { matchByPeriod: boolean; suggestedIds: number[]; sumInPeriod: number; targetValue: number } | null;
-  } | null>(null);
-
-  const openLinkOsModal = async (invoiceId: number) => {
-    setLinkOsModal({ loading: true, invoiceId, invoice: null, period: null, candidates: [], selected: new Set(), autoSuggest: null });
-    try {
-      const r = await authFetch(`/api/relatorio-nf/suggest-os-link/${invoiceId}`);
-      const json = await r.json();
-      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
-      setLinkOsModal({
-        loading: false,
-        invoiceId,
-        invoice: json.invoice,
-        period: json.period,
-        candidates: json.candidates || [],
-        selected: new Set(json.autoSuggest?.suggestedIds || []),
-        autoSuggest: json.autoSuggest || null,
-      });
-    } catch (e: any) {
-      toast({ title: "Erro ao buscar candidatos", description: e?.message, variant: "destructive" });
-      setLinkOsModal(null);
-    }
-  };
-
-  const linkOsMutation = useMutation({
-    mutationFn: async (payload: { invoiceId: number; billingIds: number[] }) => {
-      const r = await authFetch(`/api/relatorio-nf/link-os`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
-      return json;
-    },
-    onSuccess: (data: any) => {
-      toast({ title: "Vínculo restaurado", description: `${data.linked} OS vinculada(s)${data.skipped ? `; ${data.skipped} ignorada(s)` : ""}.` });
-      setLinkOsModal(null);
-      invalidateRelatedQueries("invoice");
-    },
-    onError: (e: any) => toast({ title: "Erro ao vincular", description: e?.message, variant: "destructive" }),
-  });
-
-  // Auto-vínculo em lote: roda a heurística pra todas as faturas da
-  // listagem atual que estão sem nenhuma OS vinculada e aplica
-  // automaticamente quando a soma das OS órfãs do período bate com
-  // o valor da fatura (±5%).
-  const autoLinkBulkMutation = useMutation({
-    mutationFn: async (invoiceIds: number[]) => {
-      const r = await authFetch(`/api/relatorio-nf/auto-link-bulk`, {
-        method: "POST",
-        body: JSON.stringify({ invoiceIds }),
-      });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
-      return json;
-    },
-    onSuccess: (data: any) => {
-      toast({
-        title: data.linked > 0 ? "Auto-vínculo concluído" : "Nenhum vínculo automático possível",
-        description: data.message || `${data.linked} OS vinculadas em ${data.successful || 0}/${data.processed} faturas.`,
-        variant: data.linked > 0 ? "default" : "destructive",
-      });
-      invalidateRelatedQueries("invoice");
-    },
-    onError: (e: any) => toast({ title: "Erro no auto-vínculo", description: e?.message, variant: "destructive" }),
-  });
+  // O vínculo de OS↔Fatura é 100% automático: roda dentro de
+  // reconcileInvoiceFromAsaas / reconcileAllInvoicesAsaas via
+  // autoLinkOrphanBillingsForInvoice (server/asaas.ts). Não há mais
+  // interface manual — se a coluna "OS Vinculadas" ficar vazia,
+  // significa que não existe nenhuma medição no banco com aquele
+  // valor pra esse cliente (faturamento avulso real).
 
   const openCleanupModal = async () => {
     setCleanupModal({ loading: true, orphans: [], totalValue: 0 });
@@ -564,46 +495,6 @@ export default function RelatorioNFPage() {
           </div>
         </div>
 
-        {/* Banner de faturas sem OS vinculada — visível só se houver órfãs no período filtrado */}
-        {(() => {
-          const orphans = filtered.filter(r =>
-            r.source === "INVOICE" &&
-            (!r.osList || r.osList.length === 0) &&
-            r.normalizedStatus !== "NF_CANCELADA"
-          );
-          if (orphans.length === 0) return null;
-          const orphanIds = orphans.map(r => r.sourceId).filter(Boolean) as number[];
-          return (
-            <div
-              className="text-xs bg-amber-50 border border-amber-300 rounded-md px-3 py-2 flex flex-wrap items-center gap-2 justify-between"
-              data-testid="banner-faturas-sem-os"
-            >
-              <div className="flex items-center gap-2 text-amber-900">
-                <Link2 className="h-4 w-4 flex-shrink-0" />
-                <span>
-                  <strong>{orphans.length}</strong> fatura(s) sem OS vinculada na visão atual.
-                  Para garantir auditoria, vincule cada uma manualmente ou tente o vínculo automático
-                  (período + valor compatível ±5%).
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-amber-400 text-amber-800 hover:bg-amber-100 h-7"
-                disabled={autoLinkBulkMutation.isPending || orphanIds.length === 0}
-                onClick={() => {
-                  if (!confirm(`Tentar vincular automaticamente as OS de ${orphanIds.length} fatura(s) sem vínculo? O sistema só aplica quando a soma das OS órfãs do mesmo cliente no período bate com o valor da fatura (±5%).`)) return;
-                  autoLinkBulkMutation.mutate(orphanIds);
-                }}
-                data-testid="button-auto-link-bulk"
-              >
-                <Link2 className={`h-3.5 w-3.5 mr-1 ${autoLinkBulkMutation.isPending ? "animate-pulse" : ""}`} />
-                {autoLinkBulkMutation.isPending ? "Vinculando…" : `Vincular sugestões automáticas (${orphanIds.length})`}
-              </Button>
-            </div>
-          );
-        })()}
-
         {/* Last sync badge */}
         {lastSync && (lastSync.completedAt || lastSync.startedAt) && (
           <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1" data-testid="text-last-sync">
@@ -834,15 +725,13 @@ export default function RelatorioNFPage() {
                           ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : r.source === "INVOICE" && r.sourceId > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => openLinkOsModal(r.sourceId)}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              data-testid={`button-link-os-${r.id}`}
-                              title="Tentar vincular esta fatura a OS órfãs do mesmo cliente"
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] text-slate-400 italic"
+                              title="Nenhuma medição no banco com este valor pra este cliente. Faturamento avulso ou OS ainda não cadastrada."
+                              data-testid={`text-no-os-${r.id}`}
                             >
-                              <Link2 className="h-2.5 w-2.5" /> Vincular OS
-                            </button>
+                              avulsa
+                            </span>
                           ) : null}
                         </div>
                       </td>
@@ -1592,109 +1481,6 @@ export default function RelatorioNFPage() {
             >
               {emitirFaturaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Emitindo…</> : <><Send className="h-4 w-4 mr-1" /> Emitir agora</>}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal: Vincular OS automaticamente */}
-      <Dialog open={!!linkOsModal} onOpenChange={open => { if (!open && !linkOsMutation.isPending) setLinkOsModal(null); }}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-blue-800"><Link2 className="h-5 w-5" /> Vincular OS automaticamente</DialogTitle>
-            <DialogDescription>
-              {linkOsModal?.invoice ? (
-                <>Buscando OS órfãs (sem fatura) do cliente <strong>{linkOsModal.invoice.clientName}</strong> para reanexar à fatura <strong>#{linkOsModal.invoice.id}</strong> ({fmtBRL(linkOsModal.invoice.value)}).</>
-              ) : "Carregando…"}
-            </DialogDescription>
-          </DialogHeader>
-          {linkOsModal?.loading ? (
-            <div className="py-8 text-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
-          ) : linkOsModal && linkOsModal.candidates.length === 0 ? (
-            <div className="py-8 text-center text-amber-700 font-medium">
-              <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-              Nenhuma OS órfã encontrada para este cliente.
-              <p className="text-xs text-slate-500 mt-2 font-normal">
-                Significa que todas as OS deste cliente já estão amarradas a outras faturas, ou esta fatura nunca teve medições — pode ter sido criada manualmente no Asaas.
-              </p>
-            </div>
-          ) : linkOsModal && (
-            <div className="space-y-3">
-              {linkOsModal.period && (
-                <div className="text-xs bg-slate-50 border border-slate-200 rounded p-2">
-                  Período da fatura (extraído da descrição): <strong>{linkOsModal.period.start.split("-").reverse().join("/")} a {linkOsModal.period.end.split("-").reverse().join("/")}</strong>
-                </div>
-              )}
-              {linkOsModal.autoSuggest?.matchByPeriod && (
-                <div className="text-xs bg-emerald-50 border border-emerald-300 rounded p-2 text-emerald-800">
-                  <CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />
-                  <strong>Match perfeito!</strong> Soma das OS no período ({fmtBRL(linkOsModal.autoSuggest.sumInPeriod)}) bate com o valor da fatura ({fmtBRL(linkOsModal.autoSuggest.targetValue)}). {linkOsModal.autoSuggest.suggestedIds.length} OS já pré-selecionada(s).
-                </div>
-              )}
-              <div className="text-xs flex justify-between items-center">
-                <span className="text-slate-600">{linkOsModal.candidates.length} candidato(s) — selecionadas: <strong>{linkOsModal.selected.size}</strong> ({fmtBRL(linkOsModal.candidates.filter(c => linkOsModal.selected.has(c.id)).reduce((s, c) => s + c.valor, 0))})</span>
-                <button
-                  type="button"
-                  onClick={() => setLinkOsModal(prev => prev ? { ...prev, selected: prev.selected.size === prev.candidates.length ? new Set() : new Set(prev.candidates.map(c => c.id)) } : prev)}
-                  className="text-blue-600 hover:underline"
-                >
-                  {linkOsModal.selected.size === linkOsModal.candidates.length ? "Desmarcar tudo" : "Selecionar tudo"}
-                </button>
-              </div>
-              <div className="max-h-[400px] overflow-y-auto border border-slate-200 rounded">
-                <table className="min-w-full text-xs">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr className="text-slate-600">
-                      <th className="px-2 py-1.5 w-8"></th>
-                      <th className="text-left px-2 py-1.5">OS</th>
-                      <th className="text-left px-2 py-1.5">Data missão</th>
-                      <th className="text-right px-2 py-1.5">Valor</th>
-                      <th className="text-left px-2 py-1.5">Status</th>
-                      <th className="text-center px-2 py-1.5">Período?</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {linkOsModal.candidates.map(c => {
-                      const checked = linkOsModal.selected.has(c.id);
-                      return (
-                        <tr key={c.id} className={`hover:bg-blue-50/40 cursor-pointer ${c.inPeriod ? "bg-emerald-50/30" : ""}`} onClick={() => {
-                          setLinkOsModal(prev => {
-                            if (!prev) return prev;
-                            const sel = new Set(prev.selected);
-                            if (sel.has(c.id)) sel.delete(c.id); else sel.add(c.id);
-                            return { ...prev, selected: sel };
-                          });
-                        }} data-testid={`candidate-row-${c.id}`}>
-                          <td className="px-2 py-1.5"><Checkbox checked={checked} /></td>
-                          <td className="px-2 py-1.5 font-medium">{c.osNumber || <span className="text-slate-300">— (billing #{c.id})</span>}</td>
-                          <td className="px-2 py-1.5 whitespace-nowrap">{fmtDate(c.dataMissao)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtBRL(c.valor)}</td>
-                          <td className="px-2 py-1.5">{c.status}</td>
-                          <td className="px-2 py-1.5 text-center">{c.inPeriod ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 inline" /> : <span className="text-slate-300">—</span>}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Ao confirmar, as billings selecionadas terão o campo <code>invoice_id</code> definido para esta fatura e o status passará para <code>FATURADO</code>.
-              </p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLinkOsModal(null)} disabled={linkOsMutation.isPending} data-testid="button-cancel-link-os">Cancelar</Button>
-            {linkOsModal && linkOsModal.candidates.length > 0 && (
-              <Button
-                onClick={() => {
-                  if (!linkOsModal || linkOsModal.selected.size === 0) return;
-                  linkOsMutation.mutate({ invoiceId: linkOsModal.invoiceId, billingIds: Array.from(linkOsModal.selected) });
-                }}
-                disabled={linkOsMutation.isPending || linkOsModal.selected.size === 0}
-                data-testid="button-confirm-link-os"
-              >
-                {linkOsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Vinculando…</> : <><Link2 className="h-4 w-4 mr-1" /> Vincular {linkOsModal.selected.size} OS</>}
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

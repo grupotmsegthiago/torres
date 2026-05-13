@@ -323,6 +323,9 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
         .limit(500);
       if (!orphans || orphans.length === 0) return { linked: 0, reason: "sem órfãs no período" };
 
+      // Tolerância: 2% absoluto OU R$ 1,00 (cobre arredondamento de centavos
+      // em faturas pequenas onde 2% < R$1).
+
       const valorOf = (b: any) => {
         const v = Number(b.fat_total || 0);
         if (v > 0) return v;
