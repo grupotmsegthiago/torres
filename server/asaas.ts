@@ -3277,8 +3277,8 @@ export function registerAsaasRoutes(app: Express) {
           if (fatGroups.has(inv.id)) continue;
           if (seenExtra.has(inv.id)) continue;
           seenExtra.add(inv.id);
-          const linkedBills = reverseBillingsByInvoice.get(inv.id) || [];
-          const osListExtra = Array.from(new Map(
+          let linkedBills = reverseBillingsByInvoice.get(inv.id) || [];
+          let osListExtra = Array.from(new Map(
             linkedBills
               .filter((b: any) => b.service_order_id)
               .map((b: any) => [b.service_order_id, { id: b.service_order_id, osNumber: osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}` }])
@@ -3286,15 +3286,40 @@ export function registerAsaasRoutes(app: Express) {
           const cli = clientMap.get(inv.client_id);
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
 
-          // Raio-X: pra cada fatura sem OS vinculada, computa o motivo
-          // exato (CNPJ não bate? sem OS no período? valor incompatível?)
-          // pra mostrar no tooltip da UI.
+          // Raio-X + auto-vínculo on-demand: pra cada fatura sem OS vinculada,
+          // tenta efetivar o vínculo na hora (CNPJ → valor → fallback período).
+          // Se vincular: re-consulta billings e popula osList. Se não: guarda
+          // o motivo no tooltip (CNPJ não bate, valor incompatível, etc.).
+          // Persistência fica no banco — próximas GETs já vêm prontas sem
+          // re-tentar.
           let noLinkReason: string | null = null;
           if (osListExtra.length === 0) {
-            const probe = await autoLinkOrphanBillingsForInvoice(inv, { dryRun: true });
-            noLinkReason = probe.linked > 0
-              ? `Vínculo pendente (${probe.matchedBy}) — rode "Sincronizar c/ Asaas" pra efetivar`
-              : (probe.reason || "Sem informação");
+            const result = await autoLinkOrphanBillingsForInvoice(inv);
+            if (result.linked > 0) {
+              const { data: justLinked } = await supabaseAdmin
+                .from("escort_billings")
+                .select("id, invoice_id, service_order_id, client_name, data_missao")
+                .eq("invoice_id", inv.id)
+                .limit(500);
+              const newSoIds = (justLinked || [])
+                .map((b: any) => b.service_order_id)
+                .filter((id: any) => id && !osNumMap.has(id)) as number[];
+              if (newSoIds.length > 0) {
+                const { data: newSos } = await supabaseAdmin
+                  .from("service_orders")
+                  .select("id, os_number")
+                  .in("id", Array.from(new Set(newSoIds)));
+                for (const so of (newSos || [])) osNumMap.set(so.id, so.os_number);
+              }
+              linkedBills = justLinked || [];
+              osListExtra = Array.from(new Map(
+                linkedBills
+                  .filter((b: any) => b.service_order_id)
+                  .map((b: any) => [b.service_order_id, { id: b.service_order_id, osNumber: osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}` }])
+              ).values());
+            } else {
+              noLinkReason = result.reason || "Sem informação";
+            }
           }
 
           rows.push({
