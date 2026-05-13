@@ -1,0 +1,25 @@
+Excelente avanço. O fato de o sistema já ter "dedurado" nomes como o do André e do Fernando prova que a auditoria é necessária. Sobre a falha no horário do Jorge, isso é o clássico problema de turno noturno que derruba qualquer lógica simples.
+
+Como estamos falando de segurança e escolta, turnos que atravessam a meia-noite são o nosso "pão com cada dia". Não adianta ter um alerta que me dá falso positivo toda vez que alguém trabalha à noite, senão eu paro de olhar para a tela.
+
+🛠️ Minha decisão: Opção 2 (Refatoração para Precisão)
+Não quero validar uma tela que eu sei que tem erro de cálculo. Vamos fazer o serviço completo:
+
+Use o computeWorkedHours: Esse motor já está treinado para entender quem entra às 22h e sai às 06h. É muito mais seguro confiar nele do que tentar reinventar a roda.
+
+Tratamento de Turno Noturno: O sistema precisa entender que se o Jorge bateu o ponto às 03:49, ele provavelmente estava encerrando uma jornada que começou no dia anterior ou iniciando uma que vai longe. O cruzamento com a OS tem que ser inteligente o suficiente para olhar a "janela" de trabalho, e não apenas o dia civil (00h às 23h59).
+
+Resultado Esperado: Eu só quero que o alerta 🟡 Ponto fechado c/ OS aberta apareça se, e somente se, o sistema confirmar que a última batida de "Saída" (OUT) aconteceu antes do término da missão na OS.
+
+📧 Ordem para o Replit (Ajuste de Precisão):
+"O teste real foi ótimo, mas os falsos positivos no turno noturno (caso do Jorge) precisam ser eliminados.
+
+Refatoração: Substituam a lógica simples de 'última batida' pelo motor computeWorkedHours (em server/lib/hours-calc.ts).
+
+Inteligência de Turno: O cruzamento deve considerar a jornada pareada (IN/OUT). O alerta de 'Ponto fechado com OS aberta' só deve disparar se o horário de término da OS for posterior ao horário da batida de saída validada.
+
+Deploy Final: Após aplicar essa precisão, atualizem a tela de 'Divergências Ponto×OS' e me deem o OK para eu conferir os dados reais sem ruído."
+
+Thiago, com esses 30 min de ajuste, a sua auditoria vira uma "arma" de gestão. Você vai chamar o funcionário na sala e dizer: "Você encerrou o ponto às 18h, mas a OS da DHL só fechou às 19h30. O que aconteceu?". Sem erro, sem desculpa.
+
+Pode seguir com a refatoração?

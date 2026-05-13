@@ -39,6 +39,8 @@ export interface WorkedHoursResult {
   hasOpenShift: boolean;
   /** Timestamp da última batida ímpar (entrada sem saída), ou null. */
   openShiftSince: Date | null;
+  /** Pares (entrada, saida) já casados — necessário pra cruzamentos com OS. */
+  pairs: Array<{ entrada: Date; saida: Date }>;
 }
 
 /** Converte um timestamp para a data BRT yyyy-mm-dd. */
@@ -77,6 +79,7 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
   }
 
   const perDayMinutes = new Map<string, number>();
+  const pairs: Array<{ entrada: Date; saida: Date }> = [];
   let totalMinutes = 0;
 
   // 3) Itera em pares (entrada, saída).
@@ -86,6 +89,7 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
     const saida = clean[i + 1];
     const diffMin = (saida.getTime() - entrada.getTime()) / 60000;
     if (diffMin <= 0) continue;
+    pairs.push({ entrada, saida });
     // 4) Atribui ao dia BRT da entrada.
     const dayKey = ymdBRT(entrada);
     perDayMinutes.set(dayKey, (perDayMinutes.get(dayKey) || 0) + diffMin);
@@ -108,6 +112,7 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
     daysWorked,
     hasOpenShift,
     openShiftSince,
+    pairs,
   };
 }
 
