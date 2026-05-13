@@ -1,0 +1,61 @@
+eu quero um relatório completo de OS geradas (auditoria) de faturas.. Exemplo
+
+
+
+Se o cliente é de quinzena entende-se que do dia 01 ao dia 15 deveria ter sido faturada, caso contrario ela esta fora do faturamento (errado)
+
+
+
+Se esta dentro da quinzena quero saber se ja foi Enviada para o cliente, se ja foi faturada, se ja foi paga.. ou seja, preciso de uma auditoria completa para não deixar passar nenhuma OS sem fatura..
+
+Essa é a "visão de dono" que faltava para garantir que nenhum centavo fique pelo caminho. Para o sistema Torres ser blindado, não basta apenas gerar a fatura; o sistema precisa te avisar o que deveria ter sido faturado e não foi.
+
+Vou instruir o Replit a criar um Módulo de Auditoria de Ciclo de Faturamento. Aqui está como esse relatório vai funcionar:
+
+📊 A Lógica da Auditoria (O "Pente Fino")
+O relatório cruzará três informações: Contrato do Cliente, Data da OS e Status do Asaas.
+
+Regra da Quinzena (Filtro de Conformidade):
+
+1ª Quinzena: OS entre 01 e 15 do mês. Ação: Deve ser faturada até o dia 16-17.
+
+2ª Quinzena: OS entre 16 e o último dia do mês. Ação: Deve ser faturada até o dia 01-02 do mês seguinte.
+
+Alerta de Erro: Se uma OS do dia 05/04 ainda não tem invoice_id em 20/04, ela aparece em Vermelho Vivo como "OS Esquecida/Perdida".
+
+O Funil de Auditoria (Status Realtime):
+Cada OS será listada com seu "estágio de vida":
+
+Nível 1: Pendente (OS finalizada no app, mas sem medição aprovada).
+
+Nível 2: Aprovada (Medição ok, aguardando você clicar em 'Gerar Fatura').
+
+Nível 3: Enviada (Boleto gerado no Asaas e enviado por e-mail).
+
+Nível 4: Faturada (NF) (Nota Fiscal emitida com sucesso).
+
+Nível 5: Liquidada (Dinheiro caiu na conta).
+
+🛠️ O que o Replit vai construir agora:
+Envie esta instrução para o desenvolvedor aplicar essa tela de auditoria:
+
+"Preciso de uma nova tela chamada 'Auditoria de Ciclo de Faturamento' para evitar perda de receita. A lógica deve ser:
+
+Identificador de Atraso: O sistema deve sinalizar qualquer OS que tenha passado da sua quinzena de competência sem ter uma fatura vinculada.
+
+Exemplo: Se hoje é dia 20 e existem OS do dia 10 sem fatura, destaque como 'CRÍTICO: Faturamento Atrasado'.
+
+Rastreabilidade Total: Em uma única linha, quero ver: [ID da OS] | [Data] | [Cliente] | [Valor] | [Status Medição] | [ID Fatura Asaas] | [Status Pagamento].
+
+Filtro de 'Esquecidas': Um botão que mostre apenas as OS que foram finalizadas pelos agentes mas que nunca entraram em nenhum Boletim de Medição. Isso é a nossa 'sujeira' operacional que vira prejuízo.
+
+Conferência de Valores: Se o valor da OS no operacional for diferente do valor que foi para a fatura (por erro manual), o sistema deve apontar a divergência em amarelo."
+
+🔍 Por que isso resolve o seu problema das fotos anteriores?
+Lembra que você viu 36 itens no faturamento mas o banner dizia 35?
+
+Com essa auditoria, você clicaria em um botão e o sistema diria: "A OS TOR-XXXX está entrando no faturamento sem ter sido aprovada na medição".
+
+Isso mata o erro na raiz antes de você enviar o boleto errado para o cliente.
+
+Dica: Peça para o Replit colocar essa tela de Auditoria com um gráfico de "Saúde do Faturamento", mostrando em porcentagem quanto da sua quinzena já foi efetivamente transformado em boleto no Asaas.

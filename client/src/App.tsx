@@ -27,6 +27,7 @@ const MissionPage = lazy(() => import("@/pages/admin/mission"));
 const OperationalGridPage = lazy(() => import("@/pages/admin/operational-grid"));
 const AgendaVtrPage = lazy(() => import("@/pages/admin/agenda-vtr"));
 const RelatorioNFPage = lazy(() => import("@/pages/admin/relatorio-nf"));
+const AuditoriaFaturamentoPage = lazy(() => import("@/pages/admin/auditoria-faturamento"));
 const GuiaMissaoPage = lazy(() => import("@/pages/admin/guia-missao"));
 const WeaponsPage = lazy(() => import("@/pages/admin/weapons"));
 const UsersPage = lazy(() => import("@/pages/admin/users"));
@@ -232,6 +233,7 @@ function Router() {
         <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
         <Route path="/admin/agenda-vtr">{() => <ProtectedRoute component={AgendaVtrPage} />}</Route>
         <Route path="/admin/relatorio-nf">{() => <ProtectedRoute component={RelatorioNFPage} />}</Route>
+        <Route path="/admin/auditoria-faturamento">{() => <ProtectedRoute component={AuditoriaFaturamentoPage} />}</Route>
         <Route path="/admin/laudo/:osId">{() => <ProtectedRoute component={LaudoPage} />}</Route>
         <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>

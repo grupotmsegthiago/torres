@@ -1,0 +1,44 @@
+Veja as OS aparecem como "faturadas", mas no Relatório de NFs elas não aparecem la..
+
+Analisando as duas imagens que você enviou, encontrei o "furo" na lógica que está causando esse sumiço.
+
+Na primeira imagem (Lista de OS), as ordens de serviço aparecem com a tag verde "FATURADA". No entanto, na segunda imagem (Relatório de NFs), elas não constam na lista. Isso indica uma quebra de integridade entre o banco de dados e a integração com o Asaas.
+
+Aqui está o que está acontecendo e como vamos cobrar o Replit para corrigir:
+
+🔴 O Diagnóstico do Erro
+O sistema está sofrendo de um problema de "Status Falso":
+
+No Operacional (Lista de OS): O sistema marca a OS como "Faturada" simplesmente porque ela foi incluída em um lote de faturamento, ou porque alguém clicou no botão. É um status manual/local.
+
+No Financeiro (Relatório de NFs): Esta tela é mais rigorosa. Ela só mostra o que tem um ID de Cobrança válido vindo do Asaas.
+
+Conclusão: Essas OS estão marcadas como faturadas no sistema da Torres, mas a comunicação com o Asaas falhou ou o registro da fatura foi apagado/não vinculado. Para o financeiro, elas "não existem".
+
+🛠️ Plano de Ação para o Replit (Auditoria de Sincronização)
+Envie esta instrução exata para o desenvolvedor:
+
+"Identificamos uma falha grave de sincronização: diversas OS aparecem com status 'FATURADA' na tela operacional, mas não aparecem no 'Relatório de NFs'.
+
+Correções Urgentes:
+
+Validação de Status: A tag 'FATURADA' na lista de OS só deve aparecer se o campo invoice_id (vinculado ao Asaas) estiver preenchido e ativo. Se não houver fatura real, a OS deve voltar para o status 'APROVADA' ou 'PENDENTE'.
+
+Script de Reconciliação: Por favor, rodem um script que verifique todas as OS marcadas como 'Faturadas'. Se o ID da fatura vinculado a elas não existir no Relatório de NFs, o sistema deve 'desfaturar' essas OS automaticamente para que elas fiquem disponíveis para serem faturadas novamente.
+
+Log de Erro de Faturamento: Se ao clicar em 'Gerar Fatura' o Asaas retornar erro, o sistema não pode mudar o status da OS para faturada. Atualmente, parece que ele muda o status antes de confirmar se a fatura foi criada com sucesso no Asaas.
+
+Botão de Re-vínculo: Na tela de Auditoria, permitam que eu selecione essas OS 'falsas faturadas' e as envie novamente para o faturamento."
+
+💡 Como você resolve isso manualmente agora?
+Enquanto o Replit não corrige o código, você pode fazer o seguinte para não perder esse dinheiro:
+
+Filtre as OS que estão como "Faturadas" mas você sabe que não geraram boleto.
+
+Peça para o suporte limpar o invoice_id dessas OS específicas no banco de dados.
+
+Assim que o campo for limpo, elas voltarão a aparecer no seu "Boletim de Medição" como prontas para faturar.
+
+Gere a fatura novamente e confirme se, desta vez, o número da NF e o logo do Asaas aparecem no Relatório de NFs.
+
+Isso é perigoso: Se você não corrigir isso, vai achar que faturou o cliente, mas o boleto nunca chegará para ele e o dinheiro nunca cairá na sua conta. Precisamos que o Replit force o status da OS a depender 100% da existência da fatura no Asaas.

@@ -3710,6 +3710,283 @@ export function registerAsaasRoutes(app: Express) {
       }
     });
 
+    // ============================================================
+    // GET /api/auditoria-faturamento — Auditoria de Ciclo
+    // Cruza service_orders, escort_billings, invoices e clients pra
+    // dar a "visão de dono" do ciclo: o que está dentro do prazo da
+    // quinzena/mês, o que está atrasado, o que foi esquecido (OS
+    // concluída sem boletim) e onde o valor operacional diverge do
+    // valor faturado. Tudo BRT, sem .toISOString.
+    // ============================================================
+    app.get("/api/auditoria-faturamento", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const today = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 10);
+        const defaultFrom = today.slice(0, 8) + "01";
+        const fromDate = String(req.query.from || defaultFrom);
+        const toDate = String(req.query.to || today);
+        const onlyClient = req.query.clientId ? Number(req.query.clientId) : null;
+
+        // --- Quinzena helpers (BRT puro, baseado em strings YYYY-MM-DD) ---
+        const lastDayOfMonth = (ym: string) => {
+          const [y, m] = ym.split("-").map(Number);
+          return new Date(y, m, 0).getDate();
+        };
+        const quinzenaInfo = (dateStr: string) => {
+          // dateStr: YYYY-MM-DD
+          const [y, m, d] = dateStr.split("-").map(Number);
+          const ym = `${y.toString().padStart(4, "0")}-${m.toString().padStart(2, "0")}`;
+          if (d <= 15) {
+            return {
+              q: 1 as const,
+              start: `${ym}-01`,
+              end: `${ym}-15`,
+              // Convenção: deve ser faturado até o dia 17 do mesmo mês
+              dueBy: `${ym}-17`,
+            };
+          }
+          const last = lastDayOfMonth(ym).toString().padStart(2, "0");
+          // Mês seguinte para a régua de "deve ser faturado até dia 02"
+          let nyy = y, nmm = m + 1;
+          if (nmm > 12) { nmm = 1; nyy += 1; }
+          const nextMonth = `${nyy.toString().padStart(4, "0")}-${nmm.toString().padStart(2, "0")}`;
+          return {
+            q: 2 as const,
+            start: `${ym}-16`,
+            end: `${ym}-${last}`,
+            dueBy: `${nextMonth}-02`,
+          };
+        };
+        const mensalInfo = (dateStr: string) => {
+          const [y, m] = dateStr.split("-").map(Number);
+          const ym = `${y.toString().padStart(4, "0")}-${m.toString().padStart(2, "0")}`;
+          const last = lastDayOfMonth(ym).toString().padStart(2, "0");
+          let nyy = y, nmm = m + 1;
+          if (nmm > 12) { nmm = 1; nyy += 1; }
+          const nextMonth = `${nyy.toString().padStart(4, "0")}-${nmm.toString().padStart(2, "0")}`;
+          return {
+            start: `${ym}-01`,
+            end: `${ym}-${last}`,
+            dueBy: `${nextMonth}-05`, // mensal: até o 5º dia útil aprox
+          };
+        };
+
+        // --- Carrega billings do período ---
+        let billingsQuery = supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, client_name, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, fat_adicional_noturno, status, service_order_id, invoice_id, boletim_numero, created_at")
+          .gte("data_missao", fromDate)
+          .lte("data_missao", toDate)
+          .order("data_missao", { ascending: false })
+          .limit(5000);
+        if (onlyClient) billingsQuery = billingsQuery.eq("client_id", onlyClient);
+        const { data: billings, error: bErr } = await billingsQuery;
+        if (bErr) throw bErr;
+
+        // --- Carrega clients (cycle + nomes) ---
+        const clientIds = Array.from(new Set([
+          ...((billings || []).map((b: any) => b.client_id).filter(Boolean)),
+          ...(onlyClient ? [onlyClient] : []),
+        ])) as number[];
+        const clientMap = new Map<number, { id: number; name: string; billing_cycle: string | null; payment_terms_days: number | null }>();
+        if (clientIds.length > 0) {
+          const { data: cls } = await supabaseAdmin
+            .from("clients")
+            .select("id, name, billing_cycle, payment_terms_days")
+            .in("id", clientIds);
+          for (const c of (cls || [])) clientMap.set(c.id, c as any);
+        }
+
+        // --- Carrega invoices referenciadas ---
+        const invoiceIds = Array.from(new Set((billings || [])
+          .map((b: any) => b.invoice_id).filter(Boolean))) as number[];
+        const invoiceMap = new Map<number, any>();
+        if (invoiceIds.length > 0) {
+          const { data: invs } = await supabaseAdmin
+            .from("invoices")
+            .select("id, status, value, payment_date, due_date, asaas_payment_id, nfse_status, nfse_number, nfse_url, invoice_url")
+            .in("id", invoiceIds);
+          for (const i of (invs || [])) invoiceMap.set(i.id, i);
+        }
+
+        // --- Carrega service_orders das billings + concluídas no período (esquecidas) ---
+        const billingSoIds = Array.from(new Set((billings || [])
+          .map((b: any) => b.service_order_id).filter(Boolean))) as number[];
+        const { data: sosWithBilling } = billingSoIds.length > 0
+          ? await supabaseAdmin
+              .from("service_orders")
+              .select("id, os_number, status, mission_status, valor_estimado, completed_date, scheduled_date, client_id")
+              .in("id", billingSoIds)
+          : { data: [] as any[] };
+
+        // OS concluídas no período sem billing → "esquecidas"
+        let sosCompletedQ = supabaseAdmin
+          .from("service_orders")
+          .select("id, os_number, status, mission_status, valor_estimado, completed_date, scheduled_date, client_id")
+          .in("status", ["concluida", "encerrada", "finalizada"])
+          .gte("scheduled_date", `${fromDate}T00:00:00`)
+          .lte("scheduled_date", `${toDate}T23:59:59`)
+          .neq("status", "CANCELADO")
+          .limit(5000);
+        if (onlyClient) sosCompletedQ = sosCompletedQ.eq("client_id", onlyClient);
+        const { data: sosCompleted } = await sosCompletedQ;
+
+        const soMap = new Map<number, any>();
+        for (const s of (sosWithBilling || [])) soMap.set(s.id, s);
+        for (const s of (sosCompleted || [])) if (!soMap.has(s.id)) soMap.set(s.id, s);
+
+        const billedSoIds = new Set(billingSoIds);
+
+        // --- Helpers de cálculo ---
+        const valorOf = (b: any) => {
+          const v = Number(b.fat_total || 0);
+          if (v > 0) return v;
+          return Number(b.fat_acionamento || b.valor_franquia || 0)
+               + Number(b.fat_hora_extra || 0)
+               + Number(b.fat_km || b.valor_km_extra || 0)
+               + Number(b.despesas_pedagio || 0)
+               + Number(b.fat_adicional_noturno || 0)
+               + Number(b.receitas_os || 0);
+        };
+        const stageOf = (billing: any, inv: any | null) => {
+          if (inv) {
+            const stPay = String(inv.status || "").toUpperCase();
+            if (["RECEIVED", "CONFIRMED", "PAID"].includes(stPay)) return "PAGO";
+            const nf = String(inv.nfse_status || "").toUpperCase();
+            if (["AUTHORIZED", "SYNCHRONIZED"].includes(nf) && inv.nfse_number && !String(inv.nfse_number).startsWith("inv_")) {
+              return "NF_EMITIDA";
+            }
+            if (["OVERDUE"].includes(stPay)) return "VENCIDA";
+            return "ENVIADA"; // boleto gerado, aguardando pagamento
+          }
+          const st = String(billing?.status || "").toUpperCase();
+          if (st === "APROVADA") return "APROVADA";
+          if (st === "FATURADO" || st === "FATURADA") return "FATURADA_LOCAL";
+          if (st === "CANCELADO" || st === "CANCELADA" || st === "REJEITADA" || st === "RECUSADA") return "CANCELADA";
+          return "PENDENTE";
+        };
+
+        // --- Monta linhas ---
+        const rows: any[] = [];
+
+        for (const b of (billings || [])) {
+          const cli = clientMap.get(b.client_id);
+          const cycle = String(cli?.billing_cycle || "mensal").toLowerCase();
+          const isQuinz = cycle === "quinzenal" || cycle === "quinzena";
+          const period = isQuinz ? quinzenaInfo(b.data_missao) : mensalInfo(b.data_missao);
+          const inv = b.invoice_id ? invoiceMap.get(b.invoice_id) : null;
+          const so = b.service_order_id ? soMap.get(b.service_order_id) : null;
+          const valorBilling = valorOf(b);
+          const valorOp = Number(so?.valor_estimado || 0);
+          const stage = stageOf(b, inv);
+          const hasInvoice = !!inv;
+          const lateNoInvoice = !hasInvoice && period.dueBy < today;
+          const divergence = (valorOp > 0 && valorBilling > 0)
+            ? Math.abs(valorOp - valorBilling) / Math.max(valorOp, valorBilling)
+            : 0;
+
+          rows.push({
+            tipo: "BILLING" as const,
+            billingId: b.id,
+            soId: b.service_order_id,
+            osNumber: so?.os_number || b.boletim_numero || (b.service_order_id ? `OS#${b.service_order_id}` : "—"),
+            dataMissao: b.data_missao,
+            clientId: b.client_id,
+            clientName: b.client_name || cli?.name || "—",
+            billingCycle: isQuinz ? "quinzenal" : "mensal",
+            quinzena: isQuinz ? `Q${(period as any).q}` : "M",
+            periodoStart: period.start,
+            periodoEnd: period.end,
+            dueBy: period.dueBy,
+            valorOperacional: valorOp || null,
+            valorBilling,
+            valorFatura: inv ? Number(inv.value || 0) : null,
+            statusMedicao: b.status,
+            invoiceId: b.invoice_id,
+            invoiceStatus: inv?.status || null,
+            invoiceUrl: inv?.invoice_url || null,
+            asaasPaymentId: inv?.asaas_payment_id || null,
+            nfseStatus: inv?.nfse_status || null,
+            nfseNumber: inv?.nfse_number || null,
+            paymentDate: inv?.payment_date || null,
+            stage,
+            atraso: lateNoInvoice && stage !== "CANCELADA",
+            esquecida: false,
+            divergenciaPct: divergence > 0.001 ? Number((divergence * 100).toFixed(2)) : 0,
+          });
+        }
+
+        // OS concluídas sem billing → linhas "ESQUECIDA"
+        for (const s of (sosCompleted || [])) {
+          if (billedSoIds.has(s.id)) continue;
+          const cli = clientMap.get(s.client_id);
+          const cycle = String(cli?.billing_cycle || "mensal").toLowerCase();
+          const isQuinz = cycle === "quinzenal" || cycle === "quinzena";
+          const dataRef = (s.completed_date || s.scheduled_date || "").slice(0, 10);
+          if (!dataRef) continue;
+          const period = isQuinz ? quinzenaInfo(dataRef) : mensalInfo(dataRef);
+          rows.push({
+            tipo: "OS_ESQUECIDA" as const,
+            billingId: null,
+            soId: s.id,
+            osNumber: s.os_number,
+            dataMissao: dataRef,
+            clientId: s.client_id,
+            clientName: cli?.name || "—",
+            billingCycle: isQuinz ? "quinzenal" : "mensal",
+            quinzena: isQuinz ? `Q${(period as any).q}` : "M",
+            periodoStart: period.start,
+            periodoEnd: period.end,
+            dueBy: period.dueBy,
+            valorOperacional: Number(s.valor_estimado || 0) || null,
+            valorBilling: 0,
+            valorFatura: null,
+            statusMedicao: "SEM_BOLETIM",
+            invoiceId: null,
+            invoiceStatus: null,
+            invoiceUrl: null,
+            asaasPaymentId: null,
+            nfseStatus: null,
+            nfseNumber: null,
+            paymentDate: null,
+            stage: "ESQUECIDA",
+            atraso: period.dueBy < today,
+            esquecida: true,
+            divergenciaPct: 0,
+          });
+        }
+
+        // --- Agregados ---
+        const totals = {
+          totalLinhas: rows.length,
+          totalEsquecidas: rows.filter(r => r.esquecida).length,
+          totalAtrasadas: rows.filter(r => r.atraso).length,
+          totalPagas: rows.filter(r => r.stage === "PAGO").length,
+          totalNFEmitidas: rows.filter(r => r.stage === "NF_EMITIDA").length,
+          totalEnviadas: rows.filter(r => r.stage === "ENVIADA" || r.stage === "VENCIDA").length,
+          totalAprovadas: rows.filter(r => r.stage === "APROVADA").length,
+          totalPendentes: rows.filter(r => r.stage === "PENDENTE").length,
+          totalDivergencia: rows.filter(r => r.divergenciaPct > 5).length,
+          valorTotalPeriodo: rows.reduce((s, r) => s + (r.valorBilling || r.valorOperacional || 0), 0),
+          valorPago: rows.filter(r => r.stage === "PAGO").reduce((s, r) => s + (r.valorFatura || r.valorBilling || 0), 0),
+          valorEnviado: rows.filter(r => r.stage === "ENVIADA" || r.stage === "VENCIDA" || r.stage === "NF_EMITIDA")
+            .reduce((s, r) => s + (r.valorFatura || r.valorBilling || 0), 0),
+          valorEsquecido: rows.filter(r => r.esquecida).reduce((s, r) => s + (r.valorOperacional || 0), 0),
+        };
+        const saudePct = totals.valorTotalPeriodo > 0
+          ? Number((((totals.valorPago + totals.valorEnviado) / totals.valorTotalPeriodo) * 100).toFixed(1))
+          : 0;
+
+        res.json({
+          period: { from: fromDate, to: toDate, today },
+          totals: { ...totals, saudePct },
+          rows,
+        });
+      } catch (err: any) {
+        console.error("[auditoria-faturamento] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 
