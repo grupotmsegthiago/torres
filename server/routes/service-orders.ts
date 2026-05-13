@@ -661,8 +661,9 @@ import type { Express } from "express";
           const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
 
           const updatedLogs = (updatedSo.stepLogs || []) as any[];
-          const checkinEntry = [...updatedLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && (l.timestamp || l.completedAt));
-          const stTime = checkinEntry ? toBRT(new Date(checkinEntry.timestamp || checkinEntry.completedAt)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
+          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino". Chegada na origem não conta.
+          const inicioEntry2 = [...updatedLogs].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
+          const stTime = inicioEntry2 ? toBRT(new Date(inicioEntry2.timestamp || inicioEntry2.completedAt)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
 
           const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
           const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
