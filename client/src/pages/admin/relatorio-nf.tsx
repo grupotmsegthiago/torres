@@ -357,9 +357,18 @@ export default function RelatorioNFPage() {
       .filter(r => {
         if (!search.trim()) return true;
         const s = search.trim().toLowerCase();
-        return [r.clientName, r.clientCpfCnpj, r.nfseNumber, r.asaasPaymentId, String(r.sourceId), r.id]
+        const baseFields = [r.clientName, r.clientCpfCnpj, r.nfseNumber, r.asaasPaymentId, String(r.sourceId), r.id]
           .filter(Boolean)
           .some(x => String(x).toLowerCase().includes(s));
+        if (baseFields) return true;
+        // Busca também por número de OS (TOR-0123, 0123, 123) dentro da fatura
+        const sNum = s.replace(/[^0-9]/g, "");
+        return (r.osList || []).some(o => {
+          const osStr = String(o.osNumber || "").toLowerCase();
+          if (osStr.includes(s)) return true;
+          if (sNum && osStr.replace(/[^0-9]/g, "").includes(sNum)) return true;
+          return false;
+        });
       });
   }, [rows, statusFilter, search, onlyAsaas]);
 
@@ -381,9 +390,17 @@ export default function RelatorioNFPage() {
       .filter(r => r.normalizedStatus === "PAGO")
       .filter(r => {
         if (!s) return true;
-        return [r.clientName, r.clientCpfCnpj, r.nfseNumber, r.asaasPaymentId, String(r.sourceId), r.id]
+        const baseFields = [r.clientName, r.clientCpfCnpj, r.nfseNumber, r.asaasPaymentId, String(r.sourceId), r.id]
           .filter(Boolean)
           .some(x => String(x).toLowerCase().includes(s));
+        if (baseFields) return true;
+        const sNum = s.replace(/[^0-9]/g, "");
+        return (r.osList || []).some(o => {
+          const osStr = String(o.osNumber || "").toLowerCase();
+          if (osStr.includes(s)) return true;
+          if (sNum && osStr.replace(/[^0-9]/g, "").includes(sNum)) return true;
+          return false;
+        });
       })
       .sort((a, b) => {
         const da = a.paymentDate ? new Date(a.paymentDate).getTime() : 0;
@@ -549,7 +566,7 @@ export default function RelatorioNFPage() {
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <Input
-                  placeholder="Cliente, CPF/CNPJ, Nº NF, ID Asaas…"
+                  placeholder="Cliente, CPF/CNPJ, Nº NF, ID Asaas, OS (TOR-0123)…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="pl-8 h-9"
@@ -705,23 +722,33 @@ export default function RelatorioNFPage() {
                           </div>
                         )}
                         {r.clientCpfCnpj && <div className="text-[11px] text-slate-400">{r.clientCpfCnpj}</div>}
-                        <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-x-1 gap-y-0.5 items-center" data-testid={`os-list-${r.id}`}>
+                        <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1" data-testid={`os-list-${r.id}`}>
                           {r.osList && r.osList.length > 0 ? (
-                            <>
-                              {r.osList.map((o, idx) => (
-                                <span key={o.id} className="inline-flex items-center">
-                                  <Link
-                                    href={`/admin/service-orders?os=${o.id}`}
-                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                                    data-testid={`link-os-${o.id}`}
-                                    title={`Abrir ${o.osNumber}`}
-                                  >
-                                    {o.osNumber}
-                                  </Link>
-                                  {idx < r.osList.length - 1 && <span className="text-slate-300 mx-0.5">·</span>}
-                                </span>
-                              ))}
-                            </>
+                            <div className="relative group/oslist inline-block">
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 cursor-help hover:bg-blue-100 transition-colors"
+                                data-testid={`os-count-${r.id}`}
+                              >
+                                <FileText className="h-2.5 w-2.5" />
+                                {r.osList.length} OS
+                              </span>
+                              <div className="invisible opacity-0 group-hover/oslist:visible group-hover/oslist:opacity-100 transition-opacity absolute z-50 left-0 top-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg p-2 min-w-[220px] max-w-[420px]">
+                                <div className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mb-1">OS vinculadas ({r.osList.length})</div>
+                                <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                                  {r.osList.map((o) => (
+                                    <Link
+                                      key={o.id}
+                                      href={`/admin/service-orders?os=${o.id}`}
+                                      className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-[11px] px-1 py-0.5 rounded hover:bg-blue-50"
+                                      data-testid={`link-os-${o.id}`}
+                                      title={`Abrir ${o.osNumber}`}
+                                    >
+                                      {o.osNumber}
+                                    </Link>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
                           ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : r.source === "INVOICE" && r.sourceId > 0 ? (

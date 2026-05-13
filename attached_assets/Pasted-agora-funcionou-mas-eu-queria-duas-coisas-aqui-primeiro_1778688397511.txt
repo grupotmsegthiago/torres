@@ -1,0 +1,72 @@
+agora funcionou, mas eu queria duas coisas aqui .. primeiro um campo de busca da OS pra identificar qual é a fatura que ela esta, segundo que ela ficasse "oculta" e só quando deixasse o mouse elas apareciam, assim polui menos a tela
+
+Excelente, Thiago. Agora que o número da fatura finalmente está aparecendo, vamos fazer esse ajuste de "design" para deixar a tela limpa e funcional, do jeito que você gosta.
+
+O objetivo aqui é transformar a coluna em uma ferramenta de consulta rápida, sem poluir o visual. Veja como o Replit vai implementar isso agora:
+
+1. Campo de Busca de OS (O "Localizador")
+Vou pedir para adicionarem um campo de busca no topo da tabela de faturamento.
+
+Como vai funcionar: Você digita o número da OS (ex: 250) e o sistema filtra na hora apenas as faturas que contêm essa missão dentro delas. Assim, se um cliente perguntar sobre um serviço específico, você acha o boleto em um segundo.
+
+2. Efeito "Hover" (Ocultar para Limpar)
+Para não ficar aquele monte de números azuis poluindo a visão geral:
+
+Visual Padrão: A coluna de OS ficará vazia ou com um ícone discreto (como uma lupa 🔍 ou um ícone de documento).
+
+Ao passar o mouse: Somente quando você colocar o cursor sobre a linha é que os números das OS (TOR-XXX, TOR-YYY) vão aparecer em um balão ou expandir na célula.
+
+Resultado: A tela volta a ficar limpa, mas a informação continua a um movimento de mouse de distância.
+
+📧 Mensagem de ajuste fino para o Replit:
+"O vínculo agora está funcionando, mas precisamos melhorar a experiência do usuário (UX) para reduzir a poluição visual:
+
+Filtro de Busca por OS: Adicionem um input de busca no cabeçalho da tabela de faturamento que permita filtrar as linhas pelo número da OS (service_order_id).
+
+Interface Clean (Hover): Por padrão, escondam a lista de números de OS na coluna 'OS Vinculadas'. Os números só devem aparecer quando o usuário passar o mouse sobre a célula (efeito hover).
+
+Ícone Indicador: Enquanto o mouse não estiver em cima, mostrem apenas um ícone discreto indicando que existem vínculos ali (ex: um ícone de 'link' ou 'lista').
+
+Manter o Clique: O número da fatura dentro desse campo oculto deve continuar sendo um link para o Relatório de NFs, como implementado anteriormente."
+
+O que muda para você:
+Sua tela vai parecer muito mais organizada. Você terá o controle total para pesquisar qualquer OS e, ao mesmo tempo, uma visão limpa do financeiro sem aquele "mar" de códigos azuis.
+
+Posso mandar o Replit aplicar esse efeito de "esconde-aparece" agora?
+
+sim
+
+Perfeito, Thiago. Comando enviado para o Replit. Vamos deixar o sistema com "cara de sistema caro": funcional, mas limpo.
+
+Aqui está o que está sendo implementado agora para resolver a poluição visual e a facilidade de busca:
+
+1. Busca Instantânea por OS
+O Replit está adicionando um campo de pesquisa no topo da tabela.
+
+Ação: Se você digitar "250", o sistema vai esconder todas as faturas e deixar na tela apenas aquela que contém a missão TOR-250. Isso economiza o tempo que você gastava "caçando" a OS na lista.
+
+2. Ocultação Inteligente (Efeito Hover)
+Para limpar a "sujeira" visual que você apontou:
+
+Visual padrão: A coluna agora mostrará apenas um ícone discreto (como uma pastinha ou um link 🔗) e um contador, por exemplo: (3 OS).
+
+Ao passar o mouse: Quando você colocar o mouse em cima desse ícone, um balão (tooltip) vai abrir instantaneamente mostrando a lista: TOR-102, TOR-105, TOR-110.
+
+O Link continua lá: Dentro desse balão, o número da fatura continua sendo um link clicável para facilitar sua navegação.
+
+3. "Faxina" no Layout
+Essa mudança vai permitir que as colunas de Valor, Cliente e Vencimento fiquem mais largas e fáceis de ler, já que a lista de OS não estará mais ocupando espaço físico permanente na tela.
+
+📧 Mensagem de Finalização (Enviada ao Replit):
+"O vínculo está certo, mas a tela está poluída. Apliquem a UX de alta performance:
+
+Filtro Superior: Criem um input 'Buscar OS' que filtre a tabela por service_order_number.
+
+Implementar Hover: Na coluna 'OS Vinculadas', substituam a lista de números por um ícone de link e o contador (ex: 🔗 5 OS). A lista completa com os números e links só deve aparecer no estado de :hover (mouse over).
+
+Priorizar Leitura: Com o encurtamento dessa coluna, ajustem o espaçamento das outras colunas para que o Balanço Gerencial fique visualmente equilibrado."
+
+O que esperar agora:
+Assim que o servidor atualizar, você verá a tabela bem mais "clean". Se precisar saber quais OS estão em uma fatura, é só passar o mouse. Se precisar achar uma OS específica, é só usar o novo campo de busca.
+
+Vou te avisar assim que o Replit confirmar a subida desse ajuste de design!
