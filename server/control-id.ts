@@ -1646,13 +1646,19 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     const hoursWorked = +(totalMin / 60).toFixed(2);
     const duty = dutyByEmp.get(e.id) || null;
 
-    // Status unificado (regra Thiago): se o agente está com OS ativa hoje E
-    // o ponto está aberto/em andamento, o status visual prioritário é TRABALHANDO.
-    // Mantém o todayStatus original (do ponto) pra outros usos/filtros.
+    // Status unificado (regra Thiago): a OS é a fonte da verdade operacional.
+    // Se o agente tem OS ativa escalada hoje, ele ESTÁ TRABALHANDO,
+    // independente do que o relógio diz (ponto pode ter sido fechado cedo,
+    // não batido, ou ele pode ter esquecido de bater entrada do novo turno).
+    // O status do ponto vira informação secundária (pontoConflict) — exibido
+    // como aviso ⚠️ no badge quando não bate com a realidade da OS.
     let unifiedStatus: string = todayStatus;
+    let pontoConflict: "PONTO_FECHADO" | "SEM_BATIDA" | null = null;
     const dutyIsActive = !!duty && duty.status !== "concluida" && duty.status !== "cancelada" && duty.status !== "recusada";
-    if (dutyIsActive && (todayStatus === "EM_ABERTO" || todayStatus === "EM_ANDAMENTO")) {
+    if (dutyIsActive && todayStatus !== "AUSENCIA") {
       unifiedStatus = "TRABALHANDO";
+      if (todayStatus === "COMPLETO") pontoConflict = "PONTO_FECHADO";
+      else if (todayStatus === "NAO_BATEU") pontoConflict = "SEM_BATIDA";
     }
 
     result.push({
@@ -1667,6 +1673,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       daysWorked,
       todayStatus,
       unifiedStatus,
+      pontoConflict,
       todayPunchCount: todayPunches.length,
       openSinceMinutes,
       lastPunchAt,

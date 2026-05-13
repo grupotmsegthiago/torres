@@ -932,6 +932,7 @@ type PainelRow = {
   daysWorked: number;
   todayStatus: "NAO_BATEU" | "EM_ANDAMENTO" | "EM_ABERTO" | "COMPLETO" | "AUSENCIA" | "NAO_MAPEADO" | "MES_PASSADO";
   unifiedStatus?: "NAO_BATEU" | "EM_ANDAMENTO" | "EM_ABERTO" | "COMPLETO" | "AUSENCIA" | "NAO_MAPEADO" | "MES_PASSADO" | "TRABALHANDO";
+  pontoConflict?: "PONTO_FECHADO" | "SEM_BATIDA" | null;
   todayPunchCount: number;
   openSinceMinutes: number | null;
   lastPunchAt: string | null;
@@ -1269,7 +1270,23 @@ function PainelMesTab() {
                       <td className="p-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${meta.cls}`}>
                           <meta.Icon className="w-3 h-3" /> {meta.label}
+                          {r.pontoConflict && (
+                            <AlertTriangle
+                              className="w-3 h-3 text-amber-600"
+                              data-testid={`icon-ponto-conflict-${r.employeeId}`}
+                            />
+                          )}
                         </span>
+                        {r.pontoConflict === "PONTO_FECHADO" && (
+                          <div className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-0.5" title="OS aberta, mas o agente já bateu saída do ponto. Verificar se ele esqueceu de bater entrada do novo turno.">
+                            <AlertTriangle className="w-2.5 h-2.5" /> Ponto fechado às {r.lastPunchAt ? new Date(r.lastPunchAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—"}
+                          </div>
+                        )}
+                        {r.pontoConflict === "SEM_BATIDA" && (
+                          <div className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-0.5" title="OS aberta, mas o agente ainda não bateu o ponto hoje.">
+                            <AlertTriangle className="w-2.5 h-2.5" /> Sem batida hoje
+                          </div>
+                        )}
                         {r.todayStatus === "EM_ABERTO" && r.openSinceMinutes != null && (
                           <div className="text-[10px] text-amber-700 mt-0.5">há {fmtSinceMin(r.openSinceMinutes)} sem fechar</div>
                         )}
