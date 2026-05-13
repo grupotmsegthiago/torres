@@ -287,9 +287,11 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
   // dentro do período da fatura bate com o valor da fatura
   // (tolerância 2%). Roda silenciosamente durante a sync com Asaas.
   // ============================================================
-  export async function autoLinkOrphanBillingsForInvoice(invoice: any): Promise<{ linked: number; reason?: string }> {
+  export async function autoLinkOrphanBillingsForInvoice(invoice: any, opts: { dryRun?: boolean } = {}): Promise<{ linked: number; reason?: string; matchedBy?: string }> {
+    const dryRun = !!opts.dryRun;
     try {
-      if (!invoice?.id || !invoice?.client_id) return { linked: 0, reason: "invoice inválida" };
+      if (!invoice?.id) return { linked: 0, reason: "invoice inválida" };
+      if (!invoice.value || Number(invoice.value) <= 0) return { linked: 0, reason: "valor zero" };
 
       // Já tem billings vinculadas? Não mexe.
       const { data: already } = await supabaseAdmin
@@ -299,32 +301,77 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
         .limit(1);
       if (already && already.length > 0) return { linked: 0, reason: "já vinculada" };
 
-      // Extrai período da descrição: "...01/05/2026 a 31/05/2026..."
+      const target = Number(invoice.value);
+
+      // ===========================================================
+      // RESOLUÇÃO DE CLIENTE — não confiar cegamente em invoice.client_id.
+      // Várias faturas vêm do Asaas com client_id desalinhado (ex: FAT
+      // INTEC apontando pra LUFT). Resolver via CNPJ é a chave segura.
+      // ===========================================================
+      const invCnpj = cleanCnpj(invoice.client_cpf_cnpj);
+      const candidateClientIds = new Set<number>();
+      if (invoice.client_id) candidateClientIds.add(Number(invoice.client_id));
+
+      if (invCnpj && invCnpj !== TORRES_CNPJ) {
+        // Busca cliente pelo CNPJ — match por raiz (8 primeiros dígitos)
+        // pra cobrir filiais de mesma empresa.
+        const root = invCnpj.slice(0, 8);
+        const { data: matched } = await supabaseAdmin
+          .from("clients").select("id, cnpj").like("cnpj", `${root}%`).limit(20);
+        for (const c of (matched || [])) {
+          const cn = cleanCnpj((c as any).cnpj);
+          if (cn === invCnpj || cn.startsWith(root)) candidateClientIds.add((c as any).id);
+        }
+      }
+
+      if (candidateClientIds.size === 0) {
+        return { linked: 0, reason: `Sem CNPJ válido na fatura (CNPJ inv: ${invoice.client_cpf_cnpj || "—"}) — não foi possível identificar o cliente no cadastro` };
+      }
+
+      // ===========================================================
+      // PERÍODO — descrição preferida; fallback: due_date - 45d → due_date
+      // ===========================================================
       const desc = String(invoice.description || "");
-      const periodMatch = desc.match(/(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
-      if (!periodMatch) return { linked: 0, reason: "sem período na descrição" };
-      const [d1, m1, y1] = periodMatch[1].split("/");
-      const [d2, m2, y2] = periodMatch[2].split("/");
-      const periodStart = `${y1}-${m1}-${d1}`;
-      const periodEnd = `${y2}-${m2}-${d2}`;
+      const pm = desc.match(/(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
+      let periodStart: string, periodEnd: string, periodSource: string;
+      if (pm) {
+        const [d1, m1, y1] = pm[1].split("/"); const [d2, m2, y2] = pm[2].split("/");
+        periodStart = `${y1}-${m1}-${d1}`; periodEnd = `${y2}-${m2}-${d2}`;
+        periodSource = "descrição";
+      } else if (invoice.due_date) {
+        const due = String(invoice.due_date).slice(0, 10);
+        const dueDate = new Date(`${due}T12:00:00-03:00`);
+        const start = new Date(dueDate); start.setDate(start.getDate() - 45);
+        periodStart = start.toISOString().slice(0, 10);
+        periodEnd = due;
+        periodSource = "vencimento -45d";
+      } else {
+        const cr = String(invoice.created_at || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+        const crDate = new Date(`${cr}T12:00:00-03:00`);
+        const start = new Date(crDate); start.setDate(start.getDate() - 45);
+        const end = new Date(crDate); end.setDate(end.getDate() + 15);
+        periodStart = start.toISOString().slice(0, 10);
+        periodEnd = end.toISOString().slice(0, 10);
+        periodSource = "criação ±";
+      }
 
-      const target = Number(invoice.value || 0);
-      if (target <= 0) return { linked: 0, reason: "valor zero" };
-
+      // ===========================================================
+      // BUSCA BILLINGS ÓRFÃS de qualquer client_id candidato no período
+      // ===========================================================
       const { data: orphans } = await supabaseAdmin
         .from("escort_billings")
-        .select("id, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, data_missao")
-        .eq("client_id", invoice.client_id)
+        .select("id, client_id, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, data_missao")
+        .in("client_id", Array.from(candidateClientIds))
         .is("invoice_id", null)
-        .gte("data_missao", periodStart)
-        .lte("data_missao", periodEnd)
+        .gte("data_missao", `${periodStart}T00:00:00-03:00`)
+        .lte("data_missao", `${periodEnd}T23:59:59-03:00`)
         .neq("status", "CANCELADO")
         .neq("status", "REJEITADA")
         .limit(500);
-      if (!orphans || orphans.length === 0) return { linked: 0, reason: "sem órfãs no período" };
 
-      // Tolerância: 2% absoluto OU R$ 1,00 (cobre arredondamento de centavos
-      // em faturas pequenas onde 2% < R$1).
+      if (!orphans || orphans.length === 0) {
+        return { linked: 0, reason: `Nenhuma OS aprovada/em medição no período ${periodStart}→${periodEnd} (${periodSource}) para ${invoice.client_name || "cliente"} (CNPJ ${invoice.client_cpf_cnpj || "—"})` };
+      }
 
       const valorOf = (b: any) => {
         const v = Number(b.fat_total || 0);
@@ -336,24 +383,61 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
              + Number(b.receitas_os || 0);
       };
 
-      const sum = orphans.reduce((s: number, b: any) => s + valorOf(b), 0);
-      const diffPct = Math.abs(sum - target) / target;
-      if (diffPct > 0.02) {
-        return { linked: 0, reason: `match fraco (soma R$${sum.toFixed(2)} vs alvo R$${target.toFixed(2)}, ${(diffPct * 100).toFixed(1)}%)` };
+      // Tolerância: max(2%, R$ 1,00)
+      const tol = Math.max(target * 0.02, 1.00);
+
+      // Tentativa 1: soma de TODAS as órfãs do período bate
+      const totalSum = orphans.reduce((s: number, b: any) => s + valorOf(b), 0);
+      if (Math.abs(totalSum - target) <= tol) {
+        const ids = orphans.map((b: any) => b.id);
+        if (!dryRun) {
+          const { error } = await supabaseAdmin.from("escort_billings")
+            .update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", ids);
+          if (error) return { linked: 0, reason: error.message };
+          console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${ids.length} OS vinculadas (TODAS, soma R$${totalSum.toFixed(2)} ≈ R$${target.toFixed(2)}, ${periodSource})`);
+        }
+        return { linked: ids.length, matchedBy: "soma_total" };
       }
 
-      const ids = orphans.map((b: any) => b.id);
-      const { error } = await supabaseAdmin
-        .from("escort_billings")
-        .update({ invoice_id: invoice.id, status: "FATURADO" })
-        .in("id", ids);
-      if (error) {
-        console.error(`[auto-link] erro vinculando invoice #${invoice.id}:`, error.message);
-        return { linked: 0, reason: error.message };
+      // Tentativa 2: subset-sum (uma única billing que case)
+      const single = orphans.find((b: any) => Math.abs(valorOf(b) - target) <= tol);
+      if (single) {
+        if (!dryRun) {
+          const { error } = await supabaseAdmin.from("escort_billings")
+            .update({ invoice_id: invoice.id, status: "FATURADO" }).eq("id", single.id);
+          if (error) return { linked: 0, reason: error.message };
+          console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): 1 OS vinculada (single match R$${valorOf(single).toFixed(2)} ≈ R$${target.toFixed(2)}, ${periodSource})`);
+        }
+        return { linked: 1, matchedBy: "single_billing" };
       }
 
-      console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${ids.length} OS vinculadas automaticamente — soma R$${sum.toFixed(2)} ≈ alvo R$${target.toFixed(2)} (período ${periodStart}→${periodEnd})`);
-      return { linked: ids.length };
+      // Tentativa 3: subset-sum DP (combinação de até 12 billings)
+      // Usa centavos como inteiros pra precisão. Limita a 12 itens
+      // pra cap de complexidade (2^12 = 4096 subsets).
+      const cents = orphans.slice(0, 12).map((b: any) => ({ id: b.id, c: Math.round(valorOf(b) * 100) }));
+      const targetC = Math.round(target * 100);
+      const tolC = Math.round(tol * 100);
+      let bestSubset: number[] | null = null;
+      let bestDiff = Infinity;
+      const n = cents.length;
+      for (let mask = 1; mask < (1 << n); mask++) {
+        let sum = 0; const picks: number[] = [];
+        for (let i = 0; i < n; i++) if (mask & (1 << i)) { sum += cents[i].c; picks.push(cents[i].id); }
+        const diff = Math.abs(sum - targetC);
+        if (diff <= tolC && diff < bestDiff) { bestDiff = diff; bestSubset = picks; if (diff === 0) break; }
+      }
+      if (bestSubset && bestSubset.length > 0) {
+        if (!dryRun) {
+          const { error } = await supabaseAdmin.from("escort_billings")
+            .update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", bestSubset);
+          if (error) return { linked: 0, reason: error.message };
+          console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${bestSubset.length} OS vinculadas (subset diff R$${(bestDiff/100).toFixed(2)}, ${periodSource})`);
+        }
+        return { linked: bestSubset.length, matchedBy: "subset" };
+      }
+
+      const valores = orphans.map(valorOf).sort((a, b) => b - a).slice(0, 5).map(v => `R$${v.toFixed(2)}`).join(", ");
+      return { linked: 0, reason: `Existem ${orphans.length} OS aprovadas no período (${valores}${orphans.length > 5 ? "…" : ""}) mas nenhuma combinação soma R$${target.toFixed(2)} (tol ±R$${tol.toFixed(2)}). Verifique se a fatura é avulsa ou se faltam medições.` };
     } catch (e: any) {
       console.error(`[auto-link] erro inesperado invoice #${invoice?.id}:`, e?.message);
       return { linked: 0, reason: e?.message };
@@ -3197,6 +3281,18 @@ export function registerAsaasRoutes(app: Express) {
           ).values());
           const cli = clientMap.get(inv.client_id);
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
+
+          // Raio-X: pra cada fatura sem OS vinculada, computa o motivo
+          // exato (CNPJ não bate? sem OS no período? valor incompatível?)
+          // pra mostrar no tooltip da UI.
+          let noLinkReason: string | null = null;
+          if (osListExtra.length === 0) {
+            const probe = await autoLinkOrphanBillingsForInvoice(inv, { dryRun: true });
+            noLinkReason = probe.linked > 0
+              ? `Vínculo pendente (${probe.matchedBy}) — rode "Sincronizar c/ Asaas" pra efetivar`
+              : (probe.reason || "Sem informação");
+          }
+
           rows.push({
             id: `INV-${inv.id}`,
             source: "INVOICE",
@@ -3218,6 +3314,7 @@ export function registerAsaasRoutes(app: Express) {
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
             osCount: osListExtra.length,
             osList: osListExtra,
+            noLinkReason,
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             nfseErrorMessage: inv.nfse_error_message || null,

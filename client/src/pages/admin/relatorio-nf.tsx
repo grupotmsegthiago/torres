@@ -726,11 +726,11 @@ export default function RelatorioNFPage() {
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : r.source === "INVOICE" && r.sourceId > 0 ? (
                             <span
-                              className="inline-flex items-center gap-1 text-[10px] text-slate-400 italic"
-                              title="Nenhuma medição no banco com este valor pra este cliente. Faturamento avulso ou OS ainda não cadastrada."
+                              className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded cursor-help italic"
+                              title={r.noLinkReason || "Nenhuma OS aprovada encontrada no banco com este valor para este cliente."}
                               data-testid={`text-no-os-${r.id}`}
                             >
-                              avulsa
+                              <AlertTriangle className="h-2.5 w-2.5" /> sem OS
                             </span>
                           ) : null}
                         </div>
