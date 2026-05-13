@@ -1,0 +1,88 @@
+No calculo da OS preciso entender a lógica do sistema para geração de cobrança..
+
+
+
+Como meu sistema trabalha com acionamentos + franquias + kms e kms extras + horas e horas extras o sistema deve ser..
+
+
+
+Calculo da OS.. primeiro é o custo da franquia do acionamento (Exemplo R$ 480,00 3horas 100km)
+
+
+
+Quando inicia a contagem ..
+
+
+
+Se a missão estiver agendada as 08:00 deve iniciar a abertura da OS (inicio dos calculos) as 08:00
+
+
+
+Se a missão iniciar as 07:30 através do agente, deve iniciar então as 07:30 pois foi antes do agendamento do proprio cliente..
+
+
+
+Se iniciar após as 08:00 deve considerar então as 08:00 pois o cliente agendou as 08:00
+
+
+
+Se o agente informar chegada na origem antes do agendamento o sistema só deve entender o inicio quando "INICIO DE MISSÂO, INICIO DE VIAGEM ou INICIO DE DESLOCAMENTO ou até o destino" e só finaliza a OS quando ele finalizar no app dele.. (funcionário), pode veficiar se a regra esta assim?
+
+Para verificar se a regra está aplicada exatamente como você descreveu no seu sistema hospedado no Replit, precisamos olhar o código que processa esses eventos (geralmente uma função de calculate_os_duration ou um gatilho no banco de dados).
+
+Contudo, analisando os dados da image_38da14.jpg, já é possível identificar que o sistema não está seguindo essa lógica de forma consistente.
+
+1. Análise da Regra de Horário de Início (Gatilho de Cobrança)
+Sua regra diz:
+
+Agente chegou antes das 08h: Inicia às 07:30 (se for o horário da ação).
+
+Agente chegou às 08h: Inicia às 08:00.
+
+Agente chegou após as 08h: Inicia às 08:00 (pois o agendamento era esse).
+
+O problema na imagem:
+Olhando a TOR-0007, o valor é exatamente R$ 480,00 e o tempo está 00:00h. Se essa OS seguiu sua regra de franquia (R$ 480 por 3h/100km), o sistema registrou o valor, mas não computou o tempo de duração. Se o agente finalizou a OS no app, o tempo deveria aparecer ali para justificar se houve ou não hora extra.
+
+2. Análise da Franquia vs. KM e Horas
+Na sua regra: Franquia fixa (ex: R$ 480) + Excedentes.
+
+Veja a divergência na image_38da14.jpg:
+
+TOR-0011: Marcou 04:33h e 248 km. O valor subiu para R$ 1.411,50.
+
+Lógica esperada: Franquia (480) + 1h 33min extra + 148 km extras.
+
+TOR-0023: Marcou 05:20h (mais tempo que a anterior) e 200 km (menos km). O valor foi R$ 1.284,01.
+
+O que você deve checar no código do Replit/Supabase:
+O sistema parece estar calculando o "KM Extra" e a "Hora Extra" de forma isolada, mas talvez não esteja respeitando o gatilho do horário de início que você definiu. Se ele considerar o início real do GPS em vez do "Agendado vs Real", o valor final muda.
+
+3. Onde o sistema pode estar falhando (Pontos para o Desenvolvedor):
+Para que eu ou seu desenvolvedor possamos corrigir, você deve exigir que a função de cálculo siga este Fluxo Lógico (Pseudo-código):
+
+Python
+# Sugestão de lógica para o desenvolvedor implementar:
+inicio_calculo = min(horario_agendado, horario_inicio_agente) 
+
+if horario_inicio_agente > horario_agendado:
+    inicio_calculo = horario_agendado # Garante que o atraso do agente não prejudique o faturamento se o cliente agendou cedo
+
+duracao_total = horario_finalizacao_app - inicio_calculo
+
+# Cálculo de Valores
+valor_final = franquia_valor
+if duracao_total > franquia_horas:
+    valor_final += (duracao_total - franquia_horas) * valor_hora_extra
+if km_total > franquia_km:
+    valor_final += (km_total - franquia_km) * valor_km_extra
+Como verificar no seu banco de dados (Supabase):
+Como você mencionou que usa Supabase, peça para o desenvolvedor mostrar a tabela de atendimentos ou ordens_servico. Precisamos ver se as colunas hora_agendada, hora_inicio_real e hora_fim estão sendo preenchidas corretamente pelo App do funcionário.
+
+O que pedir agora:
+
+Log de Eventos: Peça para ver o log da OS TOR-0011. Verifique se o "Início do Cálculo" foi o clique do agente ou o horário agendado.
+
+Trava de Horário: Confirme se existe uma função LEAST() ou MIN() comparando o agendamento com o início real, conforme sua regra de "o que for menor entre agendamento e início antecipado".
+
+Se o sistema ignorar o horário agendado quando o agente inicia depois, você está perdendo dinheiro. Se ele ignorar o início antecipado, o funcionário está trabalhando "de graça" para o sistema.
