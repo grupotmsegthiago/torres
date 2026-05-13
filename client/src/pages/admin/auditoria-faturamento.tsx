@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import AdminLayout from "@/components/admin/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ShieldCheck, AlertTriangle, FileText, CheckCircle2, Clock, DollarSign, RefreshCw, ExternalLink, Receipt } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ShieldCheck, AlertTriangle, FileText, CheckCircle2, Clock, DollarSign, RefreshCw, ExternalLink, Receipt, Wrench } from "lucide-react";
 
 type Row = {
   tipo: "BILLING" | "OS_ESQUECIDA";
@@ -33,7 +36,7 @@ type Row = {
   nfseStatus: string | null;
   nfseNumber: string | null;
   paymentDate: string | null;
-  stage: "PENDENTE" | "APROVADA" | "ENVIADA" | "VENCIDA" | "NF_EMITIDA" | "PAGO" | "CANCELADA" | "FATURADA_LOCAL" | "ESQUECIDA";
+  stage: "PENDENTE" | "APROVADA" | "ENVIADA" | "VENCIDA" | "NF_EMITIDA" | "PAGO" | "CANCELADA" | "FATURADA_LOCAL" | "FATURADA_FALSA" | "ESQUECIDA";
   atraso: boolean;
   esquecida: boolean;
   divergenciaPct: number;
@@ -45,6 +48,7 @@ type Resp = {
     totalLinhas: number; totalEsquecidas: number; totalAtrasadas: number;
     totalPagas: number; totalNFEmitidas: number; totalEnviadas: number;
     totalAprovadas: number; totalPendentes: number; totalDivergencia: number;
+    totalFalsasFaturadas: number; totalFaturadasLocal: number;
     valorTotalPeriodo: number; valorPago: number; valorEnviado: number; valorEsquecido: number;
     saudePct: number;
   };
@@ -68,7 +72,8 @@ const stageStyle = (st: Row["stage"], atraso: boolean) => {
     case "ENVIADA": return { bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-800 dark:text-blue-200", label: "ENVIADA" };
     case "VENCIDA": return { bg: "bg-orange-100 dark:bg-orange-900/40", text: "text-orange-800 dark:text-orange-200", label: "VENCIDA" };
     case "APROVADA": return { bg: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-800 dark:text-purple-200", label: "APROVADA" };
-    case "FATURADA_LOCAL": return { bg: "bg-indigo-100 dark:bg-indigo-900/40", text: "text-indigo-800 dark:text-indigo-200", label: "FATURADA (s/ Asaas)" };
+    case "FATURADA_LOCAL": return { bg: "bg-indigo-100 dark:bg-indigo-900/40", text: "text-indigo-800 dark:text-indigo-200", label: "SÓ TORRES (falta Asaas)" };
+    case "FATURADA_FALSA": return { bg: "bg-rose-200 dark:bg-rose-900/60", text: "text-rose-900 dark:text-rose-100", label: "FATURADA FALSA" };
     case "PENDENTE": return { bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-800 dark:text-yellow-200", label: "PENDENTE" };
     case "ESQUECIDA": return { bg: "bg-red-200 dark:bg-red-900/60", text: "text-red-900 dark:text-red-100", label: "ESQUECIDA" };
     case "CANCELADA": return { bg: "bg-zinc-200 dark:bg-zinc-800", text: "text-zinc-700 dark:text-zinc-300", label: "CANCELADA" };
@@ -82,7 +87,25 @@ export default function AuditoriaFaturamentoPage() {
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"todas" | "atrasadas" | "esquecidas" | "divergentes" | "pendentes" | "pagas">("todas");
+  const [filter, setFilter] = useState<"todas" | "atrasadas" | "esquecidas" | "divergentes" | "pendentes" | "pagas" | "falsas">("todas");
+  const { toast } = useToast();
+
+  const reconcileMutation = useMutation({
+    mutationFn: async (ids?: number[]) => {
+      const r = await apiRequest("POST", "/api/auditoria-faturamento/reconcile-falsos", ids ? { ids } : {});
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: data.reverted > 0 ? "Status falsos corrigidos" : "Tudo certo",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/auditoria-faturamento"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao reconciliar", description: err?.message || "Falha", variant: "destructive" });
+    },
+  });
 
   const { data, isLoading, refetch, isFetching } = useQuery<Resp>({
     queryKey: ["/api/auditoria-faturamento", from, to],
@@ -104,6 +127,7 @@ export default function AuditoriaFaturamentoPage() {
     else if (filter === "divergentes") out = out.filter(r => r.divergenciaPct > 5);
     else if (filter === "pendentes") out = out.filter(r => r.stage === "PENDENTE" || r.stage === "APROVADA");
     else if (filter === "pagas") out = out.filter(r => r.stage === "PAGO");
+    else if (filter === "falsas") out = out.filter(r => r.stage === "FATURADA_FALSA");
     if (search.trim()) {
       const q = search.toLowerCase();
       out = out.filter(r =>
@@ -129,10 +153,43 @@ export default function AuditoriaFaturamentoPage() {
               Pente fino do ciclo: medição → aprovação → boleto → NF → pagamento. Atraso, esquecidas e divergências em uma tela só.
             </p>
           </div>
-          <Button onClick={() => refetch()} disabled={isFetching} variant="outline" data-testid="button-refresh">
-            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
+          <div className="flex items-center gap-2">
+            {totals && totals.totalFalsasFaturadas > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" data-testid="button-reconcile-falsas">
+                    <Wrench className="h-4 w-4 mr-2" />
+                    Reconciliar {totals.totalFalsasFaturadas} status falso(s)
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reconciliar status falsamente "FATURADAS"?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O sistema encontrou <b>{totals.totalFalsasFaturadas} OS</b> marcadas como FATURADA mas sem fatura válida vinculada (invoice deletada ou nunca criada).
+                      <br /><br />
+                      Essas OS terão status revertido para <b>APROVADA</b>, ficando prontas para refaturar. O vínculo `invoice_id` será limpo.
+                      <br /><br />
+                      Essa ação fica registrada na auditoria do sistema.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => reconcileMutation.mutate(undefined)}
+                      data-testid="button-confirm-reconcile"
+                    >
+                      Sim, reverter para APROVADA
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <Button onClick={() => refetch()} disabled={isFetching} variant="outline" data-testid="button-refresh">
+              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+          </div>
         </div>
 
         {/* Filtros de período + busca */}
@@ -157,6 +214,7 @@ export default function AuditoriaFaturamentoPage() {
                   <SelectItem value="divergentes">Só divergência de valor &gt;5%</SelectItem>
                   <SelectItem value="pendentes">Pendentes / Aprovadas (não viraram boleto)</SelectItem>
                   <SelectItem value="pagas">Só pagas</SelectItem>
+                  <SelectItem value="falsas">Só FATURADAS FALSAS (sem invoice válida)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -182,6 +240,11 @@ export default function AuditoriaFaturamentoPage() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
+                  {totals.totalFalsasFaturadas > 0 && (
+                    <Badge variant="destructive" className="text-sm" data-testid="badge-falsas">
+                      <AlertTriangle className="h-3 w-3 mr-1" /> {totals.totalFalsasFaturadas} FATURADA(s) FALSA(s) — status mente
+                    </Badge>
+                  )}
                   {totals.totalEsquecidas > 0 && (
                     <Badge variant="destructive" className="text-sm" data-testid="badge-esquecidas">
                       <AlertTriangle className="h-3 w-3 mr-1" /> {totals.totalEsquecidas} OS esquecida(s) — {fmt(totals.valorEsquecido)} no limbo
@@ -203,7 +266,7 @@ export default function AuditoriaFaturamentoPage() {
 
         {/* Cards de status */}
         {totals && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
             <StatusCard label="Pendente" value={totals.totalPendentes} icon={<Clock className="h-4 w-4" />} color="bg-yellow-100 text-yellow-900 dark:bg-yellow-900/40 dark:text-yellow-200" />
             <StatusCard label="Aprovada" value={totals.totalAprovadas} icon={<CheckCircle2 className="h-4 w-4" />} color="bg-purple-100 text-purple-900 dark:bg-purple-900/40 dark:text-purple-200" />
             <StatusCard label="Enviada (boleto)" value={totals.totalEnviadas} icon={<FileText className="h-4 w-4" />} color="bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-200" />
@@ -211,6 +274,7 @@ export default function AuditoriaFaturamentoPage() {
             <StatusCard label="Pagas" value={totals.totalPagas} icon={<DollarSign className="h-4 w-4" />} color="bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200" />
             <StatusCard label="Atrasadas" value={totals.totalAtrasadas} icon={<AlertTriangle className="h-4 w-4" />} color="bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200" />
             <StatusCard label="Divergência valor" value={totals.totalDivergencia} icon={<AlertTriangle className="h-4 w-4" />} color="bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200" />
+            <StatusCard label="FATURADA FALSA" value={totals.totalFalsasFaturadas} icon={<AlertTriangle className="h-4 w-4" />} color="bg-rose-200 text-rose-900 dark:bg-rose-900/60 dark:text-rose-100" />
           </div>
         )}
 

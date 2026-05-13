@@ -3848,7 +3848,12 @@ export function registerAsaasRoutes(app: Express) {
                + Number(b.receitas_os || 0);
         };
         const stageOf = (billing: any, inv: any | null) => {
+          const st = String(billing?.status || "").toUpperCase();
           if (inv) {
+            // Invoice existe — verifica se realmente foi pro Asaas
+            if (!inv.asaas_payment_id) {
+              return "FATURADA_LOCAL"; // criada no Torres mas não enviada pro Asaas
+            }
             const stPay = String(inv.status || "").toUpperCase();
             if (["RECEIVED", "CONFIRMED", "PAID"].includes(stPay)) return "PAGO";
             const nf = String(inv.nfse_status || "").toUpperCase();
@@ -3858,9 +3863,11 @@ export function registerAsaasRoutes(app: Express) {
             if (["OVERDUE"].includes(stPay)) return "VENCIDA";
             return "ENVIADA"; // boleto gerado, aguardando pagamento
           }
-          const st = String(billing?.status || "").toUpperCase();
+          // Sem invoice carregada
+          // CRÍTICO: status FATURADO/FATURADA mas invoice_id NULL OU invoice deletada
+          // → status falso. Precisa reverter pra APROVADA pra poder refaturar.
+          if (st === "FATURADO" || st === "FATURADA") return "FATURADA_FALSA";
           if (st === "APROVADA") return "APROVADA";
-          if (st === "FATURADO" || st === "FATURADA") return "FATURADA_LOCAL";
           if (st === "CANCELADO" || st === "CANCELADA" || st === "REJEITADA" || st === "RECUSADA") return "CANCELADA";
           return "PENDENTE";
         };
@@ -3966,6 +3973,8 @@ export function registerAsaasRoutes(app: Express) {
           totalAprovadas: rows.filter(r => r.stage === "APROVADA").length,
           totalPendentes: rows.filter(r => r.stage === "PENDENTE").length,
           totalDivergencia: rows.filter(r => r.divergenciaPct > 5).length,
+          totalFalsasFaturadas: rows.filter(r => r.stage === "FATURADA_FALSA").length,
+          totalFaturadasLocal: rows.filter(r => r.stage === "FATURADA_LOCAL").length,
           valorTotalPeriodo: rows.reduce((s, r) => s + (r.valorBilling || r.valorOperacional || 0), 0),
           valorPago: rows.filter(r => r.stage === "PAGO").reduce((s, r) => s + (r.valorFatura || r.valorBilling || 0), 0),
           valorEnviado: rows.filter(r => r.stage === "ENVIADA" || r.stage === "VENCIDA" || r.stage === "NF_EMITIDA")
@@ -3983,6 +3992,69 @@ export function registerAsaasRoutes(app: Express) {
         });
       } catch (err: any) {
         console.error("[auditoria-faturamento] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
+    // POST /api/auditoria-faturamento/reconcile-falsos
+    // Reverte billings com status FATURADO/FATURADA cujo invoice_id
+    // está NULL ou aponta pra invoice deletada.
+    // Volta status pra APROVADA e zera invoice_id pra permitir
+    // refaturamento.
+    // ============================================================
+    app.post("/api/auditoria-faturamento/reconcile-falsos", async (req: any, res) => {
+      try {
+        const user = (req as any).user;
+        const { ids } = (req.body || {}) as { ids?: number[] };
+
+        let q = supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, client_name, invoice_id, status, data_missao")
+          .in("status", ["FATURADO", "FATURADA"]);
+        if (Array.isArray(ids) && ids.length > 0) q = q.in("id", ids);
+        const { data: candidates, error: candErr } = await q.limit(5000);
+        if (candErr) throw candErr;
+
+        const invIds = Array.from(new Set((candidates || []).map((b: any) => b.invoice_id).filter(Boolean)));
+        let invMap = new Map<number, any>();
+        if (invIds.length > 0) {
+          const { data: invs } = await supabaseAdmin.from("invoices").select("id").in("id", invIds);
+          for (const i of (invs || [])) invMap.set(i.id, i);
+        }
+
+        const toRevert = (candidates || []).filter((b: any) =>
+          !b.invoice_id || !invMap.has(b.invoice_id)
+        );
+
+        if (toRevert.length === 0) {
+          return res.json({ reverted: 0, message: "Nenhum status falso encontrado.", ids: [] });
+        }
+
+        const revertIds = toRevert.map((b: any) => b.id);
+        const { error: updErr } = await supabaseAdmin
+          .from("escort_billings")
+          .update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null })
+          .in("id", revertIds);
+        if (updErr) throw updErr;
+
+        await logSystemAudit({
+          userId: user?.id, userName: user?.name, userRole: user?.role,
+          action: "AUDITORIA_RECONCILE_FALSOS",
+          targetId: revertIds.join(","),
+          targetType: "escort_billing",
+          details: `${revertIds.length} billing(s) revertido(s) de FATURADO→APROVADA por status falso (invoice_id NULL ou deletada). IDs: ${revertIds.slice(0, 50).join(", ")}${revertIds.length > 50 ? "…" : ""}`,
+          ipAddress: (req as any).ip,
+        });
+
+        console.log(`[auditoria] reconcile-falsos: ${revertIds.length} billing(s) revertidos pra APROVADA`);
+        res.json({
+          reverted: revertIds.length,
+          ids: revertIds,
+          message: `${revertIds.length} OS retornaram para APROVADA e estão prontas para refaturar.`,
+        });
+      } catch (err: any) {
+        console.error("[auditoria-faturamento/reconcile-falsos] error:", err.message);
         res.status(500).json({ message: err.message });
       }
     });
