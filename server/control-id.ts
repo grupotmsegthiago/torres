@@ -1610,7 +1610,17 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     // e ainda não houve batida hoje, o ponto continua "EM ABERTO" carregado de ontem.
     const yesterdayBrt = new Date(Date.now() - 3 * 3600000 - 24 * 3600000).toISOString().slice(0, 10);
     const yesterdayPunches = isCurrentMonth ? (dayMap.get(yesterdayBrt) || []) : [];
-    const yesterdayOpen = yesterdayPunches.length > 0 && yesterdayPunches.length % 2 === 1;
+    // Cruzamento de meia-noite só vale se a última batida de ontem e a primeira de hoje
+    // estiverem dentro de uma janela razoável de turno (≤5h). Caso contrário, são
+    // turnos separados: a batida de ontem foi saída solta, e a de hoje é entrada nova.
+    const SHIFT_CROSS_MAX_GAP_MIN = 5 * 60;
+    let yesterdayOpen = yesterdayPunches.length > 0 && yesterdayPunches.length % 2 === 1;
+    if (yesterdayOpen && todayPunches.length > 0) {
+      const lastYestMs = new Date(yesterdayPunches[yesterdayPunches.length - 1].punch_at).getTime();
+      const firstTodayMs = new Date(todayPunches[0].punch_at).getTime();
+      const gapMin = (firstTodayMs - lastYestMs) / 60000;
+      if (gapMin > SHIFT_CROSS_MAX_GAP_MIN) yesterdayOpen = false;
+    }
 
     let todayStatus: string;
     let openSinceMinutes: number | null = null;
