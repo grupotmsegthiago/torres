@@ -62,7 +62,7 @@ export const requireDiretoria: RequestHandler = (req, res, next) => {
   return res.status(403).json({ message: "Acesso restrito à Diretoria/Admin" });
 };
 
-// Estrito: somente role === "diretoria" (Mickael). Usado em fluxos de
+// Estrito: somente role === "diretoria". Usado em fluxos de
 // aprovação financeira em que o ADM (Simone) NÃO pode atuar.
 export const requireDiretoriaStrict: RequestHandler = (req, res, next) => {
   if (!req.user) {
@@ -70,6 +70,23 @@ export const requireDiretoriaStrict: RequestHandler = (req, res, next) => {
   }
   if (req.user.role === "diretoria") return next();
   return res.status(403).json({ message: "Acesso restrito à Diretoria" });
+};
+
+// Aprovador exclusivo do fluxo financeiro: somente Thiago.
+// Identificado por e-mail (estável mesmo se mudarem o nome).
+export const THIAGO_EMAIL = "thiago@grupotmseg.com.br";
+export function isThiago(user?: { email?: string | null; name?: string | null } | null): boolean {
+  if (!user) return false;
+  const email = (user.email || "").toLowerCase().trim();
+  if (email === THIAGO_EMAIL) return true;
+  return false;
+}
+export const requireThiago: RequestHandler = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Não autorizado" });
+  }
+  if (isThiago(req.user)) return next();
+  return res.status(403).json({ message: "Apenas Thiago pode aprovar/recusar lançamentos financeiros." });
 };
 
 export function setupAuth(app: Express) {

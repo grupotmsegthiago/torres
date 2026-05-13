@@ -2731,7 +2731,7 @@ export default function FinanceiroPage() {
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
           <div className="flex overflow-x-auto gap-1">
-            {STEPS.filter(s => !s.diretoriaOnly || user?.role === "diretoria").map(step => {
+            {STEPS.filter(s => !s.diretoriaOnly || (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br").map(step => {
               const isAguardando = step.id === "AGUARDANDO";
               const count = isAguardando ? aguardandoAprovacao.length : 0;
               return (
@@ -2752,7 +2752,7 @@ export default function FinanceiroPage() {
         </div>
 
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
-        {activeStep === "AGUARDANDO" && user?.role === "diretoria" && (
+        {activeStep === "AGUARDANDO" && (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br" && (
           <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden" data-testid="table-aguardando">
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-700" />

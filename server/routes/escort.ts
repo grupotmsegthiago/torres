@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
   import { logSystemAudit } from "../audit";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
@@ -119,9 +119,15 @@ import type { Express } from "express";
     try {
       const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
       let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
-      // Apenas diretoria enxerga AGUARDANDO_APROVACAO/RECUSADA na listagem geral.
-      if (req.user?.role !== "diretoria") {
-        query = query.not("status", "in", "(AGUARDANDO_APROVACAO,RECUSADA)");
+      // Apenas Thiago (aprovador) enxerga AGUARDANDO_APROVACAO/RECUSADA na listagem geral.
+      // O próprio solicitante também enxerga os seus para acompanhar o status.
+      if (!isThiago(req.user)) {
+        const userName = (req.user?.name || "").replace(/[(),]/g, "");
+        if (userName) {
+          query = query.or(`status.not.in.(AGUARDANDO_APROVACAO,RECUSADA),solicitado_por.eq.${userName}`);
+        } else {
+          query = query.not("status", "in", "(AGUARDANDO_APROVACAO,RECUSADA)");
+        }
       }
       if (type) query = query.eq("type", type as string);
       if (status) query = query.eq("status", status as string);
@@ -144,7 +150,7 @@ import type { Express } from "express";
   });
 
   // Lista somente lançamentos AGUARDANDO_APROVACAO (Mickael / diretoria visualiza)
-  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireDiretoriaStrict, async (req, res) => {
+  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireThiago, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")
@@ -280,7 +286,7 @@ import type { Express } from "express";
   });
 
   // Aprovar lançamento (apenas diretoria — Mickael)
-  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireDiretoriaStrict, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireThiago, async (req, res) => {
     try {
       const user = req.user!;
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
@@ -314,7 +320,7 @@ import type { Express } from "express";
   });
 
   // Recusar lançamento (apenas diretoria — Mickael) com motivo obrigatório
-  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireDiretoriaStrict, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireThiago, async (req, res) => {
     try {
       const user = req.user!;
       const motivo = String(req.body?.motivo || "").trim();
