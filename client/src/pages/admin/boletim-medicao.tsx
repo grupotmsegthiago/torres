@@ -1151,29 +1151,32 @@ export default function BoletimMedicaoPage() {
                                     )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold ${status.color}`}>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-                                      {status.label}
-                                    </span>
-                                    {b && ["FATURADO", "PAGO", "FATURADA"].includes(String(b.status).toUpperCase()) && (
+                                    {b && ["FATURADO", "PAGO", "FATURADA"].includes(String(b.status).toUpperCase()) ? (
                                       b.invoice_id ? (
                                         <Link
                                           href={`/admin/relatorio-nf?invoiceId=${b.invoice_id}`}
-                                          className="block mt-1 text-[9px] font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline"
+                                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-900 transition-colors"
                                           title={`Ver fatura #${b.invoice_id} no Relatório de NFs`}
                                           data-testid={`link-invoice-os-${os.id}`}
                                         >
-                                          Fatura #{b.invoice_id} ↗
+                                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                          FAT #{b.invoice_id} ↗
                                         </Link>
                                       ) : (
                                         <span
-                                          className="block mt-1 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded"
+                                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold bg-red-50 text-red-700 border border-red-200"
                                           title="OS marcada como faturada, mas sem fatura vinculada no Asaas. Pode ter sido baixa manual incorreta."
                                           data-testid={`alert-no-invoice-os-${os.id}`}
                                         >
+                                          <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                           ⚠ FATURA NÃO ENCONTRADA
                                         </span>
                                       )
+                                    ) : (
+                                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold ${status.color}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
+                                        {status.label}
+                                      </span>
                                     )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
