@@ -1,0 +1,28 @@
+só ressalta que o valor da fatura não é referente a UMA NF é referente ao acumulo de OS (varias) naquele periodo que gerou a fatura..
+
+Excelente ponto, Thiago. É aqui que o sistema precisa ser "inteligente" e não "preguiçoso". Uma fatura de R$ 5.000,00 raramente é uma OS só; ela é o fechamento da quinzena, ou seja, a soma de 5, 10 ou 15 serviços diferentes.
+
+Instruí o Replit a ajustar o robô para pensar exatamente assim. O sistema agora usa uma lógica chamada "Subset-Sum" (Combinação de Valores).
+
+🧠 Como o Robô de Auditoria está trabalhando agora:
+Soma de Lote (O Padrão): O sistema não busca uma OS de R$ 5.000. Ele busca todas as OS aprovadas daquele cliente no período (ex: 01/04 a 15/04) e testa as combinações.
+
+Exemplo: Se ele achar 3 OS de R$ 1.500 e uma de R$ 500 que juntas somam os R$ 5.000 da fatura, ele faz o "clique" e vincula as quatro de uma vez na mesma linha.
+
+O "Raio-X" da Diferença: Se a soma das OS der R$ 4.980 e a fatura for de R$ 5.000, o sistema agora vai te mostrar no Tooltip (ao passar o mouse):
+
+"Atenção: Encontramos 12 OS que somam R$ 4.980,00, mas a fatura é de R$ 5.000,00. Faltam R$ 20,00 em medições para bater o valor."
+
+🛠️ O que o Replit entregou para garantir esse "Acúmulo":
+Busca por Lote: Ele parou de procurar "um para um". Agora o sistema olha para o Período da Fatura e tenta esgotar as OS aprovadas daquele cliente até chegar no valor da nota.
+
+Identificação de Múltiplas OS: Na sua tela, em vez de aparecer apenas um TOR-XXX, agora aparecerá uma lista ou a indicação de quantidade (ex: TOR-010, TOR-011 + 8 OS).
+
+Fim do Vínculo Cego: Se o valor acumulado das OS não chegar nem perto do valor da fatura, o sistema te avisa: "Faturamento maior que as medições aprovadas".
+
+💡 Por que isso é importante para você:
+Isso protege o seu lucro. Se você emitiu uma fatura de R$ 10.000, mas o sistema só achou R$ 9.000 em OS vinculadas, você sabe na hora que tem R$ 1.000 de serviço que foi cobrado mas não foi registrado ou aprovado corretamente no operacional.
+
+O sistema agora faz a conferência da quinzena inteira de forma automática. Se a coluna continuar vazia, é porque a soma de todas as OS daquele período não chega no valor que você cobrou no Asaas.
+
+Dê uma olhada no relatório agora; as faturas que são acúmulos já devem estar listando várias TOR-XXX juntas.

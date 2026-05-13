@@ -437,7 +437,11 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       }
 
       const valores = orphans.map(valorOf).sort((a, b) => b - a).slice(0, 5).map(v => `R$${v.toFixed(2)}`).join(", ");
-      return { linked: 0, reason: `Existem ${orphans.length} OS aprovadas no período (${valores}${orphans.length > 5 ? "…" : ""}) mas nenhuma combinação soma R$${target.toFixed(2)} (tol ±R$${tol.toFixed(2)}). Verifique se a fatura é avulsa ou se faltam medições.` };
+      const gap = target - totalSum;
+      const gapLabel = gap > 0
+        ? `Faltam R$${gap.toFixed(2)} em medições para fechar o valor da fatura — provavelmente o operacional ainda não cadastrou/aprovou todas as OS desse período.`
+        : `Excesso de R$${Math.abs(gap).toFixed(2)} em medições — a soma das OS é maior que a fatura. Confira se foi cobrado a menos ou se há OS de outro período misturada.`;
+      return { linked: 0, reason: `Encontradas ${orphans.length} OS aprovadas no período somando R$${totalSum.toFixed(2)} (${valores}${orphans.length > 5 ? "…" : ""}), mas nenhuma combinação bate R$${target.toFixed(2)} (tol ±R$${tol.toFixed(2)}). ${gapLabel}` };
     } catch (e: any) {
       console.error(`[auto-link] erro inesperado invoice #${invoice?.id}:`, e?.message);
       return { linked: 0, reason: e?.message };
