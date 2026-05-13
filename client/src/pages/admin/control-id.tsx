@@ -931,6 +931,7 @@ type PainelRow = {
   hoursWorked: number; hoursLimit: number; hoursRemaining: number; percentUsed: number;
   daysWorked: number;
   todayStatus: "NAO_BATEU" | "EM_ANDAMENTO" | "EM_ABERTO" | "COMPLETO" | "AUSENCIA" | "NAO_MAPEADO" | "MES_PASSADO";
+  unifiedStatus?: "NAO_BATEU" | "EM_ANDAMENTO" | "EM_ABERTO" | "COMPLETO" | "AUSENCIA" | "NAO_MAPEADO" | "MES_PASSADO" | "TRABALHANDO";
   todayPunchCount: number;
   openSinceMinutes: number | null;
   lastPunchAt: string | null;
@@ -949,6 +950,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string; Icon: any }> = 
   EM_ANDAMENTO: { label: "Em andamento", cls: "bg-blue-100 text-blue-700 border-blue-300", Icon: PlayCircle },
   EM_ABERTO: { label: "Ponto em aberto", cls: "bg-amber-100 text-amber-800 border-amber-400", Icon: Hourglass },
   COMPLETO: { label: "Encerrou hoje", cls: "bg-emerald-100 text-emerald-700 border-emerald-300", Icon: CheckCircle2 },
+  TRABALHANDO: { label: "Trabalhando", cls: "bg-blue-100 text-blue-700 border-blue-400", Icon: PlayCircle },
   AUSENCIA: { label: "Ausência", cls: "bg-purple-100 text-purple-700 border-purple-300", Icon: CalendarX },
   NAO_MAPEADO: { label: "Sem mapeamento", cls: "bg-neutral-100 text-neutral-500 border-neutral-300", Icon: MinusCircle },
   MES_PASSADO: { label: "—", cls: "bg-neutral-100 text-neutral-400 border-neutral-200", Icon: MinusCircle },
@@ -966,6 +968,28 @@ function PainelMesTab() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [filter, setFilter] = useState<"TODOS" | "ALERTAS" | "NAO_BATEU" | "EM_ABERTO" | "PERTO_LIMITE">("ALERTAS");
   const [search, setSearch] = useState("");
+  const { toast: painelToast } = useToast();
+
+  // Mutation: força sync com a Control iD Cloud (puxa batidas novas do RHID)
+  const syncNowMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/control-id/sync-all", {});
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      painelToast({
+        title: "Sincronização concluída",
+        description: data?.devices
+          ? `${data.devices.length} aparelho(s) sincronizado(s).`
+          : "Batidas atualizadas.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/painel-mes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/sync-diagnostic"] });
+    },
+    onError: (e: any) => {
+      painelToast({ title: "Erro ao sincronizar", description: String(e?.message || e), variant: "destructive" });
+    },
+  });
 
   const { data: rows = [], isLoading, refetch, isFetching } = useQuery<PainelRow[]>({
     queryKey: ["/api/control-id/painel-mes", month],
@@ -1136,6 +1160,17 @@ function PainelMesTab() {
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9" data-testid="button-painel-refresh">
           <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} /> Atualizar
         </Button>
+        <Button
+          size="sm"
+          onClick={() => syncNowMutation.mutate()}
+          disabled={syncNowMutation.isPending}
+          className="h-9 bg-blue-600 hover:bg-blue-700 text-white"
+          title="Força a leitura imediata da Control iD Cloud (RHID). Útil quando o aviso de atraso aparecer."
+          data-testid="button-sync-now"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncNowMutation.isPending ? "animate-spin" : ""}`} />
+          {syncNowMutation.isPending ? "Sincronizando..." : "Sincronizar Agora"}
+        </Button>
         <span className="ml-auto text-[11px] text-neutral-500">{rows.length} funcionário(s) ativo(s) · atualiza a cada 60s</span>
       </Card>
 
@@ -1193,7 +1228,7 @@ function PainelMesTab() {
             </thead>
             <tbody>
               {filtered.map(r => {
-                const meta = STATUS_BADGE[r.todayStatus] || STATUS_BADGE.MES_PASSADO;
+                const meta = STATUS_BADGE[r.unifiedStatus || r.todayStatus] || STATUS_BADGE.MES_PASSADO;
                 const pct = Math.min(100, r.percentUsed);
                 const barColor = pct >= 100 ? "bg-red-600" : pct >= 90 ? "bg-orange-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500";
                 const dutyTime = r.dutyScheduledAt

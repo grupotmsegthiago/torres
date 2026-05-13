@@ -1645,6 +1645,16 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
 
     const hoursWorked = +(totalMin / 60).toFixed(2);
     const duty = dutyByEmp.get(e.id) || null;
+
+    // Status unificado (regra Thiago): se o agente está com OS ativa hoje E
+    // o ponto está aberto/em andamento, o status visual prioritário é TRABALHANDO.
+    // Mantém o todayStatus original (do ponto) pra outros usos/filtros.
+    let unifiedStatus: string = todayStatus;
+    const dutyIsActive = !!duty && duty.status !== "concluida" && duty.status !== "cancelada" && duty.status !== "recusada";
+    if (dutyIsActive && (todayStatus === "EM_ABERTO" || todayStatus === "EM_ANDAMENTO")) {
+      unifiedStatus = "TRABALHANDO";
+    }
+
     result.push({
       employeeId: e.id,
       name: e.name,
@@ -1656,6 +1666,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       percentUsed: +((hoursWorked / HOURS_LIMIT) * 100).toFixed(1),
       daysWorked,
       todayStatus,
+      unifiedStatus,
       todayPunchCount: todayPunches.length,
       openSinceMinutes,
       lastPunchAt,
