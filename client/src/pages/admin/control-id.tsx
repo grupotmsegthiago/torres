@@ -1178,6 +1178,27 @@ function PainelMesTab() {
           {syncNowMutation.isPending ? "Sincronizando..." : "Sincronizar Agora"}
         </Button>
         <span className="ml-auto text-[11px] text-neutral-500">{rows.length} funcionário(s) ativo(s) · atualiza a cada 60s</span>
+        {syncDiag?.devices && syncDiag.devices.length > 0 && (
+          <div className="basis-full flex flex-wrap gap-x-4 gap-y-1 text-[11px] pt-1 border-t border-neutral-100" data-testid="sync-status-bar">
+            {syncDiag.devices.map(d => {
+              const ageMin = d.lastSyncAt ? Math.round((Date.now() - new Date(d.lastSyncAt).getTime()) / 60000) : null;
+              const isOk = d.lastSyncStatus === "ok";
+              const isStale = ageMin !== null && ageMin > 10;
+              const ageStr = ageMin === null ? "nunca" : ageMin < 1 ? "agora" : ageMin < 60 ? `há ${ageMin}min` : `há ${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? `${ageMin % 60}min` : ""}`;
+              return (
+                <span key={d.id} className="inline-flex items-center gap-1" data-testid={`sync-device-${d.id}`}>
+                  <span className={`w-2 h-2 rounded-full ${isOk && !isStale ? "bg-emerald-500" : isStale ? "bg-amber-500" : "bg-red-500"}`} />
+                  <span className="font-semibold text-neutral-700">{d.nome}</span>
+                  <span className="text-neutral-500">sync {ageStr}</span>
+                  {d.lastEventAt && (
+                    <span className="text-neutral-400">· últ. batida {new Date(d.lastEventAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                  )}
+                  <span className={isOk ? "text-emerald-600" : "text-red-600"}>· {d.lastSyncMessage || (isOk ? "OK" : "erro")}</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       {isCurrentMonth && (
