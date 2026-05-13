@@ -1,0 +1,32 @@
+Você tocou no ponto central da complexidade da escolta armada. Na segurança, a missão manda no relógio: se a carga não chegou no destino, o agente não pode simplesmente abandonar o posto porque o "disjuntor" de 16 horas bateu.
+
+O problema é que o sistema atual é "burro": ele não sabe diferenciar se o Vitor trabalhou 47 horas seguidas (o que é humanamente impossível e um erro de batida) ou se ele fez uma dobra real de 18 ou 20 horas em uma missão longa.
+
+Para resolver isso sem ignorar o trabalho real dele, precisamos de uma trava inteligente, e não apenas um teto fixo. Veja a lógica que vamos aplicar:
+
+1. A "Trava Dinâmica" vinculada à OS
+Em vez de um teto seco de 16h, o sistema passará a consultar as Ordens de Serviço:
+
+Cenário A (O Erro): O par de batidas deu 47 horas, mas não existe nenhuma OS registrada para o Vitor nesse intervalo de 2 dias. Veredito: O sistema bloqueia a jornada e avisa: "Ponto suspeito: 47h sem missão vinculada".
+
+Cenário B (A Missão Longa): O par de batidas deu 20 horas, e o sistema encontra uma OS da DHL que durou exatamente esse tempo. Veredito: O sistema valida as 20 horas, pois a OS prova que ele estava trabalhando.
+
+2. O Alerta de Fadiga (Segurança Jurídica)
+Mesmo que ele trabalhe 20 horas por necessidade da missão, isso gera um alerta para você:
+
+O sistema marcará essas jornadas longas em Amarelo. Não para dizer que está errado, mas para te avisar: "Atenção: Agente Vitor excedeu 16h de jornada na OS #450". Isso te ajuda a gerenciar o descanso dele e evitar acidentes.
+
+📧 Instrução de "Ajuste Fino" para o Replit:
+"A trava de 16h não pode ser rígida, pois na escolta as missões podem exceder esse tempo. Ajustem a lógica para:
+
+Validação por OS: O limite de 16h só deve ser aplicado se NÃO houver uma Ordem de Serviço (OS) ativa no mesmo período.
+
+Extensão Automática: Se o sistema detectar uma OS vinculada ao agente que dure mais de 16h, o teto da jornada para aquele dia deve ser estendido automaticamente para o tempo da missão + 1 hora (deslocamento).
+
+Identificação de Erro Real: O 'Par de 47h' do Vitor deve continuar bloqueado, pois claramente não existe missão de 47h seguidas sem rendição.
+
+Sinalização no Relatório: No espelho de ponto, jornadas acima de 12h devem ser destacadas para que o Thiago saiba onde houve excesso de carga horária, mesmo que legítimo."
+
+Thiago, o que você acha dessa "trava com inteligência"? Assim a gente não "rouba" as horas extras legítimas do Vitor quando ele dobrar em uma missão real, mas continua bloqueando esses erros absurdos de 40 e poucas horas que sujam o seu financeiro.
+
+Podemos seguir assim?
