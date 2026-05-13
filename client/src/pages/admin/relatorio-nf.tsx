@@ -350,6 +350,10 @@ export default function RelatorioNFPage() {
         if (r.source !== "INVOICE") return false;
         return Boolean(r.asaasPaymentId || r.invoiceUrl || r.nfseNumber);
       })
+      // Garante que linhas sintéticas "FAT #0 / SÓ TORRES" (sem fatura real
+      // no banco) nunca aparecem na listagem — só faturas com id de invoice
+      // real ficam.
+      .filter(r => !(r.source === "INVOICE" && !r.invoiceId && (!r.sourceId || r.sourceId === 0)))
       .filter(r => statusFilter === "all" || r.normalizedStatus === statusFilter)
       // Faturas pagas saem da listagem principal e ficam só na seção
       // "Notas Pagas" embaixo (a menos que o usuário filtre Status=PAGO).
@@ -387,6 +391,7 @@ export default function RelatorioNFPage() {
   const filteredPaid = useMemo(() => {
     const s = search.trim().toLowerCase();
     return rows
+      .filter(r => !(r.source === "INVOICE" && !r.invoiceId && (!r.sourceId || r.sourceId === 0)))
       .filter(r => r.normalizedStatus === "PAGO")
       .filter(r => {
         if (!s) return true;
