@@ -643,6 +643,7 @@ async function ensureSystemSettingsTable() {
   import { registerInterRoutes } from "./routes/inter";
   import { registerControlIdRoutes } from "./routes/control-id";
   import { registerRelatorioHorasRoutes } from "./routes/relatorio-horas";
+  import { registerDivergenciasJornadaRoutes } from "./routes/divergencias-jornada";
   import { registerBrandedContractRoutes } from "./routes/branded-contracts";
   import { registerProbationContractRoutes } from "./routes/probation-contracts";
   import { registerPermanentContractRoutes } from "./routes/permanent-contracts";
@@ -1102,6 +1103,7 @@ async function ensureSystemSettingsTable() {
     registerDailyAllowancesRoutes(app);
     registerControlIdRoutes(app);
     registerRelatorioHorasRoutes(app);
+    registerDivergenciasJornadaRoutes(app);
     registerBrandedContractRoutes(app);
 
   
