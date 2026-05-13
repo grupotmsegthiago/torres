@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -1154,6 +1155,26 @@ export default function BoletimMedicaoPage() {
                                       <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
                                       {status.label}
                                     </span>
+                                    {b && ["FATURADO", "PAGO", "FATURADA"].includes(String(b.status).toUpperCase()) && (
+                                      b.invoice_id ? (
+                                        <Link
+                                          href={`/admin/relatorio-nf?invoiceId=${b.invoice_id}`}
+                                          className="block mt-1 text-[9px] font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline"
+                                          title={`Ver fatura #${b.invoice_id} no Relatório de NFs`}
+                                          data-testid={`link-invoice-os-${os.id}`}
+                                        >
+                                          Fatura #{b.invoice_id} ↗
+                                        </Link>
+                                      ) : (
+                                        <span
+                                          className="block mt-1 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded"
+                                          title="OS marcada como faturada, mas sem fatura vinculada no Asaas. Pode ter sido baixa manual incorreta."
+                                          data-testid={`alert-no-invoice-os-${os.id}`}
+                                        >
+                                          ⚠ FATURA NÃO ENCONTRADA
+                                        </span>
+                                      )
+                                    )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
