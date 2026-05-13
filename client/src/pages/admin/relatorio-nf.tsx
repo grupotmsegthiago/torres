@@ -119,6 +119,15 @@ export default function RelatorioNFPage() {
   const [to, setTo] = useState(today);
   const [statusFilter, setStatusFilter] = useState<NormalizedStatus | "all">("all");
   const [search, setSearch] = useState("");
+  // Trava de exibição: por padrão, mostra só faturas reais do Asaas
+  // (com asaas_payment_id ou link de boleto). Toggle para ver "tudo"
+  // (boletins em medição, órfãs sem Asaas, etc.) — útil para debug.
+  const [onlyAsaas, setOnlyAsaas] = useState<boolean>(() => {
+    try { return localStorage.getItem("relatorio-nf:onlyAsaas") !== "0"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("relatorio-nf:onlyAsaas", onlyAsaas ? "1" : "0"); } catch {}
+  }, [onlyAsaas]);
 
   const { data, isLoading, refetch, isFetching } = useQuery<RelatorioResponse>({
     queryKey: ["/api/relatorio-nf", from, to],
@@ -292,6 +301,15 @@ export default function RelatorioNFPage() {
 
   const filtered = useMemo(() => {
     return rows
+      // TRAVA DE EXIBIÇÃO: só mostra faturas reais do Asaas (com asaas_payment_id
+      // ou link de boleto/NF). Boletins em medição, billings avulsas e invoices
+      // órfãs ficam ocultas — vivem na tela operacional, não na de cobrança.
+      // Pode ser desligada via o toggle "Mostrar tudo".
+      .filter(r => {
+        if (!onlyAsaas) return true;
+        if (r.source !== "INVOICE") return false;
+        return Boolean(r.asaasPaymentId || r.invoiceUrl || r.nfseNumber);
+      })
       .filter(r => statusFilter === "all" || r.normalizedStatus === statusFilter)
       // Faturas pagas saem da listagem principal e ficam só na seção
       // "Notas Pagas" embaixo (a menos que o usuário filtre Status=PAGO).
@@ -303,7 +321,7 @@ export default function RelatorioNFPage() {
           .filter(Boolean)
           .some(x => String(x).toLowerCase().includes(s));
       });
-  }, [rows, statusFilter, search]);
+  }, [rows, statusFilter, search, onlyAsaas]);
 
   // Extrai período (datas) da descrição da fatura. Aceita variações como:
   //   "Período: 01/04/2026 a 15/04/2026" / "Período 01/04 a 15/04"
@@ -494,6 +512,24 @@ export default function RelatorioNFPage() {
                 />
               </div>
             </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between flex-wrap gap-2 border-t border-slate-100 pt-3">
+            <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none" data-testid="toggle-only-asaas-label">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                checked={onlyAsaas}
+                onChange={e => setOnlyAsaas(e.target.checked)}
+                data-testid="toggle-only-asaas"
+              />
+              <span className="font-medium">Mostrar só faturas reais do Asaas</span>
+              <span className="text-slate-500">— oculta boletins em medição e registros sem ID/boleto</span>
+            </label>
+            {onlyAsaas && (
+              <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                Trava ativa: itens sem vínculo com o Asaas estão escondidos
+              </span>
+            )}
           </div>
         </Card>
 

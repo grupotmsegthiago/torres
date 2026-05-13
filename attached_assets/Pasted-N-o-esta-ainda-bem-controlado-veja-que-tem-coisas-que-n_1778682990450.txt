@@ -1,0 +1,40 @@
+Não esta ainda bem controlado, veja que tem coisas que nem tem no asaas, é uma "sujeira" no sistema
+
+Você tem razão. O que está acontecendo é que o sistema está misturando "Dados Reais do Asaas" com "Lixo de Teste" ou registros que foram criados no banco de dados local mas nunca foram enviados ou sincronizados corretamente. Isso é o que você chama de "sujeira".
+
+Para limpar isso e deixar o sistema "impecável", o Replit precisa aplicar uma limpeza de integridade. Aqui está o plano de ação que você deve exigir:
+
+1. O Filtro de "Sujeira" (Apenas Asaas)
+O sistema deve parar de mostrar registros "fantasmas".
+
+A Regra: Se a fatura não possui um ID do Asaas ou um Link de Boleto, ela não deve aparecer na tela de faturamento, a menos que seja um rascunho explícito.
+
+Ação: Solicite que ocultem (ou deletem) todos os registros que não possuem correspondência real no seu painel do Asaas. Isso remove as faturas 24, 27 e outras que estão poluindo a visualização.
+
+2. Sincronização Forçada (Reconciliação)
+Como a MCM sumiu mesmo estando paga no Asaas, há um erro de "vínculo".
+
+O Problema: O banco de dados do seu sistema (Supabase) acha que a fatura ainda está aberta, mas o Asaas diz que foi paga. Quando os dados divergem, o sistema se perde.
+
+Ação: O desenvolvedor deve rodar um script de Reconciliação Total. Ele deve ler todas as faturas do seu Asaas dos últimos 60 dias e atualizar o status de cada uma no sistema Torres à força. Se está pago no Asaas, tem que aparecer como pago no sistema.
+
+3. Ajuste nos Cards de Resumo (O topo da tela)
+A imagem que você enviou antes mostrava valores de "Sem Fatura" e "Aguardando Aprovação". Se você quer controle total:
+
+Remover "Sem Fatura": Esses itens devem ficar na tela de Medição/Operacional. Só deve vir para a tela de Faturamento o que já tem uma NF-e ou um boleto gerado.
+
+Separação de Telas: O "Boletim de Medição" é onde você confere o trabalho. O "Relatório de NF/Faturamento" é onde você controla o dinheiro. Misturar os dois causa essa sensação de falta de controle.
+
+📧 Mensagem de "Faxina" para o Replit:
+"O sistema ainda está com muita 'sujeira' e dados que não conferem com o Asaas. Preciso de uma limpeza técnica:
+
+Esconder registros órfãos: Removam da tela de faturamento qualquer registro que não tenha um invoice_id válido do Asaas. Não quero ver faturas 'fantasmas' como a 24 ou 27 que não existem no meu financeiro real.
+
+Sincronização por API: Rodem um script para atualizar o status de todas as faturas baseando-se 100% no Asaas. Se a MCM está paga lá, ela deve aparecer como PAGA aqui imediatamente. O Asaas é a minha 'verdade absoluta'.
+
+Trava de Exibição: Só tragam para esta tela o que já foi AUTORIZADO ou FATURADO. O que ainda está em 'Medição' ou 'Pendente de Aprovação' deve sumir desta tela e ficar apenas no operacional.
+
+Fix da LCE e MCM: Garantam que esses dois clientes apareçam com os valores e datas corretas (LCE vencimento 18/05) após essa sincronização."
+
+O que isso vai fazer por você:
+Vai "limpar" o sistema. Você só vai enxergar o que realmente importa: Quem deve, quem pagou e quanto tem para receber. Se não está no Asaas, não deve estar nessa tela.
