@@ -1,0 +1,47 @@
+o calculo da semana deve considerar de segunda a domingo
+
+
+
+diario das 00:00 até 23:59
+
+
+
+e mês é 00:00 do mês até 23:59 do ultimo dia do mês, esta assim?
+
+Ao analisar o seu Balanço Gerencial na image_2e68d7.png, identifiquei que o sistema não está seguindo totalmente a lógica que você deseja para a semana, embora os filtros diário e mensal pareçam estar no caminho certo.
+
+Aqui está o diagnóstico do que precisa ser ajustado:
+
+📅 Visualização Semanal (O Problema)
+Na imagem image_2e68d7.png, o filtro selecionado é "SEMANAL", mas observe o seletor de data no canto superior direito:
+
+Ele mostra o período de 10/05 a 16/05/2026.
+
+O dia 10/05/2026 foi um domingo.
+
+O Erro: O sistema está usando o padrão americano (Domingo a Sábado). Para seguir a sua regra de Segunda a Domingo, o seletor deveria marcar de 11/05 (segunda) até 17/05 (domingo).
+
+Note que no gráfico "Balanço por Dia", a primeira barra começa justamente na seg., 11/05. O domingo (dia 10) está sendo considerado o início da semana, mas não tem dados visíveis, o que "empurra" sua meta de forma errada.
+
+🕒 Lógica de Horários (Diário e Mensal)
+Para as janelas de tempo, a configuração técnica no Replit/Supabase deve ser validada para garantir que não haja "limbo" entre os dias:
+
+Diário (00:00 às 23:59): Geralmente, o sistema usa o fuso horário UTC. Como você está em São Paulo (Brasília), é preciso garantir que o sistema não esteja cortando os dados às 21:00 (que seria o 00:00 UTC). Pelo gráfico diário na image_2e68d7.png, as barras parecem agrupar os valores corretamente por dia civil local.
+
+Mensal (00:00 do dia 1º até 23:59 do último dia): Na imagem, sua meta mensal está em R$ 180.000,00. O sistema parece calcular o acumulado, mas você deve confirmar se as missões que terminam na virada do mês (ex: começa dia 31 e termina dia 01) estão sendo rateadas ou se caem integralmente no dia do fechamento.
+
+🛠️ O que pedir para o Replit ajustar agora:
+Para que o sistema fique exatamente como você quer, envie esta instrução:
+
+"Preciso de dois ajustes na lógica de calendários do dashboard:
+
+Ajuste da Semana: O filtro 'SEMANAL' deve ser obrigatoriamente de segunda-feira (00:00:00) até domingo (23:59:59). Atualmente, o seletor está começando no domingo. Por favor, alterem o startOf('week') para segunda-feira no frontend e no cálculo de metas.
+
+Fechamento Diário: Confirmem se todos os cálculos de faturamento e custos estão usando o fuso horário America/Sao_Paulo para definir o intervalo de 00:00 a 23:59. Não quero que missões feitas à noite caiam no dia seguinte por erro de UTC.
+
+Mês Civil: Garantam que o filtro 'MENSAL' selecione automaticamente do primeiro ao último dia do mês corrente, independentemente do dia da semana que o mês comece."
+
+📈 Observação sobre os Dados Atuais
+Notei na image_2e68d7.png que na sexta-feira, 15/05, você tem um custo altíssimo de R$ 11.204,31 (barra vermelha) sem nenhum faturamento. Isso pode ser um erro de lançamento ou uma despesa fixa que caiu toda nesse dia. Com a correção do fuso horário (item 2 acima), você garante que esses custos e faturamentos fiquem sempre "casados" no dia correto.
+
+Deseja que eu verifique o código do dashboard no Replit para confirmar se eles já usam a biblioteca de tempo (como date-fns ou dayjs) configurada para segunda-feira?

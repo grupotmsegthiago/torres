@@ -74,9 +74,12 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
     case "DAY":
       return { start: new Date(y, m, d), end: new Date(y, m, d, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) };
     case "WEEK": {
+      // Semana padrão BR: segunda (00:00) → domingo (23:59).
+      // getDay(): dom=0, seg=1, ..., sáb=6. Offset pra segunda = (dow + 6) % 7.
       const dow = refDate.getDay();
-      const start = new Date(y, m, d - dow);
-      const end = new Date(y, m, d - dow + 6, 23, 59, 59);
+      const offsetToMonday = (dow + 6) % 7;
+      const start = new Date(y, m, d - offsetToMonday);
+      const end = new Date(y, m, d - offsetToMonday + 6, 23, 59, 59);
       return { start, end, label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}` };
     }
     case "MONTH":
@@ -105,11 +108,13 @@ function navigatePeriod(period: Period, refDate: Date, direction: number): Date 
   switch (period) {
     case "DAY": d.setDate(d.getDate() + direction); break;
     case "WEEK": {
+      // Navega de segunda a segunda (semana BR).
       const dow = d.getDay();
-      const sunday = new Date(d);
-      sunday.setDate(d.getDate() - dow);
-      sunday.setDate(sunday.getDate() + 7 * direction);
-      d.setTime(sunday.getTime());
+      const offsetToMonday = (dow + 6) % 7;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - offsetToMonday);
+      monday.setDate(monday.getDate() + 7 * direction);
+      d.setTime(monday.getTime());
       break;
     }
     case "MONTH": d.setMonth(d.getMonth() + direction); break;

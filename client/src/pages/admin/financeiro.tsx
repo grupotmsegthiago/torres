@@ -1692,10 +1692,12 @@ export default function FinanceiroPage() {
     if (viewPeriod === "DAY") {
       list = list.filter(t => t.due_date.split("T")[0] === todayStr);
     } else if (viewPeriod === "WEEK") {
+      // Semana BR: segunda → domingo. dom=0, seg=1, ..., sáb=6 → offset pra segunda = (dow+6)%7.
       const day = now.getDay();
-      const sunday = new Date(now); sunday.setDate(now.getDate() - day);
-      const saturday = new Date(sunday); saturday.setDate(sunday.getDate() + 6);
-      list = list.filter(t => { const d = t.due_date.split("T")[0]; return d >= sunday.toISOString().split("T")[0] && d <= saturday.toISOString().split("T")[0]; });
+      const offsetToMonday = (day + 6) % 7;
+      const monday = new Date(now); monday.setDate(now.getDate() - offsetToMonday);
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      list = list.filter(t => { const d = t.due_date.split("T")[0]; return d >= monday.toISOString().split("T")[0] && d <= sunday.toISOString().split("T")[0]; });
     } else if (viewPeriod === "MONTH") {
       list = list.filter(t => { const d = new Date(t.due_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
     } else if (viewPeriod === "CUSTOM") {
