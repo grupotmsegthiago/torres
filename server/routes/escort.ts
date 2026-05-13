@@ -203,10 +203,10 @@ import type { Express } from "express";
   app.post("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id, funcionario_id } = req.body;
       if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
-      if (type === "EXPENSE" && !fornecedor_id) {
-        return res.status(400).json({ message: "Selecione um Fornecedor cadastrado para Despesa." });
+      if (type === "EXPENSE" && !fornecedor_id && !funcionario_id) {
+        return res.status(400).json({ message: "Selecione um Fornecedor ou Funcionário para Despesa." });
       }
 
       // Regra: ADM (Simone) cria → AGUARDANDO_APROVACAO; Diretoria (Mickael) cria → mantém status enviado.
@@ -219,6 +219,7 @@ import type { Express } from "express";
 
       const baseExtras: any = {
         fornecedor_id: fornecedor_id || null,
+        funcionario_id: funcionario_id || null,
         solicitado_por: user.name,
       };
 
@@ -421,7 +422,7 @@ import type { Express } from "express";
           && newStatus && newStatus !== existing.status) {
         return res.status(403).json({ message: "Status só pode ser alterado pelo fluxo de aprovação da Diretoria." });
       }
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope, fornecedor_id, funcionario_id } = req.body;
 
       const auditChanges: { field: string; old: any; new_val: any }[] = [];
       const auditFields = ["description", "amount", "type", "status", "due_date", "category_name", "account_name", "entity_name"];
@@ -441,6 +442,8 @@ import type { Express } from "express";
         entity_type, entity_name, notes, status_conciliacao,
         updated_by: user.name,
       };
+      if (fornecedor_id !== undefined) updatePayload.fornecedor_id = fornecedor_id || null;
+      if (funcionario_id !== undefined) updatePayload.funcionario_id = funcionario_id || null;
 
       if (update_scope === "future" && existing.installment_group && existing.installment_number) {
         const { data: siblings, error: sibErr } = await supabaseAdmin

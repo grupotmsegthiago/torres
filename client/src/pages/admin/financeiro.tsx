@@ -17,6 +17,7 @@ import {
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
   Shield, AlertTriangle, Eye, FileText, Send, Banknote, ExternalLink, KeyRound, TrendingUp, Info,
+  User as UserIcon,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -46,6 +47,14 @@ interface Fornecedor {
   observacoes: string | null;
   ativo: boolean;
 }
+interface EmployeeLite {
+  id: number;
+  name: string;
+  cpf: string | null;
+  role: string | null;
+  matricula: string | null;
+  status: string | null;
+}
 type ViewPeriod = "DAY" | "WEEK" | "MONTH" | "CUSTOM" | "ALL";
 
 interface FinancialTransaction {
@@ -72,6 +81,7 @@ interface FinancialTransaction {
   created_at: string;
   created_by: string | null;
   fornecedor_id: number | null;
+  funcionario_id: number | null;
   comprovante_url: string | null;
   comprovante_anexado_em: string | null;
   solicitado_por: string | null;
@@ -134,12 +144,13 @@ const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; descriptio
   { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 6 },
 ];
 
-function TransactionFormModal({ onClose, editingTransaction, categories, accounts, fornecedores }: {
+function TransactionFormModal({ onClose, editingTransaction, categories, accounts, fornecedores, employees }: {
   onClose: () => void;
   editingTransaction: FinancialTransaction | null;
   categories: FinancialCategory[];
   accounts: FinancialAccount[];
   fornecedores: Fornecedor[];
+  employees: EmployeeLite[];
 }) {
   const { toast } = useToast();
   const isEdit = !!editingTransaction;
@@ -154,6 +165,8 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [accountId, setAccountId] = useState(editingTransaction?.account_id || "");
   const [entityName, setEntityName] = useState(editingTransaction?.entity_name || "");
   const [fornecedorId, setFornecedorId] = useState<string>(editingTransaction?.fornecedor_id ? String(editingTransaction.fornecedor_id) : "");
+  const [funcionarioId, setFuncionarioId] = useState<string>(editingTransaction?.funcionario_id ? String(editingTransaction.funcionario_id) : "");
+  const [entitySource, setEntitySource] = useState<"fornecedor" | "funcionario">(editingTransaction?.funcionario_id ? "funcionario" : "fornecedor");
   const [status, setStatus] = useState<TransactionStatus>(editingTransaction?.status || "PENDING");
   const [notes, setNotes] = useState(editingTransaction?.notes || "");
   const [recurrence, setRecurrence] = useState<"SINGLE" | "INSTALLMENT">(
@@ -172,13 +185,17 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       ? `${description} (${editingTransaction.installment_number}/${editingTransaction.installment_total})`
       : description;
     const fornecedor = fornecedores.find(f => String(f.id) === fornecedorId);
+    const funcionario = employees.find(e => String(e.id) === funcionarioId);
+    const isEmployeeMode = type === "EXPENSE" && entitySource === "funcionario";
+    const sourceName = isEmployeeMode ? funcionario?.name : fornecedor?.nome;
     return {
       description: descFinal, amount: parseBRL(amount), type, status, due_date: dueDate,
       payment_date: status === "PAID" ? dueDate : null,
       category_id: categoryId || null, category_name: cat?.name || null,
       account_id: accountId || null, account_name: acc?.name || null,
-      entity_name: (fornecedor?.nome || entityName || "").toUpperCase().trim() || null,
-      fornecedor_id: fornecedorId ? Number(fornecedorId) : null,
+      entity_name: (sourceName || entityName || "").toUpperCase().trim() || null,
+      fornecedor_id: isEmployeeMode ? null : (fornecedorId ? Number(fornecedorId) : null),
+      funcionario_id: isEmployeeMode && funcionarioId ? Number(funcionarioId) : null,
       notes: notes || null,
       ...(!isEdit && recurrence === "INSTALLMENT" ? { installments } : {}),
       ...(isEdit && isSeries && scope ? { update_scope: scope } : {}),
@@ -209,9 +226,15 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   });
 
   const handleSubmit = () => {
-    if (type === "EXPENSE" && !fornecedorId) {
-      toast({ title: "Fornecedor obrigatório", description: "Selecione um fornecedor cadastrado para Despesa.", variant: "destructive" });
-      return;
+    if (type === "EXPENSE") {
+      if (entitySource === "fornecedor" && !fornecedorId) {
+        toast({ title: "Fornecedor obrigatório", description: "Selecione um fornecedor cadastrado para Despesa.", variant: "destructive" });
+        return;
+      }
+      if (entitySource === "funcionario" && !funcionarioId) {
+        toast({ title: "Funcionário obrigatório", description: "Selecione o funcionário para essa despesa.", variant: "destructive" });
+        return;
+      }
     }
     if (isEdit && isSeries) {
       setShowScopeDialog(true);
@@ -350,21 +373,79 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
             </div>
           </div>
           {type === "EXPENSE" ? (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[10px] font-black text-neutral-400 uppercase flex items-center gap-1"><Building2 size={12} /> Fornecedor</label>
-                <a href="/admin/fornecedores" target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-green-600 hover:text-green-700 uppercase" data-testid="link-novo-fornecedor">+ Novo</a>
+            <div className="space-y-2">
+              <div className="flex items-center bg-neutral-100 p-1 rounded-lg" data-testid="toggle-entity-source">
+                <button
+                  type="button"
+                  onClick={() => { setEntitySource("fornecedor"); setFuncionarioId(""); }}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-md transition-all flex items-center justify-center gap-1 ${entitySource === "fornecedor" ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500"}`}
+                  data-testid="button-source-fornecedor"
+                >
+                  <Building2 size={12} /> Fornecedor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEntitySource("funcionario"); setFornecedorId(""); }}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-md transition-all flex items-center justify-center gap-1 ${entitySource === "funcionario" ? "bg-emerald-700 text-white shadow-sm" : "text-neutral-500"}`}
+                  data-testid="button-source-funcionario"
+                >
+                  <UserIcon size={12} /> Funcionário
+                </button>
               </div>
-              <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={fornecedorId} onChange={e => { setFornecedorId(e.target.value); const f = fornecedores.find(x => String(x.id) === e.target.value); if (f) setEntityName(f.nome); }} data-testid="select-fornecedor">
-                <option value="">Selecione um fornecedor cadastrado…</option>
-                {fornecedores.filter(f => f.ativo).map(f => (
-                  <option key={f.id} value={f.id}>{f.nome}{f.cnpj_cpf ? ` — ${f.cnpj_cpf}` : ""}</option>
-                ))}
-              </select>
-              {!fornecedorId && (
-                <p className="mt-2 text-[10px] font-bold text-red-600 uppercase" data-testid="text-fornecedor-required">
-                  Selecione um fornecedor cadastrado (obrigatório para Despesa).
-                </p>
+              {entitySource === "fornecedor" ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-black text-neutral-400 uppercase flex items-center gap-1"><Building2 size={12} /> Fornecedor</label>
+                    <a href="/admin/fornecedores" target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-green-600 hover:text-green-700 uppercase" data-testid="link-novo-fornecedor">+ Novo</a>
+                  </div>
+                  <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={fornecedorId} onChange={e => { setFornecedorId(e.target.value); const f = fornecedores.find(x => String(x.id) === e.target.value); if (f) setEntityName(f.nome); }} data-testid="select-fornecedor">
+                    <option value="">Selecione um fornecedor cadastrado…</option>
+                    {fornecedores.filter(f => f.ativo).map(f => (
+                      <option key={f.id} value={f.id}>{f.nome}{f.cnpj_cpf ? ` — ${f.cnpj_cpf}` : ""}</option>
+                    ))}
+                  </select>
+                  {!fornecedorId && (
+                    <p className="mt-2 text-[10px] font-bold text-red-600 uppercase" data-testid="text-fornecedor-required">
+                      Selecione um fornecedor cadastrado (obrigatório para Despesa).
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-black text-neutral-400 uppercase flex items-center gap-1"><UserIcon size={12} /> Funcionário</label>
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase">Sem cadastro de fornecedor</span>
+                  </div>
+                  <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" value={funcionarioId} onChange={e => { setFuncionarioId(e.target.value); const emp = employees.find(x => String(x.id) === e.target.value); if (emp) setEntityName(emp.name); }} data-testid="select-funcionario">
+                    <option value="">Selecione um funcionário…</option>
+                    {employees
+                      .filter(e => (e.status || "").toLowerCase() !== "demitido" && (e.status || "").toLowerCase() !== "inativo")
+                      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"))
+                      .map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.name}{e.cpf ? ` — ${e.cpf}` : ""}{e.role ? ` (${e.role})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                  {funcionarioId && (() => {
+                    const emp = employees.find(x => String(x.id) === funcionarioId);
+                    return emp ? (
+                      <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] text-emerald-800" data-testid="text-funcionario-info">
+                        <div className="font-black uppercase tracking-wide">{emp.name}</div>
+                        <div className="font-medium opacity-80">
+                          {emp.cpf ? `CPF: ${emp.cpf}` : "CPF: —"}
+                          {emp.matricula ? ` • Matrícula: ${emp.matricula}` : ""}
+                          {emp.role ? ` • ${emp.role}` : ""}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+                  {!funcionarioId && (
+                    <p className="mt-2 text-[10px] font-bold text-red-600 uppercase" data-testid="text-funcionario-required">
+                      Selecione o funcionário (obrigatório).
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           ) : (
@@ -1563,6 +1644,15 @@ export default function FinanceiroPage() {
     },
   });
 
+  const { data: employees = [] } = useQuery<EmployeeLite[]>({
+    queryKey: ["/api/employees"],
+    queryFn: async () => {
+      const res = await authFetch("/api/employees");
+      if (!res.ok) throw new Error("Erro ao carregar funcionários");
+      return res.json();
+    },
+  });
+
   const aprovarMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/financial/transactions/${id}/aprovar`),
     onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Lançamento aprovado" }); },
@@ -2741,6 +2831,7 @@ export default function FinanceiroPage() {
             categories={categories}
             accounts={accounts}
             fornecedores={fornecedores}
+            employees={employees}
           />
         )}
 

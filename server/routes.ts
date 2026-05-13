@@ -117,6 +117,18 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMP",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS recusado_motivo TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS recusado_em TIMESTAMP",
+    // ─── Fix: expandir colunas varchar limitadas (status varchar(10) bloqueava 'AGUARDANDO_APROVACAO') ───
+    "ALTER TABLE financial_transactions ALTER COLUMN status TYPE TEXT",
+    "ALTER TABLE financial_transactions ALTER COLUMN type TYPE TEXT",
+    "ALTER TABLE financial_transactions ALTER COLUMN entity_type TYPE TEXT",
+    "ALTER TABLE financial_transactions ALTER COLUMN status_conciliacao TYPE TEXT",
+    "ALTER TABLE financial_transactions DROP CONSTRAINT IF EXISTS financial_transactions_entity_type_check",
+    "ALTER TABLE financial_transactions DROP CONSTRAINT IF EXISTS financial_transactions_status_check",
+    "ALTER TABLE financial_transactions DROP CONSTRAINT IF EXISTS financial_transactions_type_check",
+    "ALTER TABLE financial_transactions DROP CONSTRAINT IF EXISTS financial_transactions_status_conciliacao_check",
+    // ─── Suporte despesa de Funcionário (sem precisar cadastrar fornecedor) ───
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS funcionario_id INTEGER",
+    "CREATE INDEX IF NOT EXISTS idx_financial_funcionario ON financial_transactions(funcionario_id)",
     "CREATE INDEX IF NOT EXISTS idx_financial_status ON financial_transactions(status)",
     "CREATE INDEX IF NOT EXISTS idx_financial_fornecedor ON financial_transactions(fornecedor_id)",
     `CREATE TABLE IF NOT EXISTS fornecedores (
