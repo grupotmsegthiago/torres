@@ -27,11 +27,11 @@ export interface PunchInput {
 }
 
 export interface WorkedHoursResult {
-  /** Total em minutos (todos os dias somados). */
+  /** Total em minutos (todos os dias somados, EXCLUI pares suspeitos). */
   totalMinutes: number;
   /** Total em horas (totalMinutes / 60). */
   totalHours: number;
-  /** Minutos trabalhados por dia BRT (yyyy-mm-dd). */
+  /** Minutos trabalhados por dia BRT (yyyy-mm-dd). EXCLUI pares suspeitos. */
   perDayMinutes: Map<string, number>;
   /** Quantos dias distintos têm jornada > 0. */
   daysWorked: number;
@@ -39,9 +39,19 @@ export interface WorkedHoursResult {
   hasOpenShift: boolean;
   /** Timestamp da última batida ímpar (entrada sem saída), ou null. */
   openShiftSince: Date | null;
-  /** Pares (entrada, saida) já casados — necessário pra cruzamentos com OS. */
+  /** Pares VÁLIDOS (entrada, saida) já casados. Pares > MAX_PAIR_HOURS NÃO entram aqui. */
   pairs: Array<{ entrada: Date; saida: Date }>;
+  /** Pares SUSPEITOS (duração > MAX_PAIR_HOURS) — agente provavelmente esqueceu de bater. */
+  suspiciousPairs: Array<{ entrada: Date; saida: Date; hours: number; reason: "invalid_long_duration" }>;
 }
+
+/**
+ * Disjuntor de jornada: nenhum par válido pode exceder este teto.
+ * Se exceder, é considerado falha de batida (esqueceu de bater saída
+ * num dia, e o motor pareou com a entrada do próximo turno).
+ * Esses pares vão pra lista `suspiciousPairs` e são EXCLUÍDOS do total.
+ */
+export const MAX_PAIR_HOURS = 16;
 
 /** Converte um timestamp para a data BRT yyyy-mm-dd. */
 export function ymdBRT(iso: string | Date): string {

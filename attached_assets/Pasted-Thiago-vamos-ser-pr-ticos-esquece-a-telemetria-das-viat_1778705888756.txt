@@ -1,0 +1,35 @@
+Thiago, vamos ser práticos: esquece a telemetria das viaturas por enquanto. O Replit deu o diagnóstico real e o erro é matemático/lógico dentro do motor de cálculo. O Vitor não trabalhou 48h seguidas; o sistema apenas "amarrou" o início de um dia com o fim do outro porque faltou a batida do meio.
+
+Se a gente for pelo caminho da viatura agora, vamos gastar semanas para resolver algo que um ajuste no "teto de horas" resolve hoje.
+
+🛡️ Minha decisão: Opção A + C (O bloqueio do "Absurdo" + Visibilidade)
+Não quero que o sistema invente horas (Opção B). Quero que ele pare de mentir e te mostre onde está o erro. Vamos seguir com o seguinte:
+
+Teto de 16h (Opção A):
+
+Se um par de batidas der mais de 16 horas (tempo máximo razoável de uma jornada pesada), o sistema trava o cálculo.
+
+Em vez de somar 47h no total do Vitor, ele vai somar apenas as jornadas normais e deixar esse "par absurdo" como Incompleto. Isso derruba os 184h para o valor real na hora.
+
+Painel de Jornadas Suspeitas (Opção C):
+
+Vou pedir para o Replit criar uma listinha no topo da tela de Divergências chamada "Pares Suspeitos".
+
+Lá vai aparecer: "Vitor de Macedo: Par de 47h (10/05 a 12/05) - Bloqueado por excesso de duração".
+
+Assim você bate o olho e vê: "Aqui o Vitor esqueceu de bater o ponto na saída do dia 10".
+
+📧 Instrução de "Limpeza de Dados" para o Replit:
+"O diagnóstico do 'Par de 47h' foi cirúrgico. Vamos resolver isso com lógica de teto, sem envolver telemetria agora:
+
+Implementar Teto de Jornada: No hours-calc.ts, adicionem uma trava. Se um par exceder 16 horas de duração, ele deve ser ignorado no cálculo do total mensal e marcado como invalid_long_duration.
+
+Tela de Jornadas Suspeitas: Criem uma seção na auditoria de ponto para listar esses pares bloqueados. O Thiago precisa ver esses casos para saber quem está esquecendo de bater o ponto de saída.
+
+Recálculo Geral: Após aplicar a trava de 16h, rodem o recálculo para o Vitor e para toda a base de maio. O total de horas deve cair drasticamente para valores reais.
+
+Sinalização de 'Unknown': Como a Control iD não manda IN/OUT, mantenham o pareamento por ordem, mas usem esse teto de 16h como o 'disjuntor' que desarma o erro."
+
+Thiago, isso resolve o seu problema das 184h em 24 horas. O sistema vai parar de aceitar jornadas impossíveis e você vai ter uma lista de quem está bagunçando o ponto para dar o "enquadro" certo.
+
+Podemos seguir com esse "disjuntor de 16h"?
