@@ -1356,9 +1356,16 @@ export default function RelatorioFaturamentoPage() {
 
       {reportGenerated && rowsData.length > 0 && (() => {
         const effectiveLabel = (r: typeof rowsData[number]) => getRelatorioStatus(r.osStatus, r.status, (r as any).osMissionStatus).label;
-        const aprovadasRows = rowsData.filter(r => effectiveLabel(r) === "Aprovada" || effectiveLabel(r) === "Faturada" || effectiveLabel(r) === "Pago");
+        // FONTE ÚNICA DE VERDADE: aprovadas = b.status === "APROVADA" (mesma
+        // regra que o backend POST /boletim-medicao/gerar-fatura aplica). Isso
+        // garante que o número exibido aqui é EXATAMENTE o que será cobrado.
+        const aprovadasRows = rowsData.filter(r => String(r.status || "").toUpperCase() === "APROVADA");
         const canceladasRows = rowsData.filter(r => effectiveLabel(r) === "Cancelada");
         const recusadasRows = rowsData.filter(r => effectiveLabel(r) === "Recusada");
+        const faturadasRows = rowsData.filter(r => {
+          const st = String(r.status || "").toUpperCase();
+          return st === "FATURADO" || st === "FATURADA" || st === "PAGO";
+        });
         const pendentesRows = rowsData.filter(r => {
           const lbl = effectiveLabel(r);
           return lbl === "A Verificar" || lbl === "Pendente" || lbl === "Enviada Aprovação";
@@ -1367,9 +1374,13 @@ export default function RelatorioFaturamentoPage() {
         const aprovadasTotal = sumTotal(aprovadasRows);
         const pendentesTotal = sumTotal(pendentesRows);
         const canceladasTotal = sumTotal(canceladasRows);
-        const totalFaturamento = aprovadasTotal + canceladasTotal + pendentesTotal;
-        const totalCount = aprovadasRows.length + canceladasRows.length + pendentesRows.length;
-        const tooltip = "O Total p/ Faturamento considera apenas OS Aprovadas e Canceladas (com acionamento + extras). Recusadas e A Verificar não entram na soma.";
+        const faturadasTotal = sumTotal(faturadasRows);
+        // Total p/ Faturamento = APENAS aprovadas. É o valor que o botão
+        // "Gerar Fatura" vai cobrar. Canceladas/Recusadas/A_Verificar/Faturadas
+        // são contadas como info, mas NÃO entram nesse total.
+        const totalFaturamento = aprovadasTotal;
+        const totalCount = aprovadasRows.length;
+        const tooltip = "Total p/ Faturamento = soma das OS APROVADAS (mesma base que o botão 'Gerar Fatura' usa). Canceladas, Recusadas e A Verificar não entram.";
         return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
@@ -1397,21 +1408,24 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total p/ Faturamento</p>
               <p className="text-lg font-black text-white font-mono">{totalCount} OS</p>
               <p className="text-[10px] font-bold text-white font-mono">{fmt(totalFaturamento)}</p>
-              <p className="text-[8px] font-medium text-gray-400 mt-0.5">Aprovadas + Canceladas</p>
+              <p className="text-[8px] font-medium text-gray-400 mt-0.5">Apenas Aprovadas</p>
             </div>
           </div>
           <div className="flex items-center gap-3 mb-3" title={tooltip}>
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700 flex-1">
-              {totalCount} OS processadas &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
+              {totalCount} OS aprovada{totalCount === 1 ? "" : "s"} &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
+              {canceladasRows.length > 0 && (
+                <span className="ml-2 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">{canceladasRows.length} cancelada{canceladasRows.length > 1 ? "s" : ""} ({fmt(canceladasTotal)} — não contam)</span>
+              )}
               {recusadasRows.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">+ {recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
               )}
-              {faturadoBillings.length > 0 && (
-                <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadoBillings.length} faturada{faturadoBillings.length > 1 ? "s" : ""}</span>
+              {pendentesRows.length > 0 && (
+                <span className="ml-2 text-[10px] font-bold text-yellow-700 bg-yellow-50 border border-yellow-200 px-1.5 py-0.5 rounded">{pendentesRows.length} a verificar (não contam)</span>
               )}
-              {approvedBillings.length > 0 && (
-                <span className="ml-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">{approvedBillings.length} aprovada{approvedBillings.length > 1 ? "s" : ""}</span>
+              {faturadasRows.length > 0 && (
+                <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadasRows.length} já faturada{faturadasRows.length > 1 ? "s" : ""}</span>
               )}
             </span>
             <button
