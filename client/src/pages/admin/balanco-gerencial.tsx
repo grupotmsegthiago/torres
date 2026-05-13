@@ -404,7 +404,10 @@ export default function BalancoGerencialPage() {
     // "Vale Refeição" etc.) e categoria de estrutura ("Aluguel", "Infraestrutura" etc.)
     // NÃO entram no custoTotal para evitar dupla contagem com a Provisão de RH e os
     // Custos Fixos rateados — esses já cobrem o mensal completo desses itens.
-    const despReaisOperacional = despReais - despFin.payroll - despFin.fixed;
+    // Lançamentos manuais com fornecedor (categoria não reconhecida) NÃO entram aqui —
+    // o card de Custos Totais só conta o que está cadastrado oficialmente em Custos Fixos
+    // ou foi gerado por origem oficial (fueling, mission_cost, maintenance, payroll).
+    const despReaisOperacional = despReais - despFin.payroll - despFin.fixed - despFin.other;
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * daysInPeriod;
@@ -624,8 +627,7 @@ export default function BalancoGerencialPage() {
               (totals.pag || 0) +
               (totals.desp_combustivel || 0) +
               (totals.desp_pedagio || 0) +
-              (totals.desp_manutencao || 0) +
-              (totals.desp_outras || 0);
+              (totals.desp_manutencao || 0);
             const fixos = totals.custosFixosRateados || 0;
             const TipRow = ({ label, value, color = "neutral" }: { label: string; value: string; color?: string }) => (
               <div className="flex justify-between items-baseline gap-3 py-0.5">
@@ -644,24 +646,13 @@ export default function BalancoGerencialPage() {
               key: "op", label: "Operacional", value: operacional, color: "red",
               icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
               tipTitle: "Custos Operacionais",
-              tipDesc: "Despesas variáveis ligadas diretamente à execução das missões: pagamento variável aos agentes (VRP), combustível, pedágios, manutenção de viaturas e outras despesas registradas no período.",
-              rows: (() => {
-                const baseRows = [
-                  { label: "VRP (agentes)", value: totals.pag },
-                  { label: "Combustível", value: totals.desp_combustivel },
-                  { label: "Pedágio", value: totals.desp_pedagio },
-                  { label: "Manutenção", value: totals.desp_manutencao },
-                ].filter(r => r.value > 0);
-                const outrasMap = totals.desp_outras_por_categoria || {};
-                const outrasRows = Object.entries(outrasMap)
-                  .filter(([_, v]) => Number(v) > 0)
-                  .sort((a, b) => Number(b[1]) - Number(a[1]))
-                  .map(([cat, v]) => ({ label: `Outras · ${cat}`, value: Number(v) }));
-                if (outrasRows.length === 0 && totals.desp_outras > 0) {
-                  outrasRows.push({ label: "Outras despesas", value: totals.desp_outras });
-                }
-                return [...baseRows, ...outrasRows];
-              })(),
+              tipDesc: "Despesas variáveis ligadas diretamente à execução das missões: pagamento variável aos agentes (VRP), combustível, pedágios e manutenção de viaturas — apenas lançamentos automáticos por origem oficial. Lançamentos manuais com fornecedor não entram aqui; precisam estar cadastrados em Custos Fixos.",
+              rows: [
+                { label: "VRP (agentes)", value: totals.pag },
+                { label: "Combustível", value: totals.desp_combustivel },
+                { label: "Pedágio", value: totals.desp_pedagio },
+                { label: "Manutenção", value: totals.desp_manutencao },
+              ].filter(r => r.value > 0),
             });
             const PERIOD_BASE_DAYS: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
             const PERIOD_FOLHA_LABEL: Record<Period, string> = {
