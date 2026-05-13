@@ -3144,12 +3144,54 @@ export function registerAsaasRoutes(app: Express) {
         // invoices em aberto (PENDING/OVERDUE) de qualquer período —
         // pra nunca "sumirem" da tela enquanto não houver pagamento.
         const extraInvoices = [...(invoicesCreatedInPeriod || []), ...openInvoicesAdded];
+
+        // BUSCA REVERSA: para invoices em extraInvoices (faturas que vieram do
+        // Asaas / criadas fora do período de missões), buscamos no banco TODOS
+        // os escort_billings vinculados via invoice_id, mesmo que estejam
+        // fora do período de filtro. Sem isso, a coluna "OS Vinculadas"
+        // ficava vazia e o financeiro não sabia quais serviços compunham
+        // a fatura.
+        const extraInvIds = Array.from(new Set(
+          extraInvoices.filter(inv => invoiceIsTorres(inv) && !fatGroups.has(inv.id)).map((inv: any) => inv.id)
+        ));
+        const reverseBillingsByInvoice = new Map<number, any[]>();
+        if (extraInvIds.length > 0) {
+          const { data: reverseBills } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, invoice_id, service_order_id, client_name, data_missao")
+            .in("invoice_id", extraInvIds)
+            .limit(20000);
+          for (const b of (reverseBills || [])) {
+            if (!b.invoice_id) continue;
+            const arr = reverseBillingsByInvoice.get(b.invoice_id) || [];
+            arr.push(b);
+            reverseBillingsByInvoice.set(b.invoice_id, arr);
+          }
+          // Carrega os_numbers das SOs novas que não estão no osNumMap
+          const newSoIds = Array.from(new Set(
+            (reverseBills || []).map((b: any) => b.service_order_id).filter((id: any) => id && !osNumMap.has(id))
+          )) as number[];
+          if (newSoIds.length > 0) {
+            const { data: newSos } = await supabaseAdmin
+              .from("service_orders")
+              .select("id, os_number")
+              .in("id", newSoIds);
+            for (const so of (newSos || [])) osNumMap.set(so.id, so.os_number);
+          }
+        }
+
         const seenExtra = new Set<number>();
         for (const inv of extraInvoices) {
           if (!invoiceIsTorres(inv)) continue;
           if (fatGroups.has(inv.id)) continue;
           if (seenExtra.has(inv.id)) continue;
           seenExtra.add(inv.id);
+          const linkedBills = reverseBillingsByInvoice.get(inv.id) || [];
+          const osListExtra = Array.from(new Map(
+            linkedBills
+              .filter((b: any) => b.service_order_id)
+              .map((b: any) => [b.service_order_id, { id: b.service_order_id, osNumber: osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}` }])
+          ).values());
           const cli = clientMap.get(inv.client_id);
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
           rows.push({
@@ -3171,8 +3213,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceUrl: inv.invoice_url,
             nfseUrl: inv.nfse_url,
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
-            osCount: 0,
-            osList: [],
+            osCount: osListExtra.length,
+            osList: osListExtra,
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             nfseErrorMessage: inv.nfse_error_message || null,
