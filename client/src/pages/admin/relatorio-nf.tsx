@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail,
 } from "lucide-react";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
@@ -226,6 +226,22 @@ export default function RelatorioNFPage() {
       invalidateRelatedQueries("invoice");
     },
     onError: (e: any) => toast({ title: "Erro ao marcar como emitida", description: e?.message, variant: "destructive" }),
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const r = await authFetch(`/api/invoices/${invoiceId}/resend-email`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Fatura reenviada", description: data?.message || "E-mail com boleto e NF enviado ao cliente." });
+    },
+    onError: (e: any) => toast({ title: "Erro ao reenviar", description: e?.message, variant: "destructive" }),
   });
 
   const openNfMirror = async (id: number) => {
@@ -720,6 +736,27 @@ export default function RelatorioNFPage() {
                               data-testid={`button-mark-emitted-${r.id}`}
                             >
                               <FileCheck2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {r.source === "INVOICE" && r.invoiceId && (r.invoiceUrl || r.nfseUrl) && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (resendMutation.isPending) return;
+                                if (window.confirm(`Reenviar boleto + NF da fatura para ${r.clientName} por e-mail?`)) {
+                                  resendMutation.mutate(r.invoiceId!);
+                                }
+                              }}
+                              disabled={resendMutation.isPending}
+                              className="h-7 w-7 inline-flex items-center justify-center text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-50"
+                              title="Reenviar fatura por e-mail (boleto + NF)"
+                              data-testid={`button-resend-invoice-${r.id}`}
+                            >
+                              {resendMutation.isPending && resendMutation.variables === r.invoiceId ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Mail className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           )}
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
