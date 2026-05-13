@@ -228,6 +228,27 @@ export default function RelatorioNFPage() {
     onError: (e: any) => toast({ title: "Erro ao marcar como emitida", description: e?.message, variant: "destructive" }),
   });
 
+  const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
+
+  const receiveInCashMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; method: string; paymentDate: string; value: number; notes: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/receive-in-cash`, {
+        method: "POST",
+        body: JSON.stringify({ method: payload.method, paymentDate: payload.paymentDate, value: payload.value, notes: payload.notes }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      const sync = data?.asaasSynced ? " (também baixada no Asaas)" : data?.asaasMessage ? ` (Asaas: ${data.asaasMessage})` : "";
+      toast({ title: "Fatura baixada", description: `Marcada como recebida${sync}.` });
+      setReceiveModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro ao baixar fatura", description: e?.message, variant: "destructive" }),
+  });
+
   const resendMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
       const r = await authFetch(`/api/invoices/${invoiceId}/resend-email`, {
@@ -272,6 +293,9 @@ export default function RelatorioNFPage() {
   const filtered = useMemo(() => {
     return rows
       .filter(r => statusFilter === "all" || r.normalizedStatus === statusFilter)
+      // Faturas pagas saem da listagem principal e ficam só na seção
+      // "Notas Pagas" embaixo (a menos que o usuário filtre Status=PAGO).
+      .filter(r => statusFilter === "PAGO" || r.normalizedStatus !== "PAGO")
       .filter(r => {
         if (!search.trim()) return true;
         const s = search.trim().toLowerCase();
@@ -280,6 +304,18 @@ export default function RelatorioNFPage() {
           .some(x => String(x).toLowerCase().includes(s));
       });
   }, [rows, statusFilter, search]);
+
+  // Extrai período (datas) da descrição da fatura. Aceita variações como:
+  //   "Período: 01/04/2026 a 15/04/2026" / "Período 01/04 a 15/04"
+  //   "01/04/2026 a 15/04/2026" / "13/04/2026 a 13/04/2026"
+  const extractPeriod = (desc?: string | null): string | null => {
+    if (!desc) return null;
+    const s = String(desc);
+    const re = /(\d{2}\/\d{2}(?:\/\d{2,4})?)\s*(?:a|à|até|-|—)\s*(\d{2}\/\d{2}(?:\/\d{2,4})?)/i;
+    const m = s.match(re);
+    if (!m) return null;
+    return `${m[1]} a ${m[2]}`;
+  };
 
   const filteredPaid = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -496,6 +532,7 @@ export default function RelatorioNFPage() {
                 <tr className="text-xs text-slate-600">
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
+                  <th className="text-left px-3 py-2 font-semibold">Período</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Criado em</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
@@ -508,9 +545,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
                   const Icon = meta.icon;
@@ -584,6 +621,9 @@ export default function RelatorioNFPage() {
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap" data-testid={`text-period-${r.id}`}>
+                        {extractPeriod(r.description) || <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums" data-testid={`text-value-${r.id}`}>
                         {fmtBRL(r.value)}
@@ -736,6 +776,20 @@ export default function RelatorioNFPage() {
                               data-testid={`button-mark-emitted-${r.id}`}
                             >
                               <FileCheck2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+                                setReceiveModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), method: "PIX", paymentDate: today, notes: "" });
+                              }}
+                              className="h-7 w-7 inline-flex items-center justify-center text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                              title="Receber em Dinheiro/PIX (baixa manual)"
+                              data-testid={`button-receive-cash-${r.id}`}
+                            >
+                              <Banknote className="h-3.5 w-3.5" />
                             </button>
                           )}
                           {r.source === "INVOICE" && r.invoiceId && (r.invoiceUrl || r.nfseUrl) && r.normalizedStatus !== "NF_CANCELADA" && (
@@ -1292,6 +1346,62 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-emitir"
             >
               {emitirFaturaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Emitindo…</> : <><Send className="h-4 w-4 mr-1" /> Emitir agora</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Receber em Dinheiro/PIX (baixa manual) */}
+      <Dialog open={!!receiveModal} onOpenChange={open => { if (!open && !receiveInCashMutation.isPending) setReceiveModal(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5 text-emerald-700" /> Receber em Dinheiro / PIX</DialogTitle>
+            <DialogDescription>
+              Marca a fatura como recebida e tenta sincronizar a baixa no Asaas. Use quando o cliente pagou fora do boleto (PIX direto, dinheiro ou transferência).
+            </DialogDescription>
+          </DialogHeader>
+          {receiveModal && (
+            <div className="space-y-3">
+              <div className="text-sm space-y-0.5">
+                <div><span className="text-slate-500">Cliente:</span> <strong>{receiveModal.clientName}</strong></div>
+                <div><span className="text-slate-500">Fatura:</span> <strong>#{receiveModal.invoiceId}</strong></div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Forma de recebimento</label>
+                <Select value={receiveModal.method} onValueChange={v => setReceiveModal({ ...receiveModal, method: v as any })}>
+                  <SelectTrigger data-testid="select-receive-method"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PIX">PIX</SelectItem>
+                    <SelectItem value="DINHEIRO">Dinheiro</SelectItem>
+                    <SelectItem value="TRANSFERENCIA">Transferência</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-700 mb-1 block">Data do pagamento</label>
+                  <Input type="date" value={receiveModal.paymentDate} onChange={e => setReceiveModal({ ...receiveModal, paymentDate: e.target.value })} data-testid="input-receive-date" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700 mb-1 block">Valor recebido (R$)</label>
+                  <Input type="number" step="0.01" min="0" value={receiveModal.value} onChange={e => setReceiveModal({ ...receiveModal, value: Number(e.target.value) })} data-testid="input-receive-value" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Observação (opcional)</label>
+                <Textarea rows={2} value={receiveModal.notes} onChange={e => setReceiveModal({ ...receiveModal, notes: e.target.value })} placeholder="Ex.: Pago por PIX direto na conta dia 12/05" data-testid="textarea-receive-notes" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReceiveModal(null)} disabled={receiveInCashMutation.isPending} data-testid="button-cancel-receive">Cancelar</Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={() => receiveModal && receiveInCashMutation.mutate({ invoiceId: receiveModal.invoiceId, method: receiveModal.method, paymentDate: receiveModal.paymentDate, value: receiveModal.value, notes: receiveModal.notes })}
+              disabled={receiveInCashMutation.isPending || !receiveModal?.paymentDate || !receiveModal || receiveModal.value <= 0}
+              data-testid="button-confirm-receive"
+            >
+              {receiveInCashMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Baixando…</> : <><CheckCircle2 className="h-4 w-4 mr-1" /> Confirmar recebimento</>}
             </Button>
           </DialogFooter>
         </DialogContent>

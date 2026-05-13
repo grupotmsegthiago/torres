@@ -3346,6 +3346,64 @@ export function registerAsaasRoutes(app: Express) {
       }
     });
 
+    // ============================================================
+    // Baixa manual: marcar fatura como recebida em dinheiro/PIX direto
+    // (não via Asaas). Sincroniza no Asaas via /payments/:id/receiveInCash
+    // para refletir lá também.
+    // ============================================================
+    app.post("/api/invoices/:id/receive-in-cash", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        const invoiceId = Number(req.params.id);
+        const paymentDate = String(req.body?.paymentDate || "").trim();
+        const value = Number(req.body?.value || 0);
+        const notes = String(req.body?.notes || "").slice(0, 500);
+        const method = String(req.body?.method || "PIX").toUpperCase(); // PIX | DINHEIRO | TRANSFERENCIA
+
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+        if (!paymentDate || !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
+          return res.status(400).json({ message: "paymentDate (YYYY-MM-DD) obrigatório" });
+        }
+
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        const finalValue = value > 0 ? value : Number(invoice.value || 0);
+
+        let asaasOk = false;
+        let asaasMsg = "";
+        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+          try {
+            await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/receiveInCash`, {
+              paymentDate,
+              value: finalValue,
+              notifyCustomer: false,
+            });
+            asaasOk = true;
+          } catch (e: any) {
+            asaasMsg = e?.message || String(e);
+            console.log(`[receive-in-cash] Asaas falhou p/ invoice #${invoiceId}: ${asaasMsg}`);
+          }
+        }
+
+        const noteHistory = `[Baixa manual ${method} por ${user.email} em ${new Date().toISOString()} — pago em ${paymentDate}, R$${finalValue.toFixed(2)}${notes ? ` — ${notes}` : ""}${asaasOk ? " — sync Asaas OK" : asaasMsg ? ` — Asaas: ${asaasMsg}` : ""}]`;
+        const { error } = await supabaseAdmin.from("invoices").update({
+          status: "RECEIVED_IN_CASH",
+          payment_date: paymentDate,
+          net_value: finalValue,
+          nfse_observations: `${noteHistory}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
+          updated_at: new Date().toISOString(),
+        }).eq("id", invoiceId);
+        if (error) throw error;
+
+        console.log(`[receive-in-cash] Invoice #${invoiceId} (${method}) baixada por ${user.email} — R$${finalValue} em ${paymentDate}. AsaasSync=${asaasOk}`);
+        res.json({ success: true, asaasSynced: asaasOk, asaasMessage: asaasMsg || null });
+      } catch (err: any) {
+        console.error("[receive-in-cash] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 

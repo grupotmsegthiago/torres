@@ -1,0 +1,92 @@
+Essas são as faturas que tenho com o asaas , tirando a TM SEGURANÇA e LCE PROTECAO, todas devem constar do mesmo jeito!
+
+
+
+A LCE PROTECAO a data para pagamento é dia 18/05/2026
+
+
+
+Deve também ter o botão, recebido por dinheiro ou pix para mudar o status também no asaas, os demais devem ser removidos.. como essas faturas 27 e 24
+
+
+
+Porque a fatura da MCM sumiu e não esta como paga? 
+
+
+
+as que estão como pagas, devem sair das colunas de cima e só ficar nas colunas de baixo.. 
+
+
+
+Incluir também campos de buscas como clientes, aguardando pagamentos,
+
+
+
+As que estão no cadastro sem nf devem aparecer o que ja foi faturado , as que estão em abertos ainda, não devem aparecer aqui ..
+
+
+
+A TM SEG por exemplo deve aparecer como faturado a 01/04/2026 até 15/04/2026
+
+
+
+inclua também o periodo para saber qual é o periodo daquela fatura
+
+Entendido. Com base no arquivo de cobranças do Asaas e na imagem do seu sistema, estruturei os pontos exatos que o Replit precisa ajustar para organizar seu financeiro.
+
+O problema central é que o sistema não está separando o que é "Medição/Boletim" (interno) do que é "Fatura/Asaas" (real), além de misturar status de pagamento.
+
+Aqui está o roteiro para passar ao Replit:
+
+1. Organização das Colunas e Status (Fluxo de Caixa)
+Regra de Exibição: "As que estão como pagas devem sair das colunas de cima e ficar apenas nas de baixo".
+
+Ajuste: Mover automaticamente qualquer fatura com status RECEIVED ou CONFIRMED no Asaas para a seção de "Histórico/Pagos".
+
+Botão de Baixa Manual: Adicionar o botão "Recebido em Dinheiro/PIX".
+
+Ação: Ao clicar, o sistema deve avisar o Asaas (API) para baixar a fatura e mudar o status no seu dashboard imediatamente.
+
+Ação: Remover as opções de status irrelevantes (como as das faturas 24 e 27) para simplificar.
+
+2. O Caso da MCM (Por que sumiu?)
+Analisando o seu arquivo Cobrancas (1).xlsx, a fatura da MCM (MCM MONTAGENS) aparece com o ID 800889240, vencimento em 10/05/2026, no valor de R$ 2.458,50, com status "Recebida" em 11/05/2026.
+
+O Erro: Se ela sumiu e não está como paga no sistema Torres, é porque o sistema provavelmente só está buscando faturas "Aguardando" ou "Vencidas".
+
+Correção: O Replit precisa ajustar o filtro para que faturas RECEIVED (Pagas) entrem na coluna de "Pagos" em vez de serem deletadas da visão.
+
+3. Ajuste por Cliente (Exemplo TM SEG e LCE)
+LCE PROTEÇÃO: O vencimento deve ser fixado/ajustado para 18/05/2026.
+
+TM SEGURANÇA: Deve exibir o período faturado claramente (Ex: 01/04/2026 a 15/04/2026).
+
+Regra: O campo "Descrição" do Asaas já contém essa informação (ex: "Referente aos serviços... Período X a Y"). O Replit deve extrair esse texto e colocar em uma coluna visível chamada "Período".
+
+4. Filtros e Busca
+Incluir no topo da tela:
+
+Campo de Busca: Por nome do Cliente.
+
+Filtro por Status: "Aguardando Pagamento", "Vencidos", "Pagos".
+
+Filtro de Faturamento: Mostrar apenas o que já foi processado (NF emitida). O que estiver "em aberto" (em medição) não deve aparecer nesta tela de cobranças para não confundir o que já foi enviado ao cliente.
+
+📧 Mensagem para enviar ao Replit:
+"Preciso de ajustes urgentes na integração com o Asaas e na tela de Faturas:
+
+Lógica de Status: Faturas pagas (status 'RECEIVED' no Asaas) devem sair da parte superior e ir para a seção 'Pagos' na parte inferior.
+
+Botões de Ação: Deixar apenas o botão 'Recebido Dinheiro/PIX' que dá baixa manual via API. Remover status confusos.
+
+Recuperar MCM: A fatura 800889240 (MCM) está paga no Asaas mas sumiu do sistema. Corrijam o filtro para que o status 'Recebida' seja listado em 'Pagos'.
+
+Exibição de Período: Criar uma coluna 'Período' extraindo as datas que constam na descrição da fatura do Asaas (Ex: 01/04 a 15/04).
+
+Campos de Busca: Adicionar filtros por Cliente e Status (Aguardando/Pago).
+
+LCE Proteção: Validar o vencimento para 18/05/2026 conforme acordado.
+
+Trava de NF: Só mostrar nesta tela o que já foi faturado (com NF). Itens em aberto/medição ficam na tela de Boletim."
+
+Dica: Como você tem faturas de diferentes empresas (TM, LCE, MCM), esses filtros de busca são essenciais para você não se perder quando o volume de escoltas aumentar no mês.
