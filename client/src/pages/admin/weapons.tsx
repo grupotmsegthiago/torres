@@ -720,6 +720,7 @@ function WeaponGroupTable({
         <thead className="bg-neutral-50 border-b border-neutral-200">
           <tr>
             <th className="text-left p-3 font-medium text-neutral-600 w-10"></th>
+            <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider w-10">#</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Marca / Modelo</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Calibre</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nº Série</th>
@@ -732,12 +733,13 @@ function WeaponGroupTable({
           </tr>
         </thead>
         <tbody>
-          {weapons.map((w) => {
+          {weapons.map((w, idx) => {
             const regStatus = isExpiringSoon(w.registrationExpiry);
             const assignedEmp = w.assignedEmployeeId ? employees.find(e => e.id === w.assignedEmployeeId) : null;
             const kitName = weaponKitMap.get(w.id);
             return (
               <tr key={w.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-weapon-${w.id}`}>
+                <td className="px-2 py-3 text-center text-xs font-mono text-neutral-400" data-testid={`text-row-index-${w.id}`}>{idx + 1}</td>
                 <td className="p-2 pl-3">
                   {w.photoData ? (
                     <button
