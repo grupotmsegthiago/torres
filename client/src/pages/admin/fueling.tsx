@@ -198,7 +198,27 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     notes: fueling?.notes || "",
     gasolinePrice: fueling?.gasolinePrice ? maskBRL(String(fueling.gasolinePrice), 3) : "",
     ethanolPrice: fueling?.ethanolPrice ? maskBRL(String(fueling.ethanolPrice), 3) : "",
+    receiptPhoto: fueling?.receiptPhoto || "",
+    pumpPhoto: fueling?.pumpPhoto || "",
+    odometerPhoto: fueling?.odometerPhoto || "",
   });
+
+  const handlePhotoUpload = (field: "receiptPhoto" | "pumpPhoto" | "odometerPhoto") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Arquivo inválido", description: "Envie uma imagem (JPG/PNG).", variant: "destructive" });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast({ title: "Imagem muito grande", description: "Máx 8 MB.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setForm(f => ({ ...f, [field]: String(reader.result) }));
+    reader.onerror = () => toast({ title: "Erro ao ler imagem", variant: "destructive" });
+    reader.readAsDataURL(file);
+  };
 
   const gasParsed = parseBRL(form.gasolinePrice);
   const ethParsed = parseBRL(form.ethanolPrice);
@@ -405,6 +425,53 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           <div className="md:col-span-2">
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
             <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-fueling-notes" />
+          </div>
+        </div>
+
+        <div className="p-4 bg-neutral-50 border border-neutral-200 rounded-lg">
+          <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Fuel className="w-3.5 h-3.5" /> Anexos (comprovante + fotos)
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {([
+              { field: "receiptPhoto", label: "Comprovante / Nota Fiscal", testid: "receipt" },
+              { field: "pumpPhoto", label: "Foto da Bomba", testid: "pump" },
+              { field: "odometerPhoto", label: "Foto do Hodômetro (Viatura)", testid: "odometer" },
+            ] as const).map(({ field, label, testid }) => {
+              const url = form[field];
+              return (
+                <div key={field}>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">{label}</label>
+                  {url ? (
+                    <div className="relative group border border-neutral-200 rounded-lg overflow-hidden bg-white">
+                      <img src={url} alt={label} className="w-full h-32 object-cover" data-testid={`preview-${testid}`} />
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, [field]: "" }))}
+                        className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                        data-testid={`button-remove-${testid}`}
+                        title="Remover"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-neutral-300 rounded-lg cursor-pointer hover:border-neutral-400 hover:bg-white transition-colors" data-testid={`upload-${testid}`}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handlePhotoUpload(field)}
+                        data-testid={`input-${testid}`}
+                      />
+                      <span className="text-xs text-neutral-400 font-medium">Clique para enviar</span>
+                      <span className="text-[10px] text-neutral-300 mt-1">JPG/PNG • até 8 MB</span>
+                    </label>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
