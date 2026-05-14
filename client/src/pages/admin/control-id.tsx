@@ -927,6 +927,7 @@ function AbsencesTab() {
 // ═════════════════════ PAINEL DO MÊS ═════════════════════
 type PainelRow = {
   employeeId: number; name: string; role: string;
+  status?: "ativo" | "inativo" | string;
   mapped: boolean;
   hoursWorked: number; hoursLimit: number; hoursRemaining: number; percentUsed: number;
   daysWorked: number;
@@ -975,6 +976,24 @@ function PainelMesTab() {
   const [filter, setFilter] = useState<"TODOS" | "ALERTAS" | "NAO_BATEU" | "EM_ABERTO" | "PERTO_LIMITE">("ALERTAS");
   const [search, setSearch] = useState("");
   const { toast: painelToast } = useToast();
+
+  // Mutation: alterna status do funcionário (ativo ↔ inativo)
+  const toggleStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "ativo" | "inativo" }) => {
+      const r = await apiRequest("PATCH", `/api/employees/${id}`, { status });
+      return r.json();
+    },
+    onSuccess: (_data, vars) => {
+      painelToast({
+        title: vars.status === "ativo" ? "Funcionário reativado" : "Funcionário inativado",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/painel-mes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+    },
+    onError: (e: any) => {
+      painelToast({ title: "Erro ao alterar status", description: String(e?.message || e), variant: "destructive" });
+    },
+  });
 
   // Mutation: força sync com a Control iD Cloud (puxa batidas novas do RHID)
   const syncNowMutation = useMutation({
@@ -1262,11 +1281,21 @@ function PainelMesTab() {
                   ? new Date(r.dutyScheduledAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })
                   : null;
                 return (
-                  <tr key={r.employeeId} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-painel-${r.employeeId}`}>
+                  <tr key={r.employeeId} className={`border-b border-neutral-100 hover:bg-neutral-50/60 ${r.status === "inativo" ? "opacity-60" : ""}`} data-testid={`row-painel-${r.employeeId}`}>
                     <td className="p-2">
-                      <div className="font-medium text-neutral-800 flex items-center gap-1.5">
+                      <div className="font-medium text-neutral-800 flex items-center gap-1.5 flex-wrap">
                         {r.name}
-                        {isCurrentMonth && r.onDutyToday && (
+                        {r.status === "inativo" && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-neutral-200 border border-neutral-400 text-neutral-700 text-[10px] font-bold" data-testid={`badge-inativo-${r.employeeId}`}>
+                            INATIVO
+                          </span>
+                        )}
+                        {r.status && r.status !== "ativo" && r.status !== "inativo" && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-100 border border-red-300 text-red-700 text-[10px] font-bold uppercase" data-testid={`badge-status-${r.employeeId}`}>
+                            {r.status.replace(/_/g, " ")}
+                          </span>
+                        )}
+                        {isCurrentMonth && r.onDutyToday && r.status !== "inativo" && (
                           <span
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 text-[10px] font-bold"
                             title={`Em serviço · OS ${r.dutyOsNumber || "—"}${dutyTime ? ` às ${dutyTime}` : ""}${r.partnerName ? ` · Dupla: ${r.partnerName}` : " · sem dupla"}`}
@@ -1274,6 +1303,28 @@ function PainelMesTab() {
                           >
                             <PlayCircle className="w-2.5 h-2.5" /> EM SERVIÇO
                           </span>
+                        )}
+                        {(r.status === "ativo" || r.status === "inativo" || !r.status) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = r.status === "inativo" ? "ativo" : "inativo";
+                              const verbo = next === "ativo" ? "Reativar" : "Inativar";
+                              if (window.confirm(`${verbo} ${r.name}?`)) {
+                                toggleStatusMutation.mutate({ id: r.employeeId, status: next });
+                              }
+                            }}
+                            disabled={toggleStatusMutation.isPending}
+                            className={`ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold transition ${
+                              r.status === "inativo"
+                                ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                                : "bg-neutral-50 border-neutral-300 text-neutral-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
+                            } disabled:opacity-50`}
+                            title={r.status === "inativo" ? "Reativar funcionário" : "Inativar funcionário"}
+                            data-testid={`button-toggle-status-${r.employeeId}`}
+                          >
+                            {r.status === "inativo" ? "Ativar" : "Inativar"}
+                          </button>
                         )}
                       </div>
                       <div className="text-[11px] text-neutral-500">

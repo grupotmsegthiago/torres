@@ -1458,7 +1458,6 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const { data: emps } = await supabaseAdmin
     .from("employees")
     .select("id, name, role, status")
-    .eq("status", "ativo")
     .ilike("role", "vigilante")
     .order("name", { ascending: true });
 
@@ -1692,6 +1691,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
       employeeId: e.id,
       name: e.name,
       role: e.role,
+      status: e.status,
       mapped: mappedSet.has(e.id),
       hoursWorked,
       hoursLimit: HOURS_LIMIT,
