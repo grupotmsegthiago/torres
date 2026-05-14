@@ -568,11 +568,45 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                   <option value="debito_automatico">Débito Automático</option>
                   <option value="reembolso">Reembolso</option>
                 </select>
-                {paymentMethod === "reembolso" && (
-                  <p className="mt-1.5 text-[10px] font-bold text-emerald-700 uppercase" data-testid="text-reembolso-hint">
-                    Selecione o funcionário a ser reembolsado acima ↑
-                  </p>
-                )}
+                {paymentMethod === "reembolso" && (() => {
+                  const emp = employees.find(x => String(x.id) === funcionarioId);
+                  return (
+                    <div className="mt-2" data-testid="block-reembolso-funcionario">
+                      <label className="text-[10px] font-black text-emerald-700 uppercase mb-1 block">Funcionário a ser reembolsado</label>
+                      <select
+                        className="w-full p-2.5 border-2 border-emerald-300 rounded-lg text-sm font-bold uppercase bg-white"
+                        value={funcionarioId}
+                        onChange={e => {
+                          setFuncionarioId(e.target.value);
+                          const f = employees.find(x => String(x.id) === e.target.value);
+                          if (f) setEntityName(f.name);
+                        }}
+                        data-testid="select-reembolso-funcionario"
+                      >
+                        <option value="">Selecione o funcionário…</option>
+                        {employees
+                          .filter(e => (e.status || "").toLowerCase() !== "demitido" && (e.status || "").toLowerCase() !== "inativo")
+                          .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"))
+                          .map(e => (
+                            <option key={e.id} value={e.id}>
+                              {e.name}{e.cpf ? ` — ${e.cpf}` : ""}{e.role ? ` (${e.role})` : ""}
+                            </option>
+                          ))}
+                      </select>
+                      {emp && (
+                        <div className="mt-2 p-2 bg-emerald-100 border border-emerald-300 rounded-lg" data-testid="text-reembolso-funcionario-nome">
+                          <div className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Reembolsando:</div>
+                          <div className="text-sm font-black text-emerald-900 uppercase">{emp.name}</div>
+                          <div className="text-[10px] font-bold text-emerald-700">
+                            {emp.cpf ? `CPF: ${emp.cpf}` : ""}
+                            {emp.matricula ? ` • Mat.: ${emp.matricula}` : ""}
+                            {emp.role ? ` • ${emp.role}` : ""}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {paymentMethod === "boleto" && !isEdit && (
