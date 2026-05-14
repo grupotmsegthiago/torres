@@ -690,7 +690,7 @@ export default function BalancoGerencialPage() {
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Despesas variáveis ligadas à execução das missões no período (${daysInPeriod} dia(s)): VRP de cada agente + combustível + pedágios + manutenção (origem oficial). Lançamentos manuais com fornecedor não contam aqui.`,
+                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP de cada agente + combustível + pedágios + manutenção (origem oficial). Lançamentos manuais com fornecedor não contam aqui.`,
                 rows: opRows,
               });
             }
@@ -748,14 +748,14 @@ export default function BalancoGerencialPage() {
                 });
               }
               if (!sameAsBase) {
-                rhRows.push({ label: `Total: soma/mês × ${daysInPeriod}/30`, value: totals.provisaoRH });
+                rhRows.push({ label: `Total: soma/mês × ${costDays}/30`, value: totals.provisaoRH });
               }
               rhRows.push({ label: "Folha por dia (÷30)", value: monthlyFolha / 30 });
               cats.push({
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Custo real de pessoal por agente: salário + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias (mesmo motor da tela Custos Fixos). Rateado pro período (${PERIOD_ADJ[period]} = ${daysInPeriod} dia(s) ÷ 30).`,
+                tipDesc: `Custo real de pessoal por agente: salário + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias (mesmo motor da tela Custos Fixos). Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }
@@ -776,7 +776,7 @@ export default function BalancoGerencialPage() {
               fxRows.push({
                 label: sameAsBase
                   ? `Soma ${PERIOD_ADJ[period]}`
-                  : `Total: soma/mês × ${daysInPeriod}/30`,
+                  : `Total: soma/mês × ${costDays}/30`,
                 value: fixos,
               });
               fxRows.push({ label: "Custo por dia (÷30)", value: totals.custosFixosMensal / 30 });
@@ -784,7 +784,7 @@ export default function BalancoGerencialPage() {
                 key: "fx", label: "Estrutura (rateado)", value: fixos, color: "blue",
                 icon: Building2, bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500",
                 tipTitle: "Custos de Estrutura",
-                tipDesc: `Custo de "estar aberto": aluguel, contas, frota, sistemas e demais custos fixos cadastrados. Rateados conforme o período selecionado (${PERIOD_ADJ[period]} = ${daysInPeriod} dia(s) ÷ 30).`,
+                tipDesc: `Custo de "estar aberto": aluguel, contas, frota, sistemas e demais custos fixos cadastrados. Rateados conforme o período selecionado (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: fxRows,
               });
             }
