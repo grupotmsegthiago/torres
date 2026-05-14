@@ -1,0 +1,37 @@
+eu queria nessa tela de 10 em 10 minutos ele fizesse um calculo atual de como esta o cenario, incluindo os custos das horas extras, é possivel?
+
+É totalmente possível e, para o seu modelo de negócio, é o que separa um lucro estimado de um lucro real.
+
+Hoje, o seu Custo Total (R$ 815,61) na imagem provavelmente considera apenas custos fixos ou médias. Se a gente trouxer o custo das horas extras em tempo real (puxando lá do motor da Control iD que a gente ajustou), o seu Resultado (R$ 2.977,09) vai ser muito mais honesto, pois ele vai "derreter" se a equipe ficar presa em uma missão longa.
+
+🛠️ O que vou mandar o Replit fazer:
+Motor de Recálculo Automático (Cron de 10 min):
+
+O sistema vai rodar um script a cada 10 minutos que varre as OS em andamento.
+
+Ele vai perguntar ao motor do Ponto: "Quanto tempo o agente X já acumulou nessa jornada?".
+
+Se passar das 8h normais, ele já começa a multiplicar o valor da hora extra e somar no Custo Total da OS automaticamente.
+
+Atualização Visual Dinâmica:
+
+A barra amarela de "Meta do Período" e os cards de "Custo Total" vão se mexer sozinhos.
+
+Você vai ver o custo subindo conforme o tempo passa. Se a missão da DHL atrasar, você vê o lucro diminuindo na tela em tempo real.
+
+Coluna de "Gordura de HE":
+
+Vou pedir para adicionarem um pequeno indicador de "custo variável" dentro do campo de custo, para você saber quanto daquele valor é salário base e quanto já é hora extra acumulada no dia.
+
+📧 Instrução para o Replit executar:
+"Precisamos que o Relatório de OS reflita o custo real da operação em tempo real:
+
+Job de Recálculo: Criem um processo que rode a cada 10 minutos atualizando a coluna custo_total de todas as OS do dia.
+
+Custo de HE Dinâmico: O cálculo deve ser: Custo Fixo (Viatura/Seguro) + (Horas de Ponto Decorridas × Valor Hora do Agente).
+
+Integração com Control iD: Usem o motor computeWorkedHours para pegar as batidas de hoje e calcular a prospecção de custo até o momento atual.
+
+Feedback Visual: Se uma OS entrar em regime de Hora Extra, o valor do 'Custo Total' deve ficar em negrito ou mudar levemente de cor para alertar a diretoria."
+
+Thiago, com isso você vai saber exatamente quando uma missão parou de dar lucro. Se o custo subir demais e o faturamento for fixo, você toma a decisão de trocar a equipe ou negociar com o cliente na hora.
