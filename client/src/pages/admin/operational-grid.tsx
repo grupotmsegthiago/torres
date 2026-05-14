@@ -6048,6 +6048,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const refPt = getVehicleRefPoint(v, refPoints);
                 const viaturaSt = getViaturaStatus(v);
                 const VIcon = viaturaSt.icon;
+                const basePt = refPoints.find(rp => /\bbase\b/i.test(rp.name)) || refPoints[0] || null;
+                const distFromBase = (basePt && v.tracker?.latitude != null && v.tracker?.longitude != null)
+                  ? haversineDistance(v.tracker.latitude, v.tracker.longitude, basePt.latitude, basePt.longitude)
+                  : null;
 
                 return (
                   <tr
@@ -6470,6 +6474,16 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   <ShieldCheck className="w-3 h-3 flex-shrink-0 mt-0.5 text-emerald-600" />
                                   <span className="text-[10px] truncate text-neutral-600" title={v.tracker.address}>{v.tracker.address}</span>
                                 </button>
+                              )}
+                              {distFromBase != null && (
+                                <span
+                                  className={`inline-flex w-fit items-center gap-0.5 text-[9px] font-bold px-1 py-0 rounded border ${distFromBase < 0.5 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : distFromBase < 10 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+                                  title={`Distância em linha reta até ${basePt?.name || "a base"}`}
+                                  data-testid={`text-dist-base-${v.id}`}
+                                >
+                                  <Building2 className="w-2.5 h-2.5" />
+                                  {distFromBase < 0.5 ? "Na base" : distFromBase < 1 ? `${Math.round(distFromBase * 1000)}m da base` : `${distFromBase.toFixed(1)}km da base`}
+                                </span>
                               )}
                             </div>
                           )}
