@@ -952,6 +952,18 @@ import type { Express } from "express";
             })[0]
           : undefined;
 
+        // Última OS do veículo (qualquer status), pra manter os agentes visíveis
+        // mesmo quando o veículo está livre/sem missão hoje.
+        const lastOrderForVehicle = !linkedOrder
+          ? orders
+              .filter((o) => o.vehicleId === v.id && (o.assignedEmployeeId || o.assignedEmployee2Id))
+              .sort((a, b) => {
+                const at = new Date(a.completedDate || a.missionStartedAt || a.scheduledDate || 0).getTime();
+                const bt = new Date(b.completedDate || b.missionStartedAt || b.scheduledDate || 0).getTime();
+                return bt - at;
+              })[0]
+          : undefined;
+
         return {
           id: v.id,
           plate: v.plate,
@@ -1058,6 +1070,19 @@ import type { Express } from "express";
             const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id && o.id !== linkedOrder?.id);
             return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate, priority: scheduled.priority } : null;
           })(),
+          lastOs: lastOrderForVehicle
+            ? await (async () => {
+                const emp1 = lastOrderForVehicle.assignedEmployeeId ? await storage.getEmployee(lastOrderForVehicle.assignedEmployeeId) : null;
+                const emp2 = lastOrderForVehicle.assignedEmployee2Id ? await storage.getEmployee(lastOrderForVehicle.assignedEmployee2Id) : null;
+                return {
+                  id: lastOrderForVehicle.id,
+                  osNumber: lastOrderForVehicle.osNumber,
+                  completedDate: lastOrderForVehicle.completedDate || lastOrderForVehicle.missionStartedAt || lastOrderForVehicle.scheduledDate || null,
+                  employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null } : null,
+                  employee2: emp2 ? { id: emp2.id, name: emp2.name, phone: emp2.phone || null } : null,
+                };
+              })()
+            : null,
           upcomingOrders: await (async () => {
             const upcoming = orders.filter(
               (o) => {

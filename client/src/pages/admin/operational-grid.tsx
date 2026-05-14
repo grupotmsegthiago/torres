@@ -259,6 +259,13 @@ interface TrackedVehicle {
     scheduledDate: string | null;
     priority: string;
   } | null;
+  lastOs: {
+    id: number;
+    osNumber: string;
+    completedDate: string | null;
+    employee1: { id: number; name: string; phone: string | null } | null;
+    employee2: { id: number; name: string; phone: string | null } | null;
+  } | null;
   upcomingOrders: {
     id: number;
     osNumber: string;
@@ -6404,6 +6411,47 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             </div>
                           ) : (
                             <div className="flex flex-col gap-1">
+                              {v.lastOs && (v.lastOs.employee1 || v.lastOs.employee2) && (
+                                <div className="flex flex-col gap-0.5 mb-0.5" data-testid={`last-os-agents-${v.id}`}>
+                                  {v.lastOs.employee1 && (
+                                    <div className="flex items-center gap-1 group/lo1">
+                                      <Users className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+                                      <span className="font-semibold text-[11px] text-neutral-500 leading-tight truncate" title={`${v.lastOs.employee1.name} · última OS ${v.lastOs.osNumber}`}>
+                                        {titleCase(v.lastOs.employee1.name)}
+                                      </span>
+                                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo1:opacity-100 transition-opacity">
+                                        {v.lastOs.employee1.phone && (
+                                          <a href={`https://wa.me/${formatPhone(v.lastOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos1-${v.id}`}>
+                                            <SiWhatsapp className="w-3 h-3" />
+                                          </a>
+                                        )}
+                                        <Link href={`/admin/employees?id=${v.lastOs.employee1.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-lastos1-${v.id}`}>
+                                          <FileText className="w-3 h-3" />
+                                        </Link>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {v.lastOs.employee2 && (
+                                    <div className="flex items-center gap-1 group/lo2">
+                                      <span className="w-3 h-3 flex-shrink-0" />
+                                      <span className="font-medium text-[10px] text-neutral-400 leading-tight truncate" title={`${v.lastOs.employee2.name} · última OS ${v.lastOs.osNumber}`}>
+                                        {titleCase(v.lastOs.employee2.name)}
+                                      </span>
+                                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo2:opacity-100 transition-opacity">
+                                        {v.lastOs.employee2.phone && (
+                                          <a href={`https://wa.me/${formatPhone(v.lastOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos2-${v.id}`}>
+                                            <SiWhatsapp className="w-3 h-3" />
+                                          </a>
+                                        )}
+                                        <Link href={`/admin/employees?id=${v.lastOs.employee2.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-lastos2-${v.id}`}>
+                                          <FileText className="w-3 h-3" />
+                                        </Link>
+                                      </div>
+                                    </div>
+                                  )}
+                                  <span className="text-[9px] text-neutral-300 italic leading-tight">última OS · {v.lastOs.osNumber}</span>
+                                </div>
+                              )}
                               <span className={`inline-flex w-fit items-center gap-0.5 text-[9px] px-1 py-0 rounded font-bold border ${viaturaSt.className}`}>
                                 <VIcon className="w-2.5 h-2.5" />{viaturaSt.label}
                               </span>
