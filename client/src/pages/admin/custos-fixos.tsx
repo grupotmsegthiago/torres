@@ -219,11 +219,6 @@ export default function CustosFixosPage() {
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               Estrutura {fmtBRL(summary?.monthly ?? 0)} + RH {fmtBRL(rhSummary?.monthly ?? 0)}
-              {summary?.fleetRent && summary.fleetRent.count > 0 && (
-                <div className="text-[10px] mt-0.5 text-orange-700 dark:text-orange-400">
-                  Inclui frota: {summary.fleetRent.count} carro(s) × {fmtBRL(summary.fleetRent.perVehicle)} = {fmtBRL(summary.fleetRent.total)}
-                </div>
-              )}
             </div>
           </Card>
 

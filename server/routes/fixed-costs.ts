@@ -90,8 +90,10 @@ export async function getMonthlyFixedCostsTotal(): Promise<number> {
     console.warn("[fixed-costs] erro ao somar custos fixos:", error.message);
   }
   const cadastrados = (data || []).reduce((sum, r: any) => sum + Number(r.monthly_value || 0), 0);
-  const fleet = await getFleetRentMonthlyTotal();
-  return cadastrados + fleet.total;
+  // Respeita estritamente o que foi lançado em fixed_costs. O aluguel da frota
+  // deve ser cadastrado manualmente como custo fixo (ex.: "ALUGUEL CARROS - LDF")
+  // pra evitar duplicação com o cálculo automático (#veículos × R$ 3.400).
+  return cadastrados;
 }
 
 /**
@@ -578,10 +580,9 @@ export function registerFixedCostsRoutes(app: Express) {
       const cat = r.category || "Outros";
       porCategoria[cat] = (porCategoria[cat] || 0) + Number(r.monthly_value || 0);
     });
+    // fleetRent.count segue exposto pois é usado na meta de faturamento (viaturas ativas),
+    // mas o valor monetário não é somado: o aluguel real deve estar cadastrado em fixed_costs.
     const fleet = await getFleetRentMonthlyTotal();
-    if (fleet.total > 0) {
-      porCategoria["Frota (Aluguel)"] = (porCategoria["Frota (Aluguel)"] || 0) + fleet.total;
-    }
 
     res.json({
       monthly,
@@ -589,7 +590,7 @@ export function registerFixedCostsRoutes(app: Express) {
       weekly,
       yearly,
       porCategoria,
-      fleetRent: fleet, // { count, total, perVehicle }
+      fleetRent: { count: fleet.count, total: 0, perVehicle: fleet.perVehicle },
     });
   });
 
