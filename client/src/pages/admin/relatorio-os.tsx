@@ -457,6 +457,8 @@ export default function RelatorioOSPage() {
       return res.json();
     },
     staleTime: 30000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: financialDash } = useQuery<{ byMission?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
@@ -941,7 +943,52 @@ export default function RelatorioOSPage() {
                         </td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtDateShort(o.completedDate)}</td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtTime(o.completedDate)}</td>
-                        <td className="px-2 py-2 text-right font-bold text-emerald-700 whitespace-nowrap">{fat > 0 ? fmtBRL(fat) : "—"}</td>
+                        <td className={`px-2 py-2 text-right whitespace-nowrap ${(o.liveCost?.fat_hora_extra || 0) > 0 ? "font-black text-amber-600" : "font-bold text-emerald-700"}`} data-testid={`text-faturamento-${o.id}`}>
+                          {fat > 0 ? (
+                            (o.liveCost?.fat_hora_extra || 0) > 0 ? (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button className="inline-flex items-center gap-1 hover:underline" data-testid={`btn-fat-detail-${o.id}`}>
+                                    <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                    {fmtBRL(fat)}
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-72 p-3 text-xs" align="end">
+                                  <div className="font-bold text-amber-700 mb-2 uppercase text-[10px] tracking-wider flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Faturamento c/ Hora Extra
+                                  </div>
+                                  {(() => {
+                                    const lc = o.liveCost!;
+                                    const cv = lc.contrato_valores;
+                                    const items: { label: string; v: number; highlight?: boolean }[] = [
+                                      { label: "Acionamento", v: lc.fat_acionamento || 0 },
+                                      { label: "KM excedente", v: lc.fat_km_extra || 0 },
+                                      { label: `Hora extra (${(lc.horas_excedentes || 0).toFixed(1)}h × ${fmtBRL(cv?.valor_hora_extra || 0)})`, v: lc.fat_hora_extra || 0, highlight: true },
+                                    ];
+                                    return (
+                                      <div className="space-y-1">
+                                        {items.map((it) => (
+                                          <div key={it.label} className="flex justify-between">
+                                            <span className="text-neutral-600">{it.label}</span>
+                                            <span className={`font-semibold ${it.highlight ? "text-amber-700" : (it.v > 0 ? "text-emerald-700" : "text-neutral-300")}`}>{fmtBRL(it.v)}</span>
+                                          </div>
+                                        ))}
+                                        <div className="border-t border-neutral-200 pt-1 mt-2 flex justify-between font-bold">
+                                          <span>Total</span>
+                                          <span className="text-emerald-700">{fmtBRL(fat)}</span>
+                                        </div>
+                                        <div className="mt-2 pt-2 border-t border-neutral-100 text-[10px] text-neutral-500">
+                                          Franquia: {(cv?.franquia_horas || 0).toFixed(1)}h · Missão: {(lc.horas_missao || 0).toFixed(1)}h
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </PopoverContent>
+                              </Popover>
+                            ) : fmtBRL(fat)
+                          ) : "—"}
+                        </td>
                         <td className="px-2 py-2 text-center whitespace-nowrap">
                           {(() => {
                             const inv = invoiceByOs.get(o.id);
