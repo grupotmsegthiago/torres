@@ -4321,11 +4321,34 @@ export default function EmployeesPage() {
   const [empPage, setEmpPage] = useState(1);
   const [searchEmp, setSearchEmp] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ativo" | "inativo" | "todos">("ativo");
+  const [deptFilter, setDeptFilter] = useState<"vigilantes" | "administrativo" | "todos">("todos");
   const EMP_PER_PAGE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: salariesBulk = {} } = useQuery<Record<number, { baseSalary: number; effectiveDate: string }>>({
+    queryKey: ["/api/employees/salaries-bulk"],
+    enabled: isDiretoria,
+  });
+
+  const isVigilanteRole = (role?: string | null) => {
+    const r = (role || "").toLowerCase();
+    return r === "vigilante" || r.includes("vigil");
+  };
+  const getRegime = (e: Employee): { label: string; cls: string } => {
+    const cat = ((e as any).category || "").toLowerCase();
+    if (cat.includes("terceir") || cat.includes("free") || cat === "pj") {
+      return { label: "PJ", cls: "bg-purple-50 text-purple-700 border-purple-200" };
+    }
+    if ((e as any).ctpsNumber) {
+      return { label: "CLT", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+    }
+    return { label: "S/ Registro", cls: "bg-neutral-100 text-neutral-600 border-neutral-300" };
+  };
+  const fmtBRL = (v?: number | null) => v == null || isNaN(Number(v))
+    ? "—"
+    : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const { data: onboardingSummary = [] } = useQuery<OnboardingSummary[]>({
     queryKey: ["/api/onboarding-summary"],
     queryFn: async () => { const r = await authFetch("/api/onboarding-summary"); const j = await r.json(); return Array.isArray(j) ? j : []; },
@@ -4454,24 +4477,50 @@ export default function EmployeesPage() {
                   inativo: all.filter(e => e.status !== "ativo").length,
                   todos: all.length,
                 };
+                const deptCounts = {
+                  vigilantes: all.filter(e => isVigilanteRole(e.role)).length,
+                  administrativo: all.filter(e => !isVigilanteRole(e.role)).length,
+                  todos: all.length,
+                };
                 const tabs: Array<{ key: "ativo" | "inativo" | "todos"; label: string; cls: string }> = [
                   { key: "ativo", label: "Ativos", cls: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-700 data-[active=true]:border-emerald-200" },
                   { key: "inativo", label: "Inativos", cls: "data-[active=true]:bg-neutral-100 data-[active=true]:text-neutral-700 data-[active=true]:border-neutral-300" },
                   { key: "todos", label: "Todos", cls: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-700 data-[active=true]:border-blue-200" },
                 ];
+                const deptTabs: Array<{ key: "vigilantes" | "administrativo" | "todos"; label: string; cls: string }> = [
+                  { key: "vigilantes", label: "Vigilantes", cls: "data-[active=true]:bg-indigo-50 data-[active=true]:text-indigo-700 data-[active=true]:border-indigo-200" },
+                  { key: "administrativo", label: "Administrativo", cls: "data-[active=true]:bg-amber-50 data-[active=true]:text-amber-700 data-[active=true]:border-amber-200" },
+                  { key: "todos", label: "Todos Setores", cls: "data-[active=true]:bg-neutral-100 data-[active=true]:text-neutral-700 data-[active=true]:border-neutral-300" },
+                ];
                 return (
-                  <div className="flex items-center gap-1.5">
-                    {tabs.map(t => (
-                      <button
-                        key={t.key}
-                        data-active={statusFilter === t.key}
-                        onClick={() => { setStatusFilter(t.key); setEmpPage(1); }}
-                        className={`text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 ${t.cls}`}
-                        data-testid={`tab-status-${t.key}`}
-                      >
-                        {t.label} <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {tabs.map(t => (
+                        <button
+                          key={t.key}
+                          data-active={statusFilter === t.key}
+                          onClick={() => { setStatusFilter(t.key); setEmpPage(1); }}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 ${t.cls}`}
+                          data-testid={`tab-status-${t.key}`}
+                        >
+                          {t.label} <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mr-1">Setor:</span>
+                      {deptTabs.map(t => (
+                        <button
+                          key={t.key}
+                          data-active={deptFilter === t.key}
+                          onClick={() => { setDeptFilter(t.key); setEmpPage(1); }}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 ${t.cls}`}
+                          data-testid={`tab-dept-${t.key}`}
+                        >
+                          {t.label} <span className="ml-1 text-[10px] opacity-70">({deptCounts[t.key]})</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })()}
@@ -4486,12 +4535,17 @@ export default function EmployeesPage() {
                 statusFilter === "ativo" ? e.status === "ativo" :
                 e.status !== "ativo"
               );
+              const byDept = byStatus.filter(e =>
+                deptFilter === "todos" ? true :
+                deptFilter === "vigilantes" ? isVigilanteRole(e.role) :
+                !isVigilanteRole(e.role)
+              );
               const filtered = searchEmp.trim()
-                ? byStatus.filter(e => {
+                ? byDept.filter(e => {
                     const s = searchEmp.toLowerCase();
                     return e.name?.toLowerCase().includes(s) || e.cpf?.toLowerCase().includes(s) || e.matricula?.toLowerCase().includes(s);
                   })
-                : byStatus;
+                : byDept;
               const totalEmpPages = Math.ceil(filtered.length / EMP_PER_PAGE);
               const safeEmpPage = Math.min(empPage, totalEmpPages || 1);
               const paginated = filtered.slice((safeEmpPage - 1) * EMP_PER_PAGE, safeEmpPage * EMP_PER_PAGE);
@@ -4506,6 +4560,12 @@ export default function EmployeesPage() {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
+                      {isDiretoria && (
+                        <>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" title="Visível apenas para Diretoria (LGPD)">Registro</th>
+                          <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" title="Visível apenas para Diretoria (LGPD)">Salário</th>
+                        </>
+                      )}
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Onboarding</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
@@ -4546,6 +4606,22 @@ export default function EmployeesPage() {
                         <td className="p-3 font-medium text-neutral-900">{e.name}</td>
                         <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
                         <td className="p-3 text-neutral-600">{e.role}</td>
+                        {isDiretoria && (() => {
+                          const reg = getRegime(e);
+                          const sal = salariesBulk[e.id]?.baseSalary;
+                          return (
+                            <>
+                              <td className="p-3" data-testid={`cell-regime-${e.id}`}>
+                                <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase tracking-wide ${reg.cls}`}>
+                                  {reg.label}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-mono text-xs text-neutral-700" data-testid={`cell-salary-${e.id}`}>
+                                {sal ? fmtBRL(sal) : <span className="text-neutral-300">—</span>}
+                              </td>
+                            </>
+                          );
+                        })()}
                         <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
                         <td className="p-3" onClick={(ev) => { ev.stopPropagation(); setOnboardingDetailEmp(e); }}>
                           <div className="flex flex-wrap gap-1 cursor-pointer" data-testid={`onboarding-flags-${e.id}`} title="Clique para ver detalhes">

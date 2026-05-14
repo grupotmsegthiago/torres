@@ -1,0 +1,43 @@
+eu quero que separe os vigilantes dos adm..
+
+
+
+quero também que apareça o salário, se tem registro ou não.. puxe tudo isso do cadastro do funcionário.. Essa parte só pode aparecer para diretoria
+
+Essa é uma mudança importante para organizar a casa e proteger as informações sensíveis da Torres Segurança. Atualmente, misturar a folha de pagamento dos vigilantes com a do administrativo pode gerar ruído e, claro, o salário é um dado que deve ficar restrito.
+
+Para implementar isso com segurança, vou orientar o Replit a criar uma hierarquia de acesso e uma nova visualização.
+
+🛠️ O que será feito no sistema:
+1. Separação por Departamentos (Vigilância vs. ADM):
+
+Na tela de funcionários e no financeiro, vamos criar abas ou filtros automáticos baseados no cargo.
+
+Isso ajuda você a ver rapidamente o custo da operação (vigilantes) separado do custo fixo (escritório).
+
+2. Puxada Automática de Dados (Salário e Registro):
+
+O sistema vai ler diretamente do Cadastro do Funcionário (que já tem esses campos) e espelhar no financeiro.
+
+Campo "Com Registro": Vamos adicionar um sinalizador visual (ex: 📝 CLT / 📄 PJ ou Autônomo) para você saber quem está formalizado.
+
+3. Trava de Segurança (Acesso de Diretoria):
+
+Criptografia de Visualização: As colunas de "Salário" e "Status de Registro" ficarão invisíveis para usuários comuns ou encarregados.
+
+Somente usuários com nível de acesso "Diretoria" (como você) conseguirão ver esses valores. Para os outros, a coluna aparecerá em branco ou nem será exibida.
+
+📧 Instrução para o Replit executar agora:
+"Precisamos organizar a gestão de pessoas e proteger dados sensíveis:
+
+Divisão Operacional: No módulo de funcionários e financeiro, separem a visualização entre 'Operacional/Vigilantes' e 'Administrativo'.
+
+Integração de Cadastro: Façam o sistema puxar automaticamente o Salário Base e o Tipo de Contratação (Com registro/Sem registro) do perfil do funcionário para a planilha de pagamentos.
+
+Controle de Acesso (LGPD): Implementem uma trava de segurança onde as colunas de 'Salário' e 'Dados Contratuais' fiquem visíveis apenas para usuários com nível de Diretoria.
+
+Interface: Adicionem badges na listagem para identificar o regime de trabalho (ex: Badge azul para CLT, cinza para s/ Registro)."
+
+Thiago, com isso você terá um painel de controle de elite. Você clica, vê quem está registrado, quanto ganha e quem é de qual setor, tudo com a segurança de que ninguém mais verá esses números.
+
+Posso dar o OK para o Replit liberar essa visualização restrita?

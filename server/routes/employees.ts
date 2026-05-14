@@ -175,6 +175,30 @@ import { syncEmployeeStatusToRhid } from "../control-id";
     }
   });
 
+  // Bulk: último salário base por funcionário (DIRETORIA-ONLY — dado sensível LGPD)
+  app.get("/api/employees/salaries-bulk", requireAuth, requireDiretoria, async (_req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("employee_salaries")
+        .select("employee_id,base_salary,effective_date")
+        .order("effective_date", { ascending: false });
+      if (error) throw error;
+      const latest: Record<number, { baseSalary: number; effectiveDate: string }> = {};
+      for (const r of data || []) {
+        const eid = (r as any).employee_id;
+        if (latest[eid]) continue;
+        latest[eid] = {
+          baseSalary: Number((r as any).base_salary) || 0,
+          effectiveDate: (r as any).effective_date,
+        };
+      }
+      res.json(latest);
+    } catch (err: any) {
+      console.error("[salaries-bulk] erro:", err.message);
+      res.status(500).json({ message: "Erro ao buscar salários" });
+    }
+  });
+
   app.get("/api/employees/:id/salaries", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const salaries = await storage.getEmployeeSalaries(Number(req.params.id));
