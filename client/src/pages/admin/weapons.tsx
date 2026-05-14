@@ -791,8 +791,8 @@ function WeaponGroupTable({
                     "bg-neutral-100 text-neutral-600 border border-neutral-200"
                   }`}>{w.status === "em uso" ? "EM USO" : w.status === "disponível" ? "DISPONÍVEL" : w.status === "manutenção" ? "MANUTENÇÃO" : w.status}</span>
                 </td>
-                <td className="p-3 text-right">
-                  <div className="flex items-center justify-end gap-1 flex-wrap">
+                <td className="p-3 text-right whitespace-nowrap">
+                  <div className="flex items-center justify-end gap-1 flex-nowrap">
                     <Button variant="ghost" size="icon" onClick={() => onAssign(w)} title="Vincular/Desvincular" data-testid={`button-assign-weapon-${w.id}`}>
                       <Link2 className="w-4 h-4 text-blue-600" />
                     </Button>
