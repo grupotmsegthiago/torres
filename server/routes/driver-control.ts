@@ -78,6 +78,29 @@ export function registerDriverControlRoutes(app: Express) {
         return res.status(400).json({ message: "Veículo e condutor são obrigatórios." });
       }
 
+      const user = (req as any).user;
+      const isAdminOrDir = user?.role === "admin" || user?.role === "diretoria";
+      if (!isAdminOrDir) {
+        if (!user?.employeeId) {
+          return res.status(403).json({ message: "Usuário não é funcionário." });
+        }
+        const { data: relatedOs } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, assigned_employee_id, assigned_employee_2_id")
+          .eq("vehicle_id", vehicleId)
+          .in("status", ["em_andamento", "agendada"])
+          .or(`assigned_employee_id.eq.${user.employeeId},assigned_employee_2_id.eq.${user.employeeId}`)
+          .limit(1)
+          .maybeSingle();
+        if (!relatedOs) {
+          return res.status(403).json({ message: "Você não está atribuído a uma OS ativa desta viatura." });
+        }
+        const validDriverIds = [relatedOs.assigned_employee_id, relatedOs.assigned_employee_2_id].filter(Boolean);
+        if (!validDriverIds.includes(driverId)) {
+          return res.status(403).json({ message: "Condutor deve ser um dos agentes atribuídos à OS." });
+        }
+      }
+
       const now = new Date();
 
       const { data: existing } = await supabaseAdmin.from("driver_sessions")

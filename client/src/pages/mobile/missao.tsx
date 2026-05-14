@@ -1275,6 +1275,7 @@ export default function MobileMissaoPage() {
     } catch (err: any) {
       const errMsg = err?.message || "";
       if (errMsg.includes("DRIVER_REQUIRED") || errMsg.includes("CONDUTOR_OBRIGATORIO")) {
+        setDriverPromptLabel(extractDriverPromptLabel(errMsg));
         setDriverRequired(true);
         throw err;
       }
@@ -1394,6 +1395,35 @@ export default function MobileMissaoPage() {
   };
 
   const [driverRequired, setDriverRequired] = useState(false);
+  const [driverPromptLabel, setDriverPromptLabel] = useState<string>("");
+  const [driverPromptSubmitting, setDriverPromptSubmitting] = useState<number | null>(null);
+
+  const extractDriverPromptLabel = (errMsg: string): string => {
+    const m = errMsg.match(/CONDUTOR_OBRIGATORIO:\s*([^,]+)/);
+    return m ? m[1].trim() : "Informe quem está dirigindo a viatura";
+  };
+
+  const handleSelectDriver = async (driverId: number) => {
+    if (!driverId || !mission?.vehicleId) {
+      toast({ title: "Erro", description: "Viatura ou agente inválido.", variant: "destructive" });
+      return;
+    }
+    setDriverPromptSubmitting(driverId);
+    try {
+      await apiRequest("POST", "/api/driver-sessions/start", {
+        vehicleId: mission.vehicleId,
+        driverId,
+        kmStart: kmValue && /^\d+$/.test(kmValue.trim()) ? parseInt(kmValue.trim(), 10) : null,
+      });
+      setDriverRequired(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
+      toast({ title: "Condutor registrado", description: "Pode prosseguir com o avanço." });
+    } catch (err: any) {
+      toast({ title: "Erro ao registrar condutor", description: err.message || "Falha ao registrar.", variant: "destructive" });
+    } finally {
+      setDriverPromptSubmitting(null);
+    }
+  };
 
   const handleStartMission = async () => {
     setSubmitting(true);
@@ -1406,6 +1436,7 @@ export default function MobileMissaoPage() {
     } catch (err: any) {
       const msg = err.message || "";
       if (msg.includes("DRIVER_REQUIRED") || msg.includes("CONDUTOR_OBRIGATORIO")) {
+        setDriverPromptLabel(extractDriverPromptLabel(msg));
         setDriverRequired(true);
       } else {
         toast({ title: "Erro", description: msg, variant: "destructive" });
@@ -2705,25 +2736,60 @@ export default function MobileMissaoPage() {
               <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mb-3">
                 <Car className="w-8 h-8 text-amber-600" />
               </div>
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Condutor Obrigatório</h3>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Quem está dirigindo?</h3>
               <p className="text-sm text-neutral-500 mt-2 leading-relaxed">
-                Antes de iniciar a missão, você precisa registrar-se como condutor da viatura.
+                {driverPromptLabel || "Antes de prosseguir"}, toque no agente que está ao volante da <span className="font-bold text-neutral-700">{mission?.vehiclePlate || "viatura"}</span>.
               </p>
             </div>
-            <button
-              onClick={() => { window.location.href = "/mobile/controle-condutor"; }}
-              className="w-full h-12 bg-emerald-600 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
-              data-testid="button-go-driver-control"
-            >
-              <Car className="w-5 h-5" />
-              Registrar Condutor
-            </button>
+
+            <div className="space-y-2">
+              {mission?.assignedEmployeeId && mission?.employee1Name && (
+                <button
+                  onClick={() => handleSelectDriver(mission.assignedEmployeeId)}
+                  disabled={driverPromptSubmitting !== null}
+                  className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm flex items-center justify-between px-4 active:scale-[0.98]"
+                  data-testid="button-pick-driver-1"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/20 flex-shrink-0">
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                    </span>
+                    <span className="text-left leading-tight">
+                      <span className="block text-[10px] uppercase opacity-75 tracking-wider">Agente 1</span>
+                      <span className="block">{titleCase(mission.employee1Name)}</span>
+                    </span>
+                  </span>
+                  {driverPromptSubmitting === mission.assignedEmployeeId ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+                </button>
+              )}
+              {mission?.assignedEmployee2Id && mission?.employee2Name && (
+                <button
+                  onClick={() => handleSelectDriver(mission.assignedEmployee2Id)}
+                  disabled={driverPromptSubmitting !== null}
+                  className="w-full h-14 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm flex items-center justify-between px-4 active:scale-[0.98]"
+                  data-testid="button-pick-driver-2"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/20 flex-shrink-0">
+                      <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                    </span>
+                    <span className="text-left leading-tight">
+                      <span className="block text-[10px] uppercase opacity-75 tracking-wider">Agente 2</span>
+                      <span className="block">{titleCase(mission.employee2Name)}</span>
+                    </span>
+                  </span>
+                  {driverPromptSubmitting === mission.assignedEmployee2Id ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+                </button>
+              )}
+            </div>
+
             <button
               onClick={() => setDriverRequired(false)}
-              className="w-full h-10 bg-neutral-100 text-neutral-600 rounded-2xl font-semibold text-xs uppercase tracking-wider"
+              disabled={driverPromptSubmitting !== null}
+              className="w-full h-10 bg-neutral-100 text-neutral-600 rounded-2xl font-semibold text-xs uppercase tracking-wider disabled:opacity-50"
               data-testid="button-dismiss-driver-required"
             >
-              Voltar
+              Cancelar
             </button>
           </div>
         </div>

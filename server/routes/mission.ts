@@ -2205,17 +2205,29 @@ Responda APENAS com JSON: {"km_lido": number}`;
     // Início antecipado liberado: agente pode avançar assim que confirmar ciência da missão,
     // independente do horário agendado ou de aprovação da central (pedido da operação).
 
-    if (currentStep === "aguardando" && so.vehicleId) {
+    const DRIVER_CHECK_STEPS: Record<string, string> = {
+      aguardando: "Antes de iniciar a missão",
+      checkout_viatura: "Após finalizar o checklist da viatura",
+      checkout_km_saida: "Antes de iniciar o deslocamento à origem",
+      iniciar_missao: "Antes de iniciar o deslocamento ao destino",
+    };
+    if (DRIVER_CHECK_STEPS[currentStep] && so.vehicleId) {
       const { data: activeDriver } = await supabaseAdmin
         .from("driver_sessions")
-        .select("id")
+        .select("driver_id")
         .eq("vehicle_id", so.vehicleId)
+        .eq("status", "ativo")
         .is("ended_at", null)
-        .limit(1);
-      if (!activeDriver?.length) {
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const validDriverIds = [so.assignedEmployeeId, so.assignedEmployee2Id].filter((x): x is number => !!x);
+      const driverIsValid = activeDriver && validDriverIds.includes(activeDriver.driver_id);
+      if (!driverIsValid) {
         return res.status(400).json({
-          message: "CONDUTOR_OBRIGATORIO: Nenhum condutor registrado para esta viatura. Acesse 'Controle de Condutor' e registre-se antes de iniciar a missão.",
+          message: `CONDUTOR_OBRIGATORIO: ${DRIVER_CHECK_STEPS[currentStep]}, informe quem está dirigindo a viatura.`,
           code: "DRIVER_REQUIRED",
+          stepLabel: DRIVER_CHECK_STEPS[currentStep],
         });
       }
     }
