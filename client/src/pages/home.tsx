@@ -209,7 +209,7 @@ function HeroSection() {
               { value: "5+", label: "Anos no mercado" },
               { value: "PF", label: "Autorização Federal" },
               { value: "24/7", label: "Operação contínua" },
-              { value: "BR", label: "Cobertura nacional" },
+              { value: "SP", label: "Cobertura estadual" },
             ].map((stat, idx) => (
               <div key={stat.label} className="text-center" data-testid={`stat-hero-${idx}`}>
                 <div className="text-3xl sm:text-4xl font-bold text-white" data-testid={`text-stat-value-${idx}`}>{stat.value}</div>
