@@ -209,11 +209,51 @@ import type { Express } from "express";
   app.post("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id, funcionario_id } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id, funcionario_id,
+        payment_method, has_nf, nf_motivo_ausencia,
+        boleto_base64, boleto_fileName, boleto_contentType,
+        nf_base64, nf_fileName, nf_contentType } = req.body;
       if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
       if (type === "EXPENSE" && !fornecedor_id && !funcionario_id) {
         return res.status(400).json({ message: "Selecione um Fornecedor ou Funcionário para Despesa." });
       }
+
+      // ─── Checklist de documentos para despesa MANUAL ───
+      // Boleto: obrigatório APENAS se método de pagamento = boleto
+      // NF: se has_nf=true → exigir anexo; se has_nf=false → exigir motivo
+      if (type === "EXPENSE") {
+        if (!payment_method) {
+          return res.status(400).json({ message: "Forma de pagamento é obrigatória." });
+        }
+        if (payment_method === "boleto" && !boleto_base64) {
+          return res.status(400).json({ message: "Anexe o boleto para forma de pagamento BOLETO." });
+        }
+        if (typeof has_nf !== "boolean") {
+          return res.status(400).json({ message: "Informe se possui Nota Fiscal (sim/não)." });
+        }
+        if (has_nf === true && !nf_base64) {
+          return res.status(400).json({ message: "Anexe a Nota Fiscal." });
+        }
+        if (has_nf === false && !String(nf_motivo_ausencia || "").trim()) {
+          return res.status(400).json({ message: "Informe o motivo da ausência da Nota Fiscal." });
+        }
+      }
+
+      // helper de upload reutilizado para boleto/NF
+      const uploadDoc = async (transactionId: string, kind: "boleto" | "nf", b64: string, fileName: string, contentType?: string): Promise<string> => {
+        const cleanBase64 = String(b64).replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(cleanBase64, "base64");
+        if (buffer.length > 5 * 1024 * 1024) throw new Error(`${kind.toUpperCase()} excede 5 MB`);
+        const ext = String(fileName).split(".").pop()?.toLowerCase() || "bin";
+        if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) throw new Error(`${kind.toUpperCase()}: apenas PDF, JPG ou PNG`);
+        const safeName = `${kind}_${transactionId}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        const storagePath = `${transactionId}/${safeName}`;
+        const { error: upErr } = await supabaseAdmin.storage
+          .from("comprovantes-pagamento")
+          .upload(storagePath, buffer, { contentType: contentType || "application/octet-stream", upsert: true });
+        if (upErr) throw upErr;
+        return storagePath;
+      };
 
       // Regra: ADM (Simone) cria → AGUARDANDO_APROVACAO; Diretoria (Mickael) cria → mantém status enviado.
       // EXPENSE manual sempre passa pelo fluxo de aprovação quando criado por admin não-diretoria.
@@ -227,6 +267,29 @@ import type { Express } from "express";
         fornecedor_id: fornecedor_id || null,
         funcionario_id: funcionario_id || null,
         solicitado_por: user.name,
+        payment_method: payment_method || null,
+        has_nf: typeof has_nf === "boolean" ? has_nf : null,
+        nf_motivo_ausencia: (has_nf === false && nf_motivo_ausencia) ? String(nf_motivo_ausencia).trim() : null,
+      };
+
+      // helper: anexa boleto/NF a uma transação já criada e atualiza paths
+      const attachDocsTo = async (transactionId: string) => {
+        const upd: any = {};
+        if (boleto_base64) {
+          const p = await uploadDoc(String(transactionId), "boleto", boleto_base64, boleto_fileName || "boleto.pdf", boleto_contentType);
+          upd.boleto_url = p;
+          upd.boleto_path = p;
+          upd.boleto_anexado_em = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        }
+        if (nf_base64) {
+          const p = await uploadDoc(String(transactionId), "nf", nf_base64, nf_fileName || "nf.pdf", nf_contentType);
+          upd.nf_url = p;
+          upd.nf_path = p;
+          upd.nf_anexado_em = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        }
+        if (Object.keys(upd).length > 0) {
+          await supabaseAdmin.from("financial_transactions").update(upd).eq("id", transactionId);
+        }
       };
 
       if (installments && installments > 1) {
@@ -253,6 +316,8 @@ import type { Express } from "express";
         }
         const { data, error } = await supabaseAdmin.from("financial_transactions").insert(payloads).select();
         if (error) throw error;
+        // Boleto/NF anexa apenas na PRIMEIRA parcela (representa o doc original da série)
+        if (data && data[0]) await attachDocsTo(String(data[0].id));
         for (const row of data || []) {
           await logFinancialAudit("financial_transactions", String(row.id), "INSERT", [
             { field: "description", old: null, new_val: row.description },
@@ -272,13 +337,16 @@ import type { Express } from "express";
           ...baseExtras,
         }).select().single();
         if (error) throw error;
+        await attachDocsTo(String(data.id));
         await logFinancialAudit("financial_transactions", String(data.id), "INSERT", [
           { field: "description", old: null, new_val: data.description },
           { field: "amount", old: null, new_val: data.amount },
           { field: "type", old: null, new_val: data.type },
           { field: "status", old: null, new_val: data.status },
         ], user.name, user.id, "Criação manual");
-        res.json(data);
+        // re-fetch para devolver com os paths já preenchidos
+        const { data: fresh } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", data.id).single();
+        res.json(fresh || data);
       }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -411,6 +479,110 @@ import type { Express } from "express";
     }
   });
 
+  // ─── Anexar BOLETO (após criação) ───
+  app.post("/api/financial/transactions/:id/boleto", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { fileBase64, fileName, contentType } = req.body || {};
+      if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+
+      const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(cleanBase64, "base64");
+      if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Arquivo excede 5 MB" });
+      const ext = String(fileName).split(".").pop()?.toLowerCase() || "bin";
+      if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) return res.status(400).json({ message: "Apenas PDF, JPG ou PNG" });
+      const safeName = `boleto_${req.params.id}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const storagePath = `${existing.id}/${safeName}`;
+
+      const { error: upErr } = await supabaseAdmin.storage.from("comprovantes-pagamento")
+        .upload(storagePath, buffer, { contentType: contentType || "application/octet-stream", upsert: true });
+      if (upErr) throw upErr;
+
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin.from("financial_transactions")
+        .update({ boleto_url: storagePath, boleto_path: storagePath, boleto_anexado_em: nowBrt })
+        .eq("id", req.params.id).select().single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "boleto_path", old: existing.boleto_path, new_val: storagePath }],
+        user.name, user.id, "Boleto anexado");
+
+      res.json(data);
+    } catch (err: any) {
+      console.error("[boleto-upload]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/transactions/:id/boleto-url", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("boleto_path,boleto_url").eq("id", req.params.id).single();
+      if (error || !tx) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const path = tx.boleto_path || tx.boleto_url;
+      if (!path) return res.status(404).json({ message: "Boleto não anexado" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path, 60);
+      if (signErr) throw signErr;
+      res.json({ url: data?.signedUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Anexar NOTA FISCAL (após criação) ───
+  app.post("/api/financial/transactions/:id/nf", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { fileBase64, fileName, contentType } = req.body || {};
+      if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+
+      const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(cleanBase64, "base64");
+      if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Arquivo excede 5 MB" });
+      const ext = String(fileName).split(".").pop()?.toLowerCase() || "bin";
+      if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) return res.status(400).json({ message: "Apenas PDF, JPG ou PNG" });
+      const safeName = `nf_${req.params.id}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const storagePath = `${existing.id}/${safeName}`;
+
+      const { error: upErr } = await supabaseAdmin.storage.from("comprovantes-pagamento")
+        .upload(storagePath, buffer, { contentType: contentType || "application/octet-stream", upsert: true });
+      if (upErr) throw upErr;
+
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin.from("financial_transactions")
+        .update({ nf_url: storagePath, nf_path: storagePath, nf_anexado_em: nowBrt, has_nf: true, nf_motivo_ausencia: null })
+        .eq("id", req.params.id).select().single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "nf_path", old: existing.nf_path, new_val: storagePath }],
+        user.name, user.id, "NF anexada");
+
+      res.json(data);
+    } catch (err: any) {
+      console.error("[nf-upload]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/transactions/:id/nf-url", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("nf_path,nf_url").eq("id", req.params.id).single();
+      if (error || !tx) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const path = tx.nf_path || tx.nf_url;
+      if (!path) return res.status(404).json({ message: "NF não anexada" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path, 60);
+      if (signErr) throw signErr;
+      res.json({ url: data?.signedUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.put("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
@@ -428,7 +600,7 @@ import type { Express } from "express";
           && newStatus && newStatus !== existing.status) {
         return res.status(403).json({ message: "Status só pode ser alterado pelo fluxo de aprovação da Diretoria." });
       }
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope, fornecedor_id, funcionario_id } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope, fornecedor_id, funcionario_id, payment_method, has_nf, nf_motivo_ausencia } = req.body;
 
       const auditChanges: { field: string; old: any; new_val: any }[] = [];
       const auditFields = ["description", "amount", "type", "status", "due_date", "category_name", "account_name", "entity_name"];
@@ -450,6 +622,9 @@ import type { Express } from "express";
       };
       if (fornecedor_id !== undefined) updatePayload.fornecedor_id = fornecedor_id || null;
       if (funcionario_id !== undefined) updatePayload.funcionario_id = funcionario_id || null;
+      if (payment_method !== undefined) updatePayload.payment_method = payment_method || null;
+      if (has_nf !== undefined) updatePayload.has_nf = typeof has_nf === "boolean" ? has_nf : null;
+      if (nf_motivo_ausencia !== undefined) updatePayload.nf_motivo_ausencia = nf_motivo_ausencia ? String(nf_motivo_ausencia).trim() : null;
 
       if (update_scope === "future" && existing.installment_group && existing.installment_number) {
         const { data: siblings, error: sibErr } = await supabaseAdmin

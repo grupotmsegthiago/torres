@@ -84,6 +84,13 @@ interface FinancialTransaction {
   funcionario_id: number | null;
   comprovante_url: string | null;
   comprovante_anexado_em: string | null;
+  payment_method: string | null;
+  boleto_url: string | null;
+  boleto_anexado_em: string | null;
+  has_nf: boolean | null;
+  nf_motivo_ausencia: string | null;
+  nf_url: string | null;
+  nf_anexado_em: string | null;
   solicitado_por: string | null;
   aprovado_por: string | null;
   aprovado_em: string | null;
@@ -178,6 +185,44 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [showScopeDialog, setShowScopeDialog] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
 
+  // ─── Checklist de documentos (Boleto / NF) ───
+  const [paymentMethod, setPaymentMethod] = useState<string>(editingTransaction?.payment_method || "");
+  const [hasNf, setHasNf] = useState<"yes" | "no" | "">(
+    editingTransaction?.has_nf === true ? "yes" : editingTransaction?.has_nf === false ? "no" : ""
+  );
+  const [nfMotivo, setNfMotivo] = useState<string>(editingTransaction?.nf_motivo_ausencia || "");
+  const [boletoFile, setBoletoFile] = useState<{ base64: string; name: string; type: string } | null>(null);
+  const [nfFile, setNfFile] = useState<{ base64: string; name: string; type: string } | null>(null);
+
+  const fileToBase64 = (file: File): Promise<{ base64: string; name: string; type: string }> =>
+    new Promise((resolve, reject) => {
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      const extOk = /\.(jpe?g|png|pdf)$/i.test(file.name);
+      if (!allowed.includes(file.type) && !extOk) return reject(new Error("Apenas PDF, JPG ou PNG"));
+      if (file.size > 5 * 1024 * 1024) return reject(new Error("Máximo 5 MB"));
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(",")[1] || "";
+        resolve({ base64, name: file.name, type: file.type || "application/octet-stream" });
+      };
+      reader.onerror = () => reject(new Error("Erro ao ler arquivo"));
+      reader.readAsDataURL(file);
+    });
+
+  const pickFile = async (setter: (v: { base64: string; name: string; type: string } | null) => void) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/jpg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf";
+    input.onchange = async (e: any) => {
+      const file: File | undefined = e.target.files?.[0];
+      if (!file) return;
+      try { setter(await fileToBase64(file)); }
+      catch (err: any) { toast({ title: "Arquivo inválido", description: err.message, variant: "destructive" }); }
+    };
+    input.click();
+  };
+
   const buildPayload = (scope?: "single" | "future") => {
     const cat = categories.find(c => c.id === categoryId);
     const acc = accounts.find(a => a.id === accountId);
@@ -197,6 +242,15 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       fornecedor_id: isEmployeeMode ? null : (fornecedorId ? Number(fornecedorId) : null),
       funcionario_id: isEmployeeMode && funcionarioId ? Number(funcionarioId) : null,
       notes: notes || null,
+      payment_method: type === "EXPENSE" ? (paymentMethod || null) : null,
+      has_nf: type === "EXPENSE" ? (hasNf === "yes" ? true : hasNf === "no" ? false : null) : null,
+      nf_motivo_ausencia: type === "EXPENSE" && hasNf === "no" ? (nfMotivo || null) : null,
+      ...(!isEdit && boletoFile ? {
+        boleto_base64: boletoFile.base64, boleto_fileName: boletoFile.name, boleto_contentType: boletoFile.type
+      } : {}),
+      ...(!isEdit && nfFile ? {
+        nf_base64: nfFile.base64, nf_fileName: nfFile.name, nf_contentType: nfFile.type
+      } : {}),
       ...(!isEdit && recurrence === "INSTALLMENT" ? { installments } : {}),
       ...(isEdit && isSeries && scope ? { update_scope: scope } : {}),
     };
@@ -234,6 +288,28 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       if (entitySource === "funcionario" && !funcionarioId) {
         toast({ title: "Funcionário obrigatório", description: "Selecione o funcionário para essa despesa.", variant: "destructive" });
         return;
+      }
+      if (!isEdit) {
+        if (!paymentMethod) {
+          toast({ title: "Forma de pagamento obrigatória", variant: "destructive" });
+          return;
+        }
+        if (paymentMethod === "boleto" && !boletoFile) {
+          toast({ title: "Boleto obrigatório", description: "Anexe o boleto (PDF/JPG/PNG).", variant: "destructive" });
+          return;
+        }
+        if (hasNf === "") {
+          toast({ title: "Informe se possui Nota Fiscal", variant: "destructive" });
+          return;
+        }
+        if (hasNf === "yes" && !nfFile) {
+          toast({ title: "Nota Fiscal obrigatória", description: "Anexe a NF (PDF/JPG/PNG).", variant: "destructive" });
+          return;
+        }
+        if (hasNf === "no" && !nfMotivo.trim()) {
+          toast({ title: "Motivo obrigatório", description: "Explique por que não há Nota Fiscal.", variant: "destructive" });
+          return;
+        }
       }
     }
     if (isEdit && isSeries) {
@@ -461,6 +537,95 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               <option value="PAID">Liquidado (Pago/Recebido)</option>
             </select>
           </div>
+
+          {type === "EXPENSE" && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-3" data-testid="block-checklist-docs">
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-800 uppercase tracking-widest">
+                <FileText size={12} /> Checklist de Documentos
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Forma de Pagamento</label>
+                <select
+                  className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white uppercase font-bold"
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value)}
+                  data-testid="select-payment-method"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="pix">PIX</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="debito_automatico">Débito Automático</option>
+                </select>
+              </div>
+
+              {paymentMethod === "boleto" && !isEdit && (
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Boleto (PDF/JPG/PNG, máx 5MB)</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => pickFile(setBoletoFile)} className="px-3 py-2 rounded-lg border-2 border-amber-300 bg-white text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100" data-testid="button-pick-boleto">
+                      {boletoFile ? "Trocar arquivo" : "Anexar boleto"}
+                    </button>
+                    {boletoFile && (
+                      <span className="text-[10px] font-bold text-emerald-700 truncate" data-testid="text-boleto-filename">
+                        ✓ {boletoFile.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Possui Nota Fiscal?</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setHasNf("yes")}
+                    className={`py-2 rounded-lg text-xs font-black uppercase border-2 ${hasNf === "yes" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-500 border-neutral-200"}`}
+                    data-testid="button-nf-yes">
+                    Sim
+                  </button>
+                  <button type="button" onClick={() => setHasNf("no")}
+                    className={`py-2 rounded-lg text-xs font-black uppercase border-2 ${hasNf === "no" ? "bg-red-600 text-white border-red-600" : "bg-white text-neutral-500 border-neutral-200"}`}
+                    data-testid="button-nf-no">
+                    Não
+                  </button>
+                </div>
+              </div>
+
+              {hasNf === "yes" && !isEdit && (
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Anexar NF (PDF/JPG/PNG, máx 5MB)</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => pickFile(setNfFile)} className="px-3 py-2 rounded-lg border-2 border-emerald-300 bg-white text-[10px] font-black uppercase text-emerald-700 hover:bg-emerald-50" data-testid="button-pick-nf">
+                      {nfFile ? "Trocar arquivo" : "Anexar NF"}
+                    </button>
+                    {nfFile && (
+                      <span className="text-[10px] font-bold text-emerald-700 truncate" data-testid="text-nf-filename">
+                        ✓ {nfFile.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {hasNf === "no" && (
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Motivo da ausência da NF</label>
+                  <input type="text" required value={nfMotivo} onChange={e => setNfMotivo(e.target.value)}
+                    className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white"
+                    placeholder="Ex.: Fornecedor MEI sem emissão, despesa de funcionário, etc."
+                    data-testid="input-nf-motivo" />
+                </div>
+              )}
+
+              {isEdit && (
+                <p className="text-[9px] font-bold text-neutral-500 italic">
+                  Para anexar boleto/NF nesta edição, use os botões da listagem após salvar.
+                </p>
+              )}
+            </div>
+          )}
           <div>
             <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Observações</label>
             <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} data-testid="input-notes" />
@@ -1713,6 +1878,54 @@ export default function FinanceiroPage() {
     }
   };
 
+  const uploadDocMutation = useMutation({
+    mutationFn: async ({ id, kind, file }: { id: string; kind: "boleto" | "nf"; file: File }) => {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const fileBase64 = btoa(binary);
+      return apiRequest("POST", `/api/financial/transactions/${id}/${kind}`, {
+        fileBase64, fileName: file.name, contentType: file.type || "application/octet-stream",
+      });
+    },
+    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Documento anexado" }); },
+    onError: (err: Error) => toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" }),
+  });
+
+  const handleUploadDoc = (id: string, kind: "boleto" | "nf") => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/jpg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf";
+    input.onchange = async (e: any) => {
+      const file: File | undefined = e.target.files?.[0];
+      if (!file) return;
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      const extOk = /\.(jpe?g|png|pdf)$/i.test(file.name);
+      if (!allowed.includes(file.type) && !extOk) {
+        toast({ title: "Formato inválido", description: "Apenas PDF, JPG ou PNG", variant: "destructive" });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: "Arquivo muito grande", description: "Máximo 5 MB", variant: "destructive" });
+        return;
+      }
+      uploadDocMutation.mutate({ id, kind, file });
+    };
+    input.click();
+  };
+
+  const openDoc = async (id: string, kind: "boleto" | "nf") => {
+    try {
+      const res = await apiRequest("GET", `/api/financial/transactions/${id}/${kind}-url`);
+      const json = await res.json();
+      if (json?.url) window.open(json.url, "_blank", "noopener,noreferrer");
+      else throw new Error(json?.message || "Falha ao abrir");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
+
   const handleTogglePago = (t: FinancialTransaction) => {
     const goingToPaid = t.status !== "PAID";
     const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual");
@@ -1958,15 +2171,16 @@ export default function FinanceiroPage() {
               <th className="px-4 py-3">Favorecido</th>
               <th className="px-4 py-3">Categoria</th>
               <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-center">Conferência</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {isLoading ? (
-              <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
+              <tr><td colSpan={8} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={7} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
+              <tr><td colSpan={8} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
             ) : list.map(t => {
               const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < new Date().toISOString().split("T")[0];
               return (
@@ -2020,6 +2234,46 @@ export default function FinanceiroPage() {
                       }`}>
                       {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
                     </button>
+                  </td>
+                  <td className="px-4 py-3 text-center" data-testid={`cell-conferencia-${t.id}`}>
+                    {t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual") ? (
+                      <div className="inline-flex items-center gap-1">
+                        {/* 1 — BOLETO (só obrigatório se método=boleto) */}
+                        {t.payment_method === "boleto" ? (
+                          t.boleto_url ? (
+                            <button onClick={() => openDoc(t.id, "boleto")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Boleto anexado" data-testid={`badge-bol-ok-${t.id}`}>1-BOL ✓</button>
+                          ) : (
+                            <button onClick={() => handleUploadDoc(t.id, "boleto")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar boleto" data-testid={`badge-bol-pend-${t.id}`}>1-BOL !</button>
+                          )
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Não aplicável" data-testid={`badge-bol-na-${t.id}`}>1-BOL —</span>
+                        )}
+                        {/* 2 — NF */}
+                        {t.has_nf === true ? (
+                          t.nf_url ? (
+                            <button onClick={() => openDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="NF anexada" data-testid={`badge-nf-ok-${t.id}`}>2-NF ✓</button>
+                          ) : (
+                            <button onClick={() => handleUploadDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar NF" data-testid={`badge-nf-pend-${t.id}`}>2-NF !</button>
+                          )
+                        ) : t.has_nf === false ? (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-500 border border-neutral-200" title={t.nf_motivo_ausencia || "Sem NF"} data-testid={`badge-nf-na-${t.id}`}>2-NF —</span>
+                        ) : (
+                          <button onClick={() => handleUploadDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title="Anexar NF" data-testid={`badge-nf-undef-${t.id}`}>2-NF ?</button>
+                        )}
+                        {/* 3 — COMPROVANTE (só após PAGO) */}
+                        {t.status === "PAID" ? (
+                          t.comprovante_url ? (
+                            <button onClick={() => openComprovante(t.id)} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Comprovante anexado" data-testid={`badge-comp-ok-${t.id}`}>3-COMP ✓</button>
+                          ) : (
+                            <button onClick={() => handleUploadComprovante(t.id)} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar comprovante" data-testid={`badge-comp-pend-${t.id}`}>3-COMP !</button>
+                          )
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Após pagamento" data-testid={`badge-comp-na-${t.id}`}>3-COMP —</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[9px] font-bold text-neutral-300 italic">—</span>
+                    )}
                   </td>
                   <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === "INCOME" ? "text-green-600" : "text-red-600"}`}>
                     {formatCurrency(Number(t.amount))}
