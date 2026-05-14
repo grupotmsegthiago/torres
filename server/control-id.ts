@@ -1459,6 +1459,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     .from("employees")
     .select("id, name, role, status")
     .eq("status", "ativo")
+    .ilike("role", "vigilante")
     .order("name", { ascending: true });
 
   if (!emps || emps.length === 0) return [];
