@@ -1872,6 +1872,15 @@ export default function FinanceiroPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const aprovarSerieMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("PATCH", `/api/financial/transactions/${id}/aprovar-serie`),
+    onSuccess: (data: any) => {
+      invalidateRelatedQueries("financial");
+      toast({ title: "Série aprovada", description: `${data?.count || ""} parcela(s) aprovada(s) de uma vez` });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
   const recusarMutation = useMutation({
     mutationFn: ({ id, motivo }: { id: string; motivo: string }) => apiRequest("PATCH", `/api/financial/transactions/${id}/recusar`, { motivo }),
     onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Lançamento recusado" }); },
@@ -3077,7 +3086,10 @@ export default function FinanceiroPage() {
                 <tbody className="divide-y divide-neutral-100">
                   {aguardandoAprovacao.length === 0 ? (
                     <tr><td colSpan={8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
-                  ) : aguardandoAprovacao.map(t => (
+                  ) : aguardandoAprovacao.map(t => {
+                    const isSeries = !!t.installment_group && (t.installment_total || 0) > 1;
+                    const pendingInSeries = isSeries ? aguardandoAprovacao.filter(x => x.installment_group === t.installment_group).length : 0;
+                    return (
                     <tr key={t.id} className="hover:bg-amber-50/50" data-testid={`row-aguardando-${t.id}`}>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(t.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-700">{new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</td>
@@ -3088,10 +3100,28 @@ export default function FinanceiroPage() {
                       <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => aprovarMutation.mutate(t.id)} disabled={aprovarMutation.isPending}
-                            className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-aprovar-${t.id}`}>
-                            <CheckCircle2 size={12} /> Aprovar
-                          </button>
+                          {isSeries && pendingInSeries > 1 ? (
+                            <button
+                              onClick={() => {
+                                const totalValor = aguardandoAprovacao
+                                  .filter(x => x.installment_group === t.installment_group)
+                                  .reduce((s, x) => s + Number(x.amount || 0), 0);
+                                if (confirm(`Aprovar TODAS as ${pendingInSeries} parcelas pendentes desta série de uma vez?\n\nTotal: ${formatCurrency(totalValor)}`)) {
+                                  aprovarSerieMutation.mutate(t.id);
+                                }
+                              }}
+                              disabled={aprovarSerieMutation.isPending}
+                              className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50"
+                              data-testid={`button-aprovar-serie-${t.id}`}
+                              title={`Aprova as ${pendingInSeries} parcelas pendentes da série numa tacada só`}>
+                              <CheckCircle2 size={12} /> Aprovar Série ({pendingInSeries}×)
+                            </button>
+                          ) : (
+                            <button onClick={() => aprovarMutation.mutate(t.id)} disabled={aprovarMutation.isPending}
+                              className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-aprovar-${t.id}`}>
+                              <CheckCircle2 size={12} /> Aprovar
+                            </button>
+                          )}
                           <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
                             className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
                             <X size={12} /> Recusar
@@ -3099,7 +3129,8 @@ export default function FinanceiroPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

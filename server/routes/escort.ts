@@ -387,6 +387,52 @@ import type { Express } from "express";
     }
   });
 
+  // Aprovar série inteira de parcelas (apenas diretoria — Mickael).
+  // Aprova TODAS as transações do mesmo installment_group que ainda estão em AGUARDANDO_APROVACAO.
+  app.patch("/api/financial/transactions/:id/aprovar-serie", requireAuth, requireThiago, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (!existing.installment_group) {
+        return res.status(400).json({ message: "Lançamento não pertence a uma série parcelada" });
+      }
+
+      const { data: pendingSeries, error: listErr } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("id, installment_number")
+        .eq("installment_group", existing.installment_group)
+        .eq("status", "AGUARDANDO_APROVACAO");
+      if (listErr) throw listErr;
+      const ids = (pendingSeries || []).map((r: any) => r.id);
+      if (ids.length === 0) return res.status(400).json({ message: "Nenhuma parcela aguardando aprovação nessa série" });
+
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({
+          status: "PENDING",
+          aprovado_por: user.name,
+          aprovado_em: nowBrt,
+          recusado_motivo: null,
+          recusado_em: null,
+        })
+        .in("id", ids)
+        .select();
+      if (error) throw error;
+
+      for (const id of ids) {
+        await logFinancialAudit("financial_transactions", id, "UPDATE",
+          [{ field: "status", old: "AGUARDANDO_APROVACAO", new_val: "PENDING" }],
+          user.name, user.id, `Aprovação diretoria (série ${existing.installment_group} — ${ids.length} parcelas em lote)`);
+      }
+
+      res.json({ count: ids.length, transactions: data });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Recusar lançamento (apenas diretoria — Mickael) com motivo obrigatório
   app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireThiago, async (req, res) => {
     try {
