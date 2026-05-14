@@ -693,17 +693,28 @@ import type { Express } from "express";
           const sibDueStr = newDue.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
           const baseDesc = description.replace(/\s*\(\d+\/\d+\)\s*$/, "");
-          return supabaseAdmin.from("financial_transactions").update({
+          const isCurrent = sib.installment_number === existing.installment_number;
+          const sibPayload: any = {
             description: `${baseDesc} (${sib.installment_number}/${existing.installment_total})`,
             amount, type,
             category_id, category_name,
             account_id, account_name,
             entity_name, notes,
             due_date: sibDueStr,
-            payment_date: (sib.installment_number === existing.installment_number && status === "PAID") ? sibDueStr : null,
-            status: sib.installment_number === existing.installment_number ? status : "PENDING",
+            payment_date: (isCurrent && status === "PAID") ? sibDueStr : null,
+            status: isCurrent ? status : "PENDING",
             updated_by: user.name,
-          }).eq("id", sib.id);
+          };
+          // Propaga fornecedor/funcionário/forma de pagamento para a série toda
+          if (fornecedor_id !== undefined) sibPayload.fornecedor_id = fornecedor_id || null;
+          if (funcionario_id !== undefined) sibPayload.funcionario_id = funcionario_id || null;
+          if (payment_method !== undefined) sibPayload.payment_method = payment_method || null;
+          // has_nf e motivo são específicos da parcela atual (cada mês tem sua NF)
+          if (isCurrent) {
+            if (has_nf !== undefined) sibPayload.has_nf = typeof has_nf === "boolean" ? has_nf : null;
+            if (nf_motivo_ausencia !== undefined) sibPayload.nf_motivo_ausencia = nf_motivo_ausencia ? String(nf_motivo_ausencia).trim() : null;
+          }
+          return supabaseAdmin.from("financial_transactions").update(sibPayload).eq("id", sib.id);
         });
 
         await Promise.all(updates);
