@@ -548,7 +548,15 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                 <select
                   className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white uppercase font-bold"
                   value={paymentMethod}
-                  onChange={e => setPaymentMethod(e.target.value)}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setPaymentMethod(v);
+                    // Reembolso → automaticamente troca para aba Funcionário (precisa do nome do funcionário a ser reembolsado)
+                    if (v === "reembolso" && entitySource !== "funcionario") {
+                      setEntitySource("funcionario");
+                      setFornecedorId("");
+                    }
+                  }}
                   data-testid="select-payment-method"
                 >
                   <option value="">Selecione...</option>
@@ -558,7 +566,13 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                   <option value="dinheiro">Dinheiro</option>
                   <option value="cartao">Cartão</option>
                   <option value="debito_automatico">Débito Automático</option>
+                  <option value="reembolso">Reembolso</option>
                 </select>
+                {paymentMethod === "reembolso" && (
+                  <p className="mt-1.5 text-[10px] font-bold text-emerald-700 uppercase" data-testid="text-reembolso-hint">
+                    Selecione o funcionário a ser reembolsado acima ↑
+                  </p>
+                )}
               </div>
 
               {paymentMethod === "boleto" && !isEdit && (
