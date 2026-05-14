@@ -415,6 +415,7 @@ export default function RelatorioOSPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedOs, setSelectedOs] = useState<ReportOS | null>(null);
   const [sortField, setSortField] = useState<SortField>("scheduledDate");
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
   const [dateTo, setDateTo] = useState<string>(getTodayBRT());
@@ -764,9 +765,25 @@ export default function RelatorioOSPage() {
                   </Button>
                 )}
               </div>
-              <Button size="sm" onClick={() => refetch()} disabled={isFetching} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 gap-2" data-testid="button-refresh-report">
-                <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-                Atualizar
+              <Button size="sm" onClick={async () => {
+                const liveOs = gridData.filter(o => {
+                  const s = (o.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  return s === "em_andamento" || s === "agendada";
+                });
+                if (liveOs.length > 0) {
+                  setIsRecalculating(true);
+                  try {
+                    await Promise.allSettled(liveOs.map(o =>
+                      authFetch(`/api/boletim-medicao/calcular/${o.id}`, { method: "POST" })
+                    ));
+                  } finally {
+                    setIsRecalculating(false);
+                  }
+                }
+                await refetch();
+              }} disabled={isFetching || isRecalculating} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 gap-2" data-testid="button-refresh-report">
+                <RefreshCw className={`w-4 h-4 ${(isFetching || isRecalculating) ? "animate-spin" : ""}`} />
+                {isRecalculating ? "Recalculando..." : "Atualizar"}
               </Button>
               <Button size="sm" onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-excel">
                 <Download className="w-4 h-4" />
