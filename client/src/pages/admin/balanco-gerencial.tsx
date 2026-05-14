@@ -256,6 +256,13 @@ export default function BalancoGerencialPage() {
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
+  // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
+  // independente do calendário (meses de 28/29/31 dias usam 30 mesmo assim).
+  // Evita inflar o custo mensal em ~3,3% em meses de 31 dias.
+  const costDays = useMemo(() => {
+    const FIXED: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
+    return Math.min(daysInPeriod, FIXED[period]);
+  }, [daysInPeriod, period]);
 
   const filtered = useMemo(() => {
     if (!data) return {
@@ -397,9 +404,9 @@ export default function BalancoGerencialPage() {
   // Rateia o mensal pelo período. Fallback: fórmula CCT antiga se a API não respondeu.
   const provisaoRH = useMemo(() => {
     const mensalReal = Number(rhSummary?.monthly || 0);
-    if (mensalReal > 0) return (mensalReal / 30) * daysInPeriod;
-    return CCT.custoDiario * activeAgentCount * daysInPeriod;
-  }, [rhSummary, activeAgentCount, daysInPeriod]);
+    if (mensalReal > 0) return (mensalReal / 30) * costDays;
+    return CCT.custoDiario * activeAgentCount * costDays;
+  }, [rhSummary, activeAgentCount, costDays]);
 
   const provisaoDiaria = useMemo(() => {
     const mensalReal = Number(rhSummary?.monthly || 0);
@@ -422,7 +429,7 @@ export default function BalancoGerencialPage() {
     const despReaisOperacional = despReais - despFin.payroll - despFin.fixed - despFin.other;
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
-    const custosFixosRateados = (custosFixosMensal / 30) * daysInPeriod;
+    const custosFixosRateados = (custosFixosMensal / 30) * costDays;
     const custoTotal = pag + despReaisOperacional + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
@@ -441,7 +448,7 @@ export default function BalancoGerencialPage() {
       custosFixosRateados,
       custoTotal,
     };
-  }, [filtered, provisaoRH, fixedCostsSummary, daysInPeriod]);
+  }, [filtered, provisaoRH, fixedCostsSummary, costDays]);
 
   const eficiencia = useMemo(() => {
     if (!data) return { mediaKmL: 0, totalKm: 0, totalLiters: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
@@ -718,7 +725,8 @@ export default function BalancoGerencialPage() {
             if (totals.provisaoRH > 0) {
               const rhRows: Array<{ label: string; value: number }> = [];
               // Detalhe agente-a-agente (folha mensal real × fator do período)
-              const fatorPeriodo = daysInPeriod / 30;
+              // Usa costDays (mês comercial 30d) pra evitar inflar em meses de 31 dias.
+              const fatorPeriodo = costDays / 30;
               const porAgente = (rhSummary?.porAgente || [])
                 .filter((a) => Number(a.total || 0) > 0)
                 .sort((a, b) => Number(b.total) - Number(a.total));
@@ -754,8 +762,9 @@ export default function BalancoGerencialPage() {
             if (fixos > 0) {
               const fxRows: Array<{ label: string; value: number }> = [];
               // Detalhe item-a-item dos custos fixos cadastrados, rateado pro período.
+              // Usa costDays (mês comercial 30d) pra evitar inflar em meses de 31 dias.
               const itensAtivos = (fixedCostsList || []).filter((it) => it.active);
-              const rateioFator = daysInPeriod / 30;
+              const rateioFator = costDays / 30;
               for (const it of itensAtivos) {
                 const mensal = Number(it.monthlyValue || 0);
                 if (mensal <= 0) continue;
