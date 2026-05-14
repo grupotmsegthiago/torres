@@ -215,6 +215,13 @@ export default function BalancoGerencialPage() {
     refetchInterval: 600_000,
   });
 
+  // Lista de custos fixos cadastrados — usada pra detalhar o breakdown
+  // de "Estrutura" item-a-item no card de Custos Totais.
+  const { data: fixedCostsList } = useQuery<Array<{ id: number; description: string; category: string; monthlyValue: string | number; active: boolean }>>({
+    queryKey: ["/api/fixed-costs"],
+    refetchInterval: 600_000,
+  });
+
   // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
   const { data: rhSummary } = useQuery<{ monthly: number; daily: number; agentCount: number }>({
     queryKey: ["/api/fixed-costs/rh-summary"],
@@ -698,18 +705,30 @@ export default function BalancoGerencialPage() {
               });
             }
             if (fixos > 0) {
-              const fxRows: Array<{ label: string; value: number }> = [
-                { label: PERIOD_ESTRUTURA_LABEL[period], value: baseEstrutura },
-              ];
-              if (!sameAsBase) {
-                fxRows.push({ label: `÷ ${baseDays} × ${daysInPeriod} dia(s)`, value: fixos });
+              const fxRows: Array<{ label: string; value: number }> = [];
+              // Detalhe item-a-item dos custos fixos cadastrados, rateado pro período.
+              const itensAtivos = (fixedCostsList || []).filter((it) => it.active);
+              const rateioFator = daysInPeriod / 30;
+              for (const it of itensAtivos) {
+                const mensal = Number(it.monthlyValue || 0);
+                if (mensal <= 0) continue;
+                fxRows.push({
+                  label: `${it.description}${sameAsBase ? "" : ` (${fmt(mensal)}/mês)`}`,
+                  value: mensal * rateioFator,
+                });
               }
-              fxRows.push({ label: "Custo por dia", value: totals.custosFixosMensal / 30 });
+              fxRows.push({
+                label: sameAsBase
+                  ? `Soma ${PERIOD_ADJ[period]}`
+                  : `Total: soma/mês × ${daysInPeriod}/30`,
+                value: fixos,
+              });
+              fxRows.push({ label: "Custo por dia (÷30)", value: totals.custosFixosMensal / 30 });
               cats.push({
                 key: "fx", label: "Estrutura (rateado)", value: fixos, color: "blue",
                 icon: Building2, bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500",
                 tipTitle: "Custos de Estrutura",
-                tipDesc: `Custo de "estar aberto": aluguel, contas, sistemas, tributos administrativos e demais custos fixos. Rateados conforme o período selecionado (${PERIOD_ADJ[period]}).`,
+                tipDesc: `Custo de "estar aberto": aluguel, contas, frota, sistemas e demais custos fixos cadastrados. Rateados conforme o período selecionado (${PERIOD_ADJ[period]} = ${daysInPeriod} dia(s) ÷ 30).`,
                 rows: fxRows,
               });
             }
