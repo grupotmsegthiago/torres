@@ -1,0 +1,64 @@
+toda vez que inserir um pagamento, eu preciso que anexe o boleto e a NF .. marcar se tem nota fiscal, se tiver precisa anexar..
+
+
+
+Se não tiver, escreve o motivo..
+
+
+
+E faz uma linha tipo 1 - boleto ok
+
+2 - nf ok
+
+3 - comprovante, pendente..
+
+
+
+Pra saber que fase do processo esta
+
+Boa, Thiago. Essa é a trava que faltava para o seu financeiro parar de ser uma "caixa preta" e virar um processo de auditoria profissional. Hoje você olha a tela e vê o valor, mas não sabe se o documento está lá ou se alguém só "lançou de boca".
+
+Vou orientar o Replit a transformar esse lançamento em um checklist obrigatório.
+
+🛠️ O que vou mandar o Replit implementar:
+1. Campos Obrigatórios no Novo Lançamento:
+Ao clicar em "+ NOVO LANÇAMENTO", o sistema passará a exigir:
+
+Chave NF/Boleto: Um seletor "Tem Nota Fiscal?".
+
+Se Sim: O botão de anexo da NF fica obrigatório.
+
+Se Não: Abre um campo de texto "Motivo da ausência da NF" (ex: Recibo, Isento, etc.).
+
+Anexo de Boleto: OBRIGATÓRIO para salvar o lançamento (evita pagar para a conta errada).
+
+2. O "Semáforo" de Processo (A sua linha 1, 2, 3):
+Na tabela principal (essa da imagem), vamos criar uma coluna chamada "Documentação" com ícones rápidos:
+
+📄 Boleto: (Verde se anexado / Vermelho se falta).
+
+🧾 NF: (Verde se anexado / Cinza se justificado / Vermelho se falta).
+
+💸 Comprovante: (Cinza enquanto pendente / Verde após o pagamento via ASAAS).
+
+3. Visualização Rápida:
+Ao passar o mouse, você já vê:
+
+Boleto: OK ✅
+
+NF: OK ✅
+
+Comprovante: PENDENTE ⏳ (Aguardando Liquidação)
+
+📧 Instrução para o Replit executar agora:
+"Precisamos profissionalizar o fluxo de documentos no Financeiro (Contas a Pagar):
+
+Checklist de Documentos: Criem uma lógica de 3 fases para cada lançamento: Boleto, Nota Fiscal e Comprovante.
+
+Trava de Lançamento: No modal de 'Novo Lançamento', tornem o anexo do Boleto obrigatório. Adicionem um campo 'Possui NF?'. Se 'Não', exijam um campo de justificativa. Se 'Sim', tornem o anexo da NF obrigatório.
+
+Status Visual na Tabela: Adicionem uma coluna de 'Conferência' na listagem principal. Usem ícones ou badges para mostrar o que está OK e o que está Pendente (Ex: 1-BOL OK, 2-NF OK, 3-COMP PEND).
+
+Integração ASAAS: Garantam que, após o pagamento ser liquidado pelo ASAAS, o sistema anexe o comprovante de transferência automaticamente na 'Fase 3' do processo."
+
+Thiago, com isso você nunca mais vai pagar um boleto sem ter a NF na mão para conferir. Posso mandar o Replit seguir com essa trava de segurança?
