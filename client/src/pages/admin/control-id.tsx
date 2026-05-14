@@ -1258,9 +1258,12 @@ function PainelMesTab() {
           <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-300 mb-2" />
           <p>Nada para mostrar com esse filtro.</p>
         </Card>
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="table-painel">
+      ) : (() => {
+        const isVigil = (role?: string) => /vigilante|escolta/i.test(role || "");
+        const filteredVigilantes = filtered.filter(r => isVigil(r.role));
+        const filteredAdm = filtered.filter(r => !isVigil(r.role));
+        const renderRows = (rows: PainelRow[], testidPrefix: string) => (
+          <table className="w-full text-sm" data-testid={`table-painel-${testidPrefix}`}>
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-xs text-neutral-600">
                 <th className="p-2 text-left font-semibold">Funcionário</th>
@@ -1273,7 +1276,7 @@ function PainelMesTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => {
+              {rows.map(r => {
                 const meta = STATUS_BADGE[r.unifiedStatus || r.todayStatus] || STATUS_BADGE.MES_PASSADO;
                 const pct = Math.min(100, r.percentUsed);
                 const barColor = pct >= 100 ? "bg-red-600" : pct >= 90 ? "bg-orange-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500";
@@ -1439,8 +1442,30 @@ function PainelMesTab() {
               })}
             </tbody>
           </table>
-        </Card>
-      )}
+        );
+        return (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <Card className="overflow-x-auto" data-testid="card-painel-vigilantes">
+              <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-200 flex items-center justify-between sticky top-0 z-10">
+                <span className="text-indigo-800 font-bold text-xs uppercase tracking-wider">Vigilantes</span>
+                <span className="text-[11px] text-indigo-700 font-semibold tabular-nums" data-testid="count-painel-vigilantes">{filteredVigilantes.length}</span>
+              </div>
+              {filteredVigilantes.length > 0
+                ? renderRows(filteredVigilantes, "vigilantes")
+                : <div className="p-6 text-center text-xs text-neutral-400">Nenhum vigilante neste filtro.</div>}
+            </Card>
+            <Card className="overflow-x-auto" data-testid="card-painel-adm">
+              <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between sticky top-0 z-10">
+                <span className="text-amber-800 font-bold text-xs uppercase tracking-wider">Administrativo</span>
+                <span className="text-[11px] text-amber-700 font-semibold tabular-nums" data-testid="count-painel-adm">{filteredAdm.length}</span>
+              </div>
+              {filteredAdm.length > 0
+                ? renderRows(filteredAdm, "adm")
+                : <div className="p-6 text-center text-xs text-neutral-400">Ninguém em Administrativo neste filtro.</div>}
+            </Card>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1458,7 +1458,7 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   const { data: emps } = await supabaseAdmin
     .from("employees")
     .select("id, name, role, status")
-    .ilike("role", "vigilante")
+    .or("role.ilike.%vigilante%,role.ilike.%escolta%,role.ilike.%adm%")
     .order("name", { ascending: true });
 
   if (!emps || emps.length === 0) return [];
