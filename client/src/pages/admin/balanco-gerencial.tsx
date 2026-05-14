@@ -223,7 +223,12 @@ export default function BalancoGerencialPage() {
   });
 
   // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
-  const { data: rhSummary } = useQuery<{ monthly: number; daily: number; agentCount: number }>({
+  const { data: rhSummary } = useQuery<{
+    monthly: number;
+    daily: number;
+    agentCount: number;
+    porAgente?: Array<{ id: number; name: string; total: number }>;
+  }>({
     queryKey: ["/api/fixed-costs/rh-summary"],
     refetchInterval: 600_000,
   });
@@ -649,18 +654,39 @@ export default function BalancoGerencialPage() {
               tipTitle: string; tipDesc: string; rows: Array<{ label: string; value: number }>;
             };
             const cats: Cat[] = [];
-            if (operacional > 0) cats.push({
-              key: "op", label: "Operacional", value: operacional, color: "red",
-              icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
-              tipTitle: "Custos Operacionais",
-              tipDesc: "Despesas variáveis ligadas diretamente à execução das missões: pagamento variável aos agentes (VRP), combustível, pedágios e manutenção de viaturas — apenas lançamentos automáticos por origem oficial. Lançamentos manuais com fornecedor não entram aqui; precisam estar cadastrados em Custos Fixos.",
-              rows: [
-                { label: "VRP (agentes)", value: totals.pag },
-                { label: "Combustível", value: totals.desp_combustivel },
-                { label: "Pedágio", value: totals.desp_pedagio },
-                { label: "Manutenção", value: totals.desp_manutencao },
-              ].filter(r => r.value > 0),
-            });
+            if (operacional > 0) {
+              const opRows: Array<{ label: string; value: number }> = [];
+              // 1) VRP detalhado por agente (top contribuintes do período)
+              if (totals.pag > 0) {
+                opRows.push({ label: "── VRP (agentes) ──", value: totals.pag });
+                const agentesVRP = (filtered.agents || [])
+                  .filter((a: any) => Number(a.pag_total || 0) > 0)
+                  .sort((a: any, b: any) => Number(b.pag_total || 0) - Number(a.pag_total || 0));
+                for (const a of agentesVRP) {
+                  opRows.push({ label: `  ${a.name}`, value: Number(a.pag_total || 0) });
+                }
+              }
+              // 2) Despesas variáveis automáticas (origem oficial)
+              const linhasDesp: Array<[string, number]> = [
+                ["Combustível", totals.desp_combustivel],
+                ["Pedágio", totals.desp_pedagio],
+                ["Manutenção", totals.desp_manutencao],
+              ];
+              const hasDesp = linhasDesp.some(([, v]) => v > 0);
+              if (hasDesp) {
+                opRows.push({ label: "── Despesas (oficiais) ──", value: linhasDesp.reduce((s, [, v]) => s + v, 0) });
+                for (const [label, v] of linhasDesp) {
+                  if (v > 0) opRows.push({ label: `  ${label}`, value: v });
+                }
+              }
+              cats.push({
+                key: "op", label: "Operacional", value: operacional, color: "red",
+                icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
+                tipTitle: "Custos Operacionais",
+                tipDesc: `Despesas variáveis ligadas à execução das missões no período (${daysInPeriod} dia(s)): VRP de cada agente + combustível + pedágios + manutenção (origem oficial). Lançamentos manuais com fornecedor não contam aqui.`,
+                rows: opRows,
+              });
+            }
             const PERIOD_BASE_DAYS: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
             const PERIOD_FOLHA_LABEL: Record<Period, string> = {
               DAY: "Folha diária real",
@@ -690,17 +716,38 @@ export default function BalancoGerencialPage() {
             const sameAsBase = daysInPeriod === baseDays;
 
             if (totals.provisaoRH > 0) {
-              const rhRows: Array<{ label: string; value: number }> = [
-                { label: `${PERIOD_FOLHA_LABEL[period]} (${rhSummary?.agentCount ?? activeAgentCount} ag.)`, value: baseFolha },
-              ];
-              if (!sameAsBase) {
-                rhRows.push({ label: `÷ ${baseDays} × ${daysInPeriod} dia(s)`, value: totals.provisaoRH });
+              const rhRows: Array<{ label: string; value: number }> = [];
+              // Detalhe agente-a-agente (folha mensal real × fator do período)
+              const fatorPeriodo = daysInPeriod / 30;
+              const porAgente = (rhSummary?.porAgente || [])
+                .filter((a) => Number(a.total || 0) > 0)
+                .sort((a, b) => Number(b.total) - Number(a.total));
+              if (porAgente.length > 0) {
+                rhRows.push({
+                  label: `── ${porAgente.length} agente(s) ativos ──`,
+                  value: monthlyFolha * fatorPeriodo,
+                });
+                for (const a of porAgente) {
+                  rhRows.push({
+                    label: `  ${a.name}${sameAsBase ? "" : ` (${fmt(a.total)}/mês)`}`,
+                    value: Number(a.total) * fatorPeriodo,
+                  });
+                }
+              } else {
+                rhRows.push({
+                  label: `${PERIOD_FOLHA_LABEL[period]} (${rhSummary?.agentCount ?? activeAgentCount} ag.)`,
+                  value: baseFolha,
+                });
               }
+              if (!sameAsBase) {
+                rhRows.push({ label: `Total: soma/mês × ${daysInPeriod}/30`, value: totals.provisaoRH });
+              }
+              rhRows.push({ label: "Folha por dia (÷30)", value: monthlyFolha / 30 });
               cats.push({
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Custo real de pessoal calculado pelo mesmo motor da tela Custos Fixos: salário cadastrado + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias. Rateado conforme o período selecionado (${PERIOD_ADJ[period]}).`,
+                tipDesc: `Custo real de pessoal por agente: salário + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias (mesmo motor da tela Custos Fixos). Rateado pro período (${PERIOD_ADJ[period]} = ${daysInPeriod} dia(s) ÷ 30).`,
                 rows: rhRows,
               });
             }
