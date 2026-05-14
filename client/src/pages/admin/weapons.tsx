@@ -716,11 +716,11 @@ function WeaponGroupTable({
         <span className="text-sm font-semibold text-neutral-700">{title}</span>
         <span className="text-xs text-neutral-500 bg-white px-2 py-0.5 rounded-full border border-neutral-200">{weapons.length}</span>
       </div>
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead className="bg-neutral-50 border-b border-neutral-200">
           <tr>
-            <th className="text-left p-3 font-medium text-neutral-600 w-10"></th>
-            <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider w-10">#</th>
+            <th className="text-left p-2 font-medium text-neutral-600 w-10"></th>
+            <th className="text-center px-2 py-2 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider w-8">#</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Marca / Modelo</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Calibre</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nº Série</th>
@@ -755,10 +755,10 @@ function WeaponGroupTable({
                     </div>
                   )}
                 </td>
-                <td className="p-3 font-medium text-neutral-900">{w.brand} {w.model}</td>
-                <td className="p-3 text-neutral-600">{w.caliber}</td>
-                <td className="p-3 font-mono text-xs text-neutral-500">{w.serialNumber}</td>
-                <td className="p-3 text-xs text-neutral-600">{w.registrationNumber || "-"}</td>
+                <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">{w.brand} {w.model}</td>
+                <td className="p-2 text-neutral-600 whitespace-nowrap">{w.caliber}</td>
+                <td className="p-2 font-mono text-[11px] text-neutral-500 whitespace-nowrap">{w.serialNumber}</td>
+                <td className="p-2 text-[11px] text-neutral-600 whitespace-nowrap">{w.registrationNumber || "-"}</td>
                 <td className="p-3">
                   {w.registrationExpiry ? (
                     <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold ${
@@ -780,7 +780,7 @@ function WeaponGroupTable({
                     <span className="text-neutral-300 text-xs">—</span>
                   )}
                 </td>
-                <td className="p-3 text-sm text-neutral-700">
+                <td className="p-2 text-xs text-neutral-700 whitespace-nowrap">
                   {assignedEmp ? assignedEmp.name : <span className="text-neutral-400">-</span>}
                 </td>
                 <td className="p-3">
@@ -791,8 +791,8 @@ function WeaponGroupTable({
                     "bg-neutral-100 text-neutral-600 border border-neutral-200"
                   }`}>{w.status === "em uso" ? "EM USO" : w.status === "disponível" ? "DISPONÍVEL" : w.status === "manutenção" ? "MANUTENÇÃO" : w.status}</span>
                 </td>
-                <td className="p-3 text-right whitespace-nowrap">
-                  <div className="flex items-center justify-end gap-1 flex-nowrap">
+                <td className="p-2 text-right whitespace-nowrap">
+                  <div className="flex items-center justify-end gap-0.5 flex-nowrap">
                     <Button variant="ghost" size="icon" onClick={() => onAssign(w)} title="Vincular/Desvincular" data-testid={`button-assign-weapon-${w.id}`}>
                       <Link2 className="w-4 h-4 text-blue-600" />
                     </Button>
