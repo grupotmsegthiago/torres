@@ -556,8 +556,8 @@ export default function BalancoGerencialPage() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-3">
-          <div className="flex flex-col md:flex-row items-center gap-3">
-            <div className="flex gap-1 overflow-x-auto">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
               {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
                 <button key={p} onClick={() => setPeriod(p)} data-testid={`period-${p.toLowerCase()}`}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
@@ -567,11 +567,11 @@ export default function BalancoGerencialPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1 md:gap-2 md:ml-auto">
               <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} data-testid="button-prev-period">
                 <ChevronLeft size={16} />
               </Button>
-              <span className="text-sm font-black text-neutral-700 uppercase min-w-[180px] text-center" data-testid="text-period-label">
+              <span className="text-xs sm:text-sm font-black text-neutral-700 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
                 {range.label}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} data-testid="button-next-period">
@@ -584,7 +584,7 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        <div className={`grid grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
           {(() => {
             const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
             const totalViaturas = activeVehicles.length;
@@ -1603,7 +1603,7 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
                       style={{ width: `${Math.min(metaPct, 100)}%` }} />
                   </div>
 
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="text-center">
                       <p className="text-xs font-black text-neutral-400 uppercase">Faturamento</p>
                       <p className="text-sm font-black text-green-700 font-mono">{fmt(v.fat_total)}</p>
@@ -1694,7 +1694,7 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
                       style={{ width: `${Math.min(metaPct, 100)}%` }} />
                   </div>
 
-                  <div className="grid grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     <div className="text-center">
                       <p className="text-xs font-black text-neutral-400 uppercase">Faturamento</p>
                       <p className="text-sm font-black text-green-700 font-mono">{fmt(a.fat_total)}</p>
