@@ -88,6 +88,13 @@ export default function BoletimMedicaoPage() {
   const [aprovarFaturarLoading, setAprovarFaturarLoading] = useState(false);
   const [pedagioValue, setPedagioValue] = useState("");
   const [reembolsoValue, setReembolsoValue] = useState("");
+  const [acionamentoValue, setAcionamentoValue] = useState("");
+  const [horaExtraValue, setHoraExtraValue] = useState("");
+  const [kmExtraValue, setKmExtraValue] = useState("");
+  const [adNoturnoValue, setAdNoturnoValue] = useState("");
+  const [estadiaValue, setEstadiaValue] = useState("");
+  const [pernoiteValue, setPernoiteValue] = useState("");
+  const [demaisCustosValue, setDemaisCustosValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [editingFields, setEditingFields] = useState(false);
   const [overrideKmChegada, setOverrideKmChegada] = useState("");
@@ -263,12 +270,12 @@ export default function BoletimMedicaoPage() {
   });
 
   const salvarBillingMutation = useMutation({
-    mutationFn: async ({ billingId, observacoes, pedagio, reembolso }: { billingId: string; observacoes: string; pedagio: number; reembolso?: number }) => {
-      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, receitas_os: reembolso ?? undefined, recalcular: true });
+    mutationFn: async ({ billingId, payload }: { billingId: string; payload: Record<string, any> }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { ...payload, recalcular: false });
     },
     onSuccess: () => {
       invalidateAllRelated();
-      toast({ title: "Salvo", description: "Valores recalculados e salvos." });
+      toast({ title: "Salvo", description: "Valores manuais salvos." });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
@@ -295,6 +302,13 @@ export default function BoletimMedicaoPage() {
         if (fb) {
           setPedagioValue(String(fb.despesas_pedagio || 0));
           setReembolsoValue(String(fb.receitas_os || 0));
+          setAcionamentoValue(String(fb.fat_acionamento || 0));
+          setHoraExtraValue(String(fb.fat_hora_extra || 0));
+          setKmExtraValue(String(fb.fat_km || 0));
+          setAdNoturnoValue(String(fb.fat_adicional_noturno || 0));
+          setEstadiaValue(String(fb.fat_estadia || 0));
+          setPernoiteValue(String(fb.fat_pernoite || 0));
+          setDemaisCustosValue(String(fb.despesas_outras || 0));
           setObservacoesValue(fb.observacoes || "");
         }
         return;
@@ -435,7 +449,7 @@ export default function BoletimMedicaoPage() {
     if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
     if (fatTotal > 0) return fatTotal;
-    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0);
+    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.receitas_os || 0);
   };
   const totalFaturamento = periodFilteredOs.reduce((acc, o) => acc + getBillingTotal(o), 0);
   const totalFaturado = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
@@ -476,7 +490,7 @@ export default function BoletimMedicaoPage() {
         Number(b?.fat_km || 0),
         Number(b?.despesas_pedagio || 0),
         Number(b?.fat_adicional_noturno || 0),
-        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0),
+        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0),
         b?.status === "A_VERIFICAR" ? "A Verificar" : b?.status === "APROVADA" ? "Aprovada" : b?.status === "FATURADO" ? "Faturado" : b?.status || "—",
       ];
     });
@@ -682,6 +696,13 @@ export default function BoletimMedicaoPage() {
                     setSelectedOs(match);
                     setPedagioValue(match.billing?.despesas_pedagio || (match as any).pedagioEstimado || "0");
                     setReembolsoValue(String(match.billing?.receitas_os || 0));
+                    setAcionamentoValue(String(match.billing?.fat_acionamento || 0));
+                    setHoraExtraValue(String(match.billing?.fat_hora_extra || 0));
+                    setKmExtraValue(String(match.billing?.fat_km || 0));
+                    setAdNoturnoValue(String(match.billing?.fat_adicional_noturno || 0));
+                    setEstadiaValue(String(match.billing?.fat_estadia || 0));
+                    setPernoiteValue(String(match.billing?.fat_pernoite || 0));
+                    setDemaisCustosValue(String(match.billing?.despesas_outras || 0));
                     setObservacoesValue(match.billing?.observacoes || "");
                   }
                 }
@@ -1197,7 +1218,7 @@ export default function BoletimMedicaoPage() {
                                       )}
                                       {canEdit && (
                                         <button
-                                          onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setObservacoesValue(b?.observacoes || ""); }}
+                                          onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setAcionamentoValue(String(b?.fat_acionamento || 0)); setHoraExtraValue(String(b?.fat_hora_extra || 0)); setKmExtraValue(String(b?.fat_km || 0)); setAdNoturnoValue(String(b?.fat_adicional_noturno || 0)); setEstadiaValue(String(b?.fat_estadia || 0)); setPernoiteValue(String(b?.fat_pernoite || 0)); setDemaisCustosValue(String(b?.despesas_outras || 0)); setObservacoesValue(b?.observacoes || ""); }}
                                           className="p-1.5 rounded-lg border border-transparent transition-all hover:bg-amber-50 hover:border-amber-200"
                                           title="Abrir Boletim de Medição"
                                           data-testid={`button-editar-medicao-${os.id}`}
@@ -1206,7 +1227,7 @@ export default function BoletimMedicaoPage() {
                                         </button>
                                       )}
                                       <button
-                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setObservacoesValue(b?.observacoes || ""); }}
+                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setAcionamentoValue(String(b?.fat_acionamento || 0)); setHoraExtraValue(String(b?.fat_hora_extra || 0)); setKmExtraValue(String(b?.fat_km || 0)); setAdNoturnoValue(String(b?.fat_adicional_noturno || 0)); setEstadiaValue(String(b?.fat_estadia || 0)); setPernoiteValue(String(b?.fat_pernoite || 0)); setDemaisCustosValue(String(b?.despesas_outras || 0)); setObservacoesValue(b?.observacoes || ""); }}
                                         className="p-1.5 rounded-lg hover:bg-neutral-100 border border-transparent hover:border-neutral-200 transition-all"
                                         data-testid={`button-view-os-${os.id}`}
                                       >
@@ -1332,7 +1353,7 @@ export default function BoletimMedicaoPage() {
                               const checkedTotal = checkedInGroup.reduce((acc, o) => {
                                 if (o.status === "recusada" || o.status === "cancelada") return acc;
                                 const b = o.billing;
-                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0);
+                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0);
                               }, 0);
                               return checkedCount > 0 ? (
                                 <tr className="bg-blue-50/80 border-b">
@@ -1570,13 +1591,13 @@ export default function BoletimMedicaoPage() {
           </DialogContent>
         </Dialog>
 
-        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} liberarFaturamentoMutation={liberarFaturamentoMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} reembolsoValue={reembolsoValue} setReembolsoValue={setReembolsoValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
+        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} liberarFaturamentoMutation={liberarFaturamentoMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} reembolsoValue={reembolsoValue} setReembolsoValue={setReembolsoValue} acionamentoValue={acionamentoValue} setAcionamentoValue={setAcionamentoValue} horaExtraValue={horaExtraValue} setHoraExtraValue={setHoraExtraValue} kmExtraValue={kmExtraValue} setKmExtraValue={setKmExtraValue} adNoturnoValue={adNoturnoValue} setAdNoturnoValue={setAdNoturnoValue} estadiaValue={estadiaValue} setEstadiaValue={setEstadiaValue} pernoiteValue={pernoiteValue} setPernoiteValue={setPernoiteValue} demaisCustosValue={demaisCustosValue} setDemaisCustosValue={setDemaisCustosValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
       </div>
     </AdminLayout>
   );
 }
 
-export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, reembolsoValue, setReembolsoValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
+export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, reembolsoValue, setReembolsoValue, acionamentoValue, setAcionamentoValue, horaExtraValue, setHoraExtraValue, kmExtraValue, setKmExtraValue, adNoturnoValue, setAdNoturnoValue, estadiaValue, setEstadiaValue, pernoiteValue, setPernoiteValue, demaisCustosValue, setDemaisCustosValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
   const b = os.billing;
   const status = getBillingStatus(os);
   const isPendente = b?.status === "A_VERIFICAR";
@@ -1642,13 +1663,17 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
     ? Math.round((minutosExtrasCalc / 60) * valorHoraExtraContract * 100) / 100
     : Math.ceil(horasExtrasCalcRaw) * valorHoraExtraContract;
 
-  const acionamento = Number(b?.fat_acionamento || 0);
-  const horaExtra = Number(b?.fat_hora_extra || 0) > 0 ? Number(b.fat_hora_extra) : horaExtraValorCalc;
-  const kmExtraVal = Number(b?.fat_km || 0);
-  const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
-  const receitasOsVal = reembolsoValue !== undefined && reembolsoValue !== "" ? Number(reembolsoValue) || 0 : Number(b?.receitas_os || 0);
-  const adNoturno = Number(b?.fat_adicional_noturno || 0);
-  const demaisCustos = Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0);
+  const liveNum = (v: any, fallback: number) => (v !== undefined && v !== "" && v !== null ? (Number(v) || 0) : fallback);
+  const acionamento = liveNum(acionamentoValue, Number(b?.fat_acionamento || 0));
+  const horaExtra = liveNum(horaExtraValue, Number(b?.fat_hora_extra || 0) > 0 ? Number(b.fat_hora_extra) : horaExtraValorCalc);
+  const kmExtraVal = liveNum(kmExtraValue, Number(b?.fat_km || 0));
+  const pedagio = liveNum(pedagioValue, Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
+  const receitasOsVal = liveNum(reembolsoValue, Number(b?.receitas_os || 0));
+  const adNoturno = liveNum(adNoturnoValue, Number(b?.fat_adicional_noturno || 0));
+  const estadiaVal = liveNum(estadiaValue, Number(b?.fat_estadia || 0));
+  const pernoiteVal = liveNum(pernoiteValue, Number(b?.fat_pernoite || 0));
+  const despOutrasVal = liveNum(demaisCustosValue, Number(b?.despesas_outras || 0));
+  const demaisCustos = despOutrasVal + estadiaVal + pernoiteVal;
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOsVal + adNoturno + demaisCustos;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
@@ -1892,31 +1917,20 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
 
                 {isPendente && (
                   <div className="space-y-3 border-t border-neutral-100 pt-4">
-                    <SectionTitle icon={<Pencil size={14} />} title="Ajustes" />
-                    <div>
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio — Despesa (R$)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
-                        value={pedagioValue}
-                        onChange={(e: any) => setPedagioValue(e.target.value)}
-                        placeholder="0,00"
-                        data-testid="input-pedagio"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio — Reembolso Cliente (R$)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
-                        value={reembolsoValue ?? ""}
-                        onChange={(e: any) => setReembolsoValue?.(e.target.value)}
-                        placeholder="0,00"
-                        data-testid="input-reembolso-cliente"
-                      />
-                      <p className="text-[10px] text-neutral-400 mt-1">Valor cobrado do cliente como reembolso de pedágio. Zere se for divergente da medição.</p>
+                    <SectionTitle icon={<Pencil size={14} />} title="Ajustes (Valores Manuais)" />
+                    <p className="text-[10px] text-neutral-500 -mt-1">Ao salvar, os valores manuais ficam fixos e o total é recomputado pela soma. Para refazer o cálculo automático, use a aprovação ou o recálculo em lote.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <NumInput label="Acionamento (R$)" value={acionamentoValue} onChange={setAcionamentoValue} testId="input-acionamento" />
+                      <NumInput label="Hora Extra (R$)" value={horaExtraValue} onChange={setHoraExtraValue} testId="input-hora-extra" />
+                      <NumInput label="KM Excedente (R$)" value={kmExtraValue} onChange={setKmExtraValue} testId="input-km-extra" />
+                      <NumInput label="Adicional Noturno (R$)" value={adNoturnoValue} onChange={setAdNoturnoValue} testId="input-ad-noturno" />
+                      <NumInput label="Estadia (R$)" value={estadiaValue} onChange={setEstadiaValue} testId="input-estadia" />
+                      <NumInput label="Pernoite (R$)" value={pernoiteValue} onChange={setPernoiteValue} testId="input-pernoite" />
+                      <NumInput label="Pedágio — Despesa (R$)" value={pedagioValue} onChange={setPedagioValue} testId="input-pedagio" />
+                      <NumInput label="Reembolso Cliente (R$)" value={reembolsoValue} onChange={setReembolsoValue} testId="input-reembolso-cliente" />
+                      <div className="col-span-2">
+                        <NumInput label="Demais Custos (R$)" value={demaisCustosValue} onChange={setDemaisCustosValue} testId="input-demais-custos" />
+                      </div>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Observações</label>
@@ -1930,7 +1944,18 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                       />
                     </div>
                     <button
-                      onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0, reembolso: reembolsoValue === "" || reembolsoValue === undefined ? undefined : Number(reembolsoValue) || 0 })}
+                      onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, payload: {
+                        observacoes: observacoesValue,
+                        fat_acionamento: Number(acionamentoValue) || 0,
+                        fat_hora_extra: Number(horaExtraValue) || 0,
+                        fat_km: Number(kmExtraValue) || 0,
+                        fat_adicional_noturno: Number(adNoturnoValue) || 0,
+                        fat_estadia: Number(estadiaValue) || 0,
+                        fat_pernoite: Number(pernoiteValue) || 0,
+                        despesas_pedagio: Number(pedagioValue) || 0,
+                        receitas_os: Number(reembolsoValue) || 0,
+                        despesas_outras: Number(demaisCustosValue) || 0,
+                      } })}
                       disabled={salvarBillingMutation.isPending}
                       className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold uppercase text-xs tracking-wider py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                       data-testid="button-salvar-billing"
@@ -2102,6 +2127,23 @@ export function FieldRow({ label, value, accent, mono, bold }: { label: string; 
     <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg border border-neutral-100" data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">{label}</span>
       <span className={`text-sm font-black ${mono ? "font-mono" : ""} ${bold ? "font-black" : "font-bold"} ${valColor}`}>{value}</span>
+    </div>
+  );
+}
+
+export function NumInput({ label, value, onChange, testId }: { label: string; value: string; onChange: (v: string) => void; testId: string }) {
+  return (
+    <div>
+      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">{label}</label>
+      <input
+        type="number"
+        step="0.01"
+        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
+        value={value ?? ""}
+        onChange={(e: any) => onChange(e.target.value)}
+        placeholder="0,00"
+        data-testid={testId}
+      />
     </div>
   );
 }

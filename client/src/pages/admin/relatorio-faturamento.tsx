@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
-import { OsDetailModal } from "./boletim-medicao";
+import { OsDetailModal, NumInput } from "./boletim-medicao";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -73,6 +73,13 @@ export default function RelatorioFaturamentoPage() {
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
   const [pedagioValue, setPedagioValue] = useState("");
   const [reembolsoValue, setReembolsoValue] = useState("");
+  const [acionamentoValue, setAcionamentoValue] = useState("");
+  const [horaExtraValue, setHoraExtraValue] = useState("");
+  const [kmExtraValue, setKmExtraValue] = useState("");
+  const [adNoturnoValue, setAdNoturnoValue] = useState("");
+  const [estadiaValue, setEstadiaValue] = useState("");
+  const [pernoiteValue, setPernoiteValue] = useState("");
+  const [demaisCustosValue, setDemaisCustosValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [recalcLoteLoading, setRecalcLoteLoading] = useState(false);
   const [faturaDialog, setFaturaDialog] = useState(false);
@@ -156,7 +163,11 @@ export default function RelatorioFaturamentoPage() {
     const fatHE = n(b.fat_hora_extra);
     const fatPed = n(b.despesas_pedagio);
     const fatAdNot = n(b.fat_adicional_noturno);
-    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatAdNot);
+    const fatEst = n(b.fat_estadia);
+    const fatPer = n(b.fat_pernoite);
+    const fatOutras = n(b.despesas_outras);
+    const fatReemb = n(b.receitas_os);
+    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatAdNot + fatEst + fatPer + fatOutras + fatReemb);
     return acc + total;
   }, 0), [approvedBillings, contracts]);
 
@@ -468,12 +479,12 @@ export default function RelatorioFaturamentoPage() {
   });
 
   const salvarBillingMutation = useMutation({
-    mutationFn: async ({ billingId, observacoes, pedagio, reembolso }: { billingId: string; observacoes: string; pedagio: number; reembolso?: number }) => {
-      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, receitas_os: reembolso ?? undefined, recalcular: true });
+    mutationFn: async ({ billingId, payload }: { billingId: string; payload: Record<string, any> }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { ...payload, recalcular: false });
     },
     onSuccess: () => {
       refreshAfterModalAction();
-      toast({ title: "Salvo", description: "Valores recalculados e salvos." });
+      toast({ title: "Salvo", description: "Valores manuais salvos." });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
@@ -578,6 +589,13 @@ export default function RelatorioFaturamentoPage() {
       setSelectedOs(os);
       setPedagioValue(String(billing.despesas_pedagio || so.pedagioEstimado || "0"));
       setReembolsoValue(String(billing.receitas_os || 0));
+      setAcionamentoValue(String(billing.fat_acionamento || 0));
+      setHoraExtraValue(String(billing.fat_hora_extra || 0));
+      setKmExtraValue(String(billing.fat_km || 0));
+      setAdNoturnoValue(String(billing.fat_adicional_noturno || 0));
+      setEstadiaValue(String(billing.fat_estadia || 0));
+      setPernoiteValue(String(billing.fat_pernoite || 0));
+      setDemaisCustosValue(String(billing.despesas_outras || 0));
       setObservacoesValue(billing.observacoes || "");
       setEditingFields(false);
       setOverrideKmChegada(so.km_chegada_origem != null ? String(so.km_chegada_origem) : String(billing.km_inicial || ""));
@@ -683,9 +701,13 @@ export default function RelatorioFaturamentoPage() {
       const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
       const fatAdNoturno = zeroOut ? 0 : n(b.fat_adicional_noturno);
       const valorAcionamentoFinal = zeroOut ? 0 : valorAcionamento;
+      const fatEstadia = zeroOut ? 0 : n(b.fat_estadia);
+      const fatPernoite = zeroOut ? 0 : n(b.fat_pernoite);
+      const fatOutras = zeroOut ? 0 : n(b.despesas_outras);
+      const fatReembolso = zeroOut ? 0 : n(b.receitas_os);
       const fatTotal = zeroOut ? 0 : (isCancelada
-        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno)
-        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno)));
+        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)
+        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)));
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";
@@ -2073,6 +2095,20 @@ export default function RelatorioFaturamentoPage() {
           setPedagioValue={setPedagioValue}
           reembolsoValue={reembolsoValue}
           setReembolsoValue={setReembolsoValue}
+          acionamentoValue={acionamentoValue}
+          setAcionamentoValue={setAcionamentoValue}
+          horaExtraValue={horaExtraValue}
+          setHoraExtraValue={setHoraExtraValue}
+          kmExtraValue={kmExtraValue}
+          setKmExtraValue={setKmExtraValue}
+          adNoturnoValue={adNoturnoValue}
+          setAdNoturnoValue={setAdNoturnoValue}
+          estadiaValue={estadiaValue}
+          setEstadiaValue={setEstadiaValue}
+          pernoiteValue={pernoiteValue}
+          setPernoiteValue={setPernoiteValue}
+          demaisCustosValue={demaisCustosValue}
+          setDemaisCustosValue={setDemaisCustosValue}
           observacoesValue={observacoesValue}
           setObservacoesValue={setObservacoesValue}
           getBillingStatus={getBillingStatus}

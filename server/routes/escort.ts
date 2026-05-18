@@ -1790,6 +1790,7 @@ import type { Express } from "express";
         observacoes, despesas_pedagio, fat_acionamento, fat_km,
         km_inicial, km_final, horario_inicio, horario_termino,
         despesas_outras, receitas_os, recalcular,
+        fat_hora_extra, fat_adicional_noturno, fat_estadia, fat_pernoite,
       } = req.body;
 
       const updateData: any = {};
@@ -1797,6 +1798,10 @@ import type { Express } from "express";
       if (despesas_pedagio !== undefined) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
       if (fat_acionamento !== undefined) updateData.fat_acionamento = Number(fat_acionamento) || 0;
       if (fat_km !== undefined) updateData.fat_km = Number(fat_km) || 0;
+      if (fat_hora_extra !== undefined) updateData.fat_hora_extra = Number(fat_hora_extra) || 0;
+      if (fat_adicional_noturno !== undefined) updateData.fat_adicional_noturno = Number(fat_adicional_noturno) || 0;
+      if (fat_estadia !== undefined) updateData.fat_estadia = Number(fat_estadia) || 0;
+      if (fat_pernoite !== undefined) updateData.fat_pernoite = Number(fat_pernoite) || 0;
       if (km_inicial !== undefined) updateData.km_inicial = Number(km_inicial) || 0;
       if (km_final !== undefined) updateData.km_final = Number(km_final) || 0;
       if (horario_inicio !== undefined) updateData.horario_inicio = horario_inicio;
@@ -1893,7 +1898,14 @@ import type { Express } from "express";
       if (km_inicial !== undefined) changes.push(`KM Inicial: ${existing.km_inicial}→${km_inicial}`);
       if (km_final !== undefined) changes.push(`KM Final: ${existing.km_final}→${km_final}`);
       if (fat_acionamento !== undefined) changes.push(`Acionamento: ${existing.fat_acionamento}→${fat_acionamento}`);
+      if (fat_hora_extra !== undefined) changes.push(`Hora Extra: ${existing.fat_hora_extra}→${fat_hora_extra}`);
+      if (fat_km !== undefined) changes.push(`KM Extra: ${existing.fat_km}→${fat_km}`);
+      if (fat_adicional_noturno !== undefined) changes.push(`Ad. Noturno: ${existing.fat_adicional_noturno}→${fat_adicional_noturno}`);
+      if (fat_estadia !== undefined) changes.push(`Estadia: ${existing.fat_estadia}→${fat_estadia}`);
+      if (fat_pernoite !== undefined) changes.push(`Pernoite: ${existing.fat_pernoite}→${fat_pernoite}`);
       if (despesas_pedagio !== undefined) changes.push(`Pedágio: ${existing.despesas_pedagio}→${despesas_pedagio}`);
+      if (receitas_os !== undefined) changes.push(`Reembolso Cliente: ${existing.receitas_os}→${receitas_os}`);
+      if (despesas_outras !== undefined) changes.push(`Demais Custos: ${existing.despesas_outras}→${despesas_outras}`);
       if (horario_inicio !== undefined) changes.push(`Hora Início: ${existing.horario_inicio}→${horario_inicio}`);
       if (horario_termino !== undefined) changes.push(`Hora Fim: ${existing.horario_fim}→${horario_termino}`);
       if (changes.length > 0) {
@@ -1996,7 +2008,7 @@ import type { Express } from "express";
       if (error) throw error;
 
       if (acao === "APROVADA" && data) {
-        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.fat_adicional_noturno || 0) + Number(data.despesas_pedagio || 0) + Number(data.despesas_outras || 0) + Number(data.fat_estadia || 0) + Number(data.fat_pernoite || 0);
+        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.fat_adicional_noturno || 0) + Number(data.despesas_pedagio || 0) + Number(data.despesas_outras || 0) + Number(data.fat_estadia || 0) + Number(data.fat_pernoite || 0) + Number(data.receitas_os || 0);
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(data.service_order_id));
         if (totalFat > 0) {
