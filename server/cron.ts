@@ -1090,7 +1090,22 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | CobrançaVencidos (seg-sex 09:00 BRT)", "cron");
+  // ============================================================
+  // CRON: Compliance de Documentos RH — diário 07:00 BRT.
+  // Lista funcionários ativos com documentos faltantes/vencidos e
+  // envia consolidado para escolta@ e adm@torresseguranca.com.br.
+  // ============================================================
+  cron.schedule("0 7 * * *", async () => {
+    try {
+      const { sendDocComplianceEmail } = await import("./jobs/document-compliance");
+      const r = await sendDocComplianceEmail();
+      log(`CRON DocCompliance: ${r.message} — ${r.employees} funcionário(s), ${r.totalMissing} faltante(s), ${r.totalExpired} vencido(s)`, "cron");
+    } catch (e: any) {
+      log(`CRON DocCompliance: Erro: ${e.message}`, "cron");
+    }
+  }, { timezone: "America/Sao_Paulo" });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | CobrançaVencidos (seg-sex 09:00 BRT)", "cron");
 }
 
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];

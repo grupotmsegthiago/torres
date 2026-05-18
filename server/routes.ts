@@ -691,6 +691,30 @@ async function ensureSystemSettingsTable() {
       }
     });
 
+    app.post("/api/admin/document-compliance/send", requireAuth, requireAdminRole, async (req, res) => {
+      try {
+        const { sendDocComplianceEmail } = await import("./jobs/document-compliance");
+        const overrideTo = Array.isArray(req.body?.to) ? req.body.to.filter((s: any) => typeof s === "string") : undefined;
+        const dryRun = req.body?.dryRun === true;
+        const result = await sendDocComplianceEmail({ dryRun, overrideTo });
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    app.get("/api/admin/document-compliance/preview", requireAuth, requireAdminRole, async (_req, res) => {
+      try {
+        const { buildDocComplianceReport } = await import("./jobs/document-compliance");
+        const report = await buildDocComplianceReport();
+        const totalMissing = report.reduce((s, r) => s + r.missing.length, 0);
+        const totalExpired = report.reduce((s, r) => s + r.expired.length, 0);
+        res.json({ employees: report.length, totalMissing, totalExpired, report });
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     app.get("/api/financeiro/resumo-diretoria", requireAuth, requireAdminRole, async (req, res) => {
       try {
         const { getDiretoriaSnapshot } = await import("./financial-snapshot");
