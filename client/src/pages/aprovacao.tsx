@@ -17,6 +17,9 @@ interface BillingDetail {
   fat_km: number;
   despesas_pedagio: number;
   fat_adicional_noturno: number;
+  fat_estadia: number;
+  fat_pernoite: number;
+  despesas_outras: number;
   receitas_os: number;
   fat_total: number;
   km_total: number;
@@ -157,7 +160,7 @@ export default function AprovacaoPage() {
               </div>
               <div style={{ flex: "1 1 160px", background: "#ecfdf5", borderRadius: 8, padding: 16, border: "1px solid #d1fae5" }}>
                 <p style={{ color: "#059669", fontSize: 12, margin: 0 }}>Valor Total</p>
-                <p style={{ color: "#059669", fontSize: 22, fontWeight: 700, margin: "4px 0 0" }} data-testid="text-total-value">{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.despesas_pedagio || 0) + (b.fat_adicional_noturno || 0), 0) || data.totalValue)}</p>
+                <p style={{ color: "#059669", fontSize: 22, fontWeight: 700, margin: "4px 0 0" }} data-testid="text-total-value">{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.fat_adicional_noturno || 0) + (b.fat_estadia || 0) + (b.fat_pernoite || 0) + (b.despesas_pedagio || 0) + (b.despesas_outras || 0) + (b.receitas_os || 0), 0) || data.totalValue)}</p>
               </div>
             </div>
           </div>
@@ -174,7 +177,7 @@ export default function AprovacaoPage() {
             <table data-testid="approval-billings-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "#2D2D2D" }}>
-                  {["OS", "Data", "Origem", "Destino", "Placa Escolta", "Acionamento", "Hr. Extra", "KM Exc.", "Pedágio", "Noturno", "Total"].map(h => (
+                  {["OS", "Data", "Origem", "Destino", "Placa Escolta", "Acionamento", "Hr. Extra", "KM Exc.", "Noturno", "Estadia", "Pernoite", "Pedágio", "Outras", "Reembolso", "Total"].map(h => (
                     <th key={h} style={{ padding: "10px 8px", color: "#fff", fontWeight: 600, fontSize: 11, textAlign: "center", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -199,9 +202,13 @@ export default function AprovacaoPage() {
                     <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_acionamento)}</td>
                     <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_hora_extra)}</td>
                     <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_km)}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.despesas_pedagio)}</td>
                     <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_adicional_noturno)}</td>
-                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: "#059669" }}>{formatCurrency((b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.despesas_pedagio || 0) + (b.fat_adicional_noturno || 0))}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_estadia)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.fat_pernoite)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.despesas_pedagio)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.despesas_outras)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCurrency(b.receitas_os)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: "#059669" }}>{formatCurrency((b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.fat_adicional_noturno || 0) + (b.fat_estadia || 0) + (b.fat_pernoite || 0) + (b.despesas_pedagio || 0) + (b.despesas_outras || 0) + (b.receitas_os || 0))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -211,9 +218,13 @@ export default function AprovacaoPage() {
                   <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_acionamento || 0), 0))}</td>
                   <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_hora_extra || 0), 0))}</td>
                   <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_km || 0), 0))}</td>
-                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.despesas_pedagio || 0), 0))}</td>
                   <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_adicional_noturno || 0), 0))}</td>
-                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right", fontSize: 15 }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.despesas_pedagio || 0) + (b.fat_adicional_noturno || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_estadia || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_pernoite || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.despesas_pedagio || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.despesas_outras || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right" }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.receitas_os || 0), 0))}</td>
+                  <td style={{ padding: "10px 8px", color: "#fff", fontWeight: 700, textAlign: "right", fontSize: 15 }}>{formatCurrency(data.billings.reduce((s, b) => s + (b.fat_acionamento || 0) + (b.fat_hora_extra || 0) + (b.fat_km || 0) + (b.fat_adicional_noturno || 0) + (b.fat_estadia || 0) + (b.fat_pernoite || 0) + (b.despesas_pedagio || 0) + (b.despesas_outras || 0) + (b.receitas_os || 0), 0))}</td>
                 </tr>
               </tfoot>
             </table>

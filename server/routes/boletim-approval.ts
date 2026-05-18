@@ -593,6 +593,25 @@ export function registerBoletimApprovalRoutes(app: Express) {
         billingsData || [], ordersData, contractsData,
       );
 
+      // ============================================================
+      // FONTE ÚNICA DA VERDADE: total canônico calculado server-side
+      // a partir dos 9 componentes financeiros. Ignora `totalValue`
+      // enviado pelo frontend para garantir que e-mail, página de
+      // aprovação e Excel mostrem o MESMO valor.
+      // ============================================================
+      const canonicalTotal = (billingsData || []).reduce((sum: number, b: any) => {
+        return sum
+          + Number(b.fat_acionamento || 0)
+          + Number(b.fat_hora_extra || 0)
+          + Number(b.fat_km || 0)
+          + Number(b.fat_adicional_noturno || 0)
+          + Number(b.fat_estadia || 0)
+          + Number(b.fat_pernoite || 0)
+          + Number(b.despesas_pedagio || 0)
+          + Number(b.despesas_outras || 0)
+          + Number(b.receitas_os || 0);
+      }, 0);
+
       const token = generateToken();
       const baseUrl = getBaseUrl(req);
       const approvalUrl = `${baseUrl}/aprovacao/${token}`;
@@ -606,7 +625,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         period_start: periodStart,
         period_end: periodEnd,
         billing_ids: billingIds,
-        total_value: totalValue || 0,
+        total_value: canonicalTotal,
         os_count: osCount || billingIds.length,
         status: "PENDENTE",
         sent_by: user?.name || user?.username || null,
@@ -620,7 +639,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, totalValue || 0, excelBuffer, fileName, processoNumbers);
+        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);

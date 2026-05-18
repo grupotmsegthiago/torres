@@ -2472,15 +2472,19 @@ export function registerAsaasRoutes(app: Express) {
         const km = Number(b.fat_km || 0);
         const pedagio = Number(b.despesas_pedagio || 0);
         const adNoturno = Number(b.fat_adicional_noturno || 0);
-        // FÓRMULA OFICIAL DO BOLETIM DE MEDIÇÃO (deve casar com aprovacao.tsx + boletim-approval.ts)
-        // acionamento + HE + KM + pedágio + adicional_noturno
-        // receitas_os NÃO entra aqui — é cobrança avulsa, lançada à parte se necessário.
-        // Se houver fat_total congelado no banco, prevalece (mesma lógica do
-        // frontend em relatorio-faturamento.tsx). Isso evita divergências
-        // quando a fórmula muda ou quando fallbacks (ex.: acionamento via
-        // contrato) entram no cálculo do frontend.
+        const estadia = Number(b.fat_estadia || 0);
+        const pernoite = Number(b.fat_pernoite || 0);
+        const outras = Number(b.despesas_outras || 0);
+        const reembolso = Number(b.receitas_os || 0);
+        // FÓRMULA CANÔNICA DO BOLETIM DE MEDIÇÃO (9 componentes)
+        // Deve casar com: aprovacao.tsx, boletim-approval.ts (Excel + canonicalTotal),
+        // relatorio-faturamento.tsx e boletim-medicao.tsx.
+        // Componentes: acionamento + HE + KM + adicional_noturno
+        //            + estadia + pernoite + pedágio + outras + reembolso.
+        // Se houver fat_total congelado no banco, prevalece (preserva valor
+        // manualmente ajustado e evita divergências quando a fórmula muda).
         const fatTotalSalvo = Number(b.fat_total || 0);
-        const fatComponentes = acionamento + horaExtra + km + pedagio + adNoturno;
+        const fatComponentes = acionamento + horaExtra + km + adNoturno + estadia + pernoite + pedagio + outras + reembolso;
         const fat = fatTotalSalvo > 0 ? fatTotalSalvo : fatComponentes;
         totalValue += fat;
         billingIds.push(b.id);
