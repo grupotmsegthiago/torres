@@ -72,6 +72,7 @@ export default function RelatorioFaturamentoPage() {
   const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
   const [pedagioValue, setPedagioValue] = useState("");
+  const [reembolsoValue, setReembolsoValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [recalcLoteLoading, setRecalcLoteLoading] = useState(false);
   const [faturaDialog, setFaturaDialog] = useState(false);
@@ -467,8 +468,8 @@ export default function RelatorioFaturamentoPage() {
   });
 
   const salvarBillingMutation = useMutation({
-    mutationFn: async ({ billingId, observacoes, pedagio }: { billingId: string; observacoes: string; pedagio: number }) => {
-      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, recalcular: true });
+    mutationFn: async ({ billingId, observacoes, pedagio, reembolso }: { billingId: string; observacoes: string; pedagio: number; reembolso?: number }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, receitas_os: reembolso ?? undefined, recalcular: true });
     },
     onSuccess: () => {
       refreshAfterModalAction();
@@ -576,6 +577,7 @@ export default function RelatorioFaturamentoPage() {
 
       setSelectedOs(os);
       setPedagioValue(String(billing.despesas_pedagio || so.pedagioEstimado || "0"));
+      setReembolsoValue(String(billing.receitas_os || 0));
       setObservacoesValue(billing.observacoes || "");
       setEditingFields(false);
       setOverrideKmChegada(so.km_chegada_origem != null ? String(so.km_chegada_origem) : String(billing.km_inicial || ""));
@@ -2069,6 +2071,8 @@ export default function RelatorioFaturamentoPage() {
           salvarBillingMutation={salvarBillingMutation}
           pedagioValue={pedagioValue}
           setPedagioValue={setPedagioValue}
+          reembolsoValue={reembolsoValue}
+          setReembolsoValue={setReembolsoValue}
           observacoesValue={observacoesValue}
           setObservacoesValue={setObservacoesValue}
           getBillingStatus={getBillingStatus}

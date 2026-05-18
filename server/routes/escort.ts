@@ -1789,7 +1789,7 @@ import type { Express } from "express";
       const {
         observacoes, despesas_pedagio, fat_acionamento, fat_km,
         km_inicial, km_final, horario_inicio, horario_termino,
-        despesas_outras, recalcular,
+        despesas_outras, receitas_os, recalcular,
       } = req.body;
 
       const updateData: any = {};
@@ -1802,6 +1802,7 @@ import type { Express } from "express";
       if (horario_inicio !== undefined) updateData.horario_inicio = horario_inicio;
       if (horario_termino !== undefined) updateData.horario_fim = horario_termino;
       if (despesas_outras !== undefined) updateData.despesas_outras = Number(despesas_outras) || 0;
+      if (receitas_os !== undefined) updateData.receitas_os = Number(receitas_os) || 0;
 
       if (recalcular && existing.contract_id) {
         const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
@@ -1812,6 +1813,7 @@ import type { Express } from "express";
           const hFim = horario_termino !== undefined ? horario_termino : existing.horario_fim;
           const pedagio = despesas_pedagio !== undefined ? Number(despesas_pedagio) : Number(existing.despesas_pedagio || 0);
           const despOutras = despesas_outras !== undefined ? Number(despesas_outras) : Number(existing.despesas_outras || 0);
+          const receitasOsCalc = receitas_os !== undefined ? Number(receitas_os) : Number(existing.receitas_os || 0);
           try {
             const resultado = calcularEscolta({
               km_inicial: kmI, km_final: Math.max(kmI, kmF), km_vazio: Number(existing.km_vazio || 0),
@@ -1821,7 +1823,7 @@ import type { Express } from "express";
               horario_agendado: existing.horario_agendado || undefined,
               despesas_pedagio: pedagio, despesas_combustivel: Number(existing.despesas_combustivel || 0),
               despesas_outras: despOutras,
-              receitas_os: Number(existing.receitas_os || 0), contrato,
+              receitas_os: receitasOsCalc, contrato,
             });
             Object.assign(updateData, {
               km_inicial: kmI, km_final: Math.max(kmI, kmF),
@@ -1838,6 +1840,7 @@ import type { Express } from "express";
               horas_trabalhadas: resultado.horas_trabalhadas,
               horario_inicio_considerado: resultado.horario_inicio_considerado,
               despesas_pedagio: pedagio,
+              receitas_os: receitasOsCalc,
               resultado_bruto: resultado.resultado?.bruto || 0,
               resultado_liquido: resultado.resultado?.liquido || 0,
               margem_percentual: resultado.resultado?.margem_pct || 0,

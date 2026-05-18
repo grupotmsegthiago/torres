@@ -87,6 +87,7 @@ export default function BoletimMedicaoPage() {
   const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number; minDate: string; maxDate: string } | null>(null);
   const [aprovarFaturarLoading, setAprovarFaturarLoading] = useState(false);
   const [pedagioValue, setPedagioValue] = useState("");
+  const [reembolsoValue, setReembolsoValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [editingFields, setEditingFields] = useState(false);
   const [overrideKmChegada, setOverrideKmChegada] = useState("");
@@ -262,12 +263,12 @@ export default function BoletimMedicaoPage() {
   });
 
   const salvarBillingMutation = useMutation({
-    mutationFn: async ({ billingId, observacoes, pedagio }: { billingId: string; observacoes: string; pedagio: number }) => {
-      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, recalcular: true });
+    mutationFn: async ({ billingId, observacoes, pedagio, reembolso }: { billingId: string; observacoes: string; pedagio: number; reembolso?: number }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, receitas_os: reembolso ?? undefined, recalcular: true });
     },
     onSuccess: () => {
       invalidateAllRelated();
-      toast({ title: "Salvo", description: "Observações e pedágio salvos com sucesso." });
+      toast({ title: "Salvo", description: "Valores recalculados e salvos." });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
@@ -293,6 +294,7 @@ export default function BoletimMedicaoPage() {
         const fb = fresh.billing;
         if (fb) {
           setPedagioValue(String(fb.despesas_pedagio || 0));
+          setReembolsoValue(String(fb.receitas_os || 0));
           setObservacoesValue(fb.observacoes || "");
         }
         return;
@@ -679,6 +681,7 @@ export default function BoletimMedicaoPage() {
                   if (match) {
                     setSelectedOs(match);
                     setPedagioValue(match.billing?.despesas_pedagio || (match as any).pedagioEstimado || "0");
+                    setReembolsoValue(String(match.billing?.receitas_os || 0));
                     setObservacoesValue(match.billing?.observacoes || "");
                   }
                 }
@@ -1194,7 +1197,7 @@ export default function BoletimMedicaoPage() {
                                       )}
                                       {canEdit && (
                                         <button
-                                          onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setObservacoesValue(b?.observacoes || ""); }}
+                                          onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setObservacoesValue(b?.observacoes || ""); }}
                                           className="p-1.5 rounded-lg border border-transparent transition-all hover:bg-amber-50 hover:border-amber-200"
                                           title="Abrir Boletim de Medição"
                                           data-testid={`button-editar-medicao-${os.id}`}
@@ -1203,7 +1206,7 @@ export default function BoletimMedicaoPage() {
                                         </button>
                                       )}
                                       <button
-                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setObservacoesValue(b?.observacoes || ""); }}
+                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setReembolsoValue(String(b?.receitas_os || 0)); setObservacoesValue(b?.observacoes || ""); }}
                                         className="p-1.5 rounded-lg hover:bg-neutral-100 border border-transparent hover:border-neutral-200 transition-all"
                                         data-testid={`button-view-os-${os.id}`}
                                       >
@@ -1567,13 +1570,13 @@ export default function BoletimMedicaoPage() {
           </DialogContent>
         </Dialog>
 
-        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} liberarFaturamentoMutation={liberarFaturamentoMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
+        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} liberarFaturamentoMutation={liberarFaturamentoMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} reembolsoValue={reembolsoValue} setReembolsoValue={setReembolsoValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
       </div>
     </AdminLayout>
   );
 }
 
-export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
+export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, reembolsoValue, setReembolsoValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
   const b = os.billing;
   const status = getBillingStatus(os);
   const isPendente = b?.status === "A_VERIFICAR";
@@ -1643,7 +1646,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const horaExtra = Number(b?.fat_hora_extra || 0) > 0 ? Number(b.fat_hora_extra) : horaExtraValorCalc;
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
-  const receitasOsVal = Number(b?.receitas_os || 0);
+  const receitasOsVal = reembolsoValue !== undefined && reembolsoValue !== "" ? Number(reembolsoValue) || 0 : Number(b?.receitas_os || 0);
   const adNoturno = Number(b?.fat_adicional_noturno || 0);
   const demaisCustos = Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0);
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOsVal + adNoturno + demaisCustos;
@@ -1891,7 +1894,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                   <div className="space-y-3 border-t border-neutral-100 pt-4">
                     <SectionTitle icon={<Pencil size={14} />} title="Ajustes" />
                     <div>
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio (R$)</label>
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio — Despesa (R$)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -1901,6 +1904,19 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                         placeholder="0,00"
                         data-testid="input-pedagio"
                       />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio — Reembolso Cliente (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
+                        value={reembolsoValue ?? ""}
+                        onChange={(e: any) => setReembolsoValue?.(e.target.value)}
+                        placeholder="0,00"
+                        data-testid="input-reembolso-cliente"
+                      />
+                      <p className="text-[10px] text-neutral-400 mt-1">Valor cobrado do cliente como reembolso de pedágio. Zere se for divergente da medição.</p>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Observações</label>
@@ -1914,7 +1930,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                       />
                     </div>
                     <button
-                      onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0 })}
+                      onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0, reembolso: reembolsoValue === "" || reembolsoValue === undefined ? undefined : Number(reembolsoValue) || 0 })}
                       disabled={salvarBillingMutation.isPending}
                       className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold uppercase text-xs tracking-wider py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                       data-testid="button-salvar-billing"
