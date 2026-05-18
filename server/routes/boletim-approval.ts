@@ -262,7 +262,11 @@ async function generateBoletimExcel(
     const fatKmExtra = n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100;
     const fatPedagio = n(b.despesas_pedagio);
     const adNoturno = n(b.fat_adicional_noturno);
-    const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + adNoturno);
+    const fatEstadia = n(b.fat_estadia);
+    const fatPernoite = n(b.fat_pernoite);
+    const fatOutras = n(b.despesas_outras);
+    const fatReembolso = n(b.receitas_os);
+    const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + adNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso);
     grandTotal += fatTotal;
 
     const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;
@@ -650,7 +654,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       if (billingIds.length > 0) {
         const { data: b } = await supabaseAdmin
           .from("escort_billings")
-          .select("id, service_order_id, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, fat_adicional_noturno, receitas_os, fat_total, km_total, km_franquia, km_excedente, horas_trabalhadas, horario_inicio, horario_fim, status")
+          .select("id, service_order_id, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, fat_adicional_noturno, fat_estadia, fat_pernoite, despesas_outras, receitas_os, fat_total, km_total, km_franquia, km_excedente, horas_trabalhadas, horario_inicio, horario_fim, status")
           .in("id", billingIds);
         billings = b || [];
       }
@@ -768,7 +772,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         let totalCalc = 0;
         const osDescParts: string[] = [];
         for (const b of (billingsDetail || [])) {
-          const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.fat_adicional_noturno || 0);
+          const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0);
           totalCalc += fat;
           const osRef = b.boletim_numero || b.os_number || `OS-${b.service_order_id}`;
           osDescParts.push(osRef);
