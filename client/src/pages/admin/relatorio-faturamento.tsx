@@ -1223,8 +1223,8 @@ export default function RelatorioFaturamentoPage() {
                     const blocked = !!activeApproval;
                     const blockedByPending = blocked && activeApproval.status === "PENDENTE";
                     const blockedByApproved = blocked && activeApproval.status === "APROVADO";
-                    const cls = rowsData.length === 0 ? "bg-gray-400 cursor-not-allowed" : blockedByApproved ? "bg-emerald-600 hover:bg-emerald-700" : blockedByPending ? "bg-gray-400 hover:bg-gray-500" : "bg-blue-600 hover:bg-blue-700";
-                    const label = blockedByApproved ? "Cliente aprovou" : blockedByPending ? "Aguardando cliente" : "Enviar para Cliente";
+                    const cls = rowsData.length === 0 ? "bg-gray-400 cursor-not-allowed" : blockedByApproved ? "bg-emerald-600 hover:bg-emerald-700" : blockedByPending ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700";
+                    const label = blockedByApproved ? "Reenviar (já aprovado)" : blockedByPending ? "Reenviar Boletim" : "Enviar para Cliente";
                     const tip = blocked ? `${blockedByApproved ? "Aprovado" : "Enviado"} em ${activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleString("pt-BR") : "\u2014"}${activeApproval.sent_by ? " por " + activeApproval.sent_by : ""}. Clique para forçar reenvio.` : "";
                     return (
                       <button
@@ -1243,7 +1243,7 @@ export default function RelatorioFaturamentoPage() {
                         title={tip}
                         data-testid="btn-enviar-cliente"
                       >
-                        {blockedByApproved ? <Check size={18} /> : blockedByPending ? <Clock size={18} /> : <Send size={18} />}
+                        {blockedByApproved ? <Check size={18} /> : blockedByPending ? <RefreshCw size={18} /> : <Send size={18} />}
                         {label}
                       </button>
                     );
