@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, CheckCircle2, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
+import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -1505,7 +1506,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               <div>
                 <FieldLabel>Telefone do Motorista</FieldLabel>
-                <Input value={form.escortedDriverPhone} onChange={(e) => setForm(prev => ({ ...prev, escortedDriverPhone: e.target.value }))} placeholder="(11) 99999-9999" className="text-sm" data-testid="input-os-driver-phone" />
+                <Input value={displayPhoneBR(form.escortedDriverPhone)} onChange={(e) => setForm(prev => ({ ...prev, escortedDriverPhone: e.target.value.replace(/\D/g, "").slice(0, 11) }))} placeholder="(11) 99999-9999" className="text-sm" data-testid="input-os-driver-phone" />
               </div>
               <div>
                 <FieldLabel>Placa do Veículo Escoltado</FieldLabel>

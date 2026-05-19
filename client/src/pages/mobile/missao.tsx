@@ -16,6 +16,7 @@ import {
   WifiOff, History, ChevronRight, Calendar, Clock, MessageSquare,
   CircleDollarSign, Receipt, RefreshCw, Plus,
 } from "lucide-react";
+import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 
 const MISSION_STEPS = [
   "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
@@ -1859,7 +1860,7 @@ export default function MobileMissaoPage() {
                   <p className="text-xs text-neutral-500">Placa: <span className="font-mono font-bold text-neutral-700">{mission.escortedVehiclePlate}</span></p>
                 )}
                 {mission.escortedDriverPhone && (
-                  <p className="text-xs text-neutral-500">{mission.escortedDriverPhone}</p>
+                  <p className="text-xs text-neutral-500">{displayPhoneBR(mission.escortedDriverPhone)}</p>
                 )}
               </div>
               {mission.escortedDriverPhone && (
@@ -2310,8 +2311,8 @@ export default function MobileMissaoPage() {
                 <input
                   type="tel"
                   inputMode="tel"
-                  value={driverPhone}
-                  onChange={(e) => setDriverPhone(e.target.value)}
+                  value={displayPhoneBR(driverPhone)}
+                  onChange={(e) => setDriverPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                   placeholder="(11) 99999-9999"
                   className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-medium text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400"
                   data-testid="input-driver-phone"
@@ -2420,7 +2421,7 @@ export default function MobileMissaoPage() {
                   )}
                   {mission.escortedDriverPhone && (
                     <div className="flex items-center gap-2">
-                      <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Telefone:</strong> {mission.escortedDriverPhone}</p>
+                      <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Telefone:</strong> {displayPhoneBR(mission.escortedDriverPhone)}</p>
                       <a
                         href={`https://wa.me/55${mission.escortedDriverPhone.replace(/\D/g, "")}`}
                         target="_blank"

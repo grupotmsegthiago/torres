@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
+import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -3051,7 +3052,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                   <p className="text-xs font-semibold text-neutral-700 mb-2">Contato</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div><Label className="text-xs">Nome</Label><Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" className="h-8" data-testid="input-gerenciadora-contact" /></div>
-                    <div><Label className="text-xs">Telefone</Label><Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
+                    <div><Label className="text-xs">Telefone</Label><Input value={displayPhoneBR(formData.contactPhone)} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value.replace(/\D/g, "").slice(0, 11) })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
                     <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>
                   </div>
                 </div>
@@ -6947,7 +6948,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <p className="text-[10px] text-neutral-400 font-bold uppercase">Escoltado</p>
                         {os.escortedDriverName && <p className="text-xs font-bold text-neutral-800">{os.escortedDriverName}</p>}
                         {os.escortedDriverPhone && (
-                          <a href={`tel:${os.escortedDriverPhone}`} className="text-xs text-blue-600 hover:underline">{os.escortedDriverPhone}</a>
+                          <a href={`tel:${os.escortedDriverPhone}`} className="text-xs text-blue-600 hover:underline">{displayPhoneBR(os.escortedDriverPhone)}</a>
                         )}
                         {os.escortedVehiclePlate && <p className="text-xs text-neutral-600 font-medium">Placa: {os.escortedVehiclePlate}</p>}
                       </div>

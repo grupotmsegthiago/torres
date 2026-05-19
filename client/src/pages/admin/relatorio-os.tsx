@@ -18,6 +18,7 @@ import { authFetch } from "@/lib/queryClient";
 import { useLocation, Link } from "wouter";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
+import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 
 interface ReportOS {
   id: number;
@@ -260,7 +261,7 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, i
               <InfoRow label="Cliente" value={os.clientName} />
               <InfoRow label="Contrato" value={lc?.contrato_nome} />
               <InfoRow label="Motorista" value={os.escortedDriverName} icon={User} />
-              <InfoRow label="Tel. Motorista" value={os.escortedDriverPhone} icon={Phone} />
+              <InfoRow label="Tel. Motorista" value={os.escortedDriverPhone ? displayPhoneBR(os.escortedDriverPhone) : null} icon={Phone} />
               <InfoRow label="Placa Escoltado" value={os.escortedVehiclePlate} icon={Truck} mono />
               <InfoRow label="Valor Estimado" value={os.estimatedValue ? fmtBRL(os.estimatedValue) : "—"} />
             </Card>

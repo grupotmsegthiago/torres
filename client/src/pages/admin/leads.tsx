@@ -20,6 +20,7 @@ import {
   ExternalLink, History, Award, Shield, Inbox, MailOpen, Reply,
   Play, Pause, Timer, Activity, AlertCircle
 } from "lucide-react";
+import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
   novo: { label: "Novo", color: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Plus },
@@ -1269,7 +1270,7 @@ function LeadDetail({ lead, setores, onUpdate, onDelete, onSendPresentation, onC
             {lead.telefone && (
               <div className="bg-neutral-50 rounded-lg p-3">
                 <span className="text-[9px] font-bold text-neutral-400 uppercase">Telefone</span>
-                <p className="text-sm font-bold text-neutral-900">{lead.telefone}</p>
+                <p className="text-sm font-bold text-neutral-900">{displayPhoneBR(lead.telefone) || lead.telefone}</p>
               </div>
             )}
             {lead.email && (

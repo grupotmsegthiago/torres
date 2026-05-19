@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
+import { normalizePhone, normalizeZip } from "../lib/normalize-contact";
 import cron from "node-cron";
 import fs from "fs";
 import path from "path";
@@ -975,7 +976,7 @@ async function autoProspectGoogle() {
         await supabaseAdmin.from("leads").insert({
           empresa: contact.empresa,
           email,
-          telefone: contact.phone || null,
+          telefone: normalizePhone(contact.phone),
           website: siteUrl,
           endereco: null,
           cidade: "São Paulo",
@@ -1313,6 +1314,8 @@ export function registerLeadRoutes(app: Express) {
         usuario: user?.name || "Sistema",
         detalhes: `Origem: ${body.origem || "manual"}`,
       }];
+      if ("telefone" in body) body.telefone = normalizePhone(body.telefone);
+      if ("cep" in body) body.cep = normalizeZip(body.cep);
       const { data, error } = await supabaseAdmin.from("leads").insert({
         ...body,
         responsavel: body.responsavel || user?.name,
@@ -1355,6 +1358,8 @@ export function registerLeadRoutes(app: Express) {
         delete body._nota;
       }
 
+      if ("telefone" in body) body.telefone = normalizePhone(body.telefone);
+      if ("cep" in body) body.cep = normalizeZip(body.cep);
       const { data, error } = await supabaseAdmin.from("leads").update({
         ...body,
         historico: hist,
@@ -1671,7 +1676,7 @@ export function registerLeadRoutes(app: Express) {
           empresa,
           email,
           contato_nome: contato || null,
-          telefone: telefone || null,
+          telefone: normalizePhone(telefone),
           setor: setor || null,
           cnpj: cnpj || null,
           cidade: cidade || null,
@@ -1752,8 +1757,8 @@ export function registerLeadRoutes(app: Express) {
         address: lead.endereco || null,
         city: lead.cidade || "São Paulo",
         state: lead.estado || "SP",
-        zip: lead.cep || null,
-        phone: lead.telefone || null,
+        zip: normalizeZip(lead.cep),
+        phone: normalizePhone(lead.telefone),
         email: lead.email || null,
         contact_person: lead.contato_nome || null,
         segment: lead.setor || null,

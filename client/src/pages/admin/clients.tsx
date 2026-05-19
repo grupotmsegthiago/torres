@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
+import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
@@ -310,7 +311,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     emailFinanceiro: (client as any)?.emailFinanceiro || (client as any)?.email_financeiro || "",
     emailContratual: (client as any)?.emailContratual || (client as any)?.email_contratual || "",
     emailMedicao: (client as any)?.emailMedicao || (client as any)?.email_medicao || "",
-    phone: client?.phone || "",
+    phone: displayPhoneBR(client?.phone || ""),
     contactPerson: (client as any)?.contactPerson || (client as any)?.contact_person || "",
     address: client?.address || "",
     addressNumber: (client as any)?.addressNumber || (client as any)?.address_number || "",
@@ -553,13 +554,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                 <Input
-                  value={form.zip}
+                  value={displayCepBR(form.zip)}
                   onChange={(e) => {
                     const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
                     setForm({ ...form, zip: digits });
                   }}
                   className="pl-9"
-                  placeholder="04571900"
+                  placeholder="04571-900"
                   data-testid="input-client-zip"
                 />
               </div>
@@ -938,7 +939,7 @@ function InfoRow({ label, value, icon, highlight, full }: { label: string; value
 
 function ServiceContractModal({ onClose, editing, client }: { onClose: () => void; editing: ServiceContract | null; client: Client }) {
     const { toast } = useToast();
-    const fullAddress = [client.address, client.city, client.state, client.zip].filter(Boolean).join(", ");
+    const fullAddress = [client.address, client.city, client.state, displayCepBR(client.zip)].filter(Boolean).join(", ");
     const oneYearLater = (() => {
       const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0];
     })();
@@ -950,7 +951,7 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
       contratante_endereco: editing?.contratante_endereco || fullAddress,
       contratante_representante: editing?.contratante_representante || client.contactPerson || "",
       contratante_email: editing?.contratante_email || client.email || "",
-      contratante_telefone: editing?.contratante_telefone || client.phone || "",
+      contratante_telefone: editing?.contratante_telefone || displayPhoneBR(client.phone || "") || "",
       vigencia_tipo: editing?.vigencia_tipo || "determinado",
       vigencia_inicio: editing?.vigencia_inicio?.split("T")[0] || new Date().toISOString().split("T")[0],
       vigencia_fim: editing?.vigencia_fim?.split("T")[0] || oneYearLater,
@@ -1549,7 +1550,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Motorista</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" placeholder="Nome do motorista" value={vForm.driverName} onChange={e => setVForm(p => ({ ...p, driverName: e.target.value }))} data-testid="input-vehicle-driver" /></div>
-                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Telefone Motorista</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" placeholder="(21) 99999-0000" value={vForm.driverPhone} onChange={e => setVForm(p => ({ ...p, driverPhone: e.target.value }))} /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Telefone Motorista</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" placeholder="(21) 99999-0000" value={displayPhoneBR(vForm.driverPhone)} onChange={e => setVForm(p => ({ ...p, driverPhone: e.target.value.replace(/\D/g, "").slice(0, 11) }))} /></div>
                 </div>
                 <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Observações</label><textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm" rows={2} value={vForm.notes} onChange={e => setVForm(p => ({ ...p, notes: e.target.value }))} /></div>
                 <button type="submit" disabled={saveVehicleMutation.isPending || !vForm.plate} className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors disabled:opacity-50" data-testid="button-save-client-vehicle">
@@ -1579,9 +1580,9 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                       <td className="px-4 py-3 font-mono font-black text-neutral-800 text-sm">{v.plate}</td>
                       <td className="px-4 py-3 text-xs font-bold text-neutral-600">{v.model ? `${v.brand || ""} ${v.model}`.trim() : "—"}{v.color ? ` · ${v.color}` : ""}</td>
                       <td className="px-4 py-3 text-xs font-bold text-neutral-700">{v.driverName || "—"}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-neutral-500">{v.driverPhone || "—"}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-neutral-500">{v.driverPhone ? displayPhoneBR(v.driverPhone) : "—"}</td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => { setEditingVehicle(v); setVForm({ plate: v.plate, model: v.model || "", brand: v.brand || "", color: v.color || "", driverName: v.driverName || "", driverPhone: v.driverPhone || "", notes: v.notes || "" }); setShowVehicleForm(true); }} className="p-1.5 rounded hover:bg-neutral-100 mr-1" data-testid={`button-edit-vehicle-${v.id}`}><Pencil size={14} className="text-neutral-500" /></button>
+                        <button onClick={() => { setEditingVehicle(v); setVForm({ plate: v.plate, model: v.model || "", brand: v.brand || "", color: v.color || "", driverName: v.driverName || "", driverPhone: (v.driverPhone || "").replace(/\D/g, ""), notes: v.notes || "" }); setShowVehicleForm(true); }} className="p-1.5 rounded hover:bg-neutral-100 mr-1" data-testid={`button-edit-vehicle-${v.id}`}><Pencil size={14} className="text-neutral-500" /></button>
                         {canManage && <button onClick={() => { if (confirm("Remover veículo?")) deleteVehicleMutation.mutate(v.id); }} className="p-1.5 rounded hover:bg-red-50" data-testid={`button-delete-vehicle-${v.id}`}><Trash2 size={14} className="text-red-400" /></button>}
                       </td>
                     </tr>
@@ -1915,12 +1916,12 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             bairro: (client as any).bairro || "",
             cidade: (client as any).city || "",
             estado: (client as any).state || "",
-            cep: (client as any).zip || "",
+            cep: displayCepBR((client as any).zip || ""),
             inscricao_estadual: (client as any).inscricaoEstadual || "",
             inscricao_municipal: (client as any).inscricaoMunicipal || "",
             contato: (client as any).contactPerson || "",
             email: (client as any).email || (client as any).emailContratual || "",
-            telefone: (client as any).phone || "",
+            telefone: displayPhoneBR((client as any).phone || ""),
             valor: priceContracts.find(p => p.client_id === client.id)?.valor_diaria
               ? `${Number(priceContracts.find(p => p.client_id === client.id)!.valor_diaria).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (diária — conforme tabela vigente)`
               : "",
@@ -2666,7 +2667,7 @@ export default function ClientsPage() {
                       </div>
                     </td>
                     <td className="p-3 text-neutral-600">{c.cnpj || c.cpf || "-"}</td>
-                    <td className="p-3 text-neutral-600">{c.phone || "-"}</td>
+                    <td className="p-3 text-neutral-600">{displayPhoneBR(c.phone) || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.city || "-"}</td>
                     <td className="p-3 text-neutral-600 text-xs">
                       {(c as any).billingCycle || (c as any).billing_cycle ? (

@@ -27,6 +27,7 @@ import {
   type ClientForward, type InsertClientForward,
 } from "@shared/schema";
 import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables, enqueueWrite, applyViaDirectSql } from "./pg-fallback";
+import { normalizeContactFields, normalizePhone } from "./lib/normalize-contact";
 import pg from "pg";
 
 let _directPool: pg.Pool | null = null;
@@ -478,12 +479,14 @@ export class DatabaseStorage implements IStorage {
 
   async createClient(client: InsertClient): Promise<Client> {
     memInvalidate("clients");
-    return resilientInsert<Client>("clients", toSnakeObj(client as any));
+    const normalized = normalizeContactFields(client as any, { phones: ["phone"], zips: ["zip"] });
+    return resilientInsert<Client>("clients", toSnakeObj(normalized));
   }
 
   async updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined> {
     memInvalidate("clients");
-    return resilientUpdate<Client>("clients", toSnakeObj(client as any), { id });
+    const normalized = normalizeContactFields(client as any, { phones: ["phone"], zips: ["zip"] });
+    return resilientUpdate<Client>("clients", toSnakeObj(normalized), { id });
   }
 
   async deleteClient(id: number): Promise<void> {
@@ -508,11 +511,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle> {
-    return resilientInsert<ClientVehicle>("client_vehicles", toSnakeObj(v as any));
+    const normalized = normalizeContactFields(v as any, { phones: ["driverPhone"] });
+    return resilientInsert<ClientVehicle>("client_vehicles", toSnakeObj(normalized));
   }
 
   async updateClientVehicle(id: number, v: Partial<InsertClientVehicle>): Promise<ClientVehicle | undefined> {
-    return resilientUpdate<ClientVehicle>("client_vehicles", toSnakeObj(v as any), { id });
+    const normalized = normalizeContactFields(v as any, { phones: ["driverPhone"] });
+    return resilientUpdate<ClientVehicle>("client_vehicles", toSnakeObj(normalized), { id });
   }
 
   async deleteClientVehicle(id: number): Promise<void> {
@@ -535,12 +540,14 @@ export class DatabaseStorage implements IStorage {
 
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
     memInvalidate("employees");
-    return resilientInsert<Employee>("employees", toSnakeObj(employee as any));
+    const normalized = normalizeContactFields(employee as any, { phones: ["phone"], zips: ["zip"] });
+    return resilientInsert<Employee>("employees", toSnakeObj(normalized));
   }
 
   async updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
     memInvalidate("employees");
-    return resilientUpdate<Employee>("employees", toSnakeObj(employee as any), { id });
+    const normalized = normalizeContactFields(employee as any, { phones: ["phone"], zips: ["zip"] });
+    return resilientUpdate<Employee>("employees", toSnakeObj(normalized), { id });
   }
 
   async deleteEmployee(id: number): Promise<void> {
@@ -588,13 +595,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
-    const snake = toSnakeObj(order as any);
+    const normalized = normalizeContactFields(order as any, { phones: ["escortedDriverPhone"] });
+    const snake = toSnakeObj(normalized);
+    if (Array.isArray(snake.extra_drivers)) {
+      snake.extra_drivers = snake.extra_drivers.map((d: any) => d && typeof d === "object" ? { ...d, phone: normalizePhone(d.phone) } : d);
+    }
     console.log(`[DEBUG-STORAGE] createServiceOrder escorted:`, JSON.stringify({ dn: snake.escorted_driver_name, dp: snake.escorted_driver_phone, vp: snake.escorted_vehicle_plate }));
     return resilientInsert<ServiceOrder>("service_orders", snake);
   }
 
   async updateServiceOrder(id: number, order: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined> {
-    const snake = toSnakeObj(order as any);
+    const normalized = normalizeContactFields(order as any, { phones: ["escortedDriverPhone"] });
+    const snake = toSnakeObj(normalized);
+    if (Array.isArray(snake.extra_drivers)) {
+      snake.extra_drivers = snake.extra_drivers.map((d: any) => d && typeof d === "object" ? { ...d, phone: normalizePhone(d.phone) } : d);
+    }
     if (snake.escorted_driver_name !== undefined || snake.escorted_driver_phone !== undefined) {
       console.log(`[DEBUG-STORAGE] updateServiceOrder #${id} escorted:`, JSON.stringify({ dn: snake.escorted_driver_name, dp: snake.escorted_driver_phone, vp: snake.escorted_vehicle_plate }));
     }
@@ -831,11 +846,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora> {
-    return resilientInsert<Gerenciadora>("gerenciadoras", toSnakeObj(g as any));
+    const normalized = normalizeContactFields(g as any, { phones: ["contactPhone"] });
+    return resilientInsert<Gerenciadora>("gerenciadoras", toSnakeObj(normalized));
   }
 
   async updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined> {
-    return resilientUpdate<Gerenciadora>("gerenciadoras", toSnakeObj(g as any), { id });
+    const normalized = normalizeContactFields(g as any, { phones: ["contactPhone"] });
+    return resilientUpdate<Gerenciadora>("gerenciadoras", toSnakeObj(normalized), { id });
   }
 
   async deleteGerenciadora(id: number): Promise<void> {
