@@ -1674,7 +1674,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const pernoiteVal = liveNum(pernoiteValue, Number(b?.fat_pernoite || 0));
   const despOutrasVal = liveNum(demaisCustosValue, Number(b?.despesas_outras || 0));
   const demaisCustos = despOutrasVal + estadiaVal + pernoiteVal;
-  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOsVal + adNoturno + demaisCustos;
+  const resultado = acionamento + horaExtra + kmExtraVal + receitasOsVal + adNoturno + demaisCustos;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
   const startTimeRaw = (() => {
@@ -1903,9 +1903,8 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
                   {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
-                  {pedagio > 0 && <FieldRow label="Pedágio (Despesa)" value={fmt(pedagio)} bold />}
                   {receitasOsVal > 0 && <FieldRow label="Pedágio (Reembolso Cliente)" value={fmt(receitasOsVal)} bold />}
-                  {pedagio === 0 && receitasOsVal === 0 && <FieldRow label="Valor do Pedágio" value={fmt(0)} bold />}
+                  {receitasOsVal === 0 && <FieldRow label="Valor do Pedágio" value={fmt(0)} bold />}
                   {demaisCustos > 0 && <FieldRow label="Demais Custos" value={fmt(demaisCustos)} bold />}
                   {adNoturno > 0 && <FieldRow label="Adicional Noturno" value={fmt(adNoturno)} accent="violet" bold />}
                 </div>
@@ -1926,7 +1925,6 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                       <NumInput label="Adicional Noturno (R$)" value={adNoturnoValue} onChange={setAdNoturnoValue} testId="input-ad-noturno" />
                       <NumInput label="Estadia (R$)" value={estadiaValue} onChange={setEstadiaValue} testId="input-estadia" />
                       <NumInput label="Pernoite (R$)" value={pernoiteValue} onChange={setPernoiteValue} testId="input-pernoite" />
-                      <NumInput label="Pedágio — Despesa (R$)" value={pedagioValue} onChange={setPedagioValue} testId="input-pedagio" />
                       <div className="col-span-2">
                         <NumInput label="Demais Custos (R$)" value={demaisCustosValue} onChange={setDemaisCustosValue} testId="input-demais-custos" />
                       </div>
