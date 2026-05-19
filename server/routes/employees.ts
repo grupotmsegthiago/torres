@@ -44,6 +44,52 @@ import { syncEmployeeStatusToRhid } from "../control-id";
     res.json({ matricula });
   });
 
+  app.get("/api/cep/:cep", requireAuth, async (req, res) => {
+    const cep = String(req.params.cep || "").replace(/\D/g, "");
+    if (cep.length !== 8) return res.status(400).json({ message: "CEP inválido" });
+    const token = process.env.BRASILAPI_TOKEN;
+    try {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`, { headers });
+      if (r.ok) {
+        const d = await r.json();
+        return res.json({
+          cep: d.cep,
+          address: d.street || "",
+          bairro: d.neighborhood || "",
+          city: d.city || "",
+          state: d.state || "",
+          lat: d.location?.coordinates?.latitude ? Number(d.location.coordinates.latitude) : null,
+          lng: d.location?.coordinates?.longitude ? Number(d.location.coordinates.longitude) : null,
+          source: "brasilapi",
+        });
+      }
+    } catch (e: any) {
+      console.warn("[cep] brasilapi falhou, fallback viacep:", e.message);
+    }
+    try {
+      const r2 = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      if (r2.ok) {
+        const d: any = await r2.json();
+        if (d.erro) return res.status(404).json({ message: "CEP não encontrado" });
+        return res.json({
+          cep: d.cep,
+          address: d.logradouro || "",
+          bairro: d.bairro || "",
+          city: d.localidade || "",
+          state: d.uf || "",
+          lat: null,
+          lng: null,
+          source: "viacep",
+        });
+      }
+    } catch (e: any) {
+      console.warn("[cep] viacep falhou:", e.message);
+    }
+    return res.status(502).json({ message: "Não foi possível consultar o CEP" });
+  });
+
   app.get("/api/employees/:id", requireAuth, async (req, res) => {
     const empId = Number(req.params.id);
     if (isNaN(empId)) return res.status(400).json({ message: "ID inválido" });

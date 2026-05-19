@@ -815,40 +815,12 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     }
     setCepLoading(true);
     try {
-      let data: any = null;
-      try {
-        const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`);
-        if (r.ok) {
-          const j = await r.json();
-          data = {
-            address: j.street || "",
-            bairro: j.neighborhood || "",
-            city: j.city || "",
-            state: j.state || "",
-            lat: j.location?.coordinates?.latitude ? Number(j.location.coordinates.latitude) : null,
-            lng: j.location?.coordinates?.longitude ? Number(j.location.coordinates.longitude) : null,
-          };
-        }
-      } catch {}
-      if (!data) {
-        const r2 = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
-        if (r2.ok) {
-          const j2 = await r2.json();
-          if (!j2.erro) {
-            data = {
-              address: j2.logradouro || "",
-              bairro: j2.bairro || "",
-              city: j2.localidade || "",
-              state: j2.uf || "",
-              lat: null, lng: null,
-            };
-          }
-        }
-      }
-      if (!data) {
+      const r = await fetch(`/api/cep/${clean}`, { credentials: "include" });
+      if (!r.ok) {
         toast({ title: "CEP não encontrado", variant: "destructive" });
         return;
       }
+      const data = await r.json();
       setForm((prev) => ({
         ...prev,
         address: data.address || prev.address,
@@ -1496,6 +1468,33 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               <Input type="date" value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
             </div>
           </div>
+          <div className="mt-3">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Foto / PDF da CNH</label>
+            <input
+              ref={cnhFileRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => handleDocAttachment("CNH", e)}
+              disabled={docAttachments["CNH"]?.scanning}
+              data-testid="input-file-cnh"
+            />
+            <div
+              className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all text-center ${
+                docAttachments["CNH"]?.fileData ? "border-green-300 bg-green-50" : "border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+              }`}
+              onClick={() => !docAttachments["CNH"]?.scanning && cnhFileRef.current?.click()}
+              data-testid="upload-doc-cnh-block"
+            >
+              {docAttachments["CNH"]?.scanning ? (
+                <div className="flex items-center justify-center gap-2 py-1"><Loader2 className="w-4 h-4 animate-spin" /><span className="text-xs text-neutral-500">Processando OCR...</span></div>
+              ) : docAttachments["CNH"]?.fileData ? (
+                <div className="flex items-center justify-center gap-2 py-1"><CheckCircle2 className="w-4 h-4 text-green-500" /><span className="text-xs font-medium text-green-700 truncate">{docAttachments["CNH"].fileName}</span></div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 py-1"><Car className="w-4 h-4 text-neutral-400" /><span className="text-xs text-neutral-600">Anexar foto ou PDF da CNH {!employee && "(OCR auto-preenche os campos)"}</span></div>
+              )}
+            </div>
+          </div>
         </fieldset>
 
         <fieldset className="border border-neutral-200 rounded-lg p-4">
@@ -1508,6 +1507,33 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
               <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Foto / PDF da CNV</label>
+            <input
+              ref={cnvFileRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => handleDocAttachment("CNV", e)}
+              disabled={docAttachments["CNV"]?.scanning}
+              data-testid="input-file-cnv"
+            />
+            <div
+              className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all text-center ${
+                docAttachments["CNV"]?.fileData ? "border-green-300 bg-green-50" : "border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+              }`}
+              onClick={() => !docAttachments["CNV"]?.scanning && cnvFileRef.current?.click()}
+              data-testid="upload-doc-cnv-block"
+            >
+              {docAttachments["CNV"]?.scanning ? (
+                <div className="flex items-center justify-center gap-2 py-1"><Loader2 className="w-4 h-4 animate-spin" /><span className="text-xs text-neutral-500">Processando OCR...</span></div>
+              ) : docAttachments["CNV"]?.fileData ? (
+                <div className="flex items-center justify-center gap-2 py-1"><CheckCircle2 className="w-4 h-4 text-green-500" /><span className="text-xs font-medium text-green-700 truncate">{docAttachments["CNV"].fileName}</span></div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 py-1"><ShieldCheck className="w-4 h-4 text-neutral-400" /><span className="text-xs text-neutral-600">Anexar foto ou PDF da CNV {!employee && "(OCR auto-preenche os campos)"}</span></div>
+              )}
             </div>
           </div>
         </fieldset>
