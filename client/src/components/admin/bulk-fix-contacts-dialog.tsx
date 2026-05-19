@@ -24,8 +24,8 @@ export interface BulkFixContactsDialogProps {
   records: ContactRecord[];
   /** Field name in the record for the phone (digit-only stored). */
   phoneField: string;
-  /** Field name in the record for the zip (digit-only stored). */
-  zipField: string;
+  /** Field name in the record for the zip (digit-only stored). Omit when entity has no CEP. */
+  zipField?: string;
   /** Field name for the human-readable label (e.g. "name"). */
   labelField: string;
   /** PATCH URL prefix — final URL will be `${endpointPrefix}/${id}`. */
@@ -54,7 +54,7 @@ export function BulkFixContactsDialog({
   const [savingAll, setSavingAll] = useState(false);
 
   const incomplete = useMemo(
-    () => records.filter(r => getContactIssues(r, { phones: [phoneField], zips: [zipField] }).length > 0),
+    () => records.filter(r => getContactIssues(r, { phones: [phoneField], zips: zipField ? [zipField] : [] }).length > 0),
     [records, phoneField, zipField],
   );
 
@@ -65,16 +65,18 @@ export function BulkFixContactsDialog({
         id: r.id,
         name: String(r[labelField] || `#${r.id}`),
         phone: r[phoneField] ? formatPhoneBR(String(r[phoneField])) : "",
-        zip: r[zipField] ? formatCepBR(String(r[zipField])) : "",
+        zip: zipField && r[zipField] ? formatCepBR(String(r[zipField])) : "",
         status: "pending",
       })),
     );
   }, [open, incomplete, labelField, phoneField, zipField]);
 
   const validateRow = (row: RowState): string | null => {
+    const sample: Record<string, string> = { [phoneField]: row.phone.replace(/\D/g, "") };
+    if (zipField) sample[zipField] = row.zip.replace(/\D/g, "");
     const issues = validateContactFields(
-      { [phoneField]: row.phone.replace(/\D/g, ""), [zipField]: row.zip.replace(/\D/g, "") },
-      { phones: [phoneField], zips: [zipField] },
+      sample,
+      { phones: [phoneField], zips: zipField ? [zipField] : [] },
     );
     return issues.length ? issues[0].message : null;
   };
@@ -108,11 +110,13 @@ export function BulkFixContactsDialog({
       setRows([...next]);
       try {
         const phoneDigits = next[i].phone.replace(/\D/g, "");
-        const zipDigits = next[i].zip.replace(/\D/g, "");
         const payload: Record<string, string | null> = {
           [phoneField]: phoneDigits || null,
-          [zipField]: zipDigits || null,
         };
+        if (zipField) {
+          const zipDigits = next[i].zip.replace(/\D/g, "");
+          payload[zipField] = zipDigits || null;
+        }
         await apiRequest("PATCH", `${endpointPrefix}/${next[i].id}`, payload);
         next[i] = { ...next[i], status: "ok" };
         ok++;
@@ -152,13 +156,17 @@ export function BulkFixContactsDialog({
             {title}
           </DialogTitle>
           <DialogDescription>
-            Edite telefone e CEP em linha e salve tudo de uma vez. Telefone aceita 10 (fixo) ou 11 (celular) dígitos; CEP aceita 8 dígitos. Deixe em branco para limpar o campo.
+            {zipField
+              ? "Edite telefone e CEP em linha e salve tudo de uma vez. Telefone aceita 10 (fixo) ou 11 (celular) dígitos; CEP aceita 8 dígitos. Deixe em branco para limpar o campo."
+              : "Edite o telefone em linha e salve tudo de uma vez. Telefone aceita 10 (fixo) ou 11 (celular) dígitos. Deixe em branco para limpar o campo."}
           </DialogDescription>
         </DialogHeader>
 
         {rows.length === 0 ? (
           <div className="p-8 text-center text-neutral-400 text-sm">
-            Nenhum {entityLabel} com telefone ou CEP incompleto.
+            {zipField
+              ? `Nenhum ${entityLabel} com telefone ou CEP incompleto.`
+              : `Nenhum ${entityLabel} com telefone incompleto.`}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto border border-neutral-200 rounded-md">
@@ -167,15 +175,19 @@ export function BulkFixContactsDialog({
                 <tr>
                   <th className="text-left px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Nome</th>
                   <th className="text-left px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider w-44">Telefone</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider w-36">CEP</th>
+                  {zipField && (
+                    <th className="text-left px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider w-36">CEP</th>
+                  )}
                   <th className="text-center px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider w-12">St</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, idx) => {
+                  const sample: Record<string, string> = { [phoneField]: row.phone.replace(/\D/g, "") };
+                  if (zipField) sample[zipField] = row.zip.replace(/\D/g, "");
                   const originalIssues = getContactIssues(
-                    { [phoneField]: row.phone.replace(/\D/g, ""), [zipField]: row.zip.replace(/\D/g, "") },
-                    { phones: [phoneField], zips: [zipField] },
+                    sample,
+                    { phones: [phoneField], zips: zipField ? [zipField] : [] },
                   );
                   const phoneBad = originalIssues.some(i => i.kind !== "zip_invalid");
                   const zipBad = originalIssues.some(i => i.kind === "zip_invalid");
@@ -207,20 +219,22 @@ export function BulkFixContactsDialog({
                           data-testid={`input-bulk-fix-phone-${row.id}`}
                         />
                       </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          value={row.zip}
-                          disabled={savingAll || row.status === "ok"}
-                          onChange={e => {
-                            const masked = formatCepBR(e.target.value);
-                            setRows(prev => prev.map((r, i) => i === idx ? { ...r, zip: masked, status: "pending", error: undefined } : r));
-                          }}
-                          placeholder="01310-100"
-                          className={`w-full px-2 py-1.5 text-xs font-mono border rounded ${zipBad ? "border-red-300 bg-red-50/50" : "border-neutral-200"}`}
-                          data-testid={`input-bulk-fix-zip-${row.id}`}
-                        />
-                      </td>
+                      {zipField && (
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={row.zip}
+                            disabled={savingAll || row.status === "ok"}
+                            onChange={e => {
+                              const masked = formatCepBR(e.target.value);
+                              setRows(prev => prev.map((r, i) => i === idx ? { ...r, zip: masked, status: "pending", error: undefined } : r));
+                            }}
+                            placeholder="01310-100"
+                            className={`w-full px-2 py-1.5 text-xs font-mono border rounded ${zipBad ? "border-red-300 bg-red-50/50" : "border-neutral-200"}`}
+                            data-testid={`input-bulk-fix-zip-${row.id}`}
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-center">
                         {row.status === "saving" && <Loader2 className="w-4 h-4 animate-spin text-neutral-400 mx-auto" />}
                         {row.status === "ok" && <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" data-testid={`status-ok-${row.id}`} />}

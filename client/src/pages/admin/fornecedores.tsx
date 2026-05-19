@@ -12,6 +12,8 @@ import {
   MapPin, Briefcase, Users, BadgeCheck, AlertTriangle, Tag,
 } from "lucide-react";
 import { CategoryManagerModal, type FinancialCategory } from "@/components/admin/CategoryManagerModal";
+import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
+import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 
 interface Fornecedor {
   id: number;
@@ -20,6 +22,10 @@ interface Fornecedor {
   categoria: string | null;
   email: string | null;
   telefone: string | null;
+  cep: string | null;
+  endereco: string | null;
+  cidade: string | null;
+  uf: string | null;
   chave_pix: string | null;
   banco: string | null;
   agencia: string | null;
@@ -29,6 +35,7 @@ interface Fornecedor {
   ativo: boolean;
   created_at?: string;
   updated_at?: string;
+  [key: string]: unknown;
 }
 
 
@@ -38,6 +45,8 @@ export default function FornecedoresPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<Fornecedor | null>(null);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [showBulkFix, setShowBulkFix] = useState(false);
 
   const { data: fornecedores = [], isLoading } = useQuery<Fornecedor[]>({
     queryKey: ["/api/fornecedores", "all"],
@@ -69,8 +78,16 @@ export default function FornecedoresPage() {
         (f.email || "").toLowerCase().includes(t)
       );
     }
+    if (onlyIncomplete) {
+      list = list.filter(f => getContactIssues(f, { phones: ["telefone"], zips: ["cep"] }).length > 0);
+    }
     return list;
-  }, [fornecedores, search, showInactive]);
+  }, [fornecedores, search, showInactive, onlyIncomplete]);
+
+  const incompleteCount = useMemo(
+    () => fornecedores.filter(f => getContactIssues(f, { phones: ["telefone"], zips: ["cep"] }).length > 0).length,
+    [fornecedores],
+  );
 
   const handleDelete = (id: number, nome: string) => {
     if (!confirm(`Inativar fornecedor "${nome}"? Lançamentos existentes serão mantidos.`)) return;
@@ -108,6 +125,28 @@ export default function FornecedoresPage() {
               <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} data-testid="checkbox-inactive" />
               Mostrar inativos
             </label>
+            <button
+              type="button"
+              data-active={onlyIncomplete}
+              onClick={() => setOnlyIncomplete(v => !v)}
+              className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200 uppercase whitespace-nowrap"
+              data-testid="toggle-only-incomplete-fornecedores"
+              title="Mostrar apenas fornecedores com telefone ou CEP incompletos"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
+            </button>
+            {incompleteCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowBulkFix(true)}
+                className="inline-flex items-center gap-1 text-xs font-black uppercase px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700 whitespace-nowrap"
+                data-testid="button-bulk-fix-fornecedores"
+                title="Corrigir telefone/CEP de todos os fornecedores incompletos"
+              >
+                Corrigir incompletos
+              </button>
+            )}
             <span className="text-xs font-black uppercase text-neutral-500" data-testid="text-count">{filtered.length} fornecedor(es)</span>
           </div>
         </Card>
@@ -131,10 +170,27 @@ export default function FornecedoresPage() {
                   <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={7} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm" data-testid="text-empty">Nenhum fornecedor encontrado</td></tr>
-                ) : filtered.map(f => (
+                ) : filtered.map(f => {
+                  const contactIssues = getContactIssues(f, { phones: ["telefone"], zips: ["cep"] });
+                  const hasPhoneIssue = contactIssues.some(i => i.kind !== "zip_invalid");
+                  const hasZipIssue = contactIssues.some(i => i.kind === "zip_invalid");
+                  const badgeLabel = hasPhoneIssue && hasZipIssue ? "TEL/CEP" : hasZipIssue ? "CEP" : "TEL";
+                  return (
                   <tr key={f.id} className={`hover:bg-neutral-50 ${!f.ativo ? "opacity-50" : ""}`} data-testid={`row-fornecedor-${f.id}`}>
                     <td className="px-4 py-3">
-                      <span className="font-bold text-sm text-neutral-800 uppercase">{f.nome}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-neutral-800 uppercase">{f.nome}</span>
+                        {contactIssues.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200"
+                            title={summarizeContactIssues(contactIssues)}
+                            data-testid={`badge-contact-issue-fornecedor-${f.id}`}
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            {badgeLabel}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-mono text-neutral-700">{f.cnpj_cpf || "—"}</span>
@@ -178,7 +234,8 @@ export default function FornecedoresPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -190,6 +247,19 @@ export default function FornecedoresPage() {
             onClose={() => { setIsFormOpen(false); setEditing(null); }}
           />
         )}
+
+        <BulkFixContactsDialog
+          open={showBulkFix}
+          onOpenChange={setShowBulkFix}
+          records={fornecedores}
+          phoneField="telefone"
+          zipField="cep"
+          labelField="nome"
+          endpointPrefix="/api/fornecedores"
+          invalidateKeys={[["/api/fornecedores"]]}
+          title="Corrigir telefone/CEP de fornecedores"
+          entityLabel="fornecedor"
+        />
       </div>
     </AdminLayout>
   );
@@ -234,6 +304,10 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
   const [categoria, setCategoria] = useState(editing?.categoria || "");
   const [email, setEmail] = useState(editing?.email || "");
   const [telefone, setTelefone] = useState(editing?.telefone || "");
+  const [cep, setCep] = useState(editing?.cep || "");
+  const [endereco, setEndereco] = useState(editing?.endereco || "");
+  const [cidade, setCidade] = useState(editing?.cidade || "");
+  const [uf, setUf] = useState(editing?.uf || "");
   const [chavePix, setChavePix] = useState(editing?.chave_pix || "");
   const [banco, setBanco] = useState(editing?.banco || "");
   const [agencia, setAgencia] = useState(editing?.agencia || "");
@@ -277,6 +351,13 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
       if (!nome.trim()) setNome(data.razao_social);
       if (!email.trim() && data.email) setEmail(data.email);
       if (!telefone.trim() && data.telefone) setTelefone(data.telefone);
+      if (!cep.trim() && data.cep) setCep(data.cep);
+      if (!endereco.trim()) {
+        const addr = [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(", ");
+        if (addr) setEndereco(addr);
+      }
+      if (!cidade.trim() && data.municipio) setCidade(data.municipio);
+      if (!uf.trim() && data.uf) setUf(data.uf);
       toast({ title: "Dados preenchidos!", description: `${data.razao_social} — ${data.situacao || ""}` });
     } catch (e: any) {
       toast({ title: "Erro ao consultar CNPJ", description: e.message, variant: "destructive" });
@@ -290,17 +371,16 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
     setNome(cnpjData.razao_social);
     if (cnpjData.email) setEmail(cnpjData.email);
     if (cnpjData.telefone) setTelefone(cnpjData.telefone);
-    const addr = [
-      cnpjData.logradouro, cnpjData.numero,
-      cnpjData.complemento, cnpjData.bairro,
-      cnpjData.municipio && cnpjData.uf ? `${cnpjData.municipio}/${cnpjData.uf}` : cnpjData.municipio,
-      cnpjData.cep ? `CEP ${cnpjData.cep}` : null,
-    ].filter(Boolean).join(", ");
+    if (cnpjData.cep) setCep(cnpjData.cep);
+    const addr = [cnpjData.logradouro, cnpjData.numero, cnpjData.complemento, cnpjData.bairro]
+      .filter(Boolean).join(", ");
+    if (addr) setEndereco(addr);
+    if (cnpjData.municipio) setCidade(cnpjData.municipio);
+    if (cnpjData.uf) setUf(cnpjData.uf);
     const obs = [
       cnpjData.atividade ? `Atividade: ${cnpjData.atividade}` : null,
       cnpjData.natureza_juridica ? `Natureza: ${cnpjData.natureza_juridica}` : null,
       cnpjData.abertura ? `Abertura: ${cnpjData.abertura}` : null,
-      addr ? `Endereço: ${addr}` : null,
     ].filter(Boolean).join("\n");
     setObservacoes(obs);
     toast({ title: "Todos os campos aplicados!" });
@@ -309,7 +389,9 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = {
-        nome, cnpj_cpf: cnpjCpf, categoria, email, telefone, chave_pix: chavePix,
+        nome, cnpj_cpf: cnpjCpf, categoria, email, telefone,
+        cep, endereco, cidade, uf,
+        chave_pix: chavePix,
         banco, agencia, conta, tipo_conta: tipoConta, observacoes, ativo,
       };
       return isEdit
@@ -503,7 +585,23 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
             </div>
             <div className="md:col-span-2">
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Phone size={11} /> Telefone</label>
-              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={telefone} onChange={e => setTelefone(e.target.value)} data-testid="input-telefone" />
+              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="(11) 91234-5678" data-testid="input-telefone" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><MapPin size={11} /> CEP</label>
+              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white" value={cep} onChange={e => setCep(e.target.value)} placeholder="01310-100" data-testid="input-cep" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cidade</label>
+              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={cidade} onChange={e => setCidade(e.target.value)} data-testid="input-cidade" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Endereço</label>
+              <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" value={endereco} onChange={e => setEndereco(e.target.value)} placeholder="Rua, número, complemento, bairro" data-testid="input-endereco" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">UF</label>
+              <input type="text" maxLength={2} className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm uppercase font-bold bg-white" value={uf} onChange={e => setUf(e.target.value.toUpperCase().slice(0, 2))} placeholder="SP" data-testid="input-uf" />
             </div>
           </div>
 
