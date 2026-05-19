@@ -1927,7 +1927,6 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                       <NumInput label="Estadia (R$)" value={estadiaValue} onChange={setEstadiaValue} testId="input-estadia" />
                       <NumInput label="Pernoite (R$)" value={pernoiteValue} onChange={setPernoiteValue} testId="input-pernoite" />
                       <NumInput label="Pedágio — Despesa (R$)" value={pedagioValue} onChange={setPedagioValue} testId="input-pedagio" />
-                      <NumInput label="Reembolso Cliente (R$)" value={reembolsoValue} onChange={setReembolsoValue} testId="input-reembolso-cliente" />
                       <div className="col-span-2">
                         <NumInput label="Demais Custos (R$)" value={demaisCustosValue} onChange={setDemaisCustosValue} testId="input-demais-custos" />
                       </div>
