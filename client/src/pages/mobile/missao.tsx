@@ -509,8 +509,6 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   isReadOnly?: boolean;
 }) {
   const { toast } = useToast();
-  const [nearOrigin, setNearOrigin] = useState(false);
-  const [distanceInfo, setDistanceInfo] = useState<string | null>(null);
   const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
   const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -594,74 +592,12 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
 
   const isAtDestination = currentStep === "chegada_destino";
   const isGoingToOrigin = currentStep === "em_transito_origem";
-  const targetLat = isGoingToOrigin ? mission.originLat : mission.destinationLat;
-  const targetLng = isGoingToOrigin ? mission.originLng : mission.destinationLng;
-  const targetLabel = isGoingToOrigin ? "origem" : "destino";
-
-  const GEOFENCE_RADIUS_KM = 15;
-  const [refreshingGps, setRefreshingGps] = useState(false);
-
-  useEffect(() => {
-    setNearOrigin(false);
-    setDistanceInfo(null);
-  }, [currentStep]);
-
-  const checkProximity = useCallback(async (forceFresh = false) => {
-    if (!targetLat || !targetLng) return;
-    let pos: { lat: string; lng: string } | null = null;
-    if (isReadOnly && mission.agentLocation && !forceFresh) {
-      pos = mission.agentLocation;
-    } else {
-      pos = await getPosition();
-    }
-    if (!pos) return;
-
-    const lat1 = parseFloat(pos.lat);
-    const lng1 = parseFloat(pos.lng);
-    const lat2 = parseFloat(targetLat);
-    const lng2 = parseFloat(targetLng);
-
-    if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) return;
-
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    setDistanceInfo(dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`);
-    setNearOrigin(dist <= GEOFENCE_RADIUS_KM);
-    return dist;
-  }, [targetLat, targetLng, getPosition, isReadOnly, mission.agentLocation]);
-
-  useEffect(() => {
-    if (!targetLat || !targetLng) return;
-    checkProximity();
-    const interval = setInterval(() => checkProximity(), 30000);
-    return () => clearInterval(interval);
-  }, [targetLat, targetLng, checkProximity]);
-
-  const handleForceGpsRefresh = async () => {
-    setRefreshingGps(true);
-    try {
-      const dist = await checkProximity(true);
-      if (dist === undefined) {
-        toast({ title: "GPS indisponível", description: "Não foi possível obter a posição. Verifique se a localização está habilitada.", variant: "destructive" });
-      } else {
-        const distStr = dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
-        toast({ title: "GPS atualizado", description: `Distância até a ${targetLabel}: ${distStr}` });
-      }
-    } finally {
-      setRefreshingGps(false);
-    }
-  };
 
   const getSuggestions = () => {
     const suggestions: string[] = [];
-    if (nearOrigin && isGoingToOrigin) {
+    if (isGoingToOrigin) {
       suggestions.push("Na Origem");
-    }
-    if (nearOrigin && !isGoingToOrigin) {
+    } else {
       suggestions.push("Chegada no Destino");
     }
     suggestions.push("Missão segue padrão, sem novidades");
@@ -712,36 +648,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         <p className="text-sm font-bold text-neutral-800 uppercase tracking-wider">
           {isGoingToOrigin ? "Em deslocamento para origem" : "Em deslocamento para destino"}
         </p>
-        {distanceInfo && (
-          <p className="text-xs text-neutral-400 mt-1">
-            Distância até {targetLabel}{isReadOnly ? " (agente)" : ""}: <span className="font-bold text-neutral-700">{distanceInfo}</span>
-          </p>
-        )}
-        {!isReadOnly && targetLat && targetLng && (
-          <button
-            type="button"
-            onClick={handleForceGpsRefresh}
-            disabled={refreshingGps}
-            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-bold text-neutral-700 hover:bg-neutral-50 active:scale-[0.98] disabled:opacity-60"
-            data-testid="button-refresh-gps"
-          >
-            {refreshingGps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            {refreshingGps ? "Atualizando GPS..." : "Atualizar GPS"}
-          </button>
-        )}
       </div>
-      )}
-
-      {nearOrigin && !isAtDestination && (
-        <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 flex items-center gap-3" data-testid="alert-near-origin">
-          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <MapPin className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-emerald-800">Você está próximo da {targetLabel}!</p>
-            <p className="text-[10px] text-emerald-600">Confirme a chegada quando estiver no local.</p>
-          </div>
-        </div>
       )}
 
       <input
