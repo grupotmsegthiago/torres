@@ -57,6 +57,23 @@ function formatCpf(value: string): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
+function formatPhoneBR(value: string): string {
+  const d = value.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d.length ? `(${d}` : "";
+  if (d.length <= 6) return `(${d.slice(0, 2)})${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)})${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)})${d.slice(2, 7)}-${d.slice(7)}`;
+}
+
+function formatCepBR(value: string): string {
+  const d = value.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+const CNH_CATEGORIAS = ["A", "B", "AB", "C", "AC", "D", "AD", "E", "AE"];
+const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
+
 function CreateAccessModal({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
   const { toast } = useToast();
 
@@ -680,7 +697,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     name: "",
     cpf: "",
     rg: "",
+    orgaoEmissor: "",
+    ufEmissor: "",
     cnhNumber: "",
+    cnhCategoria: "",
     cnhExpiry: "",
     cnvNumber: "",
     cnvExpiry: "",
@@ -691,7 +711,13 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     category: "Mensalista",
     phone: "",
     email: "",
+    zip: "",
     address: "",
+    addressNumber: "",
+    addressComplement: "",
+    bairro: "",
+    city: "",
+    state: "",
     addressLat: null as number | null,
     addressLng: null as number | null,
     birthDate: "",
@@ -723,7 +749,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         name: e.name || "",
         cpf: e.cpf || "",
         rg: e.rg || "",
+        orgaoEmissor: e.orgaoEmissor || "",
+        ufEmissor: e.ufEmissor || "",
         cnhNumber: e.cnhNumber || "",
+        cnhCategoria: e.cnhCategoria || "",
         cnhExpiry: e.cnhExpiry || "",
         cnvNumber: e.cnvNumber || "",
         cnvExpiry: e.cnvExpiry || "",
@@ -732,9 +761,15 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         pis: e.pis || "",
         role: e.role || "Vigilante",
         category: e.category || "Mensalista",
-        phone: e.phone || "",
+        phone: e.phone ? formatPhoneBR(e.phone) : "",
         email: e.email || "",
+        zip: e.zip ? formatCepBR(e.zip) : "",
         address: e.address || "",
+        addressNumber: e.addressNumber || "",
+        addressComplement: e.addressComplement || "",
+        bairro: e.bairro || "",
+        city: e.city || "",
+        state: e.state || "",
         addressLat: e.addressLat || null,
         addressLng: e.addressLng || null,
         birthDate: e.birthDate || "",
@@ -770,6 +805,66 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     },
     enabled: !employee,
   });
+
+  const [cepLoading, setCepLoading] = useState(false);
+  const fetchCepData = useCallback(async (cep: string) => {
+    const clean = cep.replace(/\D/g, "");
+    if (clean.length !== 8) {
+      toast({ title: "CEP incompleto", description: "Digite os 8 dígitos do CEP", variant: "destructive" });
+      return;
+    }
+    setCepLoading(true);
+    try {
+      let data: any = null;
+      try {
+        const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`);
+        if (r.ok) {
+          const j = await r.json();
+          data = {
+            address: j.street || "",
+            bairro: j.neighborhood || "",
+            city: j.city || "",
+            state: j.state || "",
+            lat: j.location?.coordinates?.latitude ? Number(j.location.coordinates.latitude) : null,
+            lng: j.location?.coordinates?.longitude ? Number(j.location.coordinates.longitude) : null,
+          };
+        }
+      } catch {}
+      if (!data) {
+        const r2 = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+        if (r2.ok) {
+          const j2 = await r2.json();
+          if (!j2.erro) {
+            data = {
+              address: j2.logradouro || "",
+              bairro: j2.bairro || "",
+              city: j2.localidade || "",
+              state: j2.uf || "",
+              lat: null, lng: null,
+            };
+          }
+        }
+      }
+      if (!data) {
+        toast({ title: "CEP não encontrado", variant: "destructive" });
+        return;
+      }
+      setForm((prev) => ({
+        ...prev,
+        address: data.address || prev.address,
+        bairro: data.bairro || prev.bairro,
+        city: data.city || prev.city,
+        state: data.state || prev.state,
+        addressLat: data.lat ?? prev.addressLat,
+        addressLng: data.lng ?? prev.addressLng,
+      }));
+      toast({ title: "Endereço preenchido", description: `${data.address}, ${data.bairro} — ${data.city}/${data.state}` });
+    } catch (err: any) {
+      toast({ title: "Erro ao consultar CEP", description: err.message || "Tente novamente", variant: "destructive" });
+    } finally {
+      setCepLoading(false);
+    }
+  }, [toast]);
 
   const fetchCpfData = useCallback(async (cpf: string) => {
     const clean = cpf.replace(/\D/g, "");
@@ -1264,7 +1359,14 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RG *</label>
-              <Input value={form.rg} onChange={(e) => setForm({ ...form, rg: e.target.value })} required data-testid="input-employee-rg" />
+              <div className="flex gap-1">
+                <Input value={form.rg} onChange={(e) => setForm({ ...form, rg: e.target.value })} required className="flex-1" data-testid="input-employee-rg" />
+                <Input value={form.orgaoEmissor} onChange={(e) => setForm({ ...form, orgaoEmissor: e.target.value.toUpperCase().slice(0, 6) })} placeholder="Órgão" className="w-20" data-testid="input-employee-orgao-emissor" />
+                <select value={form.ufEmissor} onChange={(e) => setForm({ ...form, ufEmissor: e.target.value })} className="w-16 h-10 border border-neutral-300 rounded-lg px-2 text-sm bg-white" data-testid="select-employee-uf-emissor">
+                  <option value="">UF</option>
+                  {UFS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
             </div>
             <div className="md:col-span-1">
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome Completo *</label>
@@ -1304,26 +1406,108 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </fieldset>
 
         <fieldset className="border border-neutral-200 rounded-lg p-4">
-          <legend className="text-xs font-semibold text-neutral-600 px-2">Contato e Endereço</legend>
+          <legend className="text-xs font-semibold text-neutral-600 px-2">Contato</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="input-employee-phone" />
+              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhoneBR(e.target.value) })} placeholder="(11)91111-1111" data-testid="input-employee-phone" />
             </div>
-            <div>
+            <div className="md:col-span-2">
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail</label>
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-employee-email" />
             </div>
-            <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Endereço</label>
+          </div>
+        </fieldset>
+
+        <fieldset className="border border-neutral-200 rounded-lg p-4">
+          <legend className="text-xs font-semibold text-neutral-600 px-2">Endereço</legend>
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="md:col-span-2">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CEP</label>
+              <div className="flex gap-1">
+                <Input
+                  value={form.zip}
+                  onChange={(e) => {
+                    const masked = formatCepBR(e.target.value);
+                    setForm({ ...form, zip: masked });
+                    if (masked.replace(/\D/g, "").length === 8) fetchCepData(masked);
+                  }}
+                  placeholder="02412-111"
+                  data-testid="input-employee-zip"
+                />
+                <Button type="button" variant="outline" size="icon" onClick={() => fetchCepData(form.zip)} disabled={cepLoading} title="Buscar endereço pelo CEP" data-testid="button-cep-lookup">
+                  {cepLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+            <div className="md:col-span-4">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Logradouro</label>
               <PlacesAutocomplete
                 value={form.address}
                 onChange={(val) => setForm({ ...form, address: val })}
                 onPlaceSelect={(p) => setForm((prev) => ({ ...prev, address: p.address, addressLat: p.lat, addressLng: p.lng }))}
-                placeholder="Buscar endereço..."
+                placeholder="Rua, Avenida..."
                 theme="light"
                 data-testid="input-employee-address"
               />
+            </div>
+            <div className="md:col-span-1">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Número</label>
+              <Input value={form.addressNumber} onChange={(e) => setForm({ ...form, addressNumber: e.target.value })} placeholder="123" data-testid="input-employee-address-number" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Complemento</label>
+              <Input value={form.addressComplement} onChange={(e) => setForm({ ...form, addressComplement: e.target.value })} placeholder="Apto, bloco..." data-testid="input-employee-address-complement" />
+            </div>
+            <div className="md:col-span-3">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Bairro</label>
+              <Input value={form.bairro} onChange={(e) => setForm({ ...form, bairro: e.target.value })} data-testid="input-employee-bairro" />
+            </div>
+            <div className="md:col-span-4">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cidade</label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} data-testid="input-employee-city" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Estado</label>
+              <select value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-state">
+                <option value="">UF</option>
+                {UFS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="border border-neutral-200 rounded-lg p-4">
+          <legend className="text-xs font-semibold text-neutral-600 px-2">CNH — Carteira Nacional de Habilitação</legend>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Número da CNH</label>
+              <Input value={form.cnhNumber} onChange={(e) => setForm({ ...form, cnhNumber: e.target.value })} data-testid="input-employee-cnh" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Categoria</label>
+              <select value={form.cnhCategoria} onChange={(e) => setForm({ ...form, cnhCategoria: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-cnh-categoria">
+                <option value="">Selecione</option>
+                {CNH_CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNH</label>
+              <Input type="date" value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="border border-neutral-200 rounded-lg p-4">
+          <legend className="text-xs font-semibold text-neutral-600 px-2">CNV — Carteira Nacional de Vigilante</legend>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Número da CNV</label>
+              <Input value={form.cnvNumber} onChange={(e) => setForm({ ...form, cnvNumber: e.target.value })} data-testid="input-employee-cnv" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
+              <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
             </div>
           </div>
         </fieldset>
@@ -1331,22 +1515,6 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         <fieldset className="border border-neutral-200 rounded-lg p-4">
           <legend className="text-xs font-semibold text-neutral-600 px-2">Documentos e Profissional</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNH</label>
-              <Input value={form.cnhNumber} onChange={(e) => setForm({ ...form, cnhNumber: e.target.value })} data-testid="input-employee-cnh" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNH</label>
-              <Input type="date" value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNV (Número)</label>
-              <Input value={form.cnvNumber} onChange={(e) => setForm({ ...form, cnvNumber: e.target.value })} data-testid="input-employee-cnv" />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
-              <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
-            </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">PIS</label>
               <Input value={form.pis} onChange={(e) => setForm({ ...form, pis: e.target.value })} data-testid="input-employee-pis" />

@@ -276,6 +276,15 @@ export async function ensureDbSchema() {
 
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lat REAL`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lng REAL`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_categoria TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS orgao_emissor TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS uf_emissor TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_number TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_complement TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS bairro TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS city TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS state TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS zip TEXT`);
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`);
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`);
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`);
