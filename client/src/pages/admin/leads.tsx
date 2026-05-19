@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
+import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
   novo: { label: "Novo", color: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Plus },
@@ -71,6 +72,7 @@ export default function LeadsPage() {
   const [setorFilter, setSetorFilter] = useState<string>("ALL");
   const [tempFilter, setTempFilter] = useState<string>("ALL");
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [showBulkFix, setShowBulkFix] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
   const [showDetail, setShowDetail] = useState<any>(null);
@@ -450,6 +452,16 @@ export default function LeadsPage() {
             <AlertTriangle className="w-3 h-3" />
             Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteLeadsCount})</span>
           </button>
+          {incompleteLeadsCount > 0 && (
+            <button
+              onClick={() => setShowBulkFix(true)}
+              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700"
+              data-testid="button-bulk-fix-leads"
+              title="Corrigir telefone e CEP de todos os leads incompletos"
+            >
+              Corrigir incompletos
+            </button>
+          )}
         </div>
 
         {isLoading ? (
@@ -592,6 +604,18 @@ export default function LeadsPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <BulkFixContactsDialog
+        open={showBulkFix}
+        onOpenChange={setShowBulkFix}
+        records={leads || []}
+        phoneField="telefone"
+        zipField="cep"
+        labelField="empresa"
+        endpointPrefix="/api/leads"
+        invalidateKeys={[["/api/leads"]]}
+        title="Corrigir telefone/CEP de leads"
+        entityLabel="lead"
+      />
     </AdminLayout>
   );
 }

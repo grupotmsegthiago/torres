@@ -21,6 +21,7 @@ import {
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
 import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
+import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
@@ -2610,6 +2611,7 @@ export default function ClientsPage() {
   const [analysisClient, setAnalysisClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [showBulkFix, setShowBulkFix] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -2675,16 +2677,28 @@ export default function ClientsPage() {
           <>
           <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
             <span className="text-xs text-neutral-500">{visible.length} de {(clients || []).length} cliente{(clients || []).length !== 1 ? "s" : ""}</span>
-            <button
-              data-active={onlyIncomplete}
-              onClick={() => setOnlyIncomplete(v => !v)}
-              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
-              data-testid="toggle-only-incomplete-clients"
-              title="Mostrar apenas clientes com telefone ou CEP incompletos"
-            >
-              <AlertTriangle className="w-3 h-3" />
-              Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                data-active={onlyIncomplete}
+                onClick={() => setOnlyIncomplete(v => !v)}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+                data-testid="toggle-only-incomplete-clients"
+                title="Mostrar apenas clientes com telefone ou CEP incompletos"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
+              </button>
+              {incompleteCount > 0 && (
+                <button
+                  onClick={() => setShowBulkFix(true)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700"
+                  data-testid="button-bulk-fix-clients"
+                  title="Corrigir telefone e CEP de todos os clientes incompletos"
+                >
+                  Corrigir incompletos
+                </button>
+              )}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-clients">
@@ -2785,6 +2799,19 @@ export default function ClientsPage() {
       {analysisClient && (
         <CreditAnalysisModal client={analysisClient} onClose={() => setAnalysisClient(null)} />
       )}
+
+      <BulkFixContactsDialog
+        open={showBulkFix}
+        onOpenChange={setShowBulkFix}
+        records={clients || []}
+        phoneField="phone"
+        zipField="zip"
+        labelField="name"
+        endpointPrefix="/api/clients"
+        invalidateKeys={[["/api/clients"]]}
+        title="Corrigir telefone/CEP de clientes"
+        entityLabel="cliente"
+      />
     </AdminLayout>
   );
 }

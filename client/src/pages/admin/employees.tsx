@@ -16,6 +16,7 @@ import { getContactIssues, summarizeContactIssues } from "@shared/contact-valida
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
+import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 function fmtDate(d?: string | null) {
@@ -4557,6 +4558,7 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState<"ativo" | "inativo" | "todos">("ativo");
   const [deptFilter, setDeptFilter] = useState<"vigilantes" | "administrativo" | "todos">("todos");
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [showBulkFix, setShowBulkFix] = useState(false);
   const EMP_PER_PAGE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
@@ -4758,16 +4760,28 @@ export default function EmployeesPage() {
                       {(() => {
                         const incompleteCount = (employees || []).filter(e => getContactIssues(e, { phones: ["phone"], zips: ["zip"] }).length > 0).length;
                         return (
-                          <button
-                            data-active={onlyIncomplete}
-                            onClick={() => { setOnlyIncomplete(v => !v); setEmpPage(1); }}
-                            className="ml-auto inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
-                            data-testid="toggle-only-incomplete-employees"
-                            title="Mostrar apenas funcionários com telefone ou CEP incompletos"
-                          >
-                            <AlertTriangle className="w-3 h-3" />
-                            Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
-                          </button>
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              data-active={onlyIncomplete}
+                              onClick={() => { setOnlyIncomplete(v => !v); setEmpPage(1); }}
+                              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+                              data-testid="toggle-only-incomplete-employees"
+                              title="Mostrar apenas funcionários com telefone ou CEP incompletos"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
+                            </button>
+                            {incompleteCount > 0 && (
+                              <button
+                                onClick={() => setShowBulkFix(true)}
+                                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700"
+                                data-testid="button-bulk-fix-employees"
+                                title="Corrigir telefone e CEP de todos os funcionários incompletos"
+                              >
+                                Corrigir incompletos
+                              </button>
+                            )}
+                          </div>
                         );
                       })()}
                     </div>
@@ -4984,6 +4998,18 @@ export default function EmployeesPage() {
           </div>
         </div>
       )}
+      <BulkFixContactsDialog
+        open={showBulkFix}
+        onOpenChange={setShowBulkFix}
+        records={employees || []}
+        phoneField="phone"
+        zipField="zip"
+        labelField="name"
+        endpointPrefix="/api/employees"
+        invalidateKeys={[["/api/employees"]]}
+        title="Corrigir telefone/CEP de funcionários"
+        entityLabel="funcionário"
+      />
     </AdminLayout>
   );
 }
