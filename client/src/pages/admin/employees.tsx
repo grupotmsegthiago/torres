@@ -959,24 +959,45 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       const n = val(extracted.name);
       const cpf = val(extracted.cpf);
       const rg = val(extracted.rg);
+      const orgao = val(extracted.orgaoEmissor).toUpperCase().slice(0, 6);
+      const ufEmissor = val(extracted.ufEmissor).toUpperCase().slice(0, 2);
       const cnh = val(extracted.cnhNumber);
+      const cnhCat = val(extracted.cnhCategoria).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+      const cnhExp = val(extracted.cnhExpiry);
       const birth = val(extracted.birthDate);
       const mother = val(extracted.motherName);
       const father = val(extracted.fatherName);
       const nat = val(extracted.nationality);
       const marital = val(extracted.maritalStatus);
       const addr = val(extracted.address);
+      const addrNum = val(extracted.addressNumber);
+      const addrComp = val(extracted.addressComplement);
+      const bairro = val(extracted.bairro);
+      const city = val(extracted.city);
+      const state = val(extracted.state).toUpperCase().slice(0, 2);
+      const zipRaw = val(extracted.zip).replace(/\D/g, "");
+      const zip = zipRaw.length === 8 ? `${zipRaw.slice(0, 5)}-${zipRaw.slice(5)}` : (zipRaw ? val(extracted.zip) : "");
 
       if (n && !prev.name) { updated.name = n; filledFields.push("Nome"); }
       if (cpf && !prev.cpf) { updated.cpf = cpf; filledFields.push("CPF"); }
       if (rg && !prev.rg) { updated.rg = rg; filledFields.push("RG"); }
+      if (orgao && !prev.orgaoEmissor) { updated.orgaoEmissor = orgao; filledFields.push("Órgão Emissor"); }
+      if (ufEmissor && !prev.ufEmissor) { updated.ufEmissor = ufEmissor; filledFields.push("UF Emissor"); }
       if (cnh && !prev.cnhNumber) { updated.cnhNumber = cnh; filledFields.push("CNH"); }
+      if (cnhCat && !prev.cnhCategoria) { updated.cnhCategoria = cnhCat; filledFields.push("Categoria CNH"); }
+      if (cnhExp && !prev.cnhExpiry) { updated.cnhExpiry = cnhExp; filledFields.push("Validade CNH"); }
       if (birth && !prev.birthDate) { updated.birthDate = birth; filledFields.push("Nascimento"); }
       if (mother && !prev.motherName) { updated.motherName = mother; filledFields.push("Mãe"); }
       if (father && !prev.fatherName) { updated.fatherName = father; filledFields.push("Pai"); }
       if (nat && !prev.nationality) { updated.nationality = nat; filledFields.push("Nacionalidade"); }
       if (marital && !prev.maritalStatus) { updated.maritalStatus = marital; filledFields.push("Est. Civil"); }
       if (addr && !prev.address) { updated.address = addr; filledFields.push("Endereço"); }
+      if (addrNum && !prev.addressNumber) { updated.addressNumber = addrNum; filledFields.push("Número"); }
+      if (addrComp && !prev.addressComplement) { updated.addressComplement = addrComp; filledFields.push("Complemento"); }
+      if (bairro && !prev.bairro) { updated.bairro = bairro; filledFields.push("Bairro"); }
+      if (city && !prev.city) { updated.city = city; filledFields.push("Cidade"); }
+      if (state && !prev.state) { updated.state = state; filledFields.push("UF"); }
+      if (zip && !prev.zip) { updated.zip = zip; filledFields.push("CEP"); }
       return updated;
     });
 
@@ -1014,17 +1035,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       const extracted = await runOcrAndFillForm(compressedUrl, docType);
 
       if (extracted) {
-        if (docType === "Comprovante de Residência") {
-          const addr = typeof extracted.address === "string" && extracted.address.trim() ? extracted.address.trim() : "";
-          if (addr) {
-            setForm((prev) => ({ ...prev, address: prev.address || addr }));
-            toast({ title: "Comprovante processado", description: `Endereço extraído: ${addr}` });
-          } else {
-            toast({ title: "Comprovante anexado", description: "Endereço não identificado — preencha manualmente" });
-          }
-        } else {
-          applyOcrToForm(extracted, docType);
-        }
+        applyOcrToForm(extracted, docType);
       } else {
         toast({ title: `${docType} anexada`, description: "Documento salvo. Leitura automática indisponível." });
       }

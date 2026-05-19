@@ -786,19 +786,32 @@ Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem m
 {
   "name": "nome completo da pessoa",
   "cpf": "CPF no formato 000.000.000-00",
-  "rg": "número do RG com órgão emissor",
+  "rg": "número do RG (apenas o número, sem órgão emissor)",
+  "orgaoEmissor": "órgão emissor do RG (ex: SSP, DETRAN, IFP, IIRGD) — apenas a sigla",
+  "ufEmissor": "UF do órgão emissor do RG (sigla de 2 letras, ex: SP, RJ)",
   "cnhNumber": "número da CNH se for CNH",
+  "cnhCategoria": "categoria da CNH se for CNH (ex: A, B, AB, C, D, E, ACC)",
+  "cnhExpiry": "data de validade da CNH no formato YYYY-MM-DD (se for CNH)",
   "birthDate": "data de nascimento no formato YYYY-MM-DD",
   "motherName": "nome da mãe",
   "fatherName": "nome do pai",
   "nationality": "nacionalidade (ex: Brasileira)",
   "maritalStatus": "estado civil se visível",
-  "address": "endereço completo se visível no documento",
+  "address": "logradouro/rua sem número, complemento ou bairro (ex: Rua das Flores)",
+  "addressNumber": "número do endereço (apenas dígitos, ex: 123)",
+  "addressComplement": "complemento do endereço (ex: Apto 45, Bloco B) se houver",
+  "bairro": "bairro do endereço",
+  "city": "cidade do endereço",
+  "state": "UF do endereço (sigla de 2 letras, ex: SP)",
+  "zip": "CEP no formato 00000-000",
   "notes": "tipo do documento identificado e informações adicionais relevantes"
 }
 Se um campo não for encontrado no documento, retorne string vazia "". Nunca invente dados.
 Para datas, sempre converta para o formato YYYY-MM-DD.
-Para CPF, formate como 000.000.000-00.`
+Para CPF, formate como 000.000.000-00.
+Para CEP, formate como 00000-000.
+Para categoria CNH, retorne apenas a letra/sigla (sem "Categoria" ou similar).
+Para endereço: quebre o endereço completo em logradouro, número, complemento, bairro, cidade, UF e CEP em campos separados. Não duplique o número ou bairro no campo "address".`
           },
           {
             role: "user",
