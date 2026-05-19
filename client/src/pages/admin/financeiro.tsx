@@ -3122,6 +3122,11 @@ export default function FinanceiroPage() {
                               <CheckCircle2 size={12} /> Aprovar
                             </button>
                           )}
+                          <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }}
+                            className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase flex items-center gap-1" data-testid={`button-editar-aguardando-${t.id}`}
+                            title="Editar este lançamento antes de aprovar/recusar">
+                            <Edit size={12} /> Editar
+                          </button>
                           <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
                             className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
                             <X size={12} /> Recusar
