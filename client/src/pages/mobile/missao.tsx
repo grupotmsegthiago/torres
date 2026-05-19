@@ -651,6 +651,18 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
       </div>
       )}
 
+      {!isAtDestination && !isReadOnly && (
+        <button
+          onClick={handleTransitAdvance}
+          disabled={submitting}
+          className="w-full h-14 bg-emerald-600 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+          data-testid={isGoingToOrigin ? "button-cheguei-origem" : "button-cheguei-destino"}
+        >
+          {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+          {isGoingToOrigin ? "Cheguei na Origem" : "Cheguei no Destino"}
+        </button>
+      )}
+
       <input
         ref={photoInputRef}
         type="file"
@@ -2232,27 +2244,47 @@ export default function MobileMissaoPage() {
               />
             </div>
 
-            <p className="text-xs text-neutral-500 text-center">Há mais entregas nesta missão?</p>
+            {(() => {
+              const requiredPhotos = config.photos || [];
+              const missingPhotos = requiredPhotos.filter((label) => !photos[label.toLowerCase().replace(/\s/g, '-')]);
+              const kmOk = !!kmValue && /^\d+$/.test(kmValue.trim()) && parseInt(kmValue, 10) > 0;
+              const allDone = missingPhotos.length === 0 && kmOk;
+              const pendingMsg = !allDone
+                ? `Pendente: ${[...missingPhotos, !kmOk ? "KM Final" : null].filter(Boolean).join(", ")}`
+                : null;
+              return (
+                <>
+                  {pendingMsg && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center" data-testid="alert-chegada-pendente">
+                      <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">{pendingMsg}</p>
+                      <p className="text-[10px] text-amber-600 mt-0.5">Complete os procedimentos para liberar a finalização.</p>
+                    </div>
+                  )}
 
-            <button
-              onClick={handleNovaEntrega}
-              disabled={submitting}
-              className="w-full h-14 bg-white border-2 border-neutral-900 text-neutral-900 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-nova-entrega"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Route className="w-5 h-5" />}
-              Nova Entrega
-            </button>
+                  <p className="text-xs text-neutral-500 text-center">Há mais entregas nesta missão?</p>
 
-            <button
-              onClick={handleFinalizarEntregas}
-              disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-finalizar-entregas"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              Finalizar Missão
-            </button>
+                  <button
+                    onClick={handleNovaEntrega}
+                    disabled={submitting || !allDone}
+                    className="w-full h-14 bg-white border-2 border-neutral-900 text-neutral-900 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                    data-testid="button-nova-entrega"
+                  >
+                    {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Route className="w-5 h-5" />}
+                    Nova Entrega
+                  </button>
+
+                  <button
+                    onClick={handleFinalizarEntregas}
+                    disabled={submitting || !allDone}
+                    className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                    data-testid="button-finalizar-entregas"
+                  >
+                    {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                    Finalizar Missão
+                  </button>
+                </>
+              );
+            })()}
           </div>
         )}
 

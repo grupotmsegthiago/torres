@@ -2740,6 +2740,23 @@ Responda APENAS com JSON: {"km_lido": number}`;
       return res.status(400).json({ message: "Ação disponível apenas na etapa de chegada no destino" });
     }
 
+    const requiredPhotos = STEP_REQUIRED_PHOTOS["chegada_destino"] || [];
+    if (requiredPhotos.length > 0) {
+      const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+      const existingSteps = photos.map((p) => p.step);
+      const missing = requiredPhotos.filter((s) => !existingSteps.includes(s));
+      if (missing.length > 0) {
+        return res.status(400).json({
+          message: `Fotos obrigatórias pendentes: ${missing.join(", ")}`,
+          missing,
+        });
+      }
+      const kmFinalPhoto = photos.find((p) => p.step === "km_final");
+      if (!kmFinalPhoto || !kmFinalPhoto.kmValue || Number(kmFinalPhoto.kmValue) <= 0) {
+        return res.status(400).json({ message: "KM Final obrigatório (informe a quilometragem do hodômetro)" });
+      }
+    }
+
     const updated = await storage.updateServiceOrder(serviceOrderId, {
       missionStatus: "em_transito_destino",
     });
