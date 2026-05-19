@@ -1212,6 +1212,20 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           toast({ title: "Campo obrigatório", description: "O nome da mãe é obrigatório", variant: "destructive" });
           return;
         }
+        {
+          const d = (form.phone || "").replace(/\D/g, "");
+          if (d.length > 0 && (d.length < 10 || d.length > 11)) {
+            toast({ title: "Telefone inválido", description: "Telefone deve ter 10 ou 11 dígitos (DDD + número).", variant: "destructive" });
+            return;
+          }
+        }
+        {
+          const d = (form.zip || "").replace(/\D/g, "");
+          if (d.length > 0 && d.length !== 8) {
+            toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
+            return;
+          }
+        }
         if (form.status === "bloqueado_definitivo") {
           if (!form.blockType) {
             toast({ title: "Campo obrigatório", description: "Selecione o tipo de bloqueio (Criminal, Processo ou Ambos)", variant: "destructive" });
@@ -1394,6 +1408,13 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhoneBR(e.target.value) })} placeholder="(11)91111-1111" data-testid="input-employee-phone" />
+              {(() => {
+                const d = (form.phone || "").replace(/\D/g, "");
+                if (d.length > 0 && (d.length < 10 || d.length > 11)) {
+                  return <p className="text-xs text-red-600 mt-1" data-testid="error-employee-phone">Telefone deve ter 10 ou 11 dígitos.</p>;
+                }
+                return null;
+              })()}
             </div>
             <div className="md:col-span-2">
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail</label>
@@ -1422,6 +1443,13 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
                   {cepLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 </Button>
               </div>
+              {(() => {
+                const d = (form.zip || "").replace(/\D/g, "");
+                if (d.length > 0 && d.length !== 8) {
+                  return <p className="text-xs text-red-600 mt-1" data-testid="error-employee-zip">CEP deve ter 8 dígitos.</p>;
+                }
+                return null;
+              })()}
             </div>
             <div className="md:col-span-4">
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Logradouro</label>

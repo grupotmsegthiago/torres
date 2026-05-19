@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
-import { normalizePhone, normalizeZip } from "../lib/normalize-contact";
+import { normalizePhone, normalizeZip, validateContactFields } from "../lib/normalize-contact";
 import cron from "node-cron";
 import fs from "fs";
 import path from "path";
@@ -1314,6 +1314,8 @@ export function registerLeadRoutes(app: Express) {
         usuario: user?.name || "Sistema",
         detalhes: `Origem: ${body.origem || "manual"}`,
       }];
+      const contactErrors = validateContactFields(body, { phones: ["telefone"], zips: ["cep"] });
+      if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
       if ("telefone" in body) body.telefone = normalizePhone(body.telefone);
       if ("cep" in body) body.cep = normalizeZip(body.cep);
       const { data, error } = await supabaseAdmin.from("leads").insert({
@@ -1358,6 +1360,8 @@ export function registerLeadRoutes(app: Express) {
         delete body._nota;
       }
 
+      const contactErrors = validateContactFields(body, { phones: ["telefone"], zips: ["cep"] });
+      if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
       if ("telefone" in body) body.telefone = normalizePhone(body.telefone);
       if ("cep" in body) body.cep = normalizeZip(body.cep);
       const { data, error } = await supabaseAdmin.from("leads").update({

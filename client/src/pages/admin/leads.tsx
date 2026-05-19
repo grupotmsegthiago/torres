@@ -480,7 +480,19 @@ export default function LeadsPage() {
             form={form}
             setForm={setForm}
             setores={config?.setores || []}
-            onSubmit={() => createMut.mutate(form)}
+            onSubmit={() => {
+              const pd = (form.telefone || "").replace(/\D/g, "");
+              if (pd.length > 0 && (pd.length < 10 || pd.length > 11)) {
+                toast({ title: "Telefone inválido", description: "Telefone deve ter 10 ou 11 dígitos (DDD + número).", variant: "destructive" });
+                return;
+              }
+              const zd = (form.cep || "").replace(/\D/g, "");
+              if (zd.length > 0 && zd.length !== 8) {
+                toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
+                return;
+              }
+              createMut.mutate(form);
+            }}
             isPending={createMut.isPending}
           />
         </DialogContent>
@@ -657,6 +669,13 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">Telefone</label>
           <Input value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })} className="h-9 text-sm" data-testid="input-telefone" />
+          {(() => {
+            const d = (form.telefone || "").replace(/\D/g, "");
+            if (d.length > 0 && (d.length < 10 || d.length > 11)) {
+              return <p className="text-[10px] text-red-600 mt-1" data-testid="error-lead-telefone">Telefone deve ter 10 ou 11 dígitos.</p>;
+            }
+            return null;
+          })()}
         </div>
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">E-mail</label>
@@ -699,7 +718,24 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         <label className="text-[10px] font-bold text-neutral-400 uppercase">Endereço</label>
         <Input value={form.endereco} onChange={e => setForm({ ...form, endereco: e.target.value })} className="h-9 text-sm" data-testid="input-endereco" />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
+        <div>
+          <label className="text-[10px] font-bold text-neutral-400 uppercase">CEP</label>
+          <Input
+            value={form.cep || ""}
+            onChange={e => setForm({ ...form, cep: e.target.value.replace(/\D/g, "").slice(0, 8) })}
+            placeholder="00000000"
+            className="h-9 text-sm"
+            data-testid="input-cep"
+          />
+          {(() => {
+            const d = (form.cep || "").replace(/\D/g, "");
+            if (d.length > 0 && d.length !== 8) {
+              return <p className="text-[10px] text-red-600 mt-1" data-testid="error-lead-cep">CEP deve ter 8 dígitos.</p>;
+            }
+            return null;
+          })()}
+        </div>
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">Cidade</label>
           <Input value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} className="h-9 text-sm" data-testid="input-cidade" />
@@ -1230,6 +1266,7 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
 }
 
 function LeadDetail({ lead, setores, onUpdate, onDelete, onSendPresentation, onConvert, isPending, isSending, isConverting }: any) {
+  const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(lead);
   const [newNote, setNewNote] = useState("");
@@ -1413,7 +1450,20 @@ function LeadDetail({ lead, setores, onUpdate, onDelete, onSendPresentation, onC
           form={form}
           setForm={setForm}
           setores={setores}
-          onSubmit={() => { onUpdate(form); setEditing(false); }}
+          onSubmit={() => {
+            const pd = (form.telefone || "").replace(/\D/g, "");
+            if (pd.length > 0 && (pd.length < 10 || pd.length > 11)) {
+              toast({ title: "Telefone inválido", description: "Telefone deve ter 10 ou 11 dígitos (DDD + número).", variant: "destructive" });
+              return;
+            }
+            const zd = (form.cep || "").replace(/\D/g, "");
+            if (zd.length > 0 && zd.length !== 8) {
+              toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
+              return;
+            }
+            onUpdate(form);
+            setEditing(false);
+          }}
           isPending={isPending}
         />
       )}

@@ -414,6 +414,16 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       </div>
       <form onSubmit={(e) => {
         e.preventDefault();
+        const phoneDigits = (form.phone || "").replace(/\D/g, "");
+        if (phoneDigits.length > 0 && (phoneDigits.length < 10 || phoneDigits.length > 11)) {
+          toast({ title: "Telefone inválido", description: "Telefone deve ter 10 ou 11 dígitos (DDD + número).", variant: "destructive" });
+          return;
+        }
+        const zipDigits = (form.zip || "").replace(/\D/g, "");
+        if (zipDigits.length > 0 && zipDigits.length !== 8) {
+          toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
+          return;
+        }
         if (form.emiteNf) {
           const missing: string[] = [];
           const hasDoc = (form.cnpj || form.cpf || "").replace(/\D/g, "").length >= 11;
@@ -548,6 +558,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                   data-testid="input-client-phone"
                 />
               </div>
+              {(() => {
+                const d = (form.phone || "").replace(/\D/g, "");
+                if (d.length > 0 && (d.length < 10 || d.length > 11)) {
+                  return <p className="text-xs text-red-600 mt-1" data-testid="error-client-phone">Telefone deve ter 10 ou 11 dígitos.</p>;
+                }
+                return null;
+              })()}
             </div>
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">CEP</label>
@@ -564,6 +581,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                   data-testid="input-client-zip"
                 />
               </div>
+              {(() => {
+                const d = (form.zip || "").replace(/\D/g, "");
+                if (d.length > 0 && d.length !== 8) {
+                  return <p className="text-xs text-red-600 mt-1" data-testid="error-client-zip">CEP deve ter 8 dígitos.</p>;
+                }
+                return null;
+              })()}
             </div>
           </div>
 

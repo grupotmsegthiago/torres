@@ -4,6 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertEmployeeSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
+  import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
   import { calcularFolha } from "../lib/payroll";
 import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
@@ -115,6 +116,8 @@ import { syncEmployeeStatusToRhid } from "../control-id";
       console.log("[emp-debug POST] schema FAIL:", JSON.stringify(parsed.error.errors));
       return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
+    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     console.log("[emp-debug POST] parsed.rg:", JSON.stringify(parsed.data.rg));
     const data = await storage.createEmployee(parsed.data);
     console.log("[emp-debug POST] saved.rg:", JSON.stringify((data as any).rg));
@@ -189,6 +192,8 @@ import { syncEmployeeStatusToRhid } from "../control-id";
       console.log(`[emp-debug PATCH ${req.params.id}] schema FAIL:`, JSON.stringify(parsed.error.errors));
       return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
+    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     console.log(`[emp-debug PATCH ${req.params.id}] parsed.rg:`, JSON.stringify(parsed.data.rg));
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });

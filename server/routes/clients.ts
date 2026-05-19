@@ -4,6 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertClientSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
+  import { validateContactFields } from "../lib/normalize-contact";
 
   import { generateContractPDF } from "../contract-pdf";
 
@@ -52,6 +53,8 @@ import type { Express } from "express";
   app.post("/api/clients", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertClientSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     const data = await storage.createClient(parsed.data);
     const doc = data.cnpj || data.cpf || "";
     if (doc.replace(/\D/g, "").length >= 11) {
@@ -63,6 +66,8 @@ import type { Express } from "express";
   app.patch("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertClientSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     try {
       const data = await storage.updateClient(Number(req.params.id), parsed.data);
       if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
