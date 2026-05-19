@@ -21,6 +21,7 @@ import {
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
 import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
+import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
@@ -2608,6 +2609,7 @@ export default function ClientsPage() {
   const [editClient, setEditClient] = useState<Client | undefined>();
   const [analysisClient, setAnalysisClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -2664,7 +2666,26 @@ export default function ClientsPage() {
           <div className="p-8 text-center text-neutral-400">Carregando...</div>
         ) : (clients || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400">Nenhum cliente cadastrado</div>
-        ) : (
+        ) : (() => {
+          const incompleteCount = (clients || []).filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0).length;
+          const visible = onlyIncomplete
+            ? (clients || []).filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0)
+            : (clients || []);
+          return (
+          <>
+          <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+            <span className="text-xs text-neutral-500">{visible.length} de {(clients || []).length} cliente{(clients || []).length !== 1 ? "s" : ""}</span>
+            <button
+              data-active={onlyIncomplete}
+              onClick={() => setOnlyIncomplete(v => !v)}
+              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+              data-testid="toggle-only-incomplete-clients"
+              title="Mostrar apenas clientes com telefone ou CEP incompletos"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-clients">
               <thead className="bg-neutral-50 border-b border-neutral-200">
@@ -2678,7 +2699,9 @@ export default function ClientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(clients || []).map((c) => (
+                {visible.map((c) => {
+                  const contactIssues = getContactIssues(c, { phones: ["phone"], zips: ["zip"] });
+                  return (
                   <tr key={c.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" data-testid={`row-client-${c.id}`} onClick={() => setViewingClient(c)}>
                     <td className="p-3 font-medium text-neutral-900">
                       <div className="flex items-center gap-2">
@@ -2688,10 +2711,24 @@ export default function ClientsPage() {
                         ) : (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-50 text-neutral-400 border border-neutral-200" data-testid={`badge-isento-${c.id}`}>Isento</span>
                         )}
+                        {contactIssues.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200"
+                            title={summarizeContactIssues(contactIssues)}
+                            data-testid={`badge-contact-issue-client-${c.id}`}
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            {contactIssues.some(i => i.kind === "zip_invalid") && contactIssues.some(i => i.kind !== "zip_invalid") ? "TEL/CEP" : contactIssues[0].kind === "zip_invalid" ? "CEP" : "TEL"}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="p-3 text-neutral-600">{c.cnpj || c.cpf || "-"}</td>
-                    <td className="p-3 text-neutral-600">{displayPhoneBR(c.phone) || "-"}</td>
+                    <td className="p-3 text-neutral-600">
+                      <span className={contactIssues.some(i => i.kind !== "zip_invalid") ? "text-red-700 font-semibold" : ""}>
+                        {displayPhoneBR(c.phone) || "-"}
+                      </span>
+                    </td>
                     <td className="p-3 text-neutral-600">{c.city || "-"}</td>
                     <td className="p-3 text-neutral-600 text-xs">
                       {(c as any).billingCycle || (c as any).billing_cycle ? (
@@ -2735,11 +2772,14 @@ export default function ClientsPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        )}
+          </>
+          );
+        })()}
       </Card>
 
       {analysisClient && (

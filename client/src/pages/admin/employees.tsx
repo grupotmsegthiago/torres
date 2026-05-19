@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar } from "lucide-react";
+import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
@@ -4555,6 +4556,7 @@ export default function EmployeesPage() {
   const [searchEmp, setSearchEmp] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ativo" | "inativo" | "todos">("ativo");
   const [deptFilter, setDeptFilter] = useState<"vigilantes" | "administrativo" | "todos">("todos");
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const EMP_PER_PAGE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
@@ -4740,7 +4742,7 @@ export default function EmployeesPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2">
+                    <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-2 flex-wrap">
                       <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mr-1">Setor:</span>
                       {deptTabs.map(t => (
                         <button
@@ -4753,6 +4755,21 @@ export default function EmployeesPage() {
                           {t.label} <span className="ml-1 text-[10px] opacity-70">({deptCounts[t.key]})</span>
                         </button>
                       ))}
+                      {(() => {
+                        const incompleteCount = (employees || []).filter(e => getContactIssues(e, { phones: ["phone"], zips: ["zip"] }).length > 0).length;
+                        return (
+                          <button
+                            data-active={onlyIncomplete}
+                            onClick={() => { setOnlyIncomplete(v => !v); setEmpPage(1); }}
+                            className="ml-auto inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+                            data-testid="toggle-only-incomplete-employees"
+                            title="Mostrar apenas funcionários com telefone ou CEP incompletos"
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -4773,12 +4790,15 @@ export default function EmployeesPage() {
                 deptFilter === "vigilantes" ? isVigilanteRole(e.role) :
                 !isVigilanteRole(e.role)
               );
-              const filtered = searchEmp.trim()
+              const bySearch = searchEmp.trim()
                 ? byDept.filter(e => {
                     const s = searchEmp.toLowerCase();
                     return e.name?.toLowerCase().includes(s) || e.cpf?.toLowerCase().includes(s) || e.matricula?.toLowerCase().includes(s);
                   })
                 : byDept;
+              const filtered = onlyIncomplete
+                ? bySearch.filter(e => getContactIssues(e, { phones: ["phone"], zips: ["zip"] }).length > 0)
+                : bySearch;
               const totalEmpPages = Math.ceil(filtered.length / EMP_PER_PAGE);
               const safeEmpPage = Math.min(empPage, totalEmpPages || 1);
               const paginated = filtered.slice((safeEmpPage - 1) * EMP_PER_PAGE, safeEmpPage * EMP_PER_PAGE);
@@ -4836,7 +4856,25 @@ export default function EmployeesPage() {
                           </div>
                         </td>
                         <td className="p-3 font-mono text-xs text-neutral-500">{e.matricula}</td>
-                        <td className="p-3 font-medium text-neutral-900">{e.name}</td>
+                        <td className="p-3 font-medium text-neutral-900">
+                          <div className="flex items-center gap-1.5">
+                            <span>{e.name}</span>
+                            {(() => {
+                              const issues = getContactIssues(e, { phones: ["phone"], zips: ["zip"] });
+                              if (!issues.length) return null;
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200"
+                                  title={summarizeContactIssues(issues)}
+                                  data-testid={`badge-contact-issue-employee-${e.id}`}
+                                >
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  {issues.some(i => i.kind === "zip_invalid") && issues.some(i => i.kind !== "zip_invalid") ? "TEL/CEP" : issues[0].kind === "zip_invalid" ? "CEP" : "TEL"}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        </td>
                         <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
                         <td className="p-3 text-neutral-600">{e.role}</td>
                         {isDiretoria && (() => {

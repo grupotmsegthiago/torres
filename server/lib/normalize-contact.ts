@@ -53,57 +53,18 @@ export function normalizeContactFields<T extends Record<string, any>>(
 }
 
 /**
- * Validação estrita pra rejeitar cadastros incompletos:
- * - Telefone BR exige 10 (fixo) ou 11 (celular com 9) dígitos.
- * - CEP BR exige exatamente 8 dígitos.
- * - Vazio/null/undefined é considerado válido (campo opcional).
- *
- * Retorna lista de erros estruturados ({ field, message }) — vazia quando ok.
+ * Validação estrita pra rejeitar cadastros incompletos.
+ * A regra mora em `shared/contact-validation.ts` pra ser reutilizada também
+ * pelo frontend (badges/filtros). Re-exportamos aqui pra preservar o caminho
+ * que os route handlers já usam.
  */
-export type ContactValidationError = { field: string; message: string };
-
-function digitCount(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  const str = String(value).trim();
-  if (!str) return 0;
-  return str.replace(/\D/g, "").length;
-}
-
-function isPresent(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  return String(value).trim() !== "";
-}
-
-export function validateContactFields(
-  obj: object | null | undefined,
-  fields: { phones?: string[]; zips?: string[] }
-): ContactValidationError[] {
-  const errors: ContactValidationError[] = [];
-  if (!obj) return errors;
-  const record = obj as Record<string, unknown>;
-  for (const key of fields.phones || []) {
-    if (!(key in record)) continue;
-    const value = record[key];
-    if (!isPresent(value)) continue;
-    const len = digitCount(value);
-    if (len < 10 || len > 11) {
-      errors.push({
-        field: key,
-        message: "Telefone deve ter 10 ou 11 dígitos (DDD + número).",
-      });
-    }
-  }
-  for (const key of fields.zips || []) {
-    if (!(key in record)) continue;
-    const value = record[key];
-    if (!isPresent(value)) continue;
-    const len = digitCount(value);
-    if (len !== 8) {
-      errors.push({
-        field: key,
-        message: "CEP deve ter exatamente 8 dígitos.",
-      });
-    }
-  }
-  return errors;
-}
+export {
+  validateContactFields,
+  hasContactIssues,
+  summarizeContactIssues,
+} from "../../shared/contact-validation";
+export type {
+  ContactValidationError,
+  ContactIssueKind,
+  ContactFieldSpec,
+} from "../../shared/contact-validation";

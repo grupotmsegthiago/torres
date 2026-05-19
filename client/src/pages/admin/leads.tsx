@@ -21,6 +21,7 @@ import {
   Play, Pause, Timer, Activity, AlertCircle
 } from "lucide-react";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
+import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
   novo: { label: "Novo", color: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Plus },
@@ -69,6 +70,7 @@ export default function LeadsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [setorFilter, setSetorFilter] = useState<string>("ALL");
   const [tempFilter, setTempFilter] = useState<string>("ALL");
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
   const [showDetail, setShowDetail] = useState<any>(null);
@@ -221,6 +223,7 @@ export default function LeadsPage() {
       if (statusFilter !== "ALL" && l.status !== statusFilter) return false;
       if (setorFilter !== "ALL" && l.setor !== setorFilter) return false;
       if (tempFilter !== "ALL" && l.temperatura !== tempFilter) return false;
+      if (onlyIncomplete && getContactIssues(l, { phones: ["telefone"], zips: ["cep"] }).length === 0) return false;
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
         return (l.empresa || "").toLowerCase().includes(s) ||
@@ -230,7 +233,12 @@ export default function LeadsPage() {
       }
       return true;
     });
-  }, [leads, statusFilter, setorFilter, tempFilter, searchTerm]);
+  }, [leads, statusFilter, setorFilter, tempFilter, searchTerm, onlyIncomplete]);
+
+  const incompleteLeadsCount = useMemo(
+    () => leads.filter((l: any) => getContactIssues(l, { phones: ["telefone"], zips: ["cep"] }).length > 0).length,
+    [leads],
+  );
 
   const pipelineData = useMemo(() => {
     return PIPELINE_STEPS.map(step => ({
@@ -432,6 +440,16 @@ export default function LeadsPage() {
             <button onClick={() => setViewMode("pipeline")} className={`px-3 py-1.5 text-[10px] font-bold ${viewMode === "pipeline" ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50"}`} data-testid="view-pipeline">Pipeline</button>
             <button onClick={() => setViewMode("lista")} className={`px-3 py-1.5 text-[10px] font-bold ${viewMode === "lista" ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50"}`} data-testid="view-lista">Lista</button>
           </div>
+          <button
+            data-active={onlyIncomplete}
+            onClick={() => setOnlyIncomplete(v => !v)}
+            className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+            data-testid="toggle-only-incomplete-leads"
+            title="Mostrar apenas leads com telefone ou CEP incompletos"
+          >
+            <AlertTriangle className="w-3 h-3" />
+            Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteLeadsCount})</span>
+          </button>
         </div>
 
         {isLoading ? (
@@ -581,12 +599,23 @@ export default function LeadsPage() {
 function LeadCard({ lead, onClick }: { lead: any; onClick: () => void }) {
   const temp = TEMP_CONFIG[lead.temperatura] || TEMP_CONFIG.frio;
   const followUpOverdue = lead.proximo_contato && new Date(lead.proximo_contato) < new Date();
+  const contactIssues = getContactIssues(lead, { phones: ["telefone"], zips: ["cep"] });
   return (
     <button onClick={onClick} className={`w-full text-left bg-white border rounded-lg p-3 hover:shadow-md transition-all cursor-pointer group ${followUpOverdue ? "border-red-300 bg-red-50/30" : "border-neutral-200"}`} data-testid={`lead-card-${lead.id}`}>
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-xs font-bold text-neutral-900 truncate leading-tight">{lead.empresa}</p>
         <temp.icon size={12} className={temp.color} />
       </div>
+      {contactIssues.length > 0 && (
+        <div
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200 mb-1"
+          title={summarizeContactIssues(contactIssues)}
+          data-testid={`badge-contact-issue-lead-${lead.id}`}
+        >
+          <AlertTriangle className="w-2.5 h-2.5" />
+          {contactIssues.some(i => i.kind === "zip_invalid") && contactIssues.some(i => i.kind !== "zip_invalid") ? "TEL/CEP" : contactIssues[0].kind === "zip_invalid" ? "CEP" : "TEL"}
+        </div>
+      )}
       {lead.contato_nome && <p className="text-[10px] text-neutral-500 truncate">{lead.contato_nome}{lead.contato_cargo ? ` · ${lead.contato_cargo}` : ""}</p>}
       {lead.setor && <Badge variant="outline" className="text-[9px] mt-1 border-neutral-200">{lead.setor}</Badge>}
       <div className="flex items-center justify-between mt-2">
@@ -611,15 +640,26 @@ function LeadListRow({ lead, onClick }: { lead: any; onClick: () => void }) {
   const statusCfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.novo;
   const temp = TEMP_CONFIG[lead.temperatura] || TEMP_CONFIG.frio;
   const followUpOverdue = lead.proximo_contato && new Date(lead.proximo_contato) < new Date();
+  const contactIssues = getContactIssues(lead, { phones: ["telefone"], zips: ["cep"] });
   return (
     <button onClick={onClick} className={`w-full text-left bg-white border rounded-xl p-4 hover:shadow-md transition-all cursor-pointer flex items-center gap-4 ${followUpOverdue ? "border-red-300" : "border-neutral-200"}`} data-testid={`lead-row-${lead.id}`}>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <p className="text-sm font-bold text-neutral-900 truncate">{lead.empresa}</p>
           <Badge className={`text-[9px] border ${statusCfg.bg} ${statusCfg.color}`}>{statusCfg.label}</Badge>
           <temp.icon size={14} className={temp.color} />
           {followUpOverdue && <Badge className="text-[8px] bg-red-100 text-red-700 border-red-200">FOLLOW-UP</Badge>}
           {lead.emails_enviados > 0 && <Badge variant="outline" className="text-[8px] text-blue-600 border-blue-200">{lead.emails_enviados}x email</Badge>}
+          {contactIssues.length > 0 && (
+            <span
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-700 border border-red-200"
+              title={summarizeContactIssues(contactIssues)}
+              data-testid={`badge-contact-issue-lead-row-${lead.id}`}
+            >
+              <AlertTriangle className="w-2.5 h-2.5" />
+              {contactIssues.some(i => i.kind === "zip_invalid") && contactIssues.some(i => i.kind !== "zip_invalid") ? "TEL/CEP" : contactIssues[0].kind === "zip_invalid" ? "CEP" : "TEL"}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 text-[10px] text-neutral-400">
           {lead.contato_nome && <span className="flex items-center gap-1"><Users size={10} /> {lead.contato_nome}{lead.contato_cargo ? ` (${lead.contato_cargo})` : ""}</span>}
