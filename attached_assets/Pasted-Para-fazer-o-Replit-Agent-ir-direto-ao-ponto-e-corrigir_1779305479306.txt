@@ -1,0 +1,27 @@
+Para fazer o Replit Agent ir direto ao ponto e corrigir os arquivos certos sem estragar as regras de negócio do seu sistema, peça para ele focar em três frentes principais.
+
+Você pode copiar e colar as instruções abaixo no chat do Replit:
+
+1. Centralizar e Cachar os Dados do Usuário
+O Supabase detectou que o app fica perguntando quem é o usuário logado (/auth/v1/user) sem parar.
+
+O que pedir para o Replit:
+"Preciso corrigir um looping de requisições no frontend. O app está chamando o endpoint /auth/v1/user repetidamente a cada renderização. Por favor, garanta que os dados do usuário autenticado e do perfil (users?supabase_uid=...) sejam carregados apenas uma vez no login e fiquem salvos em um contexto global do React (React Context) ou no localStorage. Remova qualquer chamada direta de autenticação de dentro de useEffect que não tenha array de dependências correto."
+
+2. Controlar o Polling de Custos e Faturamento
+O aplicativo está bombardeando o banco para atualizar os valores de custos e faturamento das missões na tela.
+
+O que pedir para o Replit:
+"O Supabase identificou sobrecarga de requisições nos endpoints /mission_costs e /escort_billings por causa de polling agressivo (consultas repetitivas com curto intervalo). Nas telas de dashboard, relatórios e monitoramento financeiro, faça o seguinte:
+
+Se houver algum setInterval buscando esses dados, aumente o intervalo para no mínimo 5 minutos ou adicione um botão de 'Atualizar Manualmente'.
+
+Regra Importante: Lembre-se de que, na tela de faturamento, o comparador não calcula nada no frontend; ele deve apenas exibir os valores de revenue_value e toll_value diretamente do banco de dados de forma estática, sem disparar loops de re-cálculo."
+
+3. Ajustar o Tempo Real (Realtime) para Logs/Diário de Bordo
+Se o sistema usa loops para ver se há novas atualizações na linha do tempo, isso precisa mudar para o canal oficial do Supabase.
+
+O que pedir para o Replit:
+"Para a tela de Diário de Bordo / Linha do tempo que consome a tabela mission_updates, certifique-se de que estamos usando a inscrição por canais Realtime do Supabase (supabase.channel().on('postgres_changes', ...).subscribe()) em vez de fazer requisições manuais repetitivas (setInterval). Isso vai permitir que o banco avise o app quando houver novidades, sem que o app precise ficar perguntando toda hora."
+
+Mande essas instruções para o Agent. Assim que ele terminar de aplicar as alterações e você testar se as telas continuam funcionando direitinho, é só voltar aqui e me mandar o "pronto para varredura"!
