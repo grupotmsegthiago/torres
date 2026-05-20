@@ -1,0 +1,52 @@
+Aplique isso no Replit (frontend) ✅
+Perfeito. Passe para o Agente exatamente estes ajustes técnicos :
+
+1) Centralizar cliente Supabase (singleton)
+Garanta uma única instância de createClient()nenhum aplicativo inteiro.
+Evita múltiplos ouvintes/sessões e chamadas duplicadas.
+2) Cache de usuário autenticado
+Não chame /auth/v1/userem toda troca de tela.
+Carregar usuário uma vez (ex: contexto global) e atualizar via onAuthStateChange.
+Em telas, leia o estado global em vez de refazer getUser()sempre.
+3) Deduplicação de solicitações em voo
+Para /mission_costse /escort_billings: se já existe solicitação em andamento com os mesmos filtros, reutilizar a Promise .
+Evitar paralelismo redundante em re-renderização.
+4) Debounce em filtros/pesquisa
+Entradas que disparam consulta (busca, período, filtros) com debounce de 300–600ms.
+Só consulte quando o usuário “parar de digitar”.
+5) Remover votação
+Revisar setInterval, setTimeout, useEffectlimpeza sem.
+Se precisar de polling, aumente o intervalo (ex: 30–60s no mínimo), nunca em loop curto.
+6) Migrar atualização em tempo real para Realtime
+Onde hoje há votação para mudanças de dados, use o canal Realtime com subscribe + cleanup.
+Garantir unsubscribe no unmount para não acumular inscrições.
+7) Corrigir ungueais deuseEffect
+Evite efeitos que dependam de objetos/funções recriados em cada renderização.
+quando necessário useMemo/useCallback.
+8) React Query/SWR (recomendado)
+Definir staleTime(ex: 30s–2min) para custos/faturamento.
+Desativar refetchOnWindowFocusonde não for crítico.
+retrycontrolado para não amplificar carga.
+9) Paginação e seleção mínima
+Buscar apenas colunas possíveis ( selectenxuto).
+Usar paginação/limite; nunca traga listas gigantes sem necessidade.
+10) Instrumentação rápida
+Logar contador de chamadas por rota no cliente (modo dev).
+Objetivo: comprovar queda de chamadas repetidas após implantação.
+Mensagem curta para colar no Replit Agent
+“Aplique hardening de performance no frontend Supabase:
+
+cliente singleton do Supabase,
+cache global do usuário + onAuthStateChange,
+deduplicação de solicitações idênticas em voo,
+debounce em filtros,
+remove polling agressiva/setInterval curto,
+usar Realtime com subscribe/unsubscribe nas telas de custos/faturamento/monitoramento,
+concordo useEffect que dispara refetch em loop,
+configurar React Query/SWR com staleTime e sem buscar excessivamente,
+paginação + selecione mínimo.
+Me entreguei diff com arquivos alterados e resumo do impacto em número de chamadas.”
+Quando terminar e publicar, me mande “pronto para varredura” que eu valido no Supabase.
+
+
+
