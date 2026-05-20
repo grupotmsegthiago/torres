@@ -7,10 +7,10 @@ export const modules: ModuleMap = {
   "./components/mockups/apresentacao/Servicos.tsx": () => import("../components/mockups/apresentacao/Servicos.tsx"),
   "./components/mockups/apresentacao/Sobre.tsx": () => import("../components/mockups/apresentacao/Sobre.tsx"),
   "./components/mockups/apresentacao/Tecnologia.tsx": () => import("../components/mockups/apresentacao/Tecnologia.tsx"),
-  "./components/mockups/ignition-icons/Options.tsx": () => import("../components/mockups/ignition-icons/Options.tsx"),
   "./components/mockups/grid-veiculo-row/Chips.tsx": () => import("../components/mockups/grid-veiculo-row/Chips.tsx"),
   "./components/mockups/grid-veiculo-row/Cockpit.tsx": () => import("../components/mockups/grid-veiculo-row/Cockpit.tsx"),
   "./components/mockups/grid-veiculo-row/Editorial.tsx": () => import("../components/mockups/grid-veiculo-row/Editorial.tsx"),
   "./components/mockups/grid-veiculo-row/Progresso.tsx": () => import("../components/mockups/grid-veiculo-row/Progresso.tsx"),
+  "./components/mockups/ignition-icons/Options.tsx": () => import("../components/mockups/ignition-icons/Options.tsx"),
   "./components/mockups/pedagio-mobile/PedagioMobile.tsx": () => import("../components/mockups/pedagio-mobile/PedagioMobile.tsx")
 };
