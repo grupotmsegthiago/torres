@@ -1997,7 +1997,7 @@ export default function FinanceiroPage() {
 
   const handleTogglePago = (t: FinancialTransaction) => {
     const goingToPaid = t.status !== "PAID";
-    const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual");
+    const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura");
     if (goingToPaid && isManualExpense && !t.comprovante_url) {
       toast({ title: "Comprovante obrigatório", description: "Anexe o comprovante antes de marcar como pago." });
       handleUploadComprovante(t.id, () => toggleMutation.mutate(t.id));
@@ -2342,7 +2342,7 @@ export default function FinanceiroPage() {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-center" data-testid={`cell-conferencia-${t.id}`}>
-                    {t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual") ? (
+                    {t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura") ? (
                       <div className="inline-flex items-center gap-1">
                         {/* 1 — BOLETO (só obrigatório se método=boleto) */}
                         {t.payment_method === "boleto" ? (
