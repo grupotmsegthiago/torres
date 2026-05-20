@@ -554,8 +554,8 @@ export function registerConciliacaoRoutes(app: Express) {
   // === CONTROLADORIA: Conferência rápida pedágio pago × cobrado ===
   // Calculadora read-only: dado um período, soma quanto foi cobrado dos clientes
   // (mission_costs com category contendo "pedágio" e cost_type='revenue', joined
-  // por scheduled_date das service_orders). Frontend digita o valor pago e
-  // compara — sem persistência.
+  // por data_missao das service_orders — data efetiva da operação, BRT).
+  // Frontend digita o valor pago e compara — sem persistência.
   app.get("/api/controladoria/pedagio-cobrado", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const inicio = String(req.query.inicio || "").trim();
@@ -567,7 +567,7 @@ export function registerConciliacaoRoutes(app: Express) {
         return res.status(400).json({ message: "Data início deve ser <= data fim" });
       }
 
-      // 1. OS no período (BRT). scheduled_date é timestamp; cobre o dia inteiro.
+      // 1. OS no período (BRT). data_missao é timestamp; cobre o dia inteiro.
       const inicioTs = `${inicio}T00:00:00`;
       const fimTs = `${fim}T23:59:59`;
       const osIds: number[] = [];
@@ -576,8 +576,8 @@ export function registerConciliacaoRoutes(app: Express) {
         const { data, error } = await supabaseAdmin
           .from("service_orders")
           .select("id")
-          .gte("scheduled_date", inicioTs)
-          .lte("scheduled_date", fimTs)
+          .gte("data_missao", inicioTs)
+          .lte("data_missao", fimTs)
           .range(from, from + pageSize - 1);
         if (error) return res.status(500).json({ message: error.message });
         const rows = data || [];
