@@ -1,0 +1,42 @@
+Com base nos logs de erro do Supabase (statement timeout, queue_timeout, UnableToConnectToTenantDatabase), na varredura que o seu agente do Replit acabou de fazer no código e na tela de Controle de Abastecimento / Conciliação TicketLog que você enviou, o diagnóstico técnico está bem claro.
+
+O sistema TMSEGo está sofrendo de um gargalo de concorrência e IOPS. Quando uma operação pesada acontece (como ler arquivos de faturamento ou processar conciliações cruzando dados), o banco trava porque o Realtime mantém dezenas de conexões abertas escutando atualizações desnecessárias.
+
+Para resolver isso de forma definitiva no Replit e no Supabase, siga o plano de ação abaixo dividido exatamente nas frentes que o agente mapeou:
+
+🛠️ Plano de Ação para o Agente do Replit
+Copie e cole as instruções abaixo diretamente no chat do Replit para ele gerar o código:
+
+Markdown
+Com base na última inspeção, vamos aplicar as correções exatas nas frentes 1 e 2 para eliminar os timeouts do banco de dados. Pode executar os seguintes passos:
+
+### 1. FRENTE 2 (Banco de Dados - SQL DDL)
+Como você validou que alguns índices já existem, adicione ao arquivo `server/db-init.ts` (ou execute via script de migração) apenas a criação dos índices que estão faltando e são críticos para as chaves estrangeiras:
+
+CREATE INDEX IF NOT EXISTS idx_escort_billings_client_id ON escort_billings(client_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_id ON chat_messages(sender_id);
+
+### 2. FRENTE 1 (Otimização do Realtime no Frontend)
+O canal global em `queryClient.ts` escutando mais de 25 tabelas em tempo real está gerando um efeito de "Fan-out" que derruba o pool de conexões do Postgres (`queue_timeout`). Vamos isolar o tráfego:
+
+- Remova as tabelas de chat (`chat_messages`, `conversations`, `presence`) do canal global.
+- Certifique-se de que as telas de chat (admin/chat, mobile/chat e o widget) gerenciem suas próprias assinaturas isoladas, limpando os canais (unsubscribe) quando os componentes forem desmontados.
+- Se o canal global ainda estiver pesado, divida-o por escopo de módulo (ex: um canal dinâmico apenas para a operação ativa, separando dados estáticos ou relatórios).
+
+### 3. NOTA SOBRE POLÍTICAS RLS (auth_rls_initplan)
+Como as políticas RLS estão direto no Dashboard do Supabase e não no código local, não se preocupe em reescrevê-las agora. Deixaremos para otimizar as chamadas a `auth.uid()` direto pelo painel web do Supabase depois.
+
+Pode iniciar a implementação das Frentes 1 e 2 em paralelo.
+💡 Por que isso resolve o problema da sua tela de Conciliação?
+Olhando para a nova tela de Conciliação de Abastecimento × TicketLog que você anexou (image_3788ce.png), esse tipo de interface costuma fazer consultas pesadas cruzando dados de transações com os registros de abastecimento da frota (as 3 viaturas ativas).
+
+Se o frontend tentar atualizar essa tela ou processar o arquivo enquanto o canal global do Realtime estiver forçando o banco a reavaliar a segurança de cada linha (o erro de RLS que o linter apontou), o banco atinge o limite de tempo e cai.
+
+Com as duas correções acima aplicadas pelo Replit:
+
+O processamento da conciliação de combustível ganhará velocidade, pois as tabelas relacionadas estarão devidamente indexadas.
+
+O tráfego de rede gerado pelos usuários conectados vai despencar, liberando slots no pool do Postgres para que a API execute os cruzamentos de dados sem gerar UnableToConnectToTenantDatabase.
+
+Envie o comando para o agente do Replit e, assim que ele aplicar as modificações, faremos um novo teste de estresse na aplicação!

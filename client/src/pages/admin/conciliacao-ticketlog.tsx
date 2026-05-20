@@ -90,17 +90,21 @@ export default function ConciliacaoTicketlogPage() {
     try {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
+      // Converte em chunks pra evitar "Maximum call stack" em arquivos grandes.
       let bin = "";
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+      }
       const b64 = btoa(bin);
       const res = await authFetch("/api/conciliacao-ticketlog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdfBase64: b64, dateFrom }),
+        body: JSON.stringify({ fileBase64: b64, fileName: file.name, dateFrom }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Falha ao processar PDF");
+        throw new Error(err.message || "Falha ao processar arquivo");
       }
       const data = await res.json();
       setReport(data);
@@ -144,17 +148,18 @@ export default function ConciliacaoTicketlogPage() {
                 <h2 className="text-lg font-semibold" data-testid="text-page-title">Conciliação de Abastecimento × TicketLog</h2>
               </div>
               <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                Envie o PDF de Relatório de Faturas Cartão Veículo (RFCV) gerado pela TicketLog. O sistema vai cruzar
+                Envie o PDF do Relatório de Faturas Cartão Veículo (RFCV) ou a planilha
+                Excel (RFCVTITULO .xls / .xlsx) gerada pela TicketLog. O sistema vai cruzar
                 cada transação com os abastecimentos cadastrados, identificar divergências e placas não cadastradas.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                 <div>
                   <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1 block">
-                    Arquivo PDF
+                    Arquivo (PDF ou Excel)
                   </label>
                   <Input
                     type="file"
-                    accept=".pdf,application/pdf"
+                    accept=".pdf,application/pdf,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     data-testid="input-pdf-file"
                     className="cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-amber-100 file:px-2 file:py-1 file:text-amber-700 file:text-sm hover:file:bg-amber-200"
@@ -265,7 +270,7 @@ export default function ConciliacaoTicketlogPage() {
         {!report && !loading && (
           <Card className="p-12 text-center text-neutral-500">
             <Fuel className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">Envie um PDF para iniciar a conciliação.</p>
+            <p className="text-sm">Envie um PDF ou Excel para iniciar a conciliação.</p>
           </Card>
         )}
       </div>

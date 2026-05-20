@@ -3,6 +3,7 @@ import { spawnSync } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import * as XLSX from "xlsx";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { rodarAuditoriaPedagiosCsv } from "../lib/auditoria-pedagios-ticketlog";
@@ -101,6 +102,164 @@ function parseTicketLogText(txt: string): TicketLogTx[] {
   return out;
 }
 
+// Parser do export Excel da TicketLog ("RFCVTITULO_*.XLS") — formato tabular
+// (1 linha = 1 transação) bem mais limpo que o PDF "RFCV". Colunas (linha 0):
+//   Cartao, Placa, Modelo, Responsavel, Data/Hora, Transacao, Tipo,
+//   Liberacao Restricao, Motorista, Matricula, Estabelecimento, Cidade,
+//   Quilometragem, Horas, Servico, Valor, Km Rodados, Horas Trabalhadas,
+//   Litros, Km/litro, Litros/Hora, Valor/Litro, Ordem de Servico, Emissora...
+// Data/Hora vem no formato americano "M/D/YY H:MM" (ex: "5/14/26 21:01").
+// Detecta o tipo do arquivo TicketLog pelos magic bytes (assinatura binária),
+// mais robusto que confiar só na extensão do `fileName` (arquivo pode chegar
+// renomeado). Retorna "pdf" | "xls" | "unknown".
+//   PDF        -> "%PDF-"                       (25 50 44 46 2D)
+//   XLS OLE    -> Composite Document File V2    (D0 CF 11 E0 A1 B1 1A E1)
+//   XLSX/ZIP   -> PK..                          (50 4B 03 04)
+export function detectTicketLogFileKind(
+  buf: Buffer,
+  fileName?: string,
+): "pdf" | "xls" | "unknown" {
+  if (buf.length >= 8) {
+    if (
+      buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d
+    ) return "pdf";
+    if (
+      buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0 &&
+      buf[4] === 0xa1 && buf[5] === 0xb1 && buf[6] === 0x1a && buf[7] === 0xe1
+    ) return "xls";
+    if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
+      // ZIP container — pode ser XLSX. Se o nome ajuda, confia nele;
+      // senão assume XLS (o cliente da TicketLog só exporta planilhas).
+      const n = (fileName || "").toLowerCase();
+      if (/\.pdf$/.test(n)) return "unknown";
+      return "xls";
+    }
+  }
+  // Fallback por nome quando magic bytes inconclusivos.
+  const n = (fileName || "").toLowerCase();
+  if (/\.(xlsx?|xlsm|xlsb)$/.test(n)) return "xls";
+  if (/\.pdf$/.test(n)) return "pdf";
+  return "unknown";
+}
+
+export function parseTicketLogXls(buf: Buffer): TicketLogTx[] {
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) return [];
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json<any[]>(ws, {
+    header: 1,
+    raw: false,
+    defval: "",
+  });
+  if (rows.length < 2) return [];
+
+  const header = (rows[0] as any[]).map((h) => String(h || "").trim());
+  const colIdx = (...names: string[]): number => {
+    for (const n of names) {
+      const i = header.findIndex((h) => h.toLowerCase() === n.toLowerCase());
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const iPlate = colIdx("Placa");
+  const iDate = colIdx("Data/Hora", "DataHora", "Data Hora");
+  const iCode = colIdx("Transacao", "Transação");
+  const iTipo = colIdx("Tipo");
+  const iDriver = colIdx("Motorista");
+  const iStation = colIdx("Estabelecimento");
+  const iCity = colIdx("Cidade");
+  const iKm = colIdx("Quilometragem", "Km");
+  const iFuel = colIdx("Servico", "Serviço");
+  const iValor = colIdx("Valor");
+  const iLiters = colIdx("Litros");
+
+  // Validação dura: colunas obrigatórias precisam estar no header da planilha.
+  // Se o usuário subir um Excel qualquer (não-TicketLog), aborta com mensagem
+  // clara em vez de devolver report vazio silenciosamente.
+  const missing: string[] = [];
+  if (iPlate < 0) missing.push("Placa");
+  if (iDate < 0) missing.push("Data/Hora");
+  if (iCode < 0) missing.push("Transacao");
+  if (iValor < 0) missing.push("Valor");
+  if (missing.length) {
+    throw new Error(
+      `Planilha não parece ser o export RFCVTITULO da TicketLog. Colunas obrigatórias ausentes: ${missing.join(", ")}.`,
+    );
+  }
+
+  const out: TicketLogTx[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r] as any[];
+    if (!row || row.length === 0) continue;
+    const code = String(row[iCode] ?? "").trim();
+    const plate = String(row[iPlate] ?? "").trim().toUpperCase();
+    if (!code || !plate) continue;
+    // Pula linhas que não são COMPRA (estornos, cancelamentos etc).
+    const tipo = String(row[iTipo] ?? "").trim().toUpperCase();
+    if (tipo && tipo !== "COMPRA") continue;
+
+    // "5/14/26 21:01" -> date "14/05/2026" / time "21:01:00"
+    let date: string | null = null;
+    let time: string | null = null;
+    const dh = String(row[iDate] ?? "").trim();
+    if (dh) {
+      const m = dh.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+      if (m) {
+        const mm = m[1].padStart(2, "0");
+        const dd = m[2].padStart(2, "0");
+        const yy = m[3].length === 2 ? `20${m[3]}` : m[3];
+        date = `${dd}/${mm}/${yy}`;
+        if (m[4]) {
+          const hh = m[4].padStart(2, "0");
+          const mi = m[5];
+          const ss = (m[6] || "00").padStart(2, "0");
+          time = `${hh}:${mi}:${ss}`;
+        }
+      }
+    }
+
+    const num = (v: any): number | null => {
+      if (v === "" || v == null) return null;
+      // Excel exporta com ponto decimal (ex "61.09") e sem separador de milhar,
+      // mas trata defensivamente caso venha "1.234,56".
+      const s = String(v).trim();
+      if (!s) return null;
+      const hasComma = s.includes(",");
+      const normalized = hasComma ? s.replace(/\./g, "").replace(",", ".") : s;
+      const n = Number(normalized);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const cidadeRaw = String(row[iCity] ?? "").trim();
+    let city = cidadeRaw;
+    let uf = "";
+    const cm = cidadeRaw.match(/^(.+?)\s*-\s*([A-Z]{2})$/);
+    if (cm) {
+      city = cm[1].trim();
+      uf = cm[2];
+    }
+
+    const fuelType = normalizeFuel(String(row[iFuel] ?? "").trim()) || null;
+
+    out.push({
+      code,
+      date,
+      time,
+      plate,
+      fuelType,
+      km: num(row[iKm]),
+      liters: num(row[iLiters]),
+      valor: num(row[iValor]),
+      driver: String(row[iDriver] ?? "").trim(),
+      station: String(row[iStation] ?? "").trim(),
+      city,
+      uf,
+    });
+  }
+  return out;
+}
+
 function dmyToIso(dmy: string | null): string | null {
   if (!dmy) return null;
   const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -123,25 +282,55 @@ function normalizeFuel(f: string | null | undefined): string {
 export function registerConciliacaoRoutes(app: Express) {
   app.post("/api/conciliacao-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
     try {
-      const { pdfBase64, dateFrom } = req.body as { pdfBase64?: string; dateFrom?: string };
-      if (!pdfBase64) return res.status(400).json({ message: "pdfBase64 obrigatório" });
-
-      const buf = Buffer.from(pdfBase64.replace(/^data:application\/pdf;base64,/, ""), "base64");
-      const tmpPath = join(tmpdir(), `tl_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`);
-      const tmpTxt = tmpPath.replace(/\.pdf$/, ".txt");
-      writeFileSync(tmpPath, buf);
-
-      const result = spawnSync("pdftotext", ["-layout", "-nopgbrk", tmpPath, tmpTxt]);
-      try { unlinkSync(tmpPath); } catch {}
-      if (result.status !== 0) {
-        try { unlinkSync(tmpTxt); } catch {}
-        return res.status(500).json({ message: "Falha ao extrair texto do PDF", stderr: result.stderr?.toString() });
+      // Aceita 2 formatos de entrada:
+      //  - PDF "RFCV" (legado): { pdfBase64 }
+      //  - Arquivo genérico: { fileBase64, fileName } — fileName define o
+      //    parser (.xls/.xlsx -> Excel TicketLog "RFCVTITULO"; .pdf -> PDF).
+      const { pdfBase64, fileBase64, fileName, dateFrom } = req.body as {
+        pdfBase64?: string;
+        fileBase64?: string;
+        fileName?: string;
+        dateFrom?: string;
+      };
+      const payload = fileBase64 || pdfBase64;
+      if (!payload) {
+        return res.status(400).json({ message: "Arquivo obrigatório (fileBase64 ou pdfBase64)" });
       }
-      const fs = await import("fs");
-      const txt = fs.readFileSync(tmpTxt, "utf8");
-      try { unlinkSync(tmpTxt); } catch {}
+      const cleaned = payload.replace(/^data:[^;]+;base64,/, "");
+      const buf = Buffer.from(cleaned, "base64");
+      // Detecção híbrida (magic bytes + nome) — não confia só na extensão.
+      const kind = detectTicketLogFileKind(buf, fileName);
 
-      const tlAll = parseTicketLogText(txt);
+      let tlAll: TicketLogTx[];
+      if (kind === "xls") {
+        try {
+          tlAll = parseTicketLogXls(buf);
+        } catch (xlsErr: any) {
+          console.error("[conciliacao-ticketlog] xls parse error:", xlsErr);
+          return res.status(400).json({ message: xlsErr.message || "Falha ao ler Excel" });
+        }
+      } else if (kind === "pdf") {
+        const tmpPath = join(tmpdir(), `tl_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`);
+        const tmpTxt = tmpPath.replace(/\.pdf$/, ".txt");
+        writeFileSync(tmpPath, buf);
+
+        const result = spawnSync("pdftotext", ["-layout", "-nopgbrk", tmpPath, tmpTxt]);
+        try { unlinkSync(tmpPath); } catch {}
+        if (result.status !== 0) {
+          try { unlinkSync(tmpTxt); } catch {}
+          return res.status(500).json({ message: "Falha ao extrair texto do PDF", stderr: result.stderr?.toString() });
+        }
+        const fs = await import("fs");
+        const txt = fs.readFileSync(tmpTxt, "utf8");
+        try { unlinkSync(tmpTxt); } catch {}
+
+        tlAll = parseTicketLogText(txt);
+      } else {
+        return res.status(400).json({
+          message:
+            "Tipo de arquivo não reconhecido. Envie o PDF do RFCV ou a planilha .xls/.xlsx do RFCVTITULO gerada pela TicketLog.",
+        });
+      }
       // Filtrar a partir de dateFrom (default 2026-04-09)
       const cutoff = dateFrom || "2026-04-09";
       const tl = tlAll.filter((t) => {
