@@ -1,0 +1,63 @@
+Perfeito — vou rodar a segunda varredura comparativa agora (incidentes + logs Postgres/API/Realtime + conselheiros) para confirmar se os queue_timeoutreduziram.
+
+
+Executado o comando get_active_incidents
+
+Executou o get_logs
+
+Executou o get_logs
+
+Executou o get_logs
+
+Executado get_advisors
+
+Executado get_advisors
+
+Racional
+Segunda varredura (pós-endurecimento) — resultado
+Obrigado pela implantação rápida. A varredura mostra que houve melhorias parciais , mas a instabilidade principal ainda existe no Realtime/DB pool .
+
+Estado atual
+Incidentes globais: endpoint não conseguiu confirmar (erro temporário da verificação), sem incidente listado.
+API logs: sem eventos novos relevantes no recorte retornado.
+Postgres: ainda aparecer:
+canceling statement due to statement timeout
+muitos reconecta/autenticações
+Tempo real (ponto crítico):
+ainda há váriosqueue_timeout
+UnableToConnectToTenantDatabase
+UnableToConnectToProject
+ciclos de tenant terminate/reconnect
+✅ Validação: os sinais de pressão não zeraram ; ainda há saturação intermitente de conexões/filas.
+
+Interpretação prática
+Seu endurecimento de frontend foi correto e necessário , mas o projeto ainda entra em janelas de sobrecarga no backend (especialmente caminho Realtime + consultas lentas/timeouts no banco).
+
+Próximos 3 passos (urgente)
+Reduzir mais o Fan-out em tempo real
+
+conferir assinaturas duplicadas por usuário/tela.
+garantir 1 canal por contexto e limpeza estrito.
+Atacar consultas/índices que mais doem
+
+assessores de performance agora abriram (bom sinal).
+foco inicial: FKs sem índice e políticas RLS custosas.
+Ajuste de capacidade
+
+se a carga real exigir, considere aumentar a capacidade/plano para aumentar a folga de pool/CPU.
+Achados relevantes dos Advisors
+Desempenho
+Muitos FKs sem índice (ex.: escort_billings, service_orders, clientsetc.).
+Muitas políticas com autenticação reavaliadas por linha ( auth_rls_initplan).
+Índices duplicados e muitos não usados.
+Segurança
+Várias tabelas com RLS habilitadas sem política, e algumas públicas sem RLS.
+Ver com SECURITY DEFINER.
+Funções SECURITY DEFINERexecutadoveis por anon/authenticated.
+Links de remediação (oficiais):
+
+https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys
+https://supabase.com/docs/guides/database/database-linter?lint=0003_auth_rls_initplan
+https://supabase.com/docs/guides/database/database-linter?lint=0006_multiple_permissive_policies
+https://supabase.com/docs/guides/database/database-linter?lint=0013_rls_disabled_in_public
+Se quiser, eu já passo a ordem exata de SQLs de menor risco/maior impacto (primeiros índices críticos + ajustes RLS de desempenho) para estabilizar ainda hoje.
