@@ -1,0 +1,44 @@
+Aqui está o relatório estruturado exatamente no padrão que o agente do Replit precisa para gerar as correções (DDL SQL e otimizações).
+
+Pode copiar todo o bloco abaixo e colar diretamente no chat do Replit para ele começar a trabalhar:
+
+📋 Supabase Advisor Data & Optimization Requirements
+Markdown
+### 1. FRENTE 2 (DATABASE DDL) - OUTPUT DO ADVISOR & LINTER
+
+#### [LINTER 0001] Foreign Keys Sem Índice (Unindexed Foreign Keys)
+O banco está realizando Full Table Scans para validar integridade referencial nas operações de escrita e atualização. É necessário criar índices nas seguintes chaves estrangeiras críticas do TMSEGo:
+
+* **Tabela:** `escort_billings`
+    * `client_id` -> aponta para `clients(id)`
+    * `service_order_id` -> aponta para `service_orders(id)`
+* **Tabela:** `service_orders`
+    * `client_id` -> aponta para `clients(id)`
+* **Tabela:** `chat_messages`
+    * `conversation_id` -> aponta para `conversations(id)`
+    * `sender_id` -> aponta para `auth.users(id)`
+
+**Ação esperada no server/db-init.ts:** Gerar comandos `CREATE INDEX IF NOT EXISTS` concorrentes ou padrões para essas colunas de FK para estancar o Statement Timeout.
+
+---
+
+#### [LINTER 0003] RLS Reavaliada por Linha (auth_rls_initplan)
+As políticas de Row Level Security (RLS) estão chamando `auth.uid()` ou subconsultas diretamente no predicado de checagem de linha. Isso força o Postgres a reavaliar a função para cada linha retornada (Complexidade O(N)).
+
+* **Tabelas Afetadas:** `service_orders`, `escort_billings`, `clients` e `chat_messages`.
+* **Problema Comum:** `CREATE POLICY ... ON table TO authenticated USING (auth.uid() = user_id);` ou subqueries dinâmicas.
+* **Correção de Desempenho recomendada pela Supabase:** Reescrever as políticas injetando a checagem em variáveis de sessão estáveis ou transformando a query em um Join estático indexado, garantindo que o plano de execução (`InitPlan`) rode apenas uma vez por query e não por linha. Alternativamente, usar funções estáveis com `SECURITY DEFINER` onde for estritamente performático.
+
+---
+
+### 2. FRENTE 1 (REALTIME FAN-OUT) - DIRETRIZES DE REATORAÇÃO
+
+* **Arquivo Alvo:** `queryClient.ts` (e componentes de inicialização de listeners globais).
+* **Remoção de Duplicidade:** Remover completamente as tabelas `chat_messages`, `conversations` e `presence` do canal Realtime global.
+* **Isolamento Local:** Garantir que o escopo de chat seja assinado *apenas* localmente em `admin/chat`, `mobile/chat` e `chat-widget` quando as respectivas telas/componentes forem montados, limpando os canais (unsubscribe) no unmount.
+* **Modularização por Contexto:** Dividir o canal global remanescente em sub-canais por escopo de tela/módulo:
+    * `canal_operacional`: Assina apenas tabelas de rastreamento, ocorrências e ordens de serviço.
+    * `canal_financeiro`: Assina apenas tabelas de faturamento e custos.
+    * `canal_rh`: Assina tabelas de colaboradores/vigilantes.
+
+Proceda com as duas frentes de otimização integradas para estabilizar o sistema.
