@@ -469,9 +469,23 @@ export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: 
     );
 
     if (pending.length === 0) { flushInProgress = false; return { processed: 0, failed: 0 }; }
-    console.log(`[write-queue] Flushing ${pending.length} pending write(s) to Supabase...`);
+    console.log(`[write-queue] Flushing ${pending.length} pending write(s) to Supabase (batched, ~150ms entre itens)...`);
 
+    let consecutiveFailures = 0;
+    let itemIdx = 0;
     for (const item of pending) {
+      // Pausa entre escritas pra não sufocar o Supabase que acabou de voltar.
+      if (itemIdx > 0) await new Promise((r) => setTimeout(r, 150));
+      itemIdx++;
+      // Aborta o lote se Supabase voltar a cair no meio do flush.
+      if (!supabaseHealthy) {
+        console.warn(`[write-queue] Supabase voltou OFFLINE no meio do flush — abortando lote (item ${itemIdx}/${pending.length})`);
+        break;
+      }
+      if (consecutiveFailures >= 3) {
+        console.warn(`[write-queue] 3 falhas seguidas — abortando lote pra não martelar Supabase`);
+        break;
+      }
       try {
         const payload = typeof item.payload === "string" ? JSON.parse(item.payload) : item.payload;
         const filters = item.filters ? (typeof item.filters === "string" ? JSON.parse(item.filters) : item.filters) : null;
@@ -511,8 +525,15 @@ export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: 
           [item.id],
         );
         processed++;
+        consecutiveFailures = 0;
         console.log(`[write-queue] ✓ Processed queue #${item.id} (${item.operation} on ${item.table_name})`);
       } catch (err: any) {
+        // Só conta como "Supabase martelado" se for erro transitório (timeout/5xx/rede).
+        // Erros de validação/constraint (4xx, PGRST*) não devem abortar o lote inteiro.
+        const msg = String(err?.message || "");
+        const isTransient = /timeout|abort|fetch failed|ECONN|ENETUNREACH|HTTP 5\d\d|network/i.test(msg);
+        if (isTransient) consecutiveFailures++;
+        else consecutiveFailures = 0;
         const attempts = (item.attempts || 0) + 1;
         const newStatus = attempts >= MAX_QUEUE_ATTEMPTS ? "failed" : "pending";
         await p.query(

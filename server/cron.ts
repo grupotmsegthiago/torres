@@ -5,6 +5,7 @@ import * as apibrasil from "./apibrasil";
 import { log } from "./index";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
+import { isSupabaseHealthy } from "./pg-fallback";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
@@ -186,6 +187,7 @@ export function initCronJobs() {
     let controlIdRunning = false;
     cron.schedule("*/1 * * * *", async () => {
       if (controlIdRunning) return; // evita sobreposição
+      if (!isSupabaseHealthy()) return; // Supabase fora — pula pra não enfileirar lixo
       controlIdRunning = true;
       try {
         const { syncAllDevices } = await import("./control-id");
@@ -207,6 +209,7 @@ export function initCronJobs() {
     let interReconcileRunning = false;
     cron.schedule("*/1 * * * *", async () => {
       if (interReconcileRunning) return; // evita sobreposição
+      if (!isSupabaseHealthy()) return; // Supabase fora — pula pra não enfileirar lixo
       interReconcileRunning = true;
       try {
         const { isInterConfigured } = await import("./services/inter/client");
@@ -398,6 +401,10 @@ export function initCronJobs() {
   });
 
   cron.schedule("*/10 * * * *", async () => {
+    if (!isSupabaseHealthy()) {
+      log("CRON Billing: SKIP — Supabase offline (modo fallback)", "cron");
+      return;
+    }
     try {
       const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
       const n = (v: any) => Number(v) || 0;
@@ -594,6 +601,10 @@ export function initCronJobs() {
   });
 
   cron.schedule("0 6 * * *", async () => {
+    if (!isSupabaseHealthy()) {
+      log("CRON BillingAlerts: SKIP — Supabase offline (modo fallback)", "cron");
+      return;
+    }
     log("CRON BillingAlerts: Verificando linha do tempo de cobrança", "cron");
     try {
       const now = new Date();
@@ -856,6 +867,10 @@ export function initCronJobs() {
   });
 
   cron.schedule("*/30 * * * *", async () => {
+    if (!isSupabaseHealthy()) {
+      log("CRON AceiteExpirado: SKIP — Supabase offline (modo fallback)", "cron");
+      return;
+    }
     try {
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       const { data: expired } = await supabaseAdmin
