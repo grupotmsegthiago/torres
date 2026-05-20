@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
+import { rodarAuditoriaPedagiosCsv } from "../lib/auditoria-pedagios-ticketlog";
 
 interface TicketLogTx {
   code: string;
@@ -358,6 +359,25 @@ export function registerConciliacaoRoutes(app: Express) {
       res.json({ desmarcadas: (data || []).length, ref });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/auditoria-pedagios-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { csvBase64 } = req.body as { csvBase64?: string };
+      if (!csvBase64) return res.status(400).json({ message: "csvBase64 obrigatório" });
+      const buf = Buffer.from(csvBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+      // CSV TicketLog vem em UTF-8 (com BOM). Tentar utf-8 direto.
+      let content = buf.toString("utf8");
+      // Heurística: se aparecer caracteres de mojibake e não 'ç', tenta latin1
+      if (!/[áéíóúãõçÁÉÍÓÚÃÕÇ]/.test(content) && /[\xc0-\xff]/.test(buf.toString("binary"))) {
+        content = buf.toString("latin1");
+      }
+      const result = await rodarAuditoriaPedagiosCsv(content);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[auditoria-pedagios-ticketlog]", err);
+      res.status(500).json({ message: err?.message || String(err) });
     }
   });
 }

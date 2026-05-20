@@ -197,6 +197,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
+          { path: "/admin/conferencia-pedagios-ticketlog", label: "Conferência Pedágios TicketLog", icon: ShieldCheck },
         ],
       },
     ],
