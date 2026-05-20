@@ -149,7 +149,7 @@ const fmtOverdue = (iso?: string | null, nowMs?: number) => {
 export default function AgendaVtrPage() {
   const { data: gridOrders = [], isLoading: l1 } = useQuery<GridOs[]>({
     queryKey: ["/api/operational-grid"],
-    refetchInterval: 30000,
+    refetchInterval: 90000,
   });
 
   const { data: vehicles = [], isLoading: l2 } = useQuery<Vehicle[]>({

@@ -284,7 +284,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
       const res = await fetch("/api/health");
       return res.json();
     },
-    refetchInterval: 15000,
+    refetchInterval: 120000,
     retry: false,
   });
 
@@ -477,7 +477,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const { data: chatUnread } = useQuery<{ total: number }>({
     queryKey: ["/api/chat/unread-count"],
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
   const unreadCount = chatUnread?.total || 0;
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";

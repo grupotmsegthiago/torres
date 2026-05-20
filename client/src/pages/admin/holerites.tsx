@@ -49,7 +49,7 @@ export default function HoleritesPage() {
       const data = await r.json();
       return Array.isArray(data) ? data : [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 180000,
   });
 
   const filteredPayslips = payslips.filter((p: any) => p.assinaturaStatus === "assinado" || !pendingSignatures.find((x: any) => x.id === p.id));

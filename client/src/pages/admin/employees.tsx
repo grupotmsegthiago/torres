@@ -1692,7 +1692,7 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
   const { data, isLoading } = useQuery<OnboardingResult>({
     queryKey: ["/api/employees", employeeId, "onboarding"],
     queryFn: async () => { const r = await authFetch(`/api/employees/${employeeId}/onboarding`); return r.json(); },
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
   if (isLoading || !data) {
     return <div className="mb-4 p-4 rounded-lg border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">Carregando status do onboarding...</div>;
@@ -4589,7 +4589,7 @@ export default function EmployeesPage() {
   const { data: onboardingSummary = [] } = useQuery<OnboardingSummary[]>({
     queryKey: ["/api/onboarding-summary"],
     queryFn: async () => { const r = await authFetch("/api/onboarding-summary"); const j = await r.json(); return Array.isArray(j) ? j : []; },
-    refetchInterval: 60000,
+    refetchInterval: 180000,
   });
   const onboardingByEmp = new Map<number, OnboardingSummary>((Array.isArray(onboardingSummary) ? onboardingSummary : []).map(s => [s.employeeId, s]));
 

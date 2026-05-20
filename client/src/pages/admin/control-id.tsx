@@ -106,7 +106,7 @@ type SyncProgress = {
 function SyncProgressBar({ deviceId }: { deviceId: number }) {
   const { data, isLoading } = useQuery<SyncProgress>({
     queryKey: ["/api/control-id/devices", deviceId, "sync-progress"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   if (isLoading || !data) {
@@ -153,7 +153,7 @@ function DevicesTab() {
 
   const { data: devices = [], isLoading } = useQuery<Device[]>({
     queryKey: ["/api/control-id/devices"],
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const saveMutation = useMutation({
@@ -543,7 +543,7 @@ function PunchesTab() {
       const r = await authFetch(`/api/control-id/punches?${params.toString()}`);
       return r.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const [editingPunch, setEditingPunch] = useState<Punch | null>(null);

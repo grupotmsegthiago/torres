@@ -91,7 +91,7 @@ export default function ChatPage() {
 
   const { data: conversations = [], refetch: refetchConvs } = useQuery<ChatConversation[]>({
     queryKey: ["/api/chat/conversations"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   const { data: chatUsers = [] } = useQuery<ChatUser[]>({
@@ -100,13 +100,13 @@ export default function ChatPage() {
 
   const { data: presence = [] } = useQuery<PresenceEntry[]>({
     queryKey: ["/api/chat/presence"],
-    refetchInterval: 30000,
+    refetchInterval: 90000,
   });
 
   const { data: messages = [], refetch: refetchMsgs } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/conversations", activeConvId, "messages"],
     enabled: !!activeConvId,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const presenceMap = useMemo(() => {

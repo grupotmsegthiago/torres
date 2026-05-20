@@ -5166,7 +5166,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 90000,
   });
 
   const driverByVehicle = useMemo(() => {

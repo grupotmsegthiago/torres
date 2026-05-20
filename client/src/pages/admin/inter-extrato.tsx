@@ -77,7 +77,7 @@ export default function InterExtratoPage() {
 
   const { data: pagamentos = [], refetch: refetchPagamentos } = useQuery<InterPagamento[]>({
     queryKey: ["/api/inter/pagamentos"],
-    refetchInterval: 30_000,
+    refetchInterval: 120_000,
   });
 
   const pendentesAprovacao = useMemo(() => {

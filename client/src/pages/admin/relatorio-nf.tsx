@@ -137,9 +137,9 @@ export default function RelatorioNFPage() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
-    staleTime: 15000,
-    refetchInterval: 30000,
-    refetchOnWindowFocus: true,
+    staleTime: 60000,
+    refetchInterval: 180000,
+    refetchOnWindowFocus: false,
   });
 
   const reconcileMutation = useMutation({

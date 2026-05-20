@@ -1032,14 +1032,14 @@ function AsaasBalanceCard() {
 
   const { data: status, isLoading, refetch } = useQuery<{ connected: boolean; balance?: any; message?: string }>({
     queryKey: ["/api/asaas/status"],
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 180000,
+    staleTime: 60000,
     enabled: isDiretoria,
   });
 
   const { data: pendingData, refetch: refetchPending } = useQuery<{ pending: any[]; count: number; total: number }>({
     queryKey: ["/api/asaas/transfers-pending"],
-    refetchInterval: 30000,
+    refetchInterval: 120000,
     enabled: isDiretoria,
   });
 
@@ -1849,7 +1849,7 @@ export default function FinanceiroPage() {
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
     queryKey: ["/api/financial/transactions"],
-    refetchInterval: 120000,
+    refetchInterval: 300000,
   });
 
   const { data: categories = [] } = useQuery<FinancialCategory[]>({

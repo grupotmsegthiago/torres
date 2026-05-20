@@ -48,7 +48,7 @@ export default function ContratosExperienciaPage() {
       const data = await r.json();
       return Array.isArray(data) ? data : [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 180000,
   });
 
   const pendentes = contratos.filter(c => c.assinaturaStatus !== "assinado");

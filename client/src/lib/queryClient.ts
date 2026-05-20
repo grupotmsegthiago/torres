@@ -21,11 +21,39 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+let _cachedAccessToken: string | null = null;
+let _tokenPrimed = false;
+let _primePromise: Promise<void> | null = null;
+
+async function _primeToken() {
+  if (_tokenPrimed) return;
+  if (_primePromise) return _primePromise;
+  _primePromise = (async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      _cachedAccessToken = data.session?.access_token ?? null;
+    } catch {
+      _cachedAccessToken = null;
+    } finally {
+      _tokenPrimed = true;
+      _primePromise = null;
+    }
+  })();
+  return _primePromise;
+}
+
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    _cachedAccessToken = session?.access_token ?? null;
+    _tokenPrimed = true;
+  });
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
+  if (!_tokenPrimed) await _primeToken();
   const headers: Record<string, string> = {};
-  if (session?.access_token) {
-    headers["Authorization"] = `Bearer ${session.access_token}`;
+  if (_cachedAccessToken) {
+    headers["Authorization"] = `Bearer ${_cachedAccessToken}`;
   }
   return headers;
 }
@@ -101,10 +129,23 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const url = queryKey.join("/") as string;
     const authHeaders = await getAuthHeaders();
-    const res = await fetch(queryKey.join("/") as string, {
-      headers: authHeaders,
-    });
+    let res = await fetch(url, { headers: authHeaders });
+
+    if (res.status === 401) {
+      // Tenta refresh do token (igual authFetch/apiRequest). Sem isso,
+      // queries com token expirado falham silenciosamente até o usuário
+      // recarregar a página.
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      if (refreshData?.session?.access_token) {
+        _cachedAccessToken = refreshData.session.access_token;
+        _tokenPrimed = true;
+        res = await fetch(url, {
+          headers: { Authorization: `Bearer ${refreshData.session.access_token}` },
+        });
+      }
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
@@ -335,14 +376,14 @@ export function stopAutoRefresh() {
 }
 
 if (typeof window !== "undefined") {
-  startAutoRefresh();
+  // Auto-refresh global desativado: Realtime (postgres_changes) já invalida
+  // o que precisa. Polling de 2min em TODAS as queries era o maior gerador
+  // de carga repetida no Supabase.
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stopAutoRefresh();
-    } else {
-      queryClient.invalidateQueries();
-      startAutoRefresh();
+    if (!document.hidden) {
+      // Ao voltar pra aba só garantimos que o canal Realtime está vivo.
+      // NÃO invalidamos todas as queries — isso causa avalanche de refetch.
       _ensureRealtimeAlive();
     }
   });
@@ -585,7 +626,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
     console.log("[Network] Online detected, refreshing all queries");
     queryClient.invalidateQueries();
-    startAutoRefresh();
     _retryDelay = _RETRY_MIN;
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
     _reconnecting = false;
@@ -604,8 +644,9 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: true,
-      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      staleTime: 60_000,
       gcTime: 5 * 60_000,
       retry: false,
     },

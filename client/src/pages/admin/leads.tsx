@@ -86,8 +86,8 @@ export default function LeadsPage() {
 
   const { data: leads = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/leads"] });
   const { data: config } = useQuery<any>({ queryKey: ["/api/leads/setores"] });
-  const { data: emailStats } = useQuery<any>({ queryKey: ["/api/leads/email-stats"], refetchInterval: 30000 });
-  const { data: emailQueue = [] } = useQuery<any[]>({ queryKey: ["/api/leads/email-queue"], enabled: activeTab === "email", refetchInterval: 15000 });
+  const { data: emailStats } = useQuery<any>({ queryKey: ["/api/leads/email-stats"], refetchInterval: 120000 });
+  const { data: emailQueue = [] } = useQuery<any[]>({ queryKey: ["/api/leads/email-queue"], enabled: activeTab === "email", refetchInterval: 60000 });
 
   const [form, setForm] = useState<any>({
     empresa: "", cnpj: "", contato_nome: "", contato_cargo: "", telefone: "",
@@ -858,12 +858,12 @@ function CountdownTimer({ seconds, label }: { seconds: number; label: string }) 
 function AutoProspectPanel() {
   const { data: prospectStatus, refetch } = useQuery<any>({
     queryKey: ["/api/leads/auto-prospect/status"],
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const { data: automation, refetch: refetchAutomation } = useQuery<{ enabled: boolean }>({
     queryKey: ["/api/leads/automation"],
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
   const automationEnabled = automation?.enabled !== false;
 
