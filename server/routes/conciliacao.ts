@@ -507,6 +507,13 @@ export function registerConciliacaoRoutes(app: Express) {
       }
 
       if (existing?.id) {
+        const { data: prev, error: prevErr } = await supabaseAdmin
+          .from("ticketlog_pedagio_audit_notes")
+          .select("*")
+          .eq("id", existing.id)
+          .maybeSingle();
+        if (prevErr) return res.status(500).json({ message: prevErr.message });
+
         const { data, error } = await supabaseAdmin
           .from("ticketlog_pedagio_audit_notes")
           .update({
@@ -520,6 +527,31 @@ export function registerConciliacaoRoutes(app: Express) {
           .select("*")
           .single();
         if (error) return res.status(500).json({ message: error.message });
+
+        const prevStatus = prev?.status ?? null;
+        const prevObs = prev?.observacao ?? "";
+        const newObs = observacao || "";
+        if (prevStatus !== st || prevObs !== newObs) {
+          const { error: histErr } = await supabaseAdmin
+            .from("ticketlog_pedagio_audit_notes_history")
+            .insert({
+              note_id: existing.id,
+              codigo_fatura: codigoFatura,
+              scope,
+              csv_codigo: scope === "fatura_sem_os" ? csvCodigo : null,
+              mission_cost_id: scope === "os_sem_fatura" ? missionCostId : null,
+              service_order_id: serviceOrderId ?? null,
+              action: "update",
+              previous_status: prevStatus,
+              new_status: st,
+              previous_observacao: prevObs,
+              new_observacao: newObs,
+              changed_by_id: userId,
+              changed_by_name: userName,
+              changed_at: now,
+            });
+          if (histErr) console.error("[notes history insert]", histErr.message);
+        }
         return res.json({ note: data });
       }
 
@@ -541,9 +573,46 @@ export function registerConciliacaoRoutes(app: Express) {
         .select("*")
         .single();
       if (error) return res.status(500).json({ message: error.message });
+
+      const { error: histErr } = await supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes_history")
+        .insert({
+          note_id: data?.id ?? null,
+          codigo_fatura: codigoFatura,
+          scope,
+          csv_codigo: scope === "fatura_sem_os" ? csvCodigo : null,
+          mission_cost_id: scope === "os_sem_fatura" ? missionCostId : null,
+          service_order_id: serviceOrderId ?? null,
+          action: "create",
+          previous_status: null,
+          new_status: st,
+          previous_observacao: null,
+          new_observacao: observacao || "",
+          changed_by_id: userId,
+          changed_by_name: userName,
+          changed_at: now,
+        });
+      if (histErr) console.error("[notes history insert]", histErr.message);
+
       res.json({ note: data });
     } catch (err: any) {
       console.error("[auditoria-pedagios-ticketlog/notes POST]", err);
+      res.status(500).json({ message: err?.message || String(err) });
+    }
+  });
+
+  app.get("/api/auditoria-pedagios-ticketlog/notes/:id/history", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "id inválido" });
+      const { data, error } = await supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes_history")
+        .select("*")
+        .eq("note_id", id)
+        .order("changed_at", { ascending: false });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ history: data || [] });
+    } catch (err: any) {
       res.status(500).json({ message: err?.message || String(err) });
     }
   });

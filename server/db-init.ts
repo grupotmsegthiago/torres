@@ -1505,5 +1505,34 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] ticketlog_pedagio_audit_notes error:", e.message);
   }
 
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS ticketlog_pedagio_audit_notes_history (
+        id SERIAL PRIMARY KEY,
+        note_id INTEGER,
+        codigo_fatura TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        csv_codigo TEXT,
+        mission_cost_id INTEGER,
+        service_order_id INTEGER,
+        action TEXT NOT NULL,
+        previous_status TEXT,
+        new_status TEXT,
+        previous_observacao TEXT,
+        new_observacao TEXT,
+        changed_by_id TEXT,
+        changed_by_name TEXT,
+        changed_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_tlpanh_note ON ticketlog_pedagio_audit_notes_history(note_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_tlpanh_fatura ON ticketlog_pedagio_audit_notes_history(codigo_fatura)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_tlpanh_fatura_csv ON ticketlog_pedagio_audit_notes_history(codigo_fatura, csv_codigo)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_tlpanh_fatura_mc ON ticketlog_pedagio_audit_notes_history(codigo_fatura, mission_cost_id)`);
+    console.log("[db-init] ticketlog_pedagio_audit_notes_history table ensured");
+  } catch (e: any) {
+    console.error("[db-init] ticketlog_pedagio_audit_notes_history error:", e.message);
+  }
+
   await closeDbInitClient();
 }

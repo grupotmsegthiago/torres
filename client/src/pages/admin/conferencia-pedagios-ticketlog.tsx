@@ -144,6 +144,35 @@ interface NoteDraft {
   contextLabel: string;
 }
 
+interface PedagioAuditNoteHistoryEntry {
+  id: number;
+  note_id: number | null;
+  action: string;
+  previous_status: NoteStatus | null;
+  new_status: NoteStatus | null;
+  previous_observacao: string | null;
+  new_observacao: string | null;
+  changed_by_id: string | null;
+  changed_by_name: string | null;
+  changed_at: string | null;
+}
+
+const fmtDateTime = (iso: string | null) => {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  } catch {
+    return iso;
+  }
+};
+
+const statusLabel = (s: NoteStatus | null) => {
+  if (!s) return "—";
+  if (s === "justificada") return "Justificada";
+  if (s === "contestada") return "Contestada";
+  return "Pendente";
+};
+
 export default function ConferenciaPedagiosTicketLogPage() {
   const { toast } = useToast();
   const [codigoFromUrl, setCodigoFromUrl] = useState<string | null>(null);
@@ -160,6 +189,36 @@ export default function ConferenciaPedagiosTicketLogPage() {
   const [hideResolved, setHideResolved] = useState(false);
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null);
   const [savingNote, setSavingNote] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<PedagioAuditNoteHistoryEntry[]>([]);
+
+  const loadHistory = async (noteId: number) => {
+    setHistoryLoading(true);
+    try {
+      const res = await authFetch(`/api/auditoria-pedagios-ticketlog/notes/${noteId}/history`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Falha ao carregar histórico");
+      }
+      const data = await res.json();
+      setHistoryEntries(Array.isArray(data.history) ? data.history : []);
+    } catch (err: any) {
+      setHistoryEntries([]);
+      toast({ title: "Erro ao carregar histórico", description: err.message, variant: "destructive" });
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const toggleHistory = async () => {
+    if (!noteDraft?.existingNoteId) return;
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next && historyEntries.length === 0) {
+      await loadHistory(noteDraft.existingNoteId);
+    }
+  };
 
   const [openGerar, setOpenGerar] = useState(false);
   const [modoGerar, setModoGerar] = useState<"unico" | "rateado">("unico");
@@ -227,6 +286,8 @@ export default function ConferenciaPedagiosTicketLogPage() {
 
   const openNoteForFatura = (f: FaturaSemOS) => {
     const existing = noteForCsv(f.csv.codigo);
+    setShowHistory(false);
+    setHistoryEntries([]);
     setNoteDraft({
       scope: "fatura_sem_os",
       csvCodigo: f.csv.codigo,
@@ -241,6 +302,8 @@ export default function ConferenciaPedagiosTicketLogPage() {
 
   const openNoteForOs = (o: OsSemFatura) => {
     const existing = noteForMc(o.missionCost.id);
+    setShowHistory(false);
+    setHistoryEntries([]);
     setNoteDraft({
       scope: "os_sem_fatura",
       csvCodigo: null,
@@ -296,6 +359,8 @@ export default function ConferenciaPedagiosTicketLogPage() {
       if (mapped.csvCodigo) nextNotes.byCsvCodigo[mapped.csvCodigo] = mapped;
       if (mapped.missionCostId != null) nextNotes.byMissionCostId[String(mapped.missionCostId)] = mapped;
       setReport({ ...report, notes: nextNotes });
+      setHistoryEntries([]);
+      setShowHistory(false);
       setNoteDraft(null);
       toast({ title: "Anotação salva", description: `Status: ${mapped.status}` });
     } catch (err: any) {
@@ -1051,6 +1116,81 @@ export default function ConferenciaPedagiosTicketLogPage() {
                     data-testid="textarea-note-observacao"
                   />
                 </div>
+                {noteDraft.existingNoteId && (
+                  <div className="border-t pt-3">
+                    <button
+                      type="button"
+                      onClick={toggleHistory}
+                      className="flex items-center gap-1 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      data-testid="button-toggle-history"
+                    >
+                      {showHistory ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      Ver histórico de mudanças
+                    </button>
+                    {showHistory && (
+                      <div className="mt-2 max-h-64 overflow-y-auto space-y-2" data-testid="list-note-history">
+                        {historyLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-neutral-500">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Carregando…
+                          </div>
+                        ) : historyEntries.length === 0 ? (
+                          <div className="text-xs text-neutral-500">Nenhuma mudança registrada.</div>
+                        ) : (
+                          historyEntries.map((h) => {
+                            const statusChanged = h.action === "create" || h.previous_status !== h.new_status;
+                            const obsChanged = (h.previous_observacao || "") !== (h.new_observacao || "");
+                            return (
+                              <div
+                                key={h.id}
+                                className="rounded border border-neutral-200 dark:border-neutral-800 p-2 text-xs"
+                                data-testid={`item-history-${h.id}`}
+                              >
+                                <div className="flex items-center justify-between mb-1 text-neutral-500">
+                                  <span>
+                                    {h.action === "create" ? "Criada" : "Atualizada"} por{" "}
+                                    <strong className="text-neutral-700 dark:text-neutral-300">
+                                      {h.changed_by_name || "—"}
+                                    </strong>
+                                  </span>
+                                  <span>{fmtDateTime(h.changed_at)}</span>
+                                </div>
+                                {statusChanged && (
+                                  <div className="text-neutral-700 dark:text-neutral-300">
+                                    Status:{" "}
+                                    {h.action === "create" ? (
+                                      <strong>{statusLabel(h.new_status)}</strong>
+                                    ) : (
+                                      <>
+                                        <span className="line-through text-neutral-400">
+                                          {statusLabel(h.previous_status)}
+                                        </span>{" "}
+                                        → <strong>{statusLabel(h.new_status)}</strong>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                                {obsChanged && (
+                                  <div className="mt-1 space-y-1">
+                                    {h.action !== "create" && (h.previous_observacao || "") && (
+                                      <div className="text-neutral-400 line-through whitespace-pre-wrap break-words">
+                                        {h.previous_observacao}
+                                      </div>
+                                    )}
+                                    {(h.new_observacao || "") && (
+                                      <div className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-words">
+                                        {h.new_observacao}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <DialogFooter className="gap-2 sm:gap-2">
