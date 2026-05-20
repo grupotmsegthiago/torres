@@ -6,10 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, XCircle, Loader2,
-  Download, ChevronDown, ChevronRight, FileSpreadsheet,
+  Download, ChevronDown, ChevronRight, FileSpreadsheet, DollarSign, Plus,
 } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 interface TicketLogPedagioRow {
   codigo: string;
@@ -95,9 +101,26 @@ function downloadCsv(filename: string, rows: string[][]) {
 export default function ConferenciaPedagiosTicketLogPage() {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
+  const [csvBase64, setCsvBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<AuditResult | null>(null);
   const [showConciliados, setShowConciliados] = useState(false);
+
+  const [openGerar, setOpenGerar] = useState(false);
+  const [modoGerar, setModoGerar] = useState<"unico" | "rateado">("unico");
+  const [gerando, setGerando] = useState(false);
+  const [resultadoGerar, setResultadoGerar] = useState<
+    { criadas: number; ignoradas: number; total_criado: number; total_fatura: number } | null
+  >(null);
+
+  const [openCriarMc, setOpenCriarMc] = useState(false);
+  const [selecionadosMc, setSelecionadosMc] = useState<Set<string>>(new Set());
+  const [criandoMc, setCriandoMc] = useState(false);
+
+  const candidatasParaCriarMc = useMemo(() => {
+    if (!report) return [] as AuditResult["result"]["faturaSemOS"];
+    return report.result.faturaSemOS.filter((f) => f.osCandidatas.length === 1);
+  }, [report]);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -108,6 +131,7 @@ export default function ConferenciaPedagiosTicketLogPage() {
       let bin = "";
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
       const b64 = btoa(bin);
+      setCsvBase64(b64);
       const res = await authFetch("/api/auditoria-pedagios-ticketlog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -119,6 +143,8 @@ export default function ConferenciaPedagiosTicketLogPage() {
       }
       const data = (await res.json()) as AuditResult;
       setReport(data);
+      setResultadoGerar(null);
+      setSelecionadosMc(new Set());
       const t = data.result.totais;
       toast({
         title: "Conferência processada",
@@ -266,15 +292,38 @@ export default function ConferenciaPedagiosTicketLogPage() {
                     </div>
                   )}
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={exportDivergencias}
-                  disabled={report.result.faturaSemOS.length === 0 && report.result.osSemFatura.length === 0}
-                  data-testid="button-export-divergencias"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Exportar divergências (CSV)
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={exportDivergencias}
+                    disabled={report.result.faturaSemOS.length === 0 && report.result.osSemFatura.length === 0}
+                    data-testid="button-export-divergencias"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Exportar divergências (CSV)
+                  </Button>
+                  <Button
+                    onClick={() => { setResultadoGerar(null); setOpenGerar(true); }}
+                    disabled={!csvBase64 || !report.parsed.header.codigoFatura}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    data-testid="button-open-gerar-financeiro"
+                  >
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Gerar contas a pagar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelecionadosMc(new Set(candidatasParaCriarMc.map((f) => f.csv.codigo)));
+                      setOpenCriarMc(true);
+                    }}
+                    disabled={!csvBase64 || candidatasParaCriarMc.length === 0}
+                    data-testid="button-open-criar-mission-costs"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Criar mission_costs faltantes ({candidatasParaCriarMc.length})
+                  </Button>
+                </div>
               </div>
             </Card>
 
@@ -435,6 +484,190 @@ export default function ConferenciaPedagiosTicketLogPage() {
             <div className="text-sm">Envie um CSV da fatura TicketLog para iniciar a conferência.</div>
           </Card>
         )}
+
+        <Dialog open={openGerar} onOpenChange={setOpenGerar}>
+          <DialogContent className="max-w-lg" data-testid="dialog-gerar-financeiro">
+            <DialogHeader>
+              <DialogTitle>Gerar contas a pagar — Fatura TicketLog</DialogTitle>
+              <DialogDescription>
+                Cria lançamento em <code>financial_transactions</code> (despesa pendente) com referência
+                ao código da fatura. Se essa fatura já tiver lançamento (em qualquer modo), a operação
+                é bloqueada para evitar duplicidade — desfaça os lançamentos existentes antes de gerar
+                de novo.
+              </DialogDescription>
+            </DialogHeader>
+            {report && (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <span className="text-neutral-500">Fatura:</span>{" "}
+                  <span className="font-semibold">{report.parsed.header.codigoFatura || "—"}</span>
+                  {" · "}
+                  <span className="text-neutral-500">Total:</span>{" "}
+                  <span className="font-semibold">{brl(report.parsed.total)}</span>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Vencimento da fatura:</span>{" "}
+                  <span>{fmtDate(report.parsed.header.vencimento)}</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                    Modo de lançamento
+                  </label>
+                  <Select value={modoGerar} onValueChange={(v) => setModoGerar(v as "unico" | "rateado")}>
+                    <SelectTrigger data-testid="select-modo-gerar">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unico">Uma despesa única (valor total)</SelectItem>
+                      <SelectItem value="rateado">Rateado por placa (uma despesa por veículo)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {resultadoGerar && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 p-3 text-emerald-800 dark:text-emerald-300 text-xs space-y-1" data-testid="text-resultado-gerar">
+                    <div><strong>{resultadoGerar.criadas}</strong> lançamento(s) criado(s) — {brl(resultadoGerar.total_criado)}</div>
+                    {resultadoGerar.ignoradas > 0 && (
+                      <div>{resultadoGerar.ignoradas} lançamento(s) já existiam e foram ignorados.</div>
+                    )}
+                    <div className="text-neutral-600 dark:text-neutral-400">Total da fatura: {brl(resultadoGerar.total_fatura)}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenGerar(false)} data-testid="button-cancel-gerar">
+                {resultadoGerar ? "Fechar" : "Cancelar"}
+              </Button>
+              <Button
+                disabled={!csvBase64 || gerando}
+                onClick={async () => {
+                  if (!csvBase64) return;
+                  setGerando(true);
+                  try {
+                    const res = await authFetch("/api/auditoria-pedagios-ticketlog/gerar-financeiro", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ csvBase64, modo: modoGerar }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.message || "Falha ao gerar lançamento");
+                    setResultadoGerar(data);
+                    toast({
+                      title: "Lançamento financeiro gerado",
+                      description: `${data.criadas} criado(s) · ${data.ignoradas} ignorado(s)`,
+                    });
+                  } catch (err: any) {
+                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  } finally {
+                    setGerando(false);
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                data-testid="button-confirm-gerar"
+              >
+                {gerando ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Gerando…</> : "Gerar lançamento"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={openCriarMc} onOpenChange={setOpenCriarMc}>
+          <DialogContent className="max-w-2xl" data-testid="dialog-criar-mission-costs">
+            <DialogHeader>
+              <DialogTitle>Criar mission_costs faltantes</DialogTitle>
+              <DialogDescription>
+                Cria custo (e receita) de pedágio em <strong>OS conciliadas pelo cruzamento</strong> que
+                ficaram sem o lançamento. Idempotente: cada linha embute <code>[TL:&lt;código&gt;]</code> na
+                descrição e não é duplicada.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[50vh] overflow-y-auto border rounded text-sm">
+              {candidatasParaCriarMc.length === 0 ? (
+                <div className="p-4 text-neutral-500">Nenhuma OS conciliada por placa+data sem mission_cost.</div>
+              ) : (
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900">
+                    <tr className="text-left border-b">
+                      <th className="py-2 px-2 w-8"></th>
+                      <th className="py-2 px-2">Data</th>
+                      <th className="py-2 px-2">Placa</th>
+                      <th className="py-2 px-2">Valor</th>
+                      <th className="py-2 px-2">OS</th>
+                      <th className="py-2 px-2">Estabelecimento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {candidatasParaCriarMc.map((f) => {
+                      const checked = selecionadosMc.has(f.csv.codigo);
+                      return (
+                        <tr key={f.csv.codigo} className="border-b border-neutral-100 dark:border-neutral-900">
+                          <td className="py-1 px-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelecionadosMc((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(f.csv.codigo);
+                                  else next.delete(f.csv.codigo);
+                                  return next;
+                                });
+                              }}
+                              data-testid={`checkbox-mc-${f.csv.codigo}`}
+                            />
+                          </td>
+                          <td className="py-1 px-2 whitespace-nowrap">{fmtDate(f.csv.data)}</td>
+                          <td className="py-1 px-2 font-mono">{f.csv.placa}</td>
+                          <td className="py-1 px-2 whitespace-nowrap">{brl(f.csv.valor)}</td>
+                          <td className="py-1 px-2 font-mono">
+                            {f.osCandidatas[0]?.osNumber || `#${f.osCandidatas[0]?.id}`}
+                          </td>
+                          <td className="py-1 px-2 text-neutral-600 dark:text-neutral-400">
+                            {f.csv.estabelecimento || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenCriarMc(false)} data-testid="button-cancel-criar-mc">
+                Cancelar
+              </Button>
+              <Button
+                disabled={!csvBase64 || criandoMc || selecionadosMc.size === 0}
+                onClick={async () => {
+                  if (!csvBase64) return;
+                  setCriandoMc(true);
+                  try {
+                    const res = await authFetch("/api/auditoria-pedagios-ticketlog/criar-mission-costs", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ csvBase64, codigosToCreate: Array.from(selecionadosMc) }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.message || "Falha ao criar mission_costs");
+                    toast({
+                      title: "Mission_costs processados",
+                      description: `${data.criados} criado(s) · ${data.ignorados} ignorado(s) · ${data.erros} erro(s)`,
+                    });
+                    setOpenCriarMc(false);
+                    if (data.criados > 0) handleUpload();
+                  } catch (err: any) {
+                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  } finally {
+                    setCriandoMc(false);
+                  }
+                }}
+                data-testid="button-confirm-criar-mc"
+              >
+                {criandoMc ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Criando…</> : `Criar ${selecionadosMc.size} mission_cost(s)`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

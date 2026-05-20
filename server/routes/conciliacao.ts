@@ -456,4 +456,305 @@ export function registerConciliacaoRoutes(app: Express) {
       res.status(500).json({ message: err?.message || String(err) });
     }
   });
+
+  // Decodifica o CSV (base64) com a mesma heurística do endpoint principal.
+  function decodeCsvBase64(csvBase64: string): string {
+    const buf = Buffer.from(csvBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
+    let content = buf.toString("utf8");
+    if (!/[áéíóúãõçÁÉÍÓÚÃÕÇ]/.test(content) && /[\xc0-\xff]/.test(buf.toString("binary"))) {
+      content = buf.toString("latin1");
+    }
+    return content;
+  }
+
+  // ==========================================================================
+  // GERAR CONTAS A PAGAR (financial_transactions) A PARTIR DA FATURA TICKETLOG
+  // ==========================================================================
+  // - modo "unico"    -> 1 despesa total da fatura
+  // - modo "rateado"  -> 1 despesa por placa, somando todas as linhas dessa placa
+  // Idempotência: origin_type="ticketlog_pedagio_fatura",
+  //               origin_id = "<codigoFatura>" (unico) | "<codigoFatura>:<PLACA>" (rateado)
+  app.post(
+    "/api/auditoria-pedagios-ticketlog/gerar-financeiro",
+    requireAuth,
+    requireAdminRole,
+    async (req, res) => {
+      try {
+        const { csvBase64, modo, due_date, category_name } = req.body as {
+          csvBase64?: string;
+          modo?: "unico" | "rateado";
+          due_date?: string;
+          category_name?: string;
+        };
+        if (!csvBase64) return res.status(400).json({ message: "csvBase64 obrigatório" });
+        if (modo !== "unico" && modo !== "rateado") {
+          return res.status(400).json({ message: "modo deve ser 'unico' ou 'rateado'" });
+        }
+        const audit = await rodarAuditoriaPedagiosCsv(decodeCsvBase64(csvBase64));
+        const codigoFatura = audit.parsed.header.codigoFatura;
+        if (!codigoFatura) {
+          return res.status(400).json({ message: "fatura sem 'Código da fatura' — não é possível gerar lançamento idempotente" });
+        }
+        if (audit.parsed.rows.length === 0) {
+          return res.status(400).json({ message: "fatura sem linhas de pedágio" });
+        }
+        const cliente = audit.matchedClient;
+        const entityName = cliente
+          ? cliente.razaoSocial || cliente.nomeFantasia || cliente.name
+          : audit.parsed.header.cliente || "TicketLog";
+        const dueDate = due_date
+          || audit.parsed.header.vencimento
+          || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        const cat = category_name || "Pedágio";
+        const userName = (req as any).user?.name || (req as any).user?.username || "SISTEMA";
+
+        type Payload = {
+          origin_id: string;
+          description: string;
+          amount: number;
+          due_date: string;
+          notes: string;
+        };
+        const payloads: Payload[] = [];
+        if (modo === "unico") {
+          payloads.push({
+            origin_id: codigoFatura,
+            description: `Fatura TicketLog Pedágios ${codigoFatura} — ${entityName}`,
+            amount: audit.parsed.total,
+            due_date: dueDate,
+            notes: `Fatura TicketLog ${codigoFatura} (${audit.parsed.rows.length} transações de pedágio). Período ${audit.parsed.header.periodoInicio || "?"} a ${audit.parsed.header.periodoFim || "?"}.`,
+          });
+        } else {
+          const porPlaca = new Map<string, { total: number; qtd: number }>();
+          for (const r of audit.parsed.rows) {
+            const cur = porPlaca.get(r.placa) || { total: 0, qtd: 0 };
+            cur.total += r.valor;
+            cur.qtd += 1;
+            porPlaca.set(r.placa, cur);
+          }
+          for (const [placa, agg] of Array.from(porPlaca.entries())) {
+            payloads.push({
+              origin_id: `${codigoFatura}:${placa}`,
+              description: `Fatura TicketLog Pedágios ${codigoFatura} — Placa ${placa}`,
+              amount: Math.round(agg.total * 100) / 100,
+              due_date: dueDate,
+              notes: `Fatura TicketLog ${codigoFatura} — placa ${placa} (${agg.qtd} pedágios).`,
+            });
+          }
+        }
+
+        const originType = "ticketlog_pedagio_fatura";
+        // Idempotência por código da fatura: bloqueia qualquer criação se já
+        // existe lançamento (em qualquer modo) referente a este codigoFatura —
+        // origin_id == codigoFatura (modo unico) OU origin_id começa com
+        // codigoFatura + ":" (modo rateado). Evita lançar a mesma fatura duas
+        // vezes mesmo trocando de modo.
+        const { data: anyExistingRaw, error: existErr } = await supabaseAdmin
+          .from("financial_transactions")
+          .select("id, origin_id, amount")
+          .eq("origin_type", originType)
+          .or(`origin_id.eq.${codigoFatura},origin_id.like.${codigoFatura}:%`);
+        if (existErr) return res.status(500).json({ message: existErr.message });
+        const anyExisting = (anyExistingRaw || []) as Array<{ id: number; origin_id: string; amount: number }>;
+        if (anyExisting.length > 0) {
+          const modoAnterior = anyExisting.some((r) => r.origin_id === codigoFatura) ? "unico" : "rateado";
+          const totalAnterior = anyExisting.reduce((s, r) => s + Number(r.amount || 0), 0);
+          return res.status(409).json({
+            message: `Fatura ${codigoFatura} já foi lançada (modo ${modoAnterior}, ${anyExisting.length} lançamento(s), total ${totalAnterior.toFixed(2)}). Desfaça os lançamentos existentes antes de gerar novamente.`,
+            modoAnterior,
+            codigoFatura,
+            existentes: anyExisting.length,
+            total_existente: totalAnterior,
+            ids: anyExisting.map((r) => r.id),
+          });
+        }
+
+        const toInsert = payloads
+          .map((p) => ({
+            description: p.description,
+            amount: p.amount,
+            type: "EXPENSE",
+            status: "PENDING",
+            due_date: p.due_date,
+            category_name: cat,
+            entity_type: "PROVIDER",
+            entity_name: "TicketLog",
+            notes: p.notes,
+            origin_type: originType,
+            origin_id: p.origin_id,
+            created_by: userName,
+          }));
+
+        let inserted: any[] = [];
+        if (toInsert.length > 0) {
+          const { data, error } = await supabaseAdmin
+            .from("financial_transactions")
+            .insert(toInsert)
+            .select("id, origin_id, amount");
+          if (error) return res.status(500).json({ message: error.message });
+          inserted = data || [];
+        }
+
+        res.json({
+          codigoFatura,
+          modo,
+          criadas: inserted.length,
+          ignoradas: 0,
+          total_criado: inserted.reduce((s, r: any) => s + Number(r.amount || 0), 0),
+          total_fatura: audit.parsed.total,
+          ids: inserted.map((r: any) => r.id),
+        });
+      } catch (err: any) {
+        console.error("[auditoria-pedagios-ticketlog/gerar-financeiro]", err);
+        res.status(500).json({ message: err?.message || String(err) });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // CRIAR MISSION_COSTS FALTANTES PARA OS CONCILIADAS POR PLACA+DATA
+  // ==========================================================================
+  // Aplica-se às linhas da fatura que caíram em "faturaSemOS" mas com EXATAMENTE
+  // 1 OS candidata (placa+data bateram, só faltou o lançamento de pedágio).
+  // Idempotência: descrição embute "[TL:<codigo>]" e checamos antes de criar.
+  app.post(
+    "/api/auditoria-pedagios-ticketlog/criar-mission-costs",
+    requireAuth,
+    requireAdminRole,
+    async (req, res) => {
+      try {
+        const { csvBase64, codigosToCreate } = req.body as {
+          csvBase64?: string;
+          codigosToCreate?: string[];
+        };
+        if (!csvBase64) return res.status(400).json({ message: "csvBase64 obrigatório" });
+        if (!Array.isArray(codigosToCreate) || codigosToCreate.length === 0) {
+          return res.status(400).json({ message: "codigosToCreate (array) obrigatório" });
+        }
+        const audit = await rodarAuditoriaPedagiosCsv(decodeCsvBase64(csvBase64));
+        const codigoFatura = audit.parsed.header.codigoFatura || "sem-codigo";
+        const wanted = new Set(codigosToCreate.map(String));
+
+        type Plan = {
+          codigo: string;
+          osId: number;
+          vehicleId: number | null;
+          employeeId: number | null;
+          amount: number;
+          estabelecimento: string | null;
+          data: string;
+        };
+        const plans: Plan[] = [];
+        const ignorados: Array<{ codigo: string; motivo: string }> = [];
+        for (const f of audit.result.faturaSemOS) {
+          if (!wanted.has(f.csv.codigo)) continue;
+          if (f.osCandidatas.length !== 1) {
+            ignorados.push({
+              codigo: f.csv.codigo,
+              motivo: f.osCandidatas.length === 0
+                ? "sem OS candidata pelo cruzamento"
+                : `${f.osCandidatas.length} OS candidatas — escolha ambígua, não criado`,
+            });
+            continue;
+          }
+          const os = f.osCandidatas[0];
+          plans.push({
+            codigo: f.csv.codigo,
+            osId: os.id,
+            vehicleId: os.vehicleId,
+            employeeId: (os as any).assignedEmployeeId ?? null,
+            amount: f.csv.valor,
+            estabelecimento: f.csv.estabelecimento,
+            data: f.csv.data,
+          });
+        }
+
+        // Pré-busca mission_costs já existentes p/ esses OS com tag [TL:codigo]
+        const osIds = Array.from(new Set(plans.map((p) => p.osId)));
+        const jaExistem = new Set<string>();
+        if (osIds.length > 0) {
+          const { data: mcRaw } = await supabaseAdmin
+            .from("mission_costs")
+            .select("id, service_order_id, description")
+            .in("service_order_id", osIds);
+          for (const mc of (mcRaw || []) as Array<{ service_order_id: number; description: string | null }>) {
+            const desc = mc.description || "";
+            const m = desc.match(/\[TL:([^\]]+)\]/);
+            if (m) jaExistem.add(`${mc.service_order_id}|${m[1]}`);
+          }
+        }
+
+        const criados: Array<{ codigo: string; osId: number; missionCostId: number; revenueId: number | null }> = [];
+        const erros: Array<{ codigo: string; motivo: string }> = [];
+
+        for (const p of plans) {
+          const key = `${p.osId}|${p.codigo}`;
+          if (jaExistem.has(key)) {
+            ignorados.push({ codigo: p.codigo, motivo: `já existe mission_cost com tag [TL:${p.codigo}] na OS ${p.osId}` });
+            continue;
+          }
+          const descBase = `Pedágio ${p.estabelecimento ? `- ${p.estabelecimento} ` : ""}[TL:${p.codigo}] (fatura ${codigoFatura})`;
+          const amountStr = p.amount.toFixed(2);
+
+          const { data: costRecord, error: costErr } = await supabaseAdmin
+            .from("mission_costs")
+            .insert({
+              service_order_id: p.osId,
+              vehicle_id: p.vehicleId,
+              employee_id: p.employeeId,
+              category: "Pedágio",
+              description: descBase,
+              amount: amountStr,
+              cost_type: "expense",
+            })
+            .select("id")
+            .single();
+          if (costErr || !costRecord) {
+            erros.push({ codigo: p.codigo, motivo: costErr?.message || "falha ao criar custo" });
+            continue;
+          }
+          // Cria também a contrapartida de receita (cobrança ao cliente), como o fluxo do app móvel.
+          // Categoria "Pedágio Receita" para que o filtro do cruzamento
+          // (que exclui qualquer categoria contendo "receita") não trate
+          // essa linha como um custo de pedágio pendente — evitando que
+          // o próprio lançamento que acabamos de criar reapareça em
+          // `osSemFatura` na re-execução da conferência.
+          const { data: revRecord, error: revErr } = await supabaseAdmin
+            .from("mission_costs")
+            .insert({
+              service_order_id: p.osId,
+              vehicle_id: p.vehicleId,
+              employee_id: p.employeeId,
+              category: "Pedágio Receita",
+              description: descBase,
+              amount: amountStr,
+              cost_type: "revenue",
+            })
+            .select("id")
+            .single();
+          if (revErr) {
+            erros.push({ codigo: p.codigo, motivo: `custo criado mas receita falhou: ${revErr.message}` });
+            criados.push({ codigo: p.codigo, osId: p.osId, missionCostId: costRecord.id, revenueId: null });
+            continue;
+          }
+          criados.push({
+            codigo: p.codigo,
+            osId: p.osId,
+            missionCostId: costRecord.id,
+            revenueId: revRecord?.id ?? null,
+          });
+        }
+
+        res.json({
+          criados: criados.length,
+          ignorados: ignorados.length,
+          erros: erros.length,
+          detalhes: { criados, ignorados, erros },
+        });
+      } catch (err: any) {
+        console.error("[auditoria-pedagios-ticketlog/criar-mission-costs]", err);
+        res.status(500).json({ message: err?.message || String(err) });
+      }
+    },
+  );
 }
