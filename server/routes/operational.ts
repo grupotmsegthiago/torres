@@ -563,7 +563,7 @@ import type { Express } from "express";
             const frozenHoras = Math.round(horasCalc * 100) / 100;
             const frozenKm = billing.km_total;
 
-            if ((o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada") && !(o as any).custos_congelados_em) {
+            if ((o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada") && !(o as any).custosCongeladosEm) {
               try {
                 const gpsData = await calcDistanciaGPS(o.id);
                 await supabaseAdmin.from("service_orders").update({
@@ -586,7 +586,7 @@ import type { Express } from "express";
               } catch (_fe) {}
             }
 
-            const useFrozen = !!(o as any).custos_congelados_em;
+            const useFrozen = !!(o as any).custosCongeladosEm;
 
             const rSal = rateioSalario.get(o.id) || 0;
             const rDia = rateioDiaria.get(o.id) || 0;
@@ -594,29 +594,29 @@ import type { Express } from "express";
             const rMul = rateioMulta.get(o.id) || 0;
             const rComb = rateioCombustivel.get(o.id) || 0;
             const rateioExtraTotal = rSal + rDia + rManu + rMul;
-            const baseComb = useFrozen ? (Number((o as any).custo_combustivel_alocado) || frozenComb) : frozenComb;
-            const baseCustoTotal = useFrozen ? (Number((o as any).custo_total_alocado) || frozenCustoTotal) : frozenCustoTotal;
+            const baseComb = useFrozen ? (Number((o as any).custoCombustivelAlocado) || frozenComb) : frozenComb;
+            const baseCustoTotal = useFrozen ? (Number((o as any).custoTotalAlocado) || frozenCustoTotal) : frozenCustoTotal;
             const combFinal = baseComb > 0 ? baseComb : rComb;
             const custoTotalFinal = baseCustoTotal + (combFinal - baseComb) + rateioExtraTotal;
-            const baseFat = useFrozen ? (Number((o as any).fat_calculado) || frozenFat) : frozenFat;
+            const baseFat = useFrozen ? (Number((o as any).fatCalculado) || frozenFat) : frozenFat;
             const resultadoFinal = baseFat - custoTotalFinal;
             const margemFinal = baseFat > 0 ? (resultadoFinal / baseFat) * 100 : 0;
 
             liveCost = {
               km_inicial: kmInicial,
               km_atual: kmFinalNorm,
-              km_total: useFrozen ? ((o as any).km_total_calculado ?? frozenKm) : frozenKm,
-              horas_missao: useFrozen ? (Number((o as any).horas_missao_calculadas) || frozenHoras) : frozenHoras,
-              faturamento: useFrozen ? (Number((o as any).fat_calculado) || frozenFat) : frozenFat,
+              km_total: useFrozen ? ((o as any).kmTotalCalculado ?? frozenKm) : frozenKm,
+              horas_missao: useFrozen ? (Number((o as any).horasMissaoCalculadas) || frozenHoras) : frozenHoras,
+              faturamento: useFrozen ? (Number((o as any).fatCalculado) || frozenFat) : frozenFat,
               fat_acionamento: billing.fat_acionamento,
               fat_hora_extra: billing.fat_hora_extra,
               fat_km_extra: billing.fat_km,
               receitas_extras: Math.round(receitasOsGrid * 100) / 100,
               horas_excedentes: billing.horas_excedentes,
-              pagamento: useFrozen ? (Number((o as any).custo_pagamento_alocado) || frozenPag) : frozenPag,
+              pagamento: useFrozen ? (Number((o as any).custoPagamentoAlocado) || frozenPag) : frozenPag,
               custo_combustivel: combFinal,
-              custo_pedagio: useFrozen ? (Number((o as any).custo_pedagio_alocado) || frozenPed) : frozenPed,
-              custo_outros: useFrozen ? (Number((o as any).custo_outros_alocado) || frozenOut) : frozenOut,
+              custo_pedagio: useFrozen ? (Number((o as any).custoPedagioAlocado) || frozenPed) : frozenPed,
+              custo_outros: useFrozen ? (Number((o as any).custoOutrosAlocado) || frozenOut) : frozenOut,
               custo_salario: rSal,
               custo_diaria: rDia,
               custo_manutencao: rManu,
@@ -625,7 +625,7 @@ import type { Express } from "express";
               resultado: resultadoFinal,
               margem_pct: margemFinal,
               frozen: useFrozen,
-              fuel_allocated: o.fuelAllocated !== false && (useFrozen ? Number((o as any).custo_combustivel_alocado) > 0 : custoCombustivel > 0),
+              fuel_allocated: o.fuelAllocated !== false && (useFrozen ? Number((o as any).custoCombustivelAlocado) > 0 : custoCombustivel > 0),
               fuel_allocated_hint: fuelAllocatedHint,
               contrato_nome: contratoNome || contrato.name || null,
               contrato_valores: {
