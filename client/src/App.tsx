@@ -21,6 +21,7 @@ const VehiclesPage = lazy(() => import("@/pages/admin/vehicles"));
 const ServiceOrdersPage = lazy(() => import("@/pages/admin/service-orders"));
 const FuelingPage = lazy(() => import("@/pages/admin/fueling"));
 const ConferenciaPedagiosTicketLogPage = lazy(() => import("@/pages/admin/conferencia-pedagios-ticketlog"));
+const ConferenciaPedagioPage = lazy(() => import("@/pages/admin/conferencia-pedagio"));
 const MaintenancePage = lazy(() => import("@/pages/admin/maintenance"));
 const TimesheetsPage = lazy(() => import("@/pages/admin/timesheets"));
 const TrackerPage = lazy(() => import("@/pages/admin/tracker"));
@@ -242,6 +243,7 @@ function Router() {
         <Route path="/admin/relatorio-horas">{() => <ProtectedRoute component={RelatorioHorasPage} />}</Route>
         <Route path="/admin/cotacao-gasto">{() => <ProtectedRoute component={CotacaoGastoPage} />}</Route>
         <Route path="/admin/conferencia-pedagios-ticketlog">{() => <ProtectedRoute component={ConferenciaPedagiosTicketLogPage} />}</Route>
+        <Route path="/admin/conferencia-pedagio">{() => <ProtectedRoute component={ConferenciaPedagioPage} />}</Route>
         <Route path="/admin/conciliacao-ticketlog">{() => { window.location.replace("/admin/fueling"); return null; }}</Route>
         <Route path="/admin/ticketlog-postos">{() => { window.location.replace("/admin/fueling"); return null; }}</Route>
         <Route path="/admin/control-id">{() => <ProtectedRoute component={ControlIdPage} />}</Route>

@@ -362,6 +362,82 @@ export function registerConciliacaoRoutes(app: Express) {
     }
   });
 
+  // === CONTROLADORIA: Conferência rápida pedágio pago × cobrado ===
+  // Calculadora read-only: dado um período, soma quanto foi cobrado dos clientes
+  // (mission_costs com category contendo "pedágio" e cost_type='revenue', joined
+  // por scheduled_date das service_orders). Frontend digita o valor pago e
+  // compara — sem persistência.
+  app.get("/api/controladoria/pedagio-cobrado", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const inicio = String(req.query.inicio || "").trim();
+      const fim = String(req.query.fim || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
+        return res.status(400).json({ message: "Parâmetros 'inicio' e 'fim' (YYYY-MM-DD) obrigatórios" });
+      }
+      if (inicio > fim) {
+        return res.status(400).json({ message: "Data início deve ser <= data fim" });
+      }
+
+      // 1. OS no período (BRT). scheduled_date é timestamp; cobre o dia inteiro.
+      const inicioTs = `${inicio}T00:00:00`;
+      const fimTs = `${fim}T23:59:59`;
+      const osIds: number[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabaseAdmin
+          .from("service_orders")
+          .select("id")
+          .gte("scheduled_date", inicioTs)
+          .lte("scheduled_date", fimTs)
+          .range(from, from + pageSize - 1);
+        if (error) return res.status(500).json({ message: error.message });
+        const rows = data || [];
+        for (const r of rows) osIds.push((r as any).id);
+        if (rows.length < pageSize) break;
+      }
+
+      if (osIds.length === 0) {
+        return res.json({ inicio, fim, totalCobrado: 0, qtdOs: 0 });
+      }
+
+      // 2. mission_costs de receita pedágio dessas OS. Paginar em chunks de IDs.
+      let totalCobrado = 0;
+      const osComPedagio = new Set<number>();
+      const chunkSize = 500;
+      for (let i = 0; i < osIds.length; i += chunkSize) {
+        const chunk = osIds.slice(i, i + chunkSize);
+        for (let from = 0; ; from += pageSize) {
+          const { data, error } = await supabaseAdmin
+            .from("mission_costs")
+            .select("service_order_id, amount, category, cost_type")
+            .in("service_order_id", chunk)
+            .eq("cost_type", "revenue")
+            .or("category.ilike.%pedágio%,category.ilike.%pedagio%")
+            .range(from, from + pageSize - 1);
+          if (error) return res.status(500).json({ message: error.message });
+          const rows = data || [];
+          for (const r of rows) {
+            const amt = Number((r as any).amount || 0);
+            if (!Number.isFinite(amt)) continue;
+            totalCobrado += amt;
+            osComPedagio.add(Number((r as any).service_order_id));
+          }
+          if (rows.length < pageSize) break;
+        }
+      }
+
+      res.json({
+        inicio,
+        fim,
+        totalCobrado: Math.round(totalCobrado * 100) / 100,
+        qtdOs: osComPedagio.size,
+      });
+    } catch (err: any) {
+      console.error("[pedagio-cobrado] error:", err);
+      res.status(500).json({ message: err?.message || String(err) });
+    }
+  });
+
   app.post("/api/auditoria-pedagios-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { csvBase64 } = req.body as { csvBase64?: string };
