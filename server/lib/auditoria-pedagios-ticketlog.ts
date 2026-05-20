@@ -8,12 +8,31 @@ import {
   type TicketLogPedagioParsed,
 } from "./ticketlog-pedagio-csv";
 
+export interface PedagioAuditNote {
+  id: number;
+  codigoFatura: string;
+  scope: "fatura_sem_os" | "os_sem_fatura";
+  csvCodigo: string | null;
+  missionCostId: number | null;
+  serviceOrderId: number | null;
+  status: "pendente" | "justificada" | "contestada";
+  observacao: string;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface AuditoriaPedagioRunResult {
   parsed: TicketLogPedagioParsed;
   matchedClient: { id: number; name: string; razaoSocial: string | null; nomeFantasia: string | null } | null;
   resolvedClientWarning: string | null;
   window: { dataInicio: string; dataFim: string } | null;
   result: CruzamentoResult;
+  notes: {
+    byCsvCodigo: Record<string, PedagioAuditNote>;
+    byMissionCostId: Record<string, PedagioAuditNote>;
+  };
 }
 
 function normalizeName(s: string): string {
@@ -79,7 +98,35 @@ export async function rodarAuditoriaPedagiosCsv(csvContent: string): Promise<Aud
         osSemFatura: { count: 0, total: 0 },
       },
     },
+    notes: { byCsvCodigo: {}, byMissionCostId: {} },
   };
+
+  // Carrega anotações persistidas para esta fatura (independente do match de cliente,
+  // pois pode haver notas mesmo quando a fatura não consegue cruzar com OS)
+  if (parsed.header.codigoFatura) {
+    const { data: notesRaw } = await supabaseAdmin
+      .from("ticketlog_pedagio_audit_notes")
+      .select("*")
+      .eq("codigo_fatura", parsed.header.codigoFatura);
+    for (const n of (notesRaw || []) as Array<any>) {
+      const note: PedagioAuditNote = {
+        id: n.id,
+        codigoFatura: n.codigo_fatura,
+        scope: n.scope,
+        csvCodigo: n.csv_codigo ?? null,
+        missionCostId: n.mission_cost_id ?? null,
+        serviceOrderId: n.service_order_id ?? null,
+        status: n.status,
+        observacao: n.observacao || "",
+        createdById: n.created_by_id ?? null,
+        createdByName: n.created_by_name ?? null,
+        createdAt: n.created_at ?? null,
+        updatedAt: n.updated_at ?? null,
+      };
+      if (note.csvCodigo) out.notes.byCsvCodigo[note.csvCodigo] = note;
+      if (note.missionCostId != null) out.notes.byMissionCostId[String(note.missionCostId)] = note;
+    }
+  }
 
   if (!parsed.header.cliente) {
     out.resolvedClientWarning = "fatura sem campo 'Cliente:' no cabeçalho";

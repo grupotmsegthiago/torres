@@ -434,6 +434,128 @@ export function registerConciliacaoRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[pedagio-cobrado] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === ANOTAÇÕES DE AUDITORIA DE PEDÁGIO (justificadas/contestadas/etc) ===
+  app.get("/api/auditoria-pedagios-ticketlog/notes", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const codigoFatura = String(req.query.codigoFatura || "").trim();
+      if (!codigoFatura) return res.status(400).json({ message: "codigoFatura obrigatório" });
+      const { data, error } = await supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes")
+        .select("*")
+        .eq("codigo_fatura", codigoFatura);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ notes: data || [] });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || String(err) });
+    }
+  });
+
+  app.post("/api/auditoria-pedagios-ticketlog/notes", requireAuth, requireAdminRole, async (req: any, res) => {
+    try {
+      const {
+        codigoFatura,
+        scope,
+        csvCodigo,
+        missionCostId,
+        serviceOrderId,
+        status,
+        observacao,
+      } = req.body as {
+        codigoFatura?: string;
+        scope?: "fatura_sem_os" | "os_sem_fatura";
+        csvCodigo?: string | null;
+        missionCostId?: number | null;
+        serviceOrderId?: number | null;
+        status?: "pendente" | "justificada" | "contestada";
+        observacao?: string;
+      };
+      if (!codigoFatura) return res.status(400).json({ message: "codigoFatura obrigatório" });
+      if (scope !== "fatura_sem_os" && scope !== "os_sem_fatura") {
+        return res.status(400).json({ message: "scope inválido" });
+      }
+      if (scope === "fatura_sem_os" && !csvCodigo) {
+        return res.status(400).json({ message: "csvCodigo obrigatório para scope fatura_sem_os" });
+      }
+      if (scope === "os_sem_fatura" && !missionCostId) {
+        return res.status(400).json({ message: "missionCostId obrigatório para scope os_sem_fatura" });
+      }
+      const allowed = new Set(["pendente", "justificada", "contestada"]);
+      const st = status || "justificada";
+      if (!allowed.has(st)) return res.status(400).json({ message: "status inválido" });
+
+      const userId = req.user?.id ? String(req.user.id) : null;
+      const userName = req.user?.name || req.user?.username || req.user?.email || null;
+      const now = new Date().toISOString();
+
+      // Procura existente
+      let existingQuery = supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes")
+        .select("id")
+        .eq("codigo_fatura", codigoFatura);
+      if (scope === "fatura_sem_os") {
+        existingQuery = existingQuery.eq("csv_codigo", csvCodigo);
+      } else {
+        existingQuery = existingQuery.eq("mission_cost_id", missionCostId as number);
+      }
+      const { data: existing, error: findErr } = await existingQuery.maybeSingle();
+      if (findErr && findErr.code !== "PGRST116") {
+        return res.status(500).json({ message: findErr.message });
+      }
+
+      if (existing?.id) {
+        const { data, error } = await supabaseAdmin
+          .from("ticketlog_pedagio_audit_notes")
+          .update({
+            status: st,
+            observacao: observacao || "",
+            created_by_id: userId,
+            created_by_name: userName,
+            updated_at: now,
+          })
+          .eq("id", existing.id)
+          .select("*")
+          .single();
+        if (error) return res.status(500).json({ message: error.message });
+        return res.json({ note: data });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes")
+        .insert({
+          codigo_fatura: codigoFatura,
+          scope,
+          csv_codigo: scope === "fatura_sem_os" ? csvCodigo : null,
+          mission_cost_id: scope === "os_sem_fatura" ? missionCostId : null,
+          service_order_id: serviceOrderId ?? null,
+          status: st,
+          observacao: observacao || "",
+          created_by_id: userId,
+          created_by_name: userName,
+          created_at: now,
+          updated_at: now,
+        })
+        .select("*")
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ note: data });
+    } catch (err: any) {
+      console.error("[auditoria-pedagios-ticketlog/notes POST]", err);
+      res.status(500).json({ message: err?.message || String(err) });
+    }
+  });
+
+  app.delete("/api/auditoria-pedagios-ticketlog/notes/:id", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "id inválido" });
+      const { error } = await supabaseAdmin.from("ticketlog_pedagio_audit_notes").delete().eq("id", id);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ ok: true });
+    } catch (err: any) {
       res.status(500).json({ message: err?.message || String(err) });
     }
   });

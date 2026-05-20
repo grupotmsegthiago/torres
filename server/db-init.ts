@@ -1476,5 +1476,34 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] billing_splits error:", e.message);
   }
 
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS ticketlog_pedagio_audit_notes (
+        id SERIAL PRIMARY KEY,
+        codigo_fatura TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        csv_codigo TEXT,
+        mission_cost_id INTEGER,
+        service_order_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        observacao TEXT NOT NULL DEFAULT '',
+        created_by_id TEXT,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tlpan_fatura_csv ON ticketlog_pedagio_audit_notes(codigo_fatura, csv_codigo) WHERE csv_codigo IS NOT NULL`,
+    );
+    await execSql(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tlpan_fatura_mc ON ticketlog_pedagio_audit_notes(codigo_fatura, mission_cost_id) WHERE mission_cost_id IS NOT NULL`,
+    );
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_tlpan_fatura ON ticketlog_pedagio_audit_notes(codigo_fatura)`);
+    console.log("[db-init] ticketlog_pedagio_audit_notes table ensured");
+  } catch (e: any) {
+    console.error("[db-init] ticketlog_pedagio_audit_notes error:", e.message);
+  }
+
   await closeDbInitClient();
 }
