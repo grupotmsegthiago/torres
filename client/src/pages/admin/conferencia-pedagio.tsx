@@ -3,191 +3,219 @@ import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Calculator, Receipt, TrendingUp, TrendingDown, Scale } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, Calculator, AlertCircle } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-interface CobradoResult {
+function formatBRL(n: number): string {
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function parseBRLInput(s: string): number {
+  const cleaned = s.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const v = Number(cleaned);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function todayBRT(): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(new Date());
+}
+
+interface CalcResult {
   inicio: string;
   fim: string;
   totalCobrado: number;
   qtdOs: number;
 }
 
-const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-function parseBR(v: string): number {
-  if (!v) return 0;
-  const cleaned = v.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : 0;
-}
-
 export default function ConferenciaPedagioPage() {
   const { toast } = useToast();
-  const [valorPagoStr, setValorPagoStr] = useState("");
-  const [inicio, setInicio] = useState("");
-  const [fim, setFim] = useState("");
+  const [valorPagoStr, setValorPagoStr] = useState<string>("");
+  const [inicio, setInicio] = useState<string>(todayBRT());
+  const [fim, setFim] = useState<string>(todayBRT());
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<CobradoResult | null>(null);
+  const [result, setResult] = useState<CalcResult | null>(null);
 
-  const valorPago = parseBR(valorPagoStr);
+  const valorPago = parseBRLInput(valorPagoStr);
 
-  const handleCalcular = async () => {
+  async function calcular() {
     if (!inicio || !fim) {
-      toast({ title: "Período obrigatório", description: "Selecione data início e data fim.", variant: "destructive" });
+      toast({ title: "Datas obrigatórias", description: "Informe início e fim", variant: "destructive" });
       return;
     }
     if (inicio > fim) {
-      toast({ title: "Período inválido", description: "A data início deve ser <= data fim.", variant: "destructive" });
+      toast({ title: "Período inválido", description: "Início deve ser <= fim", variant: "destructive" });
       return;
     }
     setLoading(true);
+    setResult(null);
     try {
-      const res = await authFetch(`/api/controladoria/pedagio-cobrado?inicio=${inicio}&fim=${fim}`);
+      const params = new URLSearchParams({ inicio, fim });
+      const res = await authFetch(`/api/controladoria/pedagio-cobrado?${params}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Falha ao calcular");
+        throw new Error(err.message || `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as CobradoResult;
+      const data = (await res.json()) as CalcResult;
       setResult(data);
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Erro ao calcular", description: e.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const diferenca = result ? result.totalCobrado - valorPago : 0;
-  const cobrouMais = diferenca >= 0;
+  const diferencaPositiva = diferenca >= 0;
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <Card className="p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Calculator className="h-5 w-5 text-violet-500" />
-            <h2 className="text-lg font-semibold" data-testid="text-page-title">
-              Conferência Pedágio: Pago × Cobrado
-            </h2>
-          </div>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-            Calculadora rápida pra conferir quanto foi pago de pedágio (fatura Sem Parar, ConectCar, etc) contra
-            quanto o sistema cobrou dos clientes no mesmo período. Nada é gravado — recarregar a página perde os
-            valores.
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white" data-testid="text-page-title">
+            Pedágio: Pago × Cobrado
+          </h1>
+          <p className="text-sm text-zinc-400 mt-1">
+            Calculadora rápida — informe o valor pago no período (fatura Sem Parar /
+            ConectCar / etc) e compare com o que foi cobrado dos clientes via
+            mission_costs. Nada é gravado; recarregar perde os valores.
           </p>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <Card className="p-6 bg-zinc-900 border-zinc-800">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1 block">
+              <Label htmlFor="valor-pago" className="text-zinc-300">
                 Valor pago (R$)
-              </label>
+              </Label>
               <Input
+                id="valor-pago"
+                type="text"
                 inputMode="decimal"
                 placeholder="0,00"
                 value={valorPagoStr}
                 onChange={(e) => setValorPagoStr(e.target.value)}
+                className="mt-1 bg-zinc-950 border-zinc-700 text-white"
                 data-testid="input-valor-pago"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1 block">
+              <Label htmlFor="data-inicio" className="text-zinc-300">
                 Data início
-              </label>
+              </Label>
               <Input
+                id="data-inicio"
                 type="date"
                 value={inicio}
                 onChange={(e) => setInicio(e.target.value)}
-                data-testid="input-inicio"
+                className="mt-1 bg-zinc-950 border-zinc-700 text-white"
+                data-testid="input-data-inicio"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1 block">
+              <Label htmlFor="data-fim" className="text-zinc-300">
                 Data fim
-              </label>
+              </Label>
               <Input
+                id="data-fim"
                 type="date"
                 value={fim}
                 onChange={(e) => setFim(e.target.value)}
-                data-testid="input-fim"
+                className="mt-1 bg-zinc-950 border-zinc-700 text-white"
+                data-testid="input-data-fim"
               />
             </div>
+          </div>
+          <div className="mt-4 flex justify-end">
             <Button
-              onClick={handleCalcular}
+              onClick={calcular}
               disabled={loading}
-              className="bg-violet-500 hover:bg-violet-600 text-white"
+              className="bg-violet-600 hover:bg-violet-700 text-white"
               data-testid="button-calcular"
             >
               {loading ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Calculando…</>
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Calculando...
+                </>
               ) : (
-                <><Calculator className="h-4 w-4 mr-2" /> Calcular</>
+                <>
+                  <Calculator className="w-4 h-4 mr-2" />
+                  Calcular
+                </>
               )}
             </Button>
           </div>
         </Card>
 
         {result && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Card className="p-4 bg-neutral-50 dark:bg-neutral-900/50">
-              <div className="flex items-center gap-3">
-                <Receipt className="h-6 w-6 text-neutral-500" />
-                <div>
-                  <div className="text-xs text-neutral-600 dark:text-neutral-400">Pago no período</div>
-                  <div className="text-2xl font-bold" data-testid="text-pago">
-                    {brl(valorPago)}
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="p-5 bg-zinc-900 border-zinc-800" data-testid="card-pago">
+              <div className="text-xs uppercase tracking-wide text-zinc-500">Pago</div>
+              <div className="text-3xl font-bold text-white mt-2" data-testid="text-valor-pago">
+                {formatBRL(valorPago)}
+              </div>
+              <div className="text-xs text-zinc-500 mt-2">
+                Informado para o período {result.inicio} até {result.fim}
               </div>
             </Card>
 
-            <Card className="p-4 bg-blue-50 dark:bg-blue-950/30">
-              <div className="flex items-center gap-3">
-                <TrendingUp className="h-6 w-6 text-blue-600" />
-                <div>
-                  <div className="text-xs text-neutral-600 dark:text-neutral-400">
-                    Cobrado dos clientes ({result.qtdOs} OS)
-                  </div>
-                  <div className="text-2xl font-bold text-blue-700 dark:text-blue-400" data-testid="text-cobrado">
-                    {brl(result.totalCobrado)}
-                  </div>
-                </div>
+            <Card className="p-5 bg-zinc-900 border-zinc-800" data-testid="card-cobrado">
+              <div className="text-xs uppercase tracking-wide text-zinc-500">Cobrado</div>
+              <div className="text-3xl font-bold text-white mt-2" data-testid="text-valor-cobrado">
+                {formatBRL(result.totalCobrado)}
+              </div>
+              <div className="text-xs text-zinc-500 mt-2" data-testid="text-qtd-os">
+                {result.qtdOs} OS com pedágio cobrado
               </div>
             </Card>
 
-            <Card className={`p-4 ${cobrouMais ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-rose-50 dark:bg-rose-950/30"}`}>
-              <div className="flex items-center gap-3">
-                {cobrouMais ? (
-                  <Scale className="h-6 w-6 text-emerald-600" />
-                ) : (
-                  <TrendingDown className="h-6 w-6 text-rose-600" />
-                )}
-                <div>
-                  <div className="text-xs text-neutral-600 dark:text-neutral-400">Diferença (cobrado − pago)</div>
-                  <div
-                    className={`text-2xl font-bold ${cobrouMais ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}
-                    data-testid="text-diferenca"
-                  >
-                    {cobrouMais ? "+" : ""}{brl(diferenca)}
-                  </div>
-                  <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-1" data-testid="text-diferenca-legenda">
-                    {valorPago === 0
-                      ? "Digite o valor pago para comparar"
-                      : cobrouMais
-                        ? `Você cobrou ${brl(Math.abs(diferenca))} a mais do que pagou`
-                        : `Você cobrou ${brl(Math.abs(diferenca))} a menos do que pagou`}
-                  </div>
-                </div>
+            <Card
+              className={`p-5 border ${
+                diferencaPositiva
+                  ? "bg-emerald-950/40 border-emerald-800"
+                  : "bg-rose-950/40 border-rose-800"
+              }`}
+              data-testid="card-diferenca"
+            >
+              <div className="text-xs uppercase tracking-wide text-zinc-400">
+                Diferença (cobrado − pago)
+              </div>
+              <div
+                className={`text-3xl font-bold mt-2 ${
+                  diferencaPositiva ? "text-emerald-300" : "text-rose-300"
+                }`}
+                data-testid="text-diferenca"
+              >
+                {formatBRL(diferenca)}
+              </div>
+              <div className="text-xs text-zinc-300 mt-2 flex items-start gap-1">
+                {!diferencaPositiva && <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+                <span>
+                  Você cobrou {formatBRL(Math.abs(diferenca))}{" "}
+                  {diferencaPositiva ? "a mais" : "a menos"} do que pagou.
+                </span>
               </div>
             </Card>
           </div>
         )}
 
-        {result && (
-          <Card className="p-4 text-xs text-neutral-500">
-            Período: {result.inicio.split("-").reverse().join("/")} → {result.fim.split("-").reverse().join("/")}.
-            Cobrado = soma de mission_costs (categoria "Pedágio", cost_type=revenue) das OS com
-            scheduled_date no intervalo. Não inclui boletins/escort_billings.
+        {result && result.totalCobrado === 0 && (
+          <Card className="p-4 bg-amber-950/40 border-amber-800 text-amber-200 text-sm">
+            Nenhum lançamento de receita de pedágio encontrado no período. Verifique
+            se as OS foram fechadas e se a categoria contém "Pedágio".
           </Card>
         )}
       </div>
