@@ -164,11 +164,12 @@ export default function ConferenciaPedagiosTicketLogPage() {
 
   const [openCriarMc, setOpenCriarMc] = useState(false);
   const [selecionadosMc, setSelecionadosMc] = useState<Set<string>>(new Set());
+  const [escolhaOsMc, setEscolhaOsMc] = useState<Record<string, number>>({});
   const [criandoMc, setCriandoMc] = useState(false);
 
   const candidatasParaCriarMc = useMemo(() => {
     if (!report) return [] as AuditResult["result"]["faturaSemOS"];
-    return report.result.faturaSemOS.filter((f) => f.osCandidatas.length === 1);
+    return report.result.faturaSemOS.filter((f) => f.osCandidatas.length >= 1);
   }, [report]);
 
   const handleUpload = async () => {
@@ -195,6 +196,7 @@ export default function ConferenciaPedagiosTicketLogPage() {
       setReport(data);
       setResultadoGerar(null);
       setSelecionadosMc(new Set());
+      setEscolhaOsMc({});
       const t = data.result.totais;
       toast({
         title: "Conferência processada",
@@ -872,12 +874,16 @@ export default function ConferenciaPedagiosTicketLogPage() {
                   <tbody>
                     {candidatasParaCriarMc.map((f) => {
                       const checked = selecionadosMc.has(f.csv.codigo);
+                      const multi = f.osCandidatas.length > 1;
+                      const escolhido = escolhaOsMc[f.csv.codigo];
+                      const podeMarcar = !multi || (multi && !!escolhido);
                       return (
                         <tr key={f.csv.codigo} className="border-b border-neutral-100 dark:border-neutral-900">
                           <td className="py-1 px-2">
                             <input
                               type="checkbox"
                               checked={checked}
+                              disabled={!podeMarcar}
                               onChange={(e) => {
                                 setSelecionadosMc((prev) => {
                                   const next = new Set(prev);
@@ -893,7 +899,32 @@ export default function ConferenciaPedagiosTicketLogPage() {
                           <td className="py-1 px-2 font-mono">{f.csv.placa}</td>
                           <td className="py-1 px-2 whitespace-nowrap">{brl(f.csv.valor)}</td>
                           <td className="py-1 px-2 font-mono">
-                            {f.osCandidatas[0]?.osNumber || `#${f.osCandidatas[0]?.id}`}
+                            {multi ? (
+                              <Select
+                                value={escolhido ? String(escolhido) : ""}
+                                onValueChange={(v) => {
+                                  const id = Number(v);
+                                  setEscolhaOsMc((prev) => ({ ...prev, [f.csv.codigo]: id }));
+                                }}
+                              >
+                                <SelectTrigger
+                                  className="h-7 text-xs w-[180px]"
+                                  data-testid={`select-os-mc-${f.csv.codigo}`}
+                                >
+                                  <SelectValue placeholder={`Escolher (${f.osCandidatas.length})`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {f.osCandidatas.map((o) => (
+                                    <SelectItem key={o.id} value={String(o.id)}>
+                                      {o.osNumber || `#${o.id}`}
+                                      {o.status ? ` · ${o.status}` : ""}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <>{f.osCandidatas[0]?.osNumber || `#${f.osCandidatas[0]?.id}`}</>
+                            )}
                           </td>
                           <td className="py-1 px-2 text-neutral-600 dark:text-neutral-400">
                             {f.csv.estabelecimento || "—"}
@@ -918,7 +949,15 @@ export default function ConferenciaPedagiosTicketLogPage() {
                     const res = await authFetch("/api/auditoria-pedagios-ticketlog/criar-mission-costs", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ csvBase64, codigosToCreate: Array.from(selecionadosMc) }),
+                      body: JSON.stringify({
+                        csvBase64,
+                        codigosToCreate: Array.from(selecionadosMc),
+                        manualOsByCodigo: Object.fromEntries(
+                          Array.from(selecionadosMc)
+                            .filter((c) => escolhaOsMc[c])
+                            .map((c) => [c, escolhaOsMc[c]]),
+                        ),
+                      }),
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.message || "Falha ao criar mission_costs");

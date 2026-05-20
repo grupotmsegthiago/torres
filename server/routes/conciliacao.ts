@@ -745,9 +745,10 @@ export function registerConciliacaoRoutes(app: Express) {
     requireAdminRole,
     async (req, res) => {
       try {
-        const { csvBase64, codigosToCreate } = req.body as {
+        const { csvBase64, codigosToCreate, manualOsByCodigo } = req.body as {
           csvBase64?: string;
           codigosToCreate?: string[];
+          manualOsByCodigo?: Record<string, number>;
         };
         if (!csvBase64) return res.status(400).json({ message: "csvBase64 obrigatório" });
         if (!Array.isArray(codigosToCreate) || codigosToCreate.length === 0) {
@@ -756,6 +757,13 @@ export function registerConciliacaoRoutes(app: Express) {
         const audit = await rodarAuditoriaPedagiosCsv(decodeCsvBase64(csvBase64));
         const codigoFatura = audit.parsed.header.codigoFatura || "sem-codigo";
         const wanted = new Set(codigosToCreate.map(String));
+        const manualMap = new Map<string, number>();
+        if (manualOsByCodigo && typeof manualOsByCodigo === "object") {
+          for (const [k, v] of Object.entries(manualOsByCodigo)) {
+            const n = Number(v);
+            if (Number.isFinite(n) && n > 0) manualMap.set(String(k), n);
+          }
+        }
 
         type Plan = {
           codigo: string;
@@ -770,16 +778,30 @@ export function registerConciliacaoRoutes(app: Express) {
         const ignorados: Array<{ codigo: string; motivo: string }> = [];
         for (const f of audit.result.faturaSemOS) {
           if (!wanted.has(f.csv.codigo)) continue;
-          if (f.osCandidatas.length !== 1) {
-            ignorados.push({
-              codigo: f.csv.codigo,
-              motivo: f.osCandidatas.length === 0
-                ? "sem OS candidata pelo cruzamento"
-                : `${f.osCandidatas.length} OS candidatas — escolha ambígua, não criado`,
-            });
+          if (f.osCandidatas.length === 0) {
+            ignorados.push({ codigo: f.csv.codigo, motivo: "sem OS candidata pelo cruzamento" });
             continue;
           }
-          const os = f.osCandidatas[0];
+          let os = f.osCandidatas[0];
+          if (f.osCandidatas.length > 1) {
+            const manualOsId = manualMap.get(f.csv.codigo);
+            if (!manualOsId) {
+              ignorados.push({
+                codigo: f.csv.codigo,
+                motivo: `${f.osCandidatas.length} OS candidatas — escolha manual necessária, não criado`,
+              });
+              continue;
+            }
+            const chosen = f.osCandidatas.find((c) => c.id === manualOsId);
+            if (!chosen) {
+              ignorados.push({
+                codigo: f.csv.codigo,
+                motivo: `OS ${manualOsId} não está entre as candidatas retornadas pelo cruzamento`,
+              });
+              continue;
+            }
+            os = chosen;
+          }
           plans.push({
             codigo: f.csv.codigo,
             osId: os.id,
