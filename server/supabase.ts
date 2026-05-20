@@ -9,10 +9,10 @@ if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
 }
 
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 600;
-const FETCH_TIMEOUT_MS = 15_000;
-const MAX_CONCURRENT = 6;
+const MAX_RETRIES = 2;
+const BASE_DELAY_MS = 400;
+const FETCH_TIMEOUT_MS = 12_000;
+const MAX_CONCURRENT = 16;
 const HEALTH_WINDOW_SIZE = 20;
 const HEALTH_FAIL_RATIO = 0.6;
 const HEALTH_RECOVER_RATIO = 0.3;

@@ -952,18 +952,50 @@ async function ensureSystemSettingsTable() {
     }
   });
 
+  const cpfLookupHits = new Map<string, { count: number; resetAt: number }>();
+  const CPF_LOOKUP_WINDOW_MS = 60_000;
+  const CPF_LOOKUP_MAX = 10;
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of cpfLookupHits) if (v.resetAt < now) cpfLookupHits.delete(k);
+  }, 5 * 60_000).unref?.();
+
   app.post("/api/auth/cpf-lookup", async (req, res) => {
+    const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0].trim()) || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    const bucket = cpfLookupHits.get(ip);
+    if (bucket && bucket.resetAt > now) {
+      if (bucket.count >= CPF_LOOKUP_MAX) {
+        return res.status(429).json({ message: "Muitas tentativas. Aguarde 1 minuto." });
+      }
+      bucket.count++;
+    } else {
+      cpfLookupHits.set(ip, { count: 1, resetAt: now + CPF_LOOKUP_WINDOW_MS });
+    }
+
     const { cpf } = req.body;
     if (!cpf) return res.status(400).json({ message: "CPF obrigatório" });
-    const cleanCpf = cpf.replace(/\D/g, "");
+    const cleanCpf = String(cpf).replace(/\D/g, "");
     if (cleanCpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+    const maskedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9)}`;
 
-    const allEmployees = await storage.getEmployees();
-    const emp = allEmployees.find((e) => e.cpf?.replace(/\D/g, "") === cleanCpf);
+    const { data: emp, error: empErr } = await supabaseAdmin
+      .from("employees")
+      .select("id, name, cpf")
+      .or(`cpf.eq.${cleanCpf},cpf.eq.${maskedCpf}`)
+      .limit(1)
+      .maybeSingle();
+    if (empErr) return res.status(500).json({ message: "Erro ao consultar funcionário" });
     if (!emp) return res.status(404).json({ message: "CPF não encontrado no cadastro de funcionários" });
 
-    const allUsers = await storage.getUsers();
-    const user = allUsers.find((u) => u.employeeId === emp.id);
+    const { data: user, error: userErr } = await supabaseAdmin
+      .from("users")
+      .select("email")
+      .eq("employee_id", emp.id)
+      .not("email", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (userErr) return res.status(500).json({ message: "Erro ao consultar usuário" });
     if (!user || !user.email) return res.status(404).json({ message: "Nenhum usuário vinculado a este CPF. Contate o administrador." });
 
     res.json({ email: user.email, name: emp.name });
