@@ -9,6 +9,7 @@ import { isSupabaseHealthy } from "./pg-fallback";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
+import { ymdBRT } from "./lib/hours-calc";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -161,12 +162,13 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Validação TicketLog — re-tenta fuelings pendentes a cada 20 min
+    // CRON: Validação TicketLog — re-tenta fuelings pendentes a cada 3 min
     // (TicketLog pode demorar minutos pra processar a transação após o agente
-    //  passar o cartão; tentamos novamente até bater)
+    //  passar o cartão; tentamos novamente até bater. Antes era a cada 1 min,
+    //  reduzido em 2026-05 pra aliviar pressão no pool do Supabase.)
     // ============================================================
     let ticketLogRunning = false;
-    cron.schedule("*/1 * * * *", async () => {
+    cron.schedule("*/3 * * * *", async () => {
       if (ticketLogRunning) return; // evita sobreposição
       ticketLogRunning = true;
       try {
@@ -182,10 +184,12 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Control iD — puxa batidas dos aparelhos a cada 1 min (near-realtime)
+    // CRON: Control iD — puxa batidas dos aparelhos a cada 3 min
+    // (antes era a cada 1 min; reduzido em 2026-05 pra aliviar pool Supabase.
+    //  3 min ainda é "near-realtime" pra ponto eletrônico.)
     // ============================================================
     let controlIdRunning = false;
-    cron.schedule("*/1 * * * *", async () => {
+    cron.schedule("*/3 * * * *", async () => {
       if (controlIdRunning) return; // evita sobreposição
       if (!isSupabaseHealthy()) return; // Supabase fora — pula pra não enfileirar lixo
       controlIdRunning = true;
@@ -203,97 +207,122 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Reconciliação Banco Inter — extrato dos últimos 7 dias
-    // a cada 1 min, casa entradas com invoices PENDING
+    // CRON: Reconciliação Banco Inter
+    //  - Rápido: a cada 5 min, janela 2 dias (pega o que está pingando agora)
+    //  - Backfill: 1x/dia às 04:00 BRT, janela 30 dias (recolhe pagamentos
+    //    atrasados que escaparam da janela curta — ex.: cliente paga
+    //    boleto 5 dias depois do vencimento)
+    // (Antes: 1x/min com 7 dias. Reduzido em 2026-05 pra aliviar pool Supabase.
+    //  Datas em BRT — regra do projeto, vide replit.md Gotchas.)
     // ============================================================
+    async function runInterReconcile(diasJanela: number, contexto: string) {
+      const { isInterConfigured } = await import("./services/inter/client");
+      if (!isInterConfigured()) return; // pula silenciosamente se Inter não configurado
+      const { consultarExtrato } = await import("./services/inter/banking");
+      const hoje = new Date();
+      const inicio = new Date(hoje.getTime() - diasJanela * 24 * 60 * 60 * 1000);
+      const dataInicio = ymdBRT(inicio);
+      const dataFim = ymdBRT(hoje);
+
+      const extrato = await consultarExtrato(dataInicio, dataFim);
+      const transacoes = extrato.transacoes || [];
+
+      let novosLancamentos = 0;
+      let conciliados = 0;
+
+      for (const tx of transacoes) {
+        if (tx.tipoOperacao !== "C") continue;
+
+        const { data: existing } = await supabaseAdmin
+          .from("inter_extrato_lancamentos")
+          .select("id")
+          .eq("data_entrada", tx.dataEntrada)
+          .eq("valor", Number(tx.valor || 0).toFixed(2))
+          .eq("tipo_operacao", "C")
+          .eq("titulo", tx.titulo || "")
+          .maybeSingle();
+
+        if (existing) continue;
+
+        // Buscar TODAS as invoices PENDING/OVERDUE com mesmo valor
+        // Se houver MAIS DE UMA, NÃO concilia automaticamente (ambíguo) — deixa para revisão manual
+        const { data: candidateInvoices } = await supabaseAdmin
+          .from("invoices")
+          .select("id, status, due_date, client_name")
+          .eq("value", Number(tx.valor || 0).toFixed(2))
+          .in("status", ["PENDING", "OVERDUE"])
+          .order("due_date", { ascending: true });
+
+        const invoice = (candidateInvoices && candidateInvoices.length === 1)
+          ? candidateInvoices[0]
+          : null;
+
+        let ambiguousCount = 0;
+        if (candidateInvoices && candidateInvoices.length > 1) {
+          ambiguousCount = candidateInvoices.length;
+          log(`CRON Inter-Reconcile[${contexto}]: AMBIGUO — ${candidateInvoices.length} invoices com valor R$ ${tx.valor} em ${tx.dataEntrada}. Conciliação manual necessária.`, "cron");
+        }
+
+        await supabaseAdmin.from("inter_extrato_lancamentos").insert({
+          data_entrada: tx.dataEntrada,
+          tipo_transacao: tx.tipoTransacao,
+          tipo_operacao: tx.tipoOperacao,
+          valor: Number(tx.valor || 0).toFixed(2),
+          titulo: tx.titulo || null,
+          descricao: ambiguousCount > 0
+            ? `${tx.descricao || ""} [AMBIGUO: ${ambiguousCount} faturas mesmo valor — conciliar manualmente]`
+            : (tx.descricao || null),
+          detalhes: tx,
+          invoice_id: invoice?.id || null,
+          reconciled_at: invoice ? new Date().toISOString() : null,
+        });
+
+        novosLancamentos++;
+
+        if (invoice) {
+          await supabaseAdmin
+            .from("invoices")
+            .update({ status: "RECEIVED", payment_date: tx.dataEntrada })
+            .eq("id", invoice.id);
+          conciliados++;
+        }
+      }
+
+      if (novosLancamentos > 0) {
+        log(`CRON Inter-Reconcile[${contexto}]: ${novosLancamentos} lançamento(s), ${conciliados} invoice(s) conciliada(s)`, "cron");
+      }
+    }
+
     let interReconcileRunning = false;
-    cron.schedule("*/1 * * * *", async () => {
+    cron.schedule("*/5 * * * *", async () => {
       if (interReconcileRunning) return; // evita sobreposição
       if (!isSupabaseHealthy()) return; // Supabase fora — pula pra não enfileirar lixo
       interReconcileRunning = true;
       try {
-        const { isInterConfigured } = await import("./services/inter/client");
-        if (!isInterConfigured()) return; // pula silenciosamente se Inter não configurado
-        const { consultarExtrato } = await import("./services/inter/banking");
-        const hoje = new Date();
-        const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const dataInicio = seteDiasAtras.toISOString().slice(0, 10);
-        const dataFim = hoje.toISOString().slice(0, 10);
-
-        const extrato = await consultarExtrato(dataInicio, dataFim);
-        const transacoes = extrato.transacoes || [];
-
-        let novosLancamentos = 0;
-        let conciliados = 0;
-
-        for (const tx of transacoes) {
-          if (tx.tipoOperacao !== "C") continue;
-
-          const { data: existing } = await supabaseAdmin
-            .from("inter_extrato_lancamentos")
-            .select("id")
-            .eq("data_entrada", tx.dataEntrada)
-            .eq("valor", Number(tx.valor || 0).toFixed(2))
-            .eq("tipo_operacao", "C")
-            .eq("titulo", tx.titulo || "")
-            .maybeSingle();
-
-          if (existing) continue;
-
-          // Buscar TODAS as invoices PENDING/OVERDUE com mesmo valor
-          // Se houver MAIS DE UMA, NÃO concilia automaticamente (ambíguo) — deixa para revisão manual
-          const { data: candidateInvoices } = await supabaseAdmin
-            .from("invoices")
-            .select("id, status, due_date, client_name")
-            .eq("value", Number(tx.valor || 0).toFixed(2))
-            .in("status", ["PENDING", "OVERDUE"])
-            .order("due_date", { ascending: true });
-
-          const invoice = (candidateInvoices && candidateInvoices.length === 1)
-            ? candidateInvoices[0]
-            : null;
-
-          // Auditoria: se múltiplas, registra para o usuário ver
-          let ambiguousCount = 0;
-          if (candidateInvoices && candidateInvoices.length > 1) {
-            ambiguousCount = candidateInvoices.length;
-            log(`CRON Inter-Reconcile: AMBIGUO — ${candidateInvoices.length} invoices com valor R$ ${tx.valor} em ${tx.dataEntrada}. Conciliação manual necessária.`, "cron");
-          }
-
-          await supabaseAdmin.from("inter_extrato_lancamentos").insert({
-            data_entrada: tx.dataEntrada,
-            tipo_transacao: tx.tipoTransacao,
-            tipo_operacao: tx.tipoOperacao,
-            valor: Number(tx.valor || 0).toFixed(2),
-            titulo: tx.titulo || null,
-            descricao: ambiguousCount > 0
-              ? `${tx.descricao || ""} [AMBIGUO: ${ambiguousCount} faturas mesmo valor — conciliar manualmente]`
-              : (tx.descricao || null),
-            detalhes: tx,
-            invoice_id: invoice?.id || null,
-            reconciled_at: invoice ? new Date().toISOString() : null,
-          });
-
-          novosLancamentos++;
-
-          if (invoice) {
-            await supabaseAdmin
-              .from("invoices")
-              .update({ status: "RECEIVED", payment_date: tx.dataEntrada })
-              .eq("id", invoice.id);
-            conciliados++;
-          }
-        }
-
-        if (novosLancamentos > 0) {
-          log(`CRON Inter-Reconcile: ${novosLancamentos} lançamento(s), ${conciliados} invoice(s) conciliada(s)`, "cron");
-        }
+        await runInterReconcile(2, "5min/2d");
       } catch (e: any) {
-        log(`CRON Inter-Reconcile: Erro: ${e.message}`, "cron");
+        log(`CRON Inter-Reconcile[5min/2d]: Erro: ${e.message}`, "cron");
       } finally {
         interReconcileRunning = false;
       }
     });
+
+    // Backfill diário às 04:00 BRT — pega pagamentos atrasados (até 30d)
+    // que entraram fora da janela curta. Mutex compartilhado com o rápido
+    // pra não saturar a API do Inter.
+    cron.schedule("0 4 * * *", async () => {
+      if (interReconcileRunning) return;
+      if (!isSupabaseHealthy()) return;
+      interReconcileRunning = true;
+      try {
+        log("CRON Inter-Reconcile[backfill/30d]: iniciando varredura ampla", "cron");
+        await runInterReconcile(30, "backfill/30d");
+      } catch (e: any) {
+        log(`CRON Inter-Reconcile[backfill/30d]: Erro: ${e.message}`, "cron");
+      } finally {
+        interReconcileRunning = false;
+      }
+    }, { timezone: "America/Sao_Paulo" });
 
     // ============================================================
     // CRON: Contratos Definitivos (CLT) — verifica diariamente quais

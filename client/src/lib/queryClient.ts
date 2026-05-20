@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
-const CACHE_VERSION = "20260520-realtime-split-v1";
+const CACHE_VERSION = "20260520-realtime-trim-v2";
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("torres_cache_version");
   if (stored && stored !== CACHE_VERSION) {
@@ -492,10 +492,9 @@ if (typeof window !== "undefined") {
         queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-      })
+      // holidays removida do Realtime global em 2026-05 (muda ~1x/ano,
+      // não justifica push permanente; quem editar feriados que invalide
+      // manualmente via queryClient.invalidateQueries).
       .on("postgres_changes", { event: "*", schema: "public", table: "agent_daily_allowances" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
         queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
@@ -514,10 +513,9 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheets" }, () => {
         _invalidateLocal("hr");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "holerites" }, () => {
-        _invalidateLocal("hr");
-        _invalidateLocal("jornada-diretoria");
-      })
+      // holerites removida do Realtime global em 2026-05 (gerado em lote
+      // mensal, não precisa push permanente; quem gerar holerite já
+      // invalida o cache no client da mutation).
       .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       })
@@ -538,10 +536,8 @@ if (typeof window !== "undefined") {
         _invalidateLocal("hr");
         queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("fines") });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "salary_discounts" }, () => {
-        _invalidateLocal("hr");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
-      })
+      // salary_discounts removida do Realtime global em 2026-05 (muda só
+      // no fechamento da folha, ~1x/mês; mutations já invalidam o cache).
       .on("postgres_changes", { event: "*", schema: "public", table: "system_settings" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/system-settings"] });
       });
