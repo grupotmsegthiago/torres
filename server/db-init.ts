@@ -990,6 +990,10 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
+    // FKs sem índice (Supabase Advisor 0001_unindexed_foreign_keys) — escort_billings/chat_messages.
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_client_id ON escort_billings (client_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_chat_msg_conversation ON chat_messages (conversation_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_chat_msg_sender ON chat_messages (sender_id)`).catch(() => {});
 
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});

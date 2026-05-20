@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
-const CACHE_VERSION = "20260502-realtime-expand-v1";
+const CACHE_VERSION = "20260520-realtime-split-v1";
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("torres_cache_version");
   if (stored && stored !== CACHE_VERSION) {
@@ -388,21 +388,16 @@ if (typeof window !== "undefined") {
     }
   });
 
-  function _buildRealtimeChannel(name: string) {
+  // === REALTIME FAN-OUT REDUCTION ===
+  // Canal global antigo (1 socket, ~33 bindings) foi dividido em 3 sub-canais
+  // por escopo: operacional / financeiro / RH. Cada socket carrega só as
+  // bindings do seu domínio, reduzindo a pressão por tenant no Realtime do
+  // Supabase. Tabelas de chat (chat_messages/chat_conversations/chat_presence)
+  // foram REMOVIDAS daqui — quem cuida disso são os canais locais dos
+  // componentes admin/chat, mobile/chat e chat-widget (montados sob demanda).
+
+  function _buildOperationalChannel(name: string) {
     return supabase.channel(name)
-      .on("postgres_changes", { event: "*", schema: "public", table: "mission_costs" }, () => {
-        _invalidateLocal("mission-cost");
-        _invalidateLocal("financial");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "financial_transactions" }, () => {
-        _invalidateLocal("financial");
-        _invalidateLocal("mission-cost");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_fueling" }, () => {
-        _invalidateLocal("vehicle");
-        _invalidateLocal("financial");
-        _invalidateLocal("mission-cost");
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
         _invalidateLocal("service-order");
       })
@@ -416,41 +411,14 @@ if (typeof window !== "undefined") {
         _invalidateLocal("jornada-diretoria");
         _invalidateLocal("billing");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_conversations" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_presence" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/chat/presence"] });
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => {
         _invalidateLocal("invoice");
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
         _invalidateLocal("client");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
-        _invalidateLocal("employee");
-        _invalidateLocal("hr");
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "vehicles" }, () => {
         _invalidateLocal("vehicle");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ponto_registros" }, () => {
-        _invalidateLocal("hr");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "timesheets" }, () => {
-        _invalidateLocal("hr");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "holerites" }, () => {
-        _invalidateLocal("hr");
-        _invalidateLocal("jornada-diretoria");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_positions" }, () => {
         _invalidateLocal("position-tracking");
@@ -472,29 +440,6 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "weapon_assignments" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
         queryClient.invalidateQueries({ queryKey: ["/api/weapon-assignments"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "fixed_costs" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/balanco-gerencial"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "agent_daily_allowances" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_salaries" }, () => {
-        _invalidateLocal("employee");
-        _invalidateLocal("hr");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_documents" }, () => {
-        _invalidateLocal("employee");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("documents") });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_maintenance" }, () => {
         _invalidateLocal("vehicle");
@@ -523,6 +468,67 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "gerenciadoras" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      });
+  }
+
+  function _buildFinancialChannel(name: string) {
+    return supabase.channel(name)
+      .on("postgres_changes", { event: "*", schema: "public", table: "mission_costs" }, () => {
+        _invalidateLocal("mission-cost");
+        _invalidateLocal("financial");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "financial_transactions" }, () => {
+        _invalidateLocal("financial");
+        _invalidateLocal("mission-cost");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_fueling" }, () => {
+        _invalidateLocal("vehicle");
+        _invalidateLocal("financial");
+        _invalidateLocal("mission-cost");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "fixed_costs" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/balanco-gerencial"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "agent_daily_allowances" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+      });
+  }
+
+  function _buildHrChannel(name: string) {
+    return supabase.channel(name)
+      .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
+        _invalidateLocal("employee");
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ponto_registros" }, () => {
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "timesheets" }, () => {
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "holerites" }, () => {
+        _invalidateLocal("hr");
+        _invalidateLocal("jornada-diretoria");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_salaries" }, () => {
+        _invalidateLocal("employee");
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_documents" }, () => {
+        _invalidateLocal("employee");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("documents") });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "absences" }, () => {
         _invalidateLocal("hr");
@@ -541,8 +547,15 @@ if (typeof window !== "undefined") {
       });
   }
 
+  const _CHANNEL_BUILDERS: Array<{ label: string; build: (n: string) => ReturnType<typeof supabase.channel> }> = [
+    { label: "operational", build: _buildOperationalChannel },
+    { label: "financial", build: _buildFinancialChannel },
+    { label: "hr", build: _buildHrChannel },
+  ];
+
   let _realtimeGeneration = 0;
-  let _activeChannel: ReturnType<typeof supabase.channel> | null = null;
+  let _activeChannels: Array<ReturnType<typeof supabase.channel>> = [];
+  let _subscribedLabels: Set<string> = new Set();
   let _realtimeConnected = false;
   let _lastRealtimeEvent = Date.now();
   let _retryDelay = 3000;
@@ -550,6 +563,14 @@ if (typeof window !== "undefined") {
   const _RETRY_MAX = 60000;
   let _retryTimer: ReturnType<typeof setTimeout> | null = null;
   let _reconnecting = false;
+
+  function _teardownChannels() {
+    for (const ch of _activeChannels) {
+      try { supabase.removeChannel(ch); } catch {}
+    }
+    _activeChannels = [];
+    _subscribedLabels = new Set();
+  }
 
   function _scheduleRetry() {
     if (_retryTimer) clearTimeout(_retryTimer);
@@ -566,46 +587,53 @@ if (typeof window !== "undefined") {
     if (_reconnecting) return;
     _reconnecting = true;
 
-    if (_activeChannel) {
-      try { supabase.removeChannel(_activeChannel); } catch {}
-      _activeChannel = null;
-    }
+    _teardownChannels();
     _realtimeConnected = false;
     _realtimeGeneration++;
     const gen = _realtimeGeneration;
+    let errored = false;
 
     try {
-      const ch = _buildRealtimeChannel(`realtime-sync-${gen}`)
-        .subscribe((status, err) => {
-          if (gen !== _realtimeGeneration) {
-            try { supabase.removeChannel(ch); } catch {}
-            return;
-          }
+      for (const { label, build } of _CHANNEL_BUILDERS) {
+        const ch = build(`realtime-${label}-${gen}`)
+          .subscribe((status, err) => {
+            if (gen !== _realtimeGeneration) {
+              try { supabase.removeChannel(ch); } catch {}
+              return;
+            }
 
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("[Realtime] channel error:", err?.message ?? status);
-            _realtimeConnected = false;
-            _reconnecting = false;
-            try { supabase.removeChannel(ch); } catch {}
-            if (gen === _realtimeGeneration) {
-              _scheduleRetry();
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              if (errored) return;
+              errored = true;
+              console.warn(`[Realtime:${label}] error:`, err?.message ?? status);
+              _realtimeConnected = false;
+              _reconnecting = false;
+              _teardownChannels();
+              if (gen === _realtimeGeneration) {
+                _scheduleRetry();
+              }
             }
-          }
-          if (status === "SUBSCRIBED") {
-            const wasDisconnected = !_realtimeConnected;
-            console.log("[Realtime] connected OK");
-            _realtimeConnected = true;
-            _lastRealtimeEvent = Date.now();
-            _activeChannel = ch;
-            _reconnecting = false;
-            _retryDelay = _RETRY_MIN;
-            if (wasDisconnected) {
-              queryClient.invalidateQueries();
+            if (status === "SUBSCRIBED") {
+              // Ignora SUBSCRIBED tardio após erro/teardown nesta geração:
+              // sem isso, callback que chega depois de _teardownChannels()
+              // poderia marcar _realtimeConnected=true sem canais ativos.
+              if (errored) return;
+              _subscribedLabels.add(label);
+              _lastRealtimeEvent = Date.now();
+              if (_subscribedLabels.size >= _CHANNEL_BUILDERS.length && !_realtimeConnected) {
+                console.log(`[Realtime] connected OK (${_CHANNEL_BUILDERS.length} channels)`);
+                _realtimeConnected = true;
+                _reconnecting = false;
+                _retryDelay = _RETRY_MIN;
+                queryClient.invalidateQueries();
+              }
             }
-          }
-        });
+          });
+        _activeChannels.push(ch);
+      }
     } catch {
       _reconnecting = false;
+      _teardownChannels();
       _scheduleRetry();
     }
   }
