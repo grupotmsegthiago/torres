@@ -21,6 +21,7 @@ export interface PedagioAuditNote {
   createdByName: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  snapshot: Record<string, unknown> | null;
 }
 
 export interface AuditoriaPedagioRunResult {
@@ -122,6 +123,7 @@ export async function rodarAuditoriaPedagiosCsv(csvContent: string): Promise<Aud
         createdByName: n.created_by_name ?? null,
         createdAt: n.created_at ?? null,
         updatedAt: n.updated_at ?? null,
+        snapshot: (n.snapshot ?? null) as Record<string, unknown> | null,
       };
       if (note.csvCodigo) out.notes.byCsvCodigo[note.csvCodigo] = note;
       if (note.missionCostId != null) out.notes.byMissionCostId[String(note.missionCostId)] = note;

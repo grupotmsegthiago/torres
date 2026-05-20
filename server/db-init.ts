@@ -1490,9 +1490,11 @@ export async function ensureCalcMissionRPC() {
         created_by_id TEXT,
         created_by_name TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        snapshot JSONB
       )
     `);
+    await execSql(`ALTER TABLE ticketlog_pedagio_audit_notes ADD COLUMN IF NOT EXISTS snapshot JSONB`);
     await execSql(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tlpan_fatura_csv ON ticketlog_pedagio_audit_notes(codigo_fatura, csv_codigo) WHERE csv_codigo IS NOT NULL`,
     );

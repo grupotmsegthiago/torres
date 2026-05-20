@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, XCircle, Loader2,
   Download, ChevronDown, ChevronRight, FileSpreadsheet, DollarSign, Plus,
-  MessageSquarePlus, Trash2,
+  MessageSquarePlus, Trash2, Archive, RefreshCw,
 } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +56,21 @@ interface OsSemFatura { os: OsCandidate; missionCost: MissionCostCandidate; }
 
 type NoteStatus = "pendente" | "justificada" | "contestada";
 
+interface NoteSnapshot {
+  placa?: string | null;
+  data?: string | null;
+  valor?: number | null;
+  estabelecimento?: string | null;
+  motivo?: string | null;
+  osCandidatas?: string[] | null;
+  osNumber?: string | null;
+  osStatus?: string | null;
+  osScheduledDate?: string | null;
+  missionCostCategory?: string | null;
+  missionCostDescription?: string | null;
+  cliente?: string | null;
+}
+
 interface PedagioAuditNote {
   id: number;
   codigoFatura: string;
@@ -68,6 +84,17 @@ interface PedagioAuditNote {
   createdByName: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  snapshot: NoteSnapshot | null;
+}
+
+interface FaturaResumo {
+  codigoFatura: string;
+  pendentes: number;
+  justificadas: number;
+  contestadas: number;
+  total: number;
+  ultimaEdicao: string | null;
+  cliente: string | null;
 }
 
 interface AuditResult {
@@ -134,6 +161,7 @@ function statusBadge(status: NoteStatus) {
 }
 
 interface NoteDraft {
+  codigoFatura: string;
   scope: "fatura_sem_os" | "os_sem_fatura";
   csvCodigo: string | null;
   missionCostId: number | null;
@@ -142,6 +170,7 @@ interface NoteDraft {
   observacao: string;
   existingNoteId: number | null;
   contextLabel: string;
+  snapshot: NoteSnapshot | null;
 }
 
 interface PedagioAuditNoteHistoryEntry {
@@ -232,6 +261,64 @@ export default function ConferenciaPedagiosTicketLogPage() {
   const [escolhaOsMc, setEscolhaOsMc] = useState<Record<string, number>>({});
   const [criandoMc, setCriandoMc] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<"csv" | "analisadas">("csv");
+  const [faturas, setFaturas] = useState<FaturaResumo[]>([]);
+  const [loadingFaturas, setLoadingFaturas] = useState(false);
+  const [selectedFatura, setSelectedFatura] = useState<string | null>(null);
+  const [faturaNotes, setFaturaNotes] = useState<PedagioAuditNote[]>([]);
+  const [loadingFaturaNotes, setLoadingFaturaNotes] = useState(false);
+
+  const refreshFaturas = useCallback(async () => {
+    setLoadingFaturas(true);
+    try {
+      const res = await authFetch("/api/auditoria-pedagios-ticketlog/faturas");
+      if (!res.ok) throw new Error("Falha ao carregar faturas");
+      const data = await res.json();
+      setFaturas(data.faturas || []);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingFaturas(false);
+    }
+  }, [toast]);
+
+  const loadFaturaNotes = useCallback(async (codigo: string) => {
+    setLoadingFaturaNotes(true);
+    setSelectedFatura(codigo);
+    try {
+      const res = await authFetch(`/api/auditoria-pedagios-ticketlog/notes?codigoFatura=${encodeURIComponent(codigo)}`);
+      if (!res.ok) throw new Error("Falha ao carregar anotações");
+      const data = await res.json();
+      const mapped: PedagioAuditNote[] = (data.notes || []).map((n: any) => ({
+        id: n.id,
+        codigoFatura: n.codigo_fatura,
+        scope: n.scope,
+        csvCodigo: n.csv_codigo ?? null,
+        missionCostId: n.mission_cost_id ?? null,
+        serviceOrderId: n.service_order_id ?? null,
+        status: n.status,
+        observacao: n.observacao || "",
+        createdById: n.created_by_id ?? null,
+        createdByName: n.created_by_name ?? null,
+        createdAt: n.created_at ?? null,
+        updatedAt: n.updated_at ?? null,
+        snapshot: (n.snapshot ?? null) as NoteSnapshot | null,
+      }));
+      setFaturaNotes(mapped);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingFaturaNotes(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (activeTab === "analisadas" && faturas.length === 0 && !loadingFaturas) {
+      refreshFaturas();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const candidatasParaCriarMc = useMemo(() => {
     if (!report) return [] as AuditResult["result"]["faturaSemOS"];
     return report.result.faturaSemOS.filter((f) => f.osCandidatas.length >= 1);
@@ -285,10 +372,21 @@ export default function ConferenciaPedagiosTicketLogPage() {
     !!n && (n.status === "justificada" || n.status === "contestada");
 
   const openNoteForFatura = (f: FaturaSemOS) => {
+    if (!codigoFatura) return;
     const existing = noteForCsv(f.csv.codigo);
     setShowHistory(false);
     setHistoryEntries([]);
+    const snapshot: NoteSnapshot = {
+      placa: f.csv.placa,
+      data: f.csv.data,
+      valor: f.csv.valor,
+      estabelecimento: f.csv.estabelecimento ?? null,
+      motivo: f.motivo,
+      osCandidatas: f.osCandidatas.map((o) => o.osNumber || `#${o.id}`),
+      cliente: report?.parsed.header.cliente ?? null,
+    };
     setNoteDraft({
+      codigoFatura,
       scope: "fatura_sem_os",
       csvCodigo: f.csv.codigo,
       missionCostId: null,
@@ -297,14 +395,27 @@ export default function ConferenciaPedagiosTicketLogPage() {
       observacao: existing?.observacao || "",
       existingNoteId: existing?.id ?? null,
       contextLabel: `${fmtDate(f.csv.data)} · ${f.csv.placa} · ${brl(f.csv.valor)} — código ${f.csv.codigo}`,
+      snapshot,
     });
   };
 
   const openNoteForOs = (o: OsSemFatura) => {
+    if (!codigoFatura) return;
     const existing = noteForMc(o.missionCost.id);
     setShowHistory(false);
     setHistoryEntries([]);
+    const snapshot: NoteSnapshot = {
+      placa: o.os.placa,
+      osNumber: o.os.osNumber,
+      osStatus: o.os.status,
+      osScheduledDate: o.os.scheduledDate,
+      valor: Math.abs(o.missionCost.amount),
+      missionCostCategory: o.missionCost.category,
+      missionCostDescription: o.missionCost.description,
+      cliente: report?.parsed.header.cliente ?? null,
+    };
     setNoteDraft({
+      codigoFatura,
       scope: "os_sem_fatura",
       csvCodigo: null,
       missionCostId: o.missionCost.id,
@@ -313,24 +424,48 @@ export default function ConferenciaPedagiosTicketLogPage() {
       observacao: existing?.observacao || "",
       existingNoteId: existing?.id ?? null,
       contextLabel: `OS ${o.os.osNumber || `#${o.os.id}`} · ${brl(Math.abs(o.missionCost.amount))} · MC #${o.missionCost.id}`,
+      snapshot,
+    });
+  };
+
+  const openNoteFromSaved = (note: PedagioAuditNote) => {
+    const snap = note.snapshot || {};
+    let contextLabel = "";
+    if (note.scope === "fatura_sem_os") {
+      contextLabel = `${fmtDate(snap.data || null)} · ${snap.placa || "?"} · ${snap.valor != null ? brl(snap.valor) : "?"} — código ${note.csvCodigo || "?"}`;
+    } else {
+      contextLabel = `OS ${snap.osNumber || `#${note.serviceOrderId ?? "?"}`} · ${snap.valor != null ? brl(snap.valor) : "?"} · MC #${note.missionCostId ?? "?"}`;
+    }
+    setNoteDraft({
+      codigoFatura: note.codigoFatura,
+      scope: note.scope,
+      csvCodigo: note.csvCodigo,
+      missionCostId: note.missionCostId,
+      serviceOrderId: note.serviceOrderId,
+      status: note.status,
+      observacao: note.observacao,
+      existingNoteId: note.id,
+      contextLabel,
+      snapshot: snap as NoteSnapshot,
     });
   };
 
   const saveNote = async () => {
-    if (!noteDraft || !codigoFatura || !report) return;
+    if (!noteDraft) return;
     setSavingNote(true);
     try {
       const res = await authFetch("/api/auditoria-pedagios-ticketlog/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          codigoFatura,
+          codigoFatura: noteDraft.codigoFatura,
           scope: noteDraft.scope,
           csvCodigo: noteDraft.csvCodigo,
           missionCostId: noteDraft.missionCostId,
           serviceOrderId: noteDraft.serviceOrderId,
           status: noteDraft.status,
           observacao: noteDraft.observacao,
+          snapshot: noteDraft.snapshot,
         }),
       });
       if (!res.ok) {
@@ -351,17 +486,32 @@ export default function ConferenciaPedagiosTicketLogPage() {
         createdByName: note.created_by_name ?? null,
         createdAt: note.created_at ?? null,
         updatedAt: note.updated_at ?? null,
+        snapshot: (note.snapshot ?? null) as NoteSnapshot | null,
       };
-      const nextNotes = {
-        byCsvCodigo: { ...report.notes.byCsvCodigo },
-        byMissionCostId: { ...report.notes.byMissionCostId },
-      };
-      if (mapped.csvCodigo) nextNotes.byCsvCodigo[mapped.csvCodigo] = mapped;
-      if (mapped.missionCostId != null) nextNotes.byMissionCostId[String(mapped.missionCostId)] = mapped;
-      setReport({ ...report, notes: nextNotes });
+      if (report && noteDraft.codigoFatura === codigoFatura) {
+        const nextNotes = {
+          byCsvCodigo: { ...report.notes.byCsvCodigo },
+          byMissionCostId: { ...report.notes.byMissionCostId },
+        };
+        if (mapped.csvCodigo) nextNotes.byCsvCodigo[mapped.csvCodigo] = mapped;
+        if (mapped.missionCostId != null) nextNotes.byMissionCostId[String(mapped.missionCostId)] = mapped;
+        setReport({ ...report, notes: nextNotes });
+      }
+      if (selectedFatura === noteDraft.codigoFatura) {
+        setFaturaNotes((prev) => {
+          const idx = prev.findIndex((n) => n.id === mapped.id);
+          if (idx >= 0) {
+            const next = prev.slice();
+            next[idx] = mapped;
+            return next;
+          }
+          return [mapped, ...prev];
+        });
+      }
       setHistoryEntries([]);
       setShowHistory(false);
       setNoteDraft(null);
+      refreshFaturas();
       toast({ title: "Anotação salva", description: `Status: ${mapped.status}` });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -371,7 +521,7 @@ export default function ConferenciaPedagiosTicketLogPage() {
   };
 
   const deleteNote = async () => {
-    if (!noteDraft?.existingNoteId || !report) return;
+    if (!noteDraft?.existingNoteId) return;
     setSavingNote(true);
     try {
       const res = await authFetch(`/api/auditoria-pedagios-ticketlog/notes/${noteDraft.existingNoteId}`, {
@@ -381,14 +531,21 @@ export default function ConferenciaPedagiosTicketLogPage() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Falha ao remover anotação");
       }
-      const nextNotes = {
-        byCsvCodigo: { ...report.notes.byCsvCodigo },
-        byMissionCostId: { ...report.notes.byMissionCostId },
-      };
-      if (noteDraft.csvCodigo) delete nextNotes.byCsvCodigo[noteDraft.csvCodigo];
-      if (noteDraft.missionCostId != null) delete nextNotes.byMissionCostId[String(noteDraft.missionCostId)];
-      setReport({ ...report, notes: nextNotes });
+      if (report && noteDraft.codigoFatura === codigoFatura) {
+        const nextNotes = {
+          byCsvCodigo: { ...report.notes.byCsvCodigo },
+          byMissionCostId: { ...report.notes.byMissionCostId },
+        };
+        if (noteDraft.csvCodigo) delete nextNotes.byCsvCodigo[noteDraft.csvCodigo];
+        if (noteDraft.missionCostId != null) delete nextNotes.byMissionCostId[String(noteDraft.missionCostId)];
+        setReport({ ...report, notes: nextNotes });
+      }
+      if (selectedFatura === noteDraft.codigoFatura) {
+        const deletedId = noteDraft.existingNoteId;
+        setFaturaNotes((prev) => prev.filter((n) => n.id !== deletedId));
+      }
       setNoteDraft(null);
+      refreshFaturas();
       toast({ title: "Anotação removida" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -468,6 +625,198 @@ export default function ConferenciaPedagiosTicketLogPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "csv" | "analisadas")}>
+          <TabsList data-testid="tabs-conferencia">
+            <TabsTrigger value="csv" data-testid="tab-csv">
+              <Upload className="h-4 w-4 mr-2" />Conferência por CSV
+            </TabsTrigger>
+            <TabsTrigger value="analisadas" data-testid="tab-analisadas">
+              <Archive className="h-4 w-4 mr-2" />Faturas analisadas
+              {faturas.length > 0 && (
+                <Badge variant="outline" className="ml-2">{faturas.length}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="analisadas" className="space-y-4 mt-4">
+            <Card className="p-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Archive className="h-5 w-5 text-amber-500" />
+                    <h2 className="text-lg font-semibold">Faturas com anotações</h2>
+                  </div>
+                  <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                    Lista todas as faturas TicketLog que já têm anotações salvas no sistema.
+                    Clique em uma fatura para rever as anotações sem precisar reenviar o CSV.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={refreshFaturas}
+                  disabled={loadingFaturas}
+                  data-testid="button-refresh-faturas"
+                >
+                  {loadingFaturas ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Atualizar
+                </Button>
+              </div>
+            </Card>
+
+            {loadingFaturas && faturas.length === 0 ? (
+              <Card className="p-8 text-center text-neutral-500">
+                <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin" />
+                Carregando faturas…
+              </Card>
+            ) : faturas.length === 0 ? (
+              <Card className="p-8 text-center text-neutral-500">
+                <Archive className="h-10 w-10 mx-auto mb-3 text-neutral-400" />
+                <div className="text-sm">Nenhuma fatura com anotações ainda.</div>
+              </Card>
+            ) : (
+              <Card className="p-0 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900">
+                      <th className="py-2 px-3">Fatura</th>
+                      <th className="py-2 px-3">Cliente</th>
+                      <th className="py-2 px-3 text-center">Pendentes</th>
+                      <th className="py-2 px-3 text-center">Justificadas</th>
+                      <th className="py-2 px-3 text-center">Contestadas</th>
+                      <th className="py-2 px-3 text-center">Total</th>
+                      <th className="py-2 px-3">Última edição</th>
+                      <th className="py-2 px-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody data-testid="table-faturas-analisadas">
+                    {faturas.map((f) => (
+                      <tr
+                        key={f.codigoFatura}
+                        className={`border-b border-neutral-100 dark:border-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-900/40 cursor-pointer ${selectedFatura === f.codigoFatura ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}
+                        onClick={() => loadFaturaNotes(f.codigoFatura)}
+                        data-testid={`row-fatura-${f.codigoFatura}`}
+                      >
+                        <td className="py-2 px-3 font-mono">{f.codigoFatura}</td>
+                        <td className="py-2 px-3 text-neutral-600 dark:text-neutral-400">{f.cliente || "—"}</td>
+                        <td className="py-2 px-3 text-center">
+                          {f.pendentes > 0 ? <Badge variant="outline">{f.pendentes}</Badge> : <span className="text-neutral-400">0</span>}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {f.justificadas > 0 ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300">{f.justificadas}</Badge>
+                          ) : <span className="text-neutral-400">0</span>}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {f.contestadas > 0 ? (
+                            <Badge className="bg-sky-100 text-sky-800 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300">{f.contestadas}</Badge>
+                          ) : <span className="text-neutral-400">0</span>}
+                        </td>
+                        <td className="py-2 px-3 text-center font-semibold">{f.total}</td>
+                        <td className="py-2 px-3 whitespace-nowrap text-xs text-neutral-500">
+                          {f.ultimaEdicao ? new Date(f.ultimaEdicao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
+                        </td>
+                        <td className="py-2 px-3">
+                          <ChevronRight className="h-4 w-4 text-neutral-400" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+
+            {selectedFatura && (
+              <Card className="p-4" data-testid="card-fatura-notes">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-amber-600" />
+                  <h3 className="text-base font-semibold">
+                    Anotações da fatura {selectedFatura}
+                  </h3>
+                  <Badge variant="outline" className="ml-2">{faturaNotes.length}</Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto"
+                    onClick={() => { setSelectedFatura(null); setFaturaNotes([]); }}
+                    data-testid="button-close-fatura-notes"
+                  >
+                    Fechar
+                  </Button>
+                </div>
+                {loadingFaturaNotes ? (
+                  <div className="text-sm text-neutral-500 flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
+                  </div>
+                ) : faturaNotes.length === 0 ? (
+                  <div className="text-sm text-neutral-500">Nenhuma anotação encontrada.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b border-neutral-200 dark:border-neutral-800">
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 pr-3">Data</th>
+                          <th className="py-2 pr-3">Placa</th>
+                          <th className="py-2 pr-3">Valor</th>
+                          <th className="py-2 pr-3">OS / Estab.</th>
+                          <th className="py-2 pr-3">Status</th>
+                          <th className="py-2 pr-3">Observação</th>
+                          <th className="py-2 pr-3">Por</th>
+                          <th className="py-2 pr-3 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody data-testid="table-fatura-notes">
+                        {faturaNotes.map((n) => {
+                          const s = n.snapshot || {};
+                          return (
+                            <tr key={n.id} className="border-b border-neutral-100 dark:border-neutral-900" data-testid={`row-note-${n.id}`}>
+                              <td className="py-2 pr-3 text-xs">
+                                {n.scope === "fatura_sem_os" ? "Fatura sem OS" : "OS sem fatura"}
+                              </td>
+                              <td className="py-2 pr-3 whitespace-nowrap">
+                                {fmtDate(s.data || s.osScheduledDate || null)}
+                              </td>
+                              <td className="py-2 pr-3 font-mono">{s.placa || "—"}</td>
+                              <td className="py-2 pr-3 whitespace-nowrap">{s.valor != null ? brl(s.valor) : "—"}</td>
+                              <td className="py-2 pr-3 text-xs">
+                                {n.scope === "fatura_sem_os"
+                                  ? (s.estabelecimento || (s.osCandidatas && s.osCandidatas.length > 0 ? s.osCandidatas.join(", ") : "—"))
+                                  : (s.osNumber || `OS #${n.serviceOrderId ?? "?"}`)}
+                              </td>
+                              <td className="py-2 pr-3">{statusBadge(n.status)}</td>
+                              <td className="py-2 pr-3 text-xs text-neutral-600 dark:text-neutral-400 max-w-xs">
+                                <div className="line-clamp-2" title={n.observacao}>{n.observacao || "—"}</div>
+                              </td>
+                              <td className="py-2 pr-3 text-[10px] text-neutral-500 whitespace-nowrap">
+                                {n.createdByName || "—"}<br />
+                                {n.updatedAt ? new Date(n.updatedAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : ""}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openNoteFromSaved(n)}
+                                  data-testid={`button-edit-note-${n.id}`}
+                                >
+                                  <MessageSquarePlus className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="csv" className="space-y-6 mt-4">
         {codigoFromUrl && (
           <Card className="p-4 border-amber-300 bg-amber-50 dark:bg-amber-950/30" data-testid="banner-codigo-from-financeiro">
             <div className="flex items-start gap-3">
@@ -854,6 +1203,8 @@ export default function ConferenciaPedagiosTicketLogPage() {
             <div className="text-sm">Envie um CSV da fatura TicketLog para iniciar a conferência.</div>
           </Card>
         )}
+          </TabsContent>
+        </Tabs>
 
         <Dialog open={openGerar} onOpenChange={setOpenGerar}>
           <DialogContent className="max-w-lg" data-testid="dialog-gerar-financeiro">

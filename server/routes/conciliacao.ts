@@ -454,6 +454,62 @@ export function registerConciliacaoRoutes(app: Express) {
     }
   });
 
+  // === LISTA DE FATURAS COM ANOTAÇÕES (sem precisar do CSV) ===
+  // Agrupa por codigo_fatura, com contagem por status e data da última edição.
+  app.get("/api/auditoria-pedagios-ticketlog/faturas", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("ticketlog_pedagio_audit_notes")
+        .select("codigo_fatura,status,updated_at,snapshot")
+        .order("updated_at", { ascending: false })
+        .range(0, 10000);
+      if (error) return res.status(500).json({ message: error.message });
+      const byFat = new Map<string, {
+        codigoFatura: string;
+        pendentes: number;
+        justificadas: number;
+        contestadas: number;
+        total: number;
+        ultimaEdicao: string | null;
+        cliente: string | null;
+      }>();
+      for (const n of (data || []) as Array<any>) {
+        const k = String(n.codigo_fatura || "");
+        if (!k) continue;
+        let entry = byFat.get(k);
+        if (!entry) {
+          entry = {
+            codigoFatura: k,
+            pendentes: 0,
+            justificadas: 0,
+            contestadas: 0,
+            total: 0,
+            ultimaEdicao: null,
+            cliente: null,
+          };
+          byFat.set(k, entry);
+        }
+        entry.total += 1;
+        if (n.status === "justificada") entry.justificadas += 1;
+        else if (n.status === "contestada") entry.contestadas += 1;
+        else entry.pendentes += 1;
+        if (n.updated_at && (!entry.ultimaEdicao || n.updated_at > entry.ultimaEdicao)) {
+          entry.ultimaEdicao = n.updated_at;
+        }
+        const snapCliente = n.snapshot?.cliente;
+        if (snapCliente && !entry.cliente) entry.cliente = snapCliente;
+      }
+      const faturas = Array.from(byFat.values()).sort((a, b) => {
+        const av = a.ultimaEdicao || "";
+        const bv = b.ultimaEdicao || "";
+        return bv.localeCompare(av);
+      });
+      res.json({ faturas });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || String(err) });
+    }
+  });
+
   app.post("/api/auditoria-pedagios-ticketlog/notes", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
       const {
@@ -464,6 +520,7 @@ export function registerConciliacaoRoutes(app: Express) {
         serviceOrderId,
         status,
         observacao,
+        snapshot,
       } = req.body as {
         codigoFatura?: string;
         scope?: "fatura_sem_os" | "os_sem_fatura";
@@ -472,6 +529,7 @@ export function registerConciliacaoRoutes(app: Express) {
         serviceOrderId?: number | null;
         status?: "pendente" | "justificada" | "contestada";
         observacao?: string;
+        snapshot?: Record<string, unknown> | null;
       };
       if (!codigoFatura) return res.status(400).json({ message: "codigoFatura obrigatório" });
       if (scope !== "fatura_sem_os" && scope !== "os_sem_fatura") {
@@ -506,6 +564,8 @@ export function registerConciliacaoRoutes(app: Express) {
         return res.status(500).json({ message: findErr.message });
       }
 
+      const cleanSnapshot = snapshot && typeof snapshot === "object" ? snapshot : null;
+
       if (existing?.id) {
         const { data: prev, error: prevErr } = await supabaseAdmin
           .from("ticketlog_pedagio_audit_notes")
@@ -514,15 +574,18 @@ export function registerConciliacaoRoutes(app: Express) {
           .maybeSingle();
         if (prevErr) return res.status(500).json({ message: prevErr.message });
 
+        const updatePayload: Record<string, unknown> = {
+          status: st,
+          observacao: observacao || "",
+          created_by_id: userId,
+          created_by_name: userName,
+          updated_at: now,
+        };
+        if (cleanSnapshot) updatePayload.snapshot = cleanSnapshot;
+
         const { data, error } = await supabaseAdmin
           .from("ticketlog_pedagio_audit_notes")
-          .update({
-            status: st,
-            observacao: observacao || "",
-            created_by_id: userId,
-            created_by_name: userName,
-            updated_at: now,
-          })
+          .update(updatePayload)
           .eq("id", existing.id)
           .select("*")
           .single();
@@ -569,6 +632,7 @@ export function registerConciliacaoRoutes(app: Express) {
           created_by_name: userName,
           created_at: now,
           updated_at: now,
+          snapshot: cleanSnapshot,
         })
         .select("*")
         .single();
