@@ -31,6 +31,7 @@ type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
 type Step = "PAGAR" | "RECEBER" | "AGUARDANDO" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO";
 type StatusFilter = "ALL" | "PENDING" | "PAID" | "OVERDUE";
+type OrigemFilter = "ALL" | "MANUAL" | "TICKETLOG";
 
 interface Fornecedor {
   id: number;
@@ -105,6 +106,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   mission_cost: "MISSÃO",
   service_order: "RECEITA OS",
   manual: "MANUAL",
+  ticketlog_pedagio_fatura: "FATURA TICKETLOG",
 };
 
 const ORIGIN_ROUTES: Record<string, string> = {
@@ -113,6 +115,15 @@ const ORIGIN_ROUTES: Record<string, string> = {
   maintenance: "/admin/maintenance",
   mission_cost: "/admin/operational-grid",
   service_order: "/admin/operational-grid",
+  ticketlog_pedagio_fatura: "/admin/conferencia-pedagios-ticketlog",
+};
+
+// Extrai o código da fatura TicketLog a partir do origin_id.
+// Modo único: origin_id == codigoFatura. Modo rateado: codigoFatura:placa.
+const extractTicketLogCodigo = (originId: string | null): string => {
+  if (!originId) return "";
+  const idx = originId.indexOf(":");
+  return idx >= 0 ? originId.slice(0, idx) : originId;
 };
 
 interface FinancialCategory {
@@ -1819,6 +1830,7 @@ export default function FinanceiroPage() {
     return params.get("search") || "";
   });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [origemFilter, setOrigemFilter] = useState<OrigemFilter>("ALL");
   const [viewPeriod, setViewPeriod] = useState<ViewPeriod>("MONTH");
   const [customStartDate, setCustomStartDate] = useState(new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
   const [customEndDate, setCustomEndDate] = useState(new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
@@ -2078,7 +2090,7 @@ export default function FinanceiroPage() {
     // Em PAGAR/RECEBER esconder lançamentos automáticos de missão (Mission/Combustível/OS)
     // — eles aparecem em Conferência/Relatório, mas o operacional ADM não os manuseia aqui.
     if (typeFilter) {
-      list = list.filter(t => !t.origin_type || t.origin_type === "manual");
+      list = list.filter(t => !t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura");
       // Excluir categorias de missão (já visíveis em Conferência)
       list = list.filter(t => {
         const cat = String(t.category_name || "").toUpperCase();
@@ -2091,12 +2103,17 @@ export default function FinanceiroPage() {
     if (statusFilter === "PENDING") list = list.filter(t => t.status === "PENDING");
     else if (statusFilter === "PAID") list = list.filter(t => t.status === "PAID");
     else if (statusFilter === "OVERDUE") list = list.filter(t => t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
+    if (origemFilter === "MANUAL") {
+      list = list.filter(t => !t.origin_type || t.origin_type === "manual");
+    } else if (origemFilter === "TICKETLOG") {
+      list = list.filter(t => t.origin_type === "ticketlog_pedagio_fatura");
+    }
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      list = list.filter(t => t.description.toLowerCase().includes(term) || (t.entity_name || "").toLowerCase().includes(term) || (t.category_name || "").toLowerCase().includes(term));
+      list = list.filter(t => t.description.toLowerCase().includes(term) || (t.entity_name || "").toLowerCase().includes(term) || (t.category_name || "").toLowerCase().includes(term) || (t.origin_id || "").toLowerCase().includes(term));
     }
     return list;
-  }, [periodFilteredTransactions, activeStep, statusFilter, searchTerm]);
+  }, [periodFilteredTransactions, activeStep, statusFilter, origemFilter, searchTerm]);
 
   // Lançamentos manuais (sem origem automática de missão), excluindo categorias
   // de missão e fora do fluxo de aprovação/recusa. Aplicado a todos os totais e
@@ -2105,7 +2122,7 @@ export default function FinanceiroPage() {
   const manualOperationalTx = useMemo(() => {
     return periodFilteredTransactions.filter(t => {
       const cat = String(t.category_name || "").toUpperCase();
-      return (!t.origin_type || t.origin_type === "manual") &&
+      return (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura") &&
         !MISSION_CATEGORIES.includes(cat) &&
         t.status !== "AGUARDANDO_APROVACAO" &&
         t.status !== "RECUSADA";
@@ -2214,6 +2231,23 @@ export default function FinanceiroPage() {
           </button>
         ))}
       </div>
+      <div className="lg:col-span-12">
+        <label className="text-[10px] font-black text-neutral-400 uppercase mb-1.5 block tracking-widest">Origem</label>
+        <div className="flex gap-1 bg-neutral-100 p-1 rounded-lg">
+          {([["ALL", "Todas"], ["MANUAL", "Manual"], ["TICKETLOG", "TicketLog Pedágios"]] as [OrigemFilter, string][]).map(([id, label]) => (
+            <button key={id} onClick={() => setOrigemFilter(id)} data-testid={`button-origem-${id.toLowerCase()}`}
+              className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
+                origemFilter === id
+                  ? id === "TICKETLOG" ? "bg-amber-500 text-white shadow-sm"
+                  : id === "MANUAL" ? "bg-neutral-700 text-white shadow-sm"
+                  : "bg-white text-neutral-900 shadow-sm"
+                  : "text-neutral-500"
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 
@@ -2255,24 +2289,39 @@ export default function FinanceiroPage() {
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
                       {t.origin_type && t.origin_type !== "manual" && (
-                        <button
-                          onClick={() => {
-                            if (t.origin_type === "service_order" && t.origin_id) {
-                              setDreOsId(t.origin_id);
-                              return;
-                            }
-                            const route = ORIGIN_ROUTES[t.origin_type!];
-                            if (route) {
-                              const params = t.origin_id ? `?highlight=${t.origin_id}` : "";
-                              navigate(route + params);
-                            }
-                          }}
-                          className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-violet-100 text-violet-700 border border-violet-200 whitespace-nowrap hover:bg-violet-200 cursor-pointer transition-colors"
-                          data-testid={`badge-auto-${t.id}`}
-                          title={`Ver origem: ${ORIGIN_LABELS[t.origin_type] || "AUTO"}${t.origin_id ? ` #${t.origin_id}` : ""}`}
-                        >
-                          {ORIGIN_LABELS[t.origin_type] || "AUTO"} {t.origin_type === "service_order" ? "📊" : "↗"}
-                        </button>
+                        (() => {
+                          const isTicketLog = t.origin_type === "ticketlog_pedagio_fatura";
+                          const tlCodigo = isTicketLog ? extractTicketLogCodigo(t.origin_id) : "";
+                          const labelText = isTicketLog
+                            ? `Fatura TicketLog ${tlCodigo}`
+                            : (ORIGIN_LABELS[t.origin_type!] || "AUTO");
+                          return (
+                            <button
+                              onClick={() => {
+                                if (t.origin_type === "service_order" && t.origin_id) {
+                                  setDreOsId(t.origin_id);
+                                  return;
+                                }
+                                const route = ORIGIN_ROUTES[t.origin_type!];
+                                if (route) {
+                                  const params = isTicketLog
+                                    ? (tlCodigo ? `?codigo=${encodeURIComponent(tlCodigo)}` : "")
+                                    : (t.origin_id ? `?highlight=${t.origin_id}` : "");
+                                  navigate(route + params);
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 text-[8px] font-black uppercase rounded border whitespace-nowrap cursor-pointer transition-colors ${
+                                isTicketLog
+                                  ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+                                  : "bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200"
+                              }`}
+                              data-testid={`badge-auto-${t.id}`}
+                              title={`Ver origem: ${labelText}${!isTicketLog && t.origin_id ? ` #${t.origin_id}` : ""}`}
+                            >
+                              {labelText} {t.origin_type === "service_order" ? "📊" : "↗"}
+                            </button>
+                          );
+                        })()
                       )}
                     </div>
                   </td>

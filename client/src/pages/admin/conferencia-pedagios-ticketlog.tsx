@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -146,6 +146,12 @@ interface NoteDraft {
 
 export default function ConferenciaPedagiosTicketLogPage() {
   const { toast } = useToast();
+  const [codigoFromUrl, setCodigoFromUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const c = params.get("codigo");
+    if (c) setCodigoFromUrl(c);
+  }, []);
   const [file, setFile] = useState<File | null>(null);
   const [csvBase64, setCsvBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -397,6 +403,30 @@ export default function ConferenciaPedagiosTicketLogPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
+        {codigoFromUrl && (
+          <Card className="p-4 border-amber-300 bg-amber-50 dark:bg-amber-950/30" data-testid="banner-codigo-from-financeiro">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-sm flex-1">
+                <p className="font-semibold text-amber-800 dark:text-amber-200">
+                  Você veio do financeiro buscando a fatura{" "}
+                  <span className="font-mono" data-testid="text-codigo-from-url">{codigoFromUrl}</span>.
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                  Reenvie o CSV "Detalhamento da Fatura" da TicketLog correspondente a esta fatura para revisar a conciliação.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCodigoFromUrl(null)}
+                data-testid="button-dismiss-banner"
+              >
+                Fechar
+              </Button>
+            </div>
+          </Card>
+        )}
         <Card className="p-5">
           <div className="flex items-start gap-4 flex-col md:flex-row md:items-end">
             <div className="flex-1 space-y-3 w-full">
