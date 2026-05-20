@@ -1,0 +1,169 @@
+/**
+ * Pure helpers da integração Control iD / RHID — criptografia de credenciais,
+ * normalização de eventos, fuzzy match de nomes e ciclo de fechamento de ponto.
+ *
+ * Extraído para teste — sem dependência de Supabase/Express.
+ */
+import crypto from "node:crypto";
+
+// ============================ CRIPTOGRAFIA ============================
+
+function getEncKey(): Buffer {
+  const raw =
+    process.env.CONTROLID_ENC_KEY ||
+    process.env.SESSION_SECRET ||
+    "torres-default-encryption-key-change-me-please-32";
+  return crypto.createHash("sha256").update(raw).digest();
+}
+
+export function encryptSecret(plain: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getEncKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString("base64");
+}
+
+export function decryptSecret(b64: string): string {
+  try {
+    const buf = Buffer.from(b64, "base64");
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const enc = buf.subarray(28);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", getEncKey(), iv);
+    decipher.setAuthTag(tag);
+    const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+    return dec.toString("utf8");
+  } catch (err: any) {
+    throw new Error(`Falha ao descriptografar credencial: ${err.message}`);
+  }
+}
+
+// ============================ EVENTOS ============================
+
+export interface ControlIdEvent {
+  id: string;
+  userId: string;
+  userName?: string;
+  time: string;
+  direction?: "in" | "out" | "unknown";
+  source?: "facial" | "rfid" | "digital" | "senha";
+  raw: any;
+}
+
+export function parseRhidDate(d: any): Date {
+  if (!d) return new Date(0);
+  if (typeof d === "string") {
+    const m = d.match(/\/Date\((\d+)([+-]\d{4})?\)\//);
+    if (m) return new Date(parseInt(m[1]));
+    return new Date(d);
+  }
+  return new Date(d);
+}
+
+export function parseRhidAfdRecords(afdData: any, since: Date | null): ControlIdEvent[] {
+  const records = Array.isArray(afdData) ? afdData : (afdData?.data || afdData?.records || []);
+  const sinceMs = since ? since.getTime() : Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const events: ControlIdEvent[] = [];
+
+  for (const rec of records) {
+    const punchDate = parseRhidDate(
+      rec.dateTime || rec.DateTime || rec.PunchDate || rec.punchDate || rec.Date || rec.date,
+    );
+    if (punchDate.getTime() <= 0 || punchDate.getTime() < sinceMs) continue;
+
+    const personId = String(
+      rec.idPerson || rec.IdPerson || rec.PersonId || rec.personId || rec.EmployeeId || rec.id || "",
+    );
+    const personName = rec.personName || rec.PersonName || rec.Name || rec.name || "";
+    const punchIso = punchDate.toISOString();
+
+    events.push({
+      id: `rhid_${rec.id || personId}_${punchDate.getTime()}`,
+      userId: personId,
+      userName: personName,
+      time: punchIso,
+      direction: "unknown",
+      source: rec.faceScore > 0 ? "facial" : undefined,
+      raw: rec,
+    });
+  }
+
+  return events;
+}
+
+export function normalizeEvent(raw: any): ControlIdEvent {
+  const id = String(
+    raw.id ?? raw.event_id ?? raw.access_log_id ?? raw.uuid ?? `${raw.user_id || raw.userId}-${raw.time}`,
+  );
+  let t = raw.time ?? raw.timestamp ?? raw.date ?? raw.event_time ?? raw.access_time;
+  let punchIso: string;
+  if (typeof t === "number") {
+    punchIso = new Date(t < 1e12 ? t * 1000 : t).toISOString();
+  } else if (typeof t === "string") {
+    const num = Number(t);
+    if (!isNaN(num) && num > 1e9) {
+      punchIso = new Date(num < 1e12 ? num * 1000 : num).toISOString();
+    } else {
+      punchIso = new Date(t).toISOString();
+    }
+  } else {
+    punchIso = new Date().toISOString();
+  }
+  const dirRaw = String(raw.direction || raw.flow || raw.tipo || raw.event || "").toLowerCase();
+  let direction: "in" | "out" | "unknown" = "unknown";
+  if (/in|entrada|1/.test(dirRaw)) direction = "in";
+  else if (/out|saida|saída|2/.test(dirRaw)) direction = "out";
+  const srcRaw = String(raw.source || raw.identification_method || raw.type || "").toLowerCase();
+  let source: "facial" | "rfid" | "digital" | "senha" | undefined;
+  if (/face|facial/.test(srcRaw)) source = "facial";
+  else if (/rfid|card|cartao|cartão/.test(srcRaw)) source = "rfid";
+  else if (/digital|fingerprint|biometr/.test(srcRaw)) source = "digital";
+  else if (/pass|senha|password/.test(srcRaw)) source = "senha";
+
+  return {
+    id,
+    userId: String(raw.user_id ?? raw.userId ?? raw.person_id ?? raw.matricula ?? raw.idUser ?? ""),
+    userName: raw.user_name || raw.userName || raw.name || raw.nome,
+    time: punchIso,
+    direction,
+    source,
+    raw,
+  };
+}
+
+// ============================ NAME MATCHING ============================
+
+export function normalizeName(s: string): string {
+  return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+export function nameTokens(s: string): string[] {
+  return normalizeName(s).split(" ").filter((t) => t.length >= 3);
+}
+
+export function nameMatchScore(a: string, b: string): number {
+  const ta = nameTokens(a),
+    tb = nameTokens(b);
+  if (ta.length === 0 || tb.length === 0) return 0;
+  let common = 0;
+  for (const t of ta) if (tb.includes(t)) common++;
+  return common / Math.max(ta.length, tb.length);
+}
+
+// ============================ FECHAMENTO ============================
+
+/**
+ * Converte um mês "YYYY-MM" no ciclo de fechamento RHID (dia 26 do mês anterior
+ * até dia 25 do mês informado). Clamp inferior em 2026-03-01 (início dos dados).
+ */
+export function monthToFechamento(monthYear: string): { start: Date; end: Date } {
+  const [yyyy, mm] = monthYear.split("-").map(Number);
+  let start = new Date(Date.UTC(yyyy, mm - 2, 26));
+  const end = new Date(Date.UTC(yyyy, mm - 1, 26));
+  const minStart = new Date(Date.UTC(2026, 2, 1));
+  if (start.getTime() < minStart.getTime()) start = minStart;
+  return { start, end };
+}

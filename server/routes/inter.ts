@@ -27,6 +27,11 @@ import * as cobranca from "../services/inter/cobranca";
 import * as banking from "../services/inter/banking";
 import { logSystemAudit } from "../audit";
 import { logFinancialAudit } from "./_helpers";
+import {
+  parseInterWebhookEvent,
+  isInterPaymentConfirmation,
+  classifyInterPayment,
+} from "../lib/inter-webhook-parser";
 
 export function registerInterRoutes(app: Express) {
   console.log("[inter] Rotas Banco Inter registradas (cobrança + extrato + saldo + pagamentos + webhook)");
@@ -538,11 +543,8 @@ export function registerInterRoutes(app: Express) {
     try {
       const events = Array.isArray(req.body) ? req.body : [req.body];
       for (const ev of events) {
-        const codigoSolicitacao =
-          ev?.codigoSolicitacao ||
-          ev?.cobranca?.codigoSolicitacao;
-        const evento = ev?.situacao || ev?.evento || "DESCONHECIDO";
-        const valorPago = Number(ev?.valor || ev?.valorTotalRecebido || ev?.cobranca?.valorTotalRecebido || 0);
+        const parsed = parseInterWebhookEvent(ev);
+        const { codigoSolicitacao, evento, valorPago, dataHoraSituacao } = parsed;
 
         const { data: insertedEvent } = await supabaseAdmin.from("inter_webhook_events").insert({
           evento,
@@ -552,11 +554,7 @@ export function registerInterRoutes(app: Express) {
         }).select("id").single();
 
         // Pagamento confirmado → atualiza invoice + cria transação (com idempotência)
-        if (
-          codigoSolicitacao &&
-          ["RECEBIDO", "PAGO", "PAYMENT_RECEIVED", "PAYMENT_CONFIRMED", "MARCADA_RECEBIDA"].includes(evento)
-        ) {
-          const dataHoraSituacao = ev?.dataHoraSituacao || new Date().toISOString();
+        if (codigoSolicitacao && isInterPaymentConfirmation(evento)) {
           const { data: inv } = await supabaseAdmin
             .from("invoices")
             .select("id, value, client_name, gateway, status")
@@ -590,12 +588,10 @@ export function registerInterRoutes(app: Express) {
 
             // VALIDAÇÃO DE VALOR PARCIAL
             const valorEsperado = Number(inv.value || 0);
-            const valorRecebido = valorPago > 0 ? valorPago : valorEsperado;
-            const isPartial = valorPago > 0 && Math.abs(valorPago - valorEsperado) > 0.01;
-            const novoStatus = isPartial ? "PARTIAL" : "RECEIVED";
-            const descPrefix = isPartial
-              ? `[PAGAMENTO PARCIAL] Recebido ${valorRecebido.toFixed(2)} de ${valorEsperado.toFixed(2)} — `
-              : "Recebimento Inter — ";
+            const { valorRecebido, isPartial, novoStatus, descPrefix } = classifyInterPayment({
+              valorPago,
+              valorEsperado,
+            });
 
             // Atualiza invoice apenas se ainda não foi marcada (preserva status mais grave)
             if (inv.status !== "RECEIVED") {

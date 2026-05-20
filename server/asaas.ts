@@ -3,20 +3,26 @@ import { requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
+import {
+  TORRES_CNPJ,
+  CNAE_PRINCIPAL,
+  CODIGO_SERVICO_MUNICIPAL,
+  CODIGO_SERVICO_MUNICIPAL_CODE,
+  ISS_ALIQUOTA,
+  DESCRICAO_SERVICO_FIXA,
+  INSS_OBSERVACAO_LEGAL,
+  INSS_DISPENSA_OBSERVACAO,
+  MESES_PT,
+  cleanCnpj,
+  buildInvoiceDescription,
+  buildInssObservation,
+  buildFiscalPayload,
+  todayDateStr,
+  buildNfseInvoicePayload as buildNfseInvoicePayloadBase,
+  fmtBRL as fmt,
+} from "./lib/asaas-helpers";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
-
-// CNPJ da Torres Vigilância Patrimonial — emitente único de todas as NFs do sistema.
-// Usado para filtrar/marcar invoices e impedir que registros legados/teste de outros
-// emitentes apareçam no Relatório de NFs.
-const TORRES_CNPJ = "36982392000189";
-const cleanCnpj = (v: string | null | undefined): string => String(v || "").replace(/\D/g, "");
-
-const CNAE_PRINCIPAL = "7870";
-const CODIGO_SERVICO_MUNICIPAL = "25";
-const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
-const ISS_ALIQUOTA = 0;
-const DESCRICAO_SERVICO_FIXA = "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
 
 function getApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
@@ -24,85 +30,12 @@ function getApiKey(): string {
   return key;
 }
 
-const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-
-function buildInvoiceDescription(_clientName: string, periodoInicio: string, periodoFim: string, _osCount?: number): string {
-  const inicioDate = new Date(periodoInicio + "T12:00:00Z");
-  const fimDate = new Date(periodoFim + "T12:00:00Z");
-  const inicio = inicioDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  const fim = fimDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  // Mês de referência: usa o mês do início do período
-  const mesRef = MESES_PT[inicioDate.getUTCMonth()];
-  const anoRef = inicioDate.getUTCFullYear();
-  return `Referente aos serviços de Escolta Armada - Período: ${inicio} a ${fim} (${mesRef}/${anoRef})`;
-}
-
-const INSS_OBSERVACAO_LEGAL = "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
-const INSS_DISPENSA_OBSERVACAO = "De acordo com o artigo 115 da IN RFB nº 2.110/2022, a contratante fica dispensada de efetuar a retenção de INSS.";
-
-function buildInssObservation(retemInss: boolean, aliquota: number, valor: number): string {
-  if (!retemInss) return INSS_DISPENSA_OBSERVACAO;
-  return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
-}
-
-function buildFiscalPayload(value: number, clientCpfCnpj: string, opts?: { retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  const retemInss = !!opts?.retemInss;
-  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
-  return {
-    serviceListItem: CODIGO_SERVICO_MUNICIPAL,
-    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
-    deductions: 0,
-    effectiveDatePeriod: "MONTHLY",
-    receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs}`.trim(),
-    taxes: {
-      retainIss: false,
-      iss: ISS_ALIQUOTA,
-      cofins: 0,
-      csll: 0,
-      inss: inssAliquota,
-      ir: 0,
-      pis: 0,
-    },
-  };
-}
-
-function todayDateStr(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  const retemInss = !!opts.retemInss;
-  const inssAliquota = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
-  const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
-  // serviceDescription = texto principal que aparece na DISCRIMINAÇÃO DOS SERVIÇOS da NF.
-  // Usa a description vinda do faturamento (já formatada como "Referente aos serviços de Escolta Armada - Período: ... (Mês/Ano)")
-  // e mantém DESCRICAO_SERVICO_FIXA como fallback caso não venha.
-  const serviceDescription = (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
-  const payload: Record<string, any> = {
-    serviceDescription,
-    observations: `${baseObs} ${inssObs}`.trim(),
-    value: opts.value,
-    deductions: 0,
-    effectiveDate: todayDateStr(),
-    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
-    municipalServiceName: DESCRICAO_SERVICO_FIXA,
-    taxes: {
-      retainIss: false,
-      iss: ISS_ALIQUOTA,
-      cofins: 0, csll: 0, inss: inssAliquota, ir: 0, pis: 0,
-    },
-  };
   const overrideMunicipalServiceId = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
-  if (overrideMunicipalServiceId) {
-    payload.municipalServiceId = parseInt(overrideMunicipalServiceId);
-  }
-  if (opts.paymentId) payload.payment = opts.paymentId;
-  if (opts.customerId) payload.customer = opts.customerId;
+  const payload = buildNfseInvoicePayloadBase({
+    ...opts,
+    municipalServiceIdOverride: overrideMunicipalServiceId ? parseInt(overrideMunicipalServiceId) : undefined,
+  });
   console.log("[asaas] NFS-e payload:", JSON.stringify({
     municipalServiceCode: payload.municipalServiceCode,
     municipalServiceName: payload.municipalServiceName,
@@ -4261,8 +4194,4 @@ export function registerAsaasRoutes(app: Express) {
     });
 
     console.log("[asaas] Rotas de faturamento Asaas registradas");
-}
-
-function fmt(val: number) {
-  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
