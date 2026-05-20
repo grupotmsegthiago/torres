@@ -5,7 +5,8 @@ Acelera as operações de segurança patrimonial com gerenciamento integrado de 
 ## Run & Operate
 
 - **Run:** `npm run dev`
-- **Build:** `npm run build`
+- **Build:** `npm run build` (roda `npm test` automaticamente via `prebuild`; build falha se algum teste falhar)
+- **Test:** `npm test` — executa `tsx --test` sobre todos os arquivos `*.test.ts` / `*.test.mts` em `server/`, `shared/`, `tests/` e `.local/`. Suítes existentes incluem `server/lib/ticketlog-pedagio-csv.test.ts` (cruzamento TicketLog × OS, originalmente em `.local/test_ticketlog_pedagio.mts`). Novos testes devem usar o sufixo `.test.ts` ou `.test.mts`; scripts de debug pontuais em `.local/test_*.mts` (sem o sufixo `.test.`) continuam sendo one-offs e não são executados. O `prebuild` roda `npm test` automaticamente, então qualquer falha aborta o build/deploy.
 - **Typecheck:** `npm run typecheck`
 - **Codegen (Supabase types):** `npm run gen:supabase`
 - **DB Push (Drizzle migrations):** `npm run db:push`
