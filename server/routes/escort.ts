@@ -76,6 +76,35 @@ import type { Express } from "express";
       if (parent_name !== undefined) updates.parent_name = parent_name;
       if (type !== undefined) updates.type = type;
       if (group !== undefined) updates.group = group;
+      // Check de duplicidade no rename/alteração — se mudou name/parent_name/type,
+      // verifica se a nova combinação já existe em outra categoria.
+      if (name !== undefined || parent_name !== undefined || type !== undefined) {
+        const { data: current } = await supabaseAdmin
+          .from("financial_categories").select("name,parent_name,type")
+          .eq("id", req.params.id).single();
+        const finalName = name ?? current?.name;
+        const finalParent = parent_name !== undefined ? parent_name : current?.parent_name;
+        const finalType = type ?? current?.type;
+        if (finalName && finalType) {
+          const { data: collision } = await supabaseAdmin
+            .from("financial_categories").select("id")
+            .ilike("name", finalName).eq("type", finalType).neq("id", req.params.id);
+          const parentNorm = (finalParent || "").toLowerCase();
+          const dup = (collision || []).find((c: any) => {
+            return true; // já filtrado por name+type acima; valida parent abaixo
+          });
+          if (collision && collision.length > 0) {
+            // Refina checando parent_name também
+            const { data: full } = await supabaseAdmin
+              .from("financial_categories").select("id,parent_name")
+              .in("id", collision.map((c: any) => c.id));
+            const realDup = (full || []).find((c: any) => (c.parent_name || "").toLowerCase() === parentNorm);
+            if (realDup) {
+              return res.status(409).json({ message: `Já existe categoria "${finalName}" nesse grupo`, existingId: realDup.id });
+            }
+          }
+        }
+      }
       const { data, error } = await supabaseAdmin.from("financial_categories").update(updates).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);

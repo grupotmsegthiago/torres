@@ -31,10 +31,24 @@ function getApiKey(): string {
 }
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  const overrideMunicipalServiceId = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
+  // Valida env var: se inválida (NaN/0/negativa), loga warning gritante e
+  // omite. Sem essa guarda, parseInt silenciosamente vira NaN e o Asaas
+  // cai pro default da conta (= 01481 pedágio). Falha visível > regressão silenciosa.
+  const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
+  let override: number | undefined;
+  if (raw && raw.trim()) {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) {
+      override = n;
+    } else {
+      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — NFS-e pode sair com código errado. Esperado: número positivo (ex: 402 para código 07870).`);
+    }
+  } else {
+    console.warn("[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID não definida — Asaas usará o serviço default da conta (risco de emitir com código errado).");
+  }
   const payload = buildNfseInvoicePayloadBase({
     ...opts,
-    municipalServiceIdOverride: overrideMunicipalServiceId ? parseInt(overrideMunicipalServiceId) : undefined,
+    municipalServiceIdOverride: override,
   });
   console.log("[asaas] NFS-e payload:", JSON.stringify({
     municipalServiceCode: payload.municipalServiceCode,

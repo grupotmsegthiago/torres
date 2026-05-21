@@ -135,6 +135,7 @@ SMTP_FROM = "escolta@torresseguranca.com.br"
 ASAAS_API_URL = "https://www.asaas.com/api/v3"
 RHID_API_URL = "https://www.rhid.com.br/v2"
 RHID_EMAIL = "escolta@torresseguranca.com.br"
+ASAAS_MUNICIPAL_SERVICE_ID = "402"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0"]
