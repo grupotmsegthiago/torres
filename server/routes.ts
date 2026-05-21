@@ -914,9 +914,15 @@ async function ensureSystemSettingsTable() {
   try {
     const autoFixFn = async () => {
       const allOrders = await storage.getServiceOrders();
+      // CRÍTICO: precisa excluir "recusada" também. Sem isso, OSs marcadas
+      // como recusada (operacional não atendeu) que tinham mission_status
+      // pré-existente "encerrada" eram revertidas pra "concluida" no
+      // próximo restart, deixando o billing ativo e gerando cobrança
+      // indevida. Foi assim que TOR-0172 voltou pra concluida.
       const stuckOrders = allOrders.filter(o =>
         (o.missionStatus === "finalizada" || o.missionStatus === "encerrada") &&
-        o.status !== "concluida" && o.status !== "concluída" && o.status !== "cancelada"
+        o.status !== "concluida" && o.status !== "concluída" &&
+        o.status !== "cancelada" && o.status !== "recusada"
       );
       for (const o of stuckOrders) {
         await storage.updateServiceOrder(o.id, {
