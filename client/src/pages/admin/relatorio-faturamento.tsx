@@ -153,23 +153,20 @@ export default function RelatorioFaturamentoPage() {
   });
   const activeApproval = approvalStatus?.active || null;
 
-  const approvedBillings = useMemo(() => billings.filter(b => b.status === "APROVADA"), [billings]);
+  // Para faturamento: ENTRAM Aprovadas + A Verificar + Canceladas pelo cliente.
+  // SAEM Recusadas (operacional não atendeu) e Faturadas/Pagas (já viraram fatura).
+  // A regra "OS concluída + missão encerrada" também conta como aprovada,
+  // espelhando getRelatorioStatus (shared/constants/mission-status.ts).
+  const isFaturavelBilling = (b: any) => {
+    const st = String(b.status || "").toUpperCase();
+    if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") return false;
+    if (st === "RECUSADA" || st === "REJEITADA") return false;
+    const soSt = String(b._so_status || "").toLowerCase();
+    if (soSt === "recusada") return false;
+    return true;
+  };
+  const approvedBillings = useMemo(() => billings.filter(isFaturavelBilling), [billings]);
   const faturadoBillings = useMemo(() => billings.filter(b => b.status === "FATURADO" || b.status === "FATURADA"), [billings]);
-  const approvedTotal = useMemo(() => approvedBillings.reduce((acc, b) => {
-    const ct = contracts.find((c: any) => c.id === b.contract_id) || null;
-    const n = (v: any) => Number(v) || 0;
-    const fatAcio = n(b.fat_acionamento) || n(ct?.valor_acionamento);
-    const fatKm = n(b.fat_km);
-    const fatHE = n(b.fat_hora_extra);
-    const fatPed = n(b.despesas_pedagio);
-    const fatAdNot = n(b.fat_adicional_noturno);
-    const fatEst = n(b.fat_estadia);
-    const fatPer = n(b.fat_pernoite);
-    const fatOutras = n(b.despesas_outras);
-    const fatReemb = n(b.receitas_os);
-    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatAdNot + fatEst + fatPer + fatOutras + fatReemb);
-    return acc + total;
-  }, 0), [approvedBillings, contracts]);
 
   const liberarRefaturarMutation = useMutation({
     mutationFn: async (billingIds: string[]) => {
@@ -828,9 +825,18 @@ export default function RelatorioFaturamentoPage() {
   }, [rowsData]);
 
   const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
-  // approvedTotal (fonte única de verdade p/ faturamento) já é declarado
-  // na linha ~149 a partir de approvedBillings (status === "APROVADA"),
-  // com a mesma fórmula que o banner roxo e o backend usam.
+  // Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (Recusadas e
+  // Faturadas/Pagas fora). Usa rowsData.totalGeral que já aplica isCancelada
+  // (acionamento + extras) e isRecusada (zera) corretamente.
+  const approvedTotal = useMemo(() => {
+    return rowsData.reduce((s, r) => {
+      const st = String(r.status || "").toUpperCase();
+      if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") return s;
+      if (st === "RECUSADA" || st === "REJEITADA") return s;
+      if (String(r.osStatus || "").toLowerCase() === "recusada") return s;
+      return s + r.totalGeral;
+    }, 0);
+  }, [rowsData]);
 
   const openFaturaDialog = () => {
     const cd = clients.find((c: any) => c.id.toString() === selectedClient);
@@ -1367,9 +1373,9 @@ export default function RelatorioFaturamentoPage() {
             <Receipt size={20} className="text-indigo-600" />
             <div>
               <p className="text-sm font-bold text-indigo-900">
-                {approvedBillings.length} medição{approvedBillings.length > 1 ? "ões" : ""} pronta{approvedBillings.length > 1 ? "s" : ""} para fatura — {fmt(approvedTotal)}
+                {approvedBillings.length} OS para fatura — {fmt(approvedTotal)}
               </p>
-              <p className="text-xs text-indigo-600">Clique em "Gerar Fatura" para emitir o boleto + NFS-e dos itens aprovados</p>
+              <p className="text-xs text-indigo-600">Clique em "Gerar Fatura" para emitir boleto + NFS-e (Aprovadas + A Verificar + Canceladas)</p>
             </div>
           </div>
           <button
@@ -1385,10 +1391,11 @@ export default function RelatorioFaturamentoPage() {
 
       {reportGenerated && rowsData.length > 0 && (() => {
         const effectiveLabel = (r: typeof rowsData[number]) => getRelatorioStatus(r.osStatus, r.status, (r as any).osMissionStatus).label;
-        // FONTE ÚNICA DE VERDADE: aprovadas = b.status === "APROVADA" (mesma
-        // regra que o backend POST /boletim-medicao/gerar-fatura aplica). Isso
-        // garante que o número exibido aqui é EXATAMENTE o que será cobrado.
-        const aprovadasRows = rowsData.filter(r => String(r.status || "").toUpperCase() === "APROVADA");
+        // REGRA: Total p/ Faturamento = Aprovadas + A Verificar + Canceladas.
+        // Recusadas e Faturadas NÃO entram. Usa effectiveLabel (mesma regra
+        // do badge da linha) — assim OS concluída + missão encerrada conta
+        // como Aprovada mesmo que o billing ainda esteja A_VERIFICAR.
+        const aprovadasRows = rowsData.filter(r => effectiveLabel(r) === "Aprovada");
         const canceladasRows = rowsData.filter(r => effectiveLabel(r) === "Cancelada");
         const recusadasRows = rowsData.filter(r => effectiveLabel(r) === "Recusada");
         const faturadasRows = rowsData.filter(r => {
@@ -1404,12 +1411,12 @@ export default function RelatorioFaturamentoPage() {
         const pendentesTotal = sumTotal(pendentesRows);
         const canceladasTotal = sumTotal(canceladasRows);
         const faturadasTotal = sumTotal(faturadasRows);
-        // Total p/ Faturamento = APENAS aprovadas. É o valor que o botão
-        // "Gerar Fatura" vai cobrar. Canceladas/Recusadas/A_Verificar/Faturadas
-        // são contadas como info, mas NÃO entram nesse total.
-        const totalFaturamento = aprovadasTotal;
-        const totalCount = aprovadasRows.length;
-        const tooltip = "Total p/ Faturamento = soma das OS APROVADAS (mesma base que o botão 'Gerar Fatura' usa). Canceladas, Recusadas e A Verificar não entram.";
+        // Total p/ Faturamento = Aprovadas + A Verificar + Canceladas pelo
+        // cliente. Recusadas (operacional não atendeu) e já Faturadas ficam
+        // de fora. É o valor que o botão "Gerar Fatura" vai cobrar.
+        const totalFaturamento = aprovadasTotal + pendentesTotal + canceladasTotal;
+        const totalCount = aprovadasRows.length + pendentesRows.length + canceladasRows.length;
+        const tooltip = "Total p/ Faturamento = Aprovadas + A Verificar + Canceladas. Recusadas e Faturadas não entram.";
         return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
@@ -1418,12 +1425,12 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-lg font-black text-emerald-900 font-mono">{aprovadasRows.length}</p>
               <p className="text-[10px] font-bold text-emerald-800 font-mono">{fmt(aprovadasTotal)}</p>
             </div>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes" title="Não entra no Total — precisa ser revisada antes">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes" title="Entra no Total p/ Faturamento (pendente de revisão)">
               <p className="text-[9px] font-black uppercase tracking-wider text-yellow-700">A Verificar</p>
               <p className="text-lg font-black text-yellow-900 font-mono">{pendentesRows.length}</p>
               <p className="text-[10px] font-bold text-yellow-800 font-mono">{fmt(pendentesTotal)}</p>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="stat-canceladas" title="Cliente cancelou após acionamento — cobra acionamento + extras">
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="stat-canceladas" title="Cliente cancelou após acionamento — cobra acionamento + extras (entra no Total)">
               <p className="text-[9px] font-black uppercase tracking-wider text-red-700">Canceladas</p>
               <p className="text-lg font-black text-red-900 font-mono">{canceladasRows.length}</p>
               <p className="text-[10px] font-bold text-red-800 font-mono">{fmt(canceladasTotal)}</p>
@@ -1437,21 +1444,15 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total p/ Faturamento</p>
               <p className="text-lg font-black text-white font-mono">{totalCount} OS</p>
               <p className="text-[10px] font-bold text-white font-mono">{fmt(totalFaturamento)}</p>
-              <p className="text-[8px] font-medium text-gray-400 mt-0.5">Apenas Aprovadas</p>
+              <p className="text-[8px] font-medium text-gray-400 mt-0.5">Aprov. + A Verif. + Cancel.</p>
             </div>
           </div>
           <div className="flex items-center gap-3 mb-3" title={tooltip}>
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700 flex-1">
-              {totalCount} OS aprovada{totalCount === 1 ? "" : "s"} &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
-              {canceladasRows.length > 0 && (
-                <span className="ml-2 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">{canceladasRows.length} cancelada{canceladasRows.length > 1 ? "s" : ""} ({fmt(canceladasTotal)} — não contam)</span>
-              )}
+              {totalCount} OS &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
               {recusadasRows.length > 0 && (
-                <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">+ {recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
-              )}
-              {pendentesRows.length > 0 && (
-                <span className="ml-2 text-[10px] font-bold text-yellow-700 bg-yellow-50 border border-yellow-200 px-1.5 py-0.5 rounded">{pendentesRows.length} a verificar (não contam)</span>
+                <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">{recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
               )}
               {faturadasRows.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadasRows.length} já faturada{faturadasRows.length > 1 ? "s" : ""}</span>

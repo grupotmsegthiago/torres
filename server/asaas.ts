@@ -2324,37 +2324,53 @@ export function registerAsaasRoutes(app: Express) {
       const fromDate = `${startDate}T00:00:00`;
       const toDate = `${endDate}T23:59:59`;
 
-      // FONTE ÚNICA DE VERDADE: somente APROVADA. O banner roxo do
-      // frontend ("X medições prontas para fatura") usa o mesmo filtro.
-      // Antes excluía só CANCELADA/RECUSADA/etc — mas isso deixava entrar
-      // A_VERIFICAR / PENDENTE / ENVIADA_APROVACAO no totalizador, gerando
-      // divergência de valor entre banner e modal "Gerar Fatura".
+      // REGRA: faturável = Aprovadas + A Verificar + Canceladas (cliente).
+      // Recusadas (operacional não atendeu) e Faturadas/Pagas ficam FORA.
+      // Mesma regra que o card "Total p/ Faturamento" do frontend aplica.
+      const FATURAVEIS = ["APROVADA", "A_VERIFICAR", "PENDENTE", "ENVIADA_APROVACAO", "CANCELADA", "CANCELADO"];
       let query = supabaseAdmin
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .eq("status", "APROVADA")
+        .in("status", FATURAVEIS)
         .gte("data_missao", fromDate)
         .lte("data_missao", toDate);
 
-      const { data: billings, error: billErr } = await query;
+      const { data: rawBillings, error: billErr } = await query;
 
       if (billErr) throw billErr;
-      if (!billings || billings.length === 0) {
+
+      // Exclui billings cuja OS foi RECUSADA pelo operacional (mesmo que o
+      // bill.status ainda esteja A_VERIFICAR). Vamos buscar so.status pra
+      // o conjunto carregado e filtrar.
+      const soIds = (rawBillings || []).map((b: any) => b.service_order_id).filter(Boolean);
+      const soStatusMap = new Map<string, string>();
+      if (soIds.length > 0) {
+        const { data: sos } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, status")
+          .in("id", soIds);
+        for (const so of (sos || [])) soStatusMap.set(String(so.id), String(so.status || "").toLowerCase());
+      }
+      const billings = (rawBillings || []).filter((b: any) => {
+        const soSt = soStatusMap.get(String(b.service_order_id)) || "";
+        return soSt !== "recusada";
+      });
+
+      if (billings.length === 0) {
         const { data: allBillings } = await supabaseAdmin
           .from("escort_billings")
           .select("id, status")
           .eq("client_id", clientId)
           .gte("data_missao", fromDate)
           .lte("data_missao", toDate);
-        
-        const total = allBillings?.length || 0;
+
         const faturados = allBillings?.filter((b: any) => b.status === "FATURADO" || b.status === "FATURADA").length || 0;
-        
+
         if (faturados > 0) {
           return res.status(400).json({ message: `Todas as ${faturados} OS neste período já foram faturadas. Para gerar nova fatura, exclua a fatura existente primeiro.` });
         }
-        return res.status(400).json({ message: `Nenhuma OS faturável no período ${startDate} a ${endDate}. Verifique se existem OS com status "APROVADA" neste período.` });
+        return res.status(400).json({ message: `Nenhuma OS faturável no período ${startDate} a ${endDate}. Só há OS recusadas/faturadas.` });
       }
 
       console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Período: ${startDate} a ${endDate}. Status: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
