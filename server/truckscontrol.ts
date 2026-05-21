@@ -106,9 +106,12 @@ const MAX_PLAUSIBLE_SPEED_MS = 55.6;
 // aparecem (rotatividade de frota, devices descomissionados, lixo de teste).
 // Mantém os N mais recentes (re-insert no .set() faz a "promoção" LRU natural
 // do Map de JS, que preserva ordem de inserção).
-const VEHICLE_MSG_MAP_MAX = 2000;
-const SPY_MSG_MAP_MAX = 2000;
-const POSITION_HISTORY_MAP_MAX = 2000;
+// Reduzido de 2000 → 500: a frota ativa tem < 100 veículos; o cap de 500
+// já comporta 5x a frota + rotatividade/spy devices, e corta drasticamente
+// o residente em heap (estimativa de queda: ~40MB → ~10MB nesses Maps).
+const VEHICLE_MSG_MAP_MAX = 500;
+const SPY_MSG_MAP_MAX = 500;
+const POSITION_HISTORY_MAP_MAX = 500;
 function pruneLRU<K, V>(map: Map<K, V>, max: number) {
   if (map.size <= max) return;
   const excess = map.size - max;
@@ -118,8 +121,10 @@ function pruneLRU<K, V>(map: Map<K, V>, max: number) {
     if (k !== undefined) map.delete(k);
   }
 }
-// Sweep periódico extra: limpa entries muito antigas em positionHistory (timestamp > 6h)
-const POSITION_HISTORY_TTL_MS = 6 * 60 * 60 * 1000;
+// Sweep periódico extra: limpa entries muito antigas em positionHistory.
+// Reduzido de 6h → 1h: dados de posição com mais de 1h são pouco úteis pra
+// detecção de idle/outlier (o detector real só olha as últimas 10 amostras).
+const POSITION_HISTORY_TTL_MS = 60 * 60 * 1000;
 // Guarda contra duplicação do timer em HMR/tsx-watch (módulo recarregado
 // múltiplas vezes na mesma instância do Node).
 const _g = globalThis as unknown as { __trucks_sweep_interval?: NodeJS.Timeout };

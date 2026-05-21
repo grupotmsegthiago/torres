@@ -25,12 +25,26 @@ declare module "http" {
 
 app.use(compression({ level: 6, threshold: 1024 }));
 
+// Body parser: limite global enxuto (2MB) pra não deixar qualquer endpoint
+// alocar 10MB sob demanda. Endpoints específicos que recebem fotos base64
+// (NF de combustível, fotos de missão, NFe TicketLog) ganham um parser
+// dedicado de 10MB montado ANTES — quando o prefixo casa, esse parser roda
+// primeiro e marca req._body, então o parser global enxuto vira no-op.
+const PHOTO_UPLOAD_PATHS = [
+  "/api/fueling",                 // POST/PATCH com receiptPhoto/pumpPhoto/odometerPhoto/platePhoto base64
+  "/api/mobile/fueling",          // mobile: idem
+  "/api/mission/photo",           // upload de foto de missão
+  "/api/mission/photo-inspections-batch",
+  "/api/ticketlog/upload-nfe",    // upload de XML/PDF da NFe
+];
+const rawBodyVerify = (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
+  req.rawBody = buf;
+};
+app.use(PHOTO_UPLOAD_PATHS, express.json({ limit: "10mb", verify: rawBodyVerify }));
 app.use(
   express.json({
-    limit: "10mb",
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
+    limit: "2mb",
+    verify: rawBodyVerify,
   }),
 );
 
@@ -130,27 +144,41 @@ export function getSlowRoutes() {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  // PERF: não reter o objeto inteiro da resposta — antes guardávamos
+  // `capturedJsonResponse` em closure até o evento `finish`, o que segurava
+  // payloads de MB (listas com fotos base64, relatórios) no heap durante
+  // toda a transmissão. Agora extraímos só um sumário leve (length/preview)
+  // sincronamente dentro do hook de res.json e liberamos a referência.
+  let responseSummary: string | undefined = undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
+    if (path.startsWith("/api")) {
+      try {
+        if (Array.isArray(bodyJson)) {
+          responseSummary = `[Array(${bodyJson.length})]`;
+        } else if (bodyJson && typeof bodyJson === "object") {
+          // Pega só as chaves de topo + um preview curto (max 200 chars).
+          // Não serializa o objeto inteiro — em payloads grandes isso ainda
+          // alocaria a string completa. Stringify limitado a uma view rasa.
+          const keys = Object.keys(bodyJson).slice(0, 8).join(",");
+          responseSummary = `{${keys}${Object.keys(bodyJson).length > 8 ? ",…" : ""}}`;
+        } else {
+          responseSummary = String(bodyJson).slice(0, 100);
+        }
+      } catch {
+        responseSummary = "[unserializable]";
+      }
+    }
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        let preview: string;
-        if (Array.isArray(capturedJsonResponse)) {
-          preview = `[Array(${capturedJsonResponse.length})]`;
-        } else {
-          try { preview = JSON.stringify(capturedJsonResponse).slice(0, 300); } catch { preview = "[unserializable]"; }
-        }
-        logLine += ` :: ${preview}`;
-      }
+      const logLine = responseSummary
+        ? `${req.method} ${path} ${res.statusCode} in ${duration}ms :: ${responseSummary}`
+        : `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       log(logLine);
 
       if (duration > SLOW_THRESHOLD_MS) {
@@ -165,7 +193,7 @@ app.use((req, res, next) => {
         if (slowRoutes.length > MAX_SLOW_ENTRIES) slowRoutes.shift();
       }
     }
-    capturedJsonResponse = undefined;
+    responseSummary = undefined;
   });
 
   next();
