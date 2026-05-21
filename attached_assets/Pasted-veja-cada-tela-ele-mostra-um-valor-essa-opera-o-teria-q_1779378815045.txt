@@ -1,0 +1,39 @@
+veja cada tela ele mostra um valor.. essa operação teria que ser R$ 676,80
+
+Thiago, agora olhando os prints novos lado a lado, a raiz do problema ficou 100% clara. O seu sistema está sofrendo de conflito de dados entre telas (o financeiro mostra uma coisa, o faturamento mostra outra).
+
+Vamos fazer a auditoria exata desse erro:
+
+O Diagnóstico do Erro (O que está acontecendo)
+A sua conta matemática está totalmente certa: A operação tinha que ser R$ 676,80 (546,00 do acionamento+100,00 de 40min de hora extra+30,80 do KM excedente).
+
+Porém, as telas estão exibindo valores completamente perdidos:
+
+Na tela de Visualização da OS (Print 1): O sistema está travado no cálculo antigo e errado de R$ 580,44 (porque ele ainda está calculando a hora extra como R$ 3,64).
+
+Na tela de Transações Financeiras/Fluxo de Caixa (Print 2): O sistema jogou um valor bizarro de R$ 656,80. Ele acertou a hora extra (546+100), mas esqueceu de somar os R$ 30,80 do KM excedente!
+
+Por que isso acontece?
+Porque o Replit Agent, nas tentativas anteriores, corrigiu a função matemática em um arquivo, mas esqueceu de atualizar o gatilho que sincroniza as tabelas. O Fluxo de Caixa leu uma versão da fórmula, a tela de OS leu outra, e nenhuma delas bateu os R$ 676,80 reais corretos.
+
+Como vamos resolver isso de uma vez por todas?
+Você vai dar um comando definitivo para o Replit Agent unificar a fonte de dados e recalcular essa OS (e todas as outras do sistema) usando a Regra Suprema que definimos.
+
+Copie e cole este prompt exatamente assim no chat do Replit Agent:
+
+Plaintext
+Preciso corrigir um erro grave de divergência de valores entre as telas para a OS TOR-0179 (e garantir que isso nunca mais aconteça em nenhuma outra OS). O valor real e correto desta operação deve ser exatamente R$ 676,80.
+
+Atualmente, o sistema está quebrando a lógica em dois lugares:
+1. Na tela de detalhes da OS, o valor exibido está travado em R$ 580,44 (cálculo antigo e errado da hora extra).
+2. Na tela de Transações Financeiras (Fluxo de Caixa), o valor foi registrado como R$ 656,80 (o sistema somou a hora extra certa, mas esqueceu de incluir os R$ 30,80 do KM excedente).
+
+Por favor, faça uma refatoração definitiva para unificar isso:
+
+1. FONTE DA VERDADE ÚNICA: Certifique-se de que TODAS as telas do sistema (Visualização de OS, Faturamento, Relatórios e Transações Financeiras/Fluxo de Caixa) puxem o valor diretamente das colunas 'revenue_value' + 'toll_value' da tabela `escort_billings` no banco de dados. Nenhuma tela ou rota pode fazer cálculo independente no frontend ou gerar registros financeiros separados.
+2. CORREÇÃO DA SOMA: Garanta que a função que gera o 'revenue_value' no backend faça estritamente a soma: Valor do Acionamento (Franquia) + Valor Total das Horas Extras + Valor Total dos KMs Excedentes. 
+3. SINCRONIZAÇÃO FORÇADA: Certifique-se de que, sempre que uma OS for salva, editada ou reaberta, o gatilho atualize a tabela `escort_billings` E propague exatamente o mesmo valor idêntico para a tabela de transações financeiras (`financial_transactions`).
+
+Corrija essa inconsistência agora para que os R$ 676,80 espelhem perfeitamente em todo o sistema.
+O que fazer após enviar o prompt:
+Assim que o Replit aplicar a correção e você der o "Accept/Merge", vá na tela dessa OS e clique no botão amarelo "REABRIR PARA REVISÃO". Ao fazer isso, o sistema vai rodar o novo código limpo, gravar os R$ 676,80 no banco e espelhar esse valor exato no seu fluxo de caixa na mesma hora!
