@@ -13,11 +13,11 @@ const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 400;
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_CONCURRENT = 16;
-const HEALTH_WINDOW_SIZE = 20;
-const HEALTH_FAIL_RATIO = 0.6;
+const HEALTH_WINDOW_SIZE = 40;
+const HEALTH_FAIL_RATIO = 0.75;
 const HEALTH_RECOVER_RATIO = 0.3;
 const HEALTH_COOLDOWN_MS = 90_000;
-const MIN_RESULTS_FOR_DECISION = 8;
+const MIN_RESULTS_FOR_DECISION = 15;
 
 let activeFetches = 0;
 const waitQueue: Array<() => void> = [];
