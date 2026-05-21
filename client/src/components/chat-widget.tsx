@@ -354,12 +354,12 @@ export default function ChatWidget() {
 
   const { data: unreadData } = useQuery<{ unreadCount: number }>({
     queryKey: ["/api/chat/unread-count"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   const { data: conversations = [], refetch: refetchConvs } = useQuery<ChatConversation[]>({
     queryKey: ["/api/chat/conversations"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
     enabled: open,
   });
 
@@ -370,14 +370,14 @@ export default function ChatWidget() {
 
   const { data: presence = [] } = useQuery<PresenceEntry[]>({
     queryKey: ["/api/chat/presence"],
-    refetchInterval: 30000,
+    refetchInterval: 90000,
     enabled: open,
   });
 
   const { data: messages = [], refetch: refetchMsgs } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/conversations", activeConvId, "messages"],
     enabled: !!activeConvId && open,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const presenceMap = useMemo(() => {

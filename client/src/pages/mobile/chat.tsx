@@ -160,7 +160,7 @@ export default function MobileChatPage() {
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
-      .channel(`mobile-chat-rt-${user.id}-${Date.now()}`)
+      .channel(`mobile-chat-rt-${user.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
         queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });

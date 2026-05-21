@@ -165,7 +165,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!user?.id) return;
     const channel = supabase
-      .channel(`admin-chat-rt-${user.id}-${Date.now()}`)
+      .channel(`admin-chat-rt-${user.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
         queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });

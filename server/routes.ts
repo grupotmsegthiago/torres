@@ -842,8 +842,8 @@ async function ensureSystemSettingsTable() {
     const localFallbackEnabled = (process.env.DISABLE_LOCAL_FALLBACK ?? "true").toLowerCase() === "false";
     if (localFallbackEnabled) {
       syncAllTables(supabaseAdmin).catch(() => {});
-      setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 5 * 60_000);
-      setInterval(() => flushWriteQueue(supabaseAdmin).catch(() => {}), 30_000);
+      setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 10 * 60_000);
+      setInterval(() => flushWriteQueue(supabaseAdmin).catch(() => {}), 60_000);
     } else {
       console.log("[storage] Fallback PostgreSQL local DESATIVADO — operando 100% no Supabase");
     }
