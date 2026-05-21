@@ -300,11 +300,22 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     res.json(data);
   });
 
+  // Antes: baixava TODOS os abastecimentos do banco e fazia Math.max em JS pra
+  // achar o km máximo de UM veículo. Em ~10k registros isso estourava
+  // statement_timeout e derrubava o sistema em /api/fueling.
+  // Agora: query pontual pegando só o maior km do veículo específico
+  // (apoiada pelo índice idx_vfueling_vehicle_km criado em db-init.ts).
   async function syncVehicleKmFromFuelings(vehicleId: number) {
-    const allFuelings = await storage.getVehicleFuelings();
-    const vehicleFuelings = allFuelings.filter(f => f.vehicleId === vehicleId);
-    if (vehicleFuelings.length === 0) return;
-    const maxKm = Math.max(...vehicleFuelings.map(f => f.km));
+    const { data, error } = await supabaseAdmin
+      .from("vehicle_fueling")
+      .select("km")
+      .eq("vehicle_id", vehicleId)
+      .order("km", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return;
+    const maxKm = Number((data as any).km);
+    if (!Number.isFinite(maxKm) || maxKm <= 0) return;
     await storage.updateVehicle(vehicleId, {
       km: maxKm,
       lastKmUpdate: new Date(),

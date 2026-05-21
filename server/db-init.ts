@@ -1001,6 +1001,12 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_status TEXT`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_nfe_data JSONB`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_codigo_estab TEXT`).catch(() => {});
+
+    // Índices criados em 2026-05 pra cortar o statement_timeout recorrente em
+    // /api/fueling. O primeiro suporta syncVehicleKmFromFuelings() (MAX(km)
+    // por veículo); o segundo acelera o ORDER BY created_at DESC do listing.
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_vehicle_km ON vehicle_fueling(vehicle_id, km DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_created_at ON vehicle_fueling(created_at DESC)`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ADD COLUMN IF NOT EXISTS ai_inspection_status TEXT DEFAULT NULL`).catch(() => {});
