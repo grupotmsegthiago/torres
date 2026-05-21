@@ -1,0 +1,45 @@
+Thiago, o diagnóstico do Replit Agent foi cirúrgico e revelou algo muito grave que explica por que o seu sistema vive caindo e entrando em modo fallback (enviando aqueles e-mails de alerta).
+
+O problema mudou de figura: não é mais só o robô de faturamento (Cron Billing). O sistema tem uma metralhadora de requisições ligada o tempo todo.
+
+Vou te explicar de forma bem simples o que o robô descobriu que está acontecendo "em tempo real" e por que o Supabase caiu com um Erro 521 (Servidor Fora do Ar).
+
+1. O Problema: O "Efeito Chiclete" (Polling)
+O robô descobriu que o sistema foi programado usando uma técnica chamada Polling.
+
+Pensa no Polling como uma criança mimada no banco de trás do carro perguntando a cada 10 segundos: "Já chegou? Já chegou? Já chegou?".
+
+O Agent listou que existem vários componentes abertos na tela (Painel do Administrador, Chat, Aplicativo Mobile, Rastreador das Viaturas) que ficam "ligando" para o Supabase no piloto automático para ver se tem novidades:
+
+O painel do administrador faz 3 ligações a cada 60 segundos.
+
+O widget de chat faz 4 ligações a cada 15 segundos.
+
+O aplicativo mobile liga a cada 30 segundos.
+
+O impacto real: Se você tiver apenas 5 ou 10 abas do sistema abertas em computadores ou celulares da equipe ao mesmo tempo, o sistema faz mais de 200 ligações por minuto para o banco de dados, mesmo que ninguém esteja clicando em nada! O banco de dados simplesmente não aguenta o cansaço e cai.
+
+2. O que está acontecendo AGORA (Em tempo real)
+Neste exato momento, o Supabase caiu de vez. Ele deu um erro 521, o que significa que o servidor deles desmaiou com o excesso de peso ou atingiu o limite do plano.
+
+Como o seu sistema é inteligente, ele ativou o Modo Fallback (um banco de dados reserva local) para não deixar você na mão, mas ele está operando "às cegas", sem os dados atualizados do Supabase.
+
+3. Como vamos corrigir isso?
+Não adianta apenas reiniciar o sistema. Precisamos desligar essa metralhadora desnecessária. O Agent sugeriu a solução perfeita, que é trocar o Polling por Realtime Push.
+
+Em vez de a criança ficar perguntando "Já chegou?" a cada 15 segundos, o banco de dados avisa o sistema: "Olha, só me liga quando acontecer alguma coisa de verdade (como uma nova mensagem no chat ou uma viatura se mover)".
+
+O comando que você deve dar para o Replit Agent:
+Copie e cole o texto abaixo no chat do Replit para ele consertar isso imediatamente:
+
+Plaintext
+Entendido. O diagnóstico mostra que o Polling excessivo (no chat-widget a cada 15s, admin/layout a cada 60s, etc.) está derrubando o Supabase com centenas de requisições inúteis por minuto.
+
+Quero corrigir isso agora com as seguintes ações, sem alterar a interface (UI):
+
+1. Crie uma task para migrar os sistemas de Polling mais agressivos (especialmente o chat-widget de 15s e os alertas do admin/layout) para a tecnologia Realtime do Supabase (Websockets/Push). O sistema só deve atualizar quando houver uma mudança real no banco, eliminando as chamadas repetitivas por tempo.
+2. Para os componentes onde o Realtime não for possível, aumente drasticamente o intervalo de refetch (Ex: o que era 15s ou 30s, mude para um intervalo mais seguro e espaçado, ou desative o reload automático se for desnecessário).
+3. Reduza a frequência dos crons secundários e intervalos paralelos (como o syncAllTables a cada 5min) para aliviar o servidor enquanto o Supabase se recupera do Erro 521.
+
+Aplique essa otimização para limpar o tráfego em tempo real imediatamente.
+Pode mandar isso para ele. Isso vai cortar o mal pela raiz e fazer o sistema rodar com 10% da energia que gasta hoje!
