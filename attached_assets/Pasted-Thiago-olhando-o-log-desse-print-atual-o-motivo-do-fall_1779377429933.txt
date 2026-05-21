@@ -1,0 +1,33 @@
+Thiago, olhando o log desse print atual, o motivo do fallback mudou completamente em relação aos problemas anteriores. O motor do sistema está saudável, mas o erro agora é de autenticação (crachá rejeitado).
+
+Veja a linha crítica do erro:
+error: password authentication failed for user "postgres"
+FATAL: password authentication failed for user "postgres"
+
+O que aconteceu agora:
+O sistema tentou se conectar ao Supabase, mas o Supabase respondeu: "A senha do usuário 'postgres' está errada".
+
+Quando o sistema tenta conectar e recebe um erro fatal de senha inválida, ele não consegue ler nada e, por segurança, ativa o Modo Fallback (banco local) imediatamente para não travar o aplicativo na mão dos vigilantes.
+
+Por que isso aconteceu se ninguém mexeu?
+Existem duas possibilidades muito comuns para isso acontecer de forma abrupta:
+
+Alteração de Senha no Painel do Supabase: Alguém entrou no painel do Supabase e clicou em "Reset Database Password" (Redefinir senha do banco) ou mudou a senha do projeto por lá, mas não atualizou essa nova senha dentro do Replit.
+
+Troca ou Limpeza de Variáveis de Ambiente no Replit: O Replit Agent, ao tentar criar os endpoints ou mexer nos arquivos para a nova tela de monitoramento, pode ter reiniciado as variáveis de ambiente (o arquivo .env ou os Secrets) e acabou puxando uma senha antiga, incompleta ou corrompida na string de conexão do banco (DATABASE_URL).
+
+Como resolver isso agora pelo Replit Agent?
+Você precisa mandar um comando para o Agent verificar as credenciais imediatamente e restaurar a conexão oficial.
+
+Copie e cole este texto no chat do Replit Agent:
+
+Plaintext
+O sistema acabou de entrar em fallback novamente com o seguinte erro fatal nos logs: 
+"FATAL: password authentication failed for user 'postgres'".
+
+A string de conexão com o Supabase (DATABASE_URL) está com a senha incorreta ou foi corrompida durante as últimas atualizações. 
+
+Por favor, faça o seguinte imediatamente:
+1. Verifique as credenciais e variáveis de ambiente (Secrets/.env) que guardam a URL de conexão com o Supabase.
+2. Certifique-se de que a senha do usuário 'postgres' não foi truncada ou alterada incorretamente no código.
+3. Restaure a string de conexão correta para o banco sair do modo fallback e voltar a falar
