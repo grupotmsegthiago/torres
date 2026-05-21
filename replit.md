@@ -111,6 +111,14 @@ Essas três regras foram estabelecidas e testadas em produção. Não modificar 
 - Backend: `/api/mission/update` está em `PHOTO_UPLOAD_PATHS` (limite 10 MB) como rede de segurança — não remover dessa lista.
 - Não trocar JPEG por PNG nem subir resolução máxima sem motivo — o ganho de qualidade é insignificante e o custo de banda/quota é alto.
 
+### 5. Hora extra usa timestamps reais (multi-dia)
+- **`calcularEscolta`** (em `server/billing-calc.ts`) deve receber `inicio_ts` (mission_started_at), `fim_ts` (completed_date) e `scheduled_date` da OS — em ISO. A duração é calculada por `(fim_ts - inicio_ts_considerado) / 3600000` (ms → horas), o que pega missões que atravessam dias/noites.
+- O fallback antigo (`calcularHorasTrabalhadas` HH:MM com `if (diff<0) diff+=24h`) **só compensa 1 noite**. Para missão que dura >24h ou que atravessa um dia inteiro, perde múltiplos de 24h e subfatura silenciosamente.
+- Caso histórico: TOR-0153 com 35h39min reais foi cobrada como 11h52min (R$ 975 em vez de R$ 3.591), TOR-0159 com 25h40min foi cobrada como 1h40min.
+- Quando `horario_agendado` é anterior a `mission_started_at`, o início de cobrança é `scheduled_date + horario_agendado` (em ms), não `mission_started_at`. A função monta o timestamp a partir do `scheduled_date`.
+- **NUNCA** voltar a calcular HE só com `horario_inicio`/`horario_fim` HH:MM. Sempre passar timestamps reais nos 13 call-sites de `calcularEscolta`.
+- Teste de regressão: `server/billing-calc-hora-extra.test.ts` ("missão de 35h39min (atravessa dia)").
+
 ### 4. Cálculo de faturamento de OS
 - **Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (pelo cliente).** Recusadas e Faturadas/Pagas ficam FORA.
 - Implementação:

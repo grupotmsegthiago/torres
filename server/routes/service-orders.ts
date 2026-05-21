@@ -304,6 +304,9 @@ import type { Express } from "express";
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
         horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
         horario_inicio: billingStartTime, horario_fim: fimMissaoTime, horario_agendado: scheduledTime,
+        inicio_ts: (so as any).missionStartedAt ? new Date((so as any).missionStartedAt).toISOString() : null,
+        fim_ts: horaFimMissaoISO || ((so as any).completedDate ? new Date((so as any).completedDate).toISOString() : null),
+        scheduled_date: so.scheduledDate ? new Date(so.scheduledDate as any).toISOString() : null,
         despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, receitas_os: receitasOsCalc, contrato,
       });
       console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
@@ -453,6 +456,9 @@ import type { Express } from "express";
             km_inicial: kmI, km_final: kmFN, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: stTime, horario_fim: eTime, horario_agendado: sTime,
+            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt as any).toISOString() : null,
+            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate as any).toISOString() : null,
+            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate as any).toISOString() : null,
             despesas_pedagio: dpCalc, despesas_combustivel: dcCalc, despesas_outras: doCalc, receitas_os: roCalc, contrato,
           });
 
@@ -677,6 +683,9 @@ import type { Express } from "express";
             contrato, km_inicial: kmI, km_final: kmFN,
             km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
+            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt as any).toISOString() : null,
+            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate as any).toISOString() : null,
+            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate as any).toISOString() : null,
             despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2, receitas_os: ro2,
           });
 
@@ -1561,6 +1570,9 @@ import type { Express } from "express";
             horas_missao: 0, horas_estadia: Number(bill.horas_estadia || 0),
             teve_pernoite: !!bill.teve_pernoite, horario_inicio: horarioInicio, horario_fim: horarioFim,
             horario_agendado: horarioAgendado,
+            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt as any).toISOString() : null,
+            fim_ts: horaFimMissaoAR ? new Date(horaFimMissaoAR).toISOString() : (data.completedDate ? new Date(data.completedDate as any).toISOString() : null),
+            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate as any).toISOString() : null,
             despesas_pedagio: despPedagioAR, despesas_combustivel: dcAR || Number(bill.despesas_combustivel || 0),
             despesas_outras: doAR || Number(bill.despesas_outras || 0), receitas_os: roAR, contrato,
           });
@@ -1687,6 +1699,9 @@ import type { Express } from "express";
             contrato, km_inicial: kmI, km_final: kmFN,
             km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
+            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt as any).toISOString() : null,
+            fim_ts: data.completedDate ? new Date(data.completedDate as any).toISOString() : null,
+            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate as any).toISOString() : null,
             despesas_pedagio: dp, despesas_combustivel: dc, despesas_outras: douts, receitas_os: ro,
           });
 
@@ -3600,6 +3615,9 @@ import type { Express } from "express";
           km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
           horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
           horario_inicio: startTime, horario_fim: endTimeCalc, horario_agendado: scheduledTime,
+          inicio_ts: os.missionStartedAt ? new Date(os.missionStartedAt as any).toISOString() : null,
+          fim_ts: os.completedDate ? new Date(os.completedDate as any).toISOString() : null,
+          scheduled_date: os.scheduledDate ? new Date(os.scheduledDate as any).toISOString() : null,
           despesas_pedagio: despPedPdf, despesas_combustivel: despCombPdf, despesas_outras: despOutPdf, contrato,
         });
 

@@ -1110,6 +1110,9 @@ import type { Express } from "express";
             km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: nowTime, horario_agendado: scheduledTime,
+            inicio_ts: so.missionStartedAt ? new Date(so.missionStartedAt as any).toISOString() : null,
+            fim_ts: new Date().toISOString(),
+            scheduled_date: so.scheduledDate ? new Date(so.scheduledDate as any).toISOString() : null,
             despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
             kmRota: kmRotaDre,
           });
@@ -1530,6 +1533,9 @@ import type { Express } from "express";
         km_inicial: kmIni, km_final: kmFin, km_vazio: Number(km_vazio || 0),
         horas_missao: Number(horas_missao || 0), horas_estadia: Number(horas_estadia || 0),
         teve_pernoite: !!teve_pernoite, horario_inicio, horario_fim, horario_agendado,
+        inicio_ts: req.body.inicio_ts || req.body.mission_started_at || null,
+        fim_ts: req.body.fim_ts || req.body.completed_date || null,
+        scheduled_date: req.body.scheduled_date || null,
         despesas_pedagio: Number(desp.pedagio || despesas_pedagio || 0),
         despesas_combustivel: Number(desp.combustivel || despesas_combustivel || 0),
         despesas_outras: Number(desp.outras || despesas_outras || 0),
@@ -1698,11 +1704,27 @@ import type { Express } from "express";
         contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
       }
 
+      // Se tem service_order_id, busca timestamps reais pra cálculo multi-dia correto
+      let so_ts_inicio: string | null = null, so_ts_fim: string | null = null, so_scheduled: string | null = null;
+      if (body.service_order_id) {
+        const { data: soRow } = await supabaseAdmin
+          .from("service_orders")
+          .select("mission_started_at, completed_date, scheduled_date")
+          .eq("id", body.service_order_id).maybeSingle();
+        if (soRow) {
+          so_ts_inicio = soRow.mission_started_at;
+          so_ts_fim = soRow.completed_date;
+          so_scheduled = soRow.scheduled_date;
+        }
+      }
       const resultado = calcularEscolta({
         km_inicial: kmIni, km_final: kmFin, km_vazio: Number(body.km_vazio || 0),
         horas_missao: Number(body.horas_missao || 0), horas_estadia: Number(body.horas_estadia || 0),
         teve_pernoite: !!body.teve_pernoite, horario_inicio: body.horario_inicio, horario_fim: body.horario_fim,
         horario_agendado: body.horario_agendado,
+        inicio_ts: body.inicio_ts || so_ts_inicio,
+        fim_ts: body.fim_ts || so_ts_fim,
+        scheduled_date: body.scheduled_date || so_scheduled,
         despesas_pedagio: Number(body.despesas_pedagio || 0), despesas_combustivel: Number(body.despesas_combustivel || 0),
         despesas_outras: Number(body.despesas_outras || 0), receitas_os: Number(body.receitas_os || 0), contrato,
       });
@@ -1769,6 +1791,15 @@ import type { Express } from "express";
           const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
           if (!contrato) { errors++; continue; }
 
+          // Busca timestamps reais da OS pra HE multi-dia
+          let lot_ts_ini: string | null = null, lot_ts_fim: string | null = null, lot_sch: string | null = null;
+          if (existing.service_order_id) {
+            const { data: soRow } = await supabaseAdmin
+              .from("service_orders")
+              .select("mission_started_at, completed_date, scheduled_date")
+              .eq("id", existing.service_order_id).maybeSingle();
+            if (soRow) { lot_ts_ini = soRow.mission_started_at; lot_ts_fim = soRow.completed_date; lot_sch = soRow.scheduled_date; }
+          }
           const resultado = calcularEscolta({
             km_inicial: Number(existing.km_inicial || 0),
             km_final: Math.max(Number(existing.km_inicial || 0), Number(existing.km_final || 0)),
@@ -1779,6 +1810,7 @@ import type { Express } from "express";
             horario_inicio: existing.horario_inicio || undefined,
             horario_fim: existing.horario_fim || undefined,
             horario_agendado: existing.horario_agendado || undefined,
+            inicio_ts: lot_ts_ini, fim_ts: lot_ts_fim, scheduled_date: lot_sch,
             despesas_pedagio: Number(existing.despesas_pedagio || 0),
             despesas_combustivel: Number(existing.despesas_combustivel || 0),
             despesas_outras: Number(existing.despesas_outras || 0),
@@ -1881,12 +1913,22 @@ import type { Express } from "express";
           const despOutras = despesas_outras !== undefined ? Number(despesas_outras) : Number(existing.despesas_outras || 0);
           const receitasOsCalc = receitas_os !== undefined ? Number(receitas_os) : Number(existing.receitas_os || 0);
           try {
+            // Busca timestamps reais da OS pra HE multi-dia
+            let sv_ts_ini: string | null = null, sv_ts_fim: string | null = null, sv_sch: string | null = null;
+            if (existing.service_order_id) {
+              const { data: soRow } = await supabaseAdmin
+                .from("service_orders")
+                .select("mission_started_at, completed_date, scheduled_date")
+                .eq("id", existing.service_order_id).maybeSingle();
+              if (soRow) { sv_ts_ini = soRow.mission_started_at; sv_ts_fim = soRow.completed_date; sv_sch = soRow.scheduled_date; }
+            }
             const resultado = calcularEscolta({
               km_inicial: kmI, km_final: Math.max(kmI, kmF), km_vazio: Number(existing.km_vazio || 0),
               horas_missao: Number(existing.horas_missao || 0), horas_estadia: Number(existing.horas_estadia || 0),
               teve_pernoite: !!existing.teve_pernoite,
               horario_inicio: hInicio || undefined, horario_fim: hFim || undefined,
               horario_agendado: existing.horario_agendado || undefined,
+              inicio_ts: sv_ts_ini, fim_ts: sv_ts_fim, scheduled_date: sv_sch,
               despesas_pedagio: pedagio, despesas_combustivel: Number(existing.despesas_combustivel || 0),
               despesas_outras: despOutras,
               receitas_os: receitasOsCalc, contrato,
@@ -2012,6 +2054,15 @@ import type { Express } from "express";
           const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
           if (contrato) {
             try {
+              // Busca timestamps reais da OS pra HE multi-dia
+              let ap_ts_ini: string | null = null, ap_ts_fim: string | null = null, ap_sch: string | null = null;
+              if (billing.service_order_id) {
+                const { data: soRow } = await supabaseAdmin
+                  .from("service_orders")
+                  .select("mission_started_at, completed_date, scheduled_date")
+                  .eq("id", billing.service_order_id).maybeSingle();
+                if (soRow) { ap_ts_ini = soRow.mission_started_at; ap_ts_fim = soRow.completed_date; ap_sch = soRow.scheduled_date; }
+              }
               const resultado = calcularEscolta({
                 km_inicial: Number(billing.km_inicial || 0),
                 km_final: Math.max(Number(billing.km_inicial || 0), Number(billing.km_final || 0)),
@@ -2022,6 +2073,7 @@ import type { Express } from "express";
                 horario_inicio: billing.horario_inicio || undefined,
                 horario_fim: billing.horario_fim || undefined,
                 horario_agendado: billing.horario_agendado || undefined,
+                inicio_ts: ap_ts_ini, fim_ts: ap_ts_fim, scheduled_date: ap_sch,
                 despesas_pedagio: Number(billing.despesas_pedagio || 0),
                 despesas_combustivel: Number(billing.despesas_combustivel || 0),
                 despesas_outras: Number(billing.despesas_outras || 0),

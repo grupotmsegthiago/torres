@@ -378,11 +378,23 @@ export function calcularHorasTrabalhadas(inicio: string, fim?: string): number {
   return diff / 60;
 }
 
+export function calcularHorasTrabalhadasReais(inicio_ts: string, fim_ts: string): number {
+  const iniMs = new Date(inicio_ts).getTime();
+  const fimMs = new Date(fim_ts).getTime();
+  if (!isFinite(iniMs) || !isFinite(fimMs)) return 0;
+  const diffMs = fimMs - iniMs;
+  if (diffMs <= 0) return 0;
+  return diffMs / 3600000;
+}
+
 export function calcularEscolta(dados: {
   km_inicial: number; km_final: number; km_vazio: number;
   horas_missao: number; horas_estadia: number; teve_pernoite: boolean;
   horario_inicio?: string; horario_fim?: string;
   horario_agendado?: string;
+  inicio_ts?: string | null;
+  fim_ts?: string | null;
+  scheduled_date?: string | null;
   despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
   receitas_os?: number;
   contrato: any;
@@ -404,7 +416,27 @@ export function calcularEscolta(dados: {
   const valorAcionamento = n(contrato.valor_acionamento);
 
   const { inicio_considerado, usou_agendado } = calcularInicioCobranca(horario_agendado, horario_inicio);
-  const horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
+
+  // ✅ FIX HE multi-dia: se temos timestamps reais (mission_started_at / completed_date),
+  // usar diff em ms — pega qualquer missão que atravessa dias/noites. Senão, fallback HH:MM.
+  let horas_trabalhadas_calc = 0;
+  if (dados.fim_ts) {
+    let inicio_ts_ref: string | null = null;
+    if (usou_agendado && dados.scheduled_date && horario_agendado) {
+      // Cobrança começa no agendado: monta timestamp com a data do scheduled_date (em BRT) + HH:MM agendado.
+      // CRÍTICO: usar o dia em America/Sao_Paulo (não UTC) pra não deslocar agendamentos noturnos.
+      const dateBRT = new Date(dados.scheduled_date).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); // YYYY-MM-DD em BRT
+      inicio_ts_ref = `${dateBRT}T${truncHHMM(horario_agendado)}:00-03:00`;
+    } else if (dados.inicio_ts) {
+      inicio_ts_ref = dados.inicio_ts;
+    }
+    if (inicio_ts_ref) {
+      horas_trabalhadas_calc = calcularHorasTrabalhadasReais(inicio_ts_ref, dados.fim_ts);
+    }
+  }
+  if (horas_trabalhadas_calc <= 0) {
+    horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
+  }
   const horas_missao = horas_trabalhadas_calc > 0 ? horas_trabalhadas_calc : dados.horas_missao;
 
   const kmOdometro = km_final - km_inicial;

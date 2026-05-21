@@ -175,3 +175,74 @@ test("calcularEscolta: 2h30min excedente fracionada com R$150/h → R$375,00", (
   // 5.5h - 3h franquia = 2.5h × R$150 = R$375
   assert.equal(r.fat_hora_extra, 375);
 });
+
+// REGRESSÃO HE MULTI-DIA — bug TOR-0153/TOR-0159
+// Missão que atravessa dias deve usar timestamps reais, não HH:MM (que perde o dia).
+test("calcularEscolta: missão de 35h39min (atravessa dia) deve gravar HE real", () => {
+  const contratoTM = {
+    valor_acionamento: 480, valor_hora_extra: 110, franquia_horas: 3,
+    hora_extra_fracionada: true, valor_km_carregado: 0, valor_km_vazio: 0,
+    franquia_km: 0, valor_km_extra: 0, vrp_base: 0,
+    adicional_noturno_vrp_pct: 0, adicional_noturno_km_pct: 0,
+  };
+  // 07/05 07:13 → 08/05 18:52 = 35h39min reais
+  const r = calcularEscolta({
+    km_inicial: 0, km_final: 0, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_inicio: "07:13", horario_fim: "18:52", horario_agendado: "07:00",
+    inicio_ts: "2026-05-07T07:13:00-03:00",
+    fim_ts: "2026-05-08T18:52:00-03:00",
+    scheduled_date: "2026-05-07T07:00:00-03:00",
+    despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+    contrato: contratoTM,
+  });
+  // inicio_considerado = 07:00 (agendado < real). De 07/05 07:00 a 08/05 18:52 = 35h52min.
+  // HE = 35h52min - 3h = 32h52min ≈ 32.867h × R$110 = R$3.615,33
+  assert.ok(r.horas_trabalhadas > 30, `horas_trabalhadas deve ser > 30h, foi ${r.horas_trabalhadas}`);
+  assert.ok(r.fat_hora_extra > 3500, `fat_hora_extra deve ser > R$3500 (multi-dia), foi ${r.fat_hora_extra}`);
+  assert.ok(r.fat_hora_extra < 3700, `fat_hora_extra deve ser < R$3700, foi ${r.fat_hora_extra}`);
+});
+
+test("calcularEscolta: SEM timestamps reais, comportamento HH:MM continua valendo (fallback)", () => {
+  // sanity check: o fallback HH:MM (legado) não quebra para missão de mesmo dia
+  const contratoTM = {
+    valor_acionamento: 480, valor_hora_extra: 110, franquia_horas: 3,
+    hora_extra_fracionada: true, valor_km_carregado: 0, valor_km_vazio: 0,
+    franquia_km: 0, valor_km_extra: 0, vrp_base: 0,
+    adicional_noturno_vrp_pct: 0, adicional_noturno_km_pct: 0,
+  };
+  const r = calcularEscolta({
+    km_inicial: 0, km_final: 0, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_inicio: "08:00", horario_fim: "14:00", horario_agendado: "08:00",
+    despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+    contrato: contratoTM,
+  });
+  // 6h - 3h franquia = 3h × R$110 = R$330
+  assert.ok(Math.abs(r.fat_hora_extra - 330) < 1, `fat_hora_extra ~R$330, foi ${r.fat_hora_extra}`);
+});
+
+test("calcularEscolta: agendamento noturno (scheduled_date em ISO UTC) usa data BRT, não desloca dia", () => {
+  // Agendamento 07/05 23:30 BRT → em ISO UTC vira "2026-05-08T02:30:00.000Z".
+  // slice(0,10) DARIA "2026-05-08" (errado: 1 dia depois). Após fix, deve ser "2026-05-07".
+  // Missão real: chegou em 23:50, terminou em 09/05 06:00 = 6h30min reais (de 07/05 23:30 a 09/05 06:00).
+  const contratoTM = {
+    valor_acionamento: 400, valor_hora_extra: 100, franquia_horas: 3,
+    hora_extra_fracionada: true, valor_km_carregado: 0, valor_km_vazio: 0,
+    franquia_km: 0, valor_km_extra: 0, vrp_base: 0,
+    adicional_noturno_vrp_pct: 0, adicional_noturno_km_pct: 0,
+  };
+  const r = calcularEscolta({
+    km_inicial: 0, km_final: 0, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_inicio: "23:50", horario_fim: "06:00", horario_agendado: "23:30",
+    inicio_ts: "2026-05-07T23:50:00-03:00",
+    fim_ts: "2026-05-09T06:00:00-03:00",
+    scheduled_date: new Date("2026-05-07T23:30:00-03:00").toISOString(), // = 2026-05-08T02:30Z
+    despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+    contrato: contratoTM,
+  });
+  // Início agendado em BRT = 07/05 23:30, fim = 09/05 06:00 → 30h30min reais.
+  // Se bug do slice → daria 06h30min (perdia 24h).
+  assert.ok(r.horas_trabalhadas > 30, `horas_trabalhadas deve ser ~30.5h (não 6.5h), foi ${r.horas_trabalhadas}`);
+});

@@ -2422,6 +2422,9 @@ Responda APENAS com JSON: {"km_lido": number}`;
             km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
+            inicio_ts: so.missionStartedAt ? new Date(so.missionStartedAt as any).toISOString() : null,
+            fim_ts: completedDateVal ? new Date(completedDateVal as any).toISOString() : null,
+            scheduled_date: so.scheduledDate ? new Date(so.scheduledDate as any).toISOString() : null,
             despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, receitas_os: receitasOsEnc, contrato,
             kmRota: kmRotaEnc,
           });

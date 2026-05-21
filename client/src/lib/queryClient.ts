@@ -636,9 +636,11 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-      staleTime: 60_000,
+      // Refaz queries ao voltar foco/reconectar — combate cache antigo após offline.
+      // staleTime curto (15s) evita storm de refetch sem perder freshness percebido.
+      refetchOnWindowFocus: "always",
+      refetchOnReconnect: "always",
+      staleTime: 15_000,
       gcTime: 5 * 60_000,
       retry: false,
     },
