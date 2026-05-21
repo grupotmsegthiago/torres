@@ -567,7 +567,8 @@ export function registerConciliacaoRoutes(app: Express) {
         return res.status(400).json({ message: "Data início deve ser <= data fim" });
       }
 
-      // 1. OS no período (BRT). data_missao é timestamp; cobre o dia inteiro.
+      // 1. OS no período (BRT). scheduled_date é timestamp; cobre o dia inteiro.
+      // Filtra pela data agendada (igual aos demais relatórios financeiros).
       const inicioTs = `${inicio}T00:00:00`;
       const fimTs = `${fim}T23:59:59`;
       const osIds: number[] = [];
@@ -576,8 +577,8 @@ export function registerConciliacaoRoutes(app: Express) {
         const { data, error } = await supabaseAdmin
           .from("service_orders")
           .select("id")
-          .gte("data_missao", inicioTs)
-          .lte("data_missao", fimTs)
+          .gte("scheduled_date", inicioTs)
+          .lte("scheduled_date", fimTs)
           .range(from, from + pageSize - 1);
         if (error) return res.status(500).json({ message: error.message });
         const rows = data || [];
