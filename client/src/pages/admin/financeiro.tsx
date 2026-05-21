@@ -115,7 +115,6 @@ const ORIGIN_ROUTES: Record<string, string> = {
   maintenance: "/admin/maintenance",
   mission_cost: "/admin/operational-grid",
   service_order: "/admin/operational-grid",
-  ticketlog_pedagio_fatura: "/admin/conferencia-pedagios-ticketlog",
 };
 
 // Extrai o código da fatura TicketLog a partir do origin_id.
