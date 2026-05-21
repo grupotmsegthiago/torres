@@ -1,5 +1,5 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
+  import { storage, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
@@ -289,9 +289,63 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     res.json({ message: "Manutenção removida" });
   });
 
-  app.get("/api/fueling", requireAuth, async (_req, res) => {
-    const data = await storage.getVehicleFuelings();
-    res.json(data);
+  app.get("/api/fueling", requireAuth, async (req, res) => {
+    // Retrocompatível: sem ?page → devolve array completo (telas que fazem
+    // agregados — dashboard, relatorio, vehicles, conciliação — continuam
+    // funcionando). Com ?page=N&limit=K → modo paginado (20 mais recentes
+    // por padrão) que serve a tabela histórica em /admin/fueling.
+    const pageRaw = req.query.page;
+    if (pageRaw === undefined) {
+      const data = await storage.getVehicleFuelings();
+      return res.json(data);
+    }
+    const page = Math.max(1, parseInt(String(pageRaw), 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? 20), 10) || 20));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    // PERF: nunca selecionar as colunas de foto (receipt_photo, pump_photo,
+    // odometer_photo, plate_photo) — são base64 com MBs cada. Listamos
+    // explicitamente as colunas leves; o detail modal carrega o registro
+    // completo via GET /api/fueling/:id sob demanda.
+    const LIGHT_COLS = [
+      "id","vehicle_id","driver_id","date","liters","cost_per_liter","total_cost",
+      "km","fuel_type","full_tank","station","notes","latitude","longitude","address",
+      "gasoline_price","ethanol_price","fuel_recommendation","recommendation_followed",
+      "created_by_user_id","ticketlog_autorizacao","ticketlog_status","ticketlog_nfe_data",
+      "ticketlog_codigo_estab","ticketlog_valor_tl","ticketlog_litros_tl","ticketlog_diff_valor",
+      "ticketlog_validated_at","ticketlog_message","ticketlog_estab_nome","ticketlog_attempts",
+      "ai_validation_status","ai_validation_result","created_at",
+    ].join(",");
+    const { data, error, count } = await supabaseAdmin
+      .from("vehicle_fueling")
+      .select(LIGHT_COLS, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) return res.status(500).json({ message: "Erro ao listar abastecimentos", detail: error.message });
+    // Sinaliza presença de NF (receipt_photo) sem trazer o base64: segunda
+    // query select=id where receipt_photo IS NOT NULL, restrita aos 20 IDs.
+    const ids = (data || []).map((r: any) => r.id);
+    let receiptIds = new Set<number>();
+    if (ids.length > 0) {
+      const { data: rcpt } = await supabaseAdmin
+        .from("vehicle_fueling")
+        .select("id")
+        .in("id", ids)
+        .not("receipt_photo", "is", null);
+      receiptIds = new Set((rcpt || []).map((r: any) => r.id));
+    }
+    const items = toCamelArray(data || []).map((r: any) => ({
+      ...r,
+      hasReceiptPhoto: receiptIds.has(r.id),
+    }));
+    const total = count ?? 0;
+    res.json({
+      data: items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
   });
 
   app.get("/api/fueling/:id", requireAuth, async (req, res) => {

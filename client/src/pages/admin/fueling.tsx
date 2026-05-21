@@ -23,6 +23,12 @@ import { ConciliacaoContent } from "./conciliacao-ticketlog";
 import { PostosContent } from "./ticketlog-postos";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 
+// Tipo da linha vinda do endpoint paginado /api/fueling?page=N. Estende
+// VehicleFueling: na prática receiptPhoto/pumpPhoto/odometerPhoto/platePhoto
+// vêm undefined (não selecionadas no SQL pra economizar banda) — FuelingDetail
+// busca o registro completo sob demanda via /api/fueling/:id.
+type FuelingListItem = VehicleFueling & { hasReceiptPhoto: boolean };
+
 interface FuelingStats {
   totalLiters: number;
   totalCost: number;
@@ -744,8 +750,24 @@ function AiValidationBadge({ fueling }: { fueling: VehicleFueling }) {
   );
 }
 
-function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: VehicleFueling; vehicle?: Vehicle; driverName?: string | null; onClose: () => void }) {
+function FuelingDetail({ fueling: lightFueling, vehicle, driverName, onClose }: { fueling: VehicleFueling; vehicle?: Vehicle; driverName?: string | null; onClose: () => void }) {
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+  // Lista paginada vem sem fotos (base64 grande). Buscamos o registro
+  // completo sob demanda; `initialData` evita flash de loading.
+  const { data: fueling = lightFueling } = useQuery<VehicleFueling>({
+    queryKey: ["/api/fueling", lightFueling.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/fueling/${lightFueling.id}`, { credentials: "include" });
+      if (!r.ok) throw new Error(`Erro ao carregar abastecimento: HTTP ${r.status}`);
+      return r.json();
+    },
+    initialData: lightFueling,
+    // initialDataUpdatedAt: 0 marca initialData como "antigo" — sem isso,
+    // o useQuery + staleTime infinity considera os dados leves como fresh
+    // pra sempre e nunca busca as fotos do registro completo.
+    initialDataUpdatedAt: 0,
+    staleTime: Infinity,
+  });
 
   const fuelTypeLabel: Record<string, string> = {
     gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
@@ -929,12 +951,43 @@ export default function FuelingPage() {
   const [periodMode, setPeriodMode] = useState<"cycle" | "month">("cycle");
   const [filterMonth, setFilterMonth] = useState<string>("");
   const [expandedVehicle, setExpandedVehicle] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<"dashboard" | "history">("dashboard");
+  // Histórico paginado (rápido, instantâneo) é o default. Dashboard agregado
+  // carrega o array completo só quando o usuário clica — assim a tela abre
+  // em <500ms em vez de esperar 9s pelos 133+ abastecimentos.
+  const [viewMode, setViewMode] = useState<"dashboard" | "history">("history");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
 
-  const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
+  // Query 1: lista paginada (history view) — staleTime infinito, refaz só ao
+  // mudar de página ou após mutation (POST/PATCH/DELETE de abastecimento).
+  type PagedFuelingResp = { data: FuelingListItem[]; total: number; page: number; limit: number; totalPages: number };
+  const { data: paged, isLoading: isLoadingPaged } = useQuery<PagedFuelingResp>({
+    queryKey: ["/api/fueling", { page, limit: PAGE_SIZE }],
+    queryFn: async () => {
+      const r = await fetch(`/api/fueling?page=${page}&limit=${PAGE_SIZE}`, { credentials: "include" });
+      if (!r.ok) throw new Error(`Falha ao carregar abastecimentos: HTTP ${r.status}`);
+      return r.json();
+    },
+    enabled: viewMode === "history",
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  const pagedFuelings = paged?.data ?? [];
+  const totalPages = Math.max(1, paged?.totalPages ?? 1);
+  const totalCount = paged?.total ?? 0;
+
+  // Query 2: array completo (dashboard view + stats) — lazy. Só dispara quando
+  // o usuário entra na aba Dashboard. Também cacheia infinitamente; mutations
+  // invalidam ambas as queries via prefix match em ["/api/fueling"].
+  const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({
+    queryKey: ["/api/fueling"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: viewMode === "dashboard",
+    staleTime: Infinity,
+  });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -1178,6 +1231,7 @@ export default function FuelingPage() {
             {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
+        {viewMode === "dashboard" && (<>
         <div className="inline-flex rounded-lg border border-neutral-300 overflow-hidden" data-testid="toggle-period-mode">
           <button
             type="button"
@@ -1219,6 +1273,7 @@ export default function FuelingPage() {
             (mês civil: {currentMonthLabel})
           </span>
         )}
+        </>)}
         <div className="relative flex-1 min-w-[200px]">
           <input
             type="text"
@@ -1233,6 +1288,7 @@ export default function FuelingPage() {
         </div>
       </div>
 
+      {viewMode === "dashboard" && (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <StatCard icon={Fuel} label="Abastecimentos" value={stats.totalFuelings.toString()} color="bg-blue-600" />
         <StatCard icon={Fuel} label="Litros Total" value={`${stats.totalLiters.toFixed(1)}L`} color="bg-cyan-600" />
@@ -1247,6 +1303,7 @@ export default function FuelingPage() {
           color="bg-emerald-600"
         />
       </div>
+      )}
 
       {viewMode === "dashboard" ? (
         <div className="space-y-4">
@@ -1515,24 +1572,17 @@ export default function FuelingPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isLoadingPaged ? (
                   <tr><td colSpan={15} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
-                ) : filteredFuelings.length === 0 ? (
+                ) : pagedFuelings.length === 0 ? (
                   <tr><td colSpan={15} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
-                  [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
+                  pagedFuelings.map((f) => {
                     const v = getVehicle(f.vehicleId);
-                    const vehicleFuels = (fuelings || []).filter(vf => vf.vehicleId === f.vehicleId);
-                    const sortedByKm = [...vehicleFuels].sort((a, b) => a.km - b.km);
-                    const fIdx = sortedByKm.findIndex(vf => vf.id === f.id);
-                    let mediaKmL: number | null = null;
-                    if (fIdx > 0) {
-                      const prev = sortedByKm[fIdx - 1];
-                      const dist = f.km - prev.km;
-                      const liters = Number(f.liters) || 0;
-                      if (dist > 0 && liters > 0) mediaKmL = dist / liters;
-                    }
-                    const isFirst = fIdx === 0;
+                    // NOTA: a coluna "Média km/L" é renderizada como "—" no
+                    // histórico paginado porque o cálculo correto exige todo
+                    // o histórico do veículo (não só a página atual de 20).
+                    // Médias por veículo ficam na aba Dashboard.
                     return (
                       <tr key={f.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-fueling-${f.id}`}>
                         <td className="px-4 py-3 text-neutral-900">{formatDateBRT(f.date + "T12:00:00")}</td>
@@ -1541,16 +1591,8 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-neutral-600">{Number(f.liters).toFixed(2)}L</td>
                         <td className="px-4 py-3 text-neutral-600">{f.costPerLiter ? `R$ ${Number(f.costPerLiter).toFixed(3)}` : "-"}</td>
                         <td className="px-4 py-3 text-neutral-600 font-medium">{f.totalCost ? `R$ ${Number(f.totalCost).toFixed(2)}` : "-"}</td>
-                        <td className="px-4 py-3 bg-emerald-50/50" data-testid={`media-kml-${f.id}`}>
-                          {isFirst ? (
-                            <span className="text-xs text-neutral-400 italic">1º reg.</span>
-                          ) : mediaKmL !== null ? (
-                            <span className={`font-semibold ${mediaKmL >= 12 ? "text-emerald-600" : mediaKmL >= 7 ? "text-green-600" : mediaKmL >= 5 ? "text-amber-600" : "text-red-600"}`}>
-                              {mediaKmL.toFixed(2)} km/L
-                            </span>
-                          ) : (
-                            <span className="text-neutral-300">-</span>
-                          )}
+                        <td className="px-4 py-3 bg-emerald-50/50" data-testid={`media-kml-${f.id}`} title="Média km/L por veículo está disponível na aba Dashboard">
+                          <span className="text-neutral-300">—</span>
                         </td>
                         <td className="px-4 py-3 text-neutral-600">{fuelTypeLabel[f.fuelType] || f.fuelType}</td>
                         <td className="px-4 py-3 text-xs" data-testid={`decision-${f.id}`}>{(() => {
@@ -1579,7 +1621,10 @@ export default function FuelingPage() {
                           if (st === "verificar") return <span className="inline-flex items-center gap-1 text-red-600 text-xs font-semibold"><AlertTriangle className="w-3.5 h-3.5" />Verificar</span>;
                           if (st === "pendente") return <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin mx-auto" />;
                           if (st === "sem_foto") return <span className="text-neutral-300 text-xs">—</span>;
-                          if (!f.receiptPhoto) return <span className="text-neutral-300 text-xs">—</span>;
+                          // Em modo paginado, `receiptPhoto` (base64) não vem
+                          // no payload por performance — usamos a flag
+                          // `hasReceiptPhoto` que o backend computa.
+                          if (!f.hasReceiptPhoto) return <span className="text-neutral-300 text-xs">—</span>;
                           return <span className="text-amber-500 text-xs font-medium">Aguard.</span>;
                         })()}</td>
                         <td className="px-4 py-3 text-right">
@@ -1594,10 +1639,41 @@ export default function FuelingPage() {
               </tbody>
             </table>
           </div>
+          {/* Footer de paginação — mostra "X-Y de Z" + Prev/Next */}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-200 bg-neutral-50/50 text-sm">
+            <div className="text-neutral-600" data-testid="text-pagination-info">
+              {totalCount === 0
+                ? "0 abastecimentos"
+                : `Mostrando ${(page - 1) * PAGE_SIZE + 1}-${Math.min(page * PAGE_SIZE, totalCount)} de ${totalCount.toLocaleString("pt-BR")}`}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1 || isLoadingPaged}
+                data-testid="button-page-prev"
+              >
+                ← Anterior
+              </Button>
+              <span className="text-neutral-700 font-medium px-2" data-testid="text-page-indicator">
+                Página {page} de {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || isLoadingPaged}
+                data-testid="button-page-next"
+              >
+                Próxima →
+              </Button>
+            </div>
+          </div>
         </Card>
       )}
 
-      {stats.worstAvg && stats.worstAvg.avg < 6 && stats.worstAvg.avg > 0 && (
+      {viewMode === "dashboard" && stats.worstAvg && stats.worstAvg.avg < 6 && stats.worstAvg.avg > 0 && (
         <Card className="mt-6 p-4 bg-red-50 border-red-200">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600" />
