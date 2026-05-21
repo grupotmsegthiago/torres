@@ -184,12 +184,13 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Control iD — puxa batidas dos aparelhos a cada 3 min
-    // (antes era a cada 1 min; reduzido em 2026-05 pra aliviar pool Supabase.
-    //  3 min ainda é "near-realtime" pra ponto eletrônico.)
+    // CRON: Control iD — puxa batidas dos aparelhos 2x ao dia (00:00 e 12:00 BRT)
+    // (antes era a cada 3 min; reduzido em 2026-05 pra aliviar pool Supabase e
+    //  RHID Cloud — batidas históricas, não precisa ser near-realtime. O dado
+    //  consolidado fica disponível na próxima janela de 12h.)
     // ============================================================
     let controlIdRunning = false;
-    cron.schedule("*/3 * * * *", async () => {
+    cron.schedule("0 0,12 * * *", async () => {
       if (controlIdRunning) return; // evita sobreposição
       if (!isSupabaseHealthy()) return; // Supabase fora — pula pra não enfileirar lixo
       controlIdRunning = true;
@@ -971,7 +972,7 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
 }
 
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
