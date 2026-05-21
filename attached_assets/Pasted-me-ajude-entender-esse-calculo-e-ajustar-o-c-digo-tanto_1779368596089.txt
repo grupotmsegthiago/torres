@@ -1,0 +1,87 @@
+me ajude entender esse calculo e ajustar o código tanto do frontend e do backend no sistema, pois estou com diversos problemas de lógica.
+
+
+
+O acionamento custa R$ 546,00
+
+hora excedente R$ 150,00
+
+KM excedente 5,46
+
+
+
+Franquia de até 03 horas ou até 100km
+
+
+
+Ou seja, o cliente ja paga o acionamento de R$ 546,00 mesmo ele rodando menos que menos que 03 horas ou até 100km, se ele passar das horas ou passar do km ele paga os excedentes, veja no sistema que ele fez 40 minutos de hora extra e o sistema não calcula as horas e cobra os 40 minutos de hora extra, ele deveria pegar os 150,00 (hora extra) e pagar referente a 40 minutos (exatos)..
+
+
+
+como devo aplicar essa regra para o sistema entender que trabalhamos dessa forma, ressalto que esse é um exemplo e preciso aplicar essa regra pra todas as OS para que o sistema tenha esse entedimento e que grave para sempre essa regra e NUNCA mais altere essa lógica, mesmo que o replit faça qualquer outra alteração dentro de uma OS.
+
+
+
+Me ajude a criar um promtp completo sobre isso e tenha a certeza que ele irá aplicar essa regra que é valida para todas as OS e deve também aplicar o calculo da OS que espelha em todas as outras páginas do sistema para ter um controle de fluxo de caixa, os etc.. preciso que gere esse código da melhor fomra de entendimento, seja um especialista em desenvolvimento, lógica e engenheiro de dados.
+
+Thiago, agora entendi perfeitamente o problema central. O seu sistema está quebrando a Regra Suprema que havíamos definido antes (a de que o frontend não calcula, apenas lê o banco) porque a lógica de cálculo que roda por trás no banco de dados está errada.
+
+Olhando o print da OS TOR-0179, o erro de lógica salta aos olhos:
+
+O erro: O sistema tentou calcular a hora extra multiplicando os 40 minutos por R$ 0,09/min (de onde ele tirou isso?), resultando em míseros R$ 3,64.
+
+O correto: Se o valor da hora extra é R$ 150,00, o valor por minuto é exatos R$ 2,50 (150/60). Logo, 40 minutos deveriam custar R$ 100,00 (40×2,50). O total da missão deveria ser R$ 676,80 (546,00+100,00+30,80) e não R$ 580,44.
+
+Para resolver isso de uma vez por todas, o Replit Agent precisa reestruturar a função matemática que faz esse cálculo no backend e garantir que o frontend apenas exiba o resultado gravado.
+
+Aqui está o prompt blindado e super detalhado que você vai colar no Replit. Ele foi desenhado como engenharia de dados profissional para que o Agent mude a lógica e nunca mais altere isso.
+
+Prompt para colar no Replit Agent
+Plaintext
+Atue como um Engenheiro de Software Sênior e Especialista em Lógica de Dados Financeiros. Preciso corrigir e blindar definitivamente a lógica de cálculo de faturamento (billing) de todas as Ordens de Serviço (OS) do sistema TMSEGo. 
+
+O sistema está calculando os valores de forma totalmente errada no backend (veja o caso onde 40min de hora extra com valor de R$150,00/hora gerou apenas R$ 3,64, quando o correto seria R$ 100,00).
+
+Aplique a seguinte Regra de Negócio Unificada no Backend (Geração do Billing) e propague para que o Frontend apenas consuma os valores prontos salvos no banco de dados (tabela escort_billings -> colunas revenue_value e toll_value):
+
+--- REGRA DE NEGÓCIO DO FATURAMENTO (BILLING) ---
+
+1. VALOR DO ACIONAMENTO (FRANQUIA):
+   - O cliente sempre paga o valor cheio do acionamento (Ex: R$ 546,00), que cobre uma franquia contratual de até X horas (Ex: 03:00 horas) E até Y KM (Ex: 100 km). Mesmo que ele use menos que a franquia, o valor do acionamento é o mínimo garantido.
+
+2. CÁLCULO DE HORAS EXCEDENTES (HORA EXTRA):
+   - Passo A: Calcular a duração total da missão (Hora Fim - Hora Início) truncada no minuto.
+   - Passo B: Se a duração total for MAIOR que a franquia de horas, subtraia a franquia para obter o "Tempo Excedente" em minutos.
+   - Passo C: Descubra o valor do minuto extra dividindo o valor da Hora Extra por 60 (Ex: R$ 150,00 / 60 = R$ 2,50 por minuto).
+   - Passo D: VALOR_HORA_EXTRA = (Minutos Excedentes) * (Valor do Minuto Extra).
+
+3. CÁLCULO DE KM EXCEDENTE:
+   - Passo A: Calcular o KM total rodado (KM Final - KM Inicial).
+   - Passo B: Se o KM total for MAIOR que a franquia de KM, subtraia a franquia para obter o "KM Excedente".
+   - Passo C: VALOR_KM_EXTRA = (KM Excedente) * (Valor do KM Excedente contratado).
+
+4. COMPOSIÇÃO DO VALOR TOTAL (REVENUE_VALUE):
+   - O valor gravado na coluna 'revenue_value' deve ser EXATAMENTE a soma:
+     revenue_value = VALOR_DO ACIONAMENTO + VALOR_HORA_EXTRA + VALOR_KM_EXTRA
+   - O valor dos pedágios deve ser gravado estritamente na coluna 'toll_value'.
+   - O valor total exibido na tela deve ser sempre a soma direta (revenue_value + toll_value) puxada do banco.
+
+--- O QUE DEVE SER FEITO NO CÓDIGO (BACKEND E FRONTEND) ---
+
+1. NO BACKEND (`server/cron.ts`, `server/routes/` ou módulos de utility financeira como `lib/financialUtils.ts`):
+   - Refatore a função que calcula os valores de faturamento da OS para seguir os passos matemáticos acima de forma exata, usando pontos flutuantes corretos e sem arredondamentos que gerem quebras de centavos.
+   - Certifique-se de que, ao salvar ou atualizar no Supabase (tabela escort_billings), os valores finais calculados por essa regra sejam persistidos corretamente.
+
+2. NO FRONTEND:
+   - Proíba qualquer cálculo de hora extra ou KM extra baseado em inputs na UI. O frontend deve apenas ler os campos 'revenue_value' e 'toll_value' retornados pela API/Banco de Dados e exibir na tela.
+   - Garanta que todas as telas do sistema que utilizam dados financeiros (Fluxo de Caixa, Relatórios, Dashboard, Painel de OS) utilizem exatamente essa mesma fonte da verdade baseada no banco para que os valores fiquem 100% espelhados e idênticos em todo o ecossistema do app.
+
+REGRA SUPREMA DE MANUTENÇÃO: Esta é uma regra estrutural e permanente para o TMSEGo. Não altere o layout das tabelas, não mude o design da interface (UI). Foque exclusivamente em corrigir a matemática do cálculo no backend e unificar a exibição no frontend.
+O que fazer após enviar esse prompt:
+O Replit vai analisar os arquivos (provavelmente os arquivos server/cron.ts, lib/financialUtils.ts ou similares onde a matemática foi escrita).
+
+Ele vai propor as alterações mudando a fórmula para a divisão por 60 minutos.
+
+Assim que ele terminar, ele vai te mostrar o código modificado. Você dá o Aprovar/Merge.
+
+Para testar se ficou perfeito, abra essa mesma OS TOR-0179 e clique no botão amarelo "REABRIR PARA REVISÃO" (que aparece no seu print). Quando o sistema recalcular ela com a regra nova, os 40 minutos extras vão pular de R$ 3,64 para R$ 100,00 na hora.
