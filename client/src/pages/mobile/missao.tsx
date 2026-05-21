@@ -612,10 +612,44 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Foto vem direto do celular (4–8 MB). Sem compressão, estoura o limite
+    // de 2 MB do POST /api/mission/update (413 entity too large). Aqui
+    // reduzimos pra max 1280px no maior lado + JPEG q=0.7, o que tipicamente
+    // deixa a foto em ~80–250 KB, mantendo qualidade pro registro.
     const reader = new FileReader();
     reader.onload = () => {
-      setUpdatePhoto(reader.result as string);
-      setUpdateStep("message");
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 1280;
+        let w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) { h = Math.round((h / w) * maxSize); w = maxSize; }
+          else { w = Math.round((w / h) * maxSize); h = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          // Sem canvas, manda original como fallback
+          setUpdatePhoto(reader.result as string);
+          setUpdateStep("message");
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", 0.7);
+        const origKB = Math.round((reader.result as string).length * 0.75 / 1024);
+        const newKB = Math.round(compressed.length * 0.75 / 1024);
+        console.log(`[mission-update] foto comprimida: ${origKB} KB → ${newKB} KB (${w}x${h})`);
+        setUpdatePhoto(compressed);
+        setUpdateStep("message");
+      };
+      img.onerror = () => {
+        // Não conseguiu decodificar — manda original
+        setUpdatePhoto(reader.result as string);
+        setUpdateStep("message");
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   };
