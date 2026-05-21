@@ -35,6 +35,7 @@ const PHOTO_UPLOAD_PATHS = [
   "/api/mobile/fueling",          // mobile: idem
   "/api/mission/photo",           // upload de foto de missão
   "/api/mission/photo-inspections-batch",
+  "/api/mission/update",          // status update com foto (rede de segurança — cliente já comprime)
   "/api/ticketlog/upload-nfe",    // upload de XML/PDF da NFe
 ];
 const rawBodyVerify = (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
