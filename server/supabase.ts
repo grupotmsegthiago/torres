@@ -16,8 +16,16 @@ const MAX_CONCURRENT = 16;
 const HEALTH_WINDOW_SIZE = 40;
 const HEALTH_FAIL_RATIO = 0.75;
 const HEALTH_RECOVER_RATIO = 0.3;
-const HEALTH_COOLDOWN_MS = 90_000;
+// Cooldown assimétrico: entrar em fallback é caro (manda email + alerta),
+// então 90s pra evitar flapping. Voltar pra primário é barato/seguro,
+// então só 30s — não queremos ficar travados no fallback após Supabase recuperar.
+const HEALTH_COOLDOWN_DOWN_MS = 90_000;
+const HEALTH_COOLDOWN_UP_MS = 30_000;
 const MIN_RESULTS_FOR_DECISION = 15;
+// Atalho de recuperação rápida: se N requisições consecutivas passarem
+// E já passou o cooldown UP, força HEALTHY ignorando o ratio da janela
+// (a janela pode demorar pra "esquecer" os fails antigos quando o tráfego é baixo).
+const CONSECUTIVE_SUCCESS_FOR_RECOVERY = 10;
 
 let activeFetches = 0;
 const waitQueue: Array<() => void> = [];
@@ -46,6 +54,7 @@ function releaseSlot(): void {
 const healthWindow: boolean[] = [];
 let lastHealthChange = 0;
 let currentHealthState = true;
+let consecutiveSuccesses = 0;
 
 function recordResult(success: boolean): void {
   healthWindow.push(success);
@@ -53,21 +62,41 @@ function recordResult(success: boolean): void {
     healthWindow.shift();
   }
 
+  if (success) consecutiveSuccesses++;
+  else consecutiveSuccesses = 0;
+
+  const now = Date.now();
+
+  // Recuperação rápida por sucessos consecutivos — antes mesmo do MIN_RESULTS_FOR_DECISION.
+  // Resolve o caso onde o sistema fica travado em fallback porque a janela rolante
+  // ainda guarda fails antigos quando o tráfego pós-recovery é baixo.
+  if (
+    !currentHealthState &&
+    consecutiveSuccesses >= CONSECUTIVE_SUCCESS_FOR_RECOVERY &&
+    now - lastHealthChange > HEALTH_COOLDOWN_UP_MS
+  ) {
+    currentHealthState = true;
+    lastHealthChange = now;
+    healthWindow.length = 0;
+    setSupabaseHealth(true);
+    console.log(`[supabase] Health: ONLINE (recovered fast — ${consecutiveSuccesses} sucessos consecutivos)`);
+    return;
+  }
+
   if (healthWindow.length < MIN_RESULTS_FOR_DECISION) return;
 
   const failures = healthWindow.filter((r) => !r).length;
   const failRatio = failures / healthWindow.length;
-  const now = Date.now();
 
   if (currentHealthState && failRatio >= HEALTH_FAIL_RATIO) {
-    if (now - lastHealthChange > HEALTH_COOLDOWN_MS) {
+    if (now - lastHealthChange > HEALTH_COOLDOWN_DOWN_MS) {
       currentHealthState = false;
       lastHealthChange = now;
       setSupabaseHealth(false);
       console.warn(`[supabase] Health: OFFLINE (${failures}/${healthWindow.length} failures, ratio ${(failRatio * 100).toFixed(0)}%)`);
     }
   } else if (!currentHealthState && failRatio <= HEALTH_RECOVER_RATIO) {
-    if (now - lastHealthChange > HEALTH_COOLDOWN_MS) {
+    if (now - lastHealthChange > HEALTH_COOLDOWN_UP_MS) {
       currentHealthState = true;
       lastHealthChange = now;
       healthWindow.length = 0;
