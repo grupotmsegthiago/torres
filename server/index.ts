@@ -175,6 +175,14 @@ app.use((req, res, next) => {
   await ensureDbSchema();
   await ensureCalcMissionRPC();
   await registerRoutes(httpServer, app);
+  // Coletor de telemetria do banco (1 amostra a cada 2min, mantém 7 dias)
+  try {
+    const { startTelemetrySampler } = await import("./db-telemetry");
+    const { supabaseAdmin } = await import("./supabase");
+    startTelemetrySampler(supabaseAdmin);
+  } catch (err: any) {
+    console.warn("[db-telemetry] sampler não iniciou:", err?.message);
+  }
   registerAsaasRoutes(app);
   registerDriverControlRoutes(app);
 

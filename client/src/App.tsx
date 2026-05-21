@@ -61,6 +61,7 @@ const PhotoInspectionPage = lazy(() => import("@/pages/admin/photo-inspection"))
 
 const ControleCondutorPage = lazy(() => import("@/pages/admin/controle-condutor"));
 const LeadsPage = lazy(() => import("@/pages/admin/leads"));
+const DatabasePage = lazy(() => import("@/pages/admin/database"));
 
 const MobileHomePage = lazy(() => import("@/pages/mobile/home"));
 const MobileMissaoPage = lazy(() => import("@/pages/mobile/missao"));
@@ -263,6 +264,7 @@ function Router() {
         <Route path="/admin/ponto-operacional">{() => <ProtectedRoute component={PontoOperacionalPage} />}</Route>
         <Route path="/admin/controle-condutor">{() => <ProtectedRoute component={ControleCondutorPage} />}</Route>
         <Route path="/admin/leads">{() => <ProtectedRoute component={LeadsPage} />}</Route>
+        <Route path="/admin/database">{() => <ProtectedRoute component={DatabasePage} />}</Route>
         <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
         <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/mobile/checklist">{() => <MobileProtectedRoute component={MobileChecklistPage} />}</Route>

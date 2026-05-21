@@ -1,0 +1,68 @@
+quero uma tela onde eu consigo ver a comunicação com o banco + a cpu e memoria e se tiver mais alguma informação relevante, pode inserir? quero isso na tela no menu BANCO DE DADOS liberado apenas para administrador e diretoria..
+
+
+
+Quero uma linha do tempo de 24h pra saber a constancia do banco se teve queda ou não, até mesmo se alguém tentou invadir ou derrubar o sistema é possivel?
+
+Thiago, essa é uma excelente ideia estratégica. Em vez de você ter que abrir o painel do Supabase toda vez para ver se o sistema está sofrendo, você terá a sua própria Central de Comando e Telemetria direto no menu do TMSEGo.
+
+E sim, é totalmente possível rastrear tentativas de derrubar o sistema ou acessos suspeitos (como ataques de força bruta ou IPs desconhecidos tentando acessar dados confidenciais).
+
+Como o sistema já está desenvolvido e rodando, o Replit Agent só precisa criar essa página nova e o endpoint que puxa esses dados. Vou estruturar o prompt exato e blindado para você mandar para ele.
+
+O que vamos incluir nessa tela (Visão Geral):
+Métricas de Infraestrutura: Uso de CPU, Uso de Memória e Conexões Ativas (Pool).
+
+Gráfico de Linha do Tempo (24 horas): Uma linha contínua mostrando a latência (tempo de resposta) do banco. Se houver uma queda, o gráfico mostra a linha batendo no zero ou mudando para vermelho no exato minuto do ocorrido.
+
+Módulo de Segurança e Alertas (Antifrariamento/Invasão):
+
+Contador de Erros 429/401: Se um único IP tentar errar a senha ou disparar requisições 100 vezes seguidas em 1 minuto (padrão de ataque para derrubar ou invadir), o sistema acende um alerta vermelho.
+
+Logs de Auditoria: Mostrar quem (qual usuário logado) fez requisições administrativas nas últimas horas.
+
+Prompt para colar no Replit Agent
+Plaintext
+Preciso criar uma nova tela de monitoramento e telemetria chamada "BANCO DE DADOS" dentro do menu do sistema TMSEGo. Essa tela deve ser estritamente protegida por nível de acesso, visível APENAS para usuários com perfil 'administrador' ou 'diretoria'.
+
+Por favor, desenvolva essa funcionalidade seguindo as instruções abaixo, focando apenas em adicionar a nova página e seus respectivos componentes, sem alterar o design ou funcionamento das telas existentes:
+
+--- 1. INTERFACE VISUAL (FRONTEND) ---
+Crie a página com um design limpo e profissional contendo:
+- CARDS DE STATUS EM TEMPO REAL:
+  1. Uso de CPU (%)
+  2. Uso de Memória (%)
+  3. Conexões Ativas no Pool (Ex: 15/60)
+  4. Status Geral (Saudável / Fallback Ativo / Offline)
+
+- GRÁFICO DE LINHA DO TEMPO (ÚLTIMAS 24 HORAS):
+  - Um gráfico de linha contínuo mostrando a latência/tempo de resposta do banco de dados (em ms) ao longo do dia.
+  - O gráfico deve deixar visualmente claro se houve quedas (picos de timeout ou momentos em que o sistema chaveou para o banco local de fallback).
+
+- PAINEL DE SEGURANÇA E AUDITORIA (Rastreamento de Ataques/Invasões):
+  - Uma tabela simples exibindo logs de eventos suspeitos recentes, monitorando:
+    1. Pico abrupto de requisições vindas de um mesmo IP (Indicativo de ataque para derrubar o sistema - DDoS).
+    2. Sequência de erros de autenticação (Erros 401/403 repetidos do mesmo local, indicando tentativa de invasão por força bruta).
+    3. Alertas de 'Statement Timeout' ou consultas travadas.
+
+--- 2. LOGIC E INFRAESTRUTURA (BACKEND) ---
+- Crie um endpoint seguro (Ex: `/api/admin/db-telemetry`) que retorne esses dados consolidados.
+- Para os dados de CPU/Memória/Conexões, consuma as métricas do Postgres/Supabase (pode usar tabelas internas do Postgres como `pg_stat_activity` e o histórico que o sistema já captura nos logs de saúde).
+- Para os dados de segurança, colete os logs de falhas de autenticação recentes e volumetria de requisições por IP.
+
+--- REGRAS DE OURO ---
+- Não quebre ou altere a lógica financeira ou o cron de faturamento atual.
+- Garanta que a verificação de perfil de acesso ('administrador' / 'diretoria') seja validada rigidamente tanto no componente de rota do frontend quanto no endpoint do backend para evitar vazamento de informações de infraestrutura.
+O que vai acontecer após você mandar esse prompt:
+O Replit Agent vai mapear onde ficam as rotas do seu menu e criar a nova opção "Banco de Dados".
+
+Ele vai programar o gráfico de 24 horas usando a biblioteca visual que o seu sistema já usa (provavelmente recharts ou similar).
+
+Ele vai criar a proteção de segurança para que nenhum vigilante ou funcionário comum consiga sequer ver essa aba no menu.
+
+Pode mandar para o Agent! Assim você terá total controle e saberá exatamente se o banco está firme ou se alguém andou "cutucando" as portas do seu sistema.
+
+
+
+
+O Gemini é IA e pode cometer erros.

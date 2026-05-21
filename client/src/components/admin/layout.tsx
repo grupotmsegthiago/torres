@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
-  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
@@ -229,6 +229,7 @@ const menuSections: MenuSection[] = [
     items: [
       { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
       { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
+      { path: "/admin/database", label: "Banco de Dados", icon: Database, adminOnly: true },
       { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
       { path: "/admin/simulador-missao", label: "Simulador Missão", icon: Play },
     ],

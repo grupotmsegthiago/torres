@@ -711,6 +711,60 @@ export async function ensureDbSchema() {
       )
     `);
 
+    // Telemetria do banco — amostras coletadas a cada 2min, mantém 7 dias.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS db_health_samples (
+        id BIGSERIAL PRIMARY KEY,
+        sampled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        latency_ms INTEGER NOT NULL,
+        active_connections INTEGER,
+        idle_connections INTEGER,
+        total_connections INTEGER,
+        max_connections INTEGER,
+        long_query_count INTEGER DEFAULT 0,
+        node_cpu_pct REAL,
+        node_mem_mb INTEGER,
+        fallback_active BOOLEAN DEFAULT FALSE,
+        db_size_mb INTEGER
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_db_health_sampled ON db_health_samples(sampled_at DESC)`);
+
+    // RPC SECURITY DEFINER expõe estatísticas de pg_stat_activity sem dar acesso direto.
+    await execSql(`
+      CREATE OR REPLACE FUNCTION public.db_telemetry_snapshot() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $f$
+      DECLARE r jsonb;
+      BEGIN
+        SELECT jsonb_build_object(
+          'active_connections', (SELECT count(*) FROM pg_stat_activity WHERE state='active'),
+          'idle_connections', (SELECT count(*) FROM pg_stat_activity WHERE state='idle'),
+          'total_connections', (SELECT count(*) FROM pg_stat_activity),
+          'max_connections', current_setting('max_connections')::int,
+          'long_queries', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+              'pid', pid,
+              'duration_s', extract(epoch from (now() - query_start))::int,
+              'state', state,
+              'query', left(query, 200),
+              'application_name', application_name,
+              'client_addr', client_addr::text
+            )) FROM pg_stat_activity
+            WHERE state='active'
+              AND query_start < now() - interval '5 seconds'
+              AND query NOT ILIKE '%pg_stat_activity%'
+              AND query NOT ILIKE '%db_telemetry_snapshot%'
+          ), '[]'::jsonb),
+          'db_size_mb', (pg_database_size(current_database())/1024/1024)::int,
+          'sampled_at', now()
+        ) INTO r;
+        RETURN r;
+      END $f$
+    `);
+    // Garante que NÃO há acesso para anon/authenticated. Apenas service_role
+    // (usado pelo supabaseAdmin no servidor) deve invocar a função — o texto
+    // das queries em pg_stat_activity pode conter dados sensíveis.
+    await execSql(`REVOKE ALL ON FUNCTION public.db_telemetry_snapshot() FROM PUBLIC, anon, authenticated`);
+    await execSql(`GRANT EXECUTE ON FUNCTION public.db_telemetry_snapshot() TO service_role`);
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS login_selfies (
         id SERIAL PRIMARY KEY,

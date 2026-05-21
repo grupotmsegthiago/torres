@@ -858,6 +858,21 @@ async function ensureSystemSettingsTable() {
       res.json(result);
     });
 
+    app.get("/api/admin/db-telemetry", requireAuth, requireAdminRole, async (_req, res) => {
+      try {
+        const { getRealtimeTelemetry, getHistory24h, getSecurityEvents24h } = await import("./db-telemetry");
+        const [realtime, history24h, security] = await Promise.all([
+          getRealtimeTelemetry(supabaseAdmin),
+          getHistory24h(supabaseAdmin),
+          getSecurityEvents24h(supabaseAdmin),
+        ]);
+        res.json({ realtime, history24h, security });
+      } catch (err: any) {
+        console.error("[db-telemetry] erro:", err?.message);
+        res.status(500).json({ error: "telemetry_unavailable", message: err?.message });
+      }
+    });
+
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {
     try {
