@@ -85,6 +85,41 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 - **BCC Email Formatting:** Always use an array for BCC recipients in `nodemailer` to avoid silent failures with Office365/Outlook.
 - **Critical Business Rules:** Always read `SYSTEM_BRAIN.md` before starting any task to understand core business rules that must not be violated.
 
+## Regras INTOCÁVEIS (NUNCA alterar sem ordem explícita do usuário)
+
+Essas três regras foram estabelecidas e testadas em produção. Não modificar a lógica subjacente sem pedido direto do dono. Se uma task parecer exigir alteração, **PARE e pergunte antes**.
+
+### 1. OS Recusada = faturamento zerado, sempre
+- **Significado de negócio:** "Recusada" = o operacional NÃO atendeu a missão (sem equipe, viatura não saiu, etc.). Nunca pode gerar cobrança.
+- **Regra técnica:**
+  - Quando `service_orders.status = "recusada"`, **todos** os `fat_*` do `escort_billings` associado devem ser **0** (fat_total, fat_acionamento, fat_hora_extra, fat_km, fat_km_carregado, fat_km_vazio, fat_estadia, fat_pernoite, fat_diaria, fat_adicional_noturno, resultado_bruto, resultado_liquido, margem_percentual).
+  - O `bill.status` vira `"CANCELADO"` e `observacoes = "OS RECUSADA — <motivo>"`.
+  - A zeragem é **incondicional** — sobrescreve qualquer status anterior do billing (inclusive CANCELADO/REJEITADA/A_VERIFICAR). Recusada da OS é a verdade final.
+  - Implementação: `server/routes/service-orders.ts`, branch `isRecusada` no PATCH `/api/service-orders/:id`.
+- **NUNCA** voltar a colocar `.in("status", [...])` restritivo nesse UPDATE — foi exatamente o bug histórico que deixou R$ 134.816,50 de cobrança indevida no sistema.
+- **Diferente de "cancelada":** OS cancelada = cliente cancelou mas equipe foi acionada → preserva acionamento + extras. Não zerar billing de cancelada.
+
+### 2. Auto-fix nunca toca OS recusada
+- O auto-fix de boot em `server/routes.ts` (que força `mission_status=encerrada` → `status=concluida` em OSs penduradas) **deve excluir `status="recusada"`** do filtro.
+- Sem isso, OSs recusadas com `mission_status=encerrada` viram concluídas no próximo restart e o billing volta a contar como cobrança — bug que vitimou TOR-0172, TOR-0162, TOR-0178 e outras (R$ 9.355,49 recuperados).
+- O filtro correto exclui: `concluida`, `concluída`, `cancelada`, **`recusada`**.
+
+### 3. Compressão de foto do app mobile (resolve 413)
+- Foto tirada direto do celular vem em 4–8 MB e estoura o limite do `/api/mission/update` (2 MB padrão).
+- **Regra obrigatória no client:** antes de anexar qualquer foto vinda de `<input type="file">` num upload mobile, redimensionar via canvas para **máx 1280px no maior lado** e re-encodar em **JPEG qualidade 0.7**. Resultado típico: ~80–250 KB.
+- Implementação: `handlePhotoCapture` em `client/src/pages/mobile/missao.tsx`.
+- Backend: `/api/mission/update` está em `PHOTO_UPLOAD_PATHS` (limite 10 MB) como rede de segurança — não remover dessa lista.
+- Não trocar JPEG por PNG nem subir resolução máxima sem motivo — o ganho de qualidade é insignificante e o custo de banda/quota é alto.
+
+### 4. Cálculo de faturamento de OS
+- **Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (pelo cliente).** Recusadas e Faturadas/Pagas ficam FORA.
+- Implementação:
+  - Frontend: `client/src/pages/admin/relatorio-faturamento.tsx` — função `isFaturavelBilling` filtra por `_so_status !== "recusada"` e exclui `FATURADO/FATURADA/PAGO/RECUSADA/REJEITADA`. Card "Total p/ Faturamento" usa `approvedTotal` com a mesma regra.
+  - Backend: `POST /api/boletim-medicao/gerar-fatura/:clientId` em `server/asaas.ts` (~linha 2306). Filtra `escort_billings` por `status IN (APROVADA, A_VERIFICAR, PENDENTE, ENVIADA_APROVACAO, CANCELADA, CANCELADO)` e depois faz **segunda passada** excluindo billings cuja OS está com `so.status="recusada"` (mesmo que o `bill.status` ainda não tenha sido atualizado).
+- **NUNCA** remover a segunda passada do gerar-fatura — é a salvaguarda contra billings dessincronizados.
+- **NUNCA** incluir RECUSADA, REJEITADA, FATURADO ou PAGO no filtro do gerar-fatura.
+- Hora extra é fracionada por minuto (não por hora cheia), seguindo `valor_hora_extra` do contrato. Não usar `valor_km_extra` como fallback de HE.
+
 ## SEO da Landing Pública
 
 A landing pública em `/` é otimizada para Google. Endpoints SEO em `server/index.ts`:
