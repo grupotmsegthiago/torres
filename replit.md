@@ -119,6 +119,21 @@ Essas três regras foram estabelecidas e testadas em produção. Não modificar 
 - **NUNCA** voltar a calcular HE só com `horario_inicio`/`horario_fim` HH:MM. Sempre passar timestamps reais nos 13 call-sites de `calcularEscolta`.
 - Teste de regressão: `server/billing-calc-hora-extra.test.ts` ("missão de 35h39min (atravessa dia)").
 
+### 6. `escort_billings` é 1:1 com `service_orders` — NUNCA usar `.insert()` cego
+- **Significado de negócio:** uma OS pode ter NO MÁXIMO um billing. Se aparece mais de um, alguma rota está inserindo cego sem checar duplicata — e o Excel/boletim mostra a OS duas vezes (uma com KMs reais, outra com KM=0 ou idêntica).
+- **Regra física (banco):** existe `CREATE UNIQUE INDEX uniq_eb_so_id ON escort_billings (service_order_id) WHERE service_order_id IS NOT NULL` em `server/db-init.ts`. **NUNCA remover.** Bloqueia duplicação no nível do Postgres.
+- **Regra de código:** todos os caminhos de escrita em `escort_billings` que envolvam uma OS DEVEM usar `.upsert(payload, { onConflict: "service_order_id" })` — operação atômica que aproveita o UNIQUE pra resolver INSERT vs UPDATE sem race condition. Caminhos atuais já convertidos:
+  - `server/routes/mission.ts` — billing de cancelamento de OS + auto-billing no encerramento
+  - `server/routes/escort.ts` — criar billing manual + recalcular billing
+  - `server/cron.ts` — cron de billing (com check de FROZEN_STATUSES preservado ANTES do upsert pra não sobrescrever FATURADO/PAGO)
+  - `server/routes/service-orders.ts` — `/calcular` faz DELETE antes do INSERT dentro do mesmo handler (não vulnerável a self-race)
+- **Quando criar uma nova rota que escreve em `escort_billings`:**
+  - Se tem `service_order_id`, **OBRIGATÓRIO** usar `.upsert(payload, { onConflict: "service_order_id" })`. Nunca `.insert()` cego.
+  - Se NÃO tem `service_order_id` (billing avulso/manual de teste), pode usar `.insert()` — o UNIQUE parcial só vale quando `service_order_id IS NOT NULL`.
+- **Quando o cron precisa pular billing congelado:** fazer o check de `FROZEN_STATUSES.has(status)` ANTES do upsert e dar `return` se for o caso (vide `server/cron.ts` linhas ~1800-1808). NÃO confiar que o upsert vai pular sozinho — ele sobrescreve TUDO.
+- **Histórico:** 21/05/2026 foram detectadas 11 OSs com billing duplicado (TOR-0110, 0121, 0122, 0134, 0137, 0163, 0176, 0183, 0191, 0201, 0214). Causa raiz: 3 caminhos faziam `.insert()` cego (mission.ts cancelamento + escort.ts manual + escort.ts calcular) + race condition em UPSERTs com padrão SELECT-then-INSERT (TOR-0214 teve dois billings criados no mesmo segundo). Limpeza feita em `.local/dedup_billings.mts` + auditoria em `.local/audit_billings_dup.mts`.
+- **Teste de regressão:** `server/cron.test.ts` testes "cron Billing: cria billing para OS concluída sem billing existente" e "atualiza billing PENDENTE em OS ativa" — o mock entende `.upsert(values, { onConflict })` e resolve em INSERT ou UPDATE como o Postgres faz. NÃO remover o suporte a `upsert` do mock.
+
 ### 4. Cálculo de faturamento de OS
 - **Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (pelo cliente).** Recusadas e Faturadas/Pagas ficam FORA.
 - Implementação:
