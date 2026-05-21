@@ -2,7 +2,7 @@ import type { Express } from "express";
   import { randomBytes } from "crypto";
   import { storage, toCamelObj, toCamelArray, toSnakeObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, invalidateAuthCacheByUser } from "../auth";
   import { logSystemAudit } from "../audit";
   import { insertEmployeeDocumentSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
@@ -1174,6 +1174,10 @@ ${empNames}`
 
     const updated = await storage.updateUser(id, updateData);
     if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
+    // Mudança de role/employee invalida cache de auth (efeito imediato, não espera TTL)
+    if (updateData.role !== undefined || updateData.employeeId !== undefined) {
+      invalidateAuthCacheByUser(target.supabaseUid);
+    }
     res.json(toSafeUser(updated));
   });
 
@@ -1192,6 +1196,7 @@ ${empNames}`
 
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
     await storage.updateUser(id, { mustChangePassword: 1, plainPassword: newPassword } as any);
+    invalidateAuthCacheByUser(user.supabaseUid);
     res.json({ ...toSafeUser(user), newPassword, mustChangePassword: true });
   });
 
@@ -1217,6 +1222,7 @@ ${empNames}`
 
     if (user.supabaseUid) {
       await supabaseAdmin.auth.admin.deleteUser(user.supabaseUid).catch(() => {});
+      invalidateAuthCacheByUser(user.supabaseUid);
     }
     await storage.deleteUser(id);
     res.json({ message: "Usuário excluído" });

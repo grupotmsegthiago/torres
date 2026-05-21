@@ -101,6 +101,45 @@ const SAME_PLACE_RADIUS_METERS = 50;
 const IDLE_SAME_PLACE_THRESHOLD = 5;
 const MAX_PLAUSIBLE_SPEED_MS = 55.6;
 
+// ─── LRU caps para Maps globais de telemetria ───────────────────────────────
+// Sem isso, esses Maps crescem indefinidamente conforme veiID/spyID novos
+// aparecem (rotatividade de frota, devices descomissionados, lixo de teste).
+// Mantém os N mais recentes (re-insert no .set() faz a "promoção" LRU natural
+// do Map de JS, que preserva ordem de inserção).
+const VEHICLE_MSG_MAP_MAX = 2000;
+const SPY_MSG_MAP_MAX = 2000;
+const POSITION_HISTORY_MAP_MAX = 2000;
+function pruneLRU<K, V>(map: Map<K, V>, max: number) {
+  if (map.size <= max) return;
+  const excess = map.size - max;
+  const iter = map.keys();
+  for (let i = 0; i < excess; i++) {
+    const k = iter.next().value;
+    if (k !== undefined) map.delete(k);
+  }
+}
+// Sweep periódico extra: limpa entries muito antigas em positionHistory (timestamp > 6h)
+const POSITION_HISTORY_TTL_MS = 6 * 60 * 60 * 1000;
+// Guarda contra duplicação do timer em HMR/tsx-watch (módulo recarregado
+// múltiplas vezes na mesma instância do Node).
+const _g = globalThis as unknown as { __trucks_sweep_interval?: NodeJS.Timeout };
+if (_g.__trucks_sweep_interval) clearInterval(_g.__trucks_sweep_interval);
+_g.__trucks_sweep_interval = setInterval(() => {
+  try {
+    const cutoff = Date.now() - POSITION_HISTORY_TTL_MS;
+    for (const [k, hist] of positionHistory) {
+      const last = hist[hist.length - 1];
+      if (!last || last.timestamp < cutoff) positionHistory.delete(k);
+    }
+    pruneLRU(positionHistory, POSITION_HISTORY_MAP_MAX);
+    pruneLRU(messagesByVehicle, VEHICLE_MSG_MAP_MAX);
+    pruneLRU(lastValidMessageByVehicle, VEHICLE_MSG_MAP_MAX);
+    pruneLRU(messagesBySpy, SPY_MSG_MAP_MAX);
+    pruneLRU(lastValidMessageBySpy, SPY_MSG_MAP_MAX);
+  } catch (_e) { /* sweep best-effort */ }
+}, 10 * 60 * 1000);
+_g.__trucks_sweep_interval.unref?.();
+
 export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
