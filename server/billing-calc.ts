@@ -143,6 +143,70 @@ export function calcularFaturamentoLive(params: {
   };
 }
 
+/**
+ * Agrega mission_costs nos buckets de faturamento.
+ *
+ * REGRA CRÍTICA — Pedágio repassado ao cliente:
+ *   O sistema cria DUAS entries em mission_costs para cada pedágio:
+ *     1) cost_type="expense" (custo da empresa)
+ *     2) cost_type="revenue" (reembolso ao cliente)
+ *   A fórmula fat_total já soma `despesas_pedagio` como receita (repasse),
+ *   portanto a entry "revenue" do pedágio NÃO deve ser contabilizada em
+ *   `receitas_os` — senão duplica (bug TOR-0179: fat_total=611,24 em vez
+ *   de 580,44 quando pedágio aparecia em ambos os lados).
+ *
+ * Outras receitas (não-pedágio) com cost_type="revenue" continuam somando
+ * normalmente em `receitas_os`.
+ */
+export function splitMissionCostsForBilling(mcs: Array<any>): {
+  despesas_pedagio: number;
+  despesas_combustivel: number;
+  despesas_outras: number;
+  receitas_os: number;
+  revenueItems: Array<{ id: any; description: string; amount: number; category: string }>;
+} {
+  let despesas_pedagio = 0;
+  let despesas_combustivel = 0;
+  let despesas_outras = 0;
+  let receitas_os = 0;
+  const revenueItems: Array<{ id: any; description: string; amount: number; category: string }> = [];
+  const n = (v: any) => Number(v) || 0;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  for (const mc of mcs || []) {
+    const amt = n((mc as any).amount);
+    const isRevenue = ((mc as any).cost_type ?? (mc as any).costType) === "revenue";
+    const catRaw = String((mc as any).category || "").trim().toLowerCase();
+    // Match EXATO da categoria "Pedágio" criada automaticamente pelo sistema.
+    // Categorias custom como "Pedágio Cliente" são receitas legítimas e NÃO devem ser ignoradas.
+    const isPedagioExpenseCat = catRaw === "pedágio" || catRaw === "pedagio";
+    const isCombustivel = catRaw.includes("combustível") || catRaw.includes("combustivel") || catRaw.includes("abastecimento");
+    if (isRevenue) {
+      // Pedágio duplicado: o sistema cria a entry revenue automaticamente quando há expense
+      // de pedágio. NÃO somar em receitas_os — o repasse já está representado por despesas_pedagio
+      // na fórmula fat_total.
+      if (isPedagioExpenseCat) continue;
+      receitas_os += amt;
+      revenueItems.push({
+        id: (mc as any).id,
+        description: (mc as any).description || (mc as any).category || "Receita OS",
+        amount: amt,
+        category: (mc as any).category || "Outros",
+      });
+    } else {
+      if (isPedagioExpenseCat) despesas_pedagio += amt;
+      else if (isCombustivel) despesas_combustivel += amt;
+      else despesas_outras += amt;
+    }
+  }
+  return {
+    despesas_pedagio: r(despesas_pedagio),
+    despesas_combustivel: r(despesas_combustivel),
+    despesas_outras: r(despesas_outras),
+    receitas_os: r(receitas_os),
+    revenueItems,
+  };
+}
+
 export const DEFAULT_BILLING_CONTRACT = {
   valor_km_carregado: 2.80,
   valor_km_vazio: 1.40,
@@ -248,18 +312,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
     fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
   }
 
-  let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0, receitas_os = 0;
-  for (const c of mCosts) {
-    if (c.cost_type === "revenue") {
-      receitas_os += n(c.amount);
-    } else if (c.category === "Pedágio") {
-      despesas_pedagio += n(c.amount);
-    } else if (c.category === "Combustível") {
-      despesas_combustivel += n(c.amount);
-    } else {
-      despesas_outras += n(c.amount);
-    }
-  }
+  const { despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os } = splitMissionCostsForBilling(mCosts);
   fat_total += despesas_pedagio + receitas_os;
 
   const pag_vrp = n(contrato.vrp_base);

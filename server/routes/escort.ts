@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
-  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
 
   export function registerEscortRoutes(app: Express) {
@@ -979,23 +979,28 @@ import type { Express } from "express";
       let missionCostReceitas = 0;
       const missionCostExpenses: any[] = [];
       const missionCostRevenueItems: any[] = [];
+      const _splitDre = splitMissionCostsForBilling(osMissionCosts);
+      missionCostPedagio = _splitDre.despesas_pedagio;
+      missionCostCombustivel = _splitDre.despesas_combustivel;
+      missionCostOutros = 0; // mantém zerado aqui — distribuído abaixo por categoria
+      missionCostReceitas = _splitDre.receitas_os;
+      for (const rev of _splitDre.revenueItems) {
+        missionCostRevenueItems.push({
+          id: `mc-${rev.id}`,
+          description: rev.description,
+          amount: rev.amount,
+          type: "INCOME",
+          category_name: rev.category,
+          origin_type: "mission_cost_revenue",
+        });
+      }
       for (const mc of osMissionCosts) {
         const amt = Number((mc as any).amount || 0);
         const cat = ((mc as any).category || "").toLowerCase();
-        if ((mc as any).costType === "revenue") {
-          missionCostReceitas += amt;
-          missionCostRevenueItems.push({
-            id: `mc-${mc.id}`,
-            description: (mc as any).description || (mc as any).category || "Receita OS",
-            amount: amt,
-            type: "INCOME",
-            category_name: (mc as any).category,
-            origin_type: "mission_cost_revenue",
-          });
-          continue;
-        }
+        const isRevenue = ((mc as any).costType || (mc as any).cost_type) === "revenue";
+        if (isRevenue) continue; // já agregado via splitMissionCostsForBilling
         if (cat.includes("pedágio") || cat.includes("pedagio")) {
-          missionCostPedagio += amt;
+          // já contado em missionCostPedagio
         } else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) {
           missionCostCombustivel += amt;
         } else {
@@ -2391,14 +2396,11 @@ import type { Express } from "express";
           let receitasOs = 0;
           try {
             const osMC = await storage.getMissionCostsByOS(so.id);
-            for (const mc of osMC) {
-              const amt = Number(mc.amount) || 0;
-              if ((mc as any).costType === "revenue") { receitasOs += amt; continue; }
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) despesas_pedagio += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despesas_combustivel += amt;
-              else despesas_outras += amt;
-            }
+            const _splitE2 = splitMissionCostsForBilling(osMC);
+            despesas_pedagio = _splitE2.despesas_pedagio;
+            despesas_combustivel = _splitE2.despesas_combustivel;
+            despesas_outras = _splitE2.despesas_outras;
+            receitasOs = _splitE2.receitas_os;
             const pedEstimado = Number((so as any).pedagioEstimado) || 0;
             if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
           } catch (_e) {}
@@ -2551,16 +2553,11 @@ import type { Express } from "express";
         if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
           try {
             const osMC = await storage.getMissionCostsByOS(b.service_order_id);
-            let osReceitasOs = 0;
-            for (const mc of osMC) {
-              const amt = Number(mc.amount) || 0;
-              if ((mc as any).costType === "revenue") { osReceitasOs += amt; continue; }
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + amt;
-              else b.despesas_outras = (Number(b.despesas_outras) || 0) + amt;
-            }
-            if (osReceitasOs > 0 && !b.receitas_os) b.receitas_os = osReceitasOs;
+            const _splitL = splitMissionCostsForBilling(osMC);
+            if (_splitL.despesas_pedagio > 0) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + _splitL.despesas_pedagio;
+            if (_splitL.despesas_combustivel > 0) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + _splitL.despesas_combustivel;
+            if (_splitL.despesas_outras > 0) b.despesas_outras = (Number(b.despesas_outras) || 0) + _splitL.despesas_outras;
+            if (_splitL.receitas_os > 0 && !b.receitas_os) b.receitas_os = _splitL.receitas_os;
             if ((Number(b.despesas_pedagio) || 0) === 0) {
               const soData = osLookup.get(b.service_order_id);
               const pedEst = Number(soData?.pedagioEstimado) || 0;

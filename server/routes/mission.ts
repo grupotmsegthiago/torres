@@ -6,7 +6,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction } from "./_helpers";
-  import { calcularEscolta, extractKmFromText } from "../billing-calc";
+  import { calcularEscolta, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -2408,17 +2408,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
         {
           const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-          let despPedagio = 0, despCombustivel = 0, despOutras = 0, receitasOsEnc = 0;
-          for (const mc of osMissionCosts) {
-            const amt = Number(mc.amount) || 0;
-            if ((mc as any).costType === "revenue") { receitasOsEnc += amt; }
-            else {
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagio += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivel += amt;
-              else despOutras += amt;
-            }
-          }
+          const _splitM = splitMissionCostsForBilling(osMissionCosts);
+          let despPedagio = _splitM.despesas_pedagio;
+          const despCombustivel = _splitM.despesas_combustivel;
+          const despOutras = _splitM.despesas_outras;
+          const receitasOsEnc = _splitM.receitas_os;
           const pedagioEstimado = Number((so as any).pedagioEstimado) || 0;
           if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
 

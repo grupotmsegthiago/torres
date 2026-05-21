@@ -6,7 +6,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
-  import { calcularEscolta } from "../billing-calc";
+  import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
@@ -292,18 +292,11 @@ import type { Express } from "express";
 
       const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
       const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-      let despPedagioCalc = 0, despCombustivelCalc = 0, despOutrasCalc = 0, receitasOsCalc = 0;
-      for (const mc of osMissionCosts) {
-        const amt = Number(mc.amount) || 0;
-        if ((mc as any).costType === "revenue") {
-          receitasOsCalc += amt;
-        } else {
-          const cat = (mc.category || "").toLowerCase();
-          if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagioCalc += amt;
-          else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivelCalc += amt;
-          else despOutrasCalc += amt;
-        }
-      }
+      const _split = splitMissionCostsForBilling(osMissionCosts);
+      let despPedagioCalc = _split.despesas_pedagio;
+      const despCombustivelCalc = _split.despesas_combustivel;
+      const despOutrasCalc = _split.despesas_outras;
+      const receitasOsCalc = _split.receitas_os;
       const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
       if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
       console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}, receitas=${receitasOsCalc}`);
@@ -449,17 +442,11 @@ import type { Express } from "express";
 
           const kmFN = kmF > kmI ? kmF : kmI;
           const mcList = await storage.getMissionCostsByOS(osId);
-          let dpCalc = 0, dcCalc = 0, doCalc = 0, roCalc = 0;
-          for (const mc of mcList) {
-            const amt = Number(mc.amount) || 0;
-            if ((mc as any).costType === "revenue") { roCalc += amt; }
-            else {
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) dpCalc += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dcCalc += amt;
-              else doCalc += amt;
-            }
-          }
+          const _split = splitMissionCostsForBilling(mcList);
+          let dpCalc = _split.despesas_pedagio;
+          const dcCalc = _split.despesas_combustivel;
+          const doCalc = _split.despesas_outras;
+          const roCalc = _split.receitas_os;
           const pedagioEstOS = Number((updatedSo as any).pedagioEstimado) || 0;
           if (pedagioEstOS > 0 && dpCalc === 0) dpCalc = pedagioEstOS;
           const resultado = calcularEscolta({
@@ -679,17 +666,11 @@ import type { Express } from "express";
 
           const kmFN = kmF > kmI ? kmF : kmI;
           const mcList2 = await storage.getMissionCostsByOS(osId);
-          let dp2 = 0, dc2 = 0, do2 = 0, ro2 = 0;
-          for (const mc of mcList2) {
-            const amt = Number(mc.amount) || 0;
-            if ((mc as any).costType === "revenue") { ro2 += amt; }
-            else {
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) dp2 += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dc2 += amt;
-              else do2 += amt;
-            }
-          }
+          const _split2 = splitMissionCostsForBilling(mcList2);
+          let dp2 = _split2.despesas_pedagio;
+          const dc2 = _split2.despesas_combustivel;
+          const do2 = _split2.despesas_outras;
+          const ro2 = _split2.receitas_os;
           const pedagioEstOS2 = Number((updatedSo as any).pedagioEstimado) || 0;
           if (pedagioEstOS2 > 0 && dp2 === 0) dp2 = pedagioEstOS2;
           const resultado = calcularEscolta({
@@ -1549,17 +1530,11 @@ import type { Express } from "express";
           if (pedagioOS > 0) despPedagioAR = pedagioOS;
 
           const mcListAR = await storage.getMissionCostsByOS(osId);
-          let dpAR = 0, dcAR = 0, doAR = 0, roAR = 0;
-          for (const mc of mcListAR) {
-            const amt = Number(mc.amount) || 0;
-            if ((mc as any).costType === "revenue") { roAR += amt; }
-            else {
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) dpAR += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dcAR += amt;
-              else doAR += amt;
-            }
-          }
+          const _splitAR = splitMissionCostsForBilling(mcListAR);
+          const dpAR = _splitAR.despesas_pedagio;
+          const dcAR = _splitAR.despesas_combustivel;
+          const doAR = _splitAR.despesas_outras;
+          const roAR = _splitAR.receitas_os;
           if (dpAR > 0) despPedagioAR = dpAR;
 
           const resultado = calcularEscolta({
@@ -1681,17 +1656,11 @@ import type { Express } from "express";
 
           const kmFN = kmF > kmI ? kmF : kmI;
           const mcList = await storage.getMissionCostsByOS(data.id);
-          let dp = 0, dc = 0, douts = 0, ro = 0;
-          for (const mc of mcList) {
-            const amt = Number(mc.amount) || 0;
-            if ((mc as any).costType === "revenue") { ro += amt; }
-            else {
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) dp += amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dc += amt;
-              else douts += amt;
-            }
-          }
+          const _splitP = splitMissionCostsForBilling(mcList);
+          let dp = _splitP.despesas_pedagio;
+          const dc = _splitP.despesas_combustivel;
+          const douts = _splitP.despesas_outras;
+          const ro = _splitP.receitas_os;
           const pedEst = Number((data as any).pedagioEstimado) || 0;
           if (pedEst > 0 && dp === 0) dp = pedEst;
 

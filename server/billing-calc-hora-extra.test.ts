@@ -1,6 +1,73 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcularFaturamentoLive, calcularEscolta } from "./billing-calc.ts";
+import { calcularFaturamentoLive, calcularEscolta, splitMissionCostsForBilling } from "./billing-calc.ts";
+
+// REGRESSÃO TOR-0179 (Bug #2 — pedágio duplicado)
+// O sistema cria 2 entries em mission_costs por pedágio (expense + revenue).
+// A revenue de pedágio NÃO deve somar em receitas_os — senão duplica em fat_total.
+test("splitMissionCostsForBilling: pedágio com cost_type=revenue NÃO conta em receitas_os", () => {
+  const mcs = [
+    { id: 1, category: "Pedágio", amount: 13.60, cost_type: "expense" },
+    { id: 2, category: "Pedágio", amount: 13.60, cost_type: "revenue" },
+    { id: 3, category: "Pedágio", amount: 13.70, cost_type: "expense" },
+    { id: 4, category: "Pedágio", amount: 13.70, cost_type: "revenue" },
+    { id: 5, category: "Pedágio", amount: 3.50, cost_type: "expense" },
+    { id: 6, category: "Pedágio", amount: 3.50, cost_type: "revenue" },
+    { id: 7, category: "Combustível", amount: 143.29, cost_type: "expense" },
+    { id: 8, category: "Bonificação", amount: 50.00, cost_type: "revenue" },
+  ];
+  const r = splitMissionCostsForBilling(mcs);
+  assert.equal(r.despesas_pedagio, 30.80, "pedágios expense somam 30.80");
+  assert.equal(r.despesas_combustivel, 143.29);
+  assert.equal(r.despesas_outras, 0);
+  assert.equal(r.receitas_os, 50.00, "apenas Bonificação revenue conta; pedágio revenue é ignorado");
+  assert.equal(r.revenueItems.length, 1, "só 1 revenue item (Bonificação)");
+});
+
+test("splitMissionCostsForBilling: aceita costType (camelCase) do storage layer", () => {
+  const r = splitMissionCostsForBilling([
+    { id: 1, category: "Pedágio", amount: 10, costType: "expense" },
+    { id: 2, category: "Pedágio", amount: 10, costType: "revenue" },
+    { id: 3, category: "Outros", amount: 5, costType: "revenue" },
+  ]);
+  assert.equal(r.despesas_pedagio, 10);
+  assert.equal(r.receitas_os, 5);
+});
+
+test("TOR-0179: split + calcularEscolta produzem fat_total=676,80 (sem pedágio duplicado)", () => {
+  // Simula o fluxo real: caller faz split antes, passa só despesas_pedagio para calcularEscolta.
+  const mCosts = [
+    { category: "Pedágio", amount: 13.60, cost_type: "expense" },
+    { category: "Pedágio", amount: 13.60, cost_type: "revenue" },
+    { category: "Pedágio", amount: 13.70, cost_type: "expense" },
+    { category: "Pedágio", amount: 13.70, cost_type: "revenue" },
+    { category: "Pedágio", amount: 3.50, cost_type: "expense" },
+    { category: "Pedágio", amount: 3.50, cost_type: "revenue" },
+  ];
+  const split = splitMissionCostsForBilling(mCosts);
+  assert.equal(split.despesas_pedagio, 30.80);
+  assert.equal(split.receitas_os, 0, "pedágio revenue NÃO conta — anti-duplicação");
+
+  const contrato = {
+    valor_acionamento: 546, valor_km_extra: 5.46, valor_hora_extra: 150,
+    franquia_km: 100, franquia_horas: 3, valor_hora_estadia: 50,
+    hora_extra_fracionada: true, adicional_noturno_km_pct: 0, vrp_base: 0,
+  };
+  const r = calcularEscolta({
+    km_inicial: 12428, km_final: 12514, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_inicio: "18:00", horario_fim: "21:40", horario_agendado: "18:00",
+    despesas_pedagio: split.despesas_pedagio,
+    despesas_combustivel: split.despesas_combustivel,
+    despesas_outras: split.despesas_outras,
+    receitas_os: split.receitas_os,
+    contrato,
+  });
+  // 546 acionamento + (40/60)*150 = 100 hora extra + 30.80 pedágio = 676.80
+  assert.equal(r.fat_acionamento, 546);
+  assert.ok(Math.abs(r.fat_hora_extra - 100) < 0.02, `fat_hora_extra esperado ~100, got ${r.fat_hora_extra}`);
+  assert.ok(Math.abs(r.fat_total - 676.80) < 0.02, `fat_total esperado 676.80, got ${r.fat_total}`);
+});
 
 // REGRESSÃO TASK #102 — bug TOR-0179
 // 40min HE com valor_hora_extra=R$150 deve gravar R$100 (não R$3,64).

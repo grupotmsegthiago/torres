@@ -5,7 +5,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
-  import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
@@ -498,14 +498,11 @@ import type { Express } from "express";
 
             try {
               const osMissionCosts = missionCostsByOS.get(o.id) || [];
-              for (const mc of osMissionCosts) {
-                const amt = Number((mc as any).amount || 0);
-                if ((mc as any).costType === "revenue") { receitasOsGrid += amt; continue; }
-                const cat = ((mc as any).category || "").toLowerCase();
-                if (cat.includes("pedágio") || cat.includes("pedagio")) custoPedagio += amt;
-                else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) custoCombustivel += amt;
-                else custoOutros += amt;
-              }
+              const _splitOp = splitMissionCostsForBilling(osMissionCosts);
+              custoPedagio = _splitOp.despesas_pedagio;
+              custoCombustivel += _splitOp.despesas_combustivel;
+              custoOutros = _splitOp.despesas_outras;
+              receitasOsGrid = _splitOp.receitas_os;
 
               if (missionHasStarted) {
                 if (custoPedagio === 0 && (o as any).pedagioEstimado) {
