@@ -162,27 +162,8 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Validação TicketLog — re-tenta fuelings pendentes a cada 3 min
-    // (TicketLog pode demorar minutos pra processar a transação após o agente
-    //  passar o cartão; tentamos novamente até bater. Antes era a cada 1 min,
-    //  reduzido em 2026-05 pra aliviar pressão no pool do Supabase.)
-    // ============================================================
-    let ticketLogRunning = false;
-    cron.schedule("*/3 * * * *", async () => {
-      if (ticketLogRunning) return; // evita sobreposição
-      ticketLogRunning = true;
-      try {
-        const { isTicketLogConfigured, retryPendingValidations } = await import("./ticketlog");
-        if (!isTicketLogConfigured()) return;
-        const r = await retryPendingValidations(5);
-        if (r.tried > 0) log(`CRON TicketLog: ${r.tried} tentativa(s) — ${r.ok} OK, ${r.divergent} divergente, ${r.failed} falhou`, "cron");
-      } catch (e: any) {
-        log(`CRON TicketLog: Erro: ${e.message}`, "cron");
-      } finally {
-        ticketLogRunning = false;
-      }
-    });
-
+    // CRON TicketLog REMOVIDO (2026-05): integração automática descontinuada.
+    // O fluxo é manual via upload de PDF/Excel em /admin/fueling > "Conciliação TicketLog".
     // ============================================================
     // CRON: Control iD — puxa batidas dos aparelhos 2x ao dia (00:00 e 12:00 BRT)
     // (antes era a cada 3 min; reduzido em 2026-05 pra aliviar pool Supabase e

@@ -354,16 +354,7 @@ import type { Express } from "express";
           : `Aviso: Faltam ${(10000 - kmSinceOil).toLocaleString("pt-BR")} km para troca de óleo.`;
       }
 
-      // === DE/PARA REALTIME TicketLog — dispara em background, agente faz polling ===
-      if (fueling?.id) {
-        try {
-          const tl = await import("../ticketlog");
-          if (tl.isTicketLogConfigured()) {
-            tl.validateFueling(fueling.id).catch((e: any) => console.error(`[TicketLog mobile] fueling #${fueling.id}:`, e.message));
-          }
-        } catch (e: any) { console.error("[TicketLog mobile] dynamic import:", e.message); }
-      }
-
+      // Integração automática TicketLog REMOVIDA (2026-05) — fluxo é manual via upload no admin.
       res.status(201).json({ fueling, oilAlert });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

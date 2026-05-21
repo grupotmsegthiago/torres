@@ -48,25 +48,11 @@ type SortDir = "asc" | "desc";
 import { calcKmL } from "@/lib/fuel-kml";
 
 function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
-  const { toast } = useToast();
-  const [busy, setBusy] = useState(false);
+  // Integração automática TicketLog descontinuada (2026-05). Badge é só leitura de histórico.
   const status = String((fueling as any).ticketlogStatus || "");
   const msg = String((fueling as any).ticketlogMessage || "");
   const valTl = (fueling as any).ticketlogValorTl;
   const diff = (fueling as any).ticketlogDiffValor;
-
-  const revalidate = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setBusy(true);
-    try {
-      const r = await authFetch(`/api/fueling/${fueling.id}/validate-ticketlog`, { method: "POST" });
-      const d = await r.json();
-      toast({ title: d.status === "ok" ? "OK!" : "Resultado", description: d.message || "Validação concluída" });
-      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    } finally { setBusy(false); }
-  };
 
   let badge: React.ReactNode = null;
   if (status === "ok") {
@@ -92,9 +78,6 @@ function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
   return (
     <div className="flex items-center justify-center gap-1">
       {badge}
-      <Button variant="ghost" size="icon" className="h-5 w-5 text-neutral-400 hover:text-blue-600" disabled={busy} onClick={revalidate} title="Revalidar agora" data-testid={`button-revalidate-tl-${fueling.id}`}>
-        {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-      </Button>
     </div>
   );
 }
