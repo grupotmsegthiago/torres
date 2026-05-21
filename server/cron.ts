@@ -1769,7 +1769,8 @@ export async function executeBillingCron() {
   }
   const billingIdMap = new Map<number, number>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.id]));
 
-  for (const so of liveOrders) {
+  const CHUNK_SIZE = 15;
+  const processOne = async (so: any) => {
     try {
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 2.40, franquia_minima_km: 50, franquia_km: 50, franquia_horas: 3, valor_hora_estadia: 50, valor_hora_extra: 110, valor_acionamento: 0, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30 };
       if (so.escort_contract_id && contractMap.has(so.escort_contract_id)) {
@@ -1892,8 +1893,13 @@ export async function executeBillingCron() {
     } catch (err: any) {
       log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
     }
+  };
+
+  for (let i = 0; i < liveOrders.length; i += CHUNK_SIZE) {
+    const chunk = liveOrders.slice(i, i + CHUNK_SIZE);
+    await Promise.all(chunk.map(processOne));
   }
 
   const elapsed = ((Date.now() - cronStart) / 1000).toFixed(1);
-  log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs)`, "cron");
+  log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
 }
