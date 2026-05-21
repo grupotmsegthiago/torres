@@ -16,7 +16,20 @@ import type { Express } from "express";
     try {
       const { data, error } = await supabaseAdmin.from("financial_categories").select("*").order("name");
       if (error) throw error;
-      res.json(data || []);
+      // Dedup defensivo: a tabela tem 50+ registros duplicados (mesmo
+      // type+parent_name+name, IDs diferentes) por causa de boots antigos
+      // que executavam ensureCategoryHierarchy sem check de duplicidade.
+      // Aqui retornamos só o ID canônico (primeiro por ordem alfabética de
+      // ID, determinístico) — não polui o dropdown e mantém compat com
+      // referências antigas que já apontam pros IDs duplicados (não deleta
+      // do banco; só esconde do client).
+      const seen = new Map<string, any>();
+      for (const c of (data || []) as any[]) {
+        const k = `${c.type}||${(c.parent_name || "").toLowerCase()}||${(c.name || "").toLowerCase()}`;
+        const existing = seen.get(k);
+        if (!existing || String(c.id) < String(existing.id)) seen.set(k, c);
+      }
+      res.json([...seen.values()]);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -26,6 +39,20 @@ import type { Express } from "express";
     try {
       const { name, type, group, recurrence_type, tag, scope, is_deduction, parent_name } = req.body;
       if (!name || !type || !group) return res.status(400).json({ message: "name, type e group são obrigatórios" });
+      // Check de duplicidade — antes não existia e foi a causa raiz dos 53
+      // registros redundantes em financial_categories. Comparação case-
+      // insensitive em name + parent_name + type.
+      const { data: existing, error: checkErr } = await supabaseAdmin
+        .from("financial_categories")
+        .select("id,name,parent_name,type")
+        .ilike("name", name)
+        .eq("type", type);
+      if (checkErr) throw checkErr;
+      const parentNorm = (parent_name || "").toLowerCase();
+      const dup = (existing || []).find((c: any) => (c.parent_name || "").toLowerCase() === parentNorm);
+      if (dup) {
+        return res.status(409).json({ message: `Categoria "${name}" já existe nesse grupo`, existingId: dup.id });
+      }
       const { data, error } = await supabaseAdmin.from("financial_categories").insert({
         name, type, group,
         recurrence_type: recurrence_type || "VARIAVEL",
