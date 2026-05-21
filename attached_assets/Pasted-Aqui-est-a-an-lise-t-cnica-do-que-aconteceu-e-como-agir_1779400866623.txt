@@ -1,0 +1,39 @@
+Aqui está a análise técnica do que aconteceu e como agir:
+
+O que os logs revelam (Análise Técnica)
+Interrupção Forçada: O erro database system was interrupted significa que o banco não foi desligado graciosamente. Ele "morreu" e, ao voltar, teve que fazer o recovery (conferir os últimos logs de transação para garantir que não houve corrupção).
+
+Saturação de Recursos (Causa Provável): Como você mencionou que há muito tráfego de polling (consultas repetitivas do Replit para o banco), é muito provável que o banco tenha atingido o limite de memória (OOM - Out of Memory) ou de conexões, forçando o reinício do container/instância.
+
+Warnings de Collation: Não derrubam o banco, mas indicam que o sistema operacional foi atualizado e a versão do "dicionário" de ordenação do Postgres ficou diferente da do banco. É um ruído, não o vilão.
+
+Plano de Ação para o Desenvolvimento (Replit)
+Para evitar que isso derrube seu negócio (TMSEGo) em produção, você precisa pedir ao desenvolvimento para aplicar estas três correções de estabilidade:
+
+1. Implementar "Connection Pooling"
+O Replit não deve conectar diretamente na porta padrão do Postgres (5432) se estiver fazendo muitas requisições.
+
+Ajuste: Alterar a string de conexão para usar o Supabase Connection Pooler (geralmente porta 6543 no modo transaction). Isso impede que cada pequena consulta gaste memória abrindo uma conexão nova.
+
+2. Substituir Polling por Realtime
+Se o Replit está perguntando para o banco a cada 5 segundos "tem viagem nova?", o banco vai cair.
+
+Ajuste: Usar as bibliotecas supabase.channel() para ouvir mudanças (INSERT/UPDATE) via WebSockets. O banco "avisa" o sistema quando algo muda, em vez de o sistema ficar "martelando" o banco.
+
+3. Debounce e Caching no Frontend
+Se o seu sistema tem muitos usuários simultâneos, cada clique no modal pode estar disparando uma query pesada.
+
+Ajuste: Implementar um cache local (React Query ou SWR) para que, se o usuário abrir o modal de fechamento 3 vezes em um minuto, o sistema busque os dados no banco apenas na primeira.
+
+Mensagem para o Suporte (Caso caia de novo)
+Se o banco cair novamente mesmo sem você mexer em nada, use este texto para abrir um ticket no Supabase:
+
+Assunto: Unexpected Database Restart - Project [SEU-ID-AQUI]
+
+Descrição: Identificamos reinicializações não programadas no Postgres. Os logs indicam "database system was interrupted" seguido de recovery. Não houve migrações de banco ou ações manuais no período. Suspeitamos de saturação de recursos ou instabilidade no node de hospedagem.
+
+Timestamp do evento: [Cole aqui a data/hora exata que apareceu no log]
+Evidência: FATAL: the database system is starting up.
+
+Minha recomendação imediata:
+Verifique no Replit se o sistema não está em um "loop" infinito de tentativas de conexão. Às vezes, quando o banco volta, o Replit tenta reconectar 100 vezes por segundo, derrubando o banco novamente antes mesmo de ele estabilizar.
