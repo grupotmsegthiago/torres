@@ -1216,11 +1216,30 @@ import type { Express } from "express";
 
       try {
         if (isRecusada) {
-          // recusada: zera valores do billing
+          // recusada: zera TODOS os valores do billing, independente do
+          // status atual (inclusive CANCELADO/REJEITADA — recusada da OS é
+          // a verdade final). Bug histórico: o filtro .in() de antes deixava
+          // billings já rejeitados/cancelados com fat_total intacto, que
+          // depois aparecia como custo na geração de fatura.
           await supabaseAdmin.from("escort_billings")
-            .update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 })
-            .eq("service_order_id", Number(req.params.id))
-            .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+            .update({
+              status: "CANCELADO",
+              fat_total: 0,
+              fat_acionamento: 0,
+              fat_hora_extra: 0,
+              fat_km: 0,
+              fat_km_carregado: 0,
+              fat_km_vazio: 0,
+              fat_estadia: 0,
+              fat_pernoite: 0,
+              fat_diaria: 0,
+              fat_adicional_noturno: 0,
+              resultado_bruto: 0,
+              resultado_liquido: 0,
+              margem_percentual: 0,
+              observacoes: `OS RECUSADA${reason ? " — " + reason : ""}`,
+            })
+            .eq("service_order_id", Number(req.params.id));
         } else {
           // cancelada: só marca status como CANCELADO, preserva valores de cobrança
           await supabaseAdmin.from("escort_billings")
