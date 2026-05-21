@@ -1044,6 +1044,11 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
+    // Trava de duplicação: uma OS só pode ter UM billing. Previne race condition em UPSERTs concorrentes
+    // e INSERTs cegos (mission.ts cancelamento, escort.ts manual). Veja replit.md §"Regras INTOCÁVEIS".
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_eb_so_id ON escort_billings (service_order_id) WHERE service_order_id IS NOT NULL`).catch((e: any) => {
+      console.warn(`[db-init] uniq_eb_so_id falhou (provavelmente já existem duplicatas): ${e?.message || e}`);
+    });
     // FKs sem índice (Supabase Advisor 0001_unindexed_foreign_keys) — escort_billings/chat_messages.
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_client_id ON escort_billings (client_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_chat_msg_conversation ON chat_messages (conversation_id)`).catch(() => {});

@@ -1569,13 +1569,18 @@ import type { Express } from "express";
 
       const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
       const safeStatus = VALID_BILLING_STATUSES.includes(body.status) ? body.status : "A_VERIFICAR";
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+      const payload = {
         ...body, client_id: clientId, client_name: clientName,
         status: safeStatus,
         created_by: user.name, boletim_numero: boletimNumero, boletim_gerado: true,
-      }).select().single();
-      if (error) throw error;
-      res.json(data);
+      };
+      // UPSERT atômico por service_order_id (quando informado) — ON CONFLICT via UNIQUE uniq_eb_so_id.
+      // Quando não há OS vinculada, é billing manual avulso ⇒ INSERT normal.
+      const r = body.service_order_id
+        ? await supabaseAdmin.from("escort_billings").upsert(payload, { onConflict: "service_order_id" }).select().single()
+        : await supabaseAdmin.from("escort_billings").insert(payload).select().single();
+      if (r.error) throw r.error;
+      res.json(r.data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -1730,7 +1735,7 @@ import type { Express } from "express";
       });
 
       const nb = (v: any) => Number(v) || 0;
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+      const billingPayload2 = {
         client_id: clientId, client_name: clientName,
         contract_id: body.contract_id, route_id: body.route_id,
         service_order_id: body.service_order_id,
@@ -1766,10 +1771,14 @@ import type { Express } from "express";
         data_missao: body.data_missao || new Date().toISOString(),
         observacoes: body.observacoes, notas: body.notas,
         status: "A_VERIFICAR", created_by: user.name,
-      }).select().single();
-      if (error) throw error;
+      };
+      // UPSERT atômico por service_order_id — ON CONFLICT via UNIQUE uniq_eb_so_id (db-init.ts).
+      const r2 = body.service_order_id
+        ? await supabaseAdmin.from("escort_billings").upsert(billingPayload2, { onConflict: "service_order_id" }).select().single()
+        : await supabaseAdmin.from("escort_billings").insert(billingPayload2).select().single();
+      if (r2.error) throw r2.error;
 
-      res.json({ ...data, resumo_calculo: resultado });
+      res.json({ ...r2.data, resumo_calculo: resultado });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

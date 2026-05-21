@@ -1794,6 +1794,7 @@ export async function executeBillingCron() {
         clientName: cliName, empName, emp2Name, vehPlate,
       });
 
+      // Skip se billing está congelado (FATURADO/PAGO) — preserva imutabilidade financeira.
       const existId = billingIdMap.get(so.id);
       if (existId) {
         const existStatus = billingStatusMap.get(so.id);
@@ -1801,11 +1802,11 @@ export async function executeBillingCron() {
           log(`CRON Billing: OS ${so.os_number} pulada — billing congelado (status=${existStatus})`, "cron");
           return;
         }
-        const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
-        await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existId);
-      } else {
-        await supabaseAdmin.from("escort_billings").insert(billingPayload);
       }
+      // UPSERT atômico via ON CONFLICT (service_order_id) — UNIQUE uniq_eb_so_id (db-init.ts).
+      // Antes era SELECT-then-UPDATE/INSERT, vulnerável a race com outras chamadas paralelas.
+      await supabaseAdmin.from("escort_billings")
+        .upsert(billingPayload, { onConflict: "service_order_id" });
 
       log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
     } catch (err: any) {

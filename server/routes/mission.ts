@@ -1939,7 +1939,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
               const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
 
-              await supabaseAdmin.from("escort_billings").insert({
+              const cancelPayload = {
                 service_order_id: serviceOrderId,
                 client_id: so.clientId, client_name: client?.name || "--",
                 contract_id: contrato.id || null,
@@ -1965,7 +1965,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
                 data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
                 status: "CANCELADO", created_by: user.name,
                 observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
-              });
+              };
+              // UPSERT atômico via ON CONFLICT (service_order_id) — usa o UNIQUE uniq_eb_so_id do db-init.ts.
+              // Atômico ⇒ imune a race condition entre requisições concorrentes (clique duplo, cron, etc).
+              await supabaseAdmin.from("escort_billings")
+                .upsert(cancelPayload, { onConflict: "service_order_id" });
 
               await createAutoTransaction({
                 description: `CANCELAMENTO OS ${so.osNumber} - ${client?.name || "--"} ${vehicle?.plate || ""}`.toUpperCase().trim(),
@@ -2473,15 +2477,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
             data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
           };
-          const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
-          if (existBill?.length) {
-            const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
-            await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existBill[0].id);
-            console.log(`[auto-billing] OS ${so.osNumber}: UPDATED billing ${existBill[0].id} km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
-          } else {
-            await supabaseAdmin.from("escort_billings").insert(billingPayload);
-            console.log(`[auto-billing] OS ${so.osNumber}: CREATED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
-          }
+          // UPSERT atômico via ON CONFLICT (service_order_id) — usa UNIQUE uniq_eb_so_id.
+          // Substitui o padrão SELECT-then-UPDATE/INSERT (vulnerável a race entre clique duplo / cron paralelo).
+          await supabaseAdmin.from("escort_billings")
+            .upsert(billingPayload, { onConflict: "service_order_id" });
+          console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
         }
       } catch (billingErr: any) {
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);

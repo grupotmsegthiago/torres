@@ -14,9 +14,10 @@ interface ScenarioState {
 
 function makeQueryBuilder(state: ScenarioState, table: string) {
   let rows: Row[] = (state.tables[table] || []).slice();
-  let mode: "select" | "update" | "insert" | "delete" = "select";
+  let mode: "select" | "update" | "insert" | "delete" | "upsert" = "select";
   let pendingUpdate: Row | null = null;
   let pendingInsert: Row | Row[] | null = null;
+  let pendingUpsert: { values: Row | Row[]; onConflict: string } | null = null;
   const filters: Array<[string, any]> = [];
 
   const applyFilters = (input: Row[]) => {
@@ -32,6 +33,11 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
     select(_cols?: string) { mode = "select"; return builder; },
     update(values: Row) { mode = "update"; pendingUpdate = values; return builder; },
     insert(values: Row | Row[]) { mode = "insert"; pendingInsert = values; return builder; },
+    upsert(values: Row | Row[], opts?: { onConflict?: string }) {
+      mode = "upsert";
+      pendingUpsert = { values, onConflict: opts?.onConflict || "id" };
+      return builder;
+    },
     delete() { mode = "delete"; return builder; },
     eq(col: string, val: any) { filters.push([col, val]); return builder; },
     in(col: string, vals: any[]) { filters.push([col, vals]); return builder; },
@@ -53,6 +59,22 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
         }
         if (mode === "insert") {
           state.inserts.push({ table, values: pendingInsert! });
+          return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+        }
+        if (mode === "upsert") {
+          // Resolve para INSERT ou UPDATE com base no UNIQUE column (onConflict)
+          const { values, onConflict } = pendingUpsert!;
+          const rowsArr: Row[] = Array.isArray(values) ? values : [values];
+          const tbl = state.tables[table] || [];
+          for (const row of rowsArr) {
+            const key = row[onConflict];
+            const existing = key !== undefined && tbl.find((r) => r[onConflict] === key);
+            if (existing) {
+              state.updates.push({ table, values: row, filters: [[onConflict, key]] });
+            } else {
+              state.inserts.push({ table, values: row });
+            }
+          }
           return Promise.resolve({ data: null, error: null }).then(resolve, reject);
         }
         return Promise.resolve({ data: null, error: null }).then(resolve, reject);
