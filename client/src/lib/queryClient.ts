@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
-const CACHE_VERSION = "20260520-realtime-trim-v2";
+const CACHE_VERSION = "20260521-realtime-trim-v3";
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("torres_cache_version");
   if (stored && stored !== CACHE_VERSION) {
@@ -429,18 +429,9 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "mission_acceptances" }, () => {
         _invalidateLocal("mission-acceptance");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "weapon_kits" }, () => {
-        _invalidateLocal("service-order");
-        queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "weapons" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "weapon_assignments" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/weapon-assignments"] });
-      })
+      // weapons / weapon_kits / weapon_assignments removidos do Realtime
+      // global em 2026-05 — gestão de armamento muda pontualmente, mutations
+      // locais já invalidam o cache na aba do usuário.
       .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_maintenance" }, () => {
         _invalidateLocal("vehicle");
         queryClient.invalidateQueries({ queryKey: ["/api/vehicle-maintenance"] });
@@ -486,19 +477,10 @@ if (typeof window !== "undefined") {
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "fixed_costs" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/balanco-gerencial"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-      })
-      // holidays removida do Realtime global em 2026-05 (muda ~1x/ano,
-      // não justifica push permanente; quem editar feriados que invalide
-      // manualmente via queryClient.invalidateQueries).
-      .on("postgres_changes", { event: "*", schema: "public", table: "agent_daily_allowances" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
-      });
+      // fixed_costs / agent_daily_allowances / holidays removidos do
+      // Realtime global em 2026-05 — editados pontualmente (mensal/anual),
+      // mutations locais já invalidam o cache na aba do usuário.
+      ;
   }
 
   function _buildHrChannel(name: string) {
@@ -519,25 +501,11 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_salaries" }, () => {
-        _invalidateLocal("employee");
-        _invalidateLocal("hr");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_documents" }, () => {
-        _invalidateLocal("employee");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("documents") });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "absences" }, () => {
-        _invalidateLocal("hr");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("absences") });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "fines" }, () => {
-        _invalidateLocal("hr");
-        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("fines") });
-      })
-      // salary_discounts removida do Realtime global em 2026-05 (muda só
-      // no fechamento da folha, ~1x/mês; mutations já invalidam o cache).
+      // employee_salaries / employee_documents / absences / fines /
+      // salary_discounts removidos do Realtime global em 2026-05 — todos
+      // editados em fluxos pontuais de RH (fechamento de folha, atualização
+      // de documento, lançamento de falta/multa), as mutations locais já
+      // invalidam o cache na aba do usuário; só perde sync entre abas.
       .on("postgres_changes", { event: "*", schema: "public", table: "system_settings" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/system-settings"] });
       });

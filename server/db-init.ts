@@ -1019,6 +1019,17 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_cnpj ON clients(cnpj)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mc_so ON mission_costs(service_order_id)`).catch(() => {});
+
+    // Índices em mission_updates — tabela é polled 30+ vezes/min pelo grid
+    // operacional aberto. Patterns vistos no código:
+    //   .eq("service_order_id", id).order("created_at", asc)  -> mission.ts:3256, service-orders.ts:2878
+    //   .eq("read_by_admin", 0).order("created_at", desc)     -> mission.ts:1184/1246
+    //   .order("created_at", desc).limit(N)                    -> mission.ts:1190
+    //   .delete().eq("employee_id", id)                        -> employees.ts:220
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_so_created ON mission_updates(service_order_id, created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_unread ON mission_updates(read_by_admin, created_at DESC) WHERE read_by_admin = 0`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_created_at ON mission_updates(created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_employee ON mission_updates(employee_id)`).catch(() => {});
     // Índice GIN trigram pra ILIKE '%...%' em description (usado por
     // syncFuelingMissionCosts no padrão "%[F#%"). text_pattern_ops NÃO
     // ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
@@ -1150,6 +1161,12 @@ export async function ensureDbSchema() {
   }
 }
 
+// Lista de tabelas que ficam em supabase_realtime. Reduzida em 2026-05
+// de 40 → 29 pra desafogar workers do Realtime e conexões do pool.
+// Tabelas removidas eram editadas pontualmente (RH/armamento/feriados/folha)
+// e a mutation local já invalida o cache na aba do usuário — só perde
+// sync automático entre múltiplas abas/dispositivos pra essas, tradeoff
+// aceitável diante das quedas recorrentes do sistema.
 const REALTIME_TABLES = [
   "service_orders", "mission_updates", "mission_acceptances",
   "chat_conversations", "chat_messages", "chat_presence",
@@ -1157,15 +1174,20 @@ const REALTIME_TABLES = [
   "mission_costs", "financial_transactions", "vehicle_fueling",
   "escort_billings", "billing_alerts", "invoices",
   "clients", "employees", "vehicles",
-  "ponto_registros", "timesheets", "holerites",
-  "users", "weapon_kits", "system_settings",
-  "weapons", "weapon_assignments",
-  "fixed_costs", "holidays", "agent_daily_allowances",
-  "employee_salaries", "employee_documents",
+  "ponto_registros", "timesheets",
+  "users", "system_settings",
   "vehicle_maintenance", "vehicle_assignments",
   "client_vehicles", "client_forwards",
   "mission_photos", "trips", "gerenciadoras",
-  "absences", "fines", "salary_discounts",
+];
+
+// Removidas em 2026-05 — eram caras (40 tabelas em Realtime saturava pool)
+// e raramente editadas em runtime. Mutations já invalidam cache local.
+const REALTIME_TABLES_TO_DROP = [
+  "holerites", "holidays", "salary_discounts",
+  "weapons", "weapon_kits", "weapon_assignments",
+  "fixed_costs", "absences", "fines",
+  "employee_documents", "employee_salaries", "agent_daily_allowances",
 ];
 
 async function ensureRealtimePublication() {
@@ -1179,18 +1201,29 @@ async function ensureRealtimePublication() {
       existing.forEach((r: any) => existingTables.add(r.tablename));
     }
 
+    // 1) ADD pras que faltam.
     const missing = REALTIME_TABLES.filter(t => !existingTables.has(t));
-    if (missing.length === 0) {
-      console.log(`[db-init] Realtime publication OK (${REALTIME_TABLES.length} tables)`);
-      return;
-    }
-
     for (const table of missing) {
       try {
         await execSql(`ALTER PUBLICATION supabase_realtime ADD TABLE ${table}`);
       } catch {}
     }
-    console.log(`[db-init] Realtime publication: added ${missing.length} table(s): ${missing.join(", ")}`);
+
+    // 2) DROP das que foram retiradas da lista mas continuam na publicação.
+    const toDrop = REALTIME_TABLES_TO_DROP.filter(t => existingTables.has(t));
+    for (const table of toDrop) {
+      try {
+        await execSql(`ALTER PUBLICATION supabase_realtime DROP TABLE ${table}`);
+      } catch {}
+    }
+
+    if (missing.length === 0 && toDrop.length === 0) {
+      console.log(`[db-init] Realtime publication OK (${REALTIME_TABLES.length} tables)`);
+    } else {
+      console.log(`[db-init] Realtime publication: +${missing.length} added, -${toDrop.length} dropped (final: ${REALTIME_TABLES.length} tables)`);
+      if (missing.length > 0) console.log(`[db-init]   added: ${missing.join(", ")}`);
+      if (toDrop.length > 0) console.log(`[db-init]   dropped: ${toDrop.join(", ")}`);
+    }
   } catch (e: any) {
     console.warn("[db-init] Realtime publication check skipped:", e.message);
   }
