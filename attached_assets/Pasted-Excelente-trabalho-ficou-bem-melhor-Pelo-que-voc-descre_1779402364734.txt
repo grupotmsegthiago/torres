@@ -1,0 +1,362 @@
+Excelente trabalho — ficou bem melhor 👏
+Pelo que você descreveu, a correção é perfeita para o problema real :
+
+Tempo de recarga assimétrico (90s para baixo / 30s para cima)
+Atalho por sucessos consecutivos (10 hits)
+Mantendo os limites (0,75 / 0,30)
+Isso elimina exatamente o “travamento em fallback” por memória de falhas antigas na janela.
+
+Minha validação técnica rápida
+Sua estratégia está correta e segura :
+
+evita bater as asas para cair;
+aceleração de recuperação para subir;
+reduz a necessidade de intervenção manual.
+Próximos 3 configurações (curtos) para blindar de vez
+Métrica explícita de transição
+Logue sempre: motivo da mudança ( fail_ratiovs consecutive_successes), timestamp e duração em fallback.
+Alerta de fallback prolongado
+Se ficar > 5 min em fallback, dispara alerta (mesmo sem queda total).
+Disjuntor por endpoint crítico
+Não trate tudo igual: auth/chat/queries pesadas podem ter comportamento diferente.
+Se quiser, eu te mando um patch pequeno de observabilidade (log estruturado + contador de tempo em fallback) para colar direto no server/supabase.ts.
+
+grupotmsegthiago
+pode mandar
+
+
+
+
+Racional
+Patch rápido de observabilidade (para server/supabase.ts)
+Perfeito — aqui vai um patch direto, focado em:
+
+log estruturado de transição
+tempo em fallback
+alerta de fallback prolongado (5 min)
+motivo da transição ( fail_ratioou consecutive_successes)
+// server/supabase.ts
+type 
+HealthState
+ = 
+"HEALTHY"
+ | 
+"UNHEALTHY"
+;
+
+type 
+TransitionReason
+ =
+  | "fail_ratio"
+  | "consecutive_successes"
+  | "manual"
+  | "startup"
+;
+
+const 
+HEALTH_COOLDOWN_DOWN_MS
+ = 
+90_000
+;
+
+const 
+HEALTH_COOLDOWN_UP_MS
+ = 
+30_000
+;
+
+const 
+FALLBACK_ALERT_AFTER_MS
+ = 
+5
+ * 
+60_000
+;
+
+// já existentes no seu código:
+let healthState: 
+HealthState
+ = 
+"HEALTHY"
+;
+
+let 
+lastTransitionAt
+ = Date.now()
+;
+
+let 
+windowFailures
+ = 
+0
+;
+
+let 
+failRatio
+ = 
+0
+;
+
+let 
+consecutiveSuccesses
+ = 
+0
+;
+
+// novos:
+let fallbackStartedAt: number | 
+null
+ = null
+;
+
+let 
+fallbackAlertSent
+ = 
+false
+;
+
+// opcional: ID para correlacionar logs
+const 
+instanceId
+ = process.env.INSTANCE_ID ?? 
+"local-dev"
+;
+
+function logHealthEvent(event: string, data: Record<string, unknown> = {}) {
+  const 
+payload
+ = {
+    ts: new Date().toISOString(),
+    event,
+    instanceId,
+    state: healthState,
+    windowFailures,
+    failRatio,
+    consecutiveSuccesses,
+    ...data,
+  }
+;
+
+  // use seu logger real aqui (pino/winston/etc)
+  console.log(JSON.stringify(payload))
+;
+
+}
+function transitionTo(
+  next: HealthState,
+  reason: TransitionReason,
+  extra: Record<string, unknown> = {}
+) {
+  if (
+next
+ === healthState) return
+;
+
+  const 
+now
+ = Date.now()
+;
+
+  const 
+prev
+ = healthState
+;
+
+  const 
+timeSinceLastTransitionMs
+ = now - lastTransitionAt
+;
+
+  // calcula tempo em fallback ao sair dele
+  let fallbackDurationMs: number | undefined
+;
+
+  if (
+prev
+ === 
+"UNHEALTHY"
+ && next === 
+"HEALTHY"
+ && fallbackStartedAt) {
+    
+fallbackDurationMs
+ = now - fallbackStartedAt
+;
+
+  }
+  // atualiza estado
+  
+healthState
+ = next
+;
+
+  
+lastTransitionAt
+ = now
+;
+
+  // marcações de fallback
+  if (
+next
+ === 
+"UNHEALTHY"
+) {
+    
+fallbackStartedAt
+ = now
+;
+
+    
+fallbackAlertSent
+ = 
+false
+;
+
+  } else {
+    
+fallbackStartedAt
+ = null
+;
+
+    
+fallbackAlertSent
+ = 
+false
+;
+
+  }
+  logHealthEvent("health.transition", {
+    from: prev,
+    to: next,
+    reason,
+    timeSinceLastTransitionMs,
+    fallbackDurationMs,
+    ...extra,
+  })
+;
+
+}
+function maybeAlertProlongedFallback() {
+  if (healthState !== "UNHEALTHY" || !fallbackStartedAt || fallbackAlertSent) return
+;
+
+  const 
+now
+ = Date.now()
+;
+
+  const 
+elapsed
+ = now - fallbackStartedAt
+;
+
+  if (elapsed >= FALLBACK_ALERT_AFTER_MS) {
+    
+fallbackAlertSent
+ = 
+true
+;
+
+    logHealthEvent("health.fallback.prolonged", {
+      elapsedMs: elapsed,
+      thresholdMs: FALLBACK_ALERT_AFTER_MS,
+      message: "Fallback ativo por mais de 5 minutos",
+    })
+;
+
+    // opcional: integrar webhook/email/Slack aqui
+    // await sendAlert(...)
+  }
+}
+/**
+ * Chame isso ao fim de cada health check.
+ * `checkOk` = resultado do ping/consulta do Supabase.
+ */
+function updateHealthFromCheck(checkOk: boolean) {
+  const 
+now
+ = Date.now()
+;
+
+  const 
+elapsedSinceTransition
+ = now - lastTransitionAt
+;
+
+  // seu cálculo de janela/failRatio continua igual
+  // (apenas exemplo mínimo aqui)
+  if (checkOk) {
+    consecutiveSuccesses += 1
+;
+
+  } else {
+    
+consecutiveSuccesses
+ = 
+0
+;
+
+  }
+  // Queda para UNHEALTHY: conservador
+  if (
+    
+healthState
+ === 
+"HEALTHY"
+ &&
+    failRatio >= 0.75 &&
+    elapsedSinceTransition >= HEALTH_COOLDOWN_DOWN_MS
+  ) {
+    transitionTo("UNHEALTHY", "fail_ratio", {
+      threshold: 0.75,
+      cooldownMs: HEALTH_COOLDOWN_DOWN_MS,
+    })
+;
+
+  }
+  // Volta por fail_ratio baixo
+  if (
+    
+healthState
+ === 
+"UNHEALTHY"
+ &&
+    failRatio <= 0.30 &&
+    elapsedSinceTransition >= HEALTH_COOLDOWN_UP_MS
+  ) {
+    transitionTo("HEALTHY", "fail_ratio", {
+      threshold: 0.30,
+      cooldownMs: HEALTH_COOLDOWN_UP_MS,
+    })
+;
+
+  }
+  // Atalho por sucessos consecutivos
+  if (
+    
+healthState
+ === 
+"UNHEALTHY"
+ &&
+    consecutiveSuccesses >= 10 &&
+    elapsedSinceTransition >= HEALTH_COOLDOWN_UP_MS
+  ) {
+    transitionTo("HEALTHY", "consecutive_successes", {
+      consecutiveSuccessesRequired: 10,
+      cooldownMs: HEALTH_COOLDOWN_UP_MS,
+    })
+;
+
+  }
+  maybeAlertProlongedFallback()
+;
+
+}
+
+O que validar depois de subir
+Derrubar conexão (simulada) e confirmar log health.transitionpara UNHEALTHY.
+Restaura Supabase e confirma volta por:
+reason: "consecutive_successes" ou
+reason: "fail_ratio".
+Se mantiver fallback >5 min, confirme health.fallback.prolonged.
+Se quiser, no próximo passo eu te mando uma versão com endpoint/api/health/debug retornando fallbackDurationMs, lastReasone lastTransitionAtpara facilitar o monitoramento no Replit.

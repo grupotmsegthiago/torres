@@ -55,6 +55,30 @@ const healthWindow: boolean[] = [];
 let lastHealthChange = 0;
 let currentHealthState = true;
 let consecutiveSuccesses = 0;
+let lastTransitionReason: "fail_ratio" | "consecutive_successes" | "startup" = "startup";
+
+function logHealthTransition(
+  from: "HEALTHY" | "UNHEALTHY",
+  to: "HEALTHY" | "UNHEALTHY",
+  reason: "fail_ratio" | "consecutive_successes",
+  extra: Record<string, unknown> = {},
+): void {
+  // Log estruturado pra correlacionar transições em produção (motivo + duração + métricas).
+  const fallbackDurationMs =
+    from === "UNHEALTHY" && to === "HEALTHY" && lastHealthChange ? Date.now() - lastHealthChange : undefined;
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    event: "supabase.health.transition",
+    from,
+    to,
+    reason,
+    fallbackDurationMs,
+    windowSize: healthWindow.length,
+    windowFailures: healthWindow.filter((r) => !r).length,
+    consecutiveSuccesses,
+    ...extra,
+  }));
+}
 
 function recordResult(success: boolean): void {
   healthWindow.push(success);
@@ -75,8 +99,13 @@ function recordResult(success: boolean): void {
     consecutiveSuccesses >= CONSECUTIVE_SUCCESS_FOR_RECOVERY &&
     now - lastHealthChange > HEALTH_COOLDOWN_UP_MS
   ) {
+    logHealthTransition("UNHEALTHY", "HEALTHY", "consecutive_successes", {
+      consecutiveSuccessesRequired: CONSECUTIVE_SUCCESS_FOR_RECOVERY,
+      cooldownMs: HEALTH_COOLDOWN_UP_MS,
+    });
     currentHealthState = true;
     lastHealthChange = now;
+    lastTransitionReason = "consecutive_successes";
     healthWindow.length = 0;
     setSupabaseHealth(true);
     console.log(`[supabase] Health: ONLINE (recovered fast — ${consecutiveSuccesses} sucessos consecutivos)`);
@@ -90,15 +119,27 @@ function recordResult(success: boolean): void {
 
   if (currentHealthState && failRatio >= HEALTH_FAIL_RATIO) {
     if (now - lastHealthChange > HEALTH_COOLDOWN_DOWN_MS) {
+      logHealthTransition("HEALTHY", "UNHEALTHY", "fail_ratio", {
+        failRatio: Number(failRatio.toFixed(2)),
+        threshold: HEALTH_FAIL_RATIO,
+        cooldownMs: HEALTH_COOLDOWN_DOWN_MS,
+      });
       currentHealthState = false;
       lastHealthChange = now;
+      lastTransitionReason = "fail_ratio";
       setSupabaseHealth(false);
       console.warn(`[supabase] Health: OFFLINE (${failures}/${healthWindow.length} failures, ratio ${(failRatio * 100).toFixed(0)}%)`);
     }
   } else if (!currentHealthState && failRatio <= HEALTH_RECOVER_RATIO) {
     if (now - lastHealthChange > HEALTH_COOLDOWN_UP_MS) {
+      logHealthTransition("UNHEALTHY", "HEALTHY", "fail_ratio", {
+        failRatio: Number(failRatio.toFixed(2)),
+        threshold: HEALTH_RECOVER_RATIO,
+        cooldownMs: HEALTH_COOLDOWN_UP_MS,
+      });
       currentHealthState = true;
       lastHealthChange = now;
+      lastTransitionReason = "fail_ratio";
       healthWindow.length = 0;
       setSupabaseHealth(true);
       console.log(`[supabase] Health: ONLINE (recovered, ratio ${(failRatio * 100).toFixed(0)}%)`);
@@ -194,5 +235,10 @@ export function getSupabaseStats() {
     windowSize: healthWindow.length,
     windowFailures: failures,
     failRatio: healthWindow.length > 0 ? Math.round((failures / healthWindow.length) * 100) : 0,
+    consecutiveSuccesses,
+    lastTransitionReason,
+    lastTransitionAt: lastHealthChange || null,
+    // Quanto tempo está no estado atual (ms). Em fallback: tempo desde a queda.
+    timeInCurrentStateMs: lastHealthChange ? Date.now() - lastHealthChange : null,
   };
 }

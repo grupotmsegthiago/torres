@@ -3,9 +3,11 @@ import nodemailer from "nodemailer";
 
 const ALERT_EMAIL = "thiago@grupotmseg.com.br";
 const COOLDOWN_MS = 10 * 60 * 1000;
+const PROLONGED_FALLBACK_MS = 5 * 60 * 1000;
 let lastDownAlertAt = 0;
 let lastUpAlertAt = 0;
 let downSince: Date | null = null;
+let prolongedAlertSent = false;
 
 function getMailTransporter() {
   const host = process.env.SMTP_HOST || "smtp.office365.com";
@@ -81,6 +83,7 @@ export function setSupabaseHealth(healthy: boolean): void {
   if (supabaseHealthy && !healthy) {
     console.warn("[pg-fallback] Supabase marked UNHEALTHY — fallback mode ON");
     downSince = new Date();
+    prolongedAlertSent = false;
     if (now - lastDownAlertAt > COOLDOWN_MS) {
       lastDownAlertAt = now;
       sendHealthAlert(
@@ -121,6 +124,7 @@ export function setSupabaseHealth(healthy: boolean): void {
     }
   } else if (!supabaseHealthy && healthy) {
     console.log("[pg-fallback] Supabase recovered — primary mode ON");
+    prolongedAlertSent = false;
     const downDuration = downSince ? Math.round((now - downSince.getTime()) / 1000) : 0;
     const mins = Math.floor(downDuration / 60);
     const secs = downDuration % 60;
@@ -563,3 +567,34 @@ export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: 
 export function isWriteQueueReady(): boolean {
   return writeQueueReady;
 }
+
+// Monitor de fallback prolongado: se o Supabase ficar UNHEALTHY por mais de 5min,
+// dispara um alerta extra (uma única vez por incidente, resetado na recuperação).
+function checkProlongedFallback(): void {
+  if (supabaseHealthy || !downSince || prolongedAlertSent) return;
+  const elapsedMs = Date.now() - downSince.getTime();
+  if (elapsedMs < PROLONGED_FALLBACK_MS) return;
+  prolongedAlertSent = true;
+  const mins = Math.floor(elapsedMs / 60000);
+  console.warn(`[pg-fallback] PROLONGED fallback alert — ${mins}min em modo offline`);
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    event: "supabase.fallback.prolonged",
+    downSince: downSince.toISOString(),
+    elapsedMs,
+    thresholdMs: PROLONGED_FALLBACK_MS,
+  }));
+  sendHealthAlert(
+    `🚨 FALLBACK PROLONGADO: Supabase OFFLINE há ${mins}min`,
+    `<div style="font-family:Arial,sans-serif;max-width:600px">
+      <h2 style="color:#dc2626">🚨 Fallback Prolongado</h2>
+      <p>O Supabase está inacessível há mais de <strong>${mins} minutos</strong> (desde <strong>${formatBRT(downSince)}</strong>).</p>
+      <p>O sistema continua operando em modo fallback (PostgreSQL local). Gravações estão sendo enfileiradas e serão reprocessadas quando o Supabase voltar.</p>
+      <p style="color:#888;font-size:12px;margin-top:20px">Este alerta é enviado apenas uma vez por incidente. Próximo alerta apenas na recuperação.</p>
+    </div>`
+  );
+}
+
+// Tick a cada 60s. Unref pra não bloquear shutdown do processo.
+const prolongedFallbackInterval = setInterval(checkProlongedFallback, 60_000);
+prolongedFallbackInterval.unref?.();
