@@ -2295,15 +2295,19 @@ Responda APENAS com JSON: {"km_lido": number}`;
       updates.missionStartedAt = nowBRTString();
     }
 
+    // Regra intocável #2: nunca sobrescrever status="recusada" — operacional
+    // não atendeu, mesmo que algum evento mobile residual chegue depois.
+    const soIsRecusada = so.status === "recusada";
+
     if (nextStep === "finalizada") {
       updates.completedDate = nowBRTString();
-      updates.status = "concluida";
+      if (!soIsRecusada) updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
       try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
 
     if (nextStep === "encerrada") {
-      if (updates.status !== "concluida") updates.status = "concluida";
+      if (!soIsRecusada && updates.status !== "concluida") updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
       try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
