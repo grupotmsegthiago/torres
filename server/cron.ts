@@ -435,199 +435,14 @@ export function initCronJobs() {
       return;
     }
     try {
-      const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-      const n = (v: any) => Number(v) || 0;
-      const r = (v: number) => Math.round(v * 100) / 100;
-
-      const { data: allOrders } = await supabaseAdmin.from("service_orders").select("*");
-      if (!allOrders?.length) return;
-
-      const isConcluded = (so: any) =>
-        ["concluida", "concluída", "cancelada", "recusada"].includes(so.status) ||
-        ["encerrada", "finalizada"].includes(so.mission_status);
-
-      const activeOrders = allOrders.filter((so: any) =>
-        so.type === "escolta" &&
-        !isConcluded(so) &&
-        so.mission_status !== "aguardando"
-      );
-
-      const { data: existingBillings } = await supabaseAdmin.from("escort_billings").select("service_order_id, status");
-      const billedSet = new Set((existingBillings || []).map((b: any) => b.service_order_id));
-      const unverifBilledSet = new Set((existingBillings || []).filter((b: any) => b.status === "A_VERIFICAR").map((b: any) => b.service_order_id));
-      const unbilledConcluded = allOrders.filter((so: any) =>
-        so.type === "escolta" &&
-        isConcluded(so) &&
-        !billedSet.has(so.id)
-      );
-      const unverifConcluded = allOrders.filter((so: any) =>
-        so.type === "escolta" &&
-        isConcluded(so) &&
-        unverifBilledSet.has(so.id)
-      );
-
-      const seenIds = new Set<number>();
-      const liveOrders = [...activeOrders, ...unbilledConcluded, ...unverifConcluded].filter((so: any) => {
-        if (seenIds.has(so.id)) return false;
-        seenIds.add(so.id);
-        return true;
-      });
-      if (!liveOrders.length) return;
-      log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing + ${unverifConcluded.length} A_VERIFICAR para processar`, "cron");
-
-      const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
-      const contractMap = new Map<number, any>();
-      const clientContractMap = new Map<number, any>();
-      for (const c of (allContracts || [])) {
-        contractMap.set(c.id, c);
-        if (c.status === "Ativo" && c.client_id) {
-          clientContractMap.set(c.client_id, c);
-        }
-      }
-
-      const liveOrderIds = liveOrders.map((so: any) => so.id);
-      const { data: allPhotos } = await supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", liveOrderIds);
-      const photosMap = new Map<number, any[]>();
-      for (const p of (allPhotos || [])) {
-        if (!photosMap.has(p.service_order_id)) photosMap.set(p.service_order_id, []);
-        photosMap.get(p.service_order_id)!.push(p);
-      }
-
-      for (const so of liveOrders) {
-        try {
-          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 2.40, franquia_minima_km: 50, franquia_km: 50, franquia_horas: 3, valor_hora_estadia: 50, valor_hora_extra: 110, valor_acionamento: 0, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30 };
-          if (so.escort_contract_id && contractMap.has(so.escort_contract_id)) {
-            contrato = contractMap.get(so.escort_contract_id);
-          } else if (so.client_id && clientContractMap.has(so.client_id)) {
-            contrato = clientContractMap.get(so.client_id);
-          }
-
-          const photos = photosMap.get(so.id) || [];
-          const kmChegadaPhoto = (photos || []).find((p: any) => p.step === "km_chegada");
-          const kmSaidaPhoto = (photos || []).find((p: any) => p.step === "km_saida");
-          const kmFinalPhoto = (photos || []).find((p: any) => p.step === "km_final");
-          const kmInicial = n(kmChegadaPhoto?.km_value) || n(kmSaidaPhoto?.km_value);
-          const kmFinalVal = n(kmFinalPhoto?.km_value);
-          const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;
-
-          const missionEndDate = so.completed_date ? new Date(so.completed_date) : new Date();
-          const scheduledDate = so.scheduled_date ? new Date(so.scheduled_date) : null;
-          const missionStartDate = so.mission_started_at ? new Date(so.mission_started_at) : null;
-
-          const scheduledTime = scheduledDate ? toBRT(scheduledDate) : undefined;
-          const startTime = missionStartDate ? toBRT(missionStartDate) : undefined;
-          const endTime = toBRT(missionEndDate);
-
-          const billingStartDate = missionStartDate || scheduledDate;
-          const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
-
-          const missionNotStartedYet = !so.mission_status || so.mission_status === "aguardando";
-          const scheduledInFutureCron = (() => {
-            if (!so.scheduled_date) return false;
-            const sched = new Date(String(so.scheduled_date).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduled_date)) ? String(so.scheduled_date) : String(so.scheduled_date) + "Z");
-            return sched.getTime() > Date.now();
-          })();
-          const skipBillingHoursCron = missionNotStartedYet || (so.status === "agendada" && scheduledInFutureCron);
-
-          const horasMissao = skipBillingHoursCron ? 0 : await getHorasElapsedFromDB(so.id);
-
-          const km_total = kmFinal - kmInicial;
-          const km_carregado = Math.max(0, km_total);
-
-          const billing = calcularFaturamentoLive({
-            horasMissao,
-            kmInicial,
-            kmFinal,
-            contrato,
-          });
-
-          let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
-          const { km_excedente, has_acionamento: hasAcionamento } = billing;
-          const franquiaKm = billing.franquia_km;
-
-          const isNoturno = (() => {
-            const checkH = (t?: string) => { if (!t) return false; const h = parseInt(t.split(":")[0]); return h >= 22 || h < 5; };
-            return checkH(inicioConsiderado) || checkH(endTime);
-          })();
-          if (isNoturno) {
-            fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
-          }
-
-          const { data: mCosts } = await supabaseAdmin.from("mission_costs").select("category, amount, cost_type").eq("service_order_id", so.id);
-          let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0, receitas_os = 0;
-          (mCosts || []).forEach((c: any) => {
-            if (c.cost_type === "revenue") {
-              receitas_os += n(c.amount);
-            } else {
-              if (c.category === "Pedágio") despesas_pedagio += n(c.amount);
-              else if (c.category === "Combustível") despesas_combustivel += n(c.amount);
-              else despesas_outras += n(c.amount);
-            }
-          });
-          fat_total += despesas_pedagio + receitas_os;
-
-          const pag_vrp = n(contrato.vrp_base);
-          const resultado_bruto = fat_total - pag_vrp;
-
-          const { data: cliRow } = so.client_id ? await supabaseAdmin.from("clients").select("name").eq("id", so.client_id).single() : { data: null };
-          const { data: empRow } = so.assigned_employee_id ? await supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_id).single() : { data: null };
-          const { data: emp2Row } = so.assigned_employee_2_id ? await supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_2_id).single() : { data: null };
-          const { data: vehRow } = so.vehicle_id ? await supabaseAdmin.from("vehicles").select("plate").eq("id", so.vehicle_id).single() : { data: null };
-
-          const billingPayload = {
-            service_order_id: so.id,
-            client_id: so.client_id, client_name: cliRow?.name || "--",
-            contract_id: contrato.id || null,
-            km_inicial: n(kmInicial), km_final: n(kmFinal), km_vazio: 0,
-            km_carregado: n(km_carregado), km_total: n(km_total),
-            km_faturado: n(Math.max(km_carregado, franquiaKm)), km_franquia: n(franquiaKm),
-            km_excedente: n(km_excedente),
-            horario_agendado: scheduledTime || null,
-            horario_inicio: startTime || null, horario_fim: endTime || null,
-            horario_inicio_considerado: inicioConsiderado,
-            horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
-            horas_estadia: 0, teve_pernoite: false, is_noturno: isNoturno,
-            fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
-            valor_franquia: hasAcionamento ? r(fat_acionamento) : r(Math.min(km_carregado, franquiaKm) * n(contrato.valor_km_carregado)),
-            valor_km_extra: r(km_excedente * (hasAcionamento ? n(contrato.valor_km_extra) : n(contrato.valor_km_carregado))),
-            pag_vrp: r(pag_vrp), pag_total: r(pag_vrp),
-            resultado_bruto: r(resultado_bruto), resultado_liquido: r(resultado_bruto),
-            margem_percentual: fat_total > 0 ? r((resultado_bruto / fat_total) * 100) : 0,
-            vigilante_id: so.assigned_employee_id, vigilante_name: empRow?.name || "--",
-            vigilante2_id: so.assigned_employee_2_id || null, vigilante2_name: emp2Row?.name || null,
-            origem: so.origin || null, destino: so.destination || null,
-            placa_viatura: vehRow?.plate || null,
-            placa_escoltado: so.escorted_vehicle_plate || null,
-            motorista_escoltado: so.escorted_driver_name || null,
-            despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras), receitas_os: r(receitas_os),
-            data_missao: (() => {
-              const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
-              const b = so.scheduled_date ? new Date(so.scheduled_date).getTime() : Infinity;
-              if (a === Infinity && b === Infinity) return new Date();
-              return a <= b ? so.mission_started_at : so.scheduled_date;
-            })(),
-            status: "A_VERIFICAR", created_by: "CRON",
-          };
-
-          const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", so.id).limit(1);
-          if (existBill?.length) {
-            const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
-            await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existBill[0].id);
-          } else {
-            await supabaseAdmin.from("escort_billings").insert(billingPayload);
-          }
-
-          log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n(km_total)}km, fat=${r(fat_total)}`, "cron");
-        } catch (err: any) {
-          log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
-        }
-      }
-
+      await executeBillingCron();
       await checkMetaAndNotify();
     } catch (err: any) {
       log(`CRON Billing: Erro geral: ${err.message}`, "cron");
     }
   });
+
+  // (cron Billing acima delega para executeBillingCron — função exportada no fim do arquivo)
 
   cron.schedule("0 6 * * *", async () => {
     if (!isSupabaseHealthy()) {
@@ -1852,4 +1667,233 @@ async function sendOverdueReminders() {
       details: `${sent} lembrete(s) de cobrança enviado(s) para faturas vencidas. ${skipped} sem e-mail.`,
     });
   }
+}
+
+export async function executeBillingCron() {
+  const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+  const n = (v: any) => Number(v) || 0;
+  const r = (v: number) => Math.round(v * 100) / 100;
+
+  const cronStart = Date.now();
+
+  const { data: allOrders } = await supabaseAdmin.from("service_orders").select("*");
+  if (!allOrders?.length) return;
+
+  const isConcluded = (so: any) =>
+    ["concluida", "concluída", "cancelada", "recusada"].includes(so.status) ||
+    ["encerrada", "finalizada"].includes(so.mission_status);
+
+  const activeOrders = allOrders.filter((so: any) =>
+    so.type === "escolta" &&
+    !isConcluded(so) &&
+    so.mission_status !== "aguardando"
+  );
+
+  const { data: existingBillingsStatus } = await supabaseAdmin.from("escort_billings").select("service_order_id, status");
+  const billedSet = new Set((existingBillingsStatus || []).map((b: any) => b.service_order_id));
+  const unverifBilledSet = new Set((existingBillingsStatus || []).filter((b: any) => b.status === "A_VERIFICAR").map((b: any) => b.service_order_id));
+  const unbilledConcluded = allOrders.filter((so: any) =>
+    so.type === "escolta" && isConcluded(so) && !billedSet.has(so.id)
+  );
+  const unverifConcluded = allOrders.filter((so: any) =>
+    so.type === "escolta" && isConcluded(so) && unverifBilledSet.has(so.id)
+  );
+
+  const seenIds = new Set<number>();
+  const liveOrders = [...activeOrders, ...unbilledConcluded, ...unverifConcluded].filter((so: any) => {
+    if (seenIds.has(so.id)) return false;
+    seenIds.add(so.id);
+    return true;
+  });
+  if (!liveOrders.length) return;
+  log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing + ${unverifConcluded.length} A_VERIFICAR para processar`, "cron");
+
+  const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
+  const contractMap = new Map<number, any>();
+  const clientContractMap = new Map<number, any>();
+  for (const c of (allContracts || [])) {
+    contractMap.set(c.id, c);
+    if (c.status === "Ativo" && c.client_id) {
+      clientContractMap.set(c.client_id, c);
+    }
+  }
+
+  const liveOrderIds = liveOrders.map((so: any) => so.id);
+  const clientIds = Array.from(new Set(liveOrders.map((so: any) => so.client_id).filter((v: any) => v != null)));
+  const empIds = Array.from(new Set(liveOrders.flatMap((so: any) => [so.assigned_employee_id, so.assigned_employee_2_id]).filter((v: any) => v != null)));
+  const vehIds = Array.from(new Set(liveOrders.map((so: any) => so.vehicle_id).filter((v: any) => v != null)));
+
+  // Paginação: PostgREST limita default a 1000 rows. Buscar tudo em chunks.
+  const fetchAllPaged = async <T = any>(table: string, columns: string, idCol: string, ids: number[], orderCol: string = "id"): Promise<T[]> => {
+    const out: T[] = [];
+    const pageSize = 1000;
+    let from = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .select(columns)
+        .in(idCol, ids)
+        .order(orderCol, { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = (data || []) as T[];
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
+  };
+
+  const [photosArr, clientsRes, empsRes, vehsRes, mCostsArr, existBillsRes] = await Promise.all([
+    fetchAllPaged<any>("mission_photos", "service_order_id, step, km_value", "service_order_id", liveOrderIds),
+    clientIds.length ? supabaseAdmin.from("clients").select("id, name").in("id", clientIds) : Promise.resolve({ data: [] as any[] }),
+    empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : Promise.resolve({ data: [] as any[] }),
+    vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : Promise.resolve({ data: [] as any[] }),
+    fetchAllPaged<any>("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", liveOrderIds),
+    supabaseAdmin.from("escort_billings").select("id, service_order_id").in("service_order_id", liveOrderIds),
+  ]);
+
+  const photosMap = new Map<number, any[]>();
+  for (const p of photosArr) {
+    if (!photosMap.has(p.service_order_id)) photosMap.set(p.service_order_id, []);
+    photosMap.get(p.service_order_id)!.push(p);
+  }
+  const clientNameMap = new Map<number, string>((clientsRes.data || []).map((c: any) => [c.id, c.name]));
+  const empNameMap = new Map<number, string>((empsRes.data || []).map((e: any) => [e.id, e.name]));
+  const vehPlateMap = new Map<number, string>((vehsRes.data || []).map((v: any) => [v.id, v.plate]));
+  const mCostsMap = new Map<number, any[]>();
+  for (const c of mCostsArr) {
+    if (!mCostsMap.has(c.service_order_id)) mCostsMap.set(c.service_order_id, []);
+    mCostsMap.get(c.service_order_id)!.push(c);
+  }
+  const billingIdMap = new Map<number, number>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.id]));
+
+  for (const so of liveOrders) {
+    try {
+      let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 2.40, franquia_minima_km: 50, franquia_km: 50, franquia_horas: 3, valor_hora_estadia: 50, valor_hora_extra: 110, valor_acionamento: 0, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30 };
+      if (so.escort_contract_id && contractMap.has(so.escort_contract_id)) {
+        contrato = contractMap.get(so.escort_contract_id);
+      } else if (so.client_id && clientContractMap.has(so.client_id)) {
+        contrato = clientContractMap.get(so.client_id);
+      }
+
+      const photos = photosMap.get(so.id) || [];
+      const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
+      const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+      const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+      const kmInicial = n(kmChegadaPhoto?.km_value) || n(kmSaidaPhoto?.km_value);
+      const kmFinalVal = n(kmFinalPhoto?.km_value);
+      const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;
+
+      const missionEndDate = so.completed_date ? new Date(so.completed_date) : new Date();
+      const scheduledDate = so.scheduled_date ? new Date(so.scheduled_date) : null;
+      const missionStartDate = so.mission_started_at ? new Date(so.mission_started_at) : null;
+
+      const scheduledTime = scheduledDate ? toBRT(scheduledDate) : undefined;
+      const startTime = missionStartDate ? toBRT(missionStartDate) : undefined;
+      const endTime = toBRT(missionEndDate);
+
+      const billingStartDate = missionStartDate || scheduledDate;
+      const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
+
+      const missionNotStartedYet = !so.mission_status || so.mission_status === "aguardando";
+      const scheduledInFutureCron = (() => {
+        if (!so.scheduled_date) return false;
+        const sched = new Date(String(so.scheduled_date).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduled_date)) ? String(so.scheduled_date) : String(so.scheduled_date) + "Z");
+        return sched.getTime() > Date.now();
+      })();
+      const skipBillingHoursCron = missionNotStartedYet || (so.status === "agendada" && scheduledInFutureCron);
+
+      const horasMissao = skipBillingHoursCron ? 0 : await getHorasElapsedFromDB(so.id);
+
+      const km_total = kmFinal - kmInicial;
+      const km_carregado = Math.max(0, km_total);
+
+      const billing = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal, contrato });
+
+      let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
+      const { km_excedente, has_acionamento: hasAcionamento } = billing;
+      const franquiaKm = billing.franquia_km;
+
+      const isNoturno = (() => {
+        const checkH = (t?: string) => { if (!t) return false; const h = parseInt(t.split(":")[0]); return h >= 22 || h < 5; };
+        return checkH(inicioConsiderado) || checkH(endTime);
+      })();
+      if (isNoturno) {
+        fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
+      }
+
+      const mCosts = mCostsMap.get(so.id) || [];
+      let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0, receitas_os = 0;
+      mCosts.forEach((c: any) => {
+        if (c.cost_type === "revenue") {
+          receitas_os += n(c.amount);
+        } else {
+          if (c.category === "Pedágio") despesas_pedagio += n(c.amount);
+          else if (c.category === "Combustível") despesas_combustivel += n(c.amount);
+          else despesas_outras += n(c.amount);
+        }
+      });
+      fat_total += despesas_pedagio + receitas_os;
+
+      const pag_vrp = n(contrato.vrp_base);
+      const resultado_bruto = fat_total - pag_vrp;
+
+      const cliName = so.client_id ? clientNameMap.get(so.client_id) : null;
+      const empName = so.assigned_employee_id ? empNameMap.get(so.assigned_employee_id) : null;
+      const emp2Name = so.assigned_employee_2_id ? empNameMap.get(so.assigned_employee_2_id) : null;
+      const vehPlate = so.vehicle_id ? vehPlateMap.get(so.vehicle_id) : null;
+
+      const billingPayload = {
+        service_order_id: so.id,
+        client_id: so.client_id, client_name: cliName || "--",
+        contract_id: contrato.id || null,
+        km_inicial: n(kmInicial), km_final: n(kmFinal), km_vazio: 0,
+        km_carregado: n(km_carregado), km_total: n(km_total),
+        km_faturado: n(Math.max(km_carregado, franquiaKm)), km_franquia: n(franquiaKm),
+        km_excedente: n(km_excedente),
+        horario_agendado: scheduledTime || null,
+        horario_inicio: startTime || null, horario_fim: endTime || null,
+        horario_inicio_considerado: inicioConsiderado,
+        horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
+        horas_estadia: 0, teve_pernoite: false, is_noturno: isNoturno,
+        fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
+        valor_franquia: hasAcionamento ? r(fat_acionamento) : r(Math.min(km_carregado, franquiaKm) * n(contrato.valor_km_carregado)),
+        valor_km_extra: r(km_excedente * (hasAcionamento ? n(contrato.valor_km_extra) : n(contrato.valor_km_carregado))),
+        pag_vrp: r(pag_vrp), pag_total: r(pag_vrp),
+        resultado_bruto: r(resultado_bruto), resultado_liquido: r(resultado_bruto),
+        margem_percentual: fat_total > 0 ? r((resultado_bruto / fat_total) * 100) : 0,
+        vigilante_id: so.assigned_employee_id, vigilante_name: empName || "--",
+        vigilante2_id: so.assigned_employee_2_id || null, vigilante2_name: emp2Name || null,
+        origem: so.origin || null, destino: so.destination || null,
+        placa_viatura: vehPlate || null,
+        placa_escoltado: so.escorted_vehicle_plate || null,
+        motorista_escoltado: so.escorted_driver_name || null,
+        despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras), receitas_os: r(receitas_os),
+        data_missao: (() => {
+          const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
+          const b = so.scheduled_date ? new Date(so.scheduled_date).getTime() : Infinity;
+          if (a === Infinity && b === Infinity) return new Date();
+          return a <= b ? so.mission_started_at : so.scheduled_date;
+        })(),
+        status: "A_VERIFICAR", created_by: "CRON",
+      };
+
+      const existId = billingIdMap.get(so.id);
+      if (existId) {
+        const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
+        await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existId);
+      } else {
+        await supabaseAdmin.from("escort_billings").insert(billingPayload);
+      }
+
+      log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n(km_total)}km, fat=${r(fat_total)}`, "cron");
+    } catch (err: any) {
+      log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
+    }
+  }
+
+  const elapsed = ((Date.now() - cronStart) / 1000).toFixed(1);
+  log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs)`, "cron");
 }
