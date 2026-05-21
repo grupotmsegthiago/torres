@@ -469,12 +469,45 @@ async function syncMissingAutoTransactions() {
       }
     }
 
+    // Batch pre-load: 1 SELECT em vehicles + 1 SELECT em employees,
+    // depois resolve via Map em memória. Antes era N+1 (1 getVehicle e
+    // 1 getEmployee POR fueling/maintenance), o que saturava o pool
+    // do Supabase e estourava statement_timeout no boot.
     const fuelings = await storage.getVehicleFuelings();
+    const maintenances = await storage.getVehicleMaintenances();
+
+    const needVehicleIds = new Set<number>();
+    const needEmployeeIds = new Set<number>();
+    for (const f of fuelings) {
+      if (f.vehicleId) needVehicleIds.add(f.vehicleId);
+      if (f.driverId) needEmployeeIds.add(f.driverId);
+    }
+    for (const m of maintenances) {
+      if (m.vehicleId) needVehicleIds.add(m.vehicleId);
+    }
+
+    const vehicleById = new Map<number, { plate: string | null }>();
+    if (needVehicleIds.size > 0) {
+      const { data: vRows } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate")
+        .in("id", Array.from(needVehicleIds));
+      for (const v of (vRows || [])) vehicleById.set(Number((v as any).id), { plate: (v as any).plate });
+    }
+    const employeeById = new Map<number, { name: string | null }>();
+    if (needEmployeeIds.size > 0) {
+      const { data: eRows } = await supabaseAdmin
+        .from("employees")
+        .select("id, name")
+        .in("id", Array.from(needEmployeeIds));
+      for (const e of (eRows || [])) employeeById.set(Number((e as any).id), { name: (e as any).name });
+    }
+
     for (const f of fuelings) {
       if (txSet.has(`fueling:${f.id}`)) continue;
       if (!f.totalCost || Number(f.totalCost) <= 0) continue;
-      const vehicle = f.vehicleId ? await storage.getVehicle(f.vehicleId) : null;
-      const driver = f.driverId ? await storage.getEmployee(f.driverId) : null;
+      const vehicle = f.vehicleId ? vehicleById.get(f.vehicleId) : null;
+      const driver = f.driverId ? employeeById.get(f.driverId) : null;
       const plateStr = vehicle?.plate || "";
       const agentStr = driver?.name ? ` - Agente: ${driver.name}` : "";
       await supabaseAdmin.from("financial_transactions").insert({
@@ -492,11 +525,10 @@ async function syncMissingAutoTransactions() {
       console.log(`[Sync] Created missing fueling transaction for fueling #${f.id} (R$ ${f.totalCost})`);
     }
 
-    const maintenances = await storage.getVehicleMaintenances();
     for (const m of maintenances) {
       if (txSet.has(`maintenance:${m.id}`)) continue;
       if (!m.cost || Number(m.cost) <= 0) continue;
-      const vehicle = m.vehicleId ? await storage.getVehicle(m.vehicleId) : null;
+      const vehicle = m.vehicleId ? vehicleById.get(m.vehicleId) : null;
       await supabaseAdmin.from("financial_transactions").insert({
         description: `MANUTENÇÃO ${vehicle?.plate || ""} - ${m.type} ${m.description || ""}`.toUpperCase().trim(),
         amount: Number(m.cost),
@@ -523,37 +555,80 @@ async function syncFuelingMissionCosts() {
       .in("status", ["ativa", "em_andamento", "em andamento"]);
     if (!activeOs?.length) return;
 
-    for (const os of activeOs) {
-      if (!os.vehicle_id) continue;
-
+    // Pré-filtra OS elegíveis (mission iniciada + vehicle_id presente).
+    const eligibleOs = activeOs.filter((os: any) => {
+      if (!os.vehicle_id) return false;
       const missionStarted = os.mission_status && !["aguardando", "agendada"].includes(os.mission_status);
-      if (!missionStarted) continue;
+      return !!missionStarted;
+    });
+    if (eligibleOs.length === 0) return;
 
-      const osDateBRT = new Date(os.scheduled_date || os.created_at)
-        .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    // Batch: 1 SELECT em vehicles + 1 SELECT em vehicle_fueling + 1 SELECT
+    // em mission_costs (busca todos os F#<id> já vinculados de uma vez).
+    // Antes era N+1 (3 queries POR OS ativa), saturando o pool no boot.
+    const vehicleIds = Array.from(new Set(eligibleOs.map((os: any) => Number(os.vehicle_id))));
+    const dataMissaoBRT = new Map<number, string>();
+    for (const os of eligibleOs) {
+      dataMissaoBRT.set(Number((os as any).id), new Date((os as any).scheduled_date || (os as any).created_at)
+        .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
+    }
 
-      const { data: vData } = await supabaseAdmin.from("vehicles").select("plate").eq("id", os.vehicle_id).single();
-      const plate = vData?.plate || "";
+    const plateByVehicle = new Map<number, string>();
+    {
+      const { data: vRows } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate")
+        .in("id", vehicleIds);
+      for (const v of (vRows || [])) plateByVehicle.set(Number((v as any).id), (v as any).plate || "");
+    }
 
-      const { data: fuelings } = await supabaseAdmin.from("vehicle_fueling")
+    // Datas distintas usadas pelas OS elegíveis — limita a janela de busca em vehicle_fueling.
+    const datasDistintas = Array.from(new Set(Array.from(dataMissaoBRT.values())));
+    let fuelingsByVehicleDate: Map<string, any[]> = new Map();
+    if (datasDistintas.length > 0) {
+      const { data: fRows } = await supabaseAdmin
+        .from("vehicle_fueling")
         .select("id, vehicle_id, driver_id, total_cost, fuel_type, liters, station, latitude, longitude, created_at, date")
-        .eq("vehicle_id", os.vehicle_id)
-        .eq("date", osDateBRT)
+        .in("vehicle_id", vehicleIds)
+        .in("date", datasDistintas)
         .order("created_at", { ascending: true });
+      for (const f of (fRows || [])) {
+        const key = `${(f as any).vehicle_id}|${(f as any).date}`;
+        const arr = fuelingsByVehicleDate.get(key) || [];
+        arr.push(f);
+        fuelingsByVehicleDate.set(key, arr);
+      }
+    }
 
-      for (const f of (fuelings || [])) {
+    // Conjunto único de IDs de fueling já vinculados como mission_cost ([F#id]).
+    const linkedFuelingIds = new Set<number>();
+    {
+      const { data: mcRows } = await supabaseAdmin
+        .from("mission_costs")
+        .select("description")
+        .ilike("description", "%[F#%");
+      const re = /\[F#(\d+)\]/g;
+      for (const row of (mcRows || [])) {
+        const s = String((row as any).description || "");
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(s))) linkedFuelingIds.add(Number(m[1]));
+      }
+    }
+
+    for (const os of eligibleOs) {
+      const osId = Number((os as any).id);
+      const vehicleId = Number((os as any).vehicle_id);
+      const osDateBRT = dataMissaoBRT.get(osId)!;
+      const plate = plateByVehicle.get(vehicleId) || "";
+      const fuelings = fuelingsByVehicleDate.get(`${vehicleId}|${osDateBRT}`) || [];
+      for (const f of fuelings) {
         if (!f.total_cost || Number(f.total_cost) <= 0) continue;
-
-        const { data: alreadyLinked } = await supabaseAdmin.from("mission_costs")
-          .select("id")
-          .ilike("description", `%[F#${f.id}]%`)
-          .limit(1);
-        if (alreadyLinked?.length) continue;
+        if (linkedFuelingIds.has(Number(f.id))) continue;
 
         const desc = `Abastecimento ${plate} - ${f.fuel_type || "gasolina"} ${f.liters}L (${f.station || "posto"}) [F#${f.id}]`;
         const { error } = await supabaseAdmin.from("mission_costs").insert({
-          service_order_id: os.id,
-          vehicle_id: os.vehicle_id,
+          service_order_id: osId,
+          vehicle_id: vehicleId,
           employee_id: f.driver_id || null,
           category: "Combustível",
           description: desc,
@@ -563,7 +638,8 @@ async function syncFuelingMissionCosts() {
           longitude: f.longitude || null,
         });
         if (!error) {
-          console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${os.os_number} (date: ${osDateBRT})`);
+          linkedFuelingIds.add(Number(f.id));
+          console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${(os as any).os_number} (date: ${osDateBRT})`);
         }
       }
     }

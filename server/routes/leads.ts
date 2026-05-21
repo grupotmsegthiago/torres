@@ -80,86 +80,15 @@ const BATCH_SIZE = 10;
 const BATCH_INTERVAL_MINUTES = 5;
 let emailDispatchRunning = false;
 
-async function ensureLeadsTable() {
-  const { error } = await supabaseAdmin.rpc("exec_sql", {
-    query: `
-      CREATE TABLE IF NOT EXISTS leads (
-        id SERIAL PRIMARY KEY,
-        empresa TEXT NOT NULL,
-        cnpj TEXT,
-        contato_nome TEXT,
-        contato_cargo TEXT,
-        telefone TEXT,
-        email TEXT,
-        website TEXT,
-        endereco TEXT,
-        cidade TEXT DEFAULT 'São Paulo',
-        estado TEXT DEFAULT 'SP',
-        cep TEXT,
-        setor TEXT,
-        origem TEXT DEFAULT 'prospecao_ativa',
-        status TEXT DEFAULT 'novo',
-        temperatura TEXT DEFAULT 'frio',
-        valor_estimado REAL DEFAULT 0,
-        notas TEXT,
-        motivo_perda TEXT,
-        proximo_contato TIMESTAMP,
-        ultimo_contato TIMESTAMP,
-        responsavel TEXT,
-        responsavel_id INTEGER,
-        google_place_id TEXT,
-        google_rating REAL,
-        google_total_reviews INTEGER,
-        tags TEXT[],
-        historico JSONB DEFAULT '[]'::jsonb,
-        emails_enviados INTEGER DEFAULT 0,
-        convertido_client_id INTEGER,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-      CREATE INDEX IF NOT EXISTS idx_leads_setor ON leads(setor);
-      CREATE INDEX IF NOT EXISTS idx_leads_cidade ON leads(cidade);
-    `,
-  });
-  if (error) {
-    console.log("[leads] Table creation via RPC failed, trying direct:", error.message);
-    await supabaseAdmin.from("leads").select("id").limit(1);
-  }
-}
+// DDL movida pra server/db-init.ts em 2026-05 (rodar exec_sql em runtime
+// estava saturando o pool do Supabase). Mantemos a função como no-op pra
+// preservar os callers existentes.
+async function ensureLeadsTable() { /* no-op: handled by db-init.ts */ }
 
-async function ensureEmailQueueTable() {
-  const { error } = await supabaseAdmin.rpc("exec_sql", {
-    query: `
-      CREATE TABLE IF NOT EXISTS email_queue (
-        id SERIAL PRIMARY KEY,
-        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
-        to_email TEXT NOT NULL,
-        to_name TEXT,
-        empresa TEXT,
-        subject TEXT NOT NULL,
-        html_body TEXT NOT NULL,
-        status TEXT DEFAULT 'pendente',
-        tracking_id TEXT UNIQUE,
-        opened_at TIMESTAMP,
-        opened_count INTEGER DEFAULT 0,
-        replied BOOLEAN DEFAULT FALSE,
-        replied_at TIMESTAMP,
-        error_message TEXT,
-        sent_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW(),
-        campaign_tag TEXT DEFAULT 'apresentacao'
-      );
-      CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status);
-      CREATE INDEX IF NOT EXISTS idx_email_queue_tracking ON email_queue(tracking_id);
-      CREATE INDEX IF NOT EXISTS idx_email_queue_lead ON email_queue(lead_id);
-      CREATE INDEX IF NOT EXISTS idx_email_queue_sent ON email_queue(sent_at);
-    `,
-  });
-  if (error) {
-    console.log("[leads] email_queue table via RPC failed:", error.message);
-  }
-}
+// DDL movida pra server/db-init.ts em 2026-05 (rodar exec_sql em runtime
+// estava saturando o pool do Supabase). Mantemos a função como no-op pra
+// preservar os callers existentes.
+async function ensureEmailQueueTable() { /* no-op: handled by db-init.ts */ }
 
 function generateTrackingId(): string {
   return `trk_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
@@ -650,21 +579,8 @@ const AUTO_PROSPECT_QUERIES = [
 const QUERIES_PER_CYCLE = 3;
 let autoProspectRunning = false;
 
-async function ensureProspectState() {
-  await supabaseAdmin.rpc("exec_sql", {
-    query: `
-      CREATE TABLE IF NOT EXISTS auto_prospect_state (
-        id SERIAL PRIMARY KEY,
-        query_index INTEGER DEFAULT 0,
-        next_page_token TEXT,
-        total_found INTEGER DEFAULT 0,
-        last_run TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      INSERT INTO auto_prospect_state (id, query_index) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
-    `
-  });
-}
+// DDL movida pra server/db-init.ts em 2026-05.
+async function ensureProspectState() { /* no-op: handled by db-init.ts */ }
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

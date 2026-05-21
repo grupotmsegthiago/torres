@@ -1007,6 +1007,106 @@ export async function ensureDbSchema() {
     // por veículo); o segundo acelera o ORDER BY created_at DESC do listing.
     await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_vehicle_km ON vehicle_fueling(vehicle_id, km DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_created_at ON vehicle_fueling(created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_vehicle_date ON vehicle_fueling(vehicle_id, date)`).catch(() => {});
+
+    // Índices adicionais pra cortar lentidão em tabelas que apareciam nos
+    // logs SLOW-SUPA (users 21s, financial_transactions 15-18s, clients 18s).
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_users_supabase_uid ON users(supabase_uid)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_due_date ON financial_transactions(due_date)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_status_due ON financial_transactions(status, due_date)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_type_status ON financial_transactions(type, status)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_cnpj ON clients(cnpj)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mc_so ON mission_costs(service_order_id)`).catch(() => {});
+    // Índice GIN trigram pra ILIKE '%...%' em description (usado por
+    // syncFuelingMissionCosts no padrão "%[F#%"). text_pattern_ops NÃO
+    // ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
+    await execSql(`CREATE EXTENSION IF NOT EXISTS pg_trgm`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mc_description_trgm ON mission_costs USING gin (description gin_trgm_ops)`).catch(() => {});
+    // Se a versão errada tiver sido criada num boot anterior, remove pra
+    // não confundir o planner.
+    await execSql(`DROP INDEX IF EXISTS idx_mc_description_trgm_btree`).catch(() => {});
+
+    // Tabelas geridas anteriormente via exec_sql em runtime (leads.ts, asaas.ts).
+    // Movidas pra cá em 2026-05 — runtime exec_sql derrubava o pool.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id SERIAL PRIMARY KEY,
+        empresa TEXT NOT NULL,
+        cnpj TEXT,
+        contato_nome TEXT,
+        contato_cargo TEXT,
+        telefone TEXT,
+        email TEXT,
+        website TEXT,
+        endereco TEXT,
+        cidade TEXT DEFAULT 'São Paulo',
+        estado TEXT DEFAULT 'SP',
+        cep TEXT,
+        setor TEXT,
+        origem TEXT DEFAULT 'prospecao_ativa',
+        status TEXT DEFAULT 'novo',
+        temperatura TEXT DEFAULT 'frio',
+        valor_estimado REAL DEFAULT 0,
+        notas TEXT,
+        motivo_perda TEXT,
+        proximo_contato TIMESTAMP,
+        ultimo_contato TIMESTAMP,
+        responsavel TEXT,
+        responsavel_id INTEGER,
+        google_place_id TEXT,
+        google_rating REAL,
+        google_total_reviews INTEGER,
+        tags TEXT[],
+        historico JSONB DEFAULT '[]'::jsonb,
+        emails_enviados INTEGER DEFAULT 0,
+        convertido_client_id INTEGER,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_leads_setor ON leads(setor)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_leads_cidade ON leads(cidade)`).catch(() => {});
+
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS email_queue (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+        to_email TEXT NOT NULL,
+        to_name TEXT,
+        empresa TEXT,
+        subject TEXT NOT NULL,
+        html_body TEXT NOT NULL,
+        status TEXT DEFAULT 'pendente',
+        tracking_id TEXT UNIQUE,
+        opened_at TIMESTAMP,
+        opened_count INTEGER DEFAULT 0,
+        replied BOOLEAN DEFAULT FALSE,
+        replied_at TIMESTAMP,
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        campaign_tag TEXT DEFAULT 'apresentacao'
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_email_queue_tracking ON email_queue(tracking_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_email_queue_lead ON email_queue(lead_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_email_queue_sent ON email_queue(sent_at)`).catch(() => {});
+
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS auto_prospect_state (
+        id SERIAL PRIMARY KEY,
+        query_index INTEGER DEFAULT 0,
+        next_page_token TEXT,
+        total_found INTEGER DEFAULT 0,
+        last_run TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`INSERT INTO auto_prospect_state (id, query_index) VALUES (1, 0) ON CONFLICT (id) DO NOTHING`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ADD COLUMN IF NOT EXISTS ai_inspection_status TEXT DEFAULT NULL`).catch(() => {});

@@ -641,56 +641,10 @@ export async function getAsaasBalance(): Promise<{ connected: boolean; balance?:
   }
 }
 
-async function ensureInvoicesTable() {
-  try {
-    await supabaseAdmin.rpc("exec_sql", {
-      query: `CREATE TABLE IF NOT EXISTS invoices (
-        id SERIAL PRIMARY KEY,
-        client_id INTEGER,
-        client_name TEXT NOT NULL,
-        client_cpf_cnpj TEXT,
-        asaas_customer_id TEXT,
-        asaas_payment_id TEXT,
-        service_order_id INTEGER,
-        description TEXT NOT NULL,
-        value DECIMAL(12,2) NOT NULL,
-        net_value DECIMAL(12,2),
-        due_date TEXT NOT NULL,
-        billing_type TEXT NOT NULL DEFAULT 'BOLETO',
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        invoice_url TEXT,
-        bank_slip_url TEXT,
-        pix_qr_code TEXT,
-        pix_copia_e_cola TEXT,
-        payment_date TEXT,
-        external_reference TEXT,
-        notes TEXT,
-        nfse_url TEXT,
-        nfse_status TEXT,
-        nfse_number TEXT,
-        nf_anexo_url TEXT,
-        created_by INTEGER,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_url TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_status TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_number TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nf_anexo_url TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT FALSE;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_to TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMPTZ;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reminder_count INTEGER DEFAULT 0;`
-    });
-  } catch (e: any) {
-    console.log("[asaas] ensureInvoicesTable via direct query fallback");
-    const { error } = await supabaseAdmin.from("invoices").select("id").limit(1);
-    if (error && error.code === "42P01") {
-      console.error("[asaas] invoices table does not exist, create it manually in Supabase");
-    }
-  }
-}
+// DDL movida pra server/db-init.ts (a tabela `invoices` já é criada lá em
+// db-init.ts:933 e suas ALTER TABLE colunas extras também). Mantemos a
+// função como no-op pra preservar os callers existentes.
+async function ensureInvoicesTable() { /* no-op: handled by db-init.ts */ }
 
 interface AsaasCustomerOpts {
   addressNumber?: string;
