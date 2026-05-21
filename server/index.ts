@@ -116,16 +116,8 @@ app.get("/sitemap.xml", (req, res) => {
 setupAuth(app);
 registerPushRoutes(app);
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
+import { log } from "./lib/logger";
+export { log };
 
 const SLOW_THRESHOLD_MS = 500;
 const MAX_SLOW_ENTRIES = 50;

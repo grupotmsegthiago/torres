@@ -2,7 +2,7 @@ import cron from "node-cron";
 import nodemailer from "nodemailer";
 import { storage } from "./storage";
 import * as apibrasil from "./apibrasil";
-import { log } from "./index";
+import { log } from "./lib/logger";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
 import { isSupabaseHealthy } from "./pg-fallback";
@@ -1694,18 +1694,21 @@ export async function executeBillingCron() {
   const unbilledConcluded = allOrders.filter((so: any) =>
     so.type === "escolta" && isConcluded(so) && !billedSet.has(so.id)
   );
-  const unverifConcluded = allOrders.filter((so: any) =>
+  const frozenUnverifCount = allOrders.filter((so: any) =>
     so.type === "escolta" && isConcluded(so) && unverifBilledSet.has(so.id)
-  );
+  ).length;
 
   const seenIds = new Set<number>();
-  const liveOrders = [...activeOrders, ...unbilledConcluded, ...unverifConcluded].filter((so: any) => {
+  const liveOrders = [...activeOrders, ...unbilledConcluded].filter((so: any) => {
     if (seenIds.has(so.id)) return false;
     seenIds.add(so.id);
     return true;
   });
-  if (!liveOrders.length) return;
-  log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing + ${unverifConcluded.length} A_VERIFICAR para processar`, "cron");
+  if (!liveOrders.length) {
+    log(`CRON Billing: 0 OSs para processar, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
+    return;
+  }
+  log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing processadas, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
 
   const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
   const contractMap = new Map<number, any>();
@@ -1750,7 +1753,7 @@ export async function executeBillingCron() {
     empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : Promise.resolve({ data: [] as any[] }),
     vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : Promise.resolve({ data: [] as any[] }),
     fetchAllPaged<any>("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", liveOrderIds),
-    supabaseAdmin.from("escort_billings").select("id, service_order_id").in("service_order_id", liveOrderIds),
+    supabaseAdmin.from("escort_billings").select("id, service_order_id, status").in("service_order_id", liveOrderIds),
   ]);
 
   const photosMap = new Map<number, any[]>();
@@ -1767,6 +1770,8 @@ export async function executeBillingCron() {
     mCostsMap.get(c.service_order_id)!.push(c);
   }
   const billingIdMap = new Map<number, number>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.id]));
+  const billingStatusMap = new Map<number, string>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.status]));
+  const FROZEN_STATUSES = new Set(["A_VERIFICAR", "APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA", "REJEITADA"]);
 
   const CHUNK_SIZE = 15;
   const processOne = async (so: any) => {
@@ -1790,6 +1795,11 @@ export async function executeBillingCron() {
 
       const existId = billingIdMap.get(so.id);
       if (existId) {
+        const existStatus = billingStatusMap.get(so.id);
+        if (existStatus && FROZEN_STATUSES.has(existStatus)) {
+          log(`CRON Billing: OS ${so.os_number} pulada — billing congelado (status=${existStatus})`, "cron");
+          return;
+        }
         const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
         await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existId);
       } else {
