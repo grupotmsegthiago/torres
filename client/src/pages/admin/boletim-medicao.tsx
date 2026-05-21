@@ -318,8 +318,18 @@ export default function BoletimMedicaoPage() {
 
   useEffect(() => {
     if (selectedOs) {
-      setOverrideKmChegada(selectedOs.km_chegada_origem != null ? String(selectedOs.km_chegada_origem) : "");
-      setOverrideKmFim(selectedOs.km_final != null ? String(selectedOs.km_final) : "");
+      // Fallback: a OS pode não ter km_chegada_origem/km_final preenchidos,
+      // mas o billing tem km_inicial/km_final espelhados. Sem esse fallback o
+      // campo "Editar" aparece vazio mesmo quando o read-only mostra valor.
+      const b = selectedOs.billing || {};
+      const kmChegadaInit = selectedOs.km_chegada_origem != null
+        ? selectedOs.km_chegada_origem
+        : (selectedOs.km_inicial != null ? selectedOs.km_inicial : b.km_inicial);
+      const kmFimInit = selectedOs.km_final != null
+        ? selectedOs.km_final
+        : b.km_final;
+      setOverrideKmChegada(kmChegadaInit != null && kmChegadaInit !== "" ? String(kmChegadaInit) : "");
+      setOverrideKmFim(kmFimInit != null && kmFimInit !== "" ? String(kmFimInit) : "");
       const fmtDt = (v: string | null) => {
         if (!v) return "";
         try {
@@ -1925,6 +1935,8 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                       <NumInput label="Adicional Noturno (R$)" value={adNoturnoValue} onChange={setAdNoturnoValue} testId="input-ad-noturno" />
                       <NumInput label="Estadia (R$)" value={estadiaValue} onChange={setEstadiaValue} testId="input-estadia" />
                       <NumInput label="Pernoite (R$)" value={pernoiteValue} onChange={setPernoiteValue} testId="input-pernoite" />
+                      <NumInput label="Pedágio (R$)" value={pedagioValue} onChange={setPedagioValue} testId="input-pedagio" />
+                      <NumInput label="Reembolso Pedágio Cliente (R$)" value={reembolsoValue} onChange={setReembolsoValue} testId="input-reembolso" />
                       <div className="col-span-2">
                         <NumInput label="Demais Custos (R$)" value={demaisCustosValue} onChange={setDemaisCustosValue} testId="input-demais-custos" />
                       </div>
