@@ -321,8 +321,8 @@ export function initCronJobs() {
         const ontemBrt = new Date(Date.now() - 24 * 3600 * 1000);
         const ymd = new Date(ontemBrt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
         const r = await processDiariasJornadaLonga(ymd);
-        if (r.paresLongosDetectados > 0 || r.diariasGeradas > 0) {
-          log(`CRON Diárias>16h: data=${ymd} pares=${r.paresLongosDetectados} geradas=${r.diariasGeradas} jaExistiam=${r.diariasJaExistentes}`, "cron");
+        if (r.paresLongosDetectados > 0 || r.linhasCriadas > 0) {
+          log(`CRON Diárias>16h: ${r.quinzena} (${r.quinzenaInicio}→${r.quinzenaFim}) pares=${r.paresLongosDetectados} agentes=${r.agentes.length} criadas=${r.linhasCriadas} removidas=${r.linhasRemovidas}`, "cron");
         }
       } catch (e: any) {
         log(`CRON Diárias>16h: Erro: ${e.message}`, "cron");
