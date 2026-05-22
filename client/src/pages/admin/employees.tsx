@@ -1740,6 +1740,9 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
   if (isLoading || !data) {
     return <div className="mb-4 p-4 rounded-lg border border-neutral-200 bg-neutral-50 text-xs text-neutral-500">Carregando status do onboarding...</div>;
   }
+  if (!Array.isArray((data as any)?.stages)) {
+    return <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700">Status do onboarding indisponível no momento. Tente recarregar em alguns instantes.</div>;
+  }
   const apto = data.apto;
   const total = data.stages.length;
   const concluidoCount = data.stages.filter(s => s.status === "ok" || s.status === "neutro").length;
