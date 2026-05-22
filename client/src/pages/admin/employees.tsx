@@ -18,6 +18,48 @@ import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema"
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 
+// Anexar foto direto do celular vem em 4-8 MB e estoura o limite do POST
+// (413 request entity too large). Comprime via canvas pra max 1280px no
+// maior lado + JPEG q=0.7 (igual handlePhotoCapture do mobile/missao.tsx).
+// PDF passa direto. Resultado típico: ~80-250 KB.
+function readAndCompressFile(file: File): Promise<{ dataUrl: string; fileName: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Falha ao ler arquivo"));
+    reader.onload = (ev) => {
+      const originalDataUrl = ev.target!.result as string;
+      if (!file.type.startsWith("image/") || originalDataUrl.startsWith("data:application/pdf")) {
+        resolve({ dataUrl: originalDataUrl, fileName: file.name });
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 1280;
+        let w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) { h = Math.round((h / w) * maxSize); w = maxSize; }
+          else { w = Math.round((w / h) * maxSize); h = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve({ dataUrl: originalDataUrl, fileName: file.name }); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", 0.7);
+        const origKB = Math.round(originalDataUrl.length * 0.75 / 1024);
+        const newKB = Math.round(compressed.length * 0.75 / 1024);
+        console.log(`[doc-upload] foto comprimida: ${origKB} KB → ${newKB} KB (${w}x${h})`);
+        const baseName = file.name.replace(/\.(png|webp|heic|heif|gif|bmp|tiff?)$/i, "").replace(/\.jpe?g$/i, "");
+        resolve({ dataUrl: compressed, fileName: `${baseName || "foto"}.jpg` });
+      };
+      img.onerror = () => resolve({ dataUrl: originalDataUrl, fileName: file.name });
+      img.src = originalDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 function fmtDate(d?: string | null) {
   if (!d) return "—";
@@ -402,18 +444,19 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
     fileName: "",
   });
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" });
+    if (file.size > 15 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 15MB (será comprimido se for imagem)", variant: "destructive" });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setDocForm(prev => ({ ...prev, fileData: ev.target!.result as string, fileName: file.name }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl, fileName } = await readAndCompressFile(file);
+      setDocForm(prev => ({ ...prev, fileData: dataUrl, fileName }));
+    } catch (err: any) {
+      toast({ title: "Erro ao ler arquivo", description: err.message, variant: "destructive" });
+    }
   };
 
   const createMutation = useMutation({
@@ -3279,13 +3322,16 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const [showDepForm, setShowDepForm] = useState(false);
   const [depForm, setDepForm] = useState({ name: "", birthDate: "", parentesco: "filho", cpf: "", deduzIr: true, certidaoData: "", certidaoFileName: "", notes: "" });
-  const handleCertidaoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCertidaoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" }); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => setDepForm(p => ({ ...p, certidaoData: ev.target!.result as string, certidaoFileName: file.name }));
-    reader.readAsDataURL(file);
+    if (file.size > 15 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 15MB (será comprimido se for imagem)", variant: "destructive" }); return; }
+    try {
+      const { dataUrl, fileName } = await readAndCompressFile(file);
+      setDepForm(p => ({ ...p, certidaoData: dataUrl, certidaoFileName: fileName }));
+    } catch (err: any) {
+      toast({ title: "Erro ao ler arquivo", description: err.message, variant: "destructive" });
+    }
   };
   const addDependent = useMutation({
     mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/dependents`, depForm); },
@@ -3309,13 +3355,16 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const [docForm, setDocForm] = useState({ type: "RG", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" });
   const [showDocForm, setShowDocForm] = useState(false);
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" }); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => setDocForm(p => ({ ...p, fileData: ev.target!.result as string, fileName: file.name }));
-    reader.readAsDataURL(file);
+    if (file.size > 15 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 15MB (será comprimido se for imagem)", variant: "destructive" }); return; }
+    try {
+      const { dataUrl, fileName } = await readAndCompressFile(file);
+      setDocForm(p => ({ ...p, fileData: dataUrl, fileName }));
+    } catch (err: any) {
+      toast({ title: "Erro ao ler arquivo", description: err.message, variant: "destructive" });
+    }
   };
   const createDoc = useMutation({
     mutationFn: async () => {

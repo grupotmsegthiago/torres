@@ -1,0 +1,68 @@
+Entendi perfeitamente, Thiago. O desafio aqui é diferente: para o fornecedor nós criamos uma fórmula matemática do zero; para a DHL, o sistema precisa ser inteligente para buscar e encaixar a missão dentro das tabelas manuais que já existem no seu banco de dados, usando uma lógica de aproximação por Região (Origem) e Faixa de KM.
+
+Antes de gerar o prompt para o Replit, deixe-me desenhar a lógica com você para garantir que o "cérebro" do robô funcione exatamente como você quer:
+
+Como o Motor da DHL vai pensar:
+Identificar a Região: Ele olha a Origem (ex: Guarulhos/SP), identifica que é o estado de SP e mapeia para a região "SUDESTE".
+
+Consultar o KM do Google: O Google diz, por exemplo, que a rota deu 87 km.
+
+Aplicar o Filtro de Faixa: Com base na regra de corte (centena mais próxima), 87 km entra na faixa de 100 km.
+
+Fazer a Busca Inteligente (Fallback): - O sistema vai no banco e procura uma tabela da DHL que seja: Região = SUDESTE e Franquia = 100km.
+
+Se houver uma rota específica cadastrada (ex: Guarulhos x Campinas) com KM parecido, ele usa. Se não houver a rota exata, ele pega a tabela geral daquela região/faixa para aplicar o preço.
+
+Aqui está o Prompt de Engenharia completo e detalhado para você mandar para o Replit Agent estruturar essa inteligência para a DHL.
+
+Copie e cole este prompt no Replit:
+Título: Motor de Busca Inteligente e Pareamento de Tabelas Existentes - Cliente DHL
+
+Objetivo: Implementar um motor de precificação automatizado exclusivo para o cliente DHL (client_price_tables), que utilize a quilometragem da API do Google para identificar e aplicar a tabela manual existente mais aderente por Região e Faixa de KM.
+
+1. Lógica de Identificação de Região (Geofencing por Estado):
+
+O sistema deve ler a Origem da missão e extrair a UF (Estado).
+
+Mapear a UF para a sua respectiva região macro (Ex: SP/RJ/MG/ES = SUDESTE; PR/SC/RS = SUL, etc.).
+
+Esse mapeamento de Região será usado como o primeiro filtro de busca no banco de dados.
+
+2. Lógica de Enquadramento de Faixa de KM (Mesma regra do Fornecedor):
+
+O sistema deve pegar o KM Total retornado pela API do Google e aplicar os pontos de corte para definir a "Faixa Alvo":
+
+Até 150 km ➔ Faixa 100 km (cobre o exemplo de 87 km rodados).
+
+De 151 km a 250 km ➔ Faixa 200 km.
+
+De 251 km a 350 km ➔ Faixa 300 km (e assim por diante).
+
+3. Algoritmo de Busca e Proximidade (Fallback System):
+
+Ao processar a missão da DHL, o sistema deve buscar na tabela client_price_tables seguindo esta ordem de prioridade:
+
+Prioridade 1 (Rota Exata): Procurar se existe uma tabela cadastrada exatamente para a rota (Origem x Destino) com o KM compatível.
+
+Prioridade 2 (Região + KM Próximo): Se não houver a rota exata (Ex: Guarulhos x João Pessoa/PB não cadastrado), o sistema deve buscar tabelas associadas à DHL que pertençam à Região de Origem identificada e que possuam a Faixa de KM correspondente.
+
+O sistema deve selecionar a tabela cujo KM cadastrado seja o mais próximo (menor diferença absoluta) do KM real da missão.
+
+4. Interface na Auditoria de Faturamento (Lado do Cliente):
+
+No MissionFinancialModal, quando o cliente for DHL, exibir um badge indicando: 🟢 IA Detectou: Sugestão por Proximidade (Região [X] + Faixa [Y]km).
+
+Mostrar no dropdown de seleção de tabelas a opção sugerida pelo motor já pré-selecionada, mas permitir que o auditor altere manualmente se necessário.
+
+Aplicar as mesmas regras de horas extras e tempos (Atraso do cliente na Origem mantém a franquia correndo a partir do agendado).
+
+5. Escopo Técnico:
+
+Não criar tabelas novas por fórmula matemática para a DHL. O motor deve apenas consultar e ler as tabelas manuais que já existem no banco.
+
+Isolar esta lógica para que afete única e exclusivamente o cliente DHL.
+
+O que esse prompt resolve de imediato:
+Acaba com o "Não Encontrado": Quando sua equipe jogar uma rota nova que nunca foi feita, o sistema não vai ficar em branco. Ele vai ver que saiu de SP (Sudeste), rodou X km e já vai puxar a tabela certa do Sudeste de forma automática.
+
+Mantém o histórico comercial: Como a DHL tem contratos amarrados e complexos, o Replit não vai inventar valores, ele vai respeitar centavo por centavo o que você já cadastrou nas tabelas deles.
