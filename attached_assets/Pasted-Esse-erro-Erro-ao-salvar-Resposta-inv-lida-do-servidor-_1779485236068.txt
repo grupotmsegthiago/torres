@@ -1,0 +1,59 @@
+Esse erro "Erro ao salvar: Resposta inválida do servidor. Recarregue a página e tente de novo." acontece exatamente por causa daquela validação que falhou no front-end na hora de processar a resposta do seu endpoint PUT /api/cct-config (ou similar que salva o Kit CCT).
+
+O servidor chegou a processar a requisição e retornar o status 200 OK, mas a checagem rígida de content-type ou o parser do JSON travou no meio do caminho, disparando o toast.error vermelho que você está vendo na tela.
+
+Como você está usando o Replit, vamos ajustar isso direto no código para blindar o componente e garantir que o salvamento funcione sem disparar esse alarme falso.
+
+🛠️ O que precisamos corrigir
+Precisamos ir no arquivo que gerencia essa requisição de salvamento (provavelmente dentro de client/src/components/CctEditDialog.tsx ou onde está a Mutation que envia os dados do formulário do Kit CCT) e simplificar o tratamento do retorno.
+
+1. No Front-end (Mutation de Salvamento)
+Procure pela função que faz o fetch ou a mutation do TanStack Query (useMutation) responsável por salvar o Kit CCT. Ela deve estar fazendo algo parecido com isto:
+
+TypeScript
+// ❌ Código antigo/problemático (Gera o falso-positivo se o content-type sumir)
+const response = await fetch('/api/employees/cct-config', { // ou a sua rota correspondente
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+});
+
+// Se a validação abaixo for muito rígida, ela quebra mesmo com status 200
+if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+  throw new Error('Resposta inválida do servidor');
+}
+const result = await response.json();
+return result;
+Altere para uma abordagem direta com try/catch:
+
+TypeScript
+//  Código corrigido e resiliente
+const response = await fetch('/api/employees/cct-config', { // Ajuste para a sua rota exata se necessário
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+});
+
+if (!response.ok) {
+  throw new Error(`Erro no servidor: ${response.status}`);
+}
+
+// Em vez de checar headers, tenta dar o parse direto de forma segura
+try {
+  const text = await response.text();
+  return text ? JSON.parse(text) : {};
+} catch (err) {
+  // Se o servidor retornou 200 mas sem corpo (vazio), não deve crashar
+  return {};
+}
+2. No Back-end (Garantir o retorno correto)
+Para evitar que o front-end tente parsear um JSON inexistente, certifique-se de que a rota do Express que recebe esse PUT está respondendo explicitamente com um JSON válido (mesmo que seja só um objeto de sucesso { success: true }), em vez de apenas usar .sendStatus(200) ou .end().
+
+No seu arquivo de rotas do servidor (ex: server/routes.ts ou similar):
+
+TypeScript
+// ❌ Evite responder apenas com o status puro se o front espera JSON:
+// res.sendStatus(200); 
+
+//  Faça assim para manter o front-end feliz e alinhado:
+res.status(200).json({ success: true, message: "Kit CCT atualizado com sucesso" });

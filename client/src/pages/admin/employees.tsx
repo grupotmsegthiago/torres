@@ -3172,10 +3172,11 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
       };
       const res = await apiRequest("PUT", "/api/cct-config", payload);
+      const text = await res.text();
       try {
-        return await res.json();
+        return text ? JSON.parse(text) : {};
       } catch {
-        throw new Error("Resposta inválida do servidor. Recarregue a página e tente de novo.");
+        return {};
       }
     },
     onSuccess: () => {
