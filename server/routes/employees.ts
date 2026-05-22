@@ -602,7 +602,8 @@ import { syncEmployeeStatusToRhid } from "../control-id";
 
   app.post("/api/employees/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {
     try {
-      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 208.45, diasUteisMes: 22 };
+      const { getCctConfig } = await import("../lib/cct-config");
+      const CCT = await getCctConfig();
       const allEmployees = await storage.getEmployees();
       const vigilantes = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
       const effectiveDate = req.body.effectiveDate || new Date().toISOString().slice(0, 10);

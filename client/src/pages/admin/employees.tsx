@@ -2535,6 +2535,13 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   const now = new Date();
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
   const [selYear, setSelYear] = useState(now.getFullYear());
+  const [showCctEdit, setShowCctEdit] = useState(false);
+  const { data: cctData } = useQuery<typeof CCT_SP_2025>({
+    queryKey: ["/api/cct-config"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    staleTime: 60_000,
+  });
+  const cctCfg = cctData || CCT_SP_2025;
   const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery<any>({
     queryKey: [`/api/employees/${employee.id}/salary-summary?month=${selMonth}&year=${selYear}`],
@@ -2621,9 +2628,16 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
         </div>
         <div className="flex items-center gap-1.5">
           {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
-            <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => { const today = new Date().toISOString().slice(0, 10); setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026` }); setShowSalForm(true); }} data-testid="button-apply-cct-kit">
-              <ShieldCheck className="w-3 h-3" /> Kit CCT
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => { const today = new Date().toISOString().slice(0, 10); setSalForm({ baseSalary: String(cctCfg.salarioBase), effectiveDate: today, reason: `Kit ${cctCfg.label}` }); setShowSalForm(true); }} data-testid="button-apply-cct-kit">
+                <ShieldCheck className="w-3 h-3" /> Kit CCT
+              </Button>
+              {isDiretoria && (
+                <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => setShowCctEdit(true)} data-testid="button-edit-cct-kit" title="Editar valores do Kit CCT (Diretoria)">
+                  <Pencil className="w-3 h-3" /> Editar CCT
+                </Button>
+              )}
+            </>
           )}
           <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => { setShowDiscountForm(!showDiscountForm); setDiscountCategory(null); }} data-testid="button-launch-discount">
             <Ban className="w-3 h-3" /> Lançar Ocorrência
@@ -2691,7 +2705,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
                   <div>
                     <div className="text-xs font-semibold text-neutral-800">Salário Base</div>
-                    <div className="text-[10px] text-neutral-400 mt-0.5">{CCT_SP_2025.label}{propTag}</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">{cctCfg.label}{propTag}</div>
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.salarioBase)}</span>
                 </div>
@@ -2899,7 +2913,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   <button
                     className="border-2 border-neutral-200 rounded-xl p-4 hover:border-red-300 hover:bg-red-50/50 transition-all text-left group"
                     onClick={() => {
-                      const diaSalario = +(CCT_SP_2025.salarioBase / 30).toFixed(2);
+                      const diaSalario = +(cctCfg.salarioBase / 30).toFixed(2);
                       const dsrProporcional = +(diaSalario / 6).toFixed(2);
                       const totalFalta = +(diaSalario + dsrProporcional).toFixed(2);
                       setDiscountCategory("falta");
@@ -2960,7 +2974,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Qtd. de Faltas</label>
                         <Input type="number" min="1" max="30" value={discountForm.numFaltas} onChange={(e) => {
                           const n = Math.max(1, Number(e.target.value) || 1);
-                          const diaSalario = +(CCT_SP_2025.salarioBase / 30).toFixed(2);
+                          const diaSalario = +(cctCfg.salarioBase / 30).toFixed(2);
                           const dsrProporcional = +((diaSalario * n) / 6).toFixed(2);
                           const totalFalta = +(diaSalario * n + dsrProporcional).toFixed(2);
                           setDiscountForm({ ...discountForm, numFaltas: String(n), amount: String(totalFalta), description: `${n} falta(s) — Dia: R$${(diaSalario * n).toFixed(2)} + DSR: R$${dsrProporcional.toFixed(2)}` });
@@ -2977,7 +2991,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                     </div>
                     <div className="mt-2 bg-neutral-50 rounded-md p-2">
                       <p className="text-[10px] text-neutral-500">
-                        <span className="font-semibold">Cálculo:</span> Salário Base (R$ {CCT_SP_2025.salarioBase.toFixed(2)}) ÷ 30 = R$ {(CCT_SP_2025.salarioBase / 30).toFixed(2)}/dia × {discountForm.numFaltas} falta(s) + DSR proporcional (1/6)
+                        <span className="font-semibold">Cálculo:</span> Salário Base (R$ {cctCfg.salarioBase.toFixed(2)}) ÷ 30 = R$ {(cctCfg.salarioBase / 30).toFixed(2)}/dia × {discountForm.numFaltas} falta(s) + DSR proporcional (1/6)
                       </p>
                     </div>
                   </div>
@@ -3101,8 +3115,113 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
         )}
       </div>
 
-      <p className="text-[10px] text-neutral-400 text-center italic">Pagamento todo 5º dia útil do mês · {CCT_SP_2025.label}</p>
+      <p className="text-[10px] text-neutral-400 text-center italic">Pagamento todo {cctCfg.pagamentoDiaUtil}º dia útil do mês · {cctCfg.label}</p>
+
+      {showCctEdit && (
+        <CctEditDialog open={showCctEdit} onOpenChange={setShowCctEdit} initial={cctCfg} />
+      )}
     </div>
+  );
+}
+
+function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenChange: (v: boolean) => void; initial: typeof CCT_SP_2025 }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    label: initial.label,
+    salarioBase: String(initial.salarioBase),
+    periculosidadePct: String(initial.periculosidadePct),
+    valeRefeicaoDia: String(initial.valeRefeicaoDia),
+    cestaBasica: String(initial.cestaBasica),
+    diasUteisMes: String(initial.diasUteisMes),
+    encargosSociaisPct: String(initial.encargosSociaisPct),
+    horaExtraValor: String(initial.horaExtraValor),
+    pagamentoDiaUtil: String(initial.pagamentoDiaUtil),
+  });
+  const num = (v: string) => Number(String(v).replace(",", "."));
+  const periculosidade = +(num(form.salarioBase) * (num(form.periculosidadePct) / 100) || 0).toFixed(2);
+  const valeRefeicaoMes = +(num(form.valeRefeicaoDia) * num(form.diasUteisMes) || 0).toFixed(2);
+  const totalBruto = +(num(form.salarioBase) + periculosidade + valeRefeicaoMes + num(form.cestaBasica) || 0).toFixed(2);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        label: form.label,
+        salarioBase: num(form.salarioBase),
+        periculosidadePct: num(form.periculosidadePct),
+        valeRefeicaoDia: num(form.valeRefeicaoDia),
+        cestaBasica: num(form.cestaBasica),
+        diasUteisMes: Math.max(1, Math.round(num(form.diasUteisMes))),
+        encargosSociaisPct: num(form.encargosSociaisPct),
+        horaExtraValor: num(form.horaExtraValor),
+        pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
+      };
+      const res = await apiRequest("PUT", "/api/cct-config", payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Kit CCT atualizado", description: "Novos valores serão usados nas próximas aplicações." });
+      queryClient.invalidateQueries({ queryKey: ["/api/cct-config"] });
+      onOpenChange(false);
+    },
+    onError: (err: any) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
+  });
+
+  const Field = ({ label, value, onChange, suffix, testId }: { label: string; value: string; onChange: (v: string) => void; suffix?: string; testId: string }) => (
+    <div>
+      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">{label}</label>
+      <div className="relative">
+        <Input value={value} onChange={(e) => onChange(e.target.value)} inputMode="decimal" className="text-xs h-9 pr-10" data-testid={testId} />
+        {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-400">{suffix}</span>}
+      </div>
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl" data-testid="dialog-edit-cct">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-emerald-600" /> Editar Kit CCT</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Nome / Identificação da CCT</label>
+              <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="text-xs h-9" data-testid="input-cct-label" />
+            </div>
+            <Field label="Salário Base" value={form.salarioBase} onChange={(v) => setForm({ ...form, salarioBase: v })} suffix="R$" testId="input-cct-salario" />
+            <Field label="Periculosidade" value={form.periculosidadePct} onChange={(v) => setForm({ ...form, periculosidadePct: v })} suffix="%" testId="input-cct-periculosidade" />
+            <Field label="Vale-Refeição / dia" value={form.valeRefeicaoDia} onChange={(v) => setForm({ ...form, valeRefeicaoDia: v })} suffix="R$" testId="input-cct-vr" />
+            <Field label="Dias úteis / mês" value={form.diasUteisMes} onChange={(v) => setForm({ ...form, diasUteisMes: v })} suffix="dias" testId="input-cct-dias" />
+            <Field label="Cesta Básica" value={form.cestaBasica} onChange={(v) => setForm({ ...form, cestaBasica: v })} suffix="R$" testId="input-cct-cesta" />
+            <Field label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
+            <Field label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
+            <Field label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
+          </div>
+
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-1.5">
+            <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide mb-2">Prévia do Cálculo</div>
+            <div className="flex justify-between text-xs"><span className="text-neutral-600">Salário Base</span><span className="font-semibold tabular-nums">R$ {num(form.salarioBase).toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-neutral-600">+ Periculosidade ({form.periculosidadePct}%)</span><span className="font-semibold tabular-nums">R$ {periculosidade.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-neutral-600">+ VR ({form.valeRefeicaoDia}/dia × {form.diasUteisMes})</span><span className="font-semibold tabular-nums">R$ {valeRefeicaoMes.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-neutral-600">+ Cesta Básica</span><span className="font-semibold tabular-nums">R$ {num(form.cestaBasica).toFixed(2)}</span></div>
+            <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-neutral-200"><span>Total Bruto Mensal</span><span className="text-emerald-700 tabular-nums">R$ {totalBruto.toFixed(2)}</span></div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800">
+            <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />
+            Esses valores são aplicados quando você clica <strong>"Kit CCT"</strong> no funcionário ou na listagem. Salários já lançados não são alterados retroativamente.
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-neutral-200">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} data-testid="button-cancel-cct">Cancelar</Button>
+            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="button-save-cct">
+              {save.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+              Salvar Kit CCT
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

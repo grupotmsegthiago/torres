@@ -976,6 +976,26 @@ async function ensureSystemSettingsTable() {
     }
   });
 
+  app.get("/api/cct-config", requireAuth, async (_req, res) => {
+    try {
+      const { getCctConfig } = await import("./lib/cct-config");
+      const cfg = await getCctConfig();
+      res.json(cfg);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/cct-config", requireAdminRole, requireDiretoria, async (req, res) => {
+    try {
+      const { saveCctConfig } = await import("./lib/cct-config");
+      const cfg = await saveCctConfig(req.body);
+      res.json(cfg);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
   app.get("/api/system-settings/:key", requireAuth, async (req, res) => {
     try {
       const { data: rows } = await supabaseAdmin.from("system_settings").select("*").eq("key", req.params.key);
