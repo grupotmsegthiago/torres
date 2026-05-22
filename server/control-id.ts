@@ -1140,7 +1140,7 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
   const { data: salaryRows } = await supabaseAdmin
     .from("employee_salaries")
-    .select("base_salary, horas_mensais, encargos_pct, effective_date")
+    .select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, effective_date")
     .eq("employee_id", employeeId)
     .lte("effective_date", monthEndStr)
     .order("effective_date", { ascending: false })
@@ -1148,18 +1148,55 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     .order("id", { ascending: false })
     .limit(1);
 
+  const { getCctConfig } = await import("./lib/cct-config");
+  const CCT = await getCctConfig();
+
   const sal = (salaryRows && salaryRows[0]) as any;
   const baseSalary = sal ? Number(sal.base_salary) || 0 : 0;
   const hoursLimit = sal && sal.horas_mensais ? Number(sal.horas_mensais) : 220;
   const encargosPct = sal && sal.encargos_pct != null ? Number(sal.encargos_pct) : 80;
+  const periculosidadePct = sal && sal.periculosidade_pct != null ? Number(sal.periculosidade_pct) : CCT.periculosidadePct;
+  const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
+  const cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
+
+  // Dias úteis reais do mês (descontando feriados)
+  const { countBusinessDays, loadHolidaySet, monthRange } = await import("./routes/holidays");
+  const { from, to } = monthRange(yyyy, mm);
+  const holidaySet = await loadHolidaySet(from, to);
+  const diasUteis = countBusinessDays(from, to, holidaySet);
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
   const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
   const valorHoraExtra = valorHora * 1.5; // CLT padrão 50%
-  const custoExtra = valorHoraExtra * horaExtra;
+
+  // Vencimentos
+  const periculosidade = +(baseSalary * (periculosidadePct / 100)).toFixed(2);
+  const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
+  const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
+
+  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados no mês
+  let diarias = 0;
+  try {
+    const monthStart = `${monthYear}-01`;
+    const { data: diariaRows } = await supabaseAdmin
+      .from("operational_payments")
+      .select("amount")
+      .eq("employee_id", employeeId)
+      .eq("type", "diaria")
+      .gte("payment_date", monthStart)
+      .lte("payment_date", monthEndStr);
+    if (Array.isArray(diariaRows)) {
+      diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+    }
+  } catch { /* tabela pode não existir em ambientes antigos */ }
+  diarias = +diarias.toFixed(2);
+
+  const vencimentosTotal = +(baseSalary + periculosidade + custoExtra).toFixed(2);
+  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasica).toFixed(2);
+  const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal).toFixed(2);
   const custoBase = baseSalary;
-  const custoComEncargos = (custoBase + custoExtra) * (1 + encargosPct / 100);
+  const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPct / 100) + beneficiosTotal).toFixed(2);
 
   return {
     employeeId,
@@ -1174,11 +1211,21 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     baseSalary,
     valorHora: +valorHora.toFixed(2),
     valorHoraExtra: +valorHoraExtra.toFixed(2),
-    custoExtra: +custoExtra.toFixed(2),
+    custoExtra,
     custoBase: +custoBase.toFixed(2),
+    // Novos componentes detalhados
+    periculosidade,
+    periculosidadePct,
+    valeRefeicao,
+    vrDiario,
+    diasUteis,
+    diarias,
+    cestaBasica,
+    vencimentosTotal,
+    beneficiosTotal,
     encargosPct,
-    custoComEncargos: +custoComEncargos.toFixed(2),
-    custoTotalEstimado: +(custoBase + custoExtra).toFixed(2),
+    custoComEncargos,
+    custoTotalEstimado,
     hasSalary: !!sal,
   };
 }

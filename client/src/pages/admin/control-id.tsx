@@ -53,6 +53,10 @@ type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
   daysWorked: number; baseSalary: number; valorHora: number; valorHoraExtra: number;
   custoBase: number; custoExtra: number; custoTotalEstimado: number; encargosPct: number; custoComEncargos: number;
+  periculosidade: number; periculosidadePct: number;
+  valeRefeicao: number; vrDiario: number; diasUteis: number;
+  diarias: number; cestaBasica: number;
+  vencimentosTotal: number; beneficiosTotal: number;
   hasSalary: boolean;
 };
 
@@ -1486,8 +1490,8 @@ function ChipStat({ label, value, cls, Icon, active, onClick }: { label: string;
   );
 }
 
-function fmtBRL(n: number): string {
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function fmtBRL(n: number | null | undefined): string {
+  return Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function FolhaTab() {
@@ -1551,38 +1555,97 @@ function FolhaTab() {
       </Card>
 
       {employeeId && stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 no-print">
-          <StatCard
-            title="Horas trabalhadas"
-            value={`${stats.hoursWorked.toFixed(2)}h`}
-            sub={`de ${stats.hoursLimit}h · ${stats.percentUsed.toFixed(0)}%`}
-            Icon={Clock}
-            color="blue"
-            progress={Math.min(100, stats.percentUsed)}
-            barColor={stats.percentUsed >= 100 ? "bg-red-600" : stats.percentUsed >= 90 ? "bg-orange-500" : stats.percentUsed >= 70 ? "bg-amber-400" : "bg-emerald-500"}
-          />
-          <StatCard
-            title="Hora Extra"
-            value={`${stats.horaExtra.toFixed(2)}h`}
-            sub={stats.horaExtra > 0 ? `${fmtBRL(stats.valorHoraExtra)}/h × ${stats.horaExtra.toFixed(1)}` : "Sem horas extras"}
-            Icon={TrendingUp}
-            color={stats.horaExtra > 0 ? "orange" : "neutral"}
-          />
-          <StatCard
-            title="Restantes p/ limite"
-            value={`${stats.horasRestantes.toFixed(2)}h`}
-            sub={stats.horasRestantes <= 0 ? "Limite atingido" : "Antes de virar HE"}
-            Icon={Hourglass}
-            color={stats.horasRestantes <= 0 ? "red" : stats.horasRestantes < 22 ? "amber" : "emerald"}
-          />
-          <StatCard
-            title="Custo estimado"
-            value={fmtBRL(stats.custoTotalEstimado)}
-            sub={!stats.hasSalary ? "Sem salário cadastrado" : stats.horaExtra > 0 ? `Base ${fmtBRL(stats.custoBase)} + HE ${fmtBRL(stats.custoExtra)}` : `Base ${fmtBRL(stats.custoBase)}`}
-            Icon={DollarSign}
-            color="emerald"
-          />
-        </div>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 no-print">
+            <StatCard
+              title="Horas trabalhadas"
+              value={`${stats.hoursWorked.toFixed(2)}h`}
+              sub={`de ${stats.hoursLimit}h · ${stats.percentUsed.toFixed(0)}%`}
+              Icon={Clock}
+              color="blue"
+              progress={Math.min(100, stats.percentUsed)}
+              barColor={stats.percentUsed >= 100 ? "bg-red-600" : stats.percentUsed >= 90 ? "bg-orange-500" : stats.percentUsed >= 70 ? "bg-amber-400" : "bg-emerald-500"}
+            />
+            <StatCard
+              title="Hora Extra"
+              value={`${stats.horaExtra.toFixed(2)}h`}
+              sub={stats.horaExtra > 0 ? `${fmtBRL(stats.valorHoraExtra)}/h × ${stats.horaExtra.toFixed(1)}` : "Sem horas extras"}
+              Icon={TrendingUp}
+              color={stats.horaExtra > 0 ? "orange" : "neutral"}
+            />
+            <StatCard
+              title="Restantes p/ limite"
+              value={`${stats.horasRestantes.toFixed(2)}h`}
+              sub={stats.horasRestantes <= 0 ? "Limite atingido" : "Antes de virar HE"}
+              Icon={Hourglass}
+              color={stats.horasRestantes <= 0 ? "red" : stats.horasRestantes < 22 ? "amber" : "emerald"}
+            />
+          </div>
+
+          <Card className="p-4 no-print" data-testid="card-custo-estimado">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm font-bold text-neutral-800">Custo Estimado</h3>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-black text-emerald-700 tabular-nums" data-testid="text-custo-total">{fmtBRL(stats.custoTotalEstimado)}</div>
+                {!stats.hasSalary && <div className="text-[10px] text-amber-600">Sem salário cadastrado</div>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Vencimentos */}
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-neutral-200">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-600">Vencimentos</span>
+                  <span className="text-sm font-bold text-neutral-800 tabular-nums" data-testid="text-vencimentos-total">{fmtBRL(stats.vencimentosTotal)}</span>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Salário Base</span>
+                    <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-custo-base">{fmtBRL(stats.baseSalary)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Periculosidade <span className="text-[10px] text-neutral-400">({stats.periculosidadePct}%)</span></span>
+                    <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-periculosidade">{fmtBRL(stats.periculosidade)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Hora Extra <span className="text-[10px] text-neutral-400">({stats.horaExtra.toFixed(2)}h)</span></span>
+                    <span className={`font-semibold tabular-nums ${stats.custoExtra > 0 ? "text-orange-700" : "text-neutral-400"}`} data-testid="text-custo-extra">{fmtBRL(stats.custoExtra)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Benefícios / Diárias */}
+              <div className="rounded-lg border border-neutral-200 bg-emerald-50/30 p-3">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-neutral-200">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Benefícios + Diárias</span>
+                  <span className="text-sm font-bold text-emerald-800 tabular-nums" data-testid="text-beneficios-total">{fmtBRL(stats.beneficiosTotal)}</span>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Vale Refeição <span className="text-[10px] text-neutral-400">({fmtBRL(stats.vrDiario)}/dia × {stats.diasUteis}d)</span></span>
+                    <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-vale-refeicao">{fmtBRL(stats.valeRefeicao)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Diárias <span className="text-[10px] text-neutral-400">(missões)</span></span>
+                    <span className={`font-semibold tabular-nums ${stats.diarias > 0 ? "text-neutral-800" : "text-neutral-400"}`} data-testid="text-diarias">{fmtBRL(stats.diarias)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-600">Cesta Básica</span>
+                    <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-cesta-basica">{fmtBRL(stats.cestaBasica)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-dashed border-neutral-200 flex items-center justify-between text-[11px] text-neutral-500">
+              <span>Custo c/ encargos ({stats.encargosPct}%)</span>
+              <span className="font-semibold tabular-nums text-neutral-700" data-testid="text-custo-encargos">{fmtBRL(stats.custoComEncargos)}</span>
+            </div>
+          </Card>
+        </>
       )}
 
       {!employeeId ? (
