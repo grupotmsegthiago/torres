@@ -994,7 +994,9 @@ export async function createRhidPunch(deviceId: number, rhidPersonId: string, da
   if (device.tipo !== "rhid_cloud") throw new Error("Create punch suportado apenas em RHID Cloud");
 
   const token = await getOrLoginToken(device as DeviceRow);
-  const url = joinUrl(device.base_url, `/customerdb/afd.svc/`);
+  // ATENÇÃO: endpoint correto é `/customerdb/afd.svc/a` (com o `/a` final), confirmado via OPTIONS:
+  // Allow: POST, PUT, PATCH, GET. Sem o `/a` retorna HTTP 404 (IIS).
+  const url = joinUrl(device.base_url, `/customerdb/afd.svc/a`);
   const body = {
     idPerson: Number(rhidPersonId),
     dateTime: `/Date(${dateTime.getTime()}-0300)/`,
@@ -1997,8 +1999,10 @@ async function executeRhidPush(item: any): Promise<any> {
         new Date(payload.dateTime),
         Number(payload.tipo ?? 3),
       );
-      // RHID pode retornar o ID em chaves diferentes (id/Id/ID/idAfd/Punch.id…) — testa todas.
-      const extractedId = result?.id ?? result?.Id ?? result?.ID ?? result?.idAfd
+      // RHID pode retornar o ID em chaves diferentes — confirmado: POST /afd.svc/a devolve `newID`.
+      // Mantém fallback pras outras grafias caso a API mude.
+      const extractedId = result?.newID ?? result?.NewID ?? result?.newId ?? result?.NewId
+        ?? result?.id ?? result?.Id ?? result?.ID ?? result?.idAfd
         ?? result?.IdAfd ?? result?.id_afd ?? result?.Punch?.id ?? result?.punch?.id;
       if (item.ref_id) {
         if (extractedId == null) {
