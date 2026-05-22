@@ -3159,6 +3159,10 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
       };
       const res = await apiRequest("PUT", "/api/cct-config", payload);
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) {
+        throw new Error("Servidor ainda reiniciando — aguarde 2-3s e tente de novo.");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -3210,6 +3214,9 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
             <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-neutral-200"><span>Total Bruto Mensal</span><span className="text-emerald-700 tabular-nums">R$ {totalBruto.toFixed(2)}</span></div>
           </div>
 
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-900 space-y-1">
+            <div><strong>Encargos Sociais (%)</strong> — é o quanto a empresa paga <em>além</em> do salário bruto do funcionário: INSS patronal (~20%), FGTS (8%), provisão de 13º (~8,33%), férias + 1/3 (~11,11%), RAT/SAT e outros. O padrão de 80% reflete o custo total de um vigilante para a empresa (salário + benefícios + impostos). Esse percentual é usado nos relatórios de custo de mão-de-obra e no rateio de custo por OS — não vai no holerite do funcionário.</div>
+          </div>
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800">
             <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />
             Esses valores são aplicados quando você clica <strong>"Kit CCT"</strong> no funcionário ou na listagem. Salários já lançados não são alterados retroativamente.
