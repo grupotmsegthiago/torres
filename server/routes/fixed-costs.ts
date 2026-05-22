@@ -170,6 +170,8 @@ export async function calculateAgentMonthlyCost(
     .select("*")
     .eq("employee_id", employeeId)
     .order("effective_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1);
 
   // Dias úteis padrão: mês corrente

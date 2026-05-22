@@ -1144,6 +1144,8 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     .eq("employee_id", employeeId)
     .lte("effective_date", monthEndStr)
     .order("effective_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1);
 
   const sal = (salaryRows && salaryRows[0]) as any;
@@ -1631,6 +1633,8 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
     .eq("employee_id", employeeId)
     .lte("effective_date", monthEndStrJ)
     .order("effective_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1);
   const horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
   const jornadaDiariaMin = (horasMensais * 60) / 25;

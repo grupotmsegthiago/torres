@@ -373,7 +373,10 @@ import { syncEmployeeStatusToRhid } from "../control-id";
       // Salário vigente — preferimos o registro real (mesmo que controladoria usa)
       const { data: salRows } = await supabaseAdmin
         .from("employee_salaries").select("*").eq("employee_id", empId)
-        .order("effective_date", { ascending: false }).limit(1);
+        .order("effective_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1);
       const sal: any = salRows?.[0] || {};
 
       const { getCctConfig } = await import("../lib/cct-config");
