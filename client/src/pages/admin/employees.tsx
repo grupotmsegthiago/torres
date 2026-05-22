@@ -3142,17 +3142,24 @@ function CctField({ label, value, onChange, suffix, testId }: { label: string; v
 
 function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenChange: (v: boolean) => void; initial: typeof CCT_SP_2025 }) {
   const { toast } = useToast();
-  const [form, setForm] = useState({
-    label: initial.label,
-    salarioBase: String(initial.salarioBase),
-    periculosidadePct: String(initial.periculosidadePct),
-    valeRefeicaoDia: String(initial.valeRefeicaoDia),
-    cestaBasica: String(initial.cestaBasica),
-    diasUteisMes: String(initial.diasUteisMes),
-    encargosSociaisPct: String(initial.encargosSociaisPct),
-    horaExtraValor: String(initial.horaExtraValor),
-    pagamentoDiaUtil: String(initial.pagamentoDiaUtil),
+  const buildForm = (i: typeof CCT_SP_2025) => ({
+    label: i.label,
+    salarioBase: String(i.salarioBase),
+    periculosidadePct: String(i.periculosidadePct),
+    valeRefeicaoDia: String(i.valeRefeicaoDia),
+    cestaBasica: String(i.cestaBasica),
+    diasUteisMes: String(i.diasUteisMes),
+    encargosSociaisPct: String(i.encargosSociaisPct),
+    horaExtraValor: String(i.horaExtraValor),
+    pagamentoDiaUtil: String(i.pagamentoDiaUtil),
   });
+  const [form, setForm] = useState(buildForm(initial));
+  // Sincroniza o form com os valores reais do servidor sempre que o dialog abre
+  // ou quando o `initial` (vindo do useQuery /api/cct-config) muda.
+  useEffect(() => {
+    if (open) setForm(buildForm(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
   const num = (v: string) => Number(String(v).replace(",", "."));
   const periculosidade = +(num(form.salarioBase) * (num(form.periculosidadePct) / 100) || 0).toFixed(2);
   const valeRefeicaoMes = +(num(form.valeRefeicaoDia) * num(form.diasUteisMes) || 0).toFixed(2);
