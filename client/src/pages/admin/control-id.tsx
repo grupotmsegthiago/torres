@@ -1601,17 +1601,26 @@ function FolhaTab() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-600">Vencimentos</span>
                   <span className="text-sm font-bold text-neutral-800 tabular-nums" data-testid="text-vencimentos-total">{fmtBRL(stats.vencimentosTotal)}</span>
                 </div>
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Salário Base</span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Salário Base</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">CCT vigente</div>
+                    </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-custo-base">{fmtBRL(stats.baseSalary)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Periculosidade <span className="text-[10px] text-neutral-400">({stats.periculosidadePct}%)</span></span>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Periculosidade</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{stats.periculosidadePct}% sobre base</div>
+                    </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-periculosidade">{fmtBRL(stats.periculosidade)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Hora Extra <span className="text-[10px] text-neutral-400">({stats.horaExtra.toFixed(2)}h)</span></span>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Hora Extra</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{stats.horaExtra.toFixed(2)}h × {fmtBRL(stats.valorHoraExtra)}/h</div>
+                    </div>
                     <span className={`font-semibold tabular-nums ${stats.custoExtra > 0 ? "text-orange-700" : "text-neutral-400"}`} data-testid="text-custo-extra">{fmtBRL(stats.custoExtra)}</span>
                   </div>
                 </div>
@@ -1623,17 +1632,26 @@ function FolhaTab() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Benefícios + Diárias</span>
                   <span className="text-sm font-bold text-emerald-800 tabular-nums" data-testid="text-beneficios-total">{fmtBRL(stats.beneficiosTotal)}</span>
                 </div>
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Vale Refeição <span className="text-[10px] text-neutral-400">({fmtBRL(stats.vrDiario)}/dia × {stats.diasUteis}d)</span></span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Vale Refeição</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{fmtBRL(stats.vrDiario)}/dia × {stats.diasUteis} dias úteis</div>
+                    </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-vale-refeicao">{fmtBRL(stats.valeRefeicao)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Diárias <span className="text-[10px] text-neutral-400">(missões)</span></span>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Diárias</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">Missões / escolta</div>
+                    </div>
                     <span className={`font-semibold tabular-nums ${stats.diarias > 0 ? "text-neutral-800" : "text-neutral-400"}`} data-testid="text-diarias">{fmtBRL(stats.diarias)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-600">Cesta Básica</span>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Cesta Básica</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">Conforme CCT</div>
+                    </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-cesta-basica">{fmtBRL(stats.cestaBasica)}</span>
                   </div>
                 </div>
