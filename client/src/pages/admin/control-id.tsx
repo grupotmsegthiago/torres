@@ -1638,25 +1638,31 @@ function FolhaTab() {
                     )}
                     <div className="pt-2 border-t border-dashed border-neutral-200 flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-neutral-800 font-medium">Custo estimado do funcionário</div>
-                        <div className="text-[10px] text-neutral-400 mt-0.5">Vencimentos + benefícios</div>
+                        <div className="text-neutral-800 font-medium">Custo Real do funcionário</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">Vencimentos + benefícios + recolhimentos</div>
                       </div>
                       <span className="font-semibold tabular-nums text-neutral-800">{fmtBRL(stats.custoTotalEstimado)}</span>
                     </div>
                     {(stats.faturamentoEmpregado ?? 0) > 0 && stats.custoTotalEstimado > 0 && (() => {
-                      const resultado = (stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado;
-                      const margemPct = (stats.faturamentoEmpregado ?? 0) > 0 ? (resultado / (stats.faturamentoEmpregado ?? 1)) * 100 : 0;
+                      // Lucro real = margem líquida das OSs (já desconta VRP, combustível,
+                      // pedágio, despesas operacionais) MENOS o custo CLT mensal do agente.
+                      // NÃO usar faturamentoEmpregado bruto — isso ignoraria custos da OS.
+                      const margemLiquida = stats.faturamentoMargem ?? 0;
+                      const resultado = margemLiquida - stats.custoTotalEstimado;
+                      const denom = stats.faturamentoEmpregado ?? 0;
+                      const margemPct = denom > 0 ? (resultado / denom) * 100 : 0;
                       const positivo = resultado >= 0;
                       return (
                         <div className="pt-2 border-t border-neutral-200 space-y-1">
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-neutral-800 font-semibold">Resultado (gerado − custo)</div>
+                            <div className="text-neutral-800 font-semibold">Lucro (margem líquida − custo)</div>
                             <span className={`font-black tabular-nums ${positivo ? "text-emerald-700" : "text-red-600"}`} data-testid="text-resultado-empregado">
                               {fmtBRL(resultado)}
                             </span>
                           </div>
+                          <div className="text-[10px] text-neutral-400 -mt-0.5">{fmtBRL(margemLiquida)} − {fmtBRL(stats.custoTotalEstimado)}</div>
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-[11px] text-neutral-500">% lucro sobre faturamento</div>
+                            <div className="text-[11px] text-neutral-500">% lucro sobre faturamento bruto</div>
                             <span className={`text-[11px] font-bold tabular-nums ${positivo ? "text-emerald-700" : "text-red-600"}`} data-testid="text-margem-pct">
                               {margemPct >= 0 ? "+" : ""}{margemPct.toFixed(1)}%
                             </span>
