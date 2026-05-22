@@ -3127,6 +3127,18 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   );
 }
 
+function CctField({ label, value, onChange, suffix, testId }: { label: string; value: string; onChange: (v: string) => void; suffix?: string; testId: string }) {
+  return (
+    <div>
+      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">{label}</label>
+      <div className="relative">
+        <Input value={value} onChange={(e) => onChange(e.target.value)} inputMode="decimal" className="text-xs h-9 pr-10" data-testid={testId} />
+        {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-400">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
 function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenChange: (v: boolean) => void; initial: typeof CCT_SP_2025 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -3173,16 +3185,6 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
     onError: (err: any) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
 
-  const Field = ({ label, value, onChange, suffix, testId }: { label: string; value: string; onChange: (v: string) => void; suffix?: string; testId: string }) => (
-    <div>
-      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">{label}</label>
-      <div className="relative">
-        <Input value={value} onChange={(e) => onChange(e.target.value)} inputMode="decimal" className="text-xs h-9 pr-10" data-testid={testId} />
-        {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-400">{suffix}</span>}
-      </div>
-    </div>
-  );
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl" data-testid="dialog-edit-cct">
@@ -3195,14 +3197,14 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
               <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Nome / Identificação da CCT</label>
               <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="text-xs h-9" data-testid="input-cct-label" />
             </div>
-            <Field label="Salário Base" value={form.salarioBase} onChange={(v) => setForm({ ...form, salarioBase: v })} suffix="R$" testId="input-cct-salario" />
-            <Field label="Periculosidade" value={form.periculosidadePct} onChange={(v) => setForm({ ...form, periculosidadePct: v })} suffix="%" testId="input-cct-periculosidade" />
-            <Field label="Vale-Refeição / dia" value={form.valeRefeicaoDia} onChange={(v) => setForm({ ...form, valeRefeicaoDia: v })} suffix="R$" testId="input-cct-vr" />
-            <Field label="Dias úteis / mês" value={form.diasUteisMes} onChange={(v) => setForm({ ...form, diasUteisMes: v })} suffix="dias" testId="input-cct-dias" />
-            <Field label="Cesta Básica" value={form.cestaBasica} onChange={(v) => setForm({ ...form, cestaBasica: v })} suffix="R$" testId="input-cct-cesta" />
-            <Field label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
-            <Field label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
-            <Field label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
+            <CctField label="Salário Base" value={form.salarioBase} onChange={(v) => setForm({ ...form, salarioBase: v })} suffix="R$" testId="input-cct-salario" />
+            <CctField label="Periculosidade" value={form.periculosidadePct} onChange={(v) => setForm({ ...form, periculosidadePct: v })} suffix="%" testId="input-cct-periculosidade" />
+            <CctField label="Vale-Refeição / dia" value={form.valeRefeicaoDia} onChange={(v) => setForm({ ...form, valeRefeicaoDia: v })} suffix="R$" testId="input-cct-vr" />
+            <CctField label="Dias úteis / mês" value={form.diasUteisMes} onChange={(v) => setForm({ ...form, diasUteisMes: v })} suffix="dias" testId="input-cct-dias" />
+            <CctField label="Cesta Básica" value={form.cestaBasica} onChange={(v) => setForm({ ...form, cestaBasica: v })} suffix="R$" testId="input-cct-cesta" />
+            <CctField label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
+            <CctField label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
+            <CctField label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
           </div>
 
           <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-1.5">
