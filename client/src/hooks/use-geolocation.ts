@@ -2,8 +2,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authFetch } from "@/lib/queryClient";
 
-const INTERVAL_IDLE_MS = 10 * 60 * 1000;
-const INTERVAL_MISSION_MS = 30 * 1000;
+// Estratégia GPS (2026-05): NÃO ficamos puxando posição continuamente.
+// O servidor recebe a localização do agente apenas:
+//   1) Quando ele abre o sistema (mount inicial + permissão concedida)
+//   2) Quando a aba/PWA volta do background pra primeiro plano (visibilitychange)
+// Antes, este hook rodava watchPosition + setInterval (10min/30s) e gerava
+// dezenas de POSTs /api/agent/location por minuto por agente — causa principal
+// da saturação do Supabase.
 
 const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -11,21 +16,27 @@ const GPS_OPTIONS: PositionOptions = {
   maximumAge: 0,
 };
 
-export function useGeolocation(missionActive = false) {
+// Cache simples por aba pra não disparar dois POSTs em <30s (ex.: visibilitychange
+// que dispara várias vezes em sequência em alguns navegadores).
+const MIN_RESEND_MS = 30 * 1000;
+
+export function useGeolocation(_missionActive = false) {
   const { user } = useAuth();
   const [denied, setDenied] = useState(false);
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const watchRef = useRef<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initDone = useRef(false);
+  const lastSentAt = useRef<number>(0);
 
   const sendLocation = useCallback(async (pos: GeolocationPosition) => {
     setPosition(pos);
     setLoading(false);
     setDenied(false);
     setError(null);
+    const now = Date.now();
+    if (now - lastSentAt.current < MIN_RESEND_MS) return;
+    lastSentAt.current = now;
     try {
       await authFetch("/api/agent/location", {
         method: "POST",
@@ -41,33 +52,15 @@ export function useGeolocation(missionActive = false) {
     } catch {}
   }, []);
 
-  const startWatch = useCallback(() => {
+  const captureOnce = useCallback(() => {
     if (!navigator.geolocation) return;
-    if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
-    watchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        setDenied(false);
-        setPosition(pos);
-        setLoading(false);
-        setError(null);
-      },
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 0 }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => sendLocation(pos),
+      () => setLoading(false),
+      GPS_OPTIONS
     );
-  }, []);
-
-  const startInterval = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    const ms = missionActive ? INTERVAL_MISSION_MS : INTERVAL_IDLE_MS;
-    intervalRef.current = setInterval(() => {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(
-        (pos) => sendLocation(pos),
-        () => {},
-        GPS_OPTIONS
-      );
-    }, ms);
-  }, [sendLocation, missionActive]);
+  }, [sendLocation]);
 
   const handleGeoError = useCallback((err: GeolocationPositionError) => {
     setLoading(false);
@@ -90,40 +83,18 @@ export function useGeolocation(missionActive = false) {
     }
     setLoading(true);
     setError(null);
-
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        sendLocation(pos);
-        startWatch();
-        startInterval();
-      },
+      (pos) => sendLocation(pos),
       handleGeoError,
       GPS_OPTIONS
     );
-  }, [sendLocation, startWatch, startInterval, handleGeoError]);
-
-  useEffect(() => {
-    if (initDone.current && intervalRef.current) {
-      startInterval();
-    }
-  }, [missionActive, startInterval]);
+  }, [sendLocation, handleGeoError]);
 
   useEffect(() => {
     if (!user || !navigator.geolocation || initDone.current) return;
     initDone.current = true;
 
-    const autoFetch = () => {
-      setLoading(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          sendLocation(pos);
-          startWatch();
-          startInterval();
-        },
-        () => { setLoading(false); },
-        GPS_OPTIONS
-      );
-    };
+    const autoFetch = () => captureOnce();
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "geolocation" as PermissionName }).then((result) => {
@@ -132,7 +103,6 @@ export function useGeolocation(missionActive = false) {
         } else if (result.state === "denied") {
           setDenied(true);
         }
-
         result.addEventListener("change", () => {
           if (result.state === "granted") {
             setDenied(false);
@@ -142,15 +112,20 @@ export function useGeolocation(missionActive = false) {
             setLoading(false);
           }
         });
-      }).catch(() => {
-      });
+      }).catch(() => {});
+    } else {
+      autoFetch();
     }
 
-    return () => {
-      if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    // Re-envia quando o app volta do background (agente reabriu o PWA).
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") captureOnce();
     };
-  }, [user, sendLocation, startWatch, startInterval]);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user, captureOnce]);
 
   return { denied, position, loading, error, requestPermission };
 }

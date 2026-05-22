@@ -362,9 +362,14 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await execSql(`CREATE INDEX IF NOT EXISTS idx_al_user_id ON agent_locations(user_id)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_al_updated ON agent_locations(updated_at DESC)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_alh_user_date ON agent_location_history(user_id, created_at DESC)`);
+    // agent_locations DEVE ter UNIQUE em user_id (1 linha viva por agente). Sem isso, o .upsert({ onConflict: "user_id" })
+    // em storage.ts → upsertAgentLocation cai no fallback toda atualização de GPS. Dedupe antes (idempotente: mantém o id maior por user_id).
+    await execSql(`DELETE FROM agent_locations a USING agent_locations b WHERE a.user_id = b.user_id AND a.id < b.id`).catch(() => {});
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_loc_user ON agent_locations(user_id)`).catch(() => {});
+    // Índice antigo não-único redundante (uniq_agent_loc_user já cobre lookup por user_id).
+    await execSql(`DROP INDEX IF EXISTS idx_al_user_id`).catch(() => {});
 
     await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
     await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
@@ -1067,6 +1072,8 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_vehicle_km ON vehicle_fueling(vehicle_id, km DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_created_at ON vehicle_fueling(created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_vfueling_vehicle_date ON vehicle_fueling(vehicle_id, date)`).catch(() => {});
+    // Relatório /api/fueling filtra por intervalo de data; sem este índice o Postgres faz seq scan e estoura statement_timeout.
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vf_date_vehicle ON vehicle_fueling(date DESC, vehicle_id)`).catch(() => {});
 
     // Índices adicionais pra cortar lentidão em tabelas que apareciam nos
     // logs SLOW-SUPA (users 21s, financial_transactions 15-18s, clients 18s).
