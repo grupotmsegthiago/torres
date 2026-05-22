@@ -2647,15 +2647,23 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             size="sm"
             variant="outline"
             className="text-xs gap-1 h-8 border-neutral-300"
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ["/api/cct-config"] });
-              queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
-              refetchSummary();
-              toast({ title: "Atualizando…", description: "Recarregando vencimentos do servidor." });
+            onClick={async () => {
+              const isVig = (employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta"));
+              try {
+                if (isVig && isDiretoria) {
+                  await apiRequest("POST", `/api/employees/${employee.id}/apply-cct-kit`, {});
+                  toast({ title: "Kit CCT reaplicado", description: "Novo registro salarial criado com os valores atuais da CCT." });
+                }
+                await queryClient.invalidateQueries({ queryKey: ["/api/cct-config"] });
+                await queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
+                await refetchSummary();
+              } catch (e: any) {
+                toast({ title: "Erro ao atualizar", description: e?.message || String(e), variant: "destructive" });
+              }
             }}
             disabled={loadingSummary}
             data-testid="button-refresh-summary"
-            title="Recarregar valores do servidor"
+            title="Reaplicar Kit CCT atual e recarregar valores"
           >
             <RefreshCw className={`w-3 h-3 ${loadingSummary ? "animate-spin" : ""}`} /> Atualizar
           </Button>

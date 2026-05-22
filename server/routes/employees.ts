@@ -604,6 +604,38 @@ import { syncEmployeeStatusToRhid } from "../control-id";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/employees/:id/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+      const isVig = (emp.role || "").toLowerCase().includes("vigilante") || (emp.role || "").toLowerCase().includes("escolta");
+      if (!isVig) return res.status(400).json({ message: "Kit CCT aplica somente a vigilantes/escoltas" });
+
+      const { getCctConfig } = await import("../lib/cct-config");
+      const CCT = await getCctConfig();
+      const effectiveDate = req.body?.effectiveDate || new Date().toISOString().slice(0, 10);
+      const periculosidade = Number(CCT.salarioBase) * Number(CCT.periculosidadePct) / 100;
+      const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
+      const notes = `Pgto ${CCT.pagamentoDiaUtil}º dia útil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Cesta: R$${CCT.cestaBasica}`;
+
+      const sal = await storage.createEmployeeSalary({
+        employeeId: empId,
+        baseSalary: String(CCT.salarioBase),
+        valeRefeicaoDiario: String(CCT.valeRefeicaoDia),
+        cestaBasica: String(CCT.cestaBasica),
+        periculosidadePct: String(CCT.periculosidadePct),
+        horasMensais: "220",
+        effectiveDate,
+        reason,
+        notes,
+      } as any);
+      res.json({ message: `Kit CCT aplicado a ${emp.name}`, salary: sal });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/employees/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { getCctConfig } = await import("../lib/cct-config");
