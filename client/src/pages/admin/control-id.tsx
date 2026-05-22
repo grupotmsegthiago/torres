@@ -58,6 +58,7 @@ type FolhaStats = {
   valeRefeicao: number; vrDiario: number; diasUteis: number;
   diarias: number; cestaBasica: number;
   vencimentosTotal: number; beneficiosTotal: number;
+  fgts?: number; fgtsPct?: number; inssPatronal?: number; inssPatronalPct?: number; seguroVida?: number; recolhimentosTotal?: number;
   faturamentoBruto?: number; faturamentoEmpregado?: number; faturamentoMargem?: number; faturamentoOsCount?: number;
   hasSalary: boolean;
 };
@@ -1639,14 +1640,27 @@ function FolhaTab() {
                       </div>
                       <span className="font-semibold tabular-nums text-neutral-800">{fmtBRL(stats.custoTotalEstimado)}</span>
                     </div>
-                    {(stats.faturamentoEmpregado ?? 0) > 0 && stats.custoTotalEstimado > 0 && (
-                      <div className="pt-2 border-t border-neutral-200 flex items-center justify-between gap-3">
-                        <div className="text-neutral-800 font-semibold">Resultado (gerado − custo)</div>
-                        <span className={`font-black tabular-nums ${((stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado) >= 0 ? "text-emerald-700" : "text-red-600"}`} data-testid="text-resultado-empregado">
-                          {fmtBRL((stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado)}
-                        </span>
-                      </div>
-                    )}
+                    {(stats.faturamentoEmpregado ?? 0) > 0 && stats.custoTotalEstimado > 0 && (() => {
+                      const resultado = (stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado;
+                      const margemPct = (stats.faturamentoEmpregado ?? 0) > 0 ? (resultado / (stats.faturamentoEmpregado ?? 1)) * 100 : 0;
+                      const positivo = resultado >= 0;
+                      return (
+                        <div className="pt-2 border-t border-neutral-200 space-y-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-neutral-800 font-semibold">Resultado (gerado − custo)</div>
+                            <span className={`font-black tabular-nums ${positivo ? "text-emerald-700" : "text-red-600"}`} data-testid="text-resultado-empregado">
+                              {fmtBRL(resultado)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[11px] text-neutral-500">% lucro sobre faturamento</div>
+                            <span className={`text-[11px] font-bold tabular-nums ${positivo ? "text-emerald-700" : "text-red-600"}`} data-testid="text-margem-pct">
+                              {margemPct >= 0 ? "+" : ""}{margemPct.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </HoverCardContent>
               </HoverCard>
@@ -1712,6 +1726,37 @@ function FolhaTab() {
                     </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-cesta-basica">{fmtBRL(stats.cestaBasica)}</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recolhimentos (FGTS / INSS Patronal / Seguro de Vida) */}
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-amber-200">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Recolhimentos</span>
+                <span className="text-sm font-bold text-amber-900 tabular-nums" data-testid="text-recolhimentos-total">{fmtBRL(stats.recolhimentosTotal ?? 0)}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="flex items-start justify-between md:block">
+                  <div>
+                    <div className="text-neutral-800 font-medium">FGTS</div>
+                    <div className="text-[10px] text-neutral-500 mt-0.5">{(stats.fgtsPct ?? 8)}% sobre vencimentos</div>
+                  </div>
+                  <span className="font-semibold tabular-nums text-amber-900 md:block md:mt-1" data-testid="text-fgts">{fmtBRL(stats.fgts ?? 0)}</span>
+                </div>
+                <div className="flex items-start justify-between md:block">
+                  <div>
+                    <div className="text-neutral-800 font-medium">INSS Patronal</div>
+                    <div className="text-[10px] text-neutral-500 mt-0.5">{(stats.inssPatronalPct ?? 20)}% sobre vencimentos</div>
+                  </div>
+                  <span className="font-semibold tabular-nums text-amber-900 md:block md:mt-1" data-testid="text-inss-patronal">{fmtBRL(stats.inssPatronal ?? 0)}</span>
+                </div>
+                <div className="flex items-start justify-between md:block">
+                  <div>
+                    <div className="text-neutral-800 font-medium">Seguro de Vida</div>
+                    <div className="text-[10px] text-neutral-500 mt-0.5">Mensalidade CCT</div>
+                  </div>
+                  <span className={`font-semibold tabular-nums md:block md:mt-1 ${(stats.seguroVida ?? 0) > 0 ? "text-amber-900" : "text-neutral-400"}`} data-testid="text-seguro-vida">{fmtBRL(stats.seguroVida ?? 0)}</span>
                 </div>
               </div>
             </div>

@@ -1194,7 +1194,18 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
 
   const vencimentosTotal = +(baseSalary + periculosidade + custoExtra).toFixed(2);
   const beneficiosTotal = +(valeRefeicao + diarias + cestaBasica).toFixed(2);
-  const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal).toFixed(2);
+
+  // Recolhimentos sobre vencimentos brutos (base + periculosidade + HE)
+  const baseRecolhimentos = baseSalary + periculosidade + custoExtra;
+  const fgtsPct = (CCT as any).fgtsPct ?? 8;
+  const inssPatronalPct = (CCT as any).inssPatronalPct ?? 20;
+  const seguroVidaMensal = (CCT as any).seguroVidaMensal ?? 0;
+  const fgts = +(baseRecolhimentos * (fgtsPct / 100)).toFixed(2);
+  const inssPatronal = +(baseRecolhimentos * (inssPatronalPct / 100)).toFixed(2);
+  const seguroVida = +Number(seguroVidaMensal).toFixed(2);
+  const recolhimentosTotal = +(fgts + inssPatronal + seguroVida).toFixed(2);
+
+  const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal + recolhimentosTotal).toFixed(2);
   const custoBase = baseSalary;
   const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPct / 100) + beneficiosTotal).toFixed(2);
 
@@ -1266,6 +1277,13 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     cestaBasica,
     vencimentosTotal,
     beneficiosTotal,
+    // Recolhimentos detalhados
+    fgts,
+    fgtsPct,
+    inssPatronal,
+    inssPatronalPct,
+    seguroVida,
+    recolhimentosTotal,
     encargosPct,
     custoComEncargos,
     custoTotalEstimado,

@@ -10,6 +10,10 @@ export const cctConfigSchema = z.object({
   encargosSociaisPct: z.number().nonnegative().default(80),
   horaExtraValor: z.number().nonnegative().default(22.99),
   pagamentoDiaUtil: z.number().int().positive().default(5),
+  // Recolhimentos detalhados (defaults Brasil)
+  fgtsPct: z.number().nonnegative().default(8),
+  inssPatronalPct: z.number().nonnegative().default(20),
+  seguroVidaMensal: z.number().nonnegative().default(0),
 });
 
 export type CctConfig = z.infer<typeof cctConfigSchema>;
