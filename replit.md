@@ -75,6 +75,25 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 **SEMPRE TESTE ANTES DE ENTREGAR.** Não dá pra dizer "está pronto" sem rodar o cenário (curl, script tsx que invoca a função, screenshot, ou checar log da requisição real). Se for backend, escrever um script `.local/test_*.mts` que importa a função e exercita o caso. Se for frontend, abrir a página/screenshot. Só falar "pronto" depois que o teste mostrar o comportamento esperado de fato — não confiar só em que "o código parece certo".
 
+## Regra de inspeção do Supabase antes de mexer no banco
+
+Antes de qualquer mudança que toque o banco (criar/alterar/dropar tabela, índice, constraint, trigger, RPC, RLS, ou rodar UPDATE/DELETE em massa), **OBRIGATÓRIO** inspecionar o estado real do Supabase de produção primeiro e mostrar o impacto pro dono ANTES de aplicar. Sem exceção.
+
+**Por que:** o `executeSql({environment:"production"})` do agente aponta pro Neon do Replit (`neondb`), NÃO pro Supabase do projeto. Confiar nele pra "verificar produção" dá falso negativo (foi o que aconteceu na queda de 22/05/2026). O único caminho confiável é consultar o Supabase via `supabaseAdmin` num script `.local/test_inspect_*.mts`.
+
+**Como fazer (template):**
+1. Criar `.local/test_inspect_<assunto>.mts` que importa `supabaseAdmin` de `server/supabase.ts` e usa `supabaseAdmin.rpc("exec_sql", { query: "..." })` pra rodar SELECTs de inspeção em `pg_indexes`, `information_schema.columns`, `pg_constraint`, contagem de linhas afetadas, etc.
+2. Rodar com `tsx .local/test_inspect_<assunto>.mts` e mostrar o resultado pro dono em linguagem clara.
+3. Listar explicitamente o impacto previsto: "vai criar índice X (tabela tem N linhas, vai levar ~Ys)", "vai dropar coluna Y (tem N valores não-nulos)", "esse UNIQUE vai falhar porque tem N duplicatas — preciso dedupar antes".
+4. **Só depois da aprovação do dono**, aplicar a mudança (via `db-init.ts` no boot ou via script com `supabaseAdmin`).
+5. Após aplicar, rodar inspeção de novo pra confirmar o estado final.
+
+**Exceções (não precisa inspecionar antes):**
+- DDL puramente idempotente em tabela nova que o agente está criando do zero no mesmo turno.
+- Leituras só-leitura, debug, ou scripts de diagnóstico.
+
+Se a mudança é destrutiva ou ambígua, na dúvida, inspeciona.
+
 ## Gotchas
 
 - **Supabase CRUD Rule:** Never use `db.*` (Drizzle ORM) or direct PostgreSQL for CRUD; always use `supabaseAdmin.from(...)`.
