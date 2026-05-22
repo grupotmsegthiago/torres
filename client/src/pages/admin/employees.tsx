@@ -2643,6 +2643,22 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               )}
             </>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs gap-1 h-8 border-neutral-300"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/cct-config"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
+              refetchSummary();
+              toast({ title: "Atualizando…", description: "Recarregando vencimentos do servidor." });
+            }}
+            disabled={loadingSummary}
+            data-testid="button-refresh-summary"
+            title="Recarregar valores do servidor"
+          >
+            <RefreshCw className={`w-3 h-3 ${loadingSummary ? "animate-spin" : ""}`} /> Atualizar
+          </Button>
           <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => { setShowDiscountForm(!showDiscountForm); setDiscountCategory(null); }} data-testid="button-launch-discount">
             <Ban className="w-3 h-3" /> Lançar Ocorrência
           </Button>
