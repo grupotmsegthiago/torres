@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
 import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText, BarChart3 } from "lucide-react";
@@ -57,6 +58,7 @@ type FolhaStats = {
   valeRefeicao: number; vrDiario: number; diasUteis: number;
   diarias: number; cestaBasica: number;
   vencimentosTotal: number; beneficiosTotal: number;
+  faturamentoBruto?: number; faturamentoEmpregado?: number; faturamentoMargem?: number; faturamentoOsCount?: number;
   hasSalary: boolean;
 };
 
@@ -1588,10 +1590,66 @@ function FolhaTab() {
                 <DollarSign className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-sm font-bold text-neutral-800">Custo Estimado</h3>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-black text-emerald-700 tabular-nums" data-testid="text-custo-total">{fmtBRL(stats.custoTotalEstimado)}</div>
-                {!stats.hasSalary && <div className="text-[10px] text-amber-600">Sem salário cadastrado</div>}
-              </div>
+              <HoverCard openDelay={120} closeDelay={80}>
+                <HoverCardTrigger asChild>
+                  <div className="text-right cursor-help">
+                    <div className="text-2xl font-black text-emerald-700 tabular-nums underline decoration-dotted decoration-emerald-400 underline-offset-4" data-testid="text-custo-total">{fmtBRL(stats.custoTotalEstimado)}</div>
+                    {!stats.hasSalary && <div className="text-[10px] text-amber-600">Sem salário cadastrado</div>}
+                    {(stats.faturamentoOsCount ?? 0) > 0 && (
+                      <div className="text-[10px] text-neutral-500 mt-0.5">
+                        Gerou <span className="font-semibold text-emerald-700">{fmtBRL(stats.faturamentoEmpregado)}</span> · passe o mouse
+                      </div>
+                    )}
+                  </div>
+                </HoverCardTrigger>
+                <HoverCardContent align="end" className="w-80 p-0 overflow-hidden">
+                  <div className="bg-emerald-600 text-white px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider opacity-90">Faturamento gerado no mês</div>
+                    <div className="text-lg font-black tabular-nums" data-testid="text-faturamento-empregado">{fmtBRL(stats.faturamentoEmpregado ?? 0)}</div>
+                    <div className="text-[10px] opacity-90">Participou de {stats.faturamentoOsCount ?? 0} OS{(stats.faturamentoOsCount ?? 0) === 1 ? "" : "s"}</div>
+                  </div>
+                  <div className="p-3 space-y-2 text-xs">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-neutral-800 font-medium">Faturamento bruto das OSs</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">Soma do fat_total das missões</div>
+                      </div>
+                      <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-faturamento-bruto">{fmtBRL(stats.faturamentoBruto ?? 0)}</span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-neutral-800 font-medium">Parte deste agente</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">Dividido por 2 quando há dupla na OS</div>
+                      </div>
+                      <span className="font-semibold tabular-nums text-emerald-700">{fmtBRL(stats.faturamentoEmpregado ?? 0)}</span>
+                    </div>
+                    {(stats.faturamentoMargem ?? 0) !== 0 && (
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-neutral-800 font-medium">Margem líquida atribuída</div>
+                          <div className="text-[10px] text-neutral-400 mt-0.5">Resultado líquido × share</div>
+                        </div>
+                        <span className={`font-semibold tabular-nums ${(stats.faturamentoMargem ?? 0) >= 0 ? "text-emerald-700" : "text-red-600"}`}>{fmtBRL(stats.faturamentoMargem ?? 0)}</span>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-dashed border-neutral-200 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-neutral-800 font-medium">Custo estimado do funcionário</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">Vencimentos + benefícios</div>
+                      </div>
+                      <span className="font-semibold tabular-nums text-neutral-800">{fmtBRL(stats.custoTotalEstimado)}</span>
+                    </div>
+                    {(stats.faturamentoEmpregado ?? 0) > 0 && stats.custoTotalEstimado > 0 && (
+                      <div className="pt-2 border-t border-neutral-200 flex items-center justify-between gap-3">
+                        <div className="text-neutral-800 font-semibold">Resultado (gerado − custo)</div>
+                        <span className={`font-black tabular-nums ${((stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado) >= 0 ? "text-emerald-700" : "text-red-600"}`} data-testid="text-resultado-empregado">
+                          {fmtBRL((stats.faturamentoEmpregado ?? 0) - stats.custoTotalEstimado)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

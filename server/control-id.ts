@@ -1198,6 +1198,49 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   const custoBase = baseSalary;
   const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPct / 100) + beneficiosTotal).toFixed(2);
 
+  // ===== Faturamento das OSs em que o funcionário participou no mês =====
+  let faturamentoBruto = 0;
+  let faturamentoEmpregado = 0;
+  let faturamentoOsCount = 0;
+  let faturamentoMargem = 0;
+  try {
+    const monthStartIso = `${monthYear}-01T00:00:00-03:00`;
+    const monthEndIso = `${monthYear}-${String(new Date(yyyy, mm, 0).getDate()).padStart(2, "0")}T23:59:59-03:00`;
+    const { data: osRows } = await supabaseAdmin
+      .from("service_orders")
+      .select("id, status, assigned_employee_id, assigned_employee_2_id")
+      .or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`)
+      .gte("scheduled_date", monthStartIso)
+      .lte("scheduled_date", monthEndIso)
+      .not("status", "eq", "recusada");
+
+    const osIds = (osRows || []).map((o: any) => o.id);
+    if (osIds.length > 0) {
+      const { data: billRows } = await supabaseAdmin
+        .from("escort_billings")
+        .select("service_order_id, fat_total, resultado_liquido")
+        .in("service_order_id", osIds);
+      for (const b of (billRows || [])) {
+        const os = (osRows || []).find((o: any) => o.id === (b as any).service_order_id);
+        const hasDoubleAgent = os && os.assigned_employee_id && os.assigned_employee_2_id;
+        const share = hasDoubleAgent ? 0.5 : 1.0;
+        const total = Number((b as any).fat_total || 0);
+        const liquido = Number((b as any).resultado_liquido || 0);
+        if (total > 0) {
+          faturamentoBruto += total;
+          faturamentoEmpregado += total * share;
+          faturamentoMargem += liquido * share;
+          faturamentoOsCount += 1;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[buildFolhaStats] erro ao calcular faturamento:", err);
+  }
+  faturamentoBruto = +faturamentoBruto.toFixed(2);
+  faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
+  faturamentoMargem = +faturamentoMargem.toFixed(2);
+
   return {
     employeeId,
     monthYear,
@@ -1226,6 +1269,11 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     encargosPct,
     custoComEncargos,
     custoTotalEstimado,
+    // Faturamento atribuído ao funcionário no mês
+    faturamentoBruto,
+    faturamentoEmpregado,
+    faturamentoMargem,
+    faturamentoOsCount,
     hasSalary: !!sal,
   };
 }
