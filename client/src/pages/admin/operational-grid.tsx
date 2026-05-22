@@ -5166,7 +5166,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 90000,
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 180000),
+    refetchIntervalInBackground: false,
   });
 
   const driverByVehicle = useMemo(() => {
@@ -8525,16 +8526,17 @@ export default function OperationalGridPage() {
 
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
-    refetchInterval: REFRESH_INTERVAL_MS,
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
+    // Polling em background pausado — só refaz quando aba está ativa.
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : REFRESH_INTERVAL_MS),
+    refetchIntervalInBackground: false,
+    staleTime: 60_000,
   });
 
   const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid, dataUpdatedAt: gridUpdatedAt } = useQuery<GridItem[]>({
     queryKey: ["/api/operational-grid"],
-    refetchInterval: REFRESH_INTERVAL_MS,
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : REFRESH_INTERVAL_MS),
+    refetchIntervalInBackground: false,
+    staleTime: 60_000,
   });
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({

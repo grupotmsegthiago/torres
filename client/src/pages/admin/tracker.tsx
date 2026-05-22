@@ -206,7 +206,10 @@ export default function TrackerPage() {
   const { data: agentLocs = [], isLoading: aLoading, refetch: refetchAgents } = useQuery<AgentLoc[]>({
     queryKey: ["/api/agent/locations"],
     queryFn: () => authFetch("/api/agent/locations").then(r => r.json()),
-    refetchInterval: 60000,
+    // Pausa polling quando aba está em background pra não bombardear o Supabase
+    // com requests que ninguém está vendo. Volta a 60s quando a aba está ativa.
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 60000),
+    refetchIntervalInBackground: false,
   });
 
   const onlineCount = useMemo(() => agentLocs.filter(l => isOnline(l.updatedAt)).length, [agentLocs]);

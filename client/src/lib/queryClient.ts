@@ -636,11 +636,13 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      // Refaz queries ao voltar foco/reconectar — combate cache antigo após offline.
-      // staleTime curto (15s) evita storm de refetch sem perder freshness percebido.
-      refetchOnWindowFocus: "always",
-      refetchOnReconnect: "always",
-      staleTime: 15_000,
+      // Realtime do Supabase (postgres_changes) já invalida queries quando há
+      // mudança de verdade — refetchOnWindowFocus:"always" gerava avalanche de
+      // 60-100 requests por foco de aba e era a maior causa de saturação do
+      // PostgREST. Reconnect:true (em vez de "always") só refaz queries stale.
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      staleTime: 60_000,
       gcTime: 5 * 60_000,
       retry: false,
     },
