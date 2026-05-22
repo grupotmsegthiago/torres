@@ -253,7 +253,8 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     queryFn: async () => {
       const { authFetch } = await import("@/lib/queryClient");
       const res = await authFetch(`/api/employees/${employee.id}/salaries`);
-      return res.json();
+      const j = await res.json();
+      return Array.isArray(j) ? j : [];
     },
     enabled: open,
   });
@@ -3355,7 +3356,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   });
   const { data: salaries = [], isLoading: loadingSal } = useQuery<EmployeeSalary[]>({
     queryKey: ["/api/employees", employee.id, "salaries"],
-    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/salaries`); return r.json(); },
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/salaries`); const j = await r.json(); return Array.isArray(j) ? j : []; },
   });
   const { data: dependents = [], isLoading: loadingDeps } = useQuery<any[]>({
     queryKey: ["/api/employees", employee.id, "dependents"],
