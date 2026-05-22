@@ -1589,7 +1589,7 @@ function FolhaTab() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-sm font-bold text-neutral-800">Custo Estimado</h3>
+                <h3 className="text-sm font-bold text-neutral-800">Custo Real</h3>
               </div>
               <HoverCard openDelay={120} closeDelay={80}>
                 <HoverCardTrigger asChild>
