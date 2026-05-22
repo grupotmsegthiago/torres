@@ -3171,11 +3171,11 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
       };
       const res = await apiRequest("PUT", "/api/cct-config", payload);
-      const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        throw new Error("Servidor ainda reiniciando — aguarde 2-3s e tente de novo.");
+      try {
+        return await res.json();
+      } catch {
+        throw new Error("Resposta inválida do servidor. Recarregue a página e tente de novo.");
       }
-      return res.json();
     },
     onSuccess: () => {
       toast({ title: "Kit CCT atualizado", description: "Novos valores serão usados nas próximas aplicações." });
