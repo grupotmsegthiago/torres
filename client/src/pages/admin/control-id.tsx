@@ -1590,6 +1590,9 @@ function FolhaTab() {
               <div className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-sm font-bold text-neutral-800">Custo Real</h3>
+                {(stats as any).isMesCorrente && (
+                  <span className="text-[10px] text-neutral-500" data-testid="text-cutoff-info">até hoje · {(stats as any).diasCorridosElapsed}/{(stats as any).totalDiasMes} dias</span>
+                )}
               </div>
               <HoverCard openDelay={120} closeDelay={80}>
                 <HoverCardTrigger asChild>
@@ -1677,7 +1680,7 @@ function FolhaTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Salário Base</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">CCT vigente</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{(stats as any).isMesCorrente ? `Ratado: ${(stats as any).diasCorridosElapsed}/${(stats as any).totalDiasMes} dias · ${fmtBRL((stats as any).baseSalaryMensal ?? stats.baseSalary)}/mês` : "CCT vigente"}</div>
                     </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-custo-base">{fmtBRL(stats.baseSalary)}</span>
                   </div>
@@ -1722,7 +1725,7 @@ function FolhaTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Cesta Básica</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">Conforme CCT</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{(stats as any).isMesCorrente ? `Ratado: ${(stats as any).diasCorridosElapsed}/${(stats as any).totalDiasMes} dias · ${fmtBRL((stats as any).cestaBasicaMensal ?? stats.cestaBasica)}/mês` : "Conforme CCT"}</div>
                     </div>
                     <span className="font-semibold tabular-nums text-neutral-800" data-testid="text-cesta-basica">{fmtBRL(stats.cestaBasica)}</span>
                   </div>

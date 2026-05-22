@@ -1159,54 +1159,84 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
   const cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
 
-  // Dias úteis reais do mês (descontando feriados)
+  // Dias úteis reais do mês (descontando feriados) — proporcional ao "decorrido"
+  // quando o mês solicitado é o mês corrente em BRT: tudo que é mensal-fixo
+  // (salário base, periculosidade, cesta básica, seguro de vida) é ratado por
+  // dias corridos decorridos / total dias do mês; VR é por dias úteis efetivamente
+  // decorridos. Mês fechado (anterior) usa o mês inteiro normalmente.
   const { countBusinessDays, loadHolidaySet, monthRange } = await import("./routes/holidays");
   const { from, to } = monthRange(yyyy, mm);
   const holidaySet = await loadHolidaySet(from, to);
-  const diasUteis = countBusinessDays(from, to, holidaySet);
+
+  // "Agora" em BRT
+  const nowBrt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const nowY = nowBrt.getFullYear();
+  const nowM = nowBrt.getMonth() + 1; // 1-12
+  const isMesCorrente = nowY === yyyy && nowM === mm;
+  const isMesFuturo = (nowY < yyyy) || (nowY === yyyy && nowM < mm);
+  const totalDiasMes = new Date(yyyy, mm, 0).getDate();
+
+  // Data de corte (último dia "elegível" para custo). Mês passado = fim do mês;
+  // mês corrente = hoje; mês futuro = início (custo zero).
+  let cutoff: Date;
+  if (isMesFuturo) cutoff = new Date(yyyy, mm - 1, 0); // dia 0 = sem custo ainda
+  else if (isMesCorrente) cutoff = new Date(yyyy, mm - 1, nowBrt.getDate());
+  else cutoff = to;
+
+  const diasCorridosElapsed = Math.max(0, Math.min(totalDiasMes, Math.floor((cutoff.getTime() - from.getTime()) / 86400000) + 1));
+  const diasUteisTotal = countBusinessDays(from, to, holidaySet);
+  const diasUteis = isMesCorrente || isMesFuturo
+    ? countBusinessDays(from, cutoff, holidaySet)
+    : diasUteisTotal;
+  const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
   const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
   const valorHoraExtra = valorHora * 1.5; // CLT padrão 50%
 
-  // Vencimentos
-  const periculosidade = +(baseSalary * (periculosidadePct / 100)).toFixed(2);
+  // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
+  const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
+  const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
   const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
+  const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
 
   // Diárias de missão (escolta/operacional) — soma de pagamentos lançados no mês
   let diarias = 0;
   try {
     const monthStart = `${monthYear}-01`;
+    const cutoffStr = isMesCorrente || isMesFuturo
+      ? cutoff.toISOString().slice(0, 10)
+      : monthEndStr;
     const { data: diariaRows } = await supabaseAdmin
       .from("operational_payments")
       .select("amount")
       .eq("employee_id", employeeId)
       .eq("type", "diaria")
       .gte("payment_date", monthStart)
-      .lte("payment_date", monthEndStr);
+      .lte("payment_date", cutoffStr);
     if (Array.isArray(diariaRows)) {
       diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
     }
   } catch { /* tabela pode não existir em ambientes antigos */ }
   diarias = +diarias.toFixed(2);
 
-  const vencimentosTotal = +(baseSalary + periculosidade + custoExtra).toFixed(2);
-  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasica).toFixed(2);
+  const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra).toFixed(2);
+  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
 
-  // Recolhimentos sobre vencimentos brutos (base + periculosidade + HE)
-  const baseRecolhimentos = baseSalary + periculosidade + custoExtra;
+  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE)
+  const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra;
   const fgtsPct = (CCT as any).fgtsPct ?? 8;
   const inssPatronalPct = (CCT as any).inssPatronalPct ?? 20;
   const seguroVidaMensal = (CCT as any).seguroVidaMensal ?? 0;
   const fgts = +(baseRecolhimentos * (fgtsPct / 100)).toFixed(2);
   const inssPatronal = +(baseRecolhimentos * (inssPatronalPct / 100)).toFixed(2);
-  const seguroVida = +Number(seguroVidaMensal).toFixed(2);
+  const seguroVida = +(Number(seguroVidaMensal) * fatorRateio).toFixed(2);
   const recolhimentosTotal = +(fgts + inssPatronal + seguroVida).toFixed(2);
 
   const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal + recolhimentosTotal).toFixed(2);
-  const custoBase = baseSalary;
+  const custoBase = baseSalaryReal;
   const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPct / 100) + beneficiosTotal).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
@@ -1216,7 +1246,11 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   let faturamentoMargem = 0;
   try {
     const monthStartIso = `${monthYear}-01T00:00:00-03:00`;
-    const monthEndIso = `${monthYear}-${String(new Date(yyyy, mm, 0).getDate()).padStart(2, "0")}T23:59:59-03:00`;
+    // Cap em "hoje" quando mês corrente, para refletir só o realizado
+    const lastDayCap = (isMesCorrente && !isMesFuturo)
+      ? String(nowBrt.getDate()).padStart(2, "0")
+      : String(new Date(yyyy, mm, 0).getDate()).padStart(2, "0");
+    const monthEndIso = `${monthYear}-${lastDayCap}T23:59:59-03:00`;
     const { data: osRows } = await supabaseAdmin
       .from("service_orders")
       .select("id, status, assigned_employee_id, assigned_employee_2_id")
@@ -1262,19 +1296,26 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
     horasRestantes: +Math.max(0, hoursLimit - hoursWorked).toFixed(2),
     percentUsed: hoursLimit > 0 ? +((hoursWorked / hoursLimit) * 100).toFixed(1) : 0,
     daysWorked,
-    baseSalary,
+    baseSalary: baseSalaryReal,
+    baseSalaryMensal: baseSalary,
     valorHora: +valorHora.toFixed(2),
     valorHoraExtra: +valorHoraExtra.toFixed(2),
     custoExtra,
     custoBase: +custoBase.toFixed(2),
-    // Novos componentes detalhados
+    // Novos componentes detalhados (ratados quando mês corrente)
     periculosidade,
     periculosidadePct,
     valeRefeicao,
     vrDiario,
     diasUteis,
+    diasUteisTotal,
+    diasCorridosElapsed,
+    totalDiasMes,
+    fatorRateio: +fatorRateio.toFixed(4),
+    isMesCorrente,
     diarias,
-    cestaBasica,
+    cestaBasica: cestaBasicaReal,
+    cestaBasicaMensal: cestaBasica,
     vencimentosTotal,
     beneficiosTotal,
     // Recolhimentos detalhados
