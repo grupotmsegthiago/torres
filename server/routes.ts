@@ -990,7 +990,34 @@ async function ensureSystemSettingsTable() {
     try {
       const { saveCctConfig } = await import("./lib/cct-config");
       const cfg = await saveCctConfig(req.body);
-      res.json(cfg);
+
+      // Auto-aplica novos valores para todos os vigilantes/escoltas ativos
+      let appliedCount = 0;
+      try {
+        const allEmployees = await storage.getEmployees();
+        const vigilantes = allEmployees.filter((e: any) =>
+          e.status === "ativo" &&
+          (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta"))
+        );
+        const effectiveDate = new Date().toISOString().slice(0, 10);
+        const periculosidade = cfg.salarioBase * cfg.periculosidadePct / 100;
+        const reason = `Kit ${cfg.label} (Base R$${cfg.salarioBase.toFixed(2)} + Periculosidade ${cfg.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${cfg.valeRefeicaoDia}/dia + Cesta R$${cfg.cestaBasica})`;
+        const notes = `Pgto ${cfg.pagamentoDiaUtil}º dia útil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(cfg.valeRefeicaoDia * cfg.diasUteisMes).toFixed(2)}/mês | Cesta: R$${cfg.cestaBasica}`;
+        for (const emp of vigilantes) {
+          await storage.createEmployeeSalary({
+            employeeId: emp.id,
+            baseSalary: String(cfg.salarioBase),
+            effectiveDate,
+            reason,
+            notes,
+          } as any);
+          appliedCount++;
+        }
+      } catch (applyErr: any) {
+        console.error("[cct-config] erro ao aplicar para vigilantes:", applyErr);
+      }
+
+      res.json({ ...cfg, appliedCount });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }

@@ -3179,9 +3179,16 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         return {};
       }
     },
-    onSuccess: () => {
-      toast({ title: "Kit CCT atualizado", description: "Novos valores serão usados nas próximas aplicações." });
+    onSuccess: (data: any) => {
+      const n = data?.appliedCount || 0;
+      toast({
+        title: "Kit CCT atualizado",
+        description: n > 0
+          ? `Novos valores salvos e aplicados para ${n} vigilante(s) ativo(s).`
+          : "Novos valores salvos.",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/cct-config"] });
+      invalidateRelatedQueries("employee");
       onOpenChange(false);
     },
     onError: (err: any) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
