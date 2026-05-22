@@ -1165,7 +1165,7 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   // dias corridos decorridos / total dias do mês; VR é por dias úteis efetivamente
   // decorridos. Mês fechado (anterior) usa o mês inteiro normalmente.
   const { countBusinessDays, loadHolidaySet, monthRange } = await import("./routes/holidays");
-  const { from, to } = monthRange(yyyy, mm);
+  const { from, to } = monthRange(yyyy, mm); // strings YYYY-MM-DD
   const holidaySet = await loadHolidaySet(from, to);
 
   // "Agora" em BRT
@@ -1176,18 +1176,22 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   const isMesFuturo = (nowY < yyyy) || (nowY === yyyy && nowM < mm);
   const totalDiasMes = new Date(yyyy, mm, 0).getDate();
 
-  // Data de corte (último dia "elegível" para custo). Mês passado = fim do mês;
-  // mês corrente = hoje; mês futuro = início (custo zero).
-  let cutoff: Date;
-  if (isMesFuturo) cutoff = new Date(yyyy, mm - 1, 0); // dia 0 = sem custo ainda
-  else if (isMesCorrente) cutoff = new Date(yyyy, mm - 1, nowBrt.getDate());
-  else cutoff = to;
+  // Dia de corte (1..totalDiasMes). Mês passado = totalDiasMes; mês corrente = hoje;
+  // mês futuro = 0 (sem custo ainda).
+  let cutoffDay: number;
+  if (isMesFuturo) cutoffDay = 0;
+  else if (isMesCorrente) cutoffDay = Math.min(nowBrt.getDate(), totalDiasMes);
+  else cutoffDay = totalDiasMes;
 
-  const diasCorridosElapsed = Math.max(0, Math.min(totalDiasMes, Math.floor((cutoff.getTime() - from.getTime()) / 86400000) + 1));
+  const cutoffIso = cutoffDay > 0
+    ? `${monthYear}-${String(cutoffDay).padStart(2, "0")}`
+    : from; // se mês futuro, usa o início (range vazio gera 0 dias úteis)
+
+  const diasCorridosElapsed = cutoffDay;
   const diasUteisTotal = countBusinessDays(from, to, holidaySet);
-  const diasUteis = isMesCorrente || isMesFuturo
-    ? countBusinessDays(from, cutoff, holidaySet)
-    : diasUteisTotal;
+  const diasUteis = isMesCorrente
+    ? countBusinessDays(from, cutoffIso, holidaySet)
+    : (isMesFuturo ? 0 : diasUteisTotal);
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
@@ -1206,9 +1210,7 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   let diarias = 0;
   try {
     const monthStart = `${monthYear}-01`;
-    const cutoffStr = isMesCorrente || isMesFuturo
-      ? cutoff.toISOString().slice(0, 10)
-      : monthEndStr;
+    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : monthEndStr;
     const { data: diariaRows } = await supabaseAdmin
       .from("operational_payments")
       .select("amount")
