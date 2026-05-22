@@ -3176,6 +3176,9 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
     encargosSociaisPct: String(i.encargosSociaisPct),
     horaExtraValor: String(i.horaExtraValor),
     pagamentoDiaUtil: String(i.pagamentoDiaUtil),
+    fgtsPct: String((i as any).fgtsPct ?? 8),
+    inssPatronalPct: String((i as any).inssPatronalPct ?? 20),
+    seguroVidaMensal: String((i as any).seguroVidaMensal ?? 0),
   });
   const [form, setForm] = useState(buildForm(initial));
   // Sincroniza o form com os valores reais do servidor sempre que o dialog abre
@@ -3201,6 +3204,9 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         encargosSociaisPct: num(form.encargosSociaisPct),
         horaExtraValor: num(form.horaExtraValor),
         pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
+        fgtsPct: num(form.fgtsPct),
+        inssPatronalPct: num(form.inssPatronalPct),
+        seguroVidaMensal: num(form.seguroVidaMensal),
       };
       const res = await apiRequest("PUT", "/api/cct-config", payload);
       const text = await res.text();
@@ -3245,6 +3251,16 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
             <CctField label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
             <CctField label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
             <CctField label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 mb-2">Recolhimentos da Empresa</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <CctField label="FGTS" value={form.fgtsPct} onChange={(v) => setForm({ ...form, fgtsPct: v })} suffix="%" testId="input-cct-fgts" />
+              <CctField label="INSS Patronal" value={form.inssPatronalPct} onChange={(v) => setForm({ ...form, inssPatronalPct: v })} suffix="%" testId="input-cct-inss" />
+              <CctField label="Seguro de Vida" value={form.seguroVidaMensal} onChange={(v) => setForm({ ...form, seguroVidaMensal: v })} suffix="R$/mês" testId="input-cct-seguro-vida" />
+            </div>
+            <div className="text-[10px] text-amber-700/80 mt-2">FGTS e INSS Patronal incidem sobre Salário + Periculosidade + Hora Extra. Seguro de Vida é valor fixo mensal por funcionário.</div>
           </div>
 
           <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-1.5">
