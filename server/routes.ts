@@ -993,6 +993,7 @@ async function ensureSystemSettingsTable() {
 
       // Auto-aplica novos valores para todos os vigilantes/escoltas ativos
       let appliedCount = 0;
+      let applyErrors: string[] = [];
       try {
         const allEmployees = await storage.getEmployees();
         const vigilantes = allEmployees.filter((e: any) =>
@@ -1000,24 +1001,34 @@ async function ensureSystemSettingsTable() {
           (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta"))
         );
         const effectiveDate = new Date().toISOString().slice(0, 10);
-        const periculosidade = cfg.salarioBase * cfg.periculosidadePct / 100;
+        const periculosidade = Number(cfg.salarioBase) * Number(cfg.periculosidadePct) / 100;
         const reason = `Kit ${cfg.label} (Base R$${cfg.salarioBase.toFixed(2)} + Periculosidade ${cfg.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${cfg.valeRefeicaoDia}/dia + Cesta R$${cfg.cestaBasica})`;
         const notes = `Pgto ${cfg.pagamentoDiaUtil}º dia útil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(cfg.valeRefeicaoDia * cfg.diasUteisMes).toFixed(2)}/mês | Cesta: R$${cfg.cestaBasica}`;
-        for (const emp of vigilantes) {
-          await storage.createEmployeeSalary({
+        const results = await Promise.allSettled(vigilantes.map((emp: any) =>
+          storage.createEmployeeSalary({
             employeeId: emp.id,
             baseSalary: String(cfg.salarioBase),
+            valeRefeicaoDiario: String(cfg.valeRefeicaoDia),
+            cestaBasica: String(cfg.cestaBasica),
+            periculosidadePct: String(cfg.periculosidadePct),
+            horasMensais: "220",
             effectiveDate,
             reason,
             notes,
-          } as any);
-          appliedCount++;
+          } as any)
+        ));
+        for (const r of results) {
+          if (r.status === "fulfilled") appliedCount++;
+          else applyErrors.push(r.reason?.message || String(r.reason));
         }
+        if (applyErrors.length > 0) console.error("[cct-config] erros ao aplicar:", applyErrors);
+        console.log(`[cct-config] aplicado a ${appliedCount}/${vigilantes.length} vigilantes`);
       } catch (applyErr: any) {
-        console.error("[cct-config] erro ao aplicar para vigilantes:", applyErr);
+        console.error("[cct-config] erro fatal ao aplicar para vigilantes:", applyErr);
+        applyErrors.push(applyErr.message || String(applyErr));
       }
 
-      res.json({ ...cfg, appliedCount });
+      res.json({ ...cfg, appliedCount, applyErrors });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
