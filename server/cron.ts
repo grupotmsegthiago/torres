@@ -8,6 +8,7 @@ import { supabaseAdmin } from "./supabase";
 import { isSupabaseHealthy } from "./pg-fallback";
 import { getHorasElapsedFromDB, calcularFaturamentoLive, computeBillingPayloadForOs, resolveContractForOs, shouldSkipBillingHours, DEFAULT_BILLING_CONTRACT } from "./billing-calc";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
+import { processRhidSyncQueue } from "./control-id";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { ymdBRT } from "./lib/hours-calc";
 
@@ -274,6 +275,24 @@ export function initCronJobs() {
         log(`CRON Inter-Reconcile[${contexto}]: ${novosLancamentos} lançamento(s), ${conciliados} invoice(s) conciliada(s)`, "cron");
       }
     }
+
+    // Drena fila de sincronização RHID (push: batidas, ausências, funcionários)
+    let rhidQueueRunning = false;
+    cron.schedule("*/5 * * * *", async () => {
+      if (rhidQueueRunning) return;
+      if (!isSupabaseHealthy()) return;
+      rhidQueueRunning = true;
+      try {
+        const r = await processRhidSyncQueue(50);
+        if (r.processed > 0) {
+          log(`CRON RHID-Queue: ${r.done} OK, ${r.failed} falhou (de ${r.processed})`, "cron");
+        }
+      } catch (e: any) {
+        log(`CRON RHID-Queue ERRO: ${e?.message}`, "cron");
+      } finally {
+        rhidQueueRunning = false;
+      }
+    });
 
     let interReconcileRunning = false;
     cron.schedule("*/5 * * * *", async () => {

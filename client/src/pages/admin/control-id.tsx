@@ -75,10 +75,11 @@ export default function ControlIdPage() {
       <div className="p-4 space-y-4 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
           <ScanFace className="w-7 h-7 text-blue-600" />
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold text-neutral-900" data-testid="text-page-title">Ponto Eletrônico — Control iD</h1>
             <p className="text-xs text-neutral-500">Integração com aparelhos iDFace / iDFace MAX via Control iD Cloud. Batidas puxadas a cada 5 minutos automaticamente.</p>
           </div>
+          <SyncQueueBadge />
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -109,6 +110,86 @@ type SyncProgress = {
   lastSyncAt: string | null; lastSyncStatus: string | null; lastSyncMessage: string | null;
   isRunning: boolean; rhidLastPunchAt: string | null; localLastPunchAt: string | null;
 };
+
+function SyncQueueBadge() {
+  const { toast } = useToast();
+  const { data } = useQuery<{ summary: Record<string, number>; items: any[] }>({
+    queryKey: ["/api/control-id/sync-queue", { limit: 20 }],
+    refetchInterval: 30_000,
+  });
+  const drainMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/control-id/sync-queue/drain", { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: (r: any) => {
+      toast({ title: "Fila processada", description: `${r.done || 0} OK, ${r.failed || 0} falhou` });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/sync-queue"] });
+    },
+    onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const s = data?.summary || {};
+  const pending = s.pending || 0;
+  const error = s.error || 0;
+  const unsupported = s.unsupported || 0;
+  const done = s.done || 0;
+  const allClean = pending === 0 && error === 0;
+
+  return (
+    <HoverCard openDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          data-testid="badge-rhid-sync"
+          className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors ${
+            error > 0
+              ? "bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+              : pending > 0
+              ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+              : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+          }`}
+        >
+          {allClean ? (
+            <><CheckCircle2 className="w-3.5 h-3.5" /> RHID sincronizado</>
+          ) : (
+            <>
+              <RefreshCw className="w-3.5 h-3.5" />
+              Sync RHID
+              {pending > 0 && <span className="ml-1">· {pending} pendente{pending > 1 ? "s" : ""}</span>}
+              {error > 0 && <span className="ml-1">· {error} erro{error > 1 ? "s" : ""}</span>}
+            </>
+          )}
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-80 text-xs p-3 space-y-2">
+        <div className="font-semibold text-neutral-800">Fila de sincronização Control iD/RHID</div>
+        <div className="space-y-1 text-neutral-600">
+          <div className="flex justify-between"><span>✓ Enviados ao RHID</span><span className="tabular-nums font-medium text-emerald-700">{done}</span></div>
+          <div className="flex justify-between"><span>⏳ Pendentes (retentando)</span><span className="tabular-nums font-medium text-amber-700">{pending}</span></div>
+          <div className="flex justify-between"><span>✗ Falharam (8 tentativas)</span><span className="tabular-nums font-medium text-red-700">{error}</span></div>
+          <div className="flex justify-between"><span>⚠ Aguardando endpoint</span><span className="tabular-nums font-medium text-neutral-500">{unsupported}</span></div>
+        </div>
+        <div className="pt-2 border-t text-[10px] text-neutral-500 leading-snug">
+          Batidas manuais e cadastros de funcionários são enviados pro RHID na hora.
+          Em caso de falha de rede ou 5xx, o cron retenta a cada 5min com backoff (até 8x).
+          Folgas/faltas ficam em fila aguardando endpoint da Control iD.
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full h-7 text-[11px]"
+          onClick={() => drainMut.mutate()}
+          disabled={drainMut.isPending || pending === 0}
+          data-testid="btn-drain-rhid-queue"
+        >
+          {drainMut.isPending ? "Processando..." : `Sincronizar agora${pending > 0 ? ` (${pending})` : ""}`}
+        </Button>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
 
 function SyncProgressBar({ deviceId }: { deviceId: number }) {
   const { data, isLoading } = useQuery<SyncProgress>({

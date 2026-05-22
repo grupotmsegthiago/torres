@@ -281,6 +281,56 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // Status da fila de sincronização RHID (push pendente / erros / sucesso)
+  app.get("/api/control-id/sync-queue", requireAuth, requireAdminRole, async (req, res) => {
+    const { status, kind, limit } = req.query as Record<string, string>;
+    const lim = Math.min(Number(limit) || 100, 500);
+    let q = supabaseAdmin.from("rhid_sync_queue").select("*").order("id", { ascending: false }).limit(lim);
+    if (status) q = q.eq("status", status);
+    if (kind) q = q.eq("kind", kind);
+    const { data } = await q;
+
+    // Conta agrupada via head:true + count:'exact' (1 query rápida por status, sem trazer linhas)
+    const statuses = ["pending", "processing", "done", "error", "unsupported", "skipped"];
+    const summary: Record<string, number> = {};
+    await Promise.all(statuses.map(async (s) => {
+      const { count } = await supabaseAdmin.from("rhid_sync_queue")
+        .select("id", { count: "exact", head: true }).eq("status", s);
+      summary[s] = count || 0;
+    }));
+
+    // Mascara CPF no payload retornado (LGPD)
+    const masked = (data || []).map((it: any) => {
+      const p = it.payload || {};
+      if (typeof p.cpf === "string" && p.cpf.length >= 4) {
+        p.cpf = `***${p.cpf.slice(-4)}`;
+      }
+      return { ...it, payload: p };
+    });
+    res.json({ items: masked, summary });
+  });
+
+  // Força reprocessamento (manual) — útil pra reenviar após erro
+  app.post("/api/control-id/sync-queue/:id/retry", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("rhid_sync_queue").update({
+      status: "pending", next_attempt_at: new Date().toISOString(), last_error: null,
+    }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    const r = await ctrl.processRhidSyncQueue(1).catch((e: any) => ({ error: e?.message }));
+    res.json({ ok: true, drain: r });
+  });
+
+  // Dispara o drain manualmente (botão "sincronizar agora")
+  app.post("/api/control-id/sync-queue/drain", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const r = await ctrl.processRhidSyncQueue(200);
+      res.json(r);
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message });
+    }
+  });
+
   // Deletar batida local (mantém no RHID por segurança)
   app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
     try {
@@ -316,6 +366,11 @@ export function registerControlIdRoutes(app: Express) {
       status: status || "aprovado",
     }).select().single();
     if (error) return res.status(500).json({ message: error.message });
+    // Enfileira pro RHID (status='unsupported' até endpoint de tratamentos ser habilitado)
+    await ctrl.enqueueRhidSync({
+      kind: "absence", op: "create", refId: data.id, employeeId: Number(employeeId),
+      payload: { type, startDate: data.start_date, endDate: data.end_date, reason, status: data.status },
+    }).catch(() => {});
     res.status(201).json(data);
   });
 
@@ -330,12 +385,24 @@ export function registerControlIdRoutes(app: Express) {
     if (status !== undefined) upd.status = status;
     const { data, error } = await supabaseAdmin.from("employee_absences").update(upd).eq("id", id).select().single();
     if (error) return res.status(500).json({ message: error.message });
+    await ctrl.enqueueRhidSync({
+      kind: "absence", op: "update", refId: id, employeeId: data.employee_id,
+      payload: { type: data.type, startDate: data.start_date, endDate: data.end_date, reason: data.reason, status: data.status, rhidExternalId: data.rhid_external_id },
+    }).catch(() => {});
     res.json(data);
   });
 
   app.delete("/api/employee-absences/:id", requireAuth, requireAdminRole, async (req, res) => {
-    const { error } = await supabaseAdmin.from("employee_absences").delete().eq("id", Number(req.params.id));
+    const id = Number(req.params.id);
+    const { data: existing } = await supabaseAdmin.from("employee_absences").select("*").eq("id", id).maybeSingle();
+    const { error } = await supabaseAdmin.from("employee_absences").delete().eq("id", id);
     if (error) return res.status(500).json({ message: error.message });
+    if (existing?.rhid_external_id) {
+      await ctrl.enqueueRhidSync({
+        kind: "absence", op: "delete", refId: id, employeeId: existing.employee_id,
+        payload: { rhidExternalId: existing.rhid_external_id },
+      }).catch(() => {});
+    }
     res.json({ ok: true });
   });
 

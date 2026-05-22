@@ -8,7 +8,7 @@ import type { Express } from "express";
   import OpenAI from "openai";
   import { calcularFolha } from "../lib/payroll";
 import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
-import { syncEmployeeStatusToRhid } from "../control-id";
+import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 
   export function registerEmployeeRoutes(app: Express) {
@@ -177,6 +177,10 @@ import { syncEmployeeStatusToRhid } from "../control-id";
       if (r.contractId) probationContractId = r.contractId;
     }
 
+    // Enfileira sync pro RHID (cria pessoa lá se tiver CPF+PIS)
+    if (data.cpf) {
+      enqueueRhidSync({ kind: "employee", op: "create", refId: data.id, employeeId: data.id }).catch(() => {});
+    }
     res.status(201).json({ ...data, autoUserCreated, autoUserError, probationContractId, probationContractError });
   });
 
@@ -198,10 +202,8 @@ import { syncEmployeeStatusToRhid } from "../control-id";
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
-    // Sincroniza status com RHID se mudou (fire-and-forget, não bloqueia resposta)
-    if (parsed.data.status && (parsed.data.status === "ativo" || parsed.data.status === "inativo")) {
-      syncEmployeeStatusToRhid(Number(req.params.id), parsed.data.status).catch(() => {});
-    }
+    // Enfileira sync pro RHID (atualiza nome/matricula/status — registerEmployeeInRhid é idempotente)
+    enqueueRhidSync({ kind: "employee", op: "update", refId: Number(req.params.id), employeeId: Number(req.params.id) }).catch(() => {});
     res.json(data);
   });
 
@@ -218,6 +220,8 @@ import { syncEmployeeStatusToRhid } from "../control-id";
       await supabaseAdmin.from("weapon_movements").delete().eq("employee_id", empId);
       await supabaseAdmin.from("vehicle_assignments").delete().eq("employee_id", empId);
       try { await supabaseAdmin.from("mission_updates").delete().eq("employee_id", empId); } catch (_muErr) {}
+      // Enfileira inativação no RHID ANTES de remover localmente (pra ter o mapping)
+      await enqueueRhidSync({ kind: "employee", op: "delete", refId: empId, employeeId: empId }).catch(() => {});
       await storage.deleteEmployee(empId);
       res.json({ message: "Funcionário removido" });
     } catch (err: any) {

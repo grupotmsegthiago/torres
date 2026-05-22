@@ -392,6 +392,36 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await execSql(`ALTER TABLE employee_absences ADD COLUMN IF NOT EXISTS rhid_external_id TEXT`);
+    await execSql(`ALTER TABLE employee_absences ADD COLUMN IF NOT EXISTS rhid_synced_at TIMESTAMP`);
+    await execSql(`ALTER TABLE employee_absences ADD COLUMN IF NOT EXISTS rhid_sync_error TEXT`);
+
+    // Fila de sincronização Control iD / RHID Cloud (push do ERP → RHID).
+    // kind: 'punch' | 'absence' | 'employee'
+    // op:   'create' | 'update' | 'delete'
+    // ref_id: id local do registro afetado (control_id_punches.id, employee_absences.id, employees.id)
+    // payload: snapshot do que precisa ser enviado (caso o registro local seja apagado depois)
+    // status: 'pending' | 'done' | 'error' | 'unsupported' | 'skipped'
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS rhid_sync_queue (
+        id BIGSERIAL PRIMARY KEY,
+        kind TEXT NOT NULL,
+        op TEXT NOT NULL,
+        ref_id BIGINT,
+        employee_id INTEGER,
+        device_id INTEGER,
+        payload JSONB,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        rhid_response JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        next_attempt_at TIMESTAMP DEFAULT NOW(),
+        processed_at TIMESTAMP
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_sync_queue_pending ON rhid_sync_queue (status, next_attempt_at) WHERE status = 'pending'`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_sync_queue_ref ON rhid_sync_queue (kind, ref_id)`);
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_fines (

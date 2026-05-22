@@ -878,23 +878,7 @@ export async function createManualPunch(params: {
     mapping = data;
   }
 
-  // Tenta enviar pro RHID primeiro
-  let rhidSynced = false;
-  let rhidError: string | undefined;
-  let externalId: string | null = null;
-  if (mapping) {
-    try {
-      const result = await createRhidPunch(Number(mapping.device_id), String(mapping.control_id_user_id), punchAt, 3);
-      rhidSynced = true;
-      externalId = result?.id ? String(result.id) : null;
-    } catch (e: any) {
-      rhidError = e.message;
-    }
-  } else {
-    rhidError = "Funcionário não mapeado a nenhum aparelho";
-  }
-
-  // Salva local (com referência ao RHID se sincronizou)
+  // 1) Salva local PRIMEIRO (fonte da verdade do ERP, nunca perde o registro)
   const { data: punch, error } = await supabaseAdmin.from("control_id_punches").insert({
     device_id: mapping?.device_id || null,
     control_id_user_id: mapping?.control_id_user_id || null,
@@ -903,13 +887,34 @@ export async function createManualPunch(params: {
     direction,
     source,
     is_manual: true,
-    external_id: externalId,
-    rhid_synced_at: rhidSynced ? new Date().toISOString() : null,
-    rhid_sync_error: rhidError || null,
+    external_id: null,
+    rhid_synced_at: null,
+    rhid_sync_error: mapping ? null : "Funcionário não mapeado a nenhum aparelho",
     raw_event: { manual: true, createdBy: "system" },
   }).select("id").single();
-
   if (error) throw new Error(`Erro ao salvar batida local: ${error.message}`);
+
+  // 2) Enfileira push pro RHID (tenta agora; se falhar, cron retenta com backoff)
+  let rhidSynced = false;
+  let rhidError: string | undefined;
+  if (mapping) {
+    const r = await enqueueRhidSync({
+      kind: "punch",
+      op: "create",
+      refId: punch.id,
+      employeeId,
+      deviceId: Number(mapping.device_id),
+      payload: {
+        rhidPersonId: String(mapping.control_id_user_id),
+        dateTime: punchAt.toISOString(),
+        tipo: 3,
+      },
+    });
+    rhidSynced = r.pushedNow;
+    rhidError = r.pushError;
+  } else {
+    rhidError = "Funcionário não mapeado a nenhum aparelho";
+  }
   return { punchId: punch.id, rhidSynced, rhidError };
 }
 
@@ -924,35 +929,57 @@ export async function updateLocalPunch(punchId: number, fields: { punchAt?: Date
   if (fields.punchAt) upd.punch_at = fields.punchAt.toISOString();
   if (fields.direction !== undefined) upd.direction = fields.direction;
 
-  // Tenta sincronizar com RHID se tem external_id
+  const { error } = await supabaseAdmin.from("control_id_punches").update(upd).eq("id", punchId);
+  if (error) throw new Error(error.message);
+
+  // Enfileira sync se tem external_id (já está no RHID)
   let rhidSynced = false;
   let rhidError: string | undefined;
   if (punch.external_id && punch.device_id) {
-    try {
-      await updateRhidPunch(Number(punch.device_id), String(punch.external_id), {
-        dateTime: fields.punchAt || new Date(punch.punch_at),
-      });
-      rhidSynced = true;
-      upd.rhid_synced_at = new Date().toISOString();
-      upd.rhid_sync_error = null;
-    } catch (e: any) {
-      rhidError = e.message;
-      upd.rhid_sync_error = rhidError;
-    }
+    const r = await enqueueRhidSync({
+      kind: "punch",
+      op: "update",
+      refId: punchId,
+      employeeId: punch.employee_id,
+      deviceId: Number(punch.device_id),
+      payload: {
+        externalId: String(punch.external_id),
+        dateTime: (fields.punchAt || new Date(punch.punch_at)).toISOString(),
+      },
+    });
+    rhidSynced = r.pushedNow;
+    rhidError = r.pushError;
   }
-
-  const { error } = await supabaseAdmin.from("control_id_punches").update(upd).eq("id", punchId);
-  if (error) throw new Error(error.message);
   return { ok: true, rhidSynced, rhidError };
 }
 
 /**
- * Deleta batida local. Se tem external_id no RHID, NÃO deleta lá (segurança) — apenas marca local.
+ * Deleta batida local. Se tem external_id no RHID, também enfileira o DELETE pro RHID.
  */
-export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean }> {
+export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean; rhidQueued: boolean }> {
+  const { data: punch } = await supabaseAdmin.from("control_id_punches").select("*").eq("id", punchId).maybeSingle();
+  let rhidQueued = false;
+  // Enfileira PRIMEIRO (com tryNow:false pra não atrasar a resposta).
+  // Se o enqueue falhar (Supabase fora), abortamos antes de deletar local —
+  // assim não perdemos a referência ao registro do RHID.
+  if (punch?.external_id && punch?.device_id) {
+    const r = await enqueueRhidSync({
+      kind: "punch",
+      op: "delete",
+      refId: punchId,
+      employeeId: punch.employee_id,
+      deviceId: Number(punch.device_id),
+      payload: { externalId: String(punch.external_id) },
+      tryNow: false,
+    });
+    if (!r.queueId) {
+      throw new Error("Não foi possível enfileirar exclusão no RHID — batida local preservada");
+    }
+    rhidQueued = true;
+  }
   const { error } = await supabaseAdmin.from("control_id_punches").delete().eq("id", punchId);
   if (error) throw new Error(error.message);
-  return { ok: true };
+  return { ok: true, rhidQueued };
 }
 
 // ============================ WRITE BACK PARA RHID ============================
@@ -1844,4 +1871,261 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
     result.push(entry);
   }
   return result.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ============================================================================
+//                      FILA DE SINCRONIZAÇÃO RHID (push)
+// ============================================================================
+//
+// Toda escrita do ERP que precise repercutir no RHID Cloud deve passar por
+// `enqueueRhidSync`. A função tenta o push imediato; se falhar (rede caiu,
+// 5xx, timeout, etc.), o item fica em `rhid_sync_queue` com status='pending'
+// e é reprocessado pelo cron a cada 5min com backoff exponencial.
+//
+// Tipos suportados HOJE:
+//   - kind='punch'   op=create|update|delete  → endpoints afd.svc do RHID
+//   - kind='employee' op=create|update         → endpoint person do RHID
+//
+// Tipo NÃO suportado ainda (fica como 'unsupported' até descobrir endpoint):
+//   - kind='absence' (folgas/faltas/atestados) → RHID Cloud não expõe
+//     endpoint REST público de "tratamentos"; precisa swagger fechado da
+//     ControlId pra implementar. Itens ficam enfileirados com payload
+//     completo, prontos pra reenviar quando o endpoint for cabeado.
+
+const MAX_RHID_ATTEMPTS = 8;
+// backoff em minutos por tentativa: 1, 5, 15, 60, 240, 720, 720, 720
+function backoffMinutes(attempt: number): number {
+  const steps = [1, 5, 15, 60, 240, 720, 720, 720];
+  return steps[Math.min(attempt, steps.length - 1)];
+}
+
+export async function enqueueRhidSync(params: {
+  kind: "punch" | "absence" | "employee";
+  op: "create" | "update" | "delete";
+  refId?: number | string | null;
+  employeeId?: number | null;
+  deviceId?: number | null;
+  payload?: Record<string, any>;
+  initialStatus?: "pending" | "unsupported";
+  tryNow?: boolean;
+}): Promise<{ queueId: number; pushedNow: boolean; pushError?: string }> {
+  // Absence é sempre unsupported até endpoint RHID ser habilitado — força,
+  // mesmo que o caller peça 'pending', pra evitar loop infinito de retries.
+  const initialStatus = params.kind === "absence"
+    ? "unsupported"
+    : (params.initialStatus ?? "pending");
+  const { data: row, error } = await supabaseAdmin.from("rhid_sync_queue").insert({
+    kind: params.kind,
+    op: params.op,
+    ref_id: params.refId != null ? Number(params.refId) : null,
+    employee_id: params.employeeId ?? null,
+    device_id: params.deviceId ?? null,
+    payload: params.payload ?? {},
+    status: initialStatus,
+    attempts: 0,
+    next_attempt_at: new Date().toISOString(),
+  }).select("id").single();
+  if (error) {
+    console.error("[RHID-Q] Falha ao enfileirar:", error.message);
+    return { queueId: 0, pushedNow: false, pushError: error.message };
+  }
+  const queueId = Number(row.id);
+
+  if (initialStatus === "pending" && params.tryNow !== false) {
+    try {
+      await processRhidQueueItem(queueId);
+      return { queueId, pushedNow: true };
+    } catch (e: any) {
+      return { queueId, pushedNow: false, pushError: e?.message };
+    }
+  }
+  return { queueId, pushedNow: false };
+}
+
+async function processRhidQueueItem(queueId: number): Promise<void> {
+  // Claim atômico: UPDATE WHERE status='pending' — se 0 linhas voltam,
+  // outro worker (cron ou push imediato) já está processando esse item.
+  const { data: claimed } = await supabaseAdmin.from("rhid_sync_queue")
+    .update({ status: "processing" })
+    .eq("id", queueId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+  if (!claimed) return; // já claimado por outro worker, ou item não existe / status ≠ pending
+
+  try {
+    const response = await executeRhidPush(claimed);
+    await supabaseAdmin.from("rhid_sync_queue").update({
+      status: "done",
+      processed_at: new Date().toISOString(),
+      rhid_response: response ?? null,
+      last_error: null,
+      attempts: (claimed.attempts || 0) + 1,
+    }).eq("id", queueId);
+  } catch (e: any) {
+    const attempts = (claimed.attempts || 0) + 1;
+    const giveUp = attempts >= MAX_RHID_ATTEMPTS;
+    const nextAttemptAt = giveUp ? null : new Date(Date.now() + backoffMinutes(attempts) * 60_000).toISOString();
+    await supabaseAdmin.from("rhid_sync_queue").update({
+      status: giveUp ? "error" : "pending",
+      attempts,
+      last_error: String(e?.message || e).slice(0, 1000),
+      next_attempt_at: nextAttemptAt,
+      processed_at: giveUp ? new Date().toISOString() : null,
+    }).eq("id", queueId);
+    if (!giveUp) throw e;
+  }
+}
+
+/**
+ * Executa o push de um item da fila no RHID Cloud.
+ * Retorna a resposta da API pra logar.
+ */
+async function executeRhidPush(item: any): Promise<any> {
+  const kind = item.kind as string;
+  const op = item.op as string;
+  const payload = (item.payload || {}) as Record<string, any>;
+
+  if (kind === "punch") {
+    if (op === "create") {
+      if (!item.device_id) throw new Error("device_id ausente na fila");
+      if (!payload.rhidPersonId) throw new Error("rhidPersonId ausente no payload");
+      if (!payload.dateTime) throw new Error("dateTime ausente no payload");
+      const result = await createRhidPunch(
+        Number(item.device_id),
+        String(payload.rhidPersonId),
+        new Date(payload.dateTime),
+        Number(payload.tipo ?? 3),
+      );
+      // RHID pode retornar o ID em chaves diferentes (id/Id/ID/idAfd/Punch.id…) — testa todas.
+      const extractedId = result?.id ?? result?.Id ?? result?.ID ?? result?.idAfd
+        ?? result?.IdAfd ?? result?.id_afd ?? result?.Punch?.id ?? result?.punch?.id;
+      if (item.ref_id) {
+        if (extractedId == null) {
+          throw new Error(`RHID criou batida mas não retornou ID reconhecível. Resposta: ${JSON.stringify(result).slice(0, 300)}`);
+        }
+        await supabaseAdmin.from("control_id_punches").update({
+          external_id: String(extractedId),
+          rhid_synced_at: new Date().toISOString(),
+          rhid_sync_error: null,
+        }).eq("id", Number(item.ref_id));
+      }
+      return result;
+    }
+    if (op === "update") {
+      if (!item.device_id) throw new Error("device_id ausente");
+      if (!payload.externalId) throw new Error("externalId ausente");
+      const result = await updateRhidPunch(Number(item.device_id), String(payload.externalId), {
+        dateTime: new Date(payload.dateTime),
+      });
+      if (item.ref_id) {
+        await supabaseAdmin.from("control_id_punches").update({
+          rhid_synced_at: new Date().toISOString(),
+          rhid_sync_error: null,
+        }).eq("id", Number(item.ref_id));
+      }
+      return result;
+    }
+    if (op === "delete") {
+      if (!item.device_id) throw new Error("device_id ausente");
+      if (!payload.externalId) throw new Error("externalId ausente");
+      return await deleteRhidPunch(Number(item.device_id), String(payload.externalId));
+    }
+  }
+
+  if (kind === "employee") {
+    if (!item.employee_id) throw new Error("employee_id ausente");
+    if (op === "create" || op === "update") {
+      // Resolve/cria mapping (registerEmployeeInRhid é idempotente)
+      const reg = await registerEmployeeInRhid(Number(item.employee_id), item.device_id ?? undefined);
+      // Empurra os campos atualizados (nome, status, matrícula, depto…) no RHID
+      const { data: emp } = await supabaseAdmin.from("employees")
+        .select("id, name, cpf, pis, matricula, status").eq("id", item.employee_id).maybeSingle();
+      if (emp) {
+        const fields: Record<string, any> = {
+          name: emp.name,
+          registration: emp.matricula || String(emp.id),
+          status: emp.status === "ativo" ? 1 : 0,
+        };
+        await updateRhidPerson(reg.deviceId, reg.rhidPersonId, fields);
+      }
+      return { mappingId: reg.mappingId, rhidPersonId: reg.rhidPersonId, status: reg.status };
+    }
+    if (op === "delete") {
+      // "Delete" no RHID = inativar (status=0). Não removemos a pessoa, só desligamos.
+      const { data: maps } = await supabaseAdmin.from("control_id_users_map")
+        .select("*").eq("employee_id", item.employee_id).eq("ativo", true);
+      for (const m of (maps || [])) {
+        try {
+          await updateRhidPerson(Number(m.device_id), String(m.control_id_user_id), { status: 0 });
+        } catch (e: any) {
+          console.warn(`[RHID-Q] Falha ao inativar pessoa #${m.control_id_user_id}:`, e.message);
+        }
+      }
+      return { inativated: (maps || []).length };
+    }
+  }
+
+  if (kind === "absence") {
+    // ENDPOINT AINDA NÃO IMPLEMENTADO no RHID Cloud público.
+    // Itens ficam com status='unsupported' até descobrirmos a URL correta.
+    throw new Error("Endpoint RHID para tratamentos (folgas/faltas) ainda não habilitado");
+  }
+
+  throw new Error(`kind/op não suportado: ${kind}/${op}`);
+}
+
+/**
+ * Drena a fila: processa todos os itens 'pending' cujo next_attempt_at já passou.
+ * Chamado pelo cron a cada 5min.
+ */
+export async function processRhidSyncQueue(maxItems: number = 50): Promise<{
+  processed: number;
+  done: number;
+  failed: number;
+}> {
+  const nowIso = new Date().toISOString();
+  const { data: items } = await supabaseAdmin.from("rhid_sync_queue")
+    .select("id")
+    .eq("status", "pending")
+    .lte("next_attempt_at", nowIso)
+    .order("id", { ascending: true })
+    .limit(maxItems);
+
+  let done = 0, failed = 0;
+  for (const it of (items || [])) {
+    try {
+      await processRhidQueueItem(Number(it.id));
+      done++;
+    } catch {
+      failed++;
+    }
+  }
+  return { processed: (items || []).length, done, failed };
+}
+
+/**
+ * Deleta uma batida no RHID Cloud (DELETE em afd.svc/{id}).
+ */
+export async function deleteRhidPunch(deviceId: number, rhidPunchId: string): Promise<any> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+  if (device.tipo !== "rhid_cloud") throw new Error("Delete punch suportado apenas em RHID Cloud");
+  const token = await getOrLoginToken(device as DeviceRow);
+  const url = joinUrl(device.base_url, `/customerdb/afd.svc/${encodeURIComponent(rhidPunchId)}`);
+  let r = await tryFetch(url, {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+    timeoutMs: 20000,
+  });
+  if (r.status === 401 || r.status === 403) {
+    const newToken = await loginDevice(device as DeviceRow);
+    r = await tryFetch(url, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
+      timeoutMs: 20000,
+    });
+  }
+  if (!r.ok) throw new Error(`RHID DELETE punch falhou: ${r.status} ${await r.text().catch(() => "")}`);
+  return { ok: true };
 }
