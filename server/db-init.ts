@@ -681,6 +681,11 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
     // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
+    // Permite batidas manuais sem device_id / control_id_user_id (funcionário ainda
+    // não mapeado a um aparelho). O ERP é a fonte da verdade — nunca perder o registro
+    // local mesmo sem mapping.
+    await execSql(`ALTER TABLE control_id_punches ALTER COLUMN device_id DROP NOT NULL`).catch(() => {});
+    await execSql(`ALTER TABLE control_id_punches ALTER COLUMN control_id_user_id DROP NOT NULL`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS billing_alerts (
