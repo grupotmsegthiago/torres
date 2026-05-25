@@ -8,7 +8,7 @@ import {
   Fuel, Search, Download, RefreshCw, Eye, X, Camera, CheckCircle2,
   AlertTriangle, Loader2, ArrowUpDown, CalendarDays, MapPin,
   FileText, Gauge, DollarSign, Droplets, ChevronDown, ChevronUp,
-  ShieldCheck, XCircle, ExternalLink
+  ShieldCheck, XCircle, ExternalLink, Pencil, Save
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
@@ -105,6 +105,7 @@ export default function RelatorioAbastecimentoPage() {
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [onlyAlerts, setOnlyAlerts] = useState(false);
@@ -226,6 +227,7 @@ export default function RelatorioAbastecimentoPage() {
   }, [fuelings, dateFrom, dateTo]);
 
   const detailFueling = detailId ? fuelings.find(f => f.id === detailId) : null;
+  const editFueling = editId ? fuelings.find(f => f.id === editId) : null;
 
   const exportCSV = () => {
     const header = "ID,Data,Placa,Agente,Combustível,Litros,R$/L,Valor Total,KM,Posto\n";
@@ -638,9 +640,14 @@ export default function RelatorioAbastecimentoPage() {
                         <TicketLogBadge fueling={f} />
                       </td>
                       <td className="p-2 text-center">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => setDetailId(f.id)} data-testid={`button-detail-${f.id}`}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center justify-center gap-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => setDetailId(f.id)} data-testid={`button-detail-${f.id}`} title="Ver detalhes">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50" onClick={() => setEditId(f.id)} data-testid={`button-edit-${f.id}`} title="Editar valor / litros / KM">
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -660,6 +667,15 @@ export default function RelatorioAbastecimentoPage() {
           onClose={() => setDetailId(null)}
           zoomedPhoto={zoomedPhoto}
           setZoomedPhoto={setZoomedPhoto}
+        />
+      )}
+
+      {editFueling && (
+        <EditFuelingModal
+          fueling={editFueling}
+          vehicle={vMap.get(editFueling.vehicleId)}
+          driverName={editFueling.driverId ? eMap.get(editFueling.driverId)?.name : null}
+          onClose={() => setEditId(null)}
         />
       )}
 
@@ -953,6 +969,178 @@ function InfoBox({ label, value, sub }: { label: string; value: string; sub?: st
       <p className="text-xs text-neutral-500 mb-0.5">{label}</p>
       <p className="font-bold text-neutral-900 text-sm">{value}</p>
       {sub && <p className="text-xs text-neutral-400">{sub}</p>}
+    </div>
+  );
+}
+
+function EditFuelingModal({
+  fueling, vehicle, driverName, onClose,
+}: {
+  fueling: VehicleFueling;
+  vehicle?: Vehicle;
+  driverName?: string | null;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  // Mantém os campos como string pra permitir digitação livre (vírgula/ponto, vazio temporário)
+  const [totalCost, setTotalCost] = useState(String(fueling.totalCost ?? ""));
+  const [liters, setLiters] = useState(String(fueling.liters ?? ""));
+  const [km, setKm] = useState(String(fueling.km ?? ""));
+  const [station, setStation] = useState(fueling.station ?? "");
+  const [fuelType, setFuelType] = useState(fueling.fuelType ?? "gasolina");
+
+  const parseNum = (s: string): number | null => {
+    const n = Number(String(s).replace(",", ".").trim());
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const totalCostNum = parseNum(totalCost) ?? 0;
+  const litersNum = parseNum(liters) ?? 0;
+  const kmNum = parseNum(km);
+  const cplCalc = litersNum > 0 ? totalCostNum / litersNum : 0;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (totalCostNum < 0 || litersNum < 0) throw new Error("Valor e litros não podem ser negativos");
+      const payload: Record<string, any> = {
+        totalCost: totalCostNum,
+        liters: litersNum,
+        costPerLiter: cplCalc,
+        fuelType,
+        station: station.trim() || null,
+      };
+      if (kmNum !== null && kmNum > 0) payload.km = kmNum;
+      const r = await authFetch(`/api/fueling/${fueling.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.message || `Erro ${r.status}`);
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
+      toast({ title: "Abastecimento atualizado", description: "Os novos valores foram salvos." });
+      onClose();
+    },
+    onError: (err: any) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto pt-8 pb-8" onClick={onClose} data-testid="modal-fueling-edit">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-neutral-100">
+          <div className="flex items-center gap-3">
+            <Pencil className="w-5 h-5 text-amber-600" />
+            <div>
+              <h2 className="text-lg font-bold text-neutral-900">Editar abastecimento #{fueling.id}</h2>
+              <p className="text-xs text-neutral-500">
+                {vehicle?.plate || "-"} · {driverName || "—"} · {fueling.date}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg" data-testid="button-close-edit">
+            <X className="w-5 h-5 text-neutral-400" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
+            Use esse formulário pra corrigir valor lançado errado pelo agente. A alteração é auditada e atualiza o lançamento financeiro automaticamente.
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Combustível</label>
+            <select
+              value={fuelType}
+              onChange={e => setFuelType(e.target.value)}
+              className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm bg-white"
+              data-testid="select-edit-fuelType"
+            >
+              <option value="gasolina">Gasolina</option>
+              <option value="etanol">Etanol</option>
+              <option value="diesel">Diesel</option>
+              <option value="diesel_s10">Diesel S10</option>
+              <option value="gnv">GNV</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Valor total (R$)</label>
+              <Input
+                value={totalCost}
+                onChange={e => setTotalCost(e.target.value)}
+                placeholder="0,00"
+                inputMode="decimal"
+                data-testid="input-edit-totalCost"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Litros</label>
+              <Input
+                value={liters}
+                onChange={e => setLiters(e.target.value)}
+                placeholder="0,00"
+                inputMode="decimal"
+                data-testid="input-edit-liters"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Preço por litro (calculado)</label>
+              <Input value={cplCalc > 0 ? `R$ ${cplCalc.toFixed(3)}` : "—"} disabled className="bg-neutral-50" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">KM do veículo</label>
+              <Input
+                value={km}
+                onChange={e => setKm(e.target.value)}
+                placeholder="Hodômetro"
+                inputMode="numeric"
+                data-testid="input-edit-km"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Posto</label>
+            <Input
+              value={station}
+              onChange={e => setStation(e.target.value)}
+              placeholder="Nome do posto"
+              data-testid="input-edit-station"
+            />
+          </div>
+
+          <div className="bg-neutral-50 rounded-lg p-2.5 text-xs text-neutral-600 flex items-center justify-between">
+            <span>Antes:</span>
+            <span className="font-mono">
+              R$ {Number(fueling.totalCost || 0).toFixed(2)} · {Number(fueling.liters || 0).toFixed(2)}L · KM {fueling.km ?? "—"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-neutral-100 bg-neutral-50/50 rounded-b-xl">
+          <Button variant="outline" onClick={onClose} disabled={save.isPending} data-testid="button-edit-cancel">
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => save.mutate()}
+            disabled={save.isPending || litersNum <= 0 || totalCostNum <= 0}
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+            data-testid="button-edit-save"
+          >
+            {save.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+            Salvar correção
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
