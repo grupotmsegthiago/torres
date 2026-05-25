@@ -6,6 +6,7 @@ import { join } from "path";
 import * as XLSX from "xlsx";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
+import { createAutoTransaction } from "./_helpers";
 import { rodarAuditoriaPedagiosCsv } from "../lib/auditoria-pedagios-ticketlog";
 
 interface TicketLogTx {
@@ -1197,6 +1198,28 @@ export function registerConciliacaoRoutes(app: Express) {
             erros.push({ codigo: p.codigo, motivo: costErr?.message || "falha ao criar custo" });
             continue;
           }
+
+          // Sincronia financeira: TODA mission_cost (exceto combustível "[F#X]" que já vem
+          // representada por uma financial_transaction com origin_type=fueling) precisa
+          // ter sua tx espelho com origin_type=mission_cost para entrar no Balanço Gerencial.
+          // Pedágios do TicketLog não são combustível → criar tx normalmente.
+          const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+          try {
+            await createAutoTransaction({
+              description: `CUSTO MISSÃO OS-${p.osId} - PEDÁGIO (TicketLog ${codigoFatura})`,
+              amount: p.amount,
+              type: "EXPENSE",
+              due_date: p.data || todayBRT,
+              origin_type: "mission_cost",
+              origin_id: String(costRecord.id),
+              category_name: "Custos de Missão",
+              entity_name: null,
+              created_by: "SISTEMA",
+            });
+          } catch (txErr: any) {
+            console.error(`[ticketlog→tx] expense falhou mc=${costRecord.id}: ${txErr.message}`);
+          }
+
           // Cria também a contrapartida de receita (cobrança ao cliente), como o fluxo do app móvel.
           // Categoria "Pedágio Receita" para que o filtro do cruzamento
           // (que exclui qualquer categoria contendo "receita") não trate
@@ -1220,6 +1243,21 @@ export function registerConciliacaoRoutes(app: Express) {
             erros.push({ codigo: p.codigo, motivo: `custo criado mas receita falhou: ${revErr.message}` });
             criados.push({ codigo: p.codigo, osId: p.osId, missionCostId: costRecord.id, revenueId: null });
             continue;
+          }
+          try {
+            await createAutoTransaction({
+              description: `RECEITA MISSÃO OS-${p.osId} - PEDÁGIO (TicketLog ${codigoFatura})`,
+              amount: p.amount,
+              type: "INCOME",
+              due_date: p.data || todayBRT,
+              origin_type: "mission_cost",
+              origin_id: String(revRecord!.id),
+              category_name: "Receitas de Missão",
+              entity_name: null,
+              created_by: "SISTEMA",
+            });
+          } catch (txErr: any) {
+            console.error(`[ticketlog→tx] income falhou mc=${revRecord!.id}: ${txErr.message}`);
           }
           criados.push({
             codigo: p.codigo,
