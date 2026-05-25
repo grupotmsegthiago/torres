@@ -488,90 +488,109 @@ export function registerFixedCostsRoutes(app: Express) {
     const porAgente: any[] = [];
     let totalMensal = 0;
     const acc = {
-      base: 0, peric: 0, he: 0, adicNot: 0, dsr: 0, refeicao: 0, ajudaCusto: 0,
-      bruto: 0, inss: 0, irrf: 0, fgts: 0, deducoes: 0, liquido: 0,
-      prov13: 0, provFer: 0, prov13Ferias: 0, provFGTSFer: 0, provINSSFer: 0, provisoes: 0,
-      vt: 0, cesta: 0, outros: 0, diarias: 0,
+      base: 0, peric: 0, he: 0, refeicao: 0,
+      fgts: 0, inssPatronal: 0, seguroVida: 0,
+      cesta: 0, diarias: 0,
     };
 
-    for (const emp of ativos) {
-      // Pré-cálculo de HE/AdicNot reais do período (vêm do Control iD + jornada_calculos),
-      // pra passar como override pro motor de folha — evita usar média dos 3 últimos meses.
-      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
-      // Se "normais" exceder 220 (algumas integrações somam HE em hours_worked),
-      // realoca o excedente para "extras" automaticamente.
-      const horasNormaisMes = Math.min(220, hm.normais);
-      let horasExtrasMes = hm.extras + Math.max(0, hm.normais - 220);
-      // Cap visual em 100h de HE (até 320h totais)
-      if (horasExtrasMes > 100) horasExtrasMes = 100;
-      const horasNoturnasMesEmp = noturnasMes.get(emp.id) || 0;
+    // Alinhado em 25/05/2026 com a tela Ponto Eletrônico (control-id.tsx → buildFolhaStats):
+    // mesma fórmula de Custo Real (Vencimentos + Benefícios + Recolhimentos), mantendo o
+    // adicional de HE em 60% (CCT) em vez dos 50% legais. Sem provisões, sem DSR, sem
+    // adicional noturno — o Balanço Gerencial é fluxo de caixa do mês, não competência CLT.
+    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+    const { buildFolhaStats } = await import("../control-id");
 
-      const r = await calculateAgentMonthlyCost(emp.id, {
-        businessDays,
-        holidaySet,
-        diariasManuais: diarias.porAgente[emp.id] || 0,
-        horasExtras: horasExtrasMes,
-        horasNoturnas: horasNoturnasMesEmp,
-      });
-      totalMensal += r.total;
-      const b = r.breakdown;
-      acc.base += b.salarioProporcional; acc.peric += b.periculosidade;
-      acc.he += b.horaExtra; acc.adicNot += b.adicionalNoturno; acc.dsr += b.dsr;
-      acc.refeicao += b.vrTotal; acc.ajudaCusto += b.ajudaCusto;
-      acc.bruto += b.totalBruto; acc.inss += b.inss; acc.irrf += b.irrf; acc.fgts += b.fgts;
-      acc.deducoes += b.totalDeducoes; acc.liquido += b.liquidoFuncionario;
-      acc.prov13 += b.decimoTerceiro; acc.provFer += b.ferias - b.provisaoTercoFerias;
-      acc.prov13Ferias += b.provisaoTercoFerias;
-      acc.provFGTSFer += b.provisaoFGTSsobreFerias13; acc.provINSSFer += b.provisaoINSSsobreFerias13;
-      acc.provisoes += b.totalProvisoes;
-      acc.vt += b.vt; acc.cesta += b.cesta; acc.outros += b.outros; acc.diarias += b.diarias;
+    for (const emp of ativos) {
+      let s: any;
+      try {
+        s = await buildFolhaStats(emp.id, mesRef, { multiplicadorHE: 1.6 });
+      } catch (err: any) {
+        console.warn(`[rh-summary] buildFolhaStats(${emp.id}) falhou:`, err?.message || err);
+        continue;
+      }
+
+      const total = Number(s.custoTotalEstimado || 0);
+      totalMensal += total;
+
+      const base = Number(s.baseSalary || 0);
+      const peric = Number(s.periculosidade || 0);
+      const heVal = Number(s.custoExtra || 0);
+      const vrTotal = Number(s.valeRefeicao || 0);
+      const cesta = Number(s.cestaBasica || 0);
+      // Diárias: usar a mesma fonte que entrou em `custoTotalEstimado` (s.diarias),
+      // pra garantir que monthly === soma do breakdown. Se vier 0 do operational_payments,
+      // tenta o fallback de agent_daily_allowances pra exibição — mas NÃO altera o total.
+      const diariasEmp = Number(s.diarias || 0) > 0
+        ? Number(s.diarias)
+        : Number(diarias.porAgente[emp.id] || 0);
+      const fgts = Number(s.fgts || 0);
+      const inssPatronal = Number(s.inssPatronal || 0);
+      const seguroVida = Number(s.seguroVida || 0);
+
+      acc.base += base; acc.peric += peric; acc.he += heVal;
+      acc.refeicao += vrTotal; acc.cesta += cesta; acc.diarias += diariasEmp;
+      acc.fgts += fgts; acc.inssPatronal += inssPatronal; acc.seguroVida += seguroVida;
+
+      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
+      const horasNormaisMes = Math.min(220, hm.normais);
+      const horasExtrasMes = Number(s.horaExtra || 0);
 
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
-        total: r.total,
-        // Total OPERACIONAL = sem provisões (13º, férias, 1/3, FGTS/INSS s/ prov).
-        // É o desembolso real do mês — usado pelo Balanço Gerencial (fluxo de caixa).
-        // O `total` cheio continua disponível pra tela "Custos Fixos / Folha" (visão CLT real).
-        totalOperacional: Math.max(0, r.total - b.totalProvisoes),
+        // Total cheio e operacional são iguais — não há provisões no novo cálculo.
+        total,
+        totalOperacional: total,
+        totalProvisoes: 0,
         horasNormaisMes,
         horasExtrasMes,
         // Vencimentos
-        salarioProporcional: b.salarioProporcional,
-        periculosidade: b.periculosidade,
-        horaExtra: b.horaExtra,
-        adicionalNoturno: b.adicionalNoturno,
-        dsr: b.dsr,
-        vrDiario: b.vrDiario, vrDias: b.vrDias, vrTotal: b.vrTotal,
-        ajudaCusto: b.ajudaCusto,
-        vt: b.vt, cesta: b.cesta, outros: b.outros, diarias: b.diarias,
-        totalBruto: b.totalBruto,
-        // Deduções
-        inss: b.inss, irrf: b.irrf, fgts: b.fgts,
-        totalDeducoes: b.totalDeducoes,
-        liquidoFuncionario: b.liquidoFuncionario,
-        // Provisões
-        decimoTerceiro: b.decimoTerceiro,
-        ferias: b.ferias - b.provisaoTercoFerias, // separa férias puras do 1/3
-        provisaoTercoFerias: b.provisaoTercoFerias,
-        provisaoFGTSsobreFerias13: b.provisaoFGTSsobreFerias13,
-        provisaoINSSsobreFerias13: b.provisaoINSSsobreFerias13,
-        totalProvisoes: b.totalProvisoes,
-        // Compat (mantém UI antiga funcionando)
-        base: b.salarioProporcional,
-        encargos: b.encargos,
-        rescisao: b.rescisao,
-        horasMensais: b.horasMensais,
-        custoHora: b.custoHora,
-        semSalario: b.salarioProporcional === 0,
+        salarioProporcional: base,
+        periculosidade: peric,
+        horaExtra: heVal,
+        adicionalNoturno: 0,
+        dsr: 0,
+        valorHoraExtra: Number(s.valorHoraExtra || 0),
+        // Benefícios
+        vrDiario: Number(s.vrDiario || 0),
+        vrDias: Number(s.diasUteis || 0),
+        vrTotal,
+        ajudaCusto: 0,
+        vt: 0, cesta, outros: 0, diarias: diariasEmp,
+        // Recolhimentos (encargos empresa)
+        fgts,
+        fgtsPct: Number(s.fgtsPct || 8),
+        inssPatronal,
+        inssPatronalPct: Number(s.inssPatronalPct || 20),
+        seguroVida,
+        // Compat com UI antiga
+        base,
+        encargos: fgts + inssPatronal + seguroVida,
+        inss: 0, irrf: 0,
+        totalBruto: base + peric + heVal,
+        totalDeducoes: 0,
+        liquidoFuncionario: base + peric + heVal,
+        decimoTerceiro: 0,
+        ferias: 0,
+        provisaoTercoFerias: 0,
+        provisaoFGTSsobreFerias13: 0,
+        provisaoINSSsobreFerias13: 0,
+        rescisao: 0,
+        horasMensais: 220,
+        custoHora: Number(s.valorHora || 0),
+        semSalario: !s.hasSalary,
+        // Diagnóstico (mês corrente)
+        isMesCorrente: !!s.isMesCorrente,
+        diasCorridosElapsed: Number(s.diasCorridosElapsed || 0),
+        totalDiasMes: Number(s.totalDiasMes || 0),
       });
     }
 
     porAgente.sort((a, b) => b.total - a.total);
 
-    // Total operacional = SEM provisões. Reflete desembolso real do mês (Balanço Gerencial).
-    // Mantém `monthly` com provisões pra compat retroativa (tela "Custos Fixos / Folha").
-    const totalOperacional = Math.max(0, totalMensal - acc.provisoes);
+    // Sem provisões neste cálculo (alinhado ao Ponto Eletrônico). monthlyOperacional = monthly.
+    const totalOperacional = totalMensal;
+    const encargosTot = acc.fgts + acc.inssPatronal + acc.seguroVida;
     res.json({
       monthly: totalMensal,
       monthlyOperacional: totalOperacional,
@@ -584,28 +603,31 @@ export function registerFixedCostsRoutes(app: Express) {
       breakdown: {
         // Compat (UI antiga)
         base: acc.base,
-        encargos: acc.inss + acc.irrf + acc.fgts,
+        encargos: encargosTot, // FGTS + INSS Patronal + Seguro de Vida
         vr: acc.refeicao,
-        vt: acc.vt, cesta: acc.cesta, outros: acc.outros, diarias: acc.diarias,
-        ferias: acc.provFer + acc.prov13Ferias,
-        decimoTerceiro: acc.prov13,
-        rescisao: acc.provFGTSFer + acc.provINSSFer,
+        vt: 0, cesta: acc.cesta, outros: 0, diarias: acc.diarias,
+        ferias: 0,
+        decimoTerceiro: 0,
+        rescisao: 0,
         horaExtra: acc.he,
-        adicionalNoturno: acc.adicNot,
-        beneficios: acc.refeicao + acc.vt + acc.cesta + acc.outros + acc.diarias + acc.ajudaCusto,
-        // Folha 2025
+        adicionalNoturno: 0,
+        beneficios: acc.refeicao + acc.cesta + acc.diarias,
+        // Folha (Ponto Eletrônico)
         salarioProporcional: acc.base,
         periculosidade: acc.peric,
-        dsr: acc.dsr,
-        ajudaCusto: acc.ajudaCusto,
-        totalBruto: acc.bruto,
-        inss: acc.inss, irrf: acc.irrf, fgts: acc.fgts,
-        totalDeducoes: acc.deducoes,
-        liquidoFuncionario: acc.liquido,
-        provisaoTercoFerias: acc.prov13Ferias,
-        provisaoFGTSsobreFerias13: acc.provFGTSFer,
-        provisaoINSSsobreFerias13: acc.provINSSFer,
-        totalProvisoes: acc.provisoes,
+        dsr: 0,
+        ajudaCusto: 0,
+        totalBruto: acc.base + acc.peric + acc.he,
+        inss: 0, irrf: 0, fgts: acc.fgts,
+        // Novos campos (encargos empresa)
+        inssPatronal: acc.inssPatronal,
+        seguroVida: acc.seguroVida,
+        totalDeducoes: 0,
+        liquidoFuncionario: acc.base + acc.peric + acc.he,
+        provisaoTercoFerias: 0,
+        provisaoFGTSsobreFerias13: 0,
+        provisaoINSSsobreFerias13: 0,
+        totalProvisoes: 0,
       },
       porAgente,
     });

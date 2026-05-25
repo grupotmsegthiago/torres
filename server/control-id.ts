@@ -1159,7 +1159,12 @@ export async function syncAllDevices(): Promise<{ devices: number; totalSaved: n
  * Gera folha de ponto consolidada (por funcionário, por dia) a partir das batidas.
  * Para cada dia: 1ª batida = entrada, última = saída, intermediárias = almoço.
  */
-export async function buildFolhaStats(employeeId: number, monthYear: string): Promise<any> {
+export async function buildFolhaStats(
+  employeeId: number,
+  monthYear: string,
+  opts: { multiplicadorHE?: number } = {},
+): Promise<any> {
+  const multiplicadorHE = opts.multiplicadorHE ?? 1.5; // CLT padrão 50%; CCT é 1.6 (60%)
   const dias = await buildFolhaPonto(employeeId, monthYear);
   const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
   const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
@@ -1226,7 +1231,7 @@ export async function buildFolhaStats(employeeId: number, monthYear: string): Pr
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
   const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
-  const valorHoraExtra = valorHora * 1.5; // CLT padrão 50%
+  const valorHoraExtra = valorHora * multiplicadorHE;
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);

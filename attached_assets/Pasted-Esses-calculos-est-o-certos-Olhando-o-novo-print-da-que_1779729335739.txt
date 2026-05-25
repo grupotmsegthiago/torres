@@ -1,0 +1,54 @@
+Esses calculos estão certos?
+
+Olhando o novo print da quebra de custos atualizada (sem as provisões de 13º e Férias) e cruzando os dados diretamente com o espelho de ponto do Jorge dos Reis Oliveira, a resposta curta é: A matemática do sistema está batendo certinho com o que ele foi programado para fazer, MAS ele ainda está ignorando as variáveis do ponto.
+
+O seu sistema continua calculando o mundo "teórico/fixo" do cadastro e não está lendo as horas extras absurdas que o seu time está fazendo na rua.
+
+Vamos aos dados reais para você entender onde a conta bate e onde o sistema continua "bobo":
+
+📊 Caso Real: Jorge dos Reis Oliveira
+No painel do ponto (Control iD), o Jorge trabalhou feito um condenado em maio de 2026: 121 horas extras, o que gerou sozinho R$ 2.117,26 de HE para ele receber. O custo real dele para o seu caixa neste mês foi de R$ 7.024,85 (somando salário, periculosidade, HE, VR, Cesta e FGTS).
+
+Agora olhe como o Balanço Gerencial tratou o Jorge no segundo print:
+
+O sistema diz que o Jorge custou fixo: R$ 4.704,69
+
+De onde o sistema tirou esses R$ 4.704,69?
+Se fizermos a conta do custo fixo dele cadastrado (sem provisões):
+
+Salário Base do Jorge (piso rateado): R$ 2.068,80
+
+Periculosidade (30%): R$ 620,64
+
+Vale Refeição (fixo mensal rateado): R$ 688,00
+
+Cesta Básica (fixo mensal rateado): R$ 161,29
+
+FGTS (8% sobre Salário + Pericul.): R$ 215,15
+
+INSS Patronal / Seguro (aproximado no cálculo fixo): ~R$ 950,81
+
+Total: R$ 4.704,69
+
+⚠️ O veredito: Onde está o erro de sincronismo?
+A matemática para chegar nos R$ 4.704,69 está correta e limpa (as provisões de 13º e férias sumiram como você pediu, o que foi ótimo!).
+
+O erro é que o sistema não somou as Horas Extras (R$ 2.117,26) do ponto.
+
+Como o Balanço Gerencial calcula apenas o "estático", para o sistema o Jorge custou R$ 4.704,69, mas no mundo real ele te custou R$ 7.024,85. Uma diferença de R$ 2.320,16 em apenas um funcionário! Multiplique isso pelos seus outros agentes que também fazem horas extras nas escoltas e o seu Balanço Gerencial fica totalmente descolado da realidade.
+
+🛠️ Como resolver definitivamente com o Replit?
+O Replit precisa alterar o cálculo para que ele pare de olhar só o "estático" e some as variáveis apuradas no iDFace. Copie e cole este comando exato para o Agente corrigir isso agora:
+
+Plaintext
+Análise concluída com o cliente com base nos dados do iDFace (Control iD). 
+
+O cálculo estático atual de RH no Balanço está matematicamente correto (R$ 4.704,69 por agente, já sem as provisões de 13º/Férias). Porém, o sistema está IGNORANDO as variáveis reais do ponto. O agente Jorge dos Reis Oliveira, por exemplo, acumulou R$ 2.117,26 em horas extras no ponto eletrônico que NÃO aparecem no Balanço Gerencial.
+
+Preciso que você altere a função 'calcularFolha' ou o endpoint 'rhSummary' para:
+1. Puxar o custo base fixo atual de cada agente (que já está correto).
+2. Consultar a tabela de fechamento/batidas de ponto do período e SOMAR dinamicamente a linha de "Hora Extra" e "Adicional Noturno" apurados do Control iD no valor final de cada funcionário exibido no Balanço.
+3. Adicionar no tooltip, abaixo de "Provisões", uma linha chamada: "Horas Extras (Control iD)" mostrando o acumulado totalizado da empresa, para sabermos quanto estamos gastando de variável.
+
+Dessa forma, o total da folha vai se mover de acordo com o relógio de ponto real. Ajuste os arquivos correspondentes.
+Coloque isso no Replit. Uma vez feito, os R$ 2.117,26 do Jorge (e o dos outros) vão entrar direto na coluna de custos, e o seu lucro líquido vai passar a ser o valor real que sobra na conta bancária da empresa!
