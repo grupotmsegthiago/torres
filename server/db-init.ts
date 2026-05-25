@@ -1081,7 +1081,18 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
     // Trava de duplicação: uma OS só pode ter UM billing. Previne race condition em UPSERTs concorrentes
     // e INSERTs cegos (mission.ts cancelamento, escort.ts manual). Veja replit.md §"Regras INTOCÁVEIS".
-    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_eb_so_id ON escort_billings (service_order_id) WHERE service_order_id IS NOT NULL`).catch((e: any) => {
+    // ATENÇÃO: o índice NÃO pode ser parcial (sem WHERE) porque o Postgres exige índice unique TOTAL pra
+    // suportar `INSERT ... ON CONFLICT (service_order_id)` (usado por `.upsert({ onConflict })` do
+    // supabase-js no cron e em mission.ts/escort.ts). Índice parcial gera erro 42P10 silencioso, billing
+    // nunca persiste, e a UI mostra "Sem Cálculo" (caso real corrigido em 25/05/2026). NULLs em UNIQUE
+    // são considerados distintos no Postgres, então billings avulsos (service_order_id NULL) continuam OK.
+    await execSql(`DROP INDEX IF EXISTS uniq_eb_so_id_partial`).catch(() => {});
+    await execSql(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='uniq_eb_so_id' AND indexdef LIKE '%WHERE%') THEN
+        DROP INDEX uniq_eb_so_id;
+      END IF;
+    END $$`).catch(() => {});
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_eb_so_id ON escort_billings (service_order_id)`).catch((e: any) => {
       console.warn(`[db-init] uniq_eb_so_id falhou (provavelmente já existem duplicatas): ${e?.message || e}`);
     });
     // FKs sem índice (Supabase Advisor 0001_unindexed_foreign_keys) — escort_billings/chat_messages.
