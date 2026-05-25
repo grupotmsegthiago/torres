@@ -1638,7 +1638,7 @@ export default function RelatorioNFPage() {
             <Button
               className="bg-emerald-700 hover:bg-emerald-800"
               onClick={() => receiveModal && receiveInCashMutation.mutate({ invoiceId: receiveModal.invoiceId, method: receiveModal.method, paymentDate: receiveModal.paymentDate, value: receiveModal.value, notes: receiveModal.notes })}
-              disabled={receiveInCashMutation.isPending || !receiveModal?.paymentDate || !receiveModal || receiveModal.value <= 0}
+              disabled={receiveInCashMutation.isPending || !receiveModal?.paymentDate || !receiveModal?.invoiceId}
               data-testid="button-confirm-receive"
             >
               {receiveInCashMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Baixando…</> : <><CheckCircle2 className="h-4 w-4 mr-1" /> Confirmar recebimento</>}
