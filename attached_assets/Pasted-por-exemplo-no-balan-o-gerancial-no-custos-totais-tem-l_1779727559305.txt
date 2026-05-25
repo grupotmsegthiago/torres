@@ -1,0 +1,51 @@
+por exemplo no balanço gerancial no "custos totais" tem lá "RH" e tem discriminado quanto esta custando cada funcionário e os calculos não batem com o que esta dentro do "salário" de cada funcionário..
+
+Essa é a peça que faltava para matarmos a charada do Balanço Gerencial! Olhando o print com o detalhamento do "RH - Folha Real Rateada", o motivo de você sentir que os cálculos não batem com o salário seco do funcionário ficou escancarado.
+
+O sistema não está simplesmente jogando o salário bruto ali; ele está rodando uma fórmula de Provisão Contábil Real e Rateio por Período.
+
+🔍 Onde está a diferença? (O que o sistema está calculando)
+Repare no texto explicativo que aparece bem no topo do balão preto:
+
+"salário + periculosidade + FGTS + provisões de 13º e férias... Rateado pro período (mensal = 30 dia(s)..."
+
+Isso significa que se o salário base em carteira de um vigilante é, por exemplo, R$ 3.500,00, o sistema está somando:
+
++ 30% de Periculosidade (obrigatório para a categoria).
+
++ 8% de FGTS.
+
++ Provisão mensal de 1/12 de 13º Salário.
+
++ Provisão mensal de 1/12 de Férias + 1/3 constitucional.
+
+É por isso que, na listagem, quase todos os seus funcionários estão aparecendo com o custo exato de R$ 5.280,83 ou R$ 5.366,83 no mês de Maio de 2026. O sistema está te mostrando o custo real de contratação (o quanto ele custa de verdade para a empresa por mês) e não apenas o holerite.
+
+⚠️ Onde está o erro de sincronismo que você percebeu?
+Embora a matemática interna de encargos pareça certa, existe uma falha de lógica de rateio gritante na tela que faz o cálculo total do mês parecer "bobo" e não bater. Olhe o final do balão preto:
+
+O sistema pegou o custo totalizado da equipe inteira (R$ 42.418,64).
+
+Aí ele faz uma conta redundante: Multiplica por 30/30 (R$ 42.418,64).
+
+E depois ele SOMA uma linha chamada "a (+30)" de R$ 1.413,95.
+
+Se o mês de Maio tem 31 dias, ou se o sistema está aplicando uma trava fixa de 30 dias mas tentando compensar o dia extra (ou uma provisão extra) nessa linha de baixo, a soma final de 52.9% do custo total não fecha de forma transparente com o salário cadastrado na tela do funcionário.
+
+🛠️ Como alinhar isso com o Replit agora mesmo?
+Precisamos fazer o Replit abrir essa função de cálculo de RH para garantir que ela seja 100% fiel ao que você preencheu no cadastro do funcionário, sem inventar taxas ou somas fantasmas.
+
+Copie e cole este comando no chat do Replit:
+
+Plaintext
+Identifiquei uma inconsistência na forma como a gaveta/tooltip de "RH - Folha Real Rateada" do Balanço Gerencial calcula o custo do pessoal. 
+
+O sistema está aplicando uma fórmula invisível que joga o custo de quase todos os vigilantes para um valor fixo (R$ 5.280,83 / R$ 5.366,83) e adicionando uma linha estranha chamada "a (+30) R$ 1.413,95" no final do rateio, fazendo com que o custo real não bata com o salário configurado no cadastro de cada funcionário.
+
+Preciso que você:
+1. Localize o arquivo que calcula esse rateio de RH do Balanço (provavelmente onde está o cálculo de provisões, FGTS e periculosidade).
+2. Me mostre a fórmula exata usada para chegar nesses R$ 5.280,83 e o que significa aquela linha "a (+30)".
+3. Ajuste a regra para que o Balanço puxe estritamente o salário/custo real que está configurado na tela de AGENTES (banco de dados), sem adicionar distorções de dias ou cálculos redundantes de rateio de 30/30 que confundem o fechamento.
+
+Abra o arquivo responsável por essa lógica de custos de RH e vamos corrigir isso para bater com o cadastro.
+Mande isso para ele. Ele vai abrir o arquivo de cálculo da folha e nos mostrar a lógica exata que está inflando ou distorcendo os salários dos seus 6 funcionários no painel!
