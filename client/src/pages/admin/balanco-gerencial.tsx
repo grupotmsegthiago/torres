@@ -227,7 +227,31 @@ export default function BalancoGerencialPage() {
     monthly: number;
     daily: number;
     agentCount: number;
-    porAgente?: Array<{ id: number; name: string; total: number }>;
+    breakdown?: {
+      salarioProporcional?: number;
+      periculosidade?: number;
+      inss?: number;
+      irrf?: number;
+      fgts?: number;
+      totalProvisoes?: number;
+      decimoTerceiro?: number;
+      ferias?: number;
+      provisaoTercoFerias?: number;
+      provisaoFGTSsobreFerias13?: number;
+      provisaoINSSsobreFerias13?: number;
+      horaExtra?: number;
+      adicionalNoturno?: number;
+      dsr?: number;
+      beneficios?: number;
+    };
+    porAgente?: Array<{
+      id: number; name: string; total: number;
+      salarioProporcional?: number;
+      periculosidade?: number;
+      inss?: number; irrf?: number; fgts?: number;
+      totalProvisoes?: number;
+      horaExtra?: number; adicionalNoturno?: number; dsr?: number;
+    }>;
   }>({
     queryKey: ["/api/fixed-costs/rh-summary"],
     refetchInterval: 600_000,
@@ -730,6 +754,40 @@ export default function BalancoGerencialPage() {
               const porAgente = (rhSummary?.porAgente || [])
                 .filter((a) => Number(a.total || 0) > 0)
                 .sort((a, b) => Number(b.total) - Number(a.total));
+
+              // ── COMPOSIÇÃO AGREGADA (transparente: salário cadastrado + encargos + provisões)
+              // O backend (engine calcularFolha) JÁ retorna o breakdown agregado em rhSummary.breakdown
+              // e por agente em rhSummary.porAgente[*]. Aqui só somamos e ratemos pelo período.
+              const bk = rhSummary?.breakdown;
+              const agg = porAgente.length > 0
+                ? porAgente.reduce(
+                    (acc, a) => ({
+                      base: acc.base + Number(a.salarioProporcional || 0),
+                      peric: acc.peric + Number(a.periculosidade || 0),
+                      encargos: acc.encargos + Number(a.inss || 0) + Number(a.irrf || 0) + Number(a.fgts || 0),
+                      provisoes: acc.provisoes + Number(a.totalProvisoes || 0),
+                      he: acc.he + Number(a.horaExtra || 0) + Number(a.adicionalNoturno || 0) + Number(a.dsr || 0),
+                    }),
+                    { base: 0, peric: 0, encargos: 0, provisoes: 0, he: 0 }
+                  )
+                : {
+                    base: Number(bk?.salarioProporcional || 0),
+                    peric: Number(bk?.periculosidade || 0),
+                    encargos: Number(bk?.inss || 0) + Number(bk?.irrf || 0) + Number(bk?.fgts || 0),
+                    provisoes: Number(bk?.totalProvisoes || 0),
+                    he: Number(bk?.horaExtra || 0) + Number(bk?.adicionalNoturno || 0) + Number(bk?.dsr || 0),
+                  };
+              const hasBreakdown = agg.base + agg.peric + agg.encargos + agg.provisoes > 0;
+
+              if (hasBreakdown) {
+                rhRows.push({ label: "── Composição (do cadastro) ──", value: (agg.base + agg.peric + agg.encargos + agg.provisoes + agg.he) * fatorPeriodo });
+                rhRows.push({ label: "  Salário base (cadastro)", value: agg.base * fatorPeriodo });
+                rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
+                if (agg.he > 0) rhRows.push({ label: "  Horas Extras + Adic. Noturno + DSR", value: agg.he * fatorPeriodo });
+                rhRows.push({ label: "  Encargos (INSS + IRRF + FGTS)", value: agg.encargos * fatorPeriodo });
+                rhRows.push({ label: "  Provisões (13º + Férias + 1/3 + FGTS/INSS s/ prov)", value: agg.provisoes * fatorPeriodo });
+              }
+
               if (porAgente.length > 0) {
                 rhRows.push({
                   label: `── ${porAgente.length} agente(s) ativos ──`,
@@ -741,7 +799,7 @@ export default function BalancoGerencialPage() {
                     value: Number(a.total) * fatorPeriodo,
                   });
                 }
-              } else {
+              } else if (!hasBreakdown) {
                 rhRows.push({
                   label: `${PERIOD_FOLHA_LABEL[period]} (${rhSummary?.agentCount ?? activeAgentCount} ag.)`,
                   value: baseFolha,
@@ -755,7 +813,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Custo real de pessoal por agente: salário + periculosidade + INSS/IRRF/FGTS + provisões de 13º e férias (mesmo motor da tela Custos Fixos). Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipDesc: `Custo empresarial real por agente = salário cadastrado + periculosidade + encargos (INSS/IRRF/FGTS) + provisões mensais (13º, férias e 1/3). Mesmo motor da tela "Custos Fixos / Folha". Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }
