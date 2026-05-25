@@ -128,7 +128,17 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
  */
 export async function calculateAgentMonthlyCost(
   employeeId: number,
-  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number; rescisaoPct?: number; diasTrabalhados?: number }
+  opts?: {
+    businessDays?: number;
+    holidaySet?: Set<string>;
+    diariasManuais?: number;
+    rescisaoPct?: number;
+    diasTrabalhados?: number;
+    /** Override de horas extras do PERÍODO (decimal). Se fornecido, ignora a média dos 3 últimos meses. */
+    horasExtras?: number;
+    /** Override de horas noturnas do PERÍODO (decimal). Se fornecido, ignora a média. */
+    horasNoturnas?: number;
+  }
 ): Promise<{
   total: number;
   breakdown: {
@@ -183,10 +193,12 @@ export async function calculateAgentMonthlyCost(
     vrDias = countBusinessDays(from, to, set);
   }
 
-  // Médias mensais de HORAS extras e HORAS noturnas nos últimos 3 meses (jornada_calculos)
-  let horasExtrasMedia = 0;
-  let horasNoturnasMedia = 0;
-  {
+  // Horas extras/noturnas do PERÍODO. Se chamador passou override (rota /rh-summary
+  // que já agregou batidas Control iD + jornada_calculos do mês), usa direto.
+  // Senão, fallback: média dos 3 últimos meses em jornada_calculos (legado).
+  let horasExtrasMedia = opts?.horasExtras;
+  let horasNoturnasMedia = opts?.horasNoturnas;
+  if (horasExtrasMedia === undefined || horasNoturnasMedia === undefined) {
     const now = new Date();
     const meses: string[] = [];
     for (let i = 1; i <= 3; i++) {
@@ -209,9 +221,11 @@ export async function calculateAgentMonthlyCost(
       const nMeses = porMes.size;
       let sumE = 0, sumN = 0;
       porMes.forEach((v) => { sumE += v.extras; sumN += v.noturnas; });
-      horasExtrasMedia = sumE / nMeses;
-      horasNoturnasMedia = sumN / nMeses;
+      if (horasExtrasMedia === undefined) horasExtrasMedia = sumE / nMeses;
+      if (horasNoturnasMedia === undefined) horasNoturnasMedia = sumN / nMeses;
     }
+    if (horasExtrasMedia === undefined) horasExtrasMedia = 0;
+    if (horasNoturnasMedia === undefined) horasNoturnasMedia = 0;
   }
 
   if (error || !data || data.length === 0) {
@@ -453,6 +467,24 @@ export function registerFixedCostsRoutes(app: Express) {
       console.warn("[rh-summary] horasMes fallback:", e?.message || e);
     }
 
+    // Horas NOTURNAS do mês — vêm de jornada_calculos (cálculo CCT por missão).
+    // Control iD não diferencia turno noturno, então a fonte oficial é jornada_calculos.
+    const noturnasMes = new Map<number, number>();
+    try {
+      const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+      const { data: jornMes } = await supabaseAdmin
+        .from("jornada_calculos")
+        .select("employee_id, horas_noturnas")
+        .eq("mes_referencia", mesRef);
+      for (const r of (jornMes || []) as any[]) {
+        const id = Number(r.employee_id);
+        if (!noturnasMes.has(id)) noturnasMes.set(id, 0);
+        noturnasMes.set(id, noturnasMes.get(id)! + Number(r.horas_noturnas || 0));
+      }
+    } catch (e: any) {
+      console.warn("[rh-summary] noturnasMes:", e?.message || e);
+    }
+
     const porAgente: any[] = [];
     let totalMensal = 0;
     const acc = {
@@ -463,10 +495,23 @@ export function registerFixedCostsRoutes(app: Express) {
     };
 
     for (const emp of ativos) {
+      // Pré-cálculo de HE/AdicNot reais do período (vêm do Control iD + jornada_calculos),
+      // pra passar como override pro motor de folha — evita usar média dos 3 últimos meses.
+      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
+      // Se "normais" exceder 220 (algumas integrações somam HE em hours_worked),
+      // realoca o excedente para "extras" automaticamente.
+      const horasNormaisMes = Math.min(220, hm.normais);
+      let horasExtrasMes = hm.extras + Math.max(0, hm.normais - 220);
+      // Cap visual em 100h de HE (até 320h totais)
+      if (horasExtrasMes > 100) horasExtrasMes = 100;
+      const horasNoturnasMesEmp = noturnasMes.get(emp.id) || 0;
+
       const r = await calculateAgentMonthlyCost(emp.id, {
         businessDays,
         holidaySet,
         diariasManuais: diarias.porAgente[emp.id] || 0,
+        horasExtras: horasExtrasMes,
+        horasNoturnas: horasNoturnasMesEmp,
       });
       totalMensal += r.total;
       const b = r.breakdown;
@@ -480,14 +525,6 @@ export function registerFixedCostsRoutes(app: Express) {
       acc.provFGTSFer += b.provisaoFGTSsobreFerias13; acc.provINSSFer += b.provisaoINSSsobreFerias13;
       acc.provisoes += b.totalProvisoes;
       acc.vt += b.vt; acc.cesta += b.cesta; acc.outros += b.outros; acc.diarias += b.diarias;
-
-      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
-      // Se "normais" exceder 220 (algumas integrações somam HE em hours_worked),
-      // realoca o excedente para "extras" automaticamente.
-      let horasNormaisMes = Math.min(220, hm.normais);
-      let horasExtrasMes = hm.extras + Math.max(0, hm.normais - 220);
-      // Cap visual em 100h de HE (até 320h totais)
-      if (horasExtrasMes > 100) horasExtrasMes = 100;
 
       porAgente.push({
         id: emp.id,

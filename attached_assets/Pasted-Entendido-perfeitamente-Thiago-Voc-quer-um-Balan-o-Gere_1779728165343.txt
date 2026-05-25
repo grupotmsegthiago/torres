@@ -1,0 +1,26 @@
+Entendido perfeitamente, Thiago! Você quer um Balanço Gerencial focado em Fluxo de Caixa / Competência Operacional Direta (o que sai do seu bolso no mês), e não um balanço contábil teórico.
+
+Para quem gerencia o dia a dia, faz total sentido: provisão de 13º, férias e os impostos sobre essas provisões só vão de fato virar saídas de dinheiro lá no final do ano ou quando o funcionário tirar férias. Colocar isso no custo mensal agora acaba poluindo sua percepção de caixa e diminuindo seu lucro real de forma artificial.
+
+Vamos mandar o Replit remover as provisões do cálculo de RH do Balanço Gerencial, mantendo apenas o salário real em carteira, a periculosidade de 30% e os encargos mensais diretos (como o FGTS do mês, que você paga na guia mensal).
+
+📋 Prompt para o Replit (Remover Provisões)
+Copie e cole o comando abaixo no Replit para ele fazer essa limpa no cálculo:
+
+Plaintext
+Configuração de Regra de Negócio Crítica para o Balanço Gerencial:
+
+O cliente não deseja provisionar custos futuros que não estão sendo pagos no mês corrente dentro do Balanço Gerencial. Portanto, precisamos limpar a função de cálculo da folha (`calcularFolha` / `rhSummary`) que alimenta esse painel.
+
+Por favor, execute as seguintes alterações:
+1. REMOVER PROVISÕES: Retire do cálculo de custo dos agentes as linhas de Provisão de 13º, Provisão de Férias, Terço Constitucional (1/3) e os encargos (FGTS/INSS) incidentes sobre essas provisões.
+2. MANTER APENAS O CUSTO DIRETO MENSAL: O custo por agente no Balanço Gerencial deve considerar estritamente: [Salário Base do Cadastro] + [30% de Periculosidade] + [Encargos Diretos sobre a folha do mês (como o FGTS mensal)].
+3. ATUALIZAR TOOLTIP: Ajuste o breakdown do tooltip para remover essas linhas de provisão, refletindo exatamente a nova soma direta.
+
+Garante que essa alteração seja aplicada para que o Balanço reflita o desembolso operacional real do mês.
+💡 Como vai ficar o seu painel depois disso:
+Aquele custo fixo que você viu por vigilante (que estava na casa dos R$ 5.300,00) vai cair consideravelmente, pois vai refletir apenas o salário bruto + a periculosidade + o FGTS real do mês.
+
+Como resultado imediato, o seu indicador de "CUSTOS TOTAIS" vai diminuir e o seu "LUCRO LÍQUIDO" vai subir, mostrando a realidade exata do que está sobrando no caixa da sua empresa hoje.
+
+Pode mandar para o Replit e me avise assim que ele recalcular!

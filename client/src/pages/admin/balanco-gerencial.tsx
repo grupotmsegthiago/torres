@@ -783,7 +783,7 @@ export default function BalancoGerencialPage() {
                 rhRows.push({ label: "── Composição (do cadastro) ──", value: (agg.base + agg.peric + agg.encargos + agg.provisoes + agg.he) * fatorPeriodo });
                 rhRows.push({ label: "  Salário base (cadastro)", value: agg.base * fatorPeriodo });
                 rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
-                if (agg.he > 0) rhRows.push({ label: "  Horas Extras + Adic. Noturno + DSR", value: agg.he * fatorPeriodo });
+                if (agg.he > 0) rhRows.push({ label: "  HE + Adic. Noturno + DSR (Control iD)", value: agg.he * fatorPeriodo });
                 rhRows.push({ label: "  Encargos (INSS + IRRF + FGTS)", value: agg.encargos * fatorPeriodo });
                 rhRows.push({ label: "  Provisões (13º + Férias + 1/3 + FGTS/INSS s/ prov)", value: agg.provisoes * fatorPeriodo });
               }
