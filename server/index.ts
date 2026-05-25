@@ -201,9 +201,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Healthcheck registrado IMEDIATAMENTE, antes de qualquer await em Supabase.
+// Garante que o deploy do Replit detecte porta aberta mesmo se o Supabase
+// estiver fora — caso contrário db-init pendura por minutos e o deploy
+// aborta com "port 5000 never opened". Ver replit.md (Boot resiliente).
+app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now() }));
+
 (async () => {
-  await ensureDbSchema();
-  await ensureCalcMissionRPC();
+  // PORTA ABERTA PRIMEIRO — não bloquear listen() em chamadas Supabase.
+  // ensureDbSchema/ensureCalcMissionRPC rodam em background mais abaixo.
   await registerRoutes(httpServer, app);
   // Coletor de telemetria do banco (1 amostra a cada 2min, mantém 7 dias)
   try {
@@ -248,6 +254,16 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
     },
+  );
+
+  // db-init em BACKGROUND — não bloqueia o listen acima. Se o Supabase
+  // estiver fora, o app sobe em modo fallback e o schema é checado quando
+  // o Supabase voltar (db-init usa IF NOT EXISTS, é idempotente).
+  ensureDbSchema().catch((e: any) =>
+    console.error("[db-init] ensureDbSchema (background) falhou:", e?.message || e),
+  );
+  ensureCalcMissionRPC().catch((e: any) =>
+    console.error("[db-init] ensureCalcMissionRPC (background) falhou:", e?.message || e),
   );
 
   const shutdown = (signal: string) => {
