@@ -998,14 +998,16 @@ function EditFuelingModal({
   const save = useMutation({
     mutationFn: async () => {
       if (totalCostNum < 0 || litersNum < 0) throw new Error("Valor e litros não podem ser negativos");
+      // Colunas decimal no Postgres são strings no Drizzle/Zod — enviar string
+      // pra não bater 400 "Expected string, received number". KM é integer.
       const payload: Record<string, any> = {
-        totalCost: totalCostNum,
-        liters: litersNum,
-        costPerLiter: cplCalc,
+        totalCost: totalCostNum.toFixed(2),
+        liters: litersNum.toFixed(2),
+        costPerLiter: cplCalc.toFixed(3),
         fuelType,
         station: station.trim() || null,
       };
-      if (kmNum !== null && kmNum > 0) payload.km = kmNum;
+      if (kmNum !== null && kmNum > 0) payload.km = Math.round(kmNum);
       const r = await authFetch(`/api/fueling/${fueling.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
