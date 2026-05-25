@@ -279,7 +279,24 @@ function normalizeFuel(f: string | null | undefined): string {
   return u;
 }
 
+// Integração TicketLog desativada por solicitação do dono (2026-05-25).
+// Bloqueia todos os endpoints (/api/conciliacao-ticketlog/** e
+// /api/auditoria-pedagios-ticketlog/**) retornando 503. Histórico no banco e
+// no financeiro permanece intacto — esta é uma desativação de integração,
+// não uma remoção de dados.
+const TICKETLOG_DISABLED = true;
+const ticketlogDisabledGuard = (_req: any, res: any, _next: any) =>
+  res.status(503).json({
+    message: "Integração TicketLog desativada. Operação indisponível.",
+    code: "TICKETLOG_DISABLED",
+  });
+
 export function registerConciliacaoRoutes(app: Express) {
+  if (TICKETLOG_DISABLED) {
+    app.use("/api/conciliacao-ticketlog", ticketlogDisabledGuard);
+    app.use("/api/auditoria-pedagios-ticketlog", ticketlogDisabledGuard);
+    return;
+  }
   app.post("/api/conciliacao-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
     try {
       // Aceita 2 formatos de entrada:

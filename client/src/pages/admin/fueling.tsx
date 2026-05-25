@@ -512,24 +512,9 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
   );
 }
 
-function TicketLogPanel({ fueling }: { fueling: VehicleFueling }) {
-  // Integração automática TicketLog descontinuada (2026-05).
-  // Mantemos somente a exibição de dados históricos já gravados no banco
-  // (status/autorização anteriores). A conferência atual é manual via aba
-  // "Conciliação TicketLog" (upload de PDF/Excel).
-  const tlStatus = (fueling as any).ticketlogStatus as string | null;
-  const tlAuth = (fueling as any).ticketlogAutorizacao as string | null;
-  if (!tlStatus && !tlAuth) return null;
-  return (
-    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-1">
-      <p className="text-xs font-bold text-neutral-700 flex items-center gap-1">
-        <Ticket className="w-3 h-3" /> TicketLog (histórico)
-      </p>
-      {tlAuth && <p className="text-xs text-neutral-600">Autorização: <span className="font-mono">{tlAuth}</span></p>}
-      {tlStatus && <p className="text-xs text-neutral-600">Status anterior: {tlStatus}</p>}
-      <p className="text-[10px] text-neutral-400">A conferência atual é feita manualmente em "Conciliação TicketLog".</p>
-    </div>
-  );
+function TicketLogPanel(_: { fueling: VehicleFueling }) {
+  // Integração TicketLog desativada (2026-05-25). Painel removido da UI.
+  return null;
 }
 
 
@@ -1075,9 +1060,6 @@ export default function FuelingPage() {
           <TabsTrigger value="registros" data-testid="tab-registros">
             <Fuel className="w-4 h-4 mr-1.5" /> Registros
           </TabsTrigger>
-          <TabsTrigger value="conciliacao" data-testid="tab-conciliacao">
-            <FileText className="w-4 h-4 mr-1.5" /> Conciliação TicketLog
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="registros">
@@ -1572,10 +1554,6 @@ export default function FuelingPage() {
           onClose={() => setDetailItem(null)}
         />
       )}
-        </TabsContent>
-
-        <TabsContent value="conciliacao">
-          <ConciliacaoContent />
         </TabsContent>
       </Tabs>
     </AdminLayout>

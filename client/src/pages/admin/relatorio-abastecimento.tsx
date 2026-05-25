@@ -502,7 +502,6 @@ export default function RelatorioAbastecimentoPage() {
                   <th className="p-2 text-left font-medium text-neutral-600 cursor-pointer select-none" onClick={() => toggleSort("station")}>
                     <span className="flex items-center gap-1">Posto <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
-                  <th className="p-2 text-center font-medium text-neutral-600">TicketLog</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Ações</th>
                 </tr>
               </thead>
@@ -635,9 +634,6 @@ export default function RelatorioAbastecimentoPage() {
                       </td>
                       <td className="p-2 text-sm text-neutral-600 max-w-[140px] truncate" title={f.station || ""}>
                         {f.station || "-"}
-                      </td>
-                      <td className="p-2 text-center">
-                        <TicketLogBadge fueling={f} />
                       </td>
                       <td className="p-2 text-center">
                         <div className="flex items-center justify-center gap-0.5">
