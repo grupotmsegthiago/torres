@@ -225,7 +225,9 @@ export default function BalancoGerencialPage() {
   // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
   const { data: rhSummary } = useQuery<{
     monthly: number;
+    monthlyOperacional?: number;
     daily: number;
+    dailyOperacional?: number;
     agentCount: number;
     breakdown?: {
       salarioProporcional?: number;
@@ -246,6 +248,7 @@ export default function BalancoGerencialPage() {
     };
     porAgente?: Array<{
       id: number; name: string; total: number;
+      totalOperacional?: number;
       salarioProporcional?: number;
       periculosidade?: number;
       inss?: number; irrf?: number; fgts?: number;
@@ -259,7 +262,11 @@ export default function BalancoGerencialPage() {
 
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
   const [metaCfg] = useMetaConfig();
-  const custoFixoTotalMensal = (fixedCostsSummary?.monthly || 0) + (rhSummary?.monthly || 0);
+  // Balanço Gerencial = fluxo de caixa operacional. Usa folha SEM provisões (13º, férias, 1/3,
+  // FGTS/INSS s/ prov.) — esses só viram desembolso lá no fim do ano. Fallback p/ `monthly`
+  // se o backend antigo ainda não devolver `monthlyOperacional`.
+  const folhaOperacionalMensal = rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0;
+  const custoFixoTotalMensal = (fixedCostsSummary?.monthly || 0) + folhaOperacionalMensal;
   const viaturasAtivasGlobal = useMemo(() => (allVehicles || []).filter(isActiveVehicle).length, [allVehicles]);
   const metaResult = useMemo(() => calcMeta(custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal), [custoFixoTotalMensal, metaCfg, viaturasAtivasGlobal]);
 
@@ -423,17 +430,16 @@ export default function BalancoGerencialPage() {
     };
   }, [data, range]);
 
-  // RH usa a MESMA folha real da tela "Custos Fixos" (engine calcularFolha
-  // que considera salário cadastrado, INSS/IRRF/FGTS, 13º, férias, provisões).
-  // Rateia o mensal pelo período. Fallback: fórmula CCT antiga se a API não respondeu.
+  // RH no Balanço Gerencial = visão FLUXO DE CAIXA (sem provisões 13º/férias/1/3).
+  // Usa `monthlyOperacional` do backend; fallback p/ `monthly` (compat) e CCT antiga.
   const provisaoRH = useMemo(() => {
-    const mensalReal = Number(rhSummary?.monthly || 0);
+    const mensalReal = Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0);
     if (mensalReal > 0) return (mensalReal / 30) * costDays;
     return CCT.custoDiario * activeAgentCount * costDays;
   }, [rhSummary, activeAgentCount, costDays]);
 
   const provisaoDiaria = useMemo(() => {
-    const mensalReal = Number(rhSummary?.monthly || 0);
+    const mensalReal = Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0);
     if (mensalReal > 0) return mensalReal / 30;
     return CCT.custoDiario * activeAgentCount;
   }, [rhSummary, activeAgentCount]);
@@ -739,8 +745,9 @@ export default function BalancoGerencialPage() {
               DAY: "diário", WEEK: "semanal", MONTH: "mensal", QUARTER: "trimestral", SEMESTER: "semestral", YEAR: "anual",
             };
             const baseDays = PERIOD_BASE_DAYS[period];
-            const monthlyFolha = Number(rhSummary?.monthly || 0) > 0
-              ? Number(rhSummary?.monthly || 0)
+            // Folha mensal SEM provisões (visão fluxo de caixa do Balanço Gerencial).
+            const monthlyFolha = Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0) > 0
+              ? Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0)
               : (totals.provisaoRH / Math.max(daysInPeriod, 1)) * 30;
             const baseFolha = (monthlyFolha / 30) * baseDays;
             const baseEstrutura = (totals.custosFixosMensal / 30) * baseDays;
@@ -751,13 +758,19 @@ export default function BalancoGerencialPage() {
               // Detalhe agente-a-agente (folha mensal real × fator do período)
               // Usa costDays (mês comercial 30d) pra evitar inflar em meses de 31 dias.
               const fatorPeriodo = costDays / 30;
+              // Per-agente usa `totalOperacional` (SEM provisões) p/ refletir desembolso do mês.
+              // Fallback p/ `total - totalProvisoes` (caso backend antigo não devolva o campo novo).
               const porAgente = (rhSummary?.porAgente || [])
-                .filter((a) => Number(a.total || 0) > 0)
-                .sort((a, b) => Number(b.total) - Number(a.total));
+                .map((a) => ({
+                  ...a,
+                  _opTotal: Number(a.totalOperacional ?? (Number(a.total || 0) - Number(a.totalProvisoes || 0))) || 0,
+                }))
+                .filter((a) => a._opTotal > 0)
+                .sort((a, b) => b._opTotal - a._opTotal);
 
-              // ── COMPOSIÇÃO AGREGADA (transparente: salário cadastrado + encargos + provisões)
-              // O backend (engine calcularFolha) JÁ retorna o breakdown agregado em rhSummary.breakdown
-              // e por agente em rhSummary.porAgente[*]. Aqui só somamos e ratemos pelo período.
+              // ── COMPOSIÇÃO AGREGADA (transparente: salário + periculosidade + HE + encargos)
+              // SEM provisões — Balanço Gerencial = fluxo de caixa operacional.
+              // Provisões (13º, férias, 1/3, FGTS/INSS s/ prov.) só viram desembolso no fim do ano.
               const bk = rhSummary?.breakdown;
               const agg = porAgente.length > 0
                 ? porAgente.reduce(
@@ -765,27 +778,26 @@ export default function BalancoGerencialPage() {
                       base: acc.base + Number(a.salarioProporcional || 0),
                       peric: acc.peric + Number(a.periculosidade || 0),
                       encargos: acc.encargos + Number(a.inss || 0) + Number(a.irrf || 0) + Number(a.fgts || 0),
-                      provisoes: acc.provisoes + Number(a.totalProvisoes || 0),
                       he: acc.he + Number(a.horaExtra || 0) + Number(a.adicionalNoturno || 0) + Number(a.dsr || 0),
                     }),
-                    { base: 0, peric: 0, encargos: 0, provisoes: 0, he: 0 }
+                    { base: 0, peric: 0, encargos: 0, he: 0 }
                   )
                 : {
                     base: Number(bk?.salarioProporcional || 0),
                     peric: Number(bk?.periculosidade || 0),
                     encargos: Number(bk?.inss || 0) + Number(bk?.irrf || 0) + Number(bk?.fgts || 0),
-                    provisoes: Number(bk?.totalProvisoes || 0),
                     he: Number(bk?.horaExtra || 0) + Number(bk?.adicionalNoturno || 0) + Number(bk?.dsr || 0),
                   };
-              const hasBreakdown = agg.base + agg.peric + agg.encargos + agg.provisoes > 0;
+              const hasBreakdown = agg.base + agg.peric + agg.encargos > 0;
 
               if (hasBreakdown) {
-                rhRows.push({ label: "── Composição (do cadastro) ──", value: (agg.base + agg.peric + agg.encargos + agg.provisoes + agg.he) * fatorPeriodo });
+                rhRows.push({ label: "── Composição (desembolso do mês) ──", value: (agg.base + agg.peric + agg.encargos + agg.he) * fatorPeriodo });
                 rhRows.push({ label: "  Salário base (cadastro)", value: agg.base * fatorPeriodo });
                 rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
                 if (agg.he > 0) rhRows.push({ label: "  HE + Adic. Noturno + DSR (Control iD)", value: agg.he * fatorPeriodo });
-                rhRows.push({ label: "  Encargos (INSS + IRRF + FGTS)", value: agg.encargos * fatorPeriodo });
-                rhRows.push({ label: "  Provisões (13º + Férias + 1/3 + FGTS/INSS s/ prov)", value: agg.provisoes * fatorPeriodo });
+                rhRows.push({ label: "  Encargos diretos do mês (INSS + IRRF + FGTS)", value: agg.encargos * fatorPeriodo });
+                // Provisões (13º/Férias/1/3/FGTS-INSS s/ prov.) — EXCLUÍDAS do Balanço Gerencial
+                // por decisão do dono: foco em fluxo de caixa operacional, não competência CLT.
               }
 
               if (porAgente.length > 0) {
@@ -795,8 +807,8 @@ export default function BalancoGerencialPage() {
                 });
                 for (const a of porAgente) {
                   rhRows.push({
-                    label: `  ${a.name}${sameAsBase ? "" : ` (${fmt(a.total)}/mês)`}`,
-                    value: Number(a.total) * fatorPeriodo,
+                    label: `  ${a.name}${sameAsBase ? "" : ` (${fmt(a._opTotal)}/mês)`}`,
+                    value: a._opTotal * fatorPeriodo,
                   });
                 }
               } else if (!hasBreakdown) {
@@ -813,7 +825,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Custo empresarial real por agente = salário cadastrado + periculosidade + encargos (INSS/IRRF/FGTS) + provisões mensais (13º, férias e 1/3). Mesmo motor da tela "Custos Fixos / Folha". Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipDesc: `Desembolso operacional REAL do mês por agente = salário cadastrado + periculosidade (30%) + HE/Adic.Noturno/DSR (Control iD) + encargos diretos (INSS/IRRF/FGTS). PROVISÕES (13º, férias, 1/3 e FGTS/INSS sobre provisões) NÃO entram aqui — Balanço Gerencial é fluxo de caixa, não competência CLT. A tela "Custos Fixos / Folha" continua mostrando a folha CLT cheia. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }

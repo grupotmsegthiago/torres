@@ -530,6 +530,10 @@ export function registerFixedCostsRoutes(app: Express) {
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
         total: r.total,
+        // Total OPERACIONAL = sem provisões (13º, férias, 1/3, FGTS/INSS s/ prov).
+        // É o desembolso real do mês — usado pelo Balanço Gerencial (fluxo de caixa).
+        // O `total` cheio continua disponível pra tela "Custos Fixos / Folha" (visão CLT real).
+        totalOperacional: Math.max(0, r.total - b.totalProvisoes),
         horasNormaisMes,
         horasExtrasMes,
         // Vencimentos
@@ -565,9 +569,14 @@ export function registerFixedCostsRoutes(app: Express) {
 
     porAgente.sort((a, b) => b.total - a.total);
 
+    // Total operacional = SEM provisões. Reflete desembolso real do mês (Balanço Gerencial).
+    // Mantém `monthly` com provisões pra compat retroativa (tela "Custos Fixos / Folha").
+    const totalOperacional = Math.max(0, totalMensal - acc.provisoes);
     res.json({
       monthly: totalMensal,
+      monthlyOperacional: totalOperacional,
       daily: totalMensal / 30,
+      dailyOperacional: totalOperacional / 30,
       weekly: (totalMensal / 30) * 7,
       yearly: totalMensal * 12,
       agentCount: ativos.length,
