@@ -18,6 +18,7 @@ import {
   ChevronDown, ChevronUp, BarChart3, Eye, ScanLine, ShieldCheck, ShieldAlert
 } from "lucide-react";
 
+import { getPayrollPeriod } from "@shared/payroll-period";
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const now = new Date();
@@ -104,6 +105,9 @@ export default function HoleritesPage() {
             {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </select>
           <Input type="number" value={filterYear} onChange={e => setFilterYear(Number(e.target.value))} className="w-24" data-testid="input-filter-year" />
+          <span className="text-[11px] font-semibold text-neutral-500 bg-neutral-100 px-2 py-1 rounded" data-testid="text-payroll-period">
+            Competência {getPayrollPeriod(filterYear, filterMonth).labelShort}/{filterYear}
+          </span>
         </div>
 
         {pendingSignatures.length > 0 && (

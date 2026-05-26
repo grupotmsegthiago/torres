@@ -9,7 +9,7 @@ import type { Express } from "express";
   import { calcularFolha } from "../lib/payroll";
 import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
-  import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
+  import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
 
   export function registerEmployeeRoutes(app: Express) {
     app.get("/api/employees", requireAuth, async (req, res) => {
@@ -398,8 +398,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const horasMensais = Number(sal.horas_mensais || 220);
       const ajudaCustoMensal = Number(sal.ajuda_custo_mensal || 0);
 
-      // Dias úteis do mês (descontando feriados nacionais/estaduais)
-      const { from, to } = monthRange(year, month);
+      // Dias úteis da competência de RH (ciclo 26 → 25) — descontando feriados.
+      const { from, to } = payrollPeriodRange(year, month);
       const holidaySet = await loadHolidaySet(from, to);
       const diasUteis = countBusinessDays(from, to, holidaySet);
 
@@ -429,10 +429,10 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       } catch { /* fallback */ }
 
       // ===== HORAS EXTRAS / NOTURNAS automáticas do Ponto iD (Control iD) =====
+      // Janela = competência de RH (26 → 25), não mês civil.
       const mesRef = `${year}-${String(month).padStart(2, "0")}`;
-      const lastDay = new Date(year, month, 0).getDate();
-      const inicioMes = `${mesRef}-01T00:00:00-03:00`;
-      const fimMes = `${mesRef}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+      const inicioMes = `${from}T00:00:00-03:00`;
+      const fimMes = `${to}T23:59:59-03:00`;
 
       let horasExtras = 0;
       let horasNoturnas = 0;
@@ -680,16 +680,14 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     try {
       const month = Number(req.query.month) || new Date().getMonth() + 1;
       const year = Number(req.query.year) || new Date().getFullYear();
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endMonth = month === 12 ? 1 : month + 1;
-      const endYear = month === 12 ? year + 1 : year;
-      const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+      // Ranking de horas usa competência de RH (26 → 25).
+      const { from: startDate, to: endDateIncl } = payrollPeriodRange(year, month);
 
       const { data: billings } = await supabaseAdmin
         .from("escort_billings")
         .select("service_order_id, horas_trabalhadas, horas_missao")
         .gte("data_missao", startDate)
-        .lt("data_missao", endDate);
+        .lte("data_missao", endDateIncl);
 
       const sos = await storage.getServiceOrders();
       const relevantOsIds = new Set((billings || []).map((b: any) => b.service_order_id));
@@ -725,16 +723,14 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
       const month = Number(req.query.month) || new Date().getMonth() + 1;
       const year = Number(req.query.year) || new Date().getFullYear();
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endMonth = month === 12 ? 1 : month + 1;
-      const endYear = month === 12 ? year + 1 : year;
-      const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+      // Detalhe de custo por funcionário usa competência de RH (26 → 25).
+      const { from: startDate, to: endDateIncl } = payrollPeriodRange(year, month);
 
       const { data: billings } = await supabaseAdmin
         .from("escort_billings")
         .select("service_order_id, horas_trabalhadas, horas_missao, data_missao")
         .gte("data_missao", startDate)
-        .lt("data_missao", endDate);
+        .lte("data_missao", endDateIncl);
 
       const sos = await storage.getServiceOrders();
       let totalHours = 0;

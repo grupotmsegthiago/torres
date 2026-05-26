@@ -22,13 +22,31 @@ export function countBusinessDays(fromISO: string, toISO: string, holidaySet: Se
   return count;
 }
 
-/** Retorna primeiro/último dia (YYYY-MM-DD) de um mês (1-12). */
+/** Retorna primeiro/último dia (YYYY-MM-DD) de um mês CIVIL (1-12).
+ *  Use SOMENTE para coisas que rodam em mês civil: balanço gerencial,
+ *  meta de faturamento, custos fixos contábeis. NÃO USE em RH (folha,
+ *  ponto, holerite, horas extras, Cesta Básica II) — pra RH use
+ *  `payrollPeriodRange` do mesmo arquivo (ciclo 26 → 25).
+ */
 export function monthRange(year: number, month: number): { from: string; to: string } {
   const first = new Date(year, month - 1, 1);
   const last = new Date(year, month, 0);
   const fmt = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { from: fmt(first), to: fmt(last) };
+}
+
+/** Retorna o período de folha de RH (ciclo 26 → 25) como strings
+ *  YYYY-MM-DD INCLUSIVAS. `month` é o mês de FECHAMENTO (1-12), ex:
+ *  month=5,year=2026 → { from: "2026-04-26", to: "2026-05-25" }.
+ *  É drop-in para queries que já usam `gte(from).lte(to)`.
+ */
+export function payrollPeriodRange(year: number, month: number): { from: string; to: string } {
+  const start = new Date(Date.UTC(year, month - 2, 26));   // 26 do mês anterior
+  const end = new Date(Date.UTC(year, month - 1, 25));     // 25 do mês corrente
+  const fmt = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return { from: fmt(start), to: fmt(end) };
 }
 
 /** Carrega todos os feriados (cache-friendly) e devolve um Set "YYYY-MM-DD". */

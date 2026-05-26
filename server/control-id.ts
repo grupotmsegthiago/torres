@@ -1218,15 +1218,17 @@ export async function buildFolhaStats(
     | undefined;
   if (faixas) {
     try {
-      const monthStartIso = `${monthYear}-01`;
-      const monthEndIsoForAbs = `${monthYear}-${String(new Date(yyyy, mm, 0).getDate()).padStart(2, "0")}`;
+      // Janela = competência de RH (ciclo 26 → 25), não mês civil.
+      // Ex: monthYear="2026-05" → atestados de 26/abr a 25/mai.
+      const { getPayrollPeriod } = await import("@shared/payroll-period");
+      const periodAbs = getPayrollPeriod(yyyy, mm);
       const { data: absRows } = await supabaseAdmin
         .from("employee_absences")
         .select("id, type, start_date, end_date, status")
         .eq("employee_id", employeeId)
         .eq("status", "aprovado")
-        .gte("start_date", `${monthStartIso}T00:00:00`)
-        .lte("start_date", `${monthEndIsoForAbs}T23:59:59`);
+        .gte("start_date", `${periodAbs.startDate}T00:00:00`)
+        .lte("start_date", `${periodAbs.endDate}T23:59:59`);
       const qualificados = (absRows || []).filter((a: any) => {
         const t = String(a.type || "").toLowerCase();
         // Conta atestado médico e qualquer falta justificada/afastamento aprovado.
@@ -1256,30 +1258,46 @@ export async function buildFolhaStats(
   // (salário base, periculosidade, cesta básica, seguro de vida) é ratado por
   // dias corridos decorridos / total dias do mês; VR é por dias úteis efetivamente
   // decorridos. Mês fechado (anterior) usa o mês inteiro normalmente.
-  const { countBusinessDays, loadHolidaySet, monthRange } = await import("./routes/holidays");
-  const { from, to } = monthRange(yyyy, mm); // strings YYYY-MM-DD
+  // Dias úteis da competência de RH (26 → 25), não mês civil.
+  const { countBusinessDays, loadHolidaySet, payrollPeriodRange } = await import("./routes/holidays");
+  const { from, to } = payrollPeriodRange(yyyy, mm); // strings YYYY-MM-DD inclusivas
   const holidaySet = await loadHolidaySet(from, to);
 
-  // "Agora" em BRT
+  // "Agora" em BRT — calculado no frame da COMPETÊNCIA (26 → 25), não mês civil.
+  // Mês passado     = período inteiro decorrido
+  // Mês corrente    = ratea pelos dias decorridos desde o dia 26 do mês anterior
+  // Mês futuro      = 0 (sem custo ainda)
   const nowBrt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-  const nowY = nowBrt.getFullYear();
-  const nowM = nowBrt.getMonth() + 1; // 1-12
-  const isMesCorrente = nowY === yyyy && nowM === mm;
-  const isMesFuturo = (nowY < yyyy) || (nowY === yyyy && nowM < mm);
-  const totalDiasMes = new Date(yyyy, mm, 0).getDate();
+  const periodStartBrt = new Date(`${from}T00:00:00-03:00`);
+  const periodEndBrt = new Date(`${to}T23:59:59-03:00`);
+  const isMesFuturo = nowBrt.getTime() < periodStartBrt.getTime();
+  const isMesCorrente = !isMesFuturo && nowBrt.getTime() <= periodEndBrt.getTime();
+  const msPerDay = 24 * 3600 * 1000;
+  const totalDiasMes = Math.round(
+    (periodEndBrt.getTime() - periodStartBrt.getTime()) / msPerDay,
+  ) + 1; // ~30/31 dias do ciclo
 
-  // Dia de corte (1..totalDiasMes). Mês passado = totalDiasMes; mês corrente = hoje;
-  // mês futuro = 0 (sem custo ainda).
-  let cutoffDay: number;
-  if (isMesFuturo) cutoffDay = 0;
-  else if (isMesCorrente) cutoffDay = Math.min(nowBrt.getDate(), totalDiasMes);
-  else cutoffDay = totalDiasMes;
+  // cutoffIso = último dia (YYYY-MM-DD) já decorrido dentro da competência.
+  let diasCorridosElapsed: number;
+  let cutoffIso: string;
+  if (isMesFuturo) {
+    diasCorridosElapsed = 0;
+    cutoffIso = from;
+  } else if (isMesCorrente) {
+    diasCorridosElapsed = Math.min(
+      totalDiasMes,
+      Math.floor((nowBrt.getTime() - periodStartBrt.getTime()) / msPerDay) + 1,
+    );
+    const cutoffDate = new Date(periodStartBrt.getTime() + (diasCorridosElapsed - 1) * msPerDay);
+    const cy = cutoffDate.getFullYear();
+    const cm = String(cutoffDate.getMonth() + 1).padStart(2, "0");
+    const cd = String(cutoffDate.getDate()).padStart(2, "0");
+    cutoffIso = `${cy}-${cm}-${cd}`;
+  } else {
+    diasCorridosElapsed = totalDiasMes;
+    cutoffIso = to;
+  }
 
-  const cutoffIso = cutoffDay > 0
-    ? `${monthYear}-${String(cutoffDay).padStart(2, "0")}`
-    : from; // se mês futuro, usa o início (range vazio gera 0 dias úteis)
-
-  const diasCorridosElapsed = cutoffDay;
   const diasUteisTotal = countBusinessDays(from, to, holidaySet);
   const diasUteis = isMesCorrente
     ? countBusinessDays(from, cutoffIso, holidaySet)
@@ -1298,17 +1316,17 @@ export async function buildFolhaStats(
   const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
   const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
 
-  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados no mês
+  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados na
+  // COMPETÊNCIA RH (26 → 25), não no mês civil.
   let diarias = 0;
   try {
-    const monthStart = `${monthYear}-01`;
-    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : monthEndStr;
+    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
     const { data: diariaRows } = await supabaseAdmin
       .from("operational_payments")
       .select("amount")
       .eq("employee_id", employeeId)
       .eq("type", "diaria")
-      .gte("payment_date", monthStart)
+      .gte("payment_date", from)
       .lte("payment_date", cutoffStr);
     if (Array.isArray(diariaRows)) {
       diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);

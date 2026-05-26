@@ -348,9 +348,14 @@ import type { Express } from "express";
       const employee = await storage.getEmployee(employeeId);
       if (!employee) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
-      const daysInMonth = endDate.getDate();
+      // Espelho de ponto usa competência de RH (ciclo 26 → 25).
+      // Ex: month=5, year=2026 → 26/abr/2026 até 25/mai/2026.
+      const { getPayrollPeriod } = await import("@shared/payroll-period");
+      const period = getPayrollPeriod(year, month);
+      const startDate = new Date(`${period.startDate}T00:00:00-03:00`);
+      const endDate = new Date(`${period.endDate}T23:59:59-03:00`);
+      const msPerDay = 24 * 3600 * 1000;
+      const daysInPeriod = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
 
       const { data: timesheetRowsRaw } = await supabaseAdmin.from("employee_timesheets").select("*")
         .eq("employee_id", employeeId)
@@ -389,7 +394,7 @@ import type { Express } from "express";
       rows.push(["", "", "", "", "ENDEREÇO:", "", "", "", "", "", "", "", "", "Ficha Individual - Art 74/3 CLT", ""]);
       rows.push(["", "", "", "", "BAIRRO:", "", "", "", "", "", "", "", "", "Portaria Nº 3082 de 11/04/98", ""]);
       rows.push(["", "", "", "", `CODIGO: ${employee.matricula}`, "", employee.name, "", "", "", "", employee.role?.toUpperCase() || "VIGILANTE DE ESCOLTA ARMADA", "", "", ""]);
-      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", `MÊS: ${MONTHS_PT[month - 1].toUpperCase()} / ${year}`, ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", `COMPETÊNCIA: ${period.labelShort.toUpperCase()}/${year}`, ""]);
       rows.push(["", "", "", "", `CARGO: ${employee.role?.toUpperCase() || "VIGILANTE DE ESCOLTA ARMADA"}`, "", "", "", "", "", "", "", "", "", ""]);
       rows.push(["", "", "", "", `DEPTO/ SETOR/ SEÇÃO: 0001/ 0002 / 0000`, "", "", "", "", "", "", "", "", "", ""]);
       rows.push([]);
@@ -402,10 +407,14 @@ import type { Express } from "express";
       let totalDays = 0;
       let folgaCount = 0;
 
-      for (let day = 1; day <= daysInMonth; day++) {
-        const d = new Date(year, month - 1, day);
+      // Itera dia a dia dentro da competência (26 do mês ant. → 25 do mês ref).
+      for (let i = 0; i < daysInPeriod; i++) {
+        const d = new Date(startDate.getTime() + i * msPerDay);
         const dayStr = DAYS_PT[d.getDay()];
-        const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const dayNum = d.getDate();
+        const monNum = d.getMonth() + 1;
+        const yrNum = d.getFullYear();
+        const dateKey = `${yrNum}-${String(monNum).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
         const ts = tsMap.get(dateKey);
 
         const isSunday = d.getDay() === 0;
@@ -421,7 +430,7 @@ import type { Express } from "express";
         }
 
         rows.push([
-          `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`,
+          `${String(dayNum).padStart(2, "0")}/${String(monNum).padStart(2, "0")}/${yrNum}`,
           "",
           dayStr,
           tipo,
@@ -482,6 +491,7 @@ import type { Express } from "express";
       XLSX.utils.book_append_sheet(wb, ws, `PONTO ${MONTHS_PT[month - 1].toUpperCase()}`);
 
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      // Nome do arquivo mantém o nome do mês de fechamento (Maio/2026 = ciclo 26/abr→25/mai).
       const filename = `Folha_Ponto_${employee.name.replace(/\s+/g, "_")}_${MONTHS_PT[month - 1]}_${year}.xlsx`;
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

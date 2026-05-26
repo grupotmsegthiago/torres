@@ -2613,6 +2613,10 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   });
   const cctCfg = cctData || CCT_SP_2025;
   const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  // Label da competência de folha (ciclo 26 → 25). Ex: maio/2026 = 26/abr → 25/mai.
+  const _periodoFolha = (() => {
+    try { return getPayrollPeriod(selYear, selMonth); } catch { return null; }
+  })();
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery<any>({
     queryKey: [`/api/employees/${employee.id}/salary-summary?month=${selMonth}&year=${selYear}`],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -2751,7 +2755,9 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
           <div className="bg-neutral-900 rounded-xl p-4 md:p-5" data-testid="card-salary-hero">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Remuneração Líquida Estimada</span>
-              <span className="text-[10px] text-neutral-500">{MESES[selMonth-1]} {selYear}</span>
+              <span className="text-[10px] text-neutral-500" data-testid="text-payroll-period">
+                {_periodoFolha ? `${_periodoFolha.labelShort}/${selYear}` : `${MESES[selMonth-1]} ${selYear}`}
+              </span>
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
