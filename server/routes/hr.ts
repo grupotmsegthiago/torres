@@ -1324,6 +1324,26 @@ ${empNames}`
     res.json(docs);
   });
 
+  // Resumo dos tipos de documento entregues por funcionário — usado pelo alerta
+  // da listagem ("X funcionários com documentação pendente") pra refletir
+  // exatamente o que está marcado verde no cadastro de cada um.
+  app.get("/api/employee-documents-summary", requireAdminRole, async (_req, res) => {
+    const { supabaseAdmin } = await import("../supabase");
+    const { data, error } = await supabaseAdmin
+      .from("employee_documents")
+      .select("employee_id, type");
+    if (error) return res.status(500).json({ message: error.message });
+    const byEmp: Record<string, string[]> = {};
+    for (const row of data || []) {
+      const eid = String((row as any).employee_id);
+      const tp = String((row as any).type || "");
+      if (!eid || !tp) continue;
+      if (!byEmp[eid]) byEmp[eid] = [];
+      if (!byEmp[eid].includes(tp)) byEmp[eid].push(tp);
+    }
+    res.json(byEmp);
+  });
+
   const syncDocToEmployee = async (docType: string, employeeId: number, documentNumber?: string | null, expiryDate?: string | null) => {
     if (docType !== "CNH" && docType !== "CNV" && docType !== "PIS/PASEP/NIS" && docType !== "CTPS") return;
     try {

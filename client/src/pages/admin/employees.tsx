@@ -4800,6 +4800,7 @@ export default function EmployeesPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: docsSummary = {} } = useQuery<Record<string, string[]>>({ queryKey: ["/api/employee-documents-summary"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: salariesBulk = {} } = useQuery<Record<number, { baseSalary: number; effectiveDate: string }>>({
     queryKey: ["/api/employees/salaries-bulk"],
     enabled: isDiretoria,
@@ -4877,23 +4878,49 @@ export default function EmployeesPage() {
           </div>
 
           {(() => {
-            const getMissing = (e: Employee) => {
+            // Lista canônica de documentos obrigatórios — espelha REQUIRED_DOCS do
+            // formulário do funcionário (sem o grupo "Dependentes"). O alerta da
+            // listagem precisa contar EXATAMENTE o que aparece marcado verde no
+            // cadastro de cada um — qualquer divergência vira falso positivo.
+            const ALL_REQUIRED_DOCS: Array<{ type: string; label: string; vigilanteOnly?: boolean }> = [
+              { type: "RG", label: "RG" },
+              { type: "CPF", label: "CPF" },
+              { type: "CTPS", label: "CTPS" },
+              { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
+              { type: "Comprovante de Residência", label: "Comprovante de Residência" },
+              { type: "Fotos 3x4", label: "Foto 3x4" },
+              { type: "Título de Eleitor", label: "Título de Eleitor" },
+              { type: "Certificado de Reservista", label: "Reservista", vigilanteOnly: true },
+              { type: "CNH", label: "CNH/CNV", vigilanteOnly: true },
+              { type: "Certidão de Pontuação CNH", label: "Pontuação CNH", vigilanteOnly: true },
+              { type: "Dados Bancários", label: "Dados Bancários" },
+              { type: "Certificado Formação Vigilante", label: "Form. Vigilante", vigilanteOnly: true },
+              { type: "Certificado Formação Escolta Armada", label: "Form. Escolta", vigilanteOnly: true },
+              { type: "Reciclagem Escolta Armada", label: "Reciclagem Escolta", vigilanteOnly: true },
+              { type: "ASO", label: "ASO" },
+              { type: "Antecedente Criminal Polícia Civil", label: "Antec. P. Civil" },
+              { type: "Antecedente Criminal Polícia Militar", label: "Antec. P. Militar" },
+              { type: "Certidão de COP", label: "COP" },
+            ];
+            const isVigilante = (e: Employee) => {
+              const r = (e.role || "").toLowerCase();
+              return r.includes("vigilante") || r.includes("escolta") || r.includes("operacional") || r.includes("operador");
+            };
+            const getMissing = (e: Employee, deliveredTypes: string[]) => {
               const m: string[] = [];
-              if (!e.photoUrl) m.push("Foto");
-              if (!e.cnhNumber) m.push("CNH");
-              if (!e.cnhExpiry) m.push("Validade CNH");
-              if (!(e as any).cnvNumber) m.push("CNV");
-              if (!(e as any).cnvExpiry) m.push("Validade CNV");
-              if (!(e as any).vestNumber) m.push("Colete Nº");
-              if (!(e as any).vestExpiry) m.push("Validade Colete");
-              if (!e.rg) m.push("RG");
-              if (!e.phone) m.push("Telefone");
-              if (!e.address) m.push("Endereço");
-              if (!e.hireDate) m.push("Data Admissão");
+              const isVig = isVigilante(e);
+              for (const doc of ALL_REQUIRED_DOCS) {
+                if (doc.vigilanteOnly && !isVig) continue;
+                // "Fotos 3x4" também aceita photoUrl como entregue (mesma regra do form).
+                if (doc.type === "Fotos 3x4" && e.photoUrl) continue;
+                if (!deliveredTypes.includes(doc.type)) m.push(doc.label);
+              }
               return m;
             };
             const activeEmps = (employees || []).filter(e => e.status === "ativo");
-            const empsWithMissing = activeEmps.map(e => ({ emp: e, missing: getMissing(e) })).filter(x => x.missing.length > 0);
+            const empsWithMissing = activeEmps
+              .map(e => ({ emp: e, missing: getMissing(e, docsSummary[String(e.id)] || []) }))
+              .filter(x => x.missing.length > 0);
             const [showDocAlert, setShowDocAlert] = [docAlertOpen, setDocAlertOpen];
 
             if (empsWithMissing.length > 0) return (
