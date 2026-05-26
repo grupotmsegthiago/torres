@@ -4898,9 +4898,9 @@ export default function EmployeesPage() {
               { type: "Certificado Formação Escolta Armada", label: "Form. Escolta", vigilanteOnly: true },
               { type: "Reciclagem Escolta Armada", label: "Reciclagem Escolta", vigilanteOnly: true },
               { type: "ASO", label: "ASO" },
-              { type: "Antecedente Criminal Polícia Civil", label: "Antec. P. Civil" },
-              { type: "Antecedente Criminal Polícia Militar", label: "Antec. P. Militar" },
-              { type: "Certidão de COP", label: "COP" },
+              { type: "Antecedente Criminal Polícia Civil", label: "Antec. P. Civil", vigilanteOnly: true },
+              { type: "Antecedente Criminal Polícia Militar", label: "Antec. P. Militar", vigilanteOnly: true },
+              { type: "Certidão de COP", label: "COP", vigilanteOnly: true },
             ];
             const isVigilante = (e: Employee) => {
               const r = (e.role || "").toLowerCase();
