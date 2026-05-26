@@ -15,6 +15,12 @@ import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
 import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import type { Employee } from "@shared/schema";
+import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
+
+const formatBRT = (ymd: string) => {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+};
 
 type Device = {
   id: number; nome: string; tipo: string; base_url: string; login: string; ativo: boolean; notas: string | null;
@@ -1269,6 +1275,9 @@ function PainelMesTab() {
 
       <Card className="p-3 flex flex-wrap gap-2 items-center">
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-painel-month" />
+        <span className="text-[11px] text-neutral-500" data-testid="text-payroll-window-painel" title="Ciclo de folha RH (26 → 25)">
+          {(() => { const [y,m] = month.split("-").map(Number); const p = getPayrollPeriodFolha(y, m); return `${formatBRT(p.startDate)} → ${formatBRT(p.endDate)}`; })()}
+        </span>
         <Input placeholder="Buscar funcionário..." value={search} onChange={e => setSearch(e.target.value)} className="w-56 h-9 text-sm" data-testid="input-painel-search" />
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-9" data-testid="button-painel-refresh">
           <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} /> Atualizar
@@ -1623,6 +1632,9 @@ function FolhaTab() {
           </SelectContent>
         </Select>
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-month" />
+        <span className="text-[11px] text-neutral-500" data-testid="text-payroll-window-folha" title="Ciclo de folha RH (26 → 25)">
+          {(() => { const [y,m] = month.split("-").map(Number); const p = getPayrollPeriodFolha(y, m); return `${formatBRT(p.startDate)} → ${formatBRT(p.endDate)}`; })()}
+        </span>
         {employeeId && (
           <>
             <Button variant="outline" size="sm" onClick={openEspelho} className="h-9" data-testid="button-print-individual">
