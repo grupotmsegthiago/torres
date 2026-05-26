@@ -544,11 +544,16 @@ import type { Express } from "express";
       const salarioBase = CCT.salarioBase;
       const periculosidade = +(salarioBase * (CCT.periculosidadePct / 100)).toFixed(2);
 
+      // Janela = competência RH (26 → 25), não mês civil.
+      const { payrollPeriodRange: _pr1 } = await import("./holidays");
+      const _p1 = _pr1(year, month);
+      const _p1Start = new Date(`${_p1.from}T00:00:00-03:00`).getTime();
+      const _p1End = new Date(`${_p1.to}T23:59:59-03:00`).getTime();
       const { data: timesheets } = await supabaseAdmin.from("employee_timesheets")
         .select("*").eq("employee_id", employeeId);
       const monthTimesheets = (timesheets || []).filter((t: any) => {
-        const d = new Date(t.date);
-        return d.getMonth() + 1 === month && d.getFullYear() === year;
+        const ts = new Date(t.date).getTime();
+        return ts >= _p1Start && ts <= _p1End;
       });
       const totalOvertime = monthTimesheets.reduce((s: number, t: any) => s + (Number(t.overtime) || 0), 0);
       const horasExtrasValor = +(totalOvertime * (salarioBase / 220) * 1.5).toFixed(2);
@@ -582,8 +587,8 @@ import type { Express } from "express";
         .select("id, scheduled_date, completed_date, employee1_id, employee2_id")
         .or(`employee1_id.eq.${employeeId},employee2_id.eq.${employeeId}`);
       const monthMissions = (missions || []).filter((m: any) => {
-        const d = new Date(m.scheduled_date || m.completed_date);
-        return d.getMonth() + 1 === month && d.getFullYear() === year;
+        const ts = new Date(m.scheduled_date || m.completed_date).getTime();
+        return ts >= _p1Start && ts <= _p1End;
       });
 
       res.json({
@@ -1506,9 +1511,11 @@ ${empNames}`
       const { mes } = req.body;
       if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ message: "Informe mes no formato YYYY-MM" });
       const [y, m] = mes.split("-").map(Number);
-      const lastDay = new Date(y, m, 0).getDate();
-      const inicioMes = `${mes}-01T00:00:00-03:00`;
-      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+      // Competência RH (ciclo 26 → 25), não mês civil. mes=2026-05 → 26/abr → 25/mai.
+      const { payrollPeriodRange } = await import("./holidays");
+      const periodo = payrollPeriodRange(y, m);
+      const inicioMes = `${periodo.from}T00:00:00-03:00`;
+      const fimMes = `${periodo.to}T23:59:59-03:00`;
 
       const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
         .select("employee_id, employee_name, horas_extras")
@@ -1557,9 +1564,11 @@ ${empNames}`
     try {
       const mes = req.query.mes ? String(req.query.mes) : new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).slice(0, 7);
       const [y, m] = mes.split("-").map(Number);
-      const lastDay = new Date(y, m, 0).getDate();
-      const inicioMes = `${mes}-01T00:00:00-03:00`;
-      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+      // Competência RH (ciclo 26 → 25), não mês civil.
+      const { payrollPeriodRange } = await import("./holidays");
+      const periodo = payrollPeriodRange(y, m);
+      const inicioMes = `${periodo.from}T00:00:00-03:00`;
+      const fimMes = `${periodo.to}T23:59:59-03:00`;
 
       const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
         .select("employee_id, employee_name, horas_decimal, horas_ativo, horas_sobreaviso, horas_noturno, horas_extras")

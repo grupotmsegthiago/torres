@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { getPayrollPeriod } from "@shared/payroll-period";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Users, Filter, ChevronDown, ChevronRight, Download, Calendar, BarChart3, Loader2 } from "lucide-react";
 import AdminLayout from "@/components/admin/layout";
@@ -90,13 +91,13 @@ export default function RelatorioHorasPage() {
 
   const { data: funcionarios } = useQuery<Funcionario[]>({ queryKey: ["/api/employees"] });
 
-  // Calcula start/end efetivos conforme modo
+  // Calcula start/end efetivos conforme modo.
+  // Modo "mes" = competência de RH (ciclo 26 → 25), NÃO mês civil.
+  // Ex: mes=5, ano=2026 → 26/abr/2026 até 25/mai/2026.
   const { effStart, effEnd } = useMemo(() => {
     if (mode === "mes") {
-      const first = `${ano}-${String(mes).padStart(2, "0")}-01`;
-      const lastDay = new Date(ano, mes, 0).getDate();
-      const last = `${ano}-${String(mes).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-      return { effStart: first, effEnd: last };
+      const p = getPayrollPeriod(ano, mes);
+      return { effStart: p.startDate, effEnd: p.endDate };
     }
     return { effStart: start, effEnd: end };
   }, [mode, mes, ano, start, end]);
