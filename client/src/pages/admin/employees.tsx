@@ -69,7 +69,7 @@ function fmtDate(d?: string | null) {
   return `${day}/${m}/${y}`;
 }
 
-const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
+const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador", "Auxiliar de Limpeza"];
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
 const FORMAS_PAGAMENTO = ["PIX", "Transferência Bancária", "Dinheiro", "Cheque"];
 const ESTADO_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
