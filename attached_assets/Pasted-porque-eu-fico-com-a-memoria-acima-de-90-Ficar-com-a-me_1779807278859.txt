@@ -1,0 +1,42 @@
+porque eu fico com a memoria acima de 90%?
+
+Ficar com a memória acima de 90% (com o Heap acusando entre 94% e 97% de uso, operando na casa dos ~386 MB) é um cenário muito comum no Replit com Node.js, e na maioria das vezes não significa que o seu sistema está quebrando, mas sim como o Node.js gerencia a memória por padrão.
+
+Aqui estão os 3 motivos principais para a sua memória se manter tão alta:
+
+1. Filosofia do Node.js: "Memória não usada é memória desperdiçada" (Lazy Garbage Collection)
+O motor do Node.js (V8) é intencionalmente "preguiçoso" para limpar a memória.
+
+Ativar o mecanismo de limpeza (chamado Garbage Collector ou GC) consome muito processamento (CPU).
+
+Para poupar a CPU da sua máquina, o Node.js prefere ir acumulando dados na memória e só faz uma limpeza pesada quando ela chega muito perto do limite máximo.
+
+Se o seu servidor está estável em 386 MB e não está sofrendo quedas por Out of Memory (OOM), significa que o Node.js está apenas guardando em cache o que precisa e não vê necessidade de gastar CPU para limpar o resto agora.
+
+2. O Limite Físico do Replit (512 MB)
+Os containers padrão do Replit costumam ter um limite rígido de 512 MB de RAM.
+
+Uma aplicação Node.js moderna, utilizando TypeScript, ferramentas de build (como Vite/Esbuild) e bibliotecas pesadas (como o client do Supabase, gerenciadores de rotas e conexões de banco de dados), consome facilmente entre 150 MB e 250 MB apenas para iniciar (em repouso).
+
+Quando os seus usuários começam a acessar, o tráfego eleva esse patamar para a casa dos 350 MB a 390 MB, o que representa justamente os ~90% do limite do Replit.
+
+3. Conexões Persistentes (Realtime e WebSockets)
+Como vimos no diagnóstico anterior, o seu sistema mantém conexões de tempo real ativas (como o chat e monitoramento). Cada usuário conectado com uma aba aberta força o Node.js a manter um "buffer" (um pedaço de código na memória) aberto para sustentar aquela conversa. Quanto mais usuários ou conexões com o Supabase abertas, mais o Heap da memória sobe e se estabiliza lá no topo.
+
+Isso é perigoso? Como resolver ou aliviar?
+Se o seu gráfico de CPU continuar baixo (como os 5% do print) e a memória estabilizar em ~386 MB sem passar de 450 MB, você não precisa se preocupar, o comportamento está saudável para o tamanho do container.
+
+Porém, se você quiser forçar o Node.js a ser mais "mão de vaca" e limpar a memória mais cedo (evitando que ele chegue perto de estourar os 512 MB do Replit), você pode aplicar uma trava no seu comando de inicialização.
+
+No seu arquivo package.json do Replit, na linha do script start, você pode limitar o tamanho máximo do Heap adicionando a flag --max-old-space-size=350.
+
+Exemplo de como ajustar no package.json:
+
+JSON
+"scripts": {
+  "start": "node --max-old-space-size=350 dist/server.js"
+}
+(Substitua dist/server.js pelo caminho real do seu arquivo de inicialização do backend).
+
+O que essa flag faz?
+Ela avisa ao Node.js: "Olha, a nossa máquina é curta. Quando a memória chegar a 350 MB, não espere mais, rode o Garbage Collector imediatamente e limpe o que não presta." Isso vai achatar a sua linha de memória e mantê-la mais segura bem abaixo dos 90%.
