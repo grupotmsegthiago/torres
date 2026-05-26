@@ -1261,7 +1261,28 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE mission_costs ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_costs ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
 
+    // cct_presets — múltiplos presets de CCT (vigilancia, siemaco, etc).
+    // `cargos` é matched por substring case-insensitive em resolvePresetKeyForCargo.
+    await execSql(`CREATE TABLE IF NOT EXISTS cct_presets (
+      id SERIAL PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      sindicato TEXT DEFAULT '',
+      cargos TEXT[] DEFAULT '{}',
+      config JSONB NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )`).catch((e: any) => console.warn("[db-init] cct_presets:", e?.message));
+
     await ensureRealtimePublication();
+
+    // Seed dos presets canônicos (idempotente — só cria se não existe).
+    try {
+      const { ensureDefaultPresets } = await import("./lib/cct-config");
+      await ensureDefaultPresets();
+    } catch (e: any) {
+      console.error("[db-init] ensureDefaultPresets:", e?.message);
+    }
 
     console.log("[db-init] Schema verified OK");
 

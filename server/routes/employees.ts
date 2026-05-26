@@ -383,8 +383,12 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         .limit(1);
       const sal: any = salRows?.[0] || {};
 
-      const { getCctConfig } = await import("../lib/cct-config");
-      const CCT_FALLBACK = await getCctConfig();
+      // Resolve CCT pelo cargo (vigilante→vigilancia, limpeza→siemaco).
+      // Antes usava getCctConfig() fixo → Auxiliar de Limpeza herdava
+      // valores de vigilância silenciosamente quando employee_salaries
+      // estava vazio. Bug pego no code review de 26/05/2026.
+      const { getCctConfigByCargo } = await import("../lib/cct-config");
+      const CCT_FALLBACK = await getCctConfigByCargo(emp.role);
       const baseSalary = Number(sal.base_salary || CCT_FALLBACK.salarioBase);
       const periculosidadePct = Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100;
       const vrDiario = Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia);
@@ -613,11 +617,12 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const empId = Number(req.params.id);
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
-      const isVig = (emp.role || "").toLowerCase().includes("vigilante") || (emp.role || "").toLowerCase().includes("escolta");
-      if (!isVig) return res.status(400).json({ message: "Kit CCT aplica somente a vigilantes/escoltas" });
-
-      const { getCctConfig } = await import("../lib/cct-config");
-      const CCT = await getCctConfig();
+      // Kit CCT agora resolve o preset pelo cargo do funcionário
+      // (vigilante→vigilancia, limpeza→siemaco, etc). Cargos não mapeados
+      // caem no preset 'vigilancia' por default.
+      const { getCctPresetByCargo } = await import("../lib/cct-config");
+      const preset = await getCctPresetByCargo(emp.role);
+      const CCT = preset.config;
       const effectiveDate = req.body?.effectiveDate || new Date().toISOString().slice(0, 10);
       const periculosidade = Number(CCT.salarioBase) * Number(CCT.periculosidadePct) / 100;
       const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;

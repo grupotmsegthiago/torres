@@ -976,13 +976,42 @@ async function ensureSystemSettingsTable() {
     }
   });
 
-  app.get("/api/cct-config", requireAuth, async (_req, res) => {
+  app.get("/api/cct-config", requireAuth, async (req, res) => {
     try {
-      const { getCctConfig } = await import("./lib/cct-config");
-      const cfg = await getCctConfig();
+      // Backcompat: sem cargo → preset 'vigilancia'.
+      // Com ?cargo=X → resolve preset adequado (siemaco pra limpeza, etc).
+      const cargo = (req.query.cargo as string) || "";
+      const { getCctConfig, getCctConfigByCargo } = await import("./lib/cct-config");
+      const cfg = cargo ? await getCctConfigByCargo(cargo) : await getCctConfig();
       res.json(cfg);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/cct-presets", requireAuth, async (_req, res) => {
+    try {
+      const { listCctPresets } = await import("./lib/cct-config");
+      const list = await listCctPresets();
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/cct-presets/:key", requireAdminRole, requireDiretoria, async (req, res) => {
+    try {
+      const { savePreset } = await import("./lib/cct-config");
+      const saved = await savePreset({
+        key: req.params.key,
+        label: req.body?.label,
+        sindicato: req.body?.sindicato,
+        cargos: req.body?.cargos,
+        config: req.body?.config,
+      });
+      res.json(saved);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
     }
   });
 

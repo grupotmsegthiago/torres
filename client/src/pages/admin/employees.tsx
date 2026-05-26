@@ -70,6 +70,69 @@ function fmtDate(d?: string | null) {
 }
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador", "Auxiliar de Limpeza"];
+
+// ============================================================
+// Catálogo canônico de documentos exigidos por perfil.
+// Fonte única usada pelo checklist do cadastro (REQUIRED_DOCS) e pelo
+// alerta da listagem ("X funcionários com documentação pendente").
+// Flags:
+//   vigilanteOnly — só pra cargos operacionais (vigilante/escolta/operador)
+//   adminOnly     — só pra cargos não-operacionais (Adm/Gerente/Supervisor/Auxiliar de Limpeza)
+//   optional      — dispensável (não conta como pendência)
+// Sem flag = obrigatório pra todos.
+// ============================================================
+type DocItem = { type: string; label: string; vigilanteOnly?: boolean; adminOnly?: boolean; optional?: boolean };
+type DocGroup = { group: string; items: DocItem[] };
+
+export function buildRequiredDocsCatalog(): DocGroup[] {
+  return [
+    { group: "Identificação e Documentos Pessoais", items: [
+      { type: "RG", label: "RG" },
+      { type: "CPF", label: "CPF" },
+      { type: "CTPS", label: "Carteira de Trabalho (CTPS)" },
+      { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
+      { type: "Comprovante de Residência", label: "Comprovante de Residência" },
+      { type: "Fotos 3x4", label: "03 Fotos 3x4 recentes" },
+      { type: "Título de Eleitor", label: "Título de Eleitor" },
+      { type: "Certificado de Reservista", label: "Certificado de Reservista (homens 18-45)", vigilanteOnly: true },
+    ]},
+    { group: "Habilitação e Formação", items: [
+      { type: "CNH", label: "CNH / CNV", vigilanteOnly: true },
+      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true },
+      { type: "Dados Bancários", label: "Dados Bancários" },
+      { type: "Carteira de Vacinação", label: "Carteira de Vacinação" },
+      { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar" },
+      { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante (validade dispensada)", vigilanteOnly: true },
+      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada (validade dispensada)", vigilanteOnly: true },
+      { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada", vigilanteOnly: true },
+      { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional" },
+    ]},
+    { group: "Dependentes (se necessário)", items: [
+      { type: "Certidão Nascimento/Casamento", label: "Certidão de Casamento", optional: true },
+      { type: "Certidão Nascimento Filhos", label: "Certidão de Nascimento de Filhos (menores 14 anos)", optional: true },
+      { type: "Carteira Vacinação/Comprovante Escolar", label: "Carteira de Vacinação dos Filhos", optional: true },
+    ]},
+    { group: "Certidões Obrigatórias", items: [
+      { type: "Antecedentes Criminais", label: "Antecedentes Criminais", adminOnly: true },
+      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil", vigilanteOnly: true },
+      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar", vigilanteOnly: true },
+      { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)", vigilanteOnly: true },
+    ]},
+  ];
+}
+
+export function filterDocsCatalogByRole(catalog: DocGroup[], isVigilante: boolean): DocGroup[] {
+  return catalog
+    .map(g => ({
+      group: g.group,
+      items: g.items.filter(i => {
+        if (i.vigilanteOnly && !isVigilante) return false;
+        if (i.adminOnly && isVigilante) return false;
+        return true;
+      }),
+    }))
+    .filter(g => g.items.length > 0);
+}
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
 const FORMAS_PAGAMENTO = ["PIX", "Transferência Bancária", "Dinheiro", "Cheque"];
 const ESTADO_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
@@ -2540,8 +2603,11 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
   const [selYear, setSelYear] = useState(now.getFullYear());
   const [showCctEdit, setShowCctEdit] = useState(false);
+  // CCT resolvido pelo cargo: vigilante→vigilancia, limpeza→siemaco, etc.
+  // Garante que o "Kit CCT" mostre os valores certos pro cargo de cada funcionário.
+  const cctQueryUrl = `/api/cct-config?cargo=${encodeURIComponent(employee.role || "")}`;
   const { data: cctData } = useQuery<typeof CCT_SP_2025>({
-    queryKey: ["/api/cct-config"],
+    queryKey: [cctQueryUrl],
     queryFn: getQueryFn({ on401: "throw" }),
     staleTime: 60_000,
   });
@@ -2594,7 +2660,9 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
       summary.horasExtras?.noturnas > 0 ? `Adicional Noturno (${summary.horasExtras.noturnas}h): ${fmtR(v.adicionalNoturnoValor || 0)}` : "",
       v.dsr > 0 ? `DSR sobre HE/Noturno: ${fmtR(v.dsr)}` : "",
       `Vale Refeição${propLabel}: ${fmtR(v.valeRefeicao)}`,
-      `Cesta Básica${propLabel}: ${fmtR(v.cestaBasica)}`,
+      summary.cestaBasicaIIAplicada
+        ? `Cesta Básica II${propLabel} (${summary.cestaBasicaIIFaixa} - ${summary.cestaBasicaIIAtestados} atestado(s) no mês): ${fmtR(v.cestaBasica)}`
+        : `Cesta Básica${propLabel}: ${fmtR(v.cestaBasica)}`,
       `TOTAL VENCIMENTOS: ${fmtR(v.total)}`,
       ``,
       `═══════════════════ DEDUÇÕES LEGAIS (CLT) ═══════════════════`,
@@ -3678,46 +3746,35 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Dados Bancários", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
 
 
-  const REQUIRED_DOCS = [
-    { group: "Identificação e Documentos Pessoais", items: [
-      { type: "RG", label: "RG" },
-      { type: "CPF", label: "CPF" },
-      { type: "CTPS", label: "Carteira de Trabalho (CTPS)" },
-      { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
-      { type: "Comprovante de Residência", label: "Comprovante de Residência" },
-      { type: "Fotos 3x4", label: "03 Fotos 3x4 recentes" },
-      { type: "Título de Eleitor", label: "Título de Eleitor" },
-      { type: "Certificado de Reservista", label: "Certificado de Reservista (homens 18-45)" },
-    ]},
-    { group: "Habilitação e Formação", items: [
-      { type: "CNH", label: "CNH / CNV" },
-      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH" },
-      { type: "Dados Bancários", label: "Dados Bancários" },
-      { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante" },
-      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada" },
-      { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada" },
-      { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional (Admissional)" },
-    ]},
-    { group: "Dependentes (se necessário)", items: [
-      { type: "Certidão Nascimento/Casamento", label: "Certidão de Nascimento/Casamento" },
-      { type: "Certidão Nascimento Filhos", label: "Certidão de Nascimento de Filhos (menores 14 anos)" },
-      { type: "Carteira Vacinação/Comprovante Escolar", label: "Carteira de Vacinação e Comprovante Escolar" },
-    ]},
-    { group: "Certidões Obrigatórias", items: [
-      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil" },
-      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar" },
-      { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)" },
-    ]},
-  ];
+  // Determina perfil de cobrança documental do funcionário.
+  // Cargos operacionais (vigilante/escolta/operador) precisam de docs DRT/PF
+  // adicionais; demais cargos (Adm, Gerente, Supervisor, Auxiliar de Limpeza)
+  // têm checklist enxuto.
+  const isVigilanteRole = (role: string | null | undefined) => {
+    const r = (role || "").toLowerCase();
+    return r.includes("vigilante") || r.includes("escolta") || r.includes("operacional") || r.includes("operador");
+  };
+  const empIsVig = isVigilanteRole(employee.role);
+
+  const ALL_REQUIRED_DOCS_FULL = buildRequiredDocsCatalog();
+  const REQUIRED_DOCS = filterDocsCatalogByRole(ALL_REQUIRED_DOCS_FULL, empIsVig);
 
   const getDocStatus = (docType: string) => {
     if (docType === "Fotos 3x4" && employee.photoUrl) return true;
+    // Pra Antecedentes Criminais unificado (perfil admin), aceita também
+    // qualquer um dos dois antigos (Civil/Militar) como entregue, pra não
+    // forçar re-upload de quem já tinha sob o nome antigo.
+    if (docType === "Antecedentes Criminais") {
+      return docs.some((d: any) => d.type === "Antecedentes Criminais" ||
+        d.type === "Antecedente Criminal Polícia Civil" ||
+        d.type === "Antecedente Criminal Polícia Militar");
+    }
     return docs.some((d: any) => d.type === docType);
   };
 
   const MANDATORY_DOC_TYPES = REQUIRED_DOCS
     .filter(g => g.group !== "Dependentes (se necessário)")
-    .flatMap(g => g.items.map(i => i.type));
+    .flatMap(g => g.items.filter(i => !(i as any).optional).map(i => i.type));
   const missingDocs = MANDATORY_DOC_TYPES.filter(t => !getDocStatus(t));
   const allDocsComplete = missingDocs.length === 0;
   const isDiretoria = user?.role === "diretoria";
@@ -4878,42 +4935,53 @@ export default function EmployeesPage() {
           </div>
 
           {(() => {
-            // Lista canônica de documentos obrigatórios — espelha REQUIRED_DOCS do
-            // formulário do funcionário (sem o grupo "Dependentes"). O alerta da
-            // listagem precisa contar EXATAMENTE o que aparece marcado verde no
-            // cadastro de cada um — qualquer divergência vira falso positivo.
-            const ALL_REQUIRED_DOCS: Array<{ type: string; label: string; vigilanteOnly?: boolean }> = [
-              { type: "RG", label: "RG" },
-              { type: "CPF", label: "CPF" },
-              { type: "CTPS", label: "CTPS" },
-              { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
-              { type: "Comprovante de Residência", label: "Comprovante de Residência" },
-              { type: "Fotos 3x4", label: "Foto 3x4" },
-              { type: "Título de Eleitor", label: "Título de Eleitor" },
-              { type: "Certificado de Reservista", label: "Reservista", vigilanteOnly: true },
-              { type: "CNH", label: "CNH/CNV", vigilanteOnly: true },
-              { type: "Certidão de Pontuação CNH", label: "Pontuação CNH", vigilanteOnly: true },
-              { type: "Dados Bancários", label: "Dados Bancários" },
-              { type: "Certificado Formação Vigilante", label: "Form. Vigilante", vigilanteOnly: true },
-              { type: "Certificado Formação Escolta Armada", label: "Form. Escolta", vigilanteOnly: true },
-              { type: "Reciclagem Escolta Armada", label: "Reciclagem Escolta", vigilanteOnly: true },
-              { type: "ASO", label: "ASO" },
-              { type: "Antecedente Criminal Polícia Civil", label: "Antec. P. Civil", vigilanteOnly: true },
-              { type: "Antecedente Criminal Polícia Militar", label: "Antec. P. Militar", vigilanteOnly: true },
-              { type: "Certidão de COP", label: "COP", vigilanteOnly: true },
-            ];
+            // Usa a mesma fonte canônica do checklist dentro do cadastro
+            // (buildRequiredDocsCatalog), filtrada pelo perfil do funcionário.
+            // Sem isso, qualquer divergência entre as duas listas vira falso
+            // positivo no alerta — bug histórico de 26/05/2026.
+            const CATALOG = buildRequiredDocsCatalog();
             const isVigilante = (e: Employee) => {
               const r = (e.role || "").toLowerCase();
               return r.includes("vigilante") || r.includes("escolta") || r.includes("operacional") || r.includes("operador");
             };
+            // Alias curtos pra economizar espaço nos badges do alerta.
+            const SHORT_LABEL: Record<string, string> = {
+              "Carteira de Trabalho (CTPS)": "CTPS",
+              "Comprovante de Residência": "Compr. Residência",
+              "03 Fotos 3x4 recentes": "Foto 3x4",
+              "Certificado de Reservista (homens 18-45)": "Reservista",
+              "CNH / CNV": "CNH/CNV",
+              "Certidão de Pontuação de CNH": "Pontuação CNH",
+              "Comprovante de Formação Escolar": "Form. Escolar",
+              "Certificado de Formação de Vigilante (validade dispensada)": "Form. Vigilante",
+              "Certificado de Formação de Escolta Armada (validade dispensada)": "Form. Escolta",
+              "Última Reciclagem de Escolta Armada": "Reciclagem Escolta",
+              "ASO - Atestado de Saúde Ocupacional": "ASO",
+              "Antecedente Criminal Polícia Civil": "Antec. P. Civil",
+              "Antecedente Criminal Polícia Militar": "Antec. P. Militar",
+              "Certidão de COP (Objeto em Pé)": "COP",
+            };
+            const ANTEC_ALIASES = new Set([
+              "Antecedentes Criminais",
+              "Antecedente Criminal Polícia Civil",
+              "Antecedente Criminal Polícia Militar",
+            ]);
             const getMissing = (e: Employee, deliveredTypes: string[]) => {
               const m: string[] = [];
               const isVig = isVigilante(e);
-              for (const doc of ALL_REQUIRED_DOCS) {
-                if (doc.vigilanteOnly && !isVig) continue;
-                // "Fotos 3x4" também aceita photoUrl como entregue (mesma regra do form).
-                if (doc.type === "Fotos 3x4" && e.photoUrl) continue;
-                if (!deliveredTypes.includes(doc.type)) m.push(doc.label);
+              const filtered = filterDocsCatalogByRole(CATALOG, isVig);
+              for (const g of filtered) {
+                if (g.group === "Dependentes (se necessário)") continue;
+                for (const doc of g.items) {
+                  if (doc.optional) continue;
+                  if (doc.type === "Fotos 3x4" && e.photoUrl) continue;
+                  // Backcompat: Antecedentes Criminais aceita qualquer um dos 3 nomes.
+                  if (doc.type === "Antecedentes Criminais") {
+                    if (deliveredTypes.some(t => ANTEC_ALIASES.has(t))) continue;
+                  }
+                  if (deliveredTypes.includes(doc.type)) continue;
+                  m.push(SHORT_LABEL[doc.label] || doc.label);
+                }
               }
               return m;
             };

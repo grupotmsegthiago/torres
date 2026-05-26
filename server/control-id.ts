@@ -1182,8 +1182,16 @@ export async function buildFolhaStats(
     .order("id", { ascending: false })
     .limit(1);
 
-  const { getCctConfig } = await import("./lib/cct-config");
-  const CCT = await getCctConfig();
+  // Carrega cargo do funcionário pra resolver o CCT correto
+  // (vigilante→vigilancia, limpeza→siemaco).
+  const { data: empRow } = await supabaseAdmin
+    .from("employees")
+    .select("role")
+    .eq("id", employeeId)
+    .limit(1);
+  const empRole = (empRow && empRow[0] && (empRow[0] as any).role) || "";
+  const { getCctConfigByCargo } = await import("./lib/cct-config");
+  const CCT = await getCctConfigByCargo(empRole);
 
   const sal = (salaryRows && salaryRows[0]) as any;
   const baseSalary = sal ? Number(sal.base_salary) || 0 : 0;
@@ -1191,7 +1199,57 @@ export async function buildFolhaStats(
   const encargosPct = sal && sal.encargos_pct != null ? Number(sal.encargos_pct) : 80;
   const periculosidadePct = sal && sal.periculosidade_pct != null ? Number(sal.periculosidade_pct) : CCT.periculosidadePct;
   const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
-  const cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
+  let cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
+
+  // ============================================================
+  // Cesta Básica II (SIEMACO e similares) — aplicada por assiduidade.
+  // Se o CCT do cargo tem `cestaBasicaIIFaixas`, busca atestados/faltas
+  // justificadas aprovadas do mês em `employee_absences` e aplica a faixa.
+  //   0 atestados  -> semFalta (valor cheio)
+  //   1 atestado   -> umAtestado
+  //   2 atestados  -> doisAtestados
+  //   3+ atestados -> tresOuMaisAtestados (geralmente zero)
+  // Sobrescreve `cestaBasica` (e ignora o que estiver em employee_salaries).
+  // ============================================================
+  let cestaBasicaIIAtestados = 0;
+  let cestaBasicaIIFaixa: string | null = null;
+  const faixas = (CCT as any).cestaBasicaIIFaixas as
+    | { semFalta: number; umAtestado: number; doisAtestados: number; tresOuMaisAtestados: number }
+    | undefined;
+  if (faixas) {
+    try {
+      const monthStartIso = `${monthYear}-01`;
+      const monthEndIsoForAbs = `${monthYear}-${String(new Date(yyyy, mm, 0).getDate()).padStart(2, "0")}`;
+      const { data: absRows } = await supabaseAdmin
+        .from("employee_absences")
+        .select("id, type, start_date, end_date, status")
+        .eq("employee_id", employeeId)
+        .eq("status", "aprovado")
+        .gte("start_date", `${monthStartIso}T00:00:00`)
+        .lte("start_date", `${monthEndIsoForAbs}T23:59:59`);
+      const qualificados = (absRows || []).filter((a: any) => {
+        const t = String(a.type || "").toLowerCase();
+        // Conta atestado médico e qualquer falta justificada/afastamento aprovado.
+        return t.includes("atestado") || t.includes("afasta") || t.includes("justif");
+      });
+      cestaBasicaIIAtestados = qualificados.length;
+      if (cestaBasicaIIAtestados >= 3) {
+        cestaBasica = faixas.tresOuMaisAtestados;
+        cestaBasicaIIFaixa = "3+ atestados";
+      } else if (cestaBasicaIIAtestados === 2) {
+        cestaBasica = faixas.doisAtestados;
+        cestaBasicaIIFaixa = "2 atestados";
+      } else if (cestaBasicaIIAtestados === 1) {
+        cestaBasica = faixas.umAtestado;
+        cestaBasicaIIFaixa = "1 atestado";
+      } else {
+        cestaBasica = faixas.semFalta;
+        cestaBasicaIIFaixa = "sem falta";
+      }
+    } catch (e: any) {
+      console.error("[calcularFolha] erro ao calcular Cesta Básica II:", e?.message);
+    }
+  }
 
   // Dias úteis reais do mês (descontando feriados) — proporcional ao "decorrido"
   // quando o mês solicitado é o mês corrente em BRT: tudo que é mensal-fixo
@@ -1352,6 +1410,9 @@ export async function buildFolhaStats(
     diarias,
     cestaBasica: cestaBasicaReal,
     cestaBasicaMensal: cestaBasica,
+    cestaBasicaIIAtestados,
+    cestaBasicaIIFaixa,
+    cestaBasicaIIAplicada: !!faixas,
     vencimentosTotal,
     beneficiosTotal,
     // Recolhimentos detalhados
