@@ -32,14 +32,53 @@ export function registerSsxRoutes(app: Express) {
   // -------- lista veículos integrados --------
   app.get("/api/ssx/vehicles", requireAuth, requireAdminRole, async (_req: Request, res: Response) => {
     try {
-      const { data, error } = await supabaseAdmin
+      const { data: vehicles, error } = await supabaseAdmin
         .from("vehicles")
         .select("id, plate, brand, model, frota, ssx_integration_code, last_address, last_latitude, last_longitude, last_speed, last_ignition")
         .not("ssx_integration_code", "is", null)
         .neq("ssx_integration_code", "")
         .order("plate");
       if (error) throw error;
-      res.json({ vehicles: data || [] });
+
+      // Busca OS ativa por veículo pra mostrar agentes alocados no overlay
+      const vehIds = (vehicles || []).map((v: any) => v.id);
+      const agentsByVehicle = new Map<number, { agent1?: string; agent2?: string }>();
+      if (vehIds.length > 0) {
+        const { data: oss } = await supabaseAdmin
+          .from("service_orders")
+          .select("vehicle_id, assigned_employee_id, assigned_employee_2_id, mission_status, status, scheduled_date")
+          .in("vehicle_id", vehIds)
+          .in("mission_status", ["em_andamento", "aceita", "a_caminho", "no_local"])
+          .order("scheduled_date", { ascending: false });
+
+        const empIds = new Set<number>();
+        for (const o of (oss || []) as any[]) {
+          if (o.assigned_employee_id) empIds.add(Number(o.assigned_employee_id));
+          if (o.assigned_employee_2_id) empIds.add(Number(o.assigned_employee_2_id));
+        }
+        const empMap = new Map<number, string>();
+        if (empIds.size > 0) {
+          const { data: emps } = await supabaseAdmin
+            .from("employees").select("id, name").in("id", Array.from(empIds));
+          for (const e of (emps || []) as any[]) empMap.set(Number(e.id), e.name);
+        }
+        // 1ª OS encontrada por veículo (ordenada por scheduled_date DESC = mais recente primeiro)
+        for (const o of (oss || []) as any[]) {
+          const vid = Number(o.vehicle_id);
+          if (agentsByVehicle.has(vid)) continue;
+          agentsByVehicle.set(vid, {
+            agent1: o.assigned_employee_id ? empMap.get(Number(o.assigned_employee_id)) : undefined,
+            agent2: o.assigned_employee_2_id ? empMap.get(Number(o.assigned_employee_2_id)) : undefined,
+          });
+        }
+      }
+
+      const enriched = (vehicles || []).map((v: any) => ({
+        ...v,
+        agent1_name: agentsByVehicle.get(Number(v.id))?.agent1 || null,
+        agent2_name: agentsByVehicle.get(Number(v.id))?.agent2 || null,
+      }));
+      res.json({ vehicles: enriched });
     } catch (err: any) {
       res.status(500).json({ error: String(err?.message || err) });
     }

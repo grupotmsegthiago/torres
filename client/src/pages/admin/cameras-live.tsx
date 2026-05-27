@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { HlsVideo } from "@/components/admin/hls-video";
 import { Button } from "@/components/ui/button";
-import { Video, AlertTriangle, ArrowLeft, Bell } from "lucide-react";
+import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 interface SsxVehicle {
@@ -16,6 +16,8 @@ interface SsxVehicle {
   last_address?: string | null;
   last_speed?: number | null;
   last_ignition?: number | null;
+  agent1_name?: string | null;
+  agent2_name?: string | null;
 }
 
 interface AiAlert {
@@ -39,6 +41,43 @@ export default function CamerasLivePage() {
   const [foco, setFoco] = useState<number | null>(null);
   const [pagina, setPagina] = useState(0);
   const [alertas, setAlertas] = useState<AiAlert[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Fullscreen API + atalho de teclado F11 (intercepta e usa requestFullscreen do container,
+  // que é mais limpo que F11 nativo porque mantém a UI da câmera fullscreen sem barra do navegador
+  // se possível — o browser pode pedir confirmação na 1ª vez).
+  useEffect(() => {
+    function onFsChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "F11") {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.key === "Escape" && document.fullscreenElement) {
+        // Esc nativo já sai; aqui só sincroniza state
+        setIsFullscreen(false);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (e) {
+      // browser bloqueou (sem gesto do usuário etc) — silencia
+    }
+  }
 
   const { data, isLoading, error } = useQuery<{ vehicles: SsxVehicle[] }>({
     queryKey: ["/api/ssx/vehicles"],
@@ -128,6 +167,19 @@ export default function CamerasLivePage() {
                 Voltar ao Mosaico
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={toggleFullscreen}
+              data-testid="button-fullscreen"
+              title={isFullscreen ? "Sair de tela cheia (F11 ou Esc)" : "Tela cheia (F11)"}
+            >
+              {isFullscreen ? (
+                <><Minimize2 className="h-3.5 w-3.5 mr-1" /> Sair tela cheia</>
+              ) : (
+                <><Maximize2 className="h-3.5 w-3.5 mr-1" /> Tela cheia (F11)</>
+              )}
+            </Button>
           </div>
         </div>
 
@@ -165,6 +217,13 @@ export default function CamerasLivePage() {
                 <p className="text-xs text-indigo-400 font-mono">
                   {focoVehicle.plate} • {focoVehicle.last_address || "sem posição"}
                 </p>
+                {(focoVehicle.agent1_name || focoVehicle.agent2_name) && (
+                  <div className="mt-2 flex flex-wrap gap-3 text-xs font-mono text-slate-300">
+                    <span className="font-bold text-indigo-300">🚔 {focoVehicle.plate}</span>
+                    {focoVehicle.agent1_name && <span data-testid={`foco-agent1-${focoVehicle.id}`}>🥷 AGT 1: {focoVehicle.agent1_name}</span>}
+                    {focoVehicle.agent2_name && <span data-testid={`foco-agent2-${focoVehicle.id}`}>🥷 AGT 2: {focoVehicle.agent2_name}</span>}
+                  </div>
+                )}
               </div>
               {typeof focoVehicle.last_speed === "number" && (
                 <div className="text-right">
@@ -258,13 +317,29 @@ function MosaicTile({
         <div className="absolute top-1 left-1 bg-black/70 text-[10px] text-white px-1 rounded font-mono">
           {vehicle.plate} CH{channel}
         </div>
+        {/* Overlay agentes — só na CH1 pra não duplicar */}
+        {channel === 1 && (vehicle.agent1_name || vehicle.agent2_name) && (
+          <div className="absolute top-1 right-1 bg-black/75 text-white text-[9px] font-mono px-1.5 py-1 rounded leading-tight max-w-[60%]">
+            <div className="font-bold text-indigo-300 truncate">🚔 {vehicle.plate}</div>
+            {vehicle.agent1_name && (
+              <div className="truncate" data-testid={`text-agent1-${vehicle.id}`}>
+                🥷 AGT 1: {vehicle.agent1_name}
+              </div>
+            )}
+            {vehicle.agent2_name && (
+              <div className="truncate" data-testid={`text-agent2-${vehicle.id}`}>
+                🥷 AGT 2: {vehicle.agent2_name}
+              </div>
+            )}
+          </div>
+        )}
         {typeof vehicle.last_speed === "number" && (
           <div className="absolute bottom-1 left-1 bg-black/70 text-[10px] text-white px-1 rounded font-mono">
             {vehicle.last_speed} km/h
           </div>
         )}
         {isAlerting && (
-          <div className="absolute top-1 right-1 bg-red-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded uppercase">
+          <div className="absolute bottom-1 right-1 bg-red-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded uppercase animate-pulse">
             🚨 {alert!.tipo}
           </div>
         )}
