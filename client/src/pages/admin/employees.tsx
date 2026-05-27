@@ -71,72 +71,19 @@ function fmtDate(d?: string | null) {
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador", "Auxiliar de Limpeza"];
 
-// ============================================================
-// Catálogo canônico de documentos exigidos por perfil.
-// Fonte única usada pelo checklist do cadastro (REQUIRED_DOCS) e pelo
-// alerta da listagem ("X funcionários com documentação pendente").
-// Flags:
-//   vigilanteOnly — só pra cargos operacionais (vigilante/escolta/operador)
-//   adminOnly     — só pra cargos não-operacionais (Adm/Gerente/Supervisor/Auxiliar de Limpeza)
-//   optional      — dispensável (não conta como pendência)
-// Sem flag = obrigatório pra todos.
-// ============================================================
-type DocItem = { type: string; label: string; vigilanteOnly?: boolean; adminOnly?: boolean; optional?: boolean };
-type DocGroup = { group: string; items: DocItem[] };
-
-export function buildRequiredDocsCatalog(): DocGroup[] {
-  return [
-    { group: "Identificação e Documentos Pessoais", items: [
-      { type: "RG", label: "RG" },
-      { type: "CPF", label: "CPF" },
-      { type: "CTPS", label: "Carteira de Trabalho (CTPS)" },
-      { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
-      { type: "Comprovante de Residência", label: "Comprovante de Residência" },
-      { type: "Fotos 3x4", label: "03 Fotos 3x4 recentes" },
-      { type: "Título de Eleitor", label: "Título de Eleitor" },
-      { type: "Certificado de Reservista", label: "Certificado de Reservista (homens 18-45)", vigilanteOnly: true },
-    ]},
-    { group: "Habilitação e Formação", items: [
-      { type: "CNH", label: "CNH / CNV", vigilanteOnly: true },
-      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true },
-      { type: "Dados Bancários", label: "Dados Bancários" },
-      // Opcionais: aparecem no checklist (verde/vermelho), mas não bloqueiam o
-      // alerta de "documentação pendente" na listagem. Decidido em 27/05/2026
-      // porque 100% dos ativos estavam sem eles cadastrados e o RH vai fazer
-      // o backfill aos poucos sem travar a operação.
-      { type: "Carteira de Vacinação", label: "Carteira de Vacinação", optional: true },
-      { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar", optional: true },
-      { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante (validade dispensada)", vigilanteOnly: true },
-      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada (validade dispensada)", vigilanteOnly: true },
-      { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada", vigilanteOnly: true },
-      { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional" },
-    ]},
-    { group: "Dependentes (se necessário)", items: [
-      { type: "Certidão Nascimento/Casamento", label: "Certidão de Casamento", optional: true },
-      { type: "Certidão Nascimento Filhos", label: "Certidão de Nascimento de Filhos (menores 14 anos)", optional: true },
-      { type: "Carteira Vacinação/Comprovante Escolar", label: "Carteira de Vacinação dos Filhos", optional: true },
-    ]},
-    { group: "Certidões Obrigatórias", items: [
-      { type: "Antecedentes Criminais", label: "Antecedentes Criminais", adminOnly: true },
-      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil", vigilanteOnly: true },
-      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar", vigilanteOnly: true },
-      { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)", vigilanteOnly: true },
-    ]},
-  ];
-}
-
-export function filterDocsCatalogByRole(catalog: DocGroup[], isVigilante: boolean): DocGroup[] {
-  return catalog
-    .map(g => ({
-      group: g.group,
-      items: g.items.filter(i => {
-        if (i.vigilanteOnly && !isVigilante) return false;
-        if (i.adminOnly && isVigilante) return false;
-        return true;
-      }),
-    }))
-    .filter(g => g.items.length > 0);
-}
+// Catálogo canônico de documentos por perfil — fonte única em
+// shared/documents-catalog.ts (compartilhada com server/onboarding +
+// server/jobs/document-compliance). Re-exportada aqui pra continuar
+// permitindo `import { buildRequiredDocsCatalog } from "./employees"`.
+import {
+  buildRequiredDocsCatalog,
+  filterDocsCatalogByRole,
+  profileFromRole,
+  type DocItem,
+  type DocGroup,
+} from "@shared/documents-catalog";
+export { buildRequiredDocsCatalog, filterDocsCatalogByRole, profileFromRole };
+export type { DocItem, DocGroup };
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
 const FORMAS_PAGAMENTO = ["PIX", "Transferência Bancária", "Dinheiro", "Cheque"];
 const ESTADO_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];

@@ -1,45 +1,26 @@
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "../routes/_helpers";
+import {
+  buildRequiredDocsCatalog,
+  filterDocsCatalogByProfile,
+  profileFromRole,
+  DOCS_WITH_EXPIRY,
+} from "@shared/documents-catalog";
 
 const ESCOLTA_EMAIL = "escolta@torresseguranca.com.br";
 const ADM_EMAIL = "adm@torresseguranca.com.br";
 
-const REQUIRED_DOCS = [
-  { group: "Identificação e Documentos Pessoais", items: [
-    { type: "RG", label: "RG" },
-    { type: "CPF", label: "CPF" },
-    { type: "CTPS", label: "Carteira de Trabalho (CTPS)" },
-    { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
-    { type: "Comprovante de Residência", label: "Comprovante de Residência" },
-    { type: "Fotos 3x4", label: "03 Fotos 3x4 recentes" },
-    { type: "Título de Eleitor", label: "Título de Eleitor" },
-    { type: "Certificado de Reservista", label: "Certificado de Reservista" },
-  ]},
-  { group: "Habilitação e Formação", items: [
-    { type: "CNH", label: "CNH / CNV" },
-    { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH" },
-    { type: "Dados Bancários", label: "Dados Bancários" },
-    { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante" },
-    { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada" },
-    { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada" },
-    { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional" },
-  ]},
-  { group: "Certidões Obrigatórias", items: [
-    { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil" },
-    { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar" },
-    { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)" },
-  ]},
-];
-
-const DOCS_WITH_EXPIRY = new Set([
-  "CNH", "CNV", "ASO",
-  "Certificado Formação Vigilante",
-  "Certificado Formação Escolta Armada",
-  "Reciclagem Escolta Armada",
-  "Certidão de Pontuação CNH",
-]);
-
-const MANDATORY = REQUIRED_DOCS.flatMap(g => g.items);
+// Lista de itens obrigatórios POR PERFIL (vigilante / admin). Auxiliar de
+// Limpeza cai em "admin" via profileFromRole. Itens opcionais (Carteira de
+// Vacinação, Comprovante de Formação Escolar, dependentes) NÃO entram no
+// alerta diário de compliance — só aparecem no checklist visual da tela.
+const FULL_CATALOG = buildRequiredDocsCatalog();
+function mandatoryItemsForProfile(role?: string | null): { type: string; label: string }[] {
+  const profile = profileFromRole(role);
+  return filterDocsCatalogByProfile(FULL_CATALOG, profile)
+    .filter(g => g.group !== "Dependentes (se necessário)")
+    .flatMap(g => g.items.filter(i => !i.optional).map(i => ({ type: i.type, label: i.label })));
+}
 
 type ExpiredDoc = { type: string; label: string; expiryDate: string };
 type EmployeeReport = {
@@ -96,8 +77,15 @@ export async function buildDocComplianceReport(): Promise<EmployeeReport[]> {
     const missing: { type: string; label: string }[] = [];
     const expired: ExpiredDoc[] = [];
 
-    for (const item of MANDATORY) {
-      if (!hasType(item.type)) {
+    const mandatory = mandatoryItemsForProfile(emp.role);
+    for (const item of mandatory) {
+      // Compat: aceita "Antecedentes Criminais" do perfil admin como satisfeito
+      // por qualquer um dos dois nomes antigos (Civil/Militar), pra não forçar
+      // re-upload de quem cadastrou sob o nome antigo.
+      const hasIt = item.type === "Antecedentes Criminais"
+        ? (hasType("Antecedentes Criminais") || hasType("Antecedente Criminal Polícia Civil") || hasType("Antecedente Criminal Polícia Militar"))
+        : hasType(item.type);
+      if (!hasIt) {
         missing.push({ type: item.type, label: item.label });
         continue;
       }

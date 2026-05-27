@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
+import { getMandatoryDocTypesForProfile, profileFromRole } from "@shared/documents-catalog";
 
 /**
  * Onboarding em 4 etapas: Documentação → Contratos → Treinamento → Holerites.
@@ -16,35 +17,10 @@ import { z } from "zod";
 // (ou liberado por bypass_diretoria).
 const LEGACY_CONTRACT_CUTOFF = "2026-05-11";
 
-// Documentos obrigatórios para abertura de OS.
-// Lista alinhada com o checklist visual em client/src/pages/admin/employees.tsx (REQUIRED_DOCS).
-// "*" aplica a todos os funcionários; chaves específicas adicionam itens por papel.
-const COMMON_DOCS = [
-  "RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência",
-  "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista",
-  "Dados Bancários", "ASO",
-  "Antecedente Criminal Polícia Civil",
-  "Antecedente Criminal Polícia Militar",
-  "Certidão de COP",
-];
-const REQUIRED_DOCS: Record<string, string[]> = {
-  vigilante: [
-    ...COMMON_DOCS,
-    "Certificado Formação Vigilante",
-  ],
-  escolta: [
-    ...COMMON_DOCS,
-    "CNH", "CNV", "Certidão de Pontuação CNH",
-    "Certificado Formação Vigilante",
-    "Certificado Formação Escolta Armada",
-    "Reciclagem Escolta Armada",
-  ],
-  motorista: [
-    ...COMMON_DOCS,
-    "CNH", "Certidão de Pontuação CNH",
-  ],
-  "*": ["RG", "CPF"],
-};
+// Documentos obrigatórios para abertura de OS — derivados da fonte única
+// em shared/documents-catalog.ts. Perfil vigilante recebe os docs operacionais
+// (DRT/PF/CNH/Escolta); perfil admin (Adm/Gerente/Supervisor/Auxiliar de Limpeza)
+// recebe a lista enxuta com "Antecedentes Criminais" único.
 
 // Dias de carência para ASO após data de admissão (cadastro).
 // Durante esse período o funcionário pode ser escalado mesmo sem ASO,
@@ -71,6 +47,8 @@ const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number
 };
 
 function rolesForEmployee(role?: string | null): string[] {
+  // Mantido só para REQUIRED_TRAININGS (treinamentos por papel).
+  // Para docs, usar profileFromRole + getMandatoryDocTypesForProfile.
   const r = (role || "").toLowerCase();
   const out: string[] = ["*"];
   if (/vigilan/.test(r)) out.push("vigilante");
@@ -126,7 +104,7 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   const today = todayBRT();
   const roles = rolesForEmployee(emp.role);
 
-  const reqDocs = Array.from(new Set(roles.flatMap(r => REQUIRED_DOCS[r] || [])));
+  const reqDocs = getMandatoryDocTypesForProfile(profileFromRole(emp.role));
   const reqTrainings = Array.from(
     new Map(
       roles.flatMap(r => REQUIRED_TRAININGS[r] || []).map(t => [t.type, t])
