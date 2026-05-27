@@ -3,8 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
-import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
-import { getPayrollPeriodForDate } from "@shared/payroll-period";
+import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { computeWorkedHours } from "../lib/hours-calc";
@@ -410,12 +409,11 @@ export function registerFixedCostsRoutes(app: Express) {
 
     const ativos = (employees || []).filter(isAtivo);
 
-    // Período: por padrão, competência RH (ciclo 26 → 25) do mês corrente.
-    // Decisão (26/05/2026): RH no Balanço Gerencial usa 26→25; outras seções
-    // do balanço (custos fixos contábeis, DRE, meta) continuam mês civil.
+    // Período: por padrão mês corrente (CIVIL — 1 a último dia).
+    // Decisão (26/05/2026, REVERTIDA): Balanço Gerencial usa mês civil
+    // inclusive na seção RH — pra alinhar com DRE, meta e custos fixos.
     const now = new Date();
-    const pp = getPayrollPeriodForDate(now);
-    const def = { from: pp.startDate, to: pp.endDate };
+    const def = monthRange(now.getFullYear(), now.getMonth() + 1);
     const from = (req.query.from as string) || def.from;
     const to = (req.query.to as string) || def.to;
     const holidaySet = await loadHolidaySet(from, to);
@@ -475,10 +473,7 @@ export function registerFixedCostsRoutes(app: Express) {
     // Control iD não diferencia turno noturno, então a fonte oficial é jornada_calculos.
     const noturnasMes = new Map<number, number>();
     try {
-      // mesRef = mês de FECHAMENTO da competência (26→25), não o mês do `from`.
-      // Ex: ciclo 26/04 → 25/05 = competência 2026-05 (mês de fechamento).
-      // Usar `to.slice(0,7)` = "YYYY-MM" do fim da janela.
-      const mesRef = String(to).slice(0, 7);
+      const mesRef = String(from).slice(0, 7); // "YYYY-MM"
       const { data: jornMes } = await supabaseAdmin
         .from("jornada_calculos")
         .select("employee_id, horas_noturnas")
@@ -504,8 +499,7 @@ export function registerFixedCostsRoutes(app: Express) {
     // mesma fórmula de Custo Real (Vencimentos + Benefícios + Recolhimentos), mantendo o
     // adicional de HE em 60% (CCT) em vez dos 50% legais. Sem provisões, sem DSR, sem
     // adicional noturno — o Balanço Gerencial é fluxo de caixa do mês, não competência CLT.
-    // Mesma regra do bloco acima: mesRef é o mês de FECHAMENTO da competência.
-    const mesRef = String(to).slice(0, 7);
+    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
     const { buildFolhaStats } = await import("../control-id");
 
     for (const emp of ativos) {
