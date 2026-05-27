@@ -404,7 +404,7 @@ import type { Express } from "express";
   });
 
   // Aprovar lançamento (apenas diretoria — Mickael)
-  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireThiago, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/aprovar", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const user = req.user!;
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
@@ -439,7 +439,7 @@ import type { Express } from "express";
 
   // Aprovar série inteira de parcelas (apenas diretoria — Mickael).
   // Aprova TODAS as transações do mesmo installment_group que ainda estão em AGUARDANDO_APROVACAO.
-  app.patch("/api/financial/transactions/:id/aprovar-serie", requireAuth, requireThiago, async (req, res) => {
+  app.patch("/api/financial/transactions/:id/aprovar-serie", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const user = req.user!;
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
@@ -483,8 +483,8 @@ import type { Express } from "express";
     }
   });
 
-  // Recusar lançamento (apenas diretoria — Mickael) com motivo obrigatório
-  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireThiago, async (req, res) => {
+  // Recusar lançamento (apenas diretoria — Thiago ou Mickael) com motivo obrigatório
+  app.patch("/api/financial/transactions/:id/recusar", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const user = req.user!;
       const motivo = String(req.body?.motivo || "").trim();
