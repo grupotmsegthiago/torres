@@ -54,7 +54,7 @@ const ASO_GRACE_DAYS = 15;
 // está em carência para TODOS os agentes — nenhuma OS é barrada por
 // pendência de documentação/treinamento. A partir do dia seguinte a
 // validação volta a bloquear normalmente.
-const ONBOARDING_BLOCK_START_DATE = "2026-05-26";
+const ONBOARDING_BLOCK_START_DATE = "2026-06-30";
 
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
   vigilante: [
