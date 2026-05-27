@@ -175,16 +175,9 @@ import type { Express } from "express";
     try {
       const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
       let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
-      // Apenas Thiago (aprovador) enxerga AGUARDANDO_APROVACAO/RECUSADA na listagem geral.
-      // O próprio solicitante também enxerga os seus para acompanhar o status.
-      if (!isThiago(req.user)) {
-        const userName = (req.user?.name || "").replace(/[(),]/g, "");
-        if (userName) {
-          query = query.or(`status.not.in.(AGUARDANDO_APROVACAO,RECUSADA),solicitado_por.eq.${userName}`);
-        } else {
-          query = query.not("status", "in", "(AGUARDANDO_APROVACAO,RECUSADA)");
-        }
-      }
+      // Lançamentos AGUARDANDO_APROVACAO/RECUSADA são visíveis para TODOS os usuários
+      // com acesso ao módulo financeiro (transparência). Apenas a ação de aprovar/recusar
+      // continua restrita à diretoria (rotas /aprovar e /recusar usam requireThiago).
       if (type) query = query.eq("type", type as string);
       if (status) query = query.eq("status", status as string);
       if (from) query = query.gte("due_date", from as string);
@@ -205,8 +198,9 @@ import type { Express } from "express";
     }
   });
 
-  // Lista somente lançamentos AGUARDANDO_APROVACAO (Mickael / diretoria visualiza)
-  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireThiago, async (req, res) => {
+  // Lista lançamentos AGUARDANDO_APROVACAO — visível para TODOS os usuários autenticados
+  // do módulo financeiro. A ação de aprovar/recusar continua restrita ao Thiago/diretoria.
+  app.get("/api/financial/aguardando-aprovacao", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("financial_transactions")

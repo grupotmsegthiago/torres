@@ -155,7 +155,7 @@ const fmt = formatCurrency;
 const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; description: string; number: number; diretoriaOnly?: boolean }[] = [
   { id: "PAGAR", label: "Contas a Pagar", icon: ArrowDownCircle, description: "Despesas e pagamentos", number: 1 },
   { id: "RECEBER", label: "Contas a Receber", icon: ArrowUpCircle, description: "Valores a receber", number: 2 },
-  { id: "AGUARDANDO", label: "Aguardando Aprovação", icon: AlertTriangle, description: "Lançamentos pendentes de aprovação da diretoria", number: 3, diretoriaOnly: true },
+  { id: "AGUARDANDO", label: "Aguardando Aprovação", icon: AlertTriangle, description: "Lançamentos pendentes de aprovação da diretoria", number: 3 },
   { id: "CONFERENCIA", label: "Conferência", icon: ClipboardCheck, description: "Revisar pendências", number: 4 },
   { id: "RELATORIO", label: "Relatório", icon: BarChart3, description: "Controle financeiro", number: 5 },
   { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 6 },
@@ -1823,6 +1823,8 @@ export default function FinanceiroPage() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
+  // Só o Thiago aprova/recusa lançamentos. Outros admins veem a aba mas em modo leitura.
+  const isThiagoAprovador = (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br";
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3111,7 +3113,7 @@ export default function FinanceiroPage() {
         </div>
 
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
-        {activeStep === "AGUARDANDO" && (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br" && (
+        {activeStep === "AGUARDANDO" && (
           <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden" data-testid="table-aguardando">
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-700" />
@@ -3147,6 +3149,11 @@ export default function FinanceiroPage() {
                       <td className="px-4 py-3 text-xs font-bold text-neutral-600">{t.solicitado_por || "—"}</td>
                       <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
                       <td className="px-4 py-3 text-right">
+                        {!isThiagoAprovador ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-100 text-neutral-500 text-[10px] font-black uppercase italic" data-testid={`text-aguardando-readonly-${t.id}`} title="Apenas a diretoria pode aprovar ou recusar">
+                            <Lock size={10} /> Aguardando diretoria
+                          </span>
+                        ) : (
                         <div className="flex justify-end gap-1.5">
                           {isSeries && pendingInSeries > 1 ? (
                             <button
@@ -3180,6 +3187,7 @@ export default function FinanceiroPage() {
                             <X size={12} /> Recusar
                           </button>
                         </div>
+                        )}
                       </td>
                     </tr>
                     );
