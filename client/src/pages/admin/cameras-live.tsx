@@ -1,0 +1,306 @@
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import AdminLayout from "@/components/admin/layout";
+import { HlsVideo } from "@/components/admin/hls-video";
+import { Button } from "@/components/ui/button";
+import { Video, AlertTriangle, ArrowLeft, Bell } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+
+interface SsxVehicle {
+  id: number;
+  plate: string;
+  brand?: string | null;
+  model?: string | null;
+  frota?: string | null;
+  ssx_integration_code: string;
+  last_address?: string | null;
+  last_speed?: number | null;
+  last_ignition?: number | null;
+}
+
+interface AiAlert {
+  id: number;
+  vehicle_id: number | null;
+  integration_code: string;
+  tipo: string;
+  gravidade: string;
+  ocorrido_em: string;
+  ack_at: string | null;
+}
+
+const TOTAL_SLOTS = 20;
+const CHANNELS = [1, 2] as const;
+
+/**
+ * Mosaico de até 20 quadrantes (10 viaturas × 2 câmeras).
+ * Pagina quando ultrapassa 20. Modo "Foco" exibe 1 viatura em destaque.
+ */
+export default function CamerasLivePage() {
+  const [foco, setFoco] = useState<number | null>(null);
+  const [pagina, setPagina] = useState(0);
+  const [alertas, setAlertas] = useState<AiAlert[]>([]);
+
+  const { data, isLoading, error } = useQuery<{ vehicles: SsxVehicle[] }>({
+    queryKey: ["/api/ssx/vehicles"],
+    refetchInterval: 60_000,
+  });
+
+  // Alertas recentes (24h) + realtime
+  useQuery<{ alerts: AiAlert[] }>({
+    queryKey: ["/api/ssx/alerts/recent"],
+    refetchInterval: 30_000,
+    select: (d) => {
+      setAlertas(d.alerts || []);
+      return d;
+    },
+  });
+
+  useEffect(() => {
+    const ch = supabase.channel("vehicle-ai-alerts");
+    ch.on("broadcast", { event: "new-alert" }, (msg: any) => {
+      const a = msg?.payload as AiAlert;
+      if (!a) return;
+      setAlertas((prev) => [{ ...a, ack_at: null }, ...prev].slice(0, 100));
+    }).subscribe();
+    return () => {
+      try { supabase.removeChannel(ch); } catch {}
+    };
+  }, []);
+
+  const vehicles = data?.vehicles || [];
+  const tiles = useMemo(() => {
+    const out: { vehicle: SsxVehicle; channel: number }[] = [];
+    for (const v of vehicles) for (const ch of CHANNELS) out.push({ vehicle: v, channel: ch });
+    return out;
+  }, [vehicles]);
+
+  const totalPages = Math.max(1, Math.ceil(tiles.length / TOTAL_SLOTS));
+  const start = pagina * TOTAL_SLOTS;
+  const visibleTiles = tiles.slice(start, start + TOTAL_SLOTS);
+  const emptySlots = Math.max(0, TOTAL_SLOTS - visibleTiles.length);
+
+  const focoVehicle = foco ? vehicles.find((v) => v.id === foco) : null;
+  const alertasNaoAck = alertas.filter((a) => !a.ack_at);
+
+  function alertOf(vehicleId: number): AiAlert | undefined {
+    return alertasNaoAck.find((a) => a.vehicle_id === vehicleId);
+  }
+
+  return (
+    <AdminLayout>
+      <div className="bg-slate-950 min-h-screen text-slate-100 p-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 bg-slate-900 p-4 rounded-xl border border-slate-800">
+          <div>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <Video className="h-5 w-5 text-indigo-400" />
+              Central de Câmeras AO VIVO
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
+                SSX Tracking
+              </span>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5" data-testid="text-stats">
+              {vehicles.length} viatura(s) integrada(s) • {tiles.length} canal(is) ativo(s) de {TOTAL_SLOTS} por página
+              {totalPages > 1 && ` • página ${pagina + 1}/${totalPages}`}
+            </p>
+          </div>
+
+          <div className="flex gap-2 items-center flex-wrap">
+            {alertasNaoAck.length > 0 && (
+              <span className="text-xs bg-red-900/40 border border-red-700 text-red-200 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 animate-pulse" data-testid="badge-alertas">
+                <Bell className="h-3.5 w-3.5" />
+                {alertasNaoAck.length} alerta(s) IA pendente(s)
+              </span>
+            )}
+            {totalPages > 1 && !focoVehicle && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setPagina((p) => Math.max(0, p - 1))} disabled={pagina === 0} data-testid="button-prev-page">
+                  ← Anterior
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setPagina((p) => Math.min(totalPages - 1, p + 1))} disabled={pagina >= totalPages - 1} data-testid="button-next-page">
+                  Próxima →
+                </Button>
+              </>
+            )}
+            {focoVehicle && (
+              <Button size="sm" onClick={() => setFoco(null)} data-testid="button-back-mosaic">
+                <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                Voltar ao Mosaico
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Loading / erro / vazio */}
+        {isLoading && (
+          <div className="text-center text-slate-500 py-12 font-mono text-sm">Carregando viaturas integradas…</div>
+        )}
+        {error && (
+          <div className="bg-red-950/40 border border-red-700 text-red-200 p-4 rounded-lg" data-testid="text-error">
+            Erro ao carregar veículos: {String((error as any)?.message || error)}
+          </div>
+        )}
+        {!isLoading && vehicles.length === 0 && !error && (
+          <div className="bg-amber-950/30 border border-amber-700/50 text-amber-200 p-6 rounded-lg flex items-start gap-3" data-testid="text-empty">
+            <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-sm mb-1">Nenhuma viatura integrada ainda</p>
+              <p className="text-xs text-amber-300">
+                Para ativar a câmera ao vivo, vá em <span className="font-mono">Veículos</span> → edite cada viatura
+                e preencha o campo <span className="font-mono">"Código Integração SSX"</span> com o código fornecido
+                pelo portal da SSX. Você disse que tem 5 viaturas, mas só 1 instalada — começa por essa.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Modo foco */}
+        {focoVehicle && (
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl">
+            <div className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold">
+                  {focoVehicle.frota ? `${focoVehicle.frota} — ` : ""}{focoVehicle.brand} {focoVehicle.model}
+                </h2>
+                <p className="text-xs text-indigo-400 font-mono">
+                  {focoVehicle.plate} • {focoVehicle.last_address || "sem posição"}
+                </p>
+              </div>
+              {typeof focoVehicle.last_speed === "number" && (
+                <div className="text-right">
+                  <span className="text-2xl font-mono font-bold text-emerald-400">{focoVehicle.last_speed}</span>
+                  <span className="text-xs text-slate-500 font-mono ml-1">km/h</span>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {CHANNELS.map((ch) => (
+                <FocoCamera key={ch} vehicleId={focoVehicle.id} channel={ch} />
+              ))}
+            </div>
+            {alertOf(focoVehicle.id) && (
+              <div className="mt-4 bg-red-950/50 border border-red-500 text-red-200 p-4 rounded-lg animate-pulse" data-testid="alert-foco">
+                <p className="font-bold text-sm">⚠️ Alerta IA: {alertOf(focoVehicle.id)!.tipo} ({alertOf(focoVehicle.id)!.gravidade})</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Mosaico */}
+        {!focoVehicle && vehicles.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" data-testid="grid-mosaic">
+            {visibleTiles.map(({ vehicle, channel }, idx) => (
+              <MosaicTile
+                key={`${vehicle.id}-${channel}`}
+                vehicle={vehicle}
+                channel={channel}
+                alert={alertOf(vehicle.id)}
+                onFocus={() => setFoco(vehicle.id)}
+                testId={`tile-${vehicle.id}-${channel}`}
+              />
+            ))}
+            {Array.from({ length: emptySlots }).map((_, i) => (
+              <div
+                key={`empty-${i}`}
+                className="bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center min-h-[160px] text-slate-600 text-[10px] font-mono"
+                data-testid={`slot-empty-${i}`}
+              >
+                [ SLOT LIVRE ]
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </AdminLayout>
+  );
+}
+
+function MosaicTile({
+  vehicle, channel, alert, onFocus, testId,
+}: {
+  vehicle: SsxVehicle;
+  channel: number;
+  alert?: AiAlert;
+  onFocus: () => void;
+  testId: string;
+}) {
+  const { data, error, isLoading } = useQuery<{ url: string }>({
+    queryKey: ["/api/ssx/stream", vehicle.id, channel],
+    queryFn: async () => {
+      const r = await fetch(`/api/ssx/stream?vehicleId=${vehicle.id}&channel=${channel}`, { credentials: "include" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+      return d;
+    },
+    refetchInterval: 5 * 60_000, // URL HLS pode expirar; refresca a cada 5min
+    retry: 1,
+  });
+
+  const isAlerting = !!alert;
+  return (
+    <div
+      className={`relative bg-black rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+        isAlerting ? "border-red-600 animate-pulse" : "border-slate-800 hover:border-indigo-500"
+      }`}
+      onClick={onFocus}
+      data-testid={testId}
+    >
+      <div className="w-full aspect-video bg-slate-950 relative">
+        {isLoading ? (
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500 font-mono">Conectando…</div>
+        ) : error ? (
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-rose-400 font-mono px-2 text-center">
+            {String((error as any)?.message || "sem sinal")}
+          </div>
+        ) : (
+          <HlsVideo src={data?.url} className="w-full h-full" />
+        )}
+        <div className="absolute top-1 left-1 bg-black/70 text-[10px] text-white px-1 rounded font-mono">
+          {vehicle.plate} CH{channel}
+        </div>
+        {typeof vehicle.last_speed === "number" && (
+          <div className="absolute bottom-1 left-1 bg-black/70 text-[10px] text-white px-1 rounded font-mono">
+            {vehicle.last_speed} km/h
+          </div>
+        )}
+        {isAlerting && (
+          <div className="absolute top-1 right-1 bg-red-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded uppercase">
+            🚨 {alert!.tipo}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FocoCamera({ vehicleId, channel }: { vehicleId: number; channel: number }) {
+  const { data, error, isLoading } = useQuery<{ url: string }>({
+    queryKey: ["/api/ssx/stream", vehicleId, channel, "foco"],
+    queryFn: async () => {
+      const r = await fetch(`/api/ssx/stream?vehicleId=${vehicleId}&channel=${channel}`, { credentials: "include" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+      return d;
+    },
+    refetchInterval: 5 * 60_000,
+  });
+  return (
+    <div className="bg-black rounded-xl overflow-hidden border border-slate-700 shadow-2xl">
+      <div className="p-3 bg-slate-800 text-xs font-bold text-slate-300 font-mono flex justify-between">
+        <span>CÂMERA {channel === 1 ? "🛣️ EXTERNA" : "🔄 INTERNA"} (CH {channel})</span>
+        <span className="text-emerald-400 animate-pulse">● LIVE</span>
+      </div>
+      <div className="aspect-video bg-slate-950">
+        {isLoading ? (
+          <div className="w-full h-full flex items-center justify-center text-slate-500 font-mono text-sm">Conectando…</div>
+        ) : error ? (
+          <div className="w-full h-full flex items-center justify-center text-rose-400 font-mono text-sm px-4 text-center">
+            {String((error as any)?.message || "sem sinal")}
+          </div>
+        ) : (
+          <HlsVideo src={data?.url} className="w-full h-full" controls />
+        )}
+      </div>
+    </div>
+  );
+}

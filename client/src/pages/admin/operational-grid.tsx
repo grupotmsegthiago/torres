@@ -18,9 +18,10 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
-  CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck, Ban,
+  CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck, Ban, Video,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { VehicleCamerasHover } from "@/components/admin/vehicle-cameras-hover";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT, getNowBRT, formatNowBRT, diffMinutesBRT, isTodayBRT } from "@/lib/utils";
@@ -5314,6 +5315,25 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           </p>
                         </div>
                         <VehicleInfoTooltip v={v} />
+                        <VehicleCamerasHover
+                          vehicleId={v.id}
+                          plate={v.plate}
+                          noIntegration={!(v as any).ssxIntegrationCode}
+                        >
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors ${
+                              (v as any).ssxIntegrationCode
+                                ? "text-indigo-600 hover:bg-indigo-50"
+                                : "text-neutral-300 hover:bg-neutral-100"
+                            }`}
+                            title={(v as any).ssxIntegrationCode ? "Ver câmeras AO VIVO" : "Sem câmera SSX configurada"}
+                            data-testid={`button-cameras-${v.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                          </button>
+                        </VehicleCamerasHover>
                       </div>
                     </td>
 
@@ -6106,6 +6126,25 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <span className="text-[10px] px-1 py-0 bg-red-600 text-white rounded font-bold animate-pulse">{v.tracker!.speed}km/h</span>
                               )}
                               <VehicleInfoTooltip v={v} />
+                              <VehicleCamerasHover
+                                vehicleId={v.id}
+                                plate={v.plate}
+                                noIntegration={!(v as any).ssxIntegrationCode}
+                              >
+                                <button
+                                  type="button"
+                                  className={`inline-flex items-center justify-center w-5 h-5 rounded transition-colors ${
+                                    (v as any).ssxIntegrationCode
+                                      ? "text-indigo-600 hover:bg-indigo-50"
+                                      : "text-neutral-300 hover:bg-neutral-100"
+                                  }`}
+                                  title={(v as any).ssxIntegrationCode ? "Câmeras AO VIVO" : "Sem câmera SSX"}
+                                  data-testid={`button-cameras-card-${v.id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Video className="w-3 h-3" />
+                                </button>
+                              </VehicleCamerasHover>
                             </div>
                             <p className="text-[11px] text-neutral-500 leading-tight truncate mt-0.5">
                               {v.brand} {v.model}{v.year ? ` ${v.year}` : ""}{v.color ? ` · ${v.color}` : ""}

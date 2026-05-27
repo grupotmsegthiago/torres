@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye, Video } from "lucide-react";
+import { VehicleCamerasHover } from "@/components/admin/vehicle-cameras-hover";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
@@ -32,6 +33,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     trackerApiUrl: vehicle?.trackerApiUrl || "",
     trackerType: (vehicle as any)?.trackerType || "none",
     truckscontrolIdentifier: (vehicle as any)?.truckscontrolIdentifier || "",
+    ssxIntegrationCode: (vehicle as any)?.ssxIntegrationCode || "",
     km: vehicle?.km || 0,
     initialKm: (vehicle as any)?.initialKm || 0,
     documentFile: (vehicle as any)?.documentFile || "",
@@ -325,6 +327,18 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
                 )}
               </>
             )}
+            <div className="md:col-span-3">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-1.5">
+                <span>📹 Código Integração SSX (Câmera AO VIVO)</span>
+                <span className="text-[10px] font-normal text-neutral-400">— deixe vazio se a viatura não tem câmera SSX instalada</span>
+              </label>
+              <Input
+                value={form.ssxIntegrationCode}
+                onChange={(e) => setForm({ ...form, ssxIntegrationCode: e.target.value })}
+                placeholder="Ex: 12345 (o VehicleIntegrationCode fornecido pela SSX)"
+                data-testid="input-ssx-integration-code"
+              />
+            </div>
             {form.trackerType === "custom" && (
               <>
                 <div>
@@ -606,7 +620,29 @@ export default function VehiclesPage() {
                   const needsMaint = kmRodados >= 9000;
                   return (
                   <tr key={v.id} className={`border-b border-neutral-100 hover:bg-neutral-50 ${needsMaint ? "bg-red-50/50" : ""}`} data-testid={`row-vehicle-${v.id}`}>
-                    <td className="p-3 font-medium text-neutral-900">{v.plate}</td>
+                    <td className="p-3 font-medium text-neutral-900">
+                      <div className="flex items-center gap-2">
+                        <span>{v.plate}</span>
+                        <VehicleCamerasHover
+                          vehicleId={v.id}
+                          plate={v.plate}
+                          noIntegration={!(v as any).ssxIntegrationCode}
+                        >
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors ${
+                              (v as any).ssxIntegrationCode
+                                ? "text-indigo-600 hover:bg-indigo-50"
+                                : "text-neutral-300 hover:bg-neutral-100"
+                            }`}
+                            title={(v as any).ssxIntegrationCode ? "Ver câmeras AO VIVO" : "Sem câmera SSX configurada"}
+                            data-testid={`button-cameras-${v.id}`}
+                          >
+                            <Video className="w-4 h-4" />
+                          </button>
+                        </VehicleCamerasHover>
+                      </div>
+                    </td>
                     <td className="p-3 text-neutral-600">{v.brand} {v.model} {v.year}</td>
                     <td className="p-3 text-neutral-600 font-semibold">{v.km?.toLocaleString() || "0"}</td>
                     <td className="p-3 text-neutral-400 text-sm">{(v as any).initialKm?.toLocaleString() || "0"}</td>

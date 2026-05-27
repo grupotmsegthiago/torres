@@ -244,6 +244,26 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_speed INTEGER`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_gps_signal INTEGER`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_address TEXT`);
+    // SSX Tracking — código de integração da viatura no portal SSX (1 por veículo).
+    // Quando preenchido, habilita stream HLS + hover-card de câmeras + alertas IA.
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ssx_integration_code TEXT`);
+    // Alertas de IA recebidos via webhook SSX (fadiga, celular, fumando, pânico, etc).
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS vehicle_ai_alerts (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+        integration_code TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        gravidade TEXT DEFAULT 'alta',
+        ocorrido_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        payload JSONB,
+        ack_by TEXT,
+        ack_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vehicle_ai_alerts_ocorrido ON vehicle_ai_alerts (ocorrido_em DESC)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_vehicle_ai_alerts_vehicle ON vehicle_ai_alerts (vehicle_id, ocorrido_em DESC)`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_time TEXT`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS stopped_since TEXT`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ignition_on_since TEXT`);

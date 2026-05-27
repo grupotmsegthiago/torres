@@ -239,6 +239,7 @@ export const vehicles = pgTable("vehicles", {
   trackerApiUrl: text("tracker_api_url"),
   trackerType: text("tracker_type"),
   truckscontrolIdentifier: text("truckscontrol_identifier"),
+  ssxIntegrationCode: text("ssx_integration_code"),
   km: integer("km").default(0),
   initialKm: integer("initial_km").default(0),
   lastKmUpdate: timestamp("last_km_update"),

@@ -740,6 +740,7 @@ async function ensureSystemSettingsTable() {
   import { registerPendenciasRoutes } from "./routes/pendencias";
   import { registerOnboardingRoutes } from "./routes/onboarding";
   import { registerFornecedoresRoutes } from "./routes/fornecedores";
+  import { registerSsxRoutes } from "./routes/ssx";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -1346,6 +1347,7 @@ async function ensureSystemSettingsTable() {
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);
     registerOnboardingRoutes(app);
+    registerSsxRoutes(app);
     registerFornecedoresRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
