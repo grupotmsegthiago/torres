@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { HlsVideo } from "@/components/admin/hls-video";
 import { Button } from "@/components/ui/button";
-import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2 } from "lucide-react";
+import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2, Tv, PanelLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/queryClient";
 
@@ -43,6 +43,12 @@ export default function CamerasLivePage() {
   const [pagina, setPagina] = useState(0);
   const [alertas, setAlertas] = useState<AiAlert[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Modo TV: esconde sidebar/header do AdminLayout pra exibir só o mosaico
+  // (ideal pra projetar na televisão da operação). Lê ?tv=1 da URL pra entrar direto.
+  const [tvMode, setTvMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("tv") === "1";
+  });
 
   // Fullscreen API + atalho de teclado F11 (intercepta e usa requestFullscreen do container,
   // que é mais limpo que F11 nativo porque mantém a UI da câmera fullscreen sem barra do navegador
@@ -72,12 +78,18 @@ export default function CamerasLivePage() {
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
+        setTvMode(false); // sair de fullscreen também sai do modo TV
       } else {
         await document.documentElement.requestFullscreen();
+        setTvMode(true); // entrar em fullscreen ativa modo TV automaticamente
       }
     } catch (e) {
       // browser bloqueou (sem gesto do usuário etc) — silencia
     }
+  }
+
+  function toggleTvMode() {
+    setTvMode((v) => !v);
   }
 
   const { data, isLoading, error } = useQuery<{ vehicles: SsxVehicle[] }>({
@@ -126,9 +138,8 @@ export default function CamerasLivePage() {
     return alertasNaoAck.find((a) => a.vehicle_id === vehicleId);
   }
 
-  return (
-    <AdminLayout>
-      <div className="bg-slate-950 min-h-screen text-slate-100 p-4">
+  const content = (
+      <div className={`bg-slate-950 text-slate-100 ${tvMode ? "min-h-screen p-2" : "min-h-screen p-4"}`}>
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 bg-slate-900 p-4 rounded-xl border border-slate-800">
           <div>
@@ -171,9 +182,22 @@ export default function CamerasLivePage() {
             <Button
               size="sm"
               variant="outline"
+              onClick={toggleTvMode}
+              data-testid="button-tv-mode"
+              title={tvMode ? "Mostrar menu lateral" : "Modo TV (esconde menu lateral)"}
+            >
+              {tvMode ? (
+                <><PanelLeft className="h-3.5 w-3.5 mr-1" /> Mostrar menu</>
+              ) : (
+                <><Tv className="h-3.5 w-3.5 mr-1" /> Modo TV</>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={toggleFullscreen}
               data-testid="button-fullscreen"
-              title={isFullscreen ? "Sair de tela cheia (F11 ou Esc)" : "Tela cheia (F11)"}
+              title={isFullscreen ? "Sair de tela cheia (F11 ou Esc)" : "Tela cheia (F11) — esconde menu também"}
             >
               {isFullscreen ? (
                 <><Minimize2 className="h-3.5 w-3.5 mr-1" /> Sair tela cheia</>
@@ -271,8 +295,10 @@ export default function CamerasLivePage() {
           </div>
         )}
       </div>
-    </AdminLayout>
   );
+
+  // Em modo TV: renderiza sem AdminLayout (sem sidebar/header) — só o mosaico fullscreen
+  return tvMode ? content : <AdminLayout>{content}</AdminLayout>;
 }
 
 function MosaicTile({
