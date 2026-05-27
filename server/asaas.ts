@@ -3516,8 +3516,26 @@ export function registerAsaasRoutes(app: Express) {
 
         const finalValue = value > 0 ? value : Number(invoice.value || 0);
 
+        // (1) Idempotência: se a invoice JÁ está em status pago terminal, não
+        // tenta nada. Clique duplo / retry vira no-op. Sem isso, o segundo
+        // clique tentava receiveInCash numa cobrança já paga, caía no catch e
+        // podia degradar RECEIVED → RECEIVED_IN_CASH.
+        if (isAlreadyPaidStatus(invoice.status)) {
+          console.log(`[receive-in-cash] invoice #${invoiceId} já em status pago (${invoice.status}) — no-op idempotente.`);
+          return res.json({ success: true, alreadyPaid: true, status: invoice.status });
+        }
+
         let asaasOk = false;
         let asaasMsg = "";
+        // Quando o Asaas devolve "Cobrança removida...", a cobrança original
+        // foi deletada lá. Nesse caso o cliente normalmente já pagou via PIX
+        // direto e o Asaas gerou uma cobrança paralela RECEIVED no mesmo
+        // customer/valor. Detectamos e re-vinculamos automaticamente em vez
+        // de só escrever RECEIVED_IN_CASH local (que deixa o vínculo asaas
+        // apontando pra cobrança morta, e o reconcile/UI ficam tropeçando).
+        let relinkedPaymentId: string | null = null;
+        let relinkedNetValue: number | null = null;
+        let relinkedPaymentDate: string | null = null;
         if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
           try {
             await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/receiveInCash`, {
@@ -3529,17 +3547,71 @@ export function registerAsaasRoutes(app: Express) {
           } catch (e: any) {
             asaasMsg = e?.message || String(e);
             console.log(`[receive-in-cash] Asaas falhou p/ invoice #${invoiceId}: ${asaasMsg}`);
+            // (2) Regex estrita: só dispara o auto-relink se o erro fala
+            // explicitamente em "removida"/"deletada". "Não é possível
+            // receber" sozinho pode ser outro motivo (já paga, etc) — esse
+            // caso é coberto pelo guard de idempotência acima.
+            const looksRemoved = /cobran[cç]a\s+remov/i.test(asaasMsg) || /deletad[ao]/i.test(asaasMsg);
+            if (looksRemoved) {
+              try {
+                const original = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+                const customerId = original?.customer;
+                const targetValue = Number(invoice.value || finalValue);
+                const invoiceDueMs = invoice.due_date ? new Date(invoice.due_date).getTime() : NaN;
+                if (customerId) {
+                  const search = await asaasRequest("GET", `/payments?customer=${encodeURIComponent(customerId)}&limit=100`);
+                  const paidStatuses = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"]);
+                  const candidates = (search?.data || []).filter((p: any) => {
+                    if (!p?.id) return false;
+                    if (p.id === invoice.asaas_payment_id) return false;
+                    if (!paidStatuses.has(String(p.status || "").toUpperCase())) return false;
+                    if (Math.abs(Number(p.value || 0) - targetValue) > 0.01) return false;
+                    // (3a) Janela temporal: paymentDate (ou dueDate) tem que
+                    // estar a no máx 45 dias do due_date da invoice. Sem
+                    // isso, qualquer pagamento antigo de mesmo valor casava.
+                    if (!Number.isFinite(invoiceDueMs)) return false;
+                    const ref = p.paymentDate || p.dueDate;
+                    if (!ref) return false;
+                    const diffDays = Math.abs(new Date(ref).getTime() - invoiceDueMs) / 86400000;
+                    if (diffDays > 45) return false;
+                    return true;
+                  });
+                  // (3b) Filtro extra: não pode estar vinculada a outra inv
+                  const free: any[] = [];
+                  for (const c of candidates) {
+                    const { data: linked } = await supabaseAdmin
+                      .from("invoices").select("id").eq("asaas_payment_id", c.id).limit(1);
+                    if (!linked || linked.length === 0) free.push(c);
+                  }
+                  if (free.length === 1) {
+                    const paid = free[0];
+                    relinkedPaymentId = paid.id;
+                    relinkedNetValue = paid.netValue ? Number(paid.netValue) : null;
+                    relinkedPaymentDate = paid.paymentDate || null;
+                    asaasOk = true;
+                    asaasMsg = `cobrança removida — re-vinculado automaticamente à cobrança paga gêmea ${paid.id} (RECEIVED em ${paid.paymentDate})`;
+                    console.log(`[receive-in-cash] auto-relink invoice #${invoiceId}: ${invoice.asaas_payment_id} (removida) → ${paid.id} (${paid.status}, R$${paid.value}, pago em ${paid.paymentDate})`);
+                  } else if (free.length > 1) {
+                    asaasMsg = `${asaasMsg} — ${free.length} cobranças pagas candidatas (precisa decisão manual): ${free.map((c: any) => c.id).join(", ")}`;
+                  }
+                }
+              } catch (e2: any) {
+                console.log(`[receive-in-cash] busca cobrança paga gêmea falhou p/ invoice #${invoiceId}: ${e2.message}`);
+              }
+            }
           }
         }
 
         const noteHistory = `[Baixa manual ${method} por ${user.email} em ${new Date().toISOString()} — pago em ${paymentDate}, R$${finalValue.toFixed(2)}${notes ? ` — ${notes}` : ""}${asaasOk ? " — sync Asaas OK" : asaasMsg ? ` — Asaas: ${asaasMsg}` : ""}]`;
-        const { error } = await supabaseAdmin.from("invoices").update({
-          status: "RECEIVED_IN_CASH",
-          payment_date: paymentDate,
-          net_value: finalValue,
+        const dbUpdate: Record<string, any> = {
+          status: relinkedPaymentId ? "RECEIVED" : "RECEIVED_IN_CASH",
+          payment_date: relinkedPaymentDate || paymentDate,
+          net_value: relinkedNetValue ?? finalValue,
           nfse_observations: `${noteHistory}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
           updated_at: new Date().toISOString(),
-        }).eq("id", invoiceId);
+        };
+        if (relinkedPaymentId) dbUpdate.asaas_payment_id = relinkedPaymentId;
+        const { error } = await supabaseAdmin.from("invoices").update(dbUpdate).eq("id", invoiceId);
         if (error) throw error;
 
         console.log(`[receive-in-cash] Invoice #${invoiceId} (${method}) baixada por ${user.email} — R$${finalValue} em ${paymentDate}. AsaasSync=${asaasOk}`);
