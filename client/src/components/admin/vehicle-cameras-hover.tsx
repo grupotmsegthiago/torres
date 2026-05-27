@@ -2,6 +2,7 @@ import { useState, useEffect, ReactNode } from "react";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { HlsVideo } from "./hls-video";
 import { Video, AlertTriangle } from "lucide-react";
+import { authFetch } from "@/lib/queryClient";
 
 interface VehicleCamerasHoverProps {
   vehicleId: number | string;
@@ -20,9 +21,7 @@ type StreamState = {
 };
 
 async function fetchStream(vehicleId: number | string, channel: number): Promise<{ url: string }> {
-  const resp = await fetch(`/api/ssx/stream?vehicleId=${vehicleId}&channel=${channel}`, {
-    credentials: "include",
-  });
+  const resp = await authFetch(`/api/ssx/stream?vehicleId=${vehicleId}&channel=${channel}`);
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
   return data;
