@@ -100,8 +100,12 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
       { type: "CNH", label: "CNH / CNV", vigilanteOnly: true },
       { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true },
       { type: "Dados Bancários", label: "Dados Bancários" },
-      { type: "Carteira de Vacinação", label: "Carteira de Vacinação" },
-      { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar" },
+      // Opcionais: aparecem no checklist (verde/vermelho), mas não bloqueiam o
+      // alerta de "documentação pendente" na listagem. Decidido em 27/05/2026
+      // porque 100% dos ativos estavam sem eles cadastrados e o RH vai fazer
+      // o backfill aos poucos sem travar a operação.
+      { type: "Carteira de Vacinação", label: "Carteira de Vacinação", optional: true },
+      { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar", optional: true },
       { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante (validade dispensada)", vigilanteOnly: true },
       { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada (validade dispensada)", vigilanteOnly: true },
       { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada", vigilanteOnly: true },
