@@ -24,6 +24,23 @@ import {
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
+// Status terminais "pagos" — uma fatura nesses estados NUNCA pode ser
+// sobrescrita por um status "em aberto" vindo do Asaas. Caso de uso:
+// cliente paga via PIX direto na chave, baixa manual marca RECEIVED_IN_CASH,
+// mas o Asaas continua reportando OVERDUE no boleto original e o sync
+// reverte a baixa silenciosamente (caso OMEGA FAT #44, marcada 10x sem
+// sucesso). Os 4 caminhos de escrita (webhook, reconcile cron, auto-sync
+// no GET /api/invoices e POST /api/invoices/:id/sync) usam essa lista
+// para travar a regressão.
+export const PAID_STATUSES = ["RECEIVED_IN_CASH", "RECEIVED", "CONFIRMED", "PAGO"];
+const REGRESSION_STATUSES = ["OVERDUE", "PENDING", "AWAITING_RISK_ANALYSIS", "AWAITING_PAYMENT"];
+export function isStatusRegression(incoming: string | null | undefined): boolean {
+  return REGRESSION_STATUSES.includes(String(incoming || "").toUpperCase());
+}
+export function isAlreadyPaidStatus(status: string | null | undefined): boolean {
+  return PAID_STATUSES.includes(String(status || "").toUpperCase());
+}
+
 function getApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
   if (!key) throw new Error("ASAAS_API_KEY não configurada");
@@ -408,7 +425,15 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     try {
       const payment = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
       livePayment = payment;
-      if (payment?.status && payment.status !== invoice.status) { updates.status = payment.status; changed = true; }
+      // Não permite regressão de status pago→aberto (vide PAID_STATUSES).
+      if (payment?.status && payment.status !== invoice.status) {
+        if (isAlreadyPaidStatus(invoice.status) && isStatusRegression(payment.status)) {
+          console.log(`[reconcile] invoice #${invoice.id} status atual=${invoice.status} (pago) — IGNORANDO regressão p/ ${payment.status} vinda do Asaas.`);
+        } else {
+          updates.status = payment.status;
+          changed = true;
+        }
+      }
       if (payment?.netValue && Number(payment.netValue) !== Number(invoice.net_value || 0)) { updates.net_value = payment.netValue; changed = true; }
       if (payment?.invoiceUrl && payment.invoiceUrl !== invoice.invoice_url) { updates.invoice_url = payment.invoiceUrl; changed = true; }
       const bsUrl = payment?.bankSlip?.url || payment?.bankSlipUrl;
@@ -1140,6 +1165,9 @@ export function registerAsaasRoutes(app: Express) {
       const invoices = data || [];
 
       if (process.env.ASAAS_API_KEY && invoices.length > 0) {
+        // Auto-sync só roda em status ABERTOS (PENDING/CONFIRMED/OVERDUE).
+        // Faturas já pagas (RECEIVED/RECEIVED_IN_CASH) ficam fora do filtro,
+        // então nunca terão o status sobrescrito por esse caminho.
         const toSync = invoices.filter(inv =>
           inv.asaas_payment_id &&
           ["PENDING", "CONFIRMED", "OVERDUE"].includes(inv.status) &&
@@ -1156,7 +1184,13 @@ export function registerAsaasRoutes(app: Express) {
                 if (payment.invoiceUrl) upd.invoice_url = payment.invoiceUrl;
                 if (payment.paymentDate) upd.payment_date = payment.paymentDate;
                 if (Object.keys(upd).length > 1) {
-                  await supabaseAdmin.from("invoices").update(upd).eq("id", inv.id);
+                  // Guard atômico contra race: se entre a leitura inicial e
+                  // o GET no Asaas alguém marcou baixa manual, não sobrescreve.
+                  await supabaseAdmin
+                    .from("invoices")
+                    .update(upd)
+                    .eq("id", inv.id)
+                    .not("status", "in", `(${PAID_STATUSES.map(s => `"${s}"`).join(",")})`);
                   console.log(`[asaas] Auto-sync invoice #${inv.id}: ${inv.status} → ${upd.status || inv.status}`);
                 }
               } catch (e: any) {
@@ -1555,14 +1589,21 @@ export function registerAsaasRoutes(app: Express) {
 
       const payment = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
 
+      // Não permite regressão: se a fatura local já está paga (RECEIVED_IN_CASH
+      // de baixa manual, RECEIVED, etc), mantém o status local e atualiza só
+      // os demais campos (URL, valor líquido, NFS-e). Quem chamou o /sync
+      // raramente quer reverter uma baixa manual com base no Asaas, que pode
+      // estar reportando o boleto original como OVERDUE.
+      const willRegress = isAlreadyPaidStatus(invoice.status) && isStatusRegression(payment.status);
       const updates: Record<string, any> = {
-        status: payment.status,
+        status: willRegress ? invoice.status : payment.status,
         net_value: payment.value || payment.netValue,
         invoice_url: payment.invoiceUrl,
         bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
         updated_at: new Date().toISOString(),
       };
-      if (payment.paymentDate) updates.payment_date = payment.paymentDate;
+      if (willRegress) console.log(`[asaas] /sync invoice #${id}: mantendo status local ${invoice.status} (Asaas reportou ${payment.status} — regressão bloqueada).`);
+      if (payment.paymentDate && !willRegress) updates.payment_date = payment.paymentDate;
 
       if (invoice.nfse_number && invoice.nfse_number.startsWith("inv_")) {
         try {
@@ -2197,12 +2238,31 @@ export function registerAsaasRoutes(app: Express) {
       if (payment.paymentDate) updates.payment_date = payment.paymentDate;
       if (payment.value || payment.netValue) updates.net_value = payment.value || payment.netValue;
 
-      const { data: updatedInvoice } = await supabaseAdmin
+      // Guard atômico: se essa atualização é uma regressão (qualquer status
+      // que NÃO seja terminal pago) e a fatura local já está em estado pago
+      // (baixa manual / cobrança paralela conciliada), ignora. Caso OMEGA
+      // FAT #44 — baixa marcada 10x e revertida pelo webhook OVERDUE.
+      const isRegression = isStatusRegression(newStatus);
+      let updateQuery: any = supabaseAdmin
         .from("invoices")
         .update(updates)
-        .eq("asaas_payment_id", payment.id)
+        .eq("asaas_payment_id", payment.id);
+      if (isRegression) updateQuery = updateQuery.not("status", "in", `(${PAID_STATUSES.map(s => `"${s}"`).join(",")})`);
+
+      const { data: updatedInvoice } = await updateQuery
         .select("id, client_name, value, service_order_id")
-        .single();
+        .maybeSingle();
+
+      if (!updatedInvoice && isRegression) {
+        console.log(`[asaas] Webhook ${event} IGNORADO (fatura já em status pago protegido contra regressão p/ ${newStatus}). asaas_payment_id=${payment.id}`);
+        await logSystemAudit({
+          userId: null, userName: "Asaas Webhook", userRole: "system",
+          action: `ASAAS_WEBHOOK_${event}_IGNORADO`, targetId: payment.id, targetType: "asaas_payment",
+          details: `Webhook ${event} ignorado: fatura já em status pago, evitando regressão p/ ${newStatus}. Payment Asaas: ${payment.id}.`,
+          ipAddress: (req as any).ip,
+        });
+        return res.json({ received: true, ignored: true, reason: "already-paid-protected" });
+      }
 
       if (updatedInvoice && (newStatus === "CONFIRMED" || newStatus === "RECEIVED")) {
         try {
