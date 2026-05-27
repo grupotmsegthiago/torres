@@ -206,9 +206,9 @@ const menuSections: MenuSection[] = [
     title: "BANCO INTER",
     icon: Landmark,
     iconColor: "text-orange-400",
-    diretoriaOnly: true,
+    adminOnly: true,
     items: [
-      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet },
+      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet, diretoriaOnly: true },
       { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark },
     ],
   },

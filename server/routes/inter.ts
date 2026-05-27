@@ -20,7 +20,7 @@
  *  GET    /api/inter/webhook/eventos     — histórico de eventos recebidos
  */
 import type { Express } from "express";
-import { requireAuth, requireDiretoria } from "../auth";
+import { requireAuth, requireDiretoria, requireDiretoriaStrict, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import { isInterConfigured, getInterClient } from "../services/inter/client";
 import * as cobranca from "../services/inter/cobranca";
@@ -61,7 +61,7 @@ export function registerInterRoutes(app: Express) {
     }
   });
 
-  app.get("/api/inter/saldo", requireAuth, requireDiretoria, async (_req, res) => {
+  app.get("/api/inter/saldo", requireAuth, requireDiretoriaStrict, async (_req, res) => {
     try {
       res.json(await banking.consultarSaldo());
     } catch (e: any) {
@@ -70,7 +70,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   // === EXTRATO ===
-  app.get("/api/inter/extrato", requireAuth, requireDiretoria, async (req, res) => {
+  app.get("/api/inter/extrato", requireAuth, requireDiretoriaStrict, async (req, res) => {
     try {
       const dataInicio = String(req.query.from || "");
       const dataFim = String(req.query.to || "");
@@ -294,14 +294,17 @@ export function registerInterRoutes(app: Express) {
   // Lista despesas pendentes (financial_transactions tipo DESPESA) — usado em Contas a Pagar.
   // Exclui lançamentos de origem automática (mission/fueling/etc) e categorias
   // de missão (CUSTOS DE MISSÃO, COMBUSTÍVEL) — esses já são tratados em
-  // Conferência. Também esconde itens AGUARDANDO_APROVACAO/RECUSADA.
-  app.get("/api/financeiro/contas-a-pagar", requireAuth, requireDiretoria, async (_req, res) => {
+  // Conferência. Inclui também AGUARDANDO_APROVACAO para que admin/financeiro
+  // VEJA o que foi lançado (em cinza/disabled na UI) — só diretoria pode
+  // aprovar/recusar via /api/financial/transactions/:id/aprovar.
+  // RECUSADA fica fora da listagem.
+  app.get("/api/financeiro/contas-a-pagar", requireAuth, requireAdminRole, async (_req, res) => {
     const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
     const { data, error } = await supabaseAdmin
       .from("financial_transactions")
       .select("*")
       .in("type", ["DESPESA", "EXPENSE"])
-      .in("status", ["PENDING", "PENDENTE"])
+      .in("status", ["PENDING", "PENDENTE", "AGUARDANDO_APROVACAO"])
       .or("origin_type.is.null,origin_type.eq.manual")
       .order("due_date", { ascending: true })
       .limit(500);

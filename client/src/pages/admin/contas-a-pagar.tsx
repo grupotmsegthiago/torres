@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, RefreshCw, CreditCard, Send, FileText, Calendar,
-  AlertCircle, CheckCircle2, History, Banknote, Zap, Paperclip,
+  AlertCircle, CheckCircle2, History, Banknote, Zap, Paperclip, Check, Ban, Hourglass,
 } from "lucide-react";
 
 interface FinTx {
@@ -56,8 +57,43 @@ const fmtData = (s: string) => { try { return new Date(s).toLocaleDateString("pt
 
 export default function ContasAPagarPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const [tab, setTab] = useState<"pendentes" | "historico">("pendentes");
   const [payDialog, setPayDialog] = useState<{ open: boolean; tx?: FinTx }>({ open: false });
+  const [rejectDialog, setRejectDialog] = useState<{ open: boolean; tx?: FinTx; reason: string }>({ open: false, reason: "" });
+
+  const approveMutation = useMutation({
+    mutationFn: async (txId: string) => {
+      const r = await authFetch(`/api/financial/transactions/${txId}/aprovar`, { method: "PATCH" });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Lançamento aprovado", description: "Já pode ser pago via Inter." });
+      queryClient.invalidateQueries({ queryKey: ["/api/financeiro/contas-a-pagar"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao aprovar", description: e?.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (payload: { txId: string; reason: string }) => {
+      const r = await authFetch(`/api/financial/transactions/${payload.txId}/recusar`, {
+        method: "PATCH",
+        body: JSON.stringify({ motivo: payload.reason }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Lançamento recusado", description: "Sumiu da lista de Contas a Pagar." });
+      setRejectDialog({ open: false, reason: "" });
+      queryClient.invalidateQueries({ queryKey: ["/api/financeiro/contas-a-pagar"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao recusar", description: e?.message, variant: "destructive" }),
+  });
 
   const { data: status } = useQuery<{ connected: boolean; saldo?: number; ambiente?: string; message?: string }>({
     queryKey: ["/api/inter/status"],
@@ -142,32 +178,91 @@ export default function ContasAPagarPage() {
                     <TableHead>Categoria</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead className="text-right w-[140px]">Valor</TableHead>
-                    <TableHead className="w-[180px]">Ação</TableHead>
+                    <TableHead className="w-[100px]">Status</TableHead>
+                    <TableHead className="w-[260px]">Ação</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pendentes.map(tx => (
-                    <TableRow key={tx.id} data-testid={`row-tx-${tx.id}`}>
-                      <TableCell className="text-xs">{fmtData(tx.due_date)}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{tx.category_name || "—"}</Badge></TableCell>
-                      <TableCell className="text-sm">
-                        {tx.description}
-                        {tx.entity_name && <div className="text-xs text-neutral-500">{tx.entity_name}</div>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-red-600">{fmtBRL(tx.amount)}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!status?.connected}
-                          onClick={() => setPayDialog({ open: true, tx })}
-                          data-testid={`button-pay-${tx.id}`}
-                        >
-                          <Send className="w-3 h-3 mr-1" /> Pagar via Inter
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {pendentes.map(tx => {
+                    const aguardando = tx.status === "AGUARDANDO_APROVACAO";
+                    return (
+                      <TableRow
+                        key={tx.id}
+                        data-testid={`row-tx-${tx.id}`}
+                        className={aguardando ? "bg-neutral-50/60 opacity-70" : ""}
+                      >
+                        <TableCell className={`text-xs ${aguardando ? "text-neutral-500" : ""}`}>{fmtData(tx.due_date)}</TableCell>
+                        <TableCell><Badge variant="outline" className={`text-xs ${aguardando ? "text-neutral-500 border-neutral-300" : ""}`}>{tx.category_name || "—"}</Badge></TableCell>
+                        <TableCell className={`text-sm ${aguardando ? "text-neutral-500" : ""}`}>
+                          {tx.description}
+                          {tx.entity_name && <div className="text-xs text-neutral-400">{tx.entity_name}</div>}
+                        </TableCell>
+                        <TableCell className={`text-right font-mono font-semibold ${aguardando ? "text-neutral-500" : "text-red-600"}`}>
+                          {fmtBRL(tx.amount)}
+                        </TableCell>
+                        <TableCell>
+                          {aguardando ? (
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs" data-testid={`badge-aguardando-${tx.id}`}>
+                              <Hourglass className="w-3 h-3 mr-1" /> Aguardando aprovação
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                              <CheckCircle2 className="w-3 h-3 mr-1" /> Aprovado
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {aguardando ? (
+                            <div className="flex items-center gap-1.5">
+                              {isDiretoria ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2 text-xs"
+                                    disabled={approveMutation.isPending}
+                                    onClick={() => approveMutation.mutate(tx.id)}
+                                    data-testid={`button-approve-${tx.id}`}
+                                    title="Aprovar lançamento"
+                                  >
+                                    {approveMutation.isPending && approveMutation.variables === tx.id ? (
+                                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3 h-3 mr-1" />
+                                    )}
+                                    Aprovar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs text-rose-700 border-rose-200 hover:bg-rose-50"
+                                    onClick={() => setRejectDialog({ open: true, tx, reason: "" })}
+                                    data-testid={`button-reject-${tx.id}`}
+                                    title="Recusar lançamento"
+                                  >
+                                    <Ban className="w-3 h-3 mr-1" /> Recusar
+                                  </Button>
+                                </>
+                              ) : (
+                                <span className="text-xs text-neutral-500 italic" data-testid={`text-pending-info-${tx.id}`}>
+                                  Aguarda aprovação da diretoria
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!status?.connected}
+                              onClick={() => setPayDialog({ open: true, tx })}
+                              data-testid={`button-pay-${tx.id}`}
+                            >
+                              <Send className="w-3 h-3 mr-1" /> Pagar via Inter
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -232,6 +327,58 @@ export default function ContasAPagarPage() {
           }}
         />
       )}
+
+      <Dialog
+        open={rejectDialog.open}
+        onOpenChange={(o) => !o && setRejectDialog({ open: false, reason: "" })}
+      >
+        <DialogContent className="max-w-md" data-testid="dialog-reject">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <Ban className="w-4 h-4" /> Recusar lançamento
+            </DialogTitle>
+            <DialogDescription>
+              {rejectDialog.tx && (
+                <span className="block text-sm">
+                  <strong>{rejectDialog.tx.description}</strong>
+                  <br />
+                  Valor: <span className="font-mono">{fmtBRL(rejectDialog.tx.amount)}</span>
+                  {rejectDialog.tx.entity_name && <> — {rejectDialog.tx.entity_name}</>}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason" className="text-xs">Motivo da recusa (obrigatório)</Label>
+            <Input
+              id="reject-reason"
+              placeholder="Ex.: valor divergente, fornecedor não autorizado, NF errada…"
+              value={rejectDialog.reason}
+              onChange={(e) => setRejectDialog((d) => ({ ...d, reason: e.target.value }))}
+              data-testid="input-reject-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRejectDialog({ open: false, reason: "" })}
+              disabled={rejectMutation.isPending}
+              data-testid="button-cancel-reject"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectDialog.reason.trim() || rejectMutation.isPending}
+              onClick={() => rejectDialog.tx && rejectMutation.mutate({ txId: rejectDialog.tx.id, reason: rejectDialog.reason.trim() })}
+              data-testid="button-confirm-reject"
+            >
+              {rejectMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Ban className="w-4 h-4 mr-1" />}
+              Confirmar recusa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
