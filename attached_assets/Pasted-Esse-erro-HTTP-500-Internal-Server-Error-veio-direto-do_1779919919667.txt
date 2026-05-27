@@ -1,0 +1,31 @@
+Esse erro HTTP 500 (Internal Server Error) veio direto do servidor da própria SSX, e não do seu código no Replit. Ele significa que a sua requisição chegou até eles, mas o sistema deles falhou ao tentar gerar o link do vídeo.
+
+Na integração de câmeras da SSX, isso acontece por três motivos principais:
+
+1. O equipamento (MDVR/Câmera) está offline
+Esse é o motivo mais comum para o erro 500 nessa API.
+
+Para a SSX gerar o link HLS (.m3u8), o servidor deles precisa se comunicar com o chip 4G do equipamento que está dentro da viatura.
+
+Se a viatura estiver em uma área de sombra (sem sinal de celular), desligada (pós-chave cortado), ou se o chip estiver sem dados, o servidor da SSX tenta conectar com o veículo, dá timeout interno e joga o Erro 500 na API.
+
+2. Parâmetros inválidos ou incorretos na rota
+O agente do Replit pode ter tentado chutar o nome dos parâmetros na hora de montar a requisição para a URL da SSX. Se o ID do veículo, o número do canal (Câmera 1 ou 2), ou o tipo de stream estiver com uma nomenclatura que o servidor deles não aceita, ele quebra internamente.
+
+Exemplo: Enviar o canal como channel: "frontal" em vez de channel: 1 ou channel: 0.
+
+3. Falha de permissão no Token para o módulo de Vídeo
+Embora seu Token seja válido para o rastreamento básico (localização), algumas contas precisam de uma liberação comercial/técnica extra na SSX para ativar a API de streaming de vídeo ao vivo (módulo de câmeras). Se a conta não tiver essa flag ativa, o sistema deles gera um erro interno ao tentar processar o streaming.
+
+Como resolver isso agora no Replit?
+Para sabermos exatamente o que está quebrando, precisamos tratar esse erro no backend do Replit para ele não derrubar sua aplicação e nos mostrar o que foi enviado.
+
+Peça para o agente do Replit fazer o seguinte ajuste (pode colar o texto abaixo no chat dele):
+
+"O endpoint GetURLStreamLink da SSX está retornando erro 500. Ajuste o código para:
+
+Tratar o erro com um try/catch para que a aplicação exiba uma mensagem de 'Câmera Offline ou Sem Sinal' na UI em vez de quebrar o componente.
+
+Dê um console.log no payload (corpo da requisição) antes de enviar para a SSX, para conferirmos se os IDs das viaturas e os índices das câmeras (canais) estão nos campos corretos exigidos pela documentação deles."
+
+Dica operacional: Se você tiver o aplicativo ou a plataforma web oficial da SSX aberta aí, verifique se você consegue ver a imagem dessa viatura por lá agora. Se lá também não estiver abrindo, o veículo está realmente sem sinal de rede ou desligado!

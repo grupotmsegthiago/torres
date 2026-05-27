@@ -84,17 +84,34 @@ export async function getStreamUrl(integrationCode: string, channel: number): Pr
   if (!Number.isInteger(ch) || ch < 1 || ch > 16) {
     throw new Error("channel deve ser inteiro entre 1 e 16");
   }
+  const payload = { VehicleIntegrationCode: integrationCode, Channel: ch };
+  // Log do payload exato enviado pra SSX — facilita diagnóstico quando ela devolve 500
+  // (motivo mais comum: equipamento offline ou código de integração errado).
+  console.log(`[ssx] POST GetURLStreamLink payload=${JSON.stringify(payload)}`);
   const resp = await ssxFetch("/Tracking/Videotelemetry/GetURLStreamLink", {
     method: "POST",
-    body: JSON.stringify({ VehicleIntegrationCode: integrationCode, Channel: ch }),
+    body: JSON.stringify(payload),
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    throw new Error(`SSX GetURLStreamLink HTTP ${resp.status} ${body.slice(0, 300)}`);
+    console.log(`[ssx] resposta de erro HTTP ${resp.status}: ${body.slice(0, 300)}`);
+    // SSX devolve 500 "Erro interno ao processar a requisição de streaming"
+    // quando o MDVR está offline (sem 4G, sem ignição, área de sombra) OU
+    // quando o VehicleIntegrationCode está errado. Traduz pra mensagem amigável.
+    if (resp.status === 500) {
+      throw new Error("Câmera offline ou sem sinal (verifique se a viatura está ligada e com sinal 4G)");
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error("Sem permissão SSX pra streaming desta viatura (verifique liberação do módulo de vídeo)");
+    }
+    if (resp.status === 404) {
+      throw new Error("VehicleIntegrationCode não encontrado na SSX (código errado no cadastro)");
+    }
+    throw new Error(`SSX GetURLStreamLink HTTP ${resp.status} ${body.slice(0, 200)}`);
   }
   const data = (await resp.json()) as { URLStream?: string | null };
   if (!data.URLStream) {
-    throw new Error("SSX não retornou URLStream (câmera offline ou canal sem sinal).");
+    throw new Error("Câmera offline ou canal sem sinal");
   }
   return { url: data.URLStream, channel: ch, integrationCode };
 }
