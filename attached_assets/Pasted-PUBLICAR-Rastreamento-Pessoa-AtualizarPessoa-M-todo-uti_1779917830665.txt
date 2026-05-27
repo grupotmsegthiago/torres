@@ -1,0 +1,117 @@
+PUBLICAR
+/Rastreamento/Pessoa/AtualizarPessoa
+Método utilizado para atualizar uma pessoa Se você passar a propriedade InsertIfNotExists = true, o sistema irá cadastrar uma pessoa automaticamente caso não seja encontrado no banco de dados.
+
+Parâmetros
+Cancelar
+Sem parâmetros
+
+Corpo da solicitação
+
+aplicativo/json
+Dados da pessoa para atualização.
+
+{
+  "PersonIntegrationCode": "string",
+  "OrganizationUnitIntegrationCode": "string",
+  "Name": "string",
+  "Email": "user@example.com",
+  "CountryCode": "string",
+  "AreaCode": "string",
+  "CellPhoneNumber": "string",
+  "PhoneNumber": "string",
+  "IDCard": "string",
+  "CPF": "string",
+  "DateOfBirth": "2026-05-27",
+  "Gender": "string",
+  "IdentifierType": 0,
+  "AccessCodeType": 0,
+  "AccessCode": "string",
+  "TimeZone": 0,
+  "DaylightSaving": false,
+  "Language": 0,
+  "Country": 0,
+  "PersonRoleIntegrationCode": "string",
+  "WorkScheduleIntegrationCode": "string",
+  "ConsolidationType": 0,
+  "Registration": "string",
+  "LicenseDriver": "string",
+  "ExpirationDateLicenseDriver": "2026-05-27",
+  "EmissionDateLicenseDriver": "2026-05-27",
+  "FirstDateLicenseDriver": "2026-05-27",
+  "LicenseRegistrationType": 0,
+  "UserProfileTemplateIntegrationCode": "string",
+  "Login": "string",
+  "Password": "string",
+  "InsertIfNotExists": false
+}
+Executar
+Claro
+Respostas
+Enrolar
+
+curl -X POST "https://integration.systemsatx.com.br/Tracking/Person/UpdatePerson" -H  "accept: application/json" -H  "Authorization: 1A318992-A376-43A1-8467-FD7316B71761" -H  "Content-Type: application/json" -d "{\"PersonIntegrationCode\":\"string\",\"OrganizationUnitIntegrationCode\":\"string\",\"Name\":\"string\",\"Email\":\"user@example.com\",\"CountryCode\":\"string\",\"AreaCode\":\"string\",\"CellPhoneNumber\":\"string\",\"PhoneNumber\":\"string\",\"IDCard\":\"string\",\"CPF\":\"string\",\"DateOfBirth\":\"2026-05-27\",\"Gender\":\"string\",\"IdentifierType\":0,\"AccessCodeType\":0,\"AccessCode\":\"string\",\"TimeZone\":0,\"DaylightSaving\":false,\"Language\":0,\"Country\":0,\"PersonRoleIntegrationCode\":\"string\",\"WorkScheduleIntegrationCode\":\"string\",\"ConsolidationType\":0,\"Registration\":\"string\",\"LicenseDriver\":\"string\",\"ExpirationDateLicenseDriver\":\"2026-05-27\",\"EmissionDateLicenseDriver\":\"2026-05-27\",\"FirstDateLicenseDriver\":\"2026-05-27\",\"LicenseRegistrationType\":0,\"UserProfileTemplateIntegrationCode\":\"string\",\"Login\":\"string\",\"Password\":\"string\",\"InsertIfNotExists\":false}"
+URL de solicitação
+https://integration.systemsatx.com.br/Tracking/Person/UpdatePerson
+Resposta do servidor
+Código	Detalhes
+401	Erro: Não autorizado
+Cabeçalhos de resposta
+ conexão : fechar 
+ Data : quarta-feira , 27 de maio de 2026, 21:36:42 GMT 
+ Servidor : Microsoft-IIS/10.0 
+ codificação de transferência : chunked 
+Respostas
+Código	Descrição	Links
+200	
+Sucesso.
+
+Tipo de mídia
+
+aplicativo/json
+Cabeçalho de controles .Accept
+Valor de exemplo
+Esquema
+{
+  "ClientIntegrationCode": "string",
+  "PersonIntegrationCode": "string",
+  "PersonIntegrationCodeCentral": "string",
+  "Name": "string",
+  "RoleName": "string"
+}
+Sem links
+204	
+O servidor processou a solicitação com sucesso, mas não retornou nenhum conteúdo.
+
+Sem links
+401	
+Token.
+
+Sem links
+409	
+Conflito
+
+Tipo de mídia
+
+aplicativo/json
+Valor de exemplo
+Esquema
+{
+  "Code": 0,
+  "Message": "string"
+}
+Sem links
+415	
+Parâmetros com formato incorretos.
+
+Tipo de mídia
+
+aplicativo/json
+Valor de exemplo
+Esquema
+{
+  "Message": "string"
+}
+Sem links
+500	
+Erro inesperado no servidor, tente novamente mais tarde.
