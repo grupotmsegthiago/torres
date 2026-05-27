@@ -253,6 +253,18 @@ export function registerControlIdRoutes(app: Express) {
       if (!targetEmployeeId) return res.status(400).json({ message: "employeeId não identificado" });
       if (!punchAt) return res.status(400).json({ message: "punchAt obrigatório" });
 
+      // Bloqueia placeholders 00:00:00 e 23:59:00 (causam jornadas falsas tipo "00:00→23:59 = 24h trabalhadas").
+      // Pra forçar (ex: plantão real que começou meia-noite), passar { force: true } no body.
+      if (!req.body.force) {
+        const d = new Date(punchAt);
+        const hhmm = d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+        if (hhmm === "00:00" || hhmm === "23:59") {
+          return res.status(400).json({
+            message: `Horário ${hhmm} bloqueado (provável placeholder). Use o horário real ou envie force:true se for plantão real iniciando/terminando exatamente nesse minuto.`,
+          });
+        }
+      }
+
       const r = await ctrl.createManualPunch({
         employeeId: targetEmployeeId,
         punchAt: new Date(punchAt),

@@ -2436,6 +2436,15 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [savingDay, setSavingDay] = useState(false);
 
   async function addFullDay() {
+    // Proteção contra empilhamento: se o dia já tem batidas, força confirmação
+    if (punches.length > 0) {
+      const ok = confirm(
+        `Este dia já tem ${punches.length} batida(s). "Adicionar dia (4 batidas)" vai SOMAR mais 4 (não substitui).\n\n` +
+        `Se quer recomeçar o dia, primeiro apague as batidas atuais uma a uma e depois adicione o dia.\n\n` +
+        `Continuar adicionando 4 batidas mesmo assim?`
+      );
+      if (!ok) return;
+    }
     const slots: { time: string; direction: "in" | "out"; label: string }[] = [
       { time: dayEntrada, direction: "in", label: "Entrada" },
       { time: dayLunchOut, direction: "out", label: "Início Almoço" },
