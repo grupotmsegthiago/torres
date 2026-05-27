@@ -315,8 +315,22 @@ test("fechamento: meses bem antigos também batem no clamp", () => {
 
 test("fechamento: end é exclusivo (00:00 BRT do dia 26 = fim do dia 25)", () => {
   const { end } = monthToFechamento("2026-06");
-  // 00:00:00 UTC do dia 26
-  assert.equal(end.getUTCHours(), 0);
+  // 00:00:00 BRT do dia 26 = 03:00:00 UTC do dia 26 (BRT é UTC-3).
+  assert.equal(end.getUTCHours(), 3);
   assert.equal(end.getUTCMinutes(), 0);
   assert.equal(end.getUTCSeconds(), 0);
+});
+
+test("fechamento: limites batem com BRT, não com UTC (turno noturno 25→26)", () => {
+  // Batida às 22:30 BRT do dia 25/05 = 01:30 UTC do dia 26/05.
+  // Deve estar DENTRO do ciclo de maio (start <= ts < end).
+  const { start, end } = monthToFechamento("2026-05");
+  const punchInside = new Date("2026-05-26T01:30:00.000Z"); // 22:30 BRT 25/05
+  assert.ok(punchInside.getTime() >= start.getTime(), "22:30 BRT 25/05 deve ser >= start de maio");
+  assert.ok(punchInside.getTime() < end.getTime(), "22:30 BRT 25/05 deve ser < end de maio");
+
+  // Batida às 22:30 BRT do dia 25/04 = 01:30 UTC do dia 26/04.
+  // NÃO deve estar no ciclo de maio (é o último momento de abril).
+  const punchBefore = new Date("2026-04-26T01:30:00.000Z"); // 22:30 BRT 25/04
+  assert.ok(punchBefore.getTime() < start.getTime(), "22:30 BRT 25/04 deve ser < start de maio");
 });

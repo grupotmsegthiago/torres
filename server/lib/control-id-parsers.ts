@@ -157,13 +157,20 @@ export function nameMatchScore(a: string, b: string): number {
 
 /**
  * Converte um mês "YYYY-MM" no ciclo de fechamento RHID (dia 26 do mês anterior
- * até dia 25 do mês informado). Clamp inferior em 2026-03-01 (início dos dados).
+ * 00:00 BRT até dia 26 do mês informado 00:00 BRT — fim exclusivo, abrange até
+ * 25 23:59:59 BRT). Clamp inferior em 2026-03-01 (início dos dados).
+ *
+ * IMPORTANTE: os limites são em BRT (UTC-3), não em UTC. 00:00 BRT = 03:00 UTC.
+ * Sem essa correção, batidas de turno noturno entre 21:00 e 24:00 BRT do dia
+ * de virada (25) caíam no bucket errado — o que fazia a tela de Ponto Eletrônico
+ * mostrar números diferentes do que o badge "26/04 → 25/05" prometia.
  */
 export function monthToFechamento(monthYear: string): { start: Date; end: Date } {
   const [yyyy, mm] = monthYear.split("-").map(Number);
-  let start = new Date(Date.UTC(yyyy, mm - 2, 26));
-  const end = new Date(Date.UTC(yyyy, mm - 1, 26));
-  const minStart = new Date(Date.UTC(2026, 2, 1));
+  // BRT é UTC-3, então 00:00 BRT = 03:00 UTC do mesmo dia.
+  let start = new Date(Date.UTC(yyyy, mm - 2, 26, 3));
+  const end = new Date(Date.UTC(yyyy, mm - 1, 26, 3));
+  const minStart = new Date(Date.UTC(2026, 2, 1, 3));
   if (start.getTime() < minStart.getTime()) start = minStart;
   return { start, end };
 }
