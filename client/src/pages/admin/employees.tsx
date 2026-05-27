@@ -3495,7 +3495,8 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     queryKey: ["/api/employees", employee.id, "probation-contracts"],
     queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/probation-contracts`); return r.json(); },
   });
-  const isVigilanteRole = (employee.role || "").toLowerCase().includes("vigilante") || (employee.role || "").toLowerCase().includes("escolta");
+  // (isVigilanteRole boolean removido — duplicava o helper-função declarado mais
+  // abaixo. Use `empIsVig` para a checagem booleana do funcionário corrente.)
   const createProbationMutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/probation-contracts", { employeeId: employee.id });
@@ -4010,7 +4011,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
         {tab === "contrato" && (
           <div className="space-y-4">
             {/* ===== Contrato de Experiência (45 dias) — vigilantes ===== */}
-            {isVigilanteRole && (
+            {empIsVig && (
               <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg p-3 space-y-2">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Contrato de Experiência (45 dias)</h3>
@@ -4072,7 +4073,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
             )}
 
             {/* ===== Contrato Definitivo (CLT prazo indeterminado) — gerado quando experiência vence ===== */}
-            {isVigilanteRole && (
+            {empIsVig && (
               <div className="border border-emerald-200 bg-emerald-50/40 rounded-lg p-3 space-y-2">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-emerald-800 flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Contrato Definitivo (CLT — prazo indeterminado)</h3>
