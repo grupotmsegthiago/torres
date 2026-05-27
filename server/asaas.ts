@@ -3623,6 +3623,99 @@ export function registerAsaasRoutes(app: Express) {
     });
 
     // ============================================================
+    // Alterar vencimento da fatura (com motivo obrigatório).
+    // Atualiza local + Asaas (se houver cobrança ativa). Bloqueia
+    // alteração em faturas já pagas/canceladas pra não confundir
+    // histórico financeiro. Grava o motivo + autor + datas em
+    // nfse_observations (histórico append-only).
+    // ============================================================
+    app.post("/api/invoices/:id/change-due-date", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        // Regra de negócio: alteração de vencimento é restrita à diretoria
+        // (mesma regra da UI). requireAdminRole também aceita "admin", então
+        // bloqueamos explicitamente aqui para alinhar back e front.
+        if (user?.role !== "diretoria") {
+          return res.status(403).json({ message: "Somente a diretoria pode alterar o vencimento de faturas." });
+        }
+        const invoiceId = Number(req.params.id);
+        const newDueDate = String(req.body?.dueDate || "").trim();
+        const reason = String(req.body?.reason || "").trim();
+
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(newDueDate)) {
+          return res.status(400).json({ message: "dueDate (YYYY-MM-DD) obrigatório" });
+        }
+        // Garante que é uma data real (não 2026-02-30 nem 2026-13-01)
+        const parsed = new Date(newDueDate + "T12:00:00");
+        if (Number.isNaN(parsed.getTime()) || newDueDate.slice(0, 10) !== parsed.toISOString().slice(0, 10)) {
+          return res.status(400).json({ message: "dueDate inválida (data inexistente no calendário)" });
+        }
+        if (reason.length < 5) {
+          return res.status(400).json({ message: "Motivo obrigatório (mín. 5 caracteres)" });
+        }
+
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        if (isAlreadyPaidStatus(invoice.status)) {
+          return res.status(409).json({ message: `Fatura já está paga (${invoice.status}) — vencimento não pode ser alterado.` });
+        }
+        const blockedStatuses = new Set(["CANCELLED", "CANCELADA", "CANCELADO", "REFUNDED", "REFUND_REQUESTED"]);
+        if (blockedStatuses.has(String(invoice.status || "").toUpperCase())) {
+          return res.status(409).json({ message: `Fatura está ${invoice.status} — vencimento não pode ser alterado.` });
+        }
+
+        const oldDueDate = invoice.due_date ? String(invoice.due_date).slice(0, 10) : "(sem data)";
+        if (oldDueDate === newDueDate) {
+          return res.status(400).json({ message: "Vencimento informado é igual ao atual." });
+        }
+
+        let asaasOk = false;
+        let asaasMsg = "";
+        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+          try {
+            await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}`, { dueDate: newDueDate });
+            asaasOk = true;
+          } catch (e: any) {
+            asaasMsg = e?.message || String(e);
+            console.log(`[change-due-date] Asaas falhou p/ invoice #${invoiceId}: ${asaasMsg}`);
+          }
+        }
+
+        const noteHistory = `[Vencimento alterado por ${user.email} em ${new Date().toISOString()}: ${oldDueDate} → ${newDueDate} — Motivo: ${reason}${asaasOk ? " — sync Asaas OK" : invoice.asaas_payment_id ? ` — Asaas FALHOU: ${asaasMsg}` : ""}]`;
+        const { error } = await supabaseAdmin
+          .from("invoices")
+          .update({
+            due_date: newDueDate,
+            nfse_observations: `${noteHistory}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", invoiceId);
+        if (error) throw error;
+
+        try {
+          await logSystemAudit({
+            user_id: user?.id || null,
+            user_email: user?.email || null,
+            action: "invoice_due_date_changed",
+            target_type: "invoice",
+            target_id: String(invoiceId),
+            details: { old_due_date: oldDueDate, new_due_date: newDueDate, reason, asaas_synced: asaasOk, asaas_message: asaasMsg || null },
+          });
+        } catch (e: any) {
+          console.log(`[change-due-date] audit falhou: ${e?.message}`);
+        }
+
+        console.log(`[change-due-date] Invoice #${invoiceId}: ${oldDueDate} → ${newDueDate} por ${user.email}. AsaasSync=${asaasOk}. Motivo: ${reason}`);
+        res.json({ success: true, oldDueDate, newDueDate, asaasSynced: asaasOk, asaasMessage: asaasMsg || null });
+      } catch (err: any) {
+        console.error("[change-due-date] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
     // Limpeza de invoices órfãs (sem asaas_payment_id) — diretoria
     // GET retorna preview, POST executa.
     // ============================================================

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -239,6 +239,7 @@ export default function RelatorioNFPage() {
   });
 
   const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
+  const [dueDateModal, setDueDateModal] = useState<{ invoiceId: number; clientName: string; value: number; currentDueDate: string; newDueDate: string; reason: string } | null>(null);
   const [cleanupModal, setCleanupModal] = useState<{ loading: boolean; orphans: Array<{ id: number; client_name: string; value: number; description: string | null; status: string; due_date: string | null; nfse_number: string | null }>; totalValue: number } | null>(null);
 
   // O vínculo de OS↔Fatura é 100% automático: roda dentro de
@@ -296,6 +297,25 @@ export default function RelatorioNFPage() {
       invalidateRelatedQueries("invoice");
     },
     onError: (e: any) => toast({ title: "Erro ao baixar fatura", description: e?.message, variant: "destructive" }),
+  });
+
+  const changeDueDateMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; dueDate: string; reason: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/change-due-date`, {
+        method: "POST",
+        body: JSON.stringify({ dueDate: payload.dueDate, reason: payload.reason }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      const sync = data?.asaasSynced ? " (atualizado também no Asaas)" : data?.asaasMessage ? ` (Asaas: ${data.asaasMessage})` : "";
+      toast({ title: "Vencimento alterado", description: `Novo vencimento: ${data?.newDueDate}${sync}.` });
+      setDueDateModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro ao alterar vencimento", description: e?.message, variant: "destructive" }),
   });
 
   const resendMutation = useMutation({
@@ -935,6 +955,20 @@ export default function RelatorioNFPage() {
                               data-testid={`button-receive-cash-${r.id}`}
                             >
                               <Banknote className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = r.dueDate ? String(r.dueDate).slice(0, 10) : "";
+                                setDueDateModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), currentDueDate: current, newDueDate: current, reason: "" });
+                              }}
+                              className="h-7 w-7 inline-flex items-center justify-center text-amber-700 hover:bg-amber-50 hover:text-amber-800 transition-colors"
+                              title="Alterar vencimento (com motivo)"
+                              data-testid={`button-change-duedate-${r.id}`}
+                            >
+                              <CalendarCog className="h-3.5 w-3.5" />
                             </button>
                           )}
                           {r.source === "INVOICE" && r.invoiceId && (r.invoiceUrl || r.nfseUrl) && r.normalizedStatus !== "NF_CANCELADA" && (
@@ -1642,6 +1676,59 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-receive"
             >
               {receiveInCashMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Baixando…</> : <><CheckCircle2 className="h-4 w-4 mr-1" /> Confirmar recebimento</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Alterar vencimento da fatura (com motivo) */}
+      <Dialog open={!!dueDateModal} onOpenChange={open => { if (!open && !changeDueDateMutation.isPending) setDueDateModal(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarCog className="h-5 w-5 text-amber-700" /> Alterar vencimento</DialogTitle>
+            <DialogDescription>
+              Atualiza o vencimento local e sincroniza com a cobrança no Asaas (quando existir). O motivo fica registrado no histórico da fatura.
+            </DialogDescription>
+          </DialogHeader>
+          {dueDateModal && (
+            <div className="space-y-3">
+              <div className="text-sm space-y-0.5">
+                <div><span className="text-slate-500">Cliente:</span> <strong>{dueDateModal.clientName}</strong></div>
+                <div><span className="text-slate-500">Fatura:</span> <strong>#{dueDateModal.invoiceId}</strong></div>
+                <div><span className="text-slate-500">Vencimento atual:</span> <strong>{dueDateModal.currentDueDate ? new Date(dueDateModal.currentDueDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</strong></div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Novo vencimento</label>
+                <Input type="date" value={dueDateModal.newDueDate} onChange={e => setDueDateModal({ ...dueDateModal, newDueDate: e.target.value })} data-testid="input-new-due-date" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo <span className="text-rose-600">*</span></label>
+                <Textarea
+                  rows={3}
+                  value={dueDateModal.reason}
+                  onChange={e => setDueDateModal({ ...dueDateModal, reason: e.target.value })}
+                  placeholder="Ex.: Cliente pediu prorrogação por 10 dias para conciliar pagamento."
+                  data-testid="textarea-duedate-reason"
+                />
+                <p className="text-xs text-slate-500 mt-1">Mínimo 5 caracteres. Fica registrado no histórico da fatura com seu e-mail e a data da alteração.</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDueDateModal(null)} disabled={changeDueDateMutation.isPending} data-testid="button-cancel-duedate">Cancelar</Button>
+            <Button
+              className="bg-amber-700 hover:bg-amber-800"
+              onClick={() => dueDateModal && changeDueDateMutation.mutate({ invoiceId: dueDateModal.invoiceId, dueDate: dueDateModal.newDueDate, reason: dueDateModal.reason.trim() })}
+              disabled={
+                changeDueDateMutation.isPending ||
+                !dueDateModal?.newDueDate ||
+                !dueDateModal?.invoiceId ||
+                (dueDateModal?.reason || "").trim().length < 5 ||
+                dueDateModal?.newDueDate === dueDateModal?.currentDueDate
+              }
+              data-testid="button-confirm-duedate"
+            >
+              {changeDueDateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Alterando…</> : <><CheckCircle2 className="h-4 w-4 mr-1" /> Confirmar alteração</>}
             </Button>
           </DialogFooter>
         </DialogContent>
