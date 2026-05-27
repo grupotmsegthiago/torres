@@ -1,0 +1,26 @@
+Agora mudou o cenário, e essa mudança é uma ótima notícia porque saímos de um erro desconhecido para uma resposta exata do que está acontecendo.
+
+O erro mudou de HTTP 500 (Erro interno deles) para HTTP 401.
+
+No protocolo de internet, HTTP 401 significa estritamente: Não Autorizado (Unauthorized).
+
+Isso significa que a estrutura do seu código no Replit está correta, os parâmetros enviados estão certos e o servidor da SSX entendeu a requisição. Porém, ele recusou o acesso por um destes dois motivos reais:
+
+1. O Token expirou ou precisa ser renovado
+Geralmente, a API da SSX exige uma autenticação prévia (gerando um token de sessão temporário que expira em algumas horas) antes de chamar a rota GetURLStreamLink. Se o agente do Replit usou o Token fixo direto na rota de vídeo sem fazer o fluxo de login correto na API de vídeo antes, a SSX bloqueia com o erro 401.
+
+2. Falha de Permissão no perfil do usuário
+O e-mail intergracaotorres@ssx.com e o token que você possui estão com acesso liberado para ler a localização e velocidade (por isso o Polo Track aparece na Anhanguera a 53 km/h), mas o usuário não tem permissão de nível de visualização de vídeo vinculada a ele no painel master da SSX.
+
+Como resolver isso agora no Replit?
+Vamos fazer o agente do Replit tratar o erro 401 para exibir a mensagem correta na tela e ajustar a lógica de autenticação.
+
+Envie exatamente este texto no chat do agente do Replit:
+
+Plaintext
+O erro mudou para HTTP 401 (Não Autorizado). Isso significa que a rota de vídeo está recusando as credenciais ou exige uma sessão ativa. Ajuste o sistema com os seguintes passos:
+
+1. Na UI, substitua o texto "HTTP 401" por uma mensagem clara: "Acesso negado ao streaming (Verifique as permissões de vídeo do usuário no painel da SSX)".
+
+2. Verifique no código de integração se a requisição de vídeo 'GetURLStreamLink' está realizando o fluxo de login/autenticação prévio para gerar o token de sessão exigido pela SSX, em vez de apenas injetar o token estático na requisição. Se a SSX exigir uma chamada de Login antes para o módulo de vídeo, certifique-se de que estamos executando ela primeiro.
+O layout do mosaico de 20 posições ficou simplesmente espetacular e a telemetria está rodando em tempo real perfeitamente. Resolvendo essa permissão de credencial (401), os vídeos vão começar a carregar nos quadrantes.
