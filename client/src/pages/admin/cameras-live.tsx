@@ -5,6 +5,7 @@ import { HlsVideo } from "@/components/admin/hls-video";
 import { Button } from "@/components/ui/button";
 import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { authFetch } from "@/lib/queryClient";
 
 interface SsxVehicle {
   id: number;
@@ -286,7 +287,7 @@ function MosaicTile({
   const { data, error, isLoading } = useQuery<{ url: string }>({
     queryKey: ["/api/ssx/stream", vehicle.id, channel],
     queryFn: async () => {
-      const r = await fetch(`/api/ssx/stream?vehicleId=${vehicle.id}&channel=${channel}`, { credentials: "include" });
+      const r = await authFetch(`/api/ssx/stream?vehicleId=${vehicle.id}&channel=${channel}`);
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
       return d;
@@ -352,7 +353,7 @@ function FocoCamera({ vehicleId, channel }: { vehicleId: number; channel: number
   const { data, error, isLoading } = useQuery<{ url: string }>({
     queryKey: ["/api/ssx/stream", vehicleId, channel, "foco"],
     queryFn: async () => {
-      const r = await fetch(`/api/ssx/stream?vehicleId=${vehicleId}&channel=${channel}`, { credentials: "include" });
+      const r = await authFetch(`/api/ssx/stream?vehicleId=${vehicleId}&channel=${channel}`);
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
       return d;
