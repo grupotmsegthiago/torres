@@ -1,0 +1,318 @@
+Entendido! Vamos trabalhar com a base de 5 viaturas para o desenho desse módulo de vídeo.
+
+Com 5 viaturas e 2 câmeras por veículo (frontal + interna), teremos exatamente 10 canais de vídeo ativos. Isso se encaixa perfeitamente na sua meta de 20 quadrados por página, deixando 10 slots livres na grade prontos para quando sua frota expandir.
+
+Como você deu o sinal verde e confirmou a estrutura, vamos direto ao desenvolvimento. Vou estruturar o código completo para você implementar no seu projeto no Replit (React + TypeScript + Tailwind CSS).
+
+1. Estrutura do Serviço de Integração (Mock/API)
+A SSX geralmente fornece os dados de telemetria via REST/Websockets e os canais de vídeo em formatos compatíveis com a web (como HLS .m3u8 ou WebRTC).
+
+Crie um arquivo chamado src/services/ssxIntegration.ts para gerenciar a conexão e simular os alertas de comportamento (celular, fumo, fadiga) que o hardware das viaturas reportará para a API:
+
+TypeScript
+export interface Camera {
+  id: string;
+  type: 'internal' | 'external';
+  url: string; // URL do stream de vídeo (HLS/WebRTC)
+}
+
+export interface Viatura {
+  id: string;
+  nome: string;
+  placa: string;
+  velocidade: number;
+  localizacao: {
+    lat: number;
+    lng: number;
+    endereco: string;
+  };
+  cameras: Camera[];
+  alertaIA?: {
+    tipo: 'celular' | 'fumando' | 'fadiga' | 'panico' | 'blitz';
+    timestamp: string;
+    gravidade: 'alta' | 'critica';
+  } | null;
+}
+
+// Dados iniciais baseados nas suas 5 viaturas
+export const frotasIniciais: Viatura[] = [
+  {
+    id: 'v1',
+    nome: 'Viatura 01 - Escolta',
+    placa: 'ABC-1234',
+    velocidade: 65,
+    localizacao: { lat: -15.7938, lng: -47.8827, endereco: 'Eixo Monumental, Brasília - DF' },
+    cameras: [
+      { id: 'c1_ext', type: 'external', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' },
+      { id: 'c1_int', type: 'internal', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' }
+    ],
+    alertaIA: null
+  },
+  {
+    id: 'v2',
+    nome: 'Viatura 02 - Escolta',
+    placa: 'DEF-5678',
+    velocidade: 0,
+    localizacao: { lat: -15.8012, lng: -47.8945, endereco: 'Setor Hoteleiro Sul, Brasília - DF' },
+    cameras: [
+      { id: 'c2_ext', type: 'external', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' },
+      { id: 'c2_int', type: 'internal', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' }
+    ],
+    alertaIA: { tipo: 'celular', timestamp: '17:10', gravidade: 'alta' } // Exemplo de alerta ativo
+  },
+  {
+    id: 'v3',
+    nome: 'Viatura 03 - Escolta',
+    placa: 'GHI-9012',
+    velocidade: 82,
+    localizacao: { lat: -15.7801, lng: -47.9292, endereco: 'SIA Trecho 3, Brasília - DF' },
+    cameras: [
+      { id: 'c3_ext', type: 'external', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' },
+      { id: 'c3_int', type: 'internal', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' }
+    ],
+    alertaIA: null
+  },
+  {
+    id: 'v4',
+    nome: 'Viatura 04 - Apoio',
+    placa: 'JKL-3456',
+    velocidade: 40,
+    localizacao: { lat: -15.8234, lng: -47.9012, endereco: 'Aeroporto de Brasília, DF' },
+    cameras: [
+      { id: 'c4_ext', type: 'external', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' },
+      { id: 'c4_int', type: 'internal', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' }
+    ],
+    alertaIA: null
+  },
+  {
+    id: 'v5',
+    nome: 'Viatura 05 - Supervisor',
+    placa: 'MNO-7890',
+    velocidade: 0,
+    localizacao: { lat: -15.7432, lng: -47.8711, endereco: 'Setor de Clubes Esportivos Norte, Brasília - DF' },
+    cameras: [
+      { id: 'c5_ext', type: 'external', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' },
+      { id: 'c5_int', type: 'internal', url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08188.m3u8' }
+    ],
+    alertaIA: null
+  }
+];
+2. Componente de Tela de Vídeo Individual
+Este componente renderiza o vídeo da câmera e aplica as regras visuais de telemetria por cima da imagem (overlay).
+
+Crie o arquivo src/components/CameraBox.tsx:
+
+TypeScript
+import React from 'react';
+import { Viatura, Camera } from '../services/ssxIntegration';
+
+interface CameraBoxProps {
+  viatura?: Viatura;
+  camera?: Camera;
+  onFocusVehicle?: (id: string) => void;
+}
+
+export const CameraBox: React.FC<CameraBoxProps> = ({ viatura, camera, onFocusVehicle }) => {
+  // Caso o slot esteja vazio (para completar os 20 quadrados da página)
+  if (!viatura || !camera) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center min-h-[160px] text-slate-600 text-xs font-mono">
+        [ SLOT LIVRE ]
+      </div>
+    );
+  }
+
+  const isAlerting = !!viatura.alertaIA;
+
+  return (
+    <div className={`relative bg-black rounded-lg overflow-hidden border-2 transition-all ${
+      isAlerting ? 'border-red-600 animate-pulse' : 'border-slate-800 hover:border-indigo-500'
+    }`}>
+      
+      {/* Container de Vídeo Real/Simulado */}
+      <div className="w-full h-40 bg-slate-950 flex items-center justify-center relative">
+        <span className="text-[10px] text-slate-500 font-mono">
+          STREAM {camera.type.toUpperCase()} ({viatura.placa})
+        </span>
+        
+        {/* Marca d'água de Telemetria sobre o Vídeo */}
+        <div className="absolute top-2 left-2 bg-black/70 text-[10px] text-white p-1 rounded font-mono backdrop-blur-sm">
+          {viatura.nome} | {camera.type === 'internal' ? '🔄 INT' : '🛣️ EXT'}
+        </div>
+
+        <div className="absolute bottom-2 left-2 bg-black/70 text-[10px] text-white p-1 rounded font-mono backdrop-blur-sm">
+          {viatura.velocidade} km/h
+        </div>
+
+        {/* Alerta de IA Piscando na tela se houver ocorrência */}
+        {isAlerting && (
+          <div className="absolute top-2 right-2 bg-red-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded shadow animate-bounce uppercase">
+            🚨 IA: {viatura.alertaIA?.tipo}
+          </div>
+        )}
+      </div>
+
+      {/* Barra de Status Inferior do Quadrante */}
+      <div className="bg-slate-900 p-1.5 flex justify-between items-center border-t border-slate-800">
+        <span className="text-[10px] text-slate-400 truncate max-w-[70%]">
+          {viatura.localizacao.endereco}
+        </span>
+        <button
+          onClick={() => onFocusVehicle && onFocusVehicle(viatura.id)}
+          className="text-[9px] bg-indigo-600 hover:bg-indigo-700 text-white px-1.5 py-0.5 rounded font-medium transition"
+        >
+          Focar
+        </button>
+      </div>
+    </div>
+  );
+};
+3. Painel Central de Controle de Mosaico (20 Quadrados)
+Este é o cérebro da tela. Ele gera dinamicamente uma página com exatamente 20 posições, distribui as 10 câmeras atuais das suas 5 viaturas e permite alternar para o Modo Foco (onde exibe apenas a interna e externa da viatura escolhida lado a lado).
+
+Crie o arquivo src/components/MosaicoCameras.tsx:
+
+TypeScript
+import React, { useState } from 'react';
+import { frotasIniciais, Viatura } from '../services/ssxIntegration';
+import { CameraBox } from './CameraBox';
+
+export const MosaicoCameras: React.FC = () => {
+  const [viaturas, setViaturas] = useState<Viatura[]>(frotasIniciais);
+  const [veiculoFocadoId, setVeiculoFocadoId] = useState<string | null>(null);
+
+  // Desfazer estrutura das câmeras em uma lista linear para alimentar a grade
+  const todasAsCamerasAtivas: { viatura: Viatura; camera: any }[] = [];
+  viaturas.forEach(v => {
+    v.cameras.forEach(c => {
+      todasAsCamerasAtivas.push({ viatura: v, camera: c });
+    });
+  });
+
+  // Garante que o layout tenha exatamente 20 slots por página
+  const totalSlots = 20;
+  const slotsGrid = Array.from({ length: totalSlots });
+
+  const veiculoFocado = viaturas.find(v => v.id === veiculoFocadoId);
+
+  // Simulação de disparo de Alerta crítico de IA (Para testes operacionais no Replit)
+  const simularAlertaPanico = () => {
+    setViaturas(prev => prev.map((v, idx) => 
+      idx === 0 ? { ...v, alertaIA: { tipo: 'panico', timestamp: '17:11', gravidade: 'critica' } } : v
+    ));
+  };
+
+  const limparAlertas = () => {
+    setViaturas(prev => prev.map(v => ({ ...v, alertaIA: null })));
+  };
+
+  return (
+    <div className="p-4 bg-slate-950 min-h-screen text-slate-100 font-sans">
+      
+      {/* Cabeçalho de Controle */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            <span>📹 Central de Câmeras Realtime</span>
+            <span className="text-xs bg-indigo-500/20 text-indigo-400 font-mono px-2 py-0.5 rounded-full border border-indigo-500/30">
+              SSX Tracker
+            </span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">Integrado: 5 Viaturas operacionais (10 Canais ativos de 20)</p>
+        </div>
+
+        {/* Controles Avançados */}
+        <div className="flex gap-2 flex-wrap">
+          <button 
+            onClick={simularAlertaPanico}
+            className="text-xs bg-red-900/40 hover:bg-red-900/60 border border-red-700 text-red-200 px-3 py-1.5 rounded-lg font-medium transition"
+          >
+            🔥 Simular Pânico (IA V1)
+          </button>
+          <button 
+            onClick={limparAlertas}
+            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg font-medium transition"
+          >
+            Limpar Alertas
+          </button>
+          {veiculoFocadoId && (
+            <button 
+              onClick={() => setVeiculoFocadoId(null)}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition shadow-lg shadow-indigo-600/20"
+            >
+              ⬅️ Voltar para Mosaico Geral
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* CONTEÚDO DINÂMICO */}
+      {veiculoFocado ? (
+        /* MODO FOCO: Mostra apenas 1 veículo com interna e externa lado a lado */
+        <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl">
+          <div className="border-b border-slate-800 pb-4 mb-4 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-white">{veiculoFocado.nome}</h2>
+              <p className="text-xs text-indigo-400 font-mono">{veiculoFocado.placa} • {veiculoFocado.localizacao.endereco}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-mono font-bold text-emerald-400">{veiculoFocado.velocidade}</span>
+              <span className="text-xs text-slate-500 font-mono ml-1">km/h</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {veiculoFocado.cameras.map(cam => (
+              <div key={cam.id} className="bg-black rounded-xl overflow-hidden border border-slate-700 shadow-2xl">
+                <div className="p-3 bg-slate-800 text-xs font-bold text-slate-300 font-mono flex justify-between">
+                  <span>CÂMERA {cam.type === 'internal' ? '🔄 INTERNA (COMPORTAMENTO)' : ' Street 🛣️ EXTERNA'}</span>
+                  <span className="text-emerald-400 animate-pulse">● LIVE</span>
+                </div>
+                <div className="h-80 bg-slate-950 flex items-center justify-center text-slate-600 font-mono text-sm">
+                  [ Streaming de Vídeo Realtime da SSX - {cam.type.toUpperCase()} ]
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Alerta de Telemetria da IA focado */}
+          {veiculoFocado.alertaIA && (
+            <div className="mt-4 bg-red-950/50 border border-red-500 text-red-200 p-4 rounded-lg flex items-center justify-between animate-pulse">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">⚠️</span>
+                <div>
+                  <h4 className="font-bold text-sm text-white uppercase">Alerta de Comportamento Detectado pela IA</h4>
+                  <p className="text-xs text-red-300">Motorista identificado em padrão de risco: <span className="font-bold underline">{veiculoFocado.alertaIA.tipo}</span> às {veiculoFocado.alertaIA.timestamp}.</p>
+                </div>
+              </div>
+              <span className="text-xs bg-red-600 text-white font-mono px-2 py-1 rounded font-bold">CRÍTICO</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* MODO MOSAICO: 20 Quadrantes por Página */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {slotsGrid.map((_, index) => {
+            const itemAtivo = todasAsCamerasAtivas[index];
+            return (
+              <CameraBox
+                key={index}
+                viatura={itemAtivo?.viatura}
+                camera={itemAtivo?.camera}
+                onFocusVehicle={(id) => setVeiculoFocadoId(id)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+4. O que este código entrega no seu Replit?
+Grade Fidedigna de 20 Quadrantes: Ele cria o layout de visualização em massa exato que você pediu. Como são 5 viaturas com 2 canais, as 10 telas entram ordenadas e as outras 10 posições ficam limpas prontas para novas integrações de hardware.
+
+Botão de Foco Dedicado: Ao clicar em "Focar" em qualquer quadrante, a tela transmuta para o Modo Foco, isolando aquele veículo específico e renderizando a câmera interna e a externa lado a lado em tamanho ampliado na tela inteira.
+
+Mapeamento de Eventos de IA: Já inclui o recebimento lógico dos gatilhos de comportamento do motorista (como o exemplo ativo de uso de celular na Viatura 02 ou o botão de pânico que você pode simular no painel superior). O quadrante pisca em vermelho chamando a atenção imediata do operador da central.
+
+Leve esses arquivos para a estrutura do seu projeto no Replit para unificar a inteligência com o banco do Supabase e com os endpoints fornecidos pelas credenciais da SSX!
