@@ -818,6 +818,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     pis: "",
     role: "Vigilante",
     category: "Mensalista",
+    tipoContratacao: "clt" as "clt" | "fixo",
     phone: "",
     email: "",
     zip: "",
@@ -870,6 +871,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         pis: e.pis || "",
         role: e.role || "Vigilante",
         category: e.category || "Mensalista",
+        tipoContratacao: (e.tipoContratacao || e.tipo_contratacao || "clt") as "clt" | "fixo",
         phone: e.phone ? formatPhoneBR(e.phone) : "",
         email: e.email || "",
         zip: e.zip ? formatCepBR(e.zip) : "",
@@ -1706,6 +1708,23 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-category">
                 {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Regime de Contratação</label>
+              <select
+                value={form.tipoContratacao}
+                onChange={(e) => setForm({ ...form, tipoContratacao: e.target.value as "clt" | "fixo" })}
+                className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200"
+                data-testid="select-employee-tipo-contratacao"
+              >
+                <option value="clt">CLT (com encargos e descontos)</option>
+                <option value="fixo">Valor Fixo (sem encargos/descontos)</option>
+              </select>
+              <p className="text-[11px] text-neutral-500 mt-1">
+                {form.tipoContratacao === "fixo"
+                  ? "Bruto = líquido. Sem INSS, IRRF, FGTS, férias, 13º."
+                  : "Folha CLT padrão (INSS, IRRF, FGTS, provisões)."}
+              </p>
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Admissão</label>

@@ -1186,10 +1186,13 @@ export async function buildFolhaStats(
   // (vigilante→vigilancia, limpeza→siemaco).
   const { data: empRow } = await supabaseAdmin
     .from("employees")
-    .select("role")
+    .select("role, tipo_contratacao")
     .eq("id", employeeId)
     .limit(1);
   const empRole = (empRow && empRow[0] && (empRow[0] as any).role) || "";
+  // Não-CLT (PJ, fixo, autônomo): zera todos os encargos da empresa.
+  // O bruto pago = custo total; não há FGTS, INSS patronal, seguro de vida.
+  const isClt = !empRow || !empRow[0] || (empRow[0] as any).tipo_contratacao !== "fixo";
   const { getCctConfigByCargo } = await import("./lib/cct-config");
   const CCT = await getCctConfigByCargo(empRole);
 
@@ -1337,11 +1340,12 @@ export async function buildFolhaStats(
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra).toFixed(2);
   const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
 
-  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE)
+  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE).
+  // Não-CLT (PJ, fixo): zera FGTS, INSS patronal e seguro de vida.
   const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra;
-  const fgtsPct = (CCT as any).fgtsPct ?? 8;
-  const inssPatronalPct = (CCT as any).inssPatronalPct ?? 20;
-  const seguroVidaMensal = (CCT as any).seguroVidaMensal ?? 0;
+  const fgtsPct = isClt ? ((CCT as any).fgtsPct ?? 8) : 0;
+  const inssPatronalPct = isClt ? ((CCT as any).inssPatronalPct ?? 20) : 0;
+  const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
   const fgts = +(baseRecolhimentos * (fgtsPct / 100)).toFixed(2);
   const inssPatronal = +(baseRecolhimentos * (inssPatronalPct / 100)).toFixed(2);
   const seguroVida = +(Number(seguroVidaMensal) * fatorRateio).toFixed(2);
@@ -1349,7 +1353,9 @@ export async function buildFolhaStats(
 
   const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal + recolhimentosTotal).toFixed(2);
   const custoBase = baseSalaryReal;
-  const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPct / 100) + beneficiosTotal).toFixed(2);
+  // Para não-CLT, encargosPct efetivo é 0 (custo com encargos = bruto + benefícios).
+  const encargosPctEfetivo = isClt ? encargosPct : 0;
+  const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPctEfetivo / 100) + beneficiosTotal).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
   let faturamentoBruto = 0;
@@ -1440,7 +1446,8 @@ export async function buildFolhaStats(
     inssPatronalPct,
     seguroVida,
     recolhimentosTotal,
-    encargosPct,
+    encargosPct: encargosPctEfetivo,
+    isClt,
     custoComEncargos,
     custoTotalEstimado,
     // Faturamento atribuído ao funcionário no mês

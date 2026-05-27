@@ -103,6 +103,10 @@ export const employees = pgTable("employees", {
   pis: text("pis"),
   role: text("role").notNull(),
   category: text("category").default("mensalista"),
+  // Regime de contratação: "clt" (com encargos/descontos legais) ou "fixo"
+  // (valor fixo bruto = líquido, sem INSS/IRRF/FGTS/provisões — PJ, autônomo,
+  // freelancer pago como prestador, estagiário, etc).
+  tipoContratacao: text("tipo_contratacao").default("clt"),
   phone: text("phone"),
   email: text("email"),
   address: text("address"),

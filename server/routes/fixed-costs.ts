@@ -273,7 +273,16 @@ export async function calculateAgentMonthlyCost(
     /* mantém fallback */
   }
 
-  // Engine de folha 2025 (CLT brasileira)
+  // Regime de contratação: lê tipo_contratacao do funcionário.
+  // "fixo" = sem encargos/descontos (PJ, autônomo, freelancer pago por fora).
+  const { data: empRowTipo } = await supabaseAdmin
+    .from("employees")
+    .select("tipo_contratacao")
+    .eq("id", employeeId)
+    .limit(1);
+  const isClt = !empRowTipo || !empRowTipo[0] || (empRowTipo[0] as any).tipo_contratacao !== "fixo";
+
+  // Engine de folha 2025 (CLT brasileira; não-CLT zera encargos e provisões).
   const folha = calcularFolha({
     salarioBaseCheio: base,
     diasTrabalhados,
@@ -285,6 +294,7 @@ export async function calculateAgentMonthlyCost(
     refeicaoDiaria: vrDiario,
     ajudaCustoMensal,
     dependentesIR,
+    isClt,
   });
 
   // Custo total para a empresa = Bruto + FGTS + Provisões + outros benefícios não tributáveis (cesta/VT/outros) + diárias manuais

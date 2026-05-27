@@ -268,6 +268,10 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dependentes_declarados BOOLEAN DEFAULT FALSE`);
+    // Regime de contratação: "clt" (default) ou "fixo" (sem encargos/descontos).
+    // Funcionários "fixo" recebem o valor bruto como líquido (PJ, autônomo,
+    // freelancer pago por fora, estagiário sem encargos, etc).
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tipo_contratacao TEXT DEFAULT 'clt'`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);

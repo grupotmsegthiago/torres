@@ -468,6 +468,9 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       horasExtras = Math.round(horasExtras * 100) / 100;
       horasNoturnas = Math.round(horasNoturnas * 100) / 100;
 
+      // Regime de contratação: não-CLT (PJ, fixo) não tem INSS/IRRF/FGTS.
+      const isClt = (emp as any).tipoContratacao !== "fixo" && (emp as any).tipo_contratacao !== "fixo";
+
       // ===== ENGINE DE FOLHA 2025 (mesmo padrão do custo fixo) =====
       const folha = calcularFolha({
         salarioBaseCheio: baseSalary,
@@ -480,6 +483,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         refeicaoDiaria: vrDiario,
         ajudaCustoMensal,
         dependentesIR,
+        isClt,
       });
 
       // Vencimentos visíveis (CLT — base + peric + HE + DSR + adic + benefícios)

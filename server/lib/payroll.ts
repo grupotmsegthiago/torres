@@ -130,6 +130,14 @@ export interface PayrollInput {
   ajudaCustoMensal?: number;
   /** Quantidade de dependentes para IRRF. */
   dependentesIR?: number;
+  /**
+   * Regime de contratação. Default `true` (CLT — calcula INSS/IRRF/FGTS
+   * e todas as provisões). Quando `false` (PJ, autônomo, fixo sem encargos),
+   * o bruto vira líquido: zera todos os descontos legais e provisões.
+   * Vencimentos (salário, periculosidade, HE, adic. noturno, DSR, VR, ajuda)
+   * continuam sendo calculados normalmente — só os encargos/descontos somem.
+   */
+  isClt?: boolean;
 }
 
 export interface PayrollBreakdown {
@@ -179,6 +187,7 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     refeicaoDiaria = 0,
     ajudaCustoMensal = 0,
     dependentesIR = 0,
+    isClt = true,
   } = input;
 
   const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
@@ -206,24 +215,28 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   );
   const totalBruto = r2(baseTributavel + refeicao + ajudaCusto);
 
-  // 2) Deduções
-  const inss = calcularINSS(baseTributavel);
-  const irrf = calcularIRRF(baseTributavel, inss, dependentesIR);
-  const fgts = r2(baseTributavel * FGTS_ALIQUOTA);
+  // 2) Deduções — só CLT tem INSS/IRRF/FGTS. Não-CLT (PJ, fixo) zera tudo.
+  const inss = isClt ? calcularINSS(baseTributavel) : 0;
+  const irrf = isClt ? calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
+  const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
   const totalDeducoes = r2(inss + irrf);
 
-  // 3) Provisões mensais (sobre salário cheio — convenção contábil)
-  const provisaoDecimoTerceiro = r2(salarioBaseCheio / 12);
-  const provisaoFerias = r2(salarioBaseCheio / 12);
-  const provisaoTercoFerias = r2(provisaoFerias / 3);
+  // 3) Provisões mensais (sobre salário cheio — convenção contábil).
+  // Não-CLT não acumula férias / 13º / encargos sobre provisões.
+  const provisaoDecimoTerceiro = isClt ? r2(salarioBaseCheio / 12) : 0;
+  const provisaoFerias = isClt ? r2(salarioBaseCheio / 12) : 0;
+  const provisaoTercoFerias = isClt ? r2(provisaoFerias / 3) : 0;
   const baseProvisoes = provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias;
-  const provisaoFGTSsobreFerias13 = r2(baseProvisoes * FGTS_ALIQUOTA);
-  const provisaoINSSsobreFerias13 = r2(baseProvisoes * INSS_PROVISAO_FERIAS_13);
+  const provisaoFGTSsobreFerias13 = isClt ? r2(baseProvisoes * FGTS_ALIQUOTA) : 0;
+  const provisaoINSSsobreFerias13 = isClt ? r2(baseProvisoes * INSS_PROVISAO_FERIAS_13) : 0;
   const totalProvisoes = r2(
     provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias +
     provisaoFGTSsobreFerias13 + provisaoINSSsobreFerias13
   );
 
+  // Custo da empresa: CLT = bruto + FGTS + provisões. Não-CLT = bruto apenas
+  // (já é o desembolso total). Líquido pro funcionário: CLT desconta INSS/IRRF,
+  // não-CLT recebe o bruto integral.
   const custoTotalEmpresa = r2(totalBruto + fgts + totalProvisoes);
   const liquidoFuncionario = r2(totalBruto - inss - irrf);
 
