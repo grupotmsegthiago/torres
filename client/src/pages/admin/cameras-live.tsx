@@ -46,14 +46,14 @@ export default function CamerasLivePage() {
   });
 
   // Alertas recentes (24h) + realtime
-  useQuery<{ alerts: AiAlert[] }>({
+  const { data: alertsData } = useQuery<{ alerts: AiAlert[] }>({
     queryKey: ["/api/ssx/alerts/recent"],
     refetchInterval: 30_000,
-    select: (d) => {
-      setAlertas(d.alerts || []);
-      return d;
-    },
   });
+
+  useEffect(() => {
+    if (alertsData?.alerts) setAlertas(alertsData.alerts);
+  }, [alertsData]);
 
   useEffect(() => {
     const ch = supabase.channel("vehicle-ai-alerts");
