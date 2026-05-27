@@ -306,6 +306,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
   const [form, setForm] = useState({
     name: client?.name || "",
     razaoSocial: (client as any)?.razaoSocial || (client as any)?.razao_social || "",
+    nomeFantasia: (client as any)?.nomeFantasia || (client as any)?.nome_fantasia || "",
     cnpj: client?.cnpj || "",
     cpf: client?.cpf || "",
     email: client?.email || "",
