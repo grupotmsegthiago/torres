@@ -2239,7 +2239,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
   return (
     <div className="space-y-3 no-print">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <StatCard title="Funcionários ativos" value={String(totals.funcionarios)} sub={`${totals.comBatidas} com batidas no mês`} Icon={Users} color="blue" />
+        <StatCard title="Funcionários ativos" value={String(totals.funcionarios)} sub={`${totals.comBatidas} com batidas no ciclo`} Icon={Users} color="blue" />
         <StatCard title="Horas totais" value={`${totals.horas.toFixed(1)}h`} sub={`${totals.horaExtra > 0 ? `+${totals.horaExtra.toFixed(1)}h extras` : "Sem horas extras"}`} Icon={Clock} color={totals.horaExtra > 0 ? "orange" : "blue"} />
         <StatCard title="Custo estimado" value={fmtBRL(totals.custoTotal)} sub={`Base ${fmtBRL(totals.custoBase)} + HE ${fmtBRL(totals.custoExtra)}`} Icon={DollarSign} color="emerald" />
         <StatCard title="Custo c/ encargos" value={fmtBRL(totals.custoEncargos)} sub={totals.semSalario > 0 ? `${totals.semSalario} sem salário cadastrado` : "Inclui encargos sociais"} Icon={TrendingUp} color={totals.semSalario > 0 ? "amber" : "emerald"} />
@@ -2320,7 +2320,12 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
       <Card>
         <div className="p-2 border-b bg-neutral-50 flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-neutral-600" />
-          <h3 className="text-sm font-bold text-neutral-700">Ranking detalhado · {new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</h3>
+          <h3 className="text-sm font-bold text-neutral-700">
+            Ranking detalhado · {new Date(month + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+            <span className="ml-2 text-[11px] font-normal text-neutral-500">
+              ({(() => { const [y,m] = month.split("-").map(Number); const p = getPayrollPeriodFolha(y, m); return p.labelShort; })()} — ciclo RHID)
+            </span>
+          </h3>
           <span className="text-xs text-neutral-400 ml-auto">Clique numa linha pra abrir o espelho</span>
         </div>
         <table className="w-full text-sm">
