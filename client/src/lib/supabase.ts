@@ -23,3 +23,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
 });
+
+// ─────────────────────────────────────────────────────────────
+// Cliente de realtime DEDICADO e ISOLADO para o WhatsApp.
+// Conexão WebSocket própria → orçamento de eventos próprio, separado das
+// tabelas ruidosas (GPS/financeiro) que compartilham `supabase`. Assim msg de
+// WhatsApp NUNCA é descartada por starvation. As tabelas whatsapp_* têm RLS
+// off, então a anon key recebe os eventos sem precisar de sessão.
+export const supabaseWa = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  realtime: {
+    params: { eventsPerSecond: 20 },
+  },
+});

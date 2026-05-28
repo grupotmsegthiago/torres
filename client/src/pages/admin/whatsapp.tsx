@@ -8,7 +8,7 @@ import {
   Image as ImageIcon, FileText, AlertTriangle, Info, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
+import { supabaseWa } from "@/lib/supabase";
 
 interface ChatItem {
   id: string;
@@ -167,21 +167,55 @@ export default function WhatsappPage() {
     }
   }, [messages.length, selectedChatId]);
 
-  // Realtime: novas mensagens / mudanças de chat aparecem na hora
+  // Realtime: novas mensagens / mudanças de chat aparecem NA HORA, igual
+  // WhatsApp normal. Usa conexão dedicada (supabaseWa) pra não disputar
+  // orçamento com GPS/financeiro. Em vez de invalidar+refetch (round-trip),
+  // a mensagem é inserida DIRETO no cache — o payload do postgres_changes já
+  // vem com os nomes de coluna do banco, idênticos ao MessageItem.
   useEffect(() => {
-    const channel = supabase
+    const channel = supabaseWa
       .channel(`whatsapp-page-rt-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "whatsapp_messages" },
+        { event: "INSERT", schema: "public", table: "whatsapp_messages" },
         (payload: any) => {
-          const row = payload.new || payload.old || {};
+          const row = payload.new as MessageItem;
+          if (!row?.chat_id) return;
+          // Anexa direto no cache da conversa aberta (dedup por id / zapi id)
+          queryClient.setQueryData(
+            ["/api/whatsapp/chats", row.chat_id, "messages"],
+            (old: { ok: boolean; messages: MessageItem[] } | undefined) => {
+              if (!old?.messages) return old;
+              const dup = old.messages.some(
+                (m) =>
+                  m.id === row.id ||
+                  (!!row.zapi_message_id && m.zapi_message_id === row.zapi_message_id),
+              );
+              if (dup) return old;
+              return { ...old, messages: [...old.messages, row] };
+            },
+          );
+          // Atualiza a lista de conversas (preview, ordem, não-lidas)
           queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
-          if (row.chat_id) {
-            queryClient.invalidateQueries({
-              queryKey: ["/api/whatsapp/chats", row.chat_id, "messages"],
-            });
-          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "whatsapp_messages" },
+        (payload: any) => {
+          const row = payload.new as MessageItem;
+          if (!row?.chat_id) return;
+          // Atualiza status (enviado→entregue→lido) sem refetch
+          queryClient.setQueryData(
+            ["/api/whatsapp/chats", row.chat_id, "messages"],
+            (old: { ok: boolean; messages: MessageItem[] } | undefined) => {
+              if (!old?.messages) return old;
+              return {
+                ...old,
+                messages: old.messages.map((m) => (m.id === row.id ? { ...m, ...row } : m)),
+              };
+            },
+          );
         },
       )
       .on(
@@ -193,7 +227,7 @@ export default function WhatsappPage() {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      supabaseWa.removeChannel(channel);
     };
   }, []);
 

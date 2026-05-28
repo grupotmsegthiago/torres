@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SiWhatsapp } from "react-icons/si";
-import { supabase } from "@/lib/supabase";
+import { supabaseWa } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -60,7 +60,7 @@ export default function WhatsAppFab() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    const channel = supabase
+    const channel = supabaseWa
       .channel(`whatsapp-fab-rt-${user?.id || "anon"}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages" }, (payload) => {
         const msg = payload.new as any;
@@ -89,7 +89,7 @@ export default function WhatsAppFab() {
         qc.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey[0] === "/api/whatsapp/chats" });
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabaseWa.removeChannel(channel); };
   }, [user?.id, isAdmin, onWhatsAppPage, qc, toast]);
 
   if (!isAdmin) return null;
