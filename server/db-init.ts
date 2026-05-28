@@ -703,6 +703,7 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_estadual TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_group_id TEXT`).catch(() => {});
     // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
     // Permite batidas manuais sem device_id / control_id_user_id (funcionário ainda

@@ -333,6 +333,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     emiteNf: (client as any)?.emiteNf ?? (client as any)?.emite_nf ?? false,
     retemInss: (client as any)?.retemInss ?? (client as any)?.retem_inss ?? false,
     inssAliquota: String((client as any)?.inssAliquota ?? (client as any)?.inss_aliquota ?? "11.00"),
+    whatsappGroupId: (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id || "",
   });
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
@@ -750,6 +751,21 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <p className="text-[10px] text-neutral-400 mt-1">Dia do mês em que o lote trava e avisa se algo ficou fora</p>
             </div>
           </div>
+        </div>
+        <div className="md:col-span-2">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
+            <span className="text-emerald-600">💬</span> Grupo WhatsApp p/ encaminhar updates
+          </label>
+          <Input
+            value={form.whatsappGroupId}
+            onChange={(e) => setForm({ ...form, whatsappGroupId: e.target.value })}
+            placeholder="Ex.: 5511999999999-1681234567@g.us  ou  5511999999999"
+            data-testid="input-client-whatsapp-group"
+          />
+          <p className="text-[10px] text-neutral-400 mt-1">
+            Quando o agente enviar foto + mensagem no app, encaminhamos automaticamente pra esse grupo (ou número) via Z-API.
+            Pra pegar o ID do grupo: abra o grupo no WhatsApp Web, copie o trecho depois de <code>/</code> na URL — termina com <code>@g.us</code>.
+          </p>
         </div>
         <div className="md:col-span-2">
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>

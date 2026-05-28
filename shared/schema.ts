@@ -66,6 +66,7 @@ export const clients = pgTable("clients", {
   emiteNf: boolean("emite_nf").default(false),
   retemInss: boolean("retem_inss").default(true),
   inssAliquota: decimal("inss_aliquota", { precision: 5, scale: 2 }).default("11.00"),
+  whatsappGroupId: text("whatsapp_group_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

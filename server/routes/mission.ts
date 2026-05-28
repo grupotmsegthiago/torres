@@ -1126,23 +1126,76 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const so = await storage.getServiceOrder(serviceOrderId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
+    // Autorização: o agente só pode atualizar uma OS onde ele está vinculado
+    // (ou é admin/operação). Sem essa checagem, qualquer funcionário poderia
+    // enviar mensagens pro WhatsApp de QUALQUER cliente via API.
+    const isAdminLike = ["admin", "supervisor", "operacao", "operação", "diretoria"].includes(
+      String(user.role || "").toLowerCase()
+    );
+    const isAssigned = so.assignedEmployeeId === user.employeeId
+      || so.assignedEmployee2Id === user.employeeId;
+    if (!isAdminLike && !isAssigned) {
+      return res.status(403).json({ message: "Funcionário não está vinculado a esta OS" });
+    }
+
     const emp = await storage.getEmployee(user.employeeId);
 
     try {
-      await supabaseAdmin.from("mission_updates").insert({
+      // Corrige o texto cru do agente via IA (ortografia/acentuação/nexo)
+      // ANTES de gravar — assim a UI do admin e o WhatsApp do cliente recebem
+      // a mesma versão polida. Fail-open: se a IA falhar, grava o texto cru.
+      const { correctAgentMessage } = await import("../lib/correct-text-ai.js");
+      const correctedMessage = await correctAgentMessage(message.trim());
+
+      const { error: insertError } = await supabaseAdmin.from("mission_updates").insert({
         service_order_id: serviceOrderId,
         os_number: so.osNumber || null,
         employee_id: user.employeeId,
         employee_name: emp?.name || user.name || "—",
-        message: message.trim(),
+        message: correctedMessage,
         mission_step: missionStep || so.missionStatus || null,
         latitude: latitude || null,
         longitude: longitude || null,
         photo_url: validatedPhotoUrl,
         read_by_admin: 0,
       });
-      console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${message.trim().substring(0, 50)}"`);
+      if (insertError) {
+        console.error("[mission-update] Erro Supabase ao inserir:", insertError.message);
+        return res.status(500).json({ message: "Erro ao salvar atualização" });
+      }
+      console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${correctedMessage.substring(0, 50)}"`);
       res.json({ success: true });
+
+      // Fire-and-forget: encaminha foto+legenda pro grupo WhatsApp do cliente
+      // (se cliente tem whatsapp_group_id cadastrado E veio foto+mensagem).
+      // Não bloqueia a resposta pro app mobile.
+      if (validatedPhotoUrl && correctedMessage) {
+        (async () => {
+          try {
+            const client = await storage.getClient(so.clientId);
+            const groupId = (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id;
+            if (!groupId) return;
+            const { sendImageWithCaption, isZapiConfigured } = await import("../lib/zapi.js");
+            if (!isZapiConfigured()) {
+              console.warn(`[whatsapp-forward] Z-API não configurada, pulando OS=${so.osNumber}`);
+              return;
+            }
+            const caption = `🚨 *${so.osNumber || "OS"}* — ${emp?.name || user.name || "Agente"}\n\n${correctedMessage}`;
+            const result = await sendImageWithCaption({
+              groupOrPhone: String(groupId),
+              imageBase64OrUrl: validatedPhotoUrl,
+              caption,
+            });
+            if (result.ok) {
+              console.log(`[whatsapp-forward] OS=${so.osNumber} → grupo ${groupId} OK msgId=${result.messageId}`);
+            } else {
+              console.error(`[whatsapp-forward] OS=${so.osNumber} → grupo ${groupId} FALHOU: ${result.error}`);
+            }
+          } catch (err: any) {
+            console.error(`[whatsapp-forward] Erro inesperado OS=${so.osNumber}:`, err?.message);
+          }
+        })();
+      }
     } catch (err: any) {
       console.error("[mission-update] Erro ao salvar:", err.message);
       res.status(500).json({ message: "Erro ao salvar atualização" });
