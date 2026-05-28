@@ -37,13 +37,19 @@ export default function WhatsAppFab() {
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";
   const lastNotifyRef = useRef<number>(0);
 
-  const { data: chats = [] } = useQuery<ChatListItem[]>({
+  const { data: chatsResp } = useQuery<{ ok: boolean; chats?: ChatListItem[] } | ChatListItem[]>({
     queryKey: ["/api/whatsapp/chats"],
     refetchInterval: 30000,
     enabled: !!isAdmin,
   });
 
-  const totalUnread = chats.reduce((acc, c) => acc + (c.unread || 0), 0);
+  const chats: ChatListItem[] = Array.isArray(chatsResp)
+    ? chatsResp
+    : Array.isArray((chatsResp as any)?.chats)
+      ? ((chatsResp as any).chats as ChatListItem[])
+      : [];
+
+  const totalUnread = chats.reduce((acc, c) => acc + (Number(c?.unread) || 0), 0);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
