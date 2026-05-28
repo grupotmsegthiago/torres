@@ -308,11 +308,18 @@ export function registerWhatsappRoutes(app: Express) {
       if (!chatId || typeof chatId !== "string") return res.status(400).json({ ok: false, error: "chatId obrigatório" });
       if (!text || typeof text !== "string" || !text.trim()) return res.status(400).json({ ok: false, error: "text obrigatório" });
 
-      const r = await sendText({ groupOrPhone: chatId, message: text.trim() });
+      // Identifica quem está enviando (usuário logado) e formata o cabeçalho
+      // padrão "*Central Torres - (NOME)*:" pra todas as mensagens saintes.
+      const senderName = (req.user?.name || req.user?.email || "Operador").toString().trim();
+      const senderShort = senderName.split(/\s+/).slice(0, 2).join(" ");
+      const formatted = `*Central Torres - (${senderShort})*:\n${text.trim()}`;
+
+      const r = await sendText({ groupOrPhone: chatId, message: formatted });
       if (!r.ok) return res.status(502).json({ ok: false, error: r.error || "falha Z-API" });
 
       const ts = new Date().toISOString();
-      // Persiste no nosso DB
+      // Persiste no nosso DB (com o mesmo texto que foi pro WhatsApp,
+      // pra histórico bater com o que o contato recebeu).
       const { data: inserted } = await supabaseAdmin
         .from("whatsapp_messages")
         .insert({
@@ -320,9 +327,9 @@ export function registerWhatsappRoutes(app: Express) {
           zapi_message_id: r.messageId || null,
           from_me: true,
           sender_phone: null,
-          sender_name: "Central Torres",
+          sender_name: `Central Torres - ${senderShort}`,
           type: "text",
-          body: text.trim(),
+          body: formatted,
           media_url: null,
           media_mime: null,
           status: "sent",
@@ -335,7 +342,7 @@ export function registerWhatsappRoutes(app: Express) {
       await upsertChatFromEvent({
         chatId,
         lastMessageAt: ts,
-        lastMessageText: text.trim(),
+        lastMessageText: formatted,
         lastMessageFromMe: true,
         incrementUnread: false,
       });
