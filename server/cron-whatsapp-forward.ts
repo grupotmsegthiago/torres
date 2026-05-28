@@ -22,12 +22,21 @@ let running = false;
 // Só esses marcos da missão vão pro grupo do cliente.
 // Qualquer outro mission_step (foto de arma, viatura, dados do motorista, etc.)
 // fica visível só internamente — não polui o grupo do cliente.
+// Decisão 28/05/2026: incluir também atualizações de TRÂNSITO (texto livre + foto
+// que o vigilante manda durante a viagem). O throttle de 3min/grupo evita spam.
 const FORWARDABLE_STEPS: Record<string, string> = {
+  // 5 marcos formais da missão
   checkin_chegada_km: "Chegada na Origem",
   iniciar_missao: "Início de Missão",
   checkout_km_saida: "Em Deslocamento para o Destino",
   chegada_destino: "Chegada no Cliente",
   finalizada: "Fim de Missão",
+  // Atualizações de trânsito (texto livre durante a viagem)
+  deslocamento_inicio: "Deslocamento ao Início",
+  em_transito: "Em Trânsito",
+  em_transito_destino: "Em Trânsito ao Destino",
+  em_apoio: "Em Apoio",
+  pernoite: "Pernoite",
 };
 
 const MISSION_STATUS_LABEL: Record<string, string> = {
