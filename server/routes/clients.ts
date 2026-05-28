@@ -19,9 +19,10 @@ import { listGroups as listZapiGroups } from "../lib/zapi";
   // de cliente. Cache leve in-memory de 60s pra não bater na Z-API toda hora.
   let groupsCache: { ts: number; payload: any } | null = null;
   const GROUPS_CACHE_TTL_MS = 60_000;
-  app.get("/api/whatsapp/groups", requireAuth, requireAdminRole, async (_req, res) => {
+  app.get("/api/whatsapp/groups", requireAuth, requireAdminRole, async (req, res) => {
     try {
-      if (groupsCache && Date.now() - groupsCache.ts < GROUPS_CACHE_TTL_MS) {
+      const bypassCache = req.query.refresh === "1" || req.query.refresh === "true";
+      if (!bypassCache && groupsCache && Date.now() - groupsCache.ts < GROUPS_CACHE_TTL_MS) {
         return res.json({ ...groupsCache.payload, cached: true });
       }
       const r = await listZapiGroups();
@@ -31,6 +32,7 @@ import { listGroups as listZapiGroups } from "../lib/zapi";
         error: r.error || null,
         count: r.groups.length,
       };
+      console.log(`[whatsapp/groups] listGroups -> ok=${r.ok} count=${r.groups.length} error=${r.error || "-"} names=[${r.groups.slice(0,5).map(g=>g.name).join(", ")}]`);
       if (r.ok) groupsCache = { ts: Date.now(), payload };
       res.json(payload);
     } catch (e: any) {
