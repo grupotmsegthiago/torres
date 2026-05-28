@@ -90,24 +90,24 @@ export default function WhatsAppFab() {
   if (!isAdmin) return null;
 
   return (
-    <Link href="/admin/whatsapp" data-testid="link-whatsapp-fab">
-      <a
-        className="fixed bottom-6 right-24 z-40 group"
-        title="Abrir WhatsApp"
-        aria-label="Abrir WhatsApp"
-      >
-        <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[#25D366] hover:bg-[#1ebe57] shadow-lg shadow-emerald-900/30 transition-transform group-hover:scale-105">
-          <SiWhatsapp className="w-7 h-7 text-white" />
+    <Link
+      href="/admin/whatsapp"
+      className="fixed bottom-6 right-24 z-40 group"
+      title="Abrir WhatsApp"
+      aria-label="Abrir WhatsApp"
+      data-testid="link-whatsapp-fab"
+    >
+      <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[#25D366] hover:bg-[#1ebe57] shadow-lg shadow-emerald-900/30 transition-transform group-hover:scale-105">
+        <SiWhatsapp className="w-7 h-7 text-white" />
+      </span>
+      {totalUnread > 0 && (
+        <span
+          className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1.5 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center border-2 border-white shadow"
+          data-testid="badge-whatsapp-unread"
+        >
+          {totalUnread > 99 ? "99+" : totalUnread}
         </span>
-        {totalUnread > 0 && (
-          <span
-            className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1.5 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center border-2 border-white shadow"
-            data-testid="badge-whatsapp-unread"
-          >
-            {totalUnread > 99 ? "99+" : totalUnread}
-          </span>
-        )}
-      </a>
+      )}
     </Link>
   );
 }
