@@ -2428,6 +2428,7 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [adding, setAdding] = useState(false);
   const [newTime, setNewTime] = useState(`${day.date}T08:00`);
   const [newDir, setNewDir] = useState("unknown");
+  const [forcePunch, setForcePunch] = useState(false);
   const [addingDay, setAddingDay] = useState(false);
   const [dayEntrada, setDayEntrada] = useState(`${day.date}T08:00`);
   const [dayLunchOut, setDayLunchOut] = useState(`${day.date}T12:00`);
@@ -2521,15 +2522,30 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
 
   async function addPunch() {
     try {
+      // Detecta horário sensível (00:00 ou 23:59) — backend bloqueia por padrão pra evitar placeholders.
+      // Se usuário marcou o checkbox de confirmação, envia force:true.
+      const hhmm = newTime.slice(11, 16); // "YYYY-MM-DDTHH:MM"
+      const isSensitive = hhmm === "00:00" || hhmm === "23:59";
+      if (isSensitive && !forcePunch) {
+        toast({
+          title: "Confirme o horário",
+          description: `${hhmm} é bloqueado por padrão (placeholder antigo). Marque "Confirmar horário exato" abaixo se for plantão real iniciando/terminando nesse minuto.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const body: any = { employeeId, punchAt: new Date(newTime).toISOString(), direction: newDir };
+      if (isSensitive && forcePunch) body.force = true;
       const r = await authFetch("/api/control-id/manual-punch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId, punchAt: new Date(newTime).toISOString(), direction: newDir }),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID." : (d.rhidError || "Salva localmente.") });
       setAdding(false);
+      setForcePunch(false);
       onChanged();
       onClose();
     } catch (e: any) {
@@ -2622,7 +2638,26 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                 </Select>
               </div>
               <Button size="sm" onClick={addPunch} className="h-8"><Save className="w-3.5 h-3.5 mr-1" /> Adicionar</Button>
-              <Button size="sm" variant="ghost" onClick={() => setAdding(false)} className="h-8">Cancelar</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setForcePunch(false); }} className="h-8">Cancelar</Button>
+              {(() => {
+                const hhmm = newTime.slice(11, 16);
+                const isSensitive = hhmm === "00:00" || hhmm === "23:59";
+                if (!isSensitive) return null;
+                return (
+                  <label className="w-full flex items-start gap-2 mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1.5 cursor-pointer" data-testid="label-force-punch">
+                    <input
+                      type="checkbox"
+                      checked={forcePunch}
+                      onChange={(e) => setForcePunch(e.target.checked)}
+                      className="mt-0.5"
+                      data-testid="checkbox-force-punch"
+                    />
+                    <span>
+                      <strong>Confirmar horário exato ({hhmm})</strong> — esse horário é bloqueado por padrão pra evitar batidas-placeholder antigas que inflavam 24h de jornada. Marque só se for plantão real iniciando/terminando exatamente nesse minuto.
+                    </span>
+                  </label>
+                );
+              })()}
             </Card>
           ) : addingDay ? (
             <Card className="p-3 bg-emerald-50/50 border-emerald-200 space-y-3">
