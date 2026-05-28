@@ -10,7 +10,6 @@ import {
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ChatWidget from "@/components/chat-widget";
 import WhatsAppFab from "@/components/whatsapp-fab";
 import { SiWhatsapp } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
@@ -150,13 +149,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
           { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
-        ],
-      },
-      {
-        label: "Comunicação",
-        icon: SiWhatsapp,
-        children: [
-          { path: "/admin/whatsapp", label: "WhatsApp", icon: SiWhatsapp },
         ],
       },
       {
@@ -573,7 +565,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </main>
       </div>
-      <ChatWidget />
       <WhatsAppFab />
     </div>
   );
