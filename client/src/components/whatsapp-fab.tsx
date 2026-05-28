@@ -49,7 +49,8 @@ export default function WhatsAppFab() {
       ? ((chatsResp as any).chats as ChatListItem[])
       : [];
 
-  const totalUnread = chats.reduce((acc, c) => acc + (Number(c?.unread) || 0), 0);
+  // Conta CONVERSAS com não-lidas (não a soma total de mensagens)
+  const totalUnread = chats.filter((c) => (Number(c?.unread) || 0) > 0).length;
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -82,6 +83,10 @@ export default function WhatsAppFab() {
             });
           } catch {}
         }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_chats" }, () => {
+        // Conversa mudou (ex.: marcada como lida em outro dispositivo) → atualiza contagem na hora
+        qc.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey[0] === "/api/whatsapp/chats" });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
