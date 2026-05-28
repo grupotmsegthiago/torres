@@ -133,11 +133,15 @@ export default function WhatsappPage() {
   const [draft, setDraft] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Polling fica a cargo do interval explícito de 5s (abaixo) — único caminho,
-  // pra não empilhar com refetchInterval e multiplicar requisições.
+  // Polling via refetchInterval do próprio React Query (mecanismo ÚNICO).
+  // refetchIntervalInBackground:true mantém a busca rodando mesmo com a aba em
+  // segundo plano (sem isso o React Query PAUSA o interval quando a janela perde
+  // foco — era a causa de "voltei pra aba e não tinha atualizado / precisei F5").
   const { data: chatsData, isLoading: loadingChats, refetch: refetchChats, isFetching: fetchingChats } = useQuery<{ ok: boolean; chats: ChatItem[] }>({
     queryKey: ["/api/whatsapp/chats"],
     refetchOnWindowFocus: true,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
     staleTime: 0,
   });
 
@@ -155,10 +159,12 @@ export default function WhatsappPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId) || null;
 
-  const { data: msgsData, refetch: refetchMsgs } = useQuery<{ ok: boolean; messages: MessageItem[] }>({
+  const { data: msgsData, refetch: refetchMsgs, dataUpdatedAt: msgsUpdatedAt } = useQuery<{ ok: boolean; messages: MessageItem[] }>({
     queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
     enabled: !!selectedChatId,
     refetchOnWindowFocus: true,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: true,
     staleTime: 0,
   });
   const messages = msgsData?.messages || [];
@@ -169,74 +175,30 @@ export default function WhatsappPage() {
     }
   }, [messages.length, selectedChatId]);
 
-  // "Ctrl+Shift+R só do WhatsApp": a cada 5s força a re-busca SÓ das queries do
-  // WhatsApp (lista de conversas + conversa aberta), independente do realtime e
-  // das nuances de pausa do refetchInterval do React Query. setInterval roda
-  // mesmo com a aba fora de foco (navegadores só congelam quando a aba está em
-  // background pesado; ao voltar, o refetchOnWindowFocus das queries cobre).
+  // Realtime: quando o WS entrega (aba ativa e rede liberada), a mudança aparece
+  // NA HORA via conexão dedicada (supabaseWa, sem disputar orçamento com GPS).
+  // Em vez de mexer no cache na mão (que corria risco de um poll antigo em voo
+  // sobrescrever a mensagem recém-anexada), o realtime apenas INVALIDA a query —
+  // o refetch resultante passa pela API e sempre devolve a lista correta. O
+  // polling de 3-5s (refetchInterval acima) é a rede de segurança quando o WS
+  // está bloqueado/instável.
   useEffect(() => {
-    const tick = () => {
-      queryClient.refetchQueries({ queryKey: ["/api/whatsapp/chats"], exact: true });
-      if (selectedChatId) {
-        queryClient.refetchQueries({
-          queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
-          exact: true,
+    const bump = (chatId?: string) => {
+      if (chatId) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/whatsapp/chats", chatId, "messages"],
         });
       }
+      queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
     };
-    const id = window.setInterval(tick, 5_000);
-    return () => window.clearInterval(id);
-  }, [selectedChatId]);
-
-  // Realtime: novas mensagens / mudanças de chat aparecem NA HORA, igual
-  // WhatsApp normal. Usa conexão dedicada (supabaseWa) pra não disputar
-  // orçamento com GPS/financeiro. Em vez de invalidar+refetch (round-trip),
-  // a mensagem é inserida DIRETO no cache — o payload do postgres_changes já
-  // vem com os nomes de coluna do banco, idênticos ao MessageItem.
-  useEffect(() => {
     const channel = supabaseWa
       .channel(`whatsapp-page-rt-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "whatsapp_messages" },
+        { event: "*", schema: "public", table: "whatsapp_messages" },
         (payload: any) => {
-          const row = payload.new as MessageItem;
-          if (!row?.chat_id) return;
-          // Anexa direto no cache da conversa aberta (dedup por id / zapi id)
-          queryClient.setQueryData(
-            ["/api/whatsapp/chats", row.chat_id, "messages"],
-            (old: { ok: boolean; messages: MessageItem[] } | undefined) => {
-              if (!old?.messages) return old;
-              const dup = old.messages.some(
-                (m) =>
-                  m.id === row.id ||
-                  (!!row.zapi_message_id && m.zapi_message_id === row.zapi_message_id),
-              );
-              if (dup) return old;
-              return { ...old, messages: [...old.messages, row] };
-            },
-          );
-          // Atualiza a lista de conversas (preview, ordem, não-lidas)
-          queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "whatsapp_messages" },
-        (payload: any) => {
-          const row = payload.new as MessageItem;
-          if (!row?.chat_id) return;
-          // Atualiza status (enviado→entregue→lido) sem refetch
-          queryClient.setQueryData(
-            ["/api/whatsapp/chats", row.chat_id, "messages"],
-            (old: { ok: boolean; messages: MessageItem[] } | undefined) => {
-              if (!old?.messages) return old;
-              return {
-                ...old,
-                messages: old.messages.map((m) => (m.id === row.id ? { ...m, ...row } : m)),
-              };
-            },
-          );
+          const row = (payload.new || payload.old) as MessageItem;
+          bump(row?.chat_id);
         },
       )
       .on(
@@ -400,6 +362,19 @@ export default function WhatsappPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-slate-500">
+                  <span
+                    className="flex items-center gap-1.5 text-[10px] text-emerald-700"
+                    title="Atualização automática ativa — sem precisar dar F5"
+                    data-testid="status-whatsapp-live"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    ao vivo
+                    {msgsUpdatedAt > 0 && (
+                      <span className="text-slate-400 font-mono">
+                        {new Date(msgsUpdatedAt).toLocaleTimeString("pt-BR", { hour12: false })}
+                      </span>
+                    )}
+                  </span>
                   <Search className="w-5 h-5 cursor-pointer hover:text-slate-800" />
                   <MoreVertical className="w-5 h-5 cursor-pointer hover:text-slate-800" />
                 </div>
