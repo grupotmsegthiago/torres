@@ -1180,7 +1180,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
               console.warn(`[whatsapp-forward] Z-API não configurada, pulando OS=${so.osNumber}`);
               return;
             }
-            const caption = `🚨 *${so.osNumber || "OS"}* — ${emp?.name || user.name || "Agente"}\n\n${correctedMessage}`;
+            const caption = `*Central Torres Vigilancia*\n\n🚨 *${so.osNumber || "OS"}* — ${emp?.name || user.name || "Agente"}\n\n${correctedMessage}`;
             const result = await sendImageWithCaption({
               groupOrPhone: String(groupId),
               imageBase64OrUrl: validatedPhotoUrl,
