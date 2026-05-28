@@ -1909,7 +1909,7 @@ function FolhaTab() {
                     <td className="p-2 text-right font-bold text-blue-600">{d.hoursWorked || "—"}</td>
                     <td className="p-2 text-right text-xs tabular-nums" data-testid={`text-extra-${d.date}`}>
                       {d.extraMin && d.extraMin > 0 ? (
-                        <span className="font-semibold text-orange-600">+{Math.floor(d.extraMin / 60)}h {String(d.extraMin % 60).padStart(2, "0")}min</span>
+                        <span className="font-semibold text-orange-600">+{(d.extraMin / 60).toFixed(2)}h</span>
                       ) : (
                         <span className="text-neutral-300">—</span>
                       )}
@@ -1934,7 +1934,7 @@ function FolhaTab() {
                       <td className="p-2" colSpan={5}>Total no mês ({stats.daysWorked} dias)</td>
                       <td className="p-2 text-right text-blue-700">{stats.hoursWorked.toFixed(2)}h</td>
                       <td className="p-2 text-right text-orange-600 tabular-nums" data-testid="text-total-extra-dia">
-                        {totalExtraMin > 0 ? `+${Math.floor(totalExtraMin / 60)}h ${String(totalExtraMin % 60).padStart(2, "0")}min` : "—"}
+                        {totalExtraMin > 0 ? `+${(totalExtraMin / 60).toFixed(2)}h` : "—"}
                       </td>
                       <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
                         {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{stats.horaExtra.toFixed(2)}h</span>}
