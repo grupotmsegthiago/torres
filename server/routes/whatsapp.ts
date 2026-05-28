@@ -392,21 +392,36 @@ export function registerWhatsappRoutes(app: Express) {
       const body = req.body;
       const evtType = String(body?.type || "").toLowerCase();
 
-      // Status update (delivered/read) — atualiza status da msg sem inserir nova
-      if (evtType.includes("status") || body?.status) {
+      // Detecta se o payload TEM conteúdo de mensagem (text, image, audio, etc).
+      // A Z-API multi-device às vezes embute um campo `status` mesmo em
+      // mensagens novas (ex: "RECEIVED", "PLAYED") — só tratar como
+      // status-update quando NÃO há conteúdo de msg E o type indica isso.
+      const hasMessageContent = !!(
+        body?.text?.message || body?.image || body?.audio || body?.video ||
+        body?.document || body?.sticker || body?.contact || body?.location ||
+        body?.reaction || body?.poll || body?.listResponseMessage ||
+        body?.buttonsResponseMessage
+      );
+      const isDeliveryCallback = evtType === "deliverycallback" || evtType === "messagestatuscallback";
+      const isPureStatusUpdate = !hasMessageContent && (isDeliveryCallback || evtType.includes("status"));
+
+      if (isPureStatusUpdate) {
         const mid = body?.messageId || body?.ids?.[0];
-        const newStatus = String(body?.status || "").toLowerCase();
+        const newStatus = String(body?.status || (isDeliveryCallback ? "delivered" : "")).toLowerCase();
         if (mid && newStatus) {
           await supabaseAdmin
             .from("whatsapp_messages")
             .update({ status: newStatus })
             .eq("zapi_message_id", mid);
         }
-        return res.json({ ok: true, ignored: "status_update" });
+        return res.json({ ok: true, ignored: "status_update", type: evtType });
       }
 
       const parsed = parseWebhookMessage(body);
-      if (!parsed) return res.json({ ok: true, ignored: "unparseable" });
+      if (!parsed) {
+        console.warn("[whatsapp/webhook] unparseable body — keys:", Object.keys(body || {}));
+        return res.json({ ok: true, ignored: "unparseable" });
+      }
 
       // Idempotência: se já temos essa zapi_message_id, ignora
       if (parsed.zapiMessageId) {
