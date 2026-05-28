@@ -1062,6 +1062,7 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS whatsapp_forward_error TEXT`).catch(() => {});
     await execSql(`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS whatsapp_forward_claimed_at TIMESTAMPTZ`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_pending_forward ON mission_updates (created_at DESC) WHERE whatsapp_forwarded_at IS NULL AND photo_url IS NOT NULL`).catch(() => {});
+    await execSql(`CREATE TABLE IF NOT EXISTS whatsapp_group_throttle (group_id TEXT PRIMARY KEY, last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS invoices (

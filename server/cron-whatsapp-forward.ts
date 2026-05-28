@@ -3,9 +3,17 @@ import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured } from "./lib/zapi.js";
 
 const TAG = "[whatsapp-forward-cron]";
-const LOOKBACK_HOURS = 24;
+// Janela curta: só encaminha updates recentes. Se uma update ficar
+// pendente por mais que isso (Z-API fora, cron parado, etc.), é
+// descartada pra evitar despejar backlog antigo no grupo do cliente.
+// Decisão do dono em 28/05/2026.
+const LOOKBACK_MIN = 15;
 const MAX_PER_RUN = 10;
 const CLAIM_STALE_MIN = 5;
+// Anti-spam: no máximo 1 msg a cada N min por grupo de cliente.
+// Se já enviou recente, o claim é liberado pro próximo ciclo do cron.
+// Combinado com LOOKBACK_MIN=15: no pior caso 5 msgs/15min por cliente.
+const THROTTLE_PER_GROUP_MIN = 3;
 
 let running = false;
 
@@ -43,7 +51,7 @@ async function processPending(): Promise<void> {
   try {
     if (!isZapiConfigured()) return;
 
-    const cutoff = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - LOOKBACK_MIN * 60 * 1000).toISOString();
     const { data: ups, error } = await supabaseAdmin
       .from("mission_updates")
       .select("id, service_order_id, os_number, employee_name, message, photo_url, created_at")
@@ -103,6 +111,26 @@ async function processPending(): Promise<void> {
         continue;
       }
 
+      // Throttle por grupo: se mandou msg pra esse grupo nos últimos N min,
+      // libera o claim e tenta no próximo ciclo (evita spam em backlog)
+      const { data: thr, error: thrErr } = await supabaseAdmin
+        .from("whatsapp_group_throttle")
+        .select("last_sent_at").eq("group_id", String(groupId)).maybeSingle();
+      if (thrErr) {
+        await releaseClaim(u.id, `db throttle: ${thrErr.message}`);
+        console.error(`${TAG} ⟳ id=${u.id} erro transitório THROTTLE:`, thrErr.message);
+        continue;
+      }
+      if (thr?.last_sent_at) {
+        const elapsedMs = Date.now() - new Date(thr.last_sent_at).getTime();
+        if (elapsedMs < THROTTLE_PER_GROUP_MIN * 60 * 1000) {
+          const waitMin = Math.ceil((THROTTLE_PER_GROUP_MIN * 60 * 1000 - elapsedMs) / 60000);
+          await releaseClaim(u.id, `throttle: aguardando ${waitMin}min`);
+          console.log(`${TAG} ⏸ id=${u.id} OS=${u.os_number} → ${(client as any).name} throttle ${waitMin}min`);
+          continue;
+        }
+      }
+
       const caption = `*Central Torres Vigilancia*\n\n🚨 *${u.os_number || "OS"}* — ${u.employee_name || "Agente"}\n\n${msg}`;
       try {
         const result = await sendImageWithCaption({
@@ -112,6 +140,8 @@ async function processPending(): Promise<void> {
         });
         if (result.ok) {
           await markDone(u.id, null);
+          await supabaseAdmin.from("whatsapp_group_throttle")
+            .upsert({ group_id: String(groupId), last_sent_at: new Date().toISOString() }, { onConflict: "group_id" });
           console.log(`${TAG} ✓ id=${u.id} OS=${u.os_number} → ${(client as any).name} msgId=${result.messageId}`);
         } else {
           await releaseClaim(u.id, String(result.error || "erro desconhecido"));
@@ -131,6 +161,6 @@ export function initWhatsappForwardCron(): void {
   cron.schedule("*/30 * * * * *", () => {
     processPending().catch((e) => console.error(`${TAG} crash:`, e?.message));
   });
-  console.log(`${TAG} CRON ativo: a cada 30s, lookback ${LOOKBACK_HOURS}h, max ${MAX_PER_RUN}/ciclo, claim TTL ${CLAIM_STALE_MIN}min`);
+  console.log(`${TAG} CRON ativo: a cada 30s, lookback ${LOOKBACK_MIN}min, max ${MAX_PER_RUN}/ciclo, claim TTL ${CLAIM_STALE_MIN}min, throttle ${THROTTLE_PER_GROUP_MIN}min/grupo`);
   setTimeout(() => processPending().catch(() => {}), 5000);
 }
