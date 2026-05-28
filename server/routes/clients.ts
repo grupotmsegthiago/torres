@@ -7,11 +7,35 @@ import type { Express } from "express";
   import { validateContactFields } from "../lib/normalize-contact";
 
   import { generateContractPDF } from "../contract-pdf";
+import { listGroups as listZapiGroups } from "../lib/zapi";
 
   export function registerClientRoutes(app: Express) {
     app.get("/api/clients", requireAuth, requireAdminRole, async (_req, res) => {
     const data = await storage.getClients();
     res.json(data);
+  });
+
+  // Lista grupos do WhatsApp via Z-API pra popular o select no cadastro
+  // de cliente. Cache leve in-memory de 60s pra não bater na Z-API toda hora.
+  let groupsCache: { ts: number; payload: any } | null = null;
+  const GROUPS_CACHE_TTL_MS = 60_000;
+  app.get("/api/whatsapp/groups", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      if (groupsCache && Date.now() - groupsCache.ts < GROUPS_CACHE_TTL_MS) {
+        return res.json({ ...groupsCache.payload, cached: true });
+      }
+      const r = await listZapiGroups();
+      const payload = {
+        ok: r.ok,
+        groups: r.groups,
+        error: r.error || null,
+        count: r.groups.length,
+      };
+      if (r.ok) groupsCache = { ts: Date.now(), payload };
+      res.json(payload);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, groups: [], error: e?.message || "erro interno" });
+    }
   });
 
   app.get("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {

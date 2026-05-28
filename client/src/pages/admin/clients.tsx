@@ -22,6 +22,7 @@ import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
 import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
+import { WhatsappGroupPicker } from "@/components/admin/whatsapp-group-picker";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
@@ -756,15 +757,12 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
             <span className="text-emerald-600">💬</span> Grupo WhatsApp p/ encaminhar updates
           </label>
-          <Input
+          <WhatsappGroupPicker
             value={form.whatsappGroupId}
-            onChange={(e) => setForm({ ...form, whatsappGroupId: e.target.value })}
-            placeholder="Ex.: 5511999999999-1681234567@g.us  ou  5511999999999"
-            data-testid="input-client-whatsapp-group"
+            onChange={(v) => setForm({ ...form, whatsappGroupId: v })}
           />
           <p className="text-[10px] text-neutral-400 mt-1">
-            Quando o agente enviar foto + mensagem no app, encaminhamos automaticamente pra esse grupo (ou número) via Z-API.
-            Pra pegar o ID do grupo: abra o grupo no WhatsApp Web, copie o trecho depois de <code>/</code> na URL — termina com <code>@g.us</code>.
+            Selecione o grupo do WhatsApp conectado na Z-API. Quando o agente enviar foto+mensagem no app, encaminhamos pra esse grupo automaticamente.
           </p>
         </div>
         <div className="md:col-span-2">

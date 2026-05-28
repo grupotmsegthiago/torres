@@ -94,6 +94,67 @@ export async function sendImageWithCaption(params: {
   }
 }
 
+export interface ZapiGroup {
+  id: string;          // ex: "5511...-1681...@g.us"
+  name: string;        // nome do grupo
+  participantsCount?: number;
+}
+
+/**
+ * Lista os grupos do WhatsApp da instância Z-API conectada.
+ * Usa o endpoint /chats (paginado) e filtra os que são grupos.
+ * Retorna até 500 grupos (10 páginas de 50). Z-API limita pageSize a 50.
+ */
+export async function listGroups(): Promise<{ ok: boolean; groups: ZapiGroup[]; error?: string }> {
+  if (!isZapiConfigured()) {
+    return { ok: false, groups: [], error: "Z-API não configurada (ZAPI_INSTANCE_ID/ZAPI_TOKEN/ZAPI_CLIENT_TOKEN)" };
+  }
+
+  const groups: ZapiGroup[] = [];
+  const PAGE_SIZE = 50;
+  const MAX_PAGES = 10;
+
+  try {
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const resp = await fetch(`${BASE}/chats?page=${page}&pageSize=${PAGE_SIZE}`, {
+        method: "GET",
+        headers: { "Client-Token": CLIENT_TOKEN },
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await resp.text();
+      if (!resp.ok) {
+        return { ok: false, groups, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`) };
+      }
+      let parsed: any;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
+      const arr: any[] = Array.isArray(parsed) ? parsed : (parsed?.chats || parsed?.data || []);
+      if (!arr || arr.length === 0) break;
+
+      for (const chat of arr) {
+        const isGroup = chat?.isGroup === true || String(chat?.phone || chat?.id || "").endsWith("@g.us");
+        if (!isGroup) continue;
+        const id = String(chat?.phone || chat?.id || "").trim();
+        const name = String(chat?.name || chat?.groupName || chat?.subject || id).trim();
+        if (!id) continue;
+        groups.push({
+          id,
+          name: name || id,
+          participantsCount: chat?.participantsCount || chat?.size,
+        });
+      }
+
+      if (arr.length < PAGE_SIZE) break; // última página
+    }
+    // Dedupe por id e ordena por nome (case-insensitive)
+    const byId = new Map<string, ZapiGroup>();
+    for (const g of groups) if (!byId.has(g.id)) byId.set(g.id, g);
+    const list = Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    return { ok: true, groups: list };
+  } catch (err: any) {
+    return { ok: false, groups, error: sanitize(err?.message || String(err)) };
+  }
+}
+
 /**
  * Envia mensagem só de texto (caso não tenha foto).
  */
