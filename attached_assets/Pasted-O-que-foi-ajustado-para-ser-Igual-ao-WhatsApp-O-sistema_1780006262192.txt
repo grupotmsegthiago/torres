@@ -1,0 +1,28 @@
+O que foi ajustado para ser "Igual ao WhatsApp"
+O sistema agora não depende mais apenas do usuário dar F5. Foram implementadas três camadas de segurança para garantir que a mensagem apareça sozinha:
+
+Conexão Dedicada (Realtime Isolado): Antes, o WhatsApp dividia a "frequência" com o GPS dos veículos e o financeiro. Como o GPS manda dados a cada segundo, ele "entupia" a conexão e as mensagens se perdiam. Agora, o WhatsApp tem uma via exclusiva (via Supabase Realtime) só para mensagens.
+
+O "Refresh Cirúrgico" de 5 segundos: Atendendo ao seu pedido, foi criado um script que simula um "Ctrl + Shift + R" apenas dentro do componente de WhatsApp, a cada 5 segundos. Isso garante que, mesmo que a conexão de internet oscile, o sistema busque mensagens novas sem atualizar a página inteira.
+
+Atualização ao Focar a Aba: Se o vigilante estiver em outra aba e voltar para o sistema, o WhatsApp atualiza instantaneamente no momento do clique (foco).
+
+Como validar se está certo
+Para que isso funcione para todos os usuários logados ao mesmo tempo (sincronização espelhada), você precisa validar estes pontos:
+
+Publicação (Publish): Nada disso funcionará se você não clicar no botão "Publish" no Replit. O código novo precisa ser enviado para o servidor de produção.
+
+Teste de Espelhamento: Abra o sistema em dois navegadores diferentes (ou dois computadores). Mande uma mensagem pelo celular. A mensagem deve aparecer nos dois navegadores em até 5 segundos (pelo polling) ou instantaneamente (pelo Realtime), sem ninguém tocar no teclado.
+
+Permissões: O sistema foi configurado para que todos que tenham acesso à tela de WhatsApp vejam a mesma base de dados compartilhada, garantindo que o que um vê, o outro também vê.
+
+O que pode estar "errado" ou faltando?
+Se mesmo após o Publish as mensagens ainda não aparecerem sozinhas, o problema pode ser:
+
+Conexão Realtime Bloqueada: Alguns navegadores ou redes de internet bloqueiam WebSockets. O "Refresh de 5 segundos" foi colocado justamente como plano B para esses casos.
+
+Service Worker (Cache): Se o seu sistema for um PWA (instalado no computador), às vezes ele guarda a versão velha. Peça para os usuários darem um Ctrl + F5 uma única vez após você publicar as mudanças para "limpar" o código antigo.
+
+Resumo: O sistema agora tem uma "linha direta" para mensagens e um motor de busca automática a cada 5 segundos. Está configurado para ser instantâneo e sincronizado para todos os vigilantes e usuários.
+
+Você já clicou em Publish e testou enviar uma mensagem de um aparelho externo para ver se ela "brota" na tela sozinha?
