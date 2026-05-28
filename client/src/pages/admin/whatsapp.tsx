@@ -5,7 +5,7 @@ import AdminLayout from "@/components/admin/layout";
 import {
   Search, Paperclip, Smile, Mic, Send, Phone, Video, MoreVertical,
   MessageCircle, Users, Pin, Check, CheckCheck, User as UserIcon,
-  Image as ImageIcon, FileText, AlertTriangle, Info, RefreshCw,
+  Image as ImageIcon, FileText, AlertTriangle, Info, RefreshCw, ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabaseWa } from "@/lib/supabase";
@@ -252,7 +252,10 @@ export default function WhatsappPage() {
     <AdminLayout>
       <div className="h-[calc(100vh-4rem)] flex bg-slate-100 -m-6">
         {/* COLUNA 1 — Lista de Conversas */}
-        <div className="w-[360px] flex flex-col bg-white border-r border-slate-200 shrink-0">
+        <div className={cn(
+          "w-full md:w-[360px] flex-col bg-white border-r border-slate-200 shrink-0",
+          selectedChat ? "hidden md:flex" : "flex"
+        )}>
           <div className="h-14 bg-[#f0f2f5] flex items-center justify-between px-4 border-b border-slate-200">
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">CT</div>
@@ -335,7 +338,10 @@ export default function WhatsappPage() {
         </div>
 
         {/* COLUNA 2 — Chat Ativo */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#efeae2] relative">
+        <div className={cn(
+          "flex-1 flex-col min-w-0 bg-[#efeae2] relative",
+          selectedChat ? "flex" : "hidden md:flex"
+        )}>
           {!selectedChat ? (
             <div className="flex-1 flex items-center justify-center text-center px-8">
               <div>
@@ -351,6 +357,14 @@ export default function WhatsappPage() {
             <>
               <div className="h-14 bg-[#f0f2f5] flex items-center justify-between px-4 border-b border-slate-200 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    onClick={() => setSelectedChatId(null)}
+                    className="md:hidden text-slate-600 hover:text-slate-900 -ml-2 p-1 shrink-0"
+                    title="Voltar para a lista"
+                    data-testid="button-whatsapp-back"
+                  >
+                    <ArrowLeft className="w-6 h-6" />
+                  </button>
                   <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0", avatarColor(selectedChat.name))}>
                     {selectedChat.isGroup ? <Users className="w-5 h-5" /> : initials(selectedChat.name)}
                   </div>
