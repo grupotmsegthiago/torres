@@ -133,10 +133,12 @@ export default function WhatsappPage() {
   const [draft, setDraft] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Polling fica a cargo do interval explícito de 5s (abaixo) — único caminho,
+  // pra não empilhar com refetchInterval e multiplicar requisições.
   const { data: chatsData, isLoading: loadingChats, refetch: refetchChats, isFetching: fetchingChats } = useQuery<{ ok: boolean; chats: ChatItem[] }>({
     queryKey: ["/api/whatsapp/chats"],
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
   const chats = chatsData?.chats || [];
@@ -156,8 +158,8 @@ export default function WhatsappPage() {
   const { data: msgsData, refetch: refetchMsgs } = useQuery<{ ok: boolean; messages: MessageItem[] }>({
     queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
     enabled: !!selectedChatId,
-    refetchInterval: selectedChatId ? 3_000 : false,
-    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const messages = msgsData?.messages || [];
 
@@ -166,6 +168,25 @@ export default function WhatsappPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages.length, selectedChatId]);
+
+  // "Ctrl+Shift+R só do WhatsApp": a cada 5s força a re-busca SÓ das queries do
+  // WhatsApp (lista de conversas + conversa aberta), independente do realtime e
+  // das nuances de pausa do refetchInterval do React Query. setInterval roda
+  // mesmo com a aba fora de foco (navegadores só congelam quando a aba está em
+  // background pesado; ao voltar, o refetchOnWindowFocus das queries cobre).
+  useEffect(() => {
+    const tick = () => {
+      queryClient.refetchQueries({ queryKey: ["/api/whatsapp/chats"], exact: true });
+      if (selectedChatId) {
+        queryClient.refetchQueries({
+          queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
+          exact: true,
+        });
+      }
+    };
+    const id = window.setInterval(tick, 5_000);
+    return () => window.clearInterval(id);
+  }, [selectedChatId]);
 
   // Realtime: novas mensagens / mudanças de chat aparecem NA HORA, igual
   // WhatsApp normal. Usa conexão dedicada (supabaseWa) pra não disputar
