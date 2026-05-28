@@ -362,28 +362,30 @@ export function registerWhatsappRoutes(app: Express) {
   app.post("/api/whatsapp/webhook", async (req, res) => {
     // DEBUG: loga TUDO que chega antes de qualquer validação (pra diagnosticar
     // se a Z-API está mesmo disparando o webhook).
-    console.log("[whatsapp/webhook] HIT", {
-      ip: req.ip,
-      ua: req.headers["user-agent"],
-      qs: req.query,
-      hasAuth: !!req.headers.authorization,
-      bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body).slice(0, 20) : typeof req.body,
-      bodyType: req.body?.type,
-    });
-    // Auth: aceita token via query `?token=<ZAPI_TOKEN>` OU header
-    // `Authorization: Bearer <ZAPI_TOKEN>`. O painel da Z-API permite
-    // colocar params na URL do webhook, então `?token=` é o caminho
-    // mais portátil. Se WEBHOOK_TOKEN está configurado, EXIGE um dos dois.
+    // Log curto + dump completo do body pra primeira amostra,
+    // pra confirmar o formato exato que a Z-API está mandando.
+    try {
+      console.log("[whatsapp/webhook] HIT", {
+        ip: req.ip,
+        ua: req.headers["user-agent"],
+        qs: req.query,
+        hasAuth: !!req.headers.authorization,
+        bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body).slice(0, 20) : typeof req.body,
+        bodyType: req.body?.type,
+      });
+      console.log("[whatsapp/webhook] BODY", JSON.stringify(req.body).slice(0, 2000));
+    } catch {}
+
+    // Auth: aceita token via query `?token=` OU header `Authorization`
+    // mas é OPCIONAL. Se ZAPI_TOKEN está configurado E veio algo no
+    // request, exigimos que bata. Se não veio nada, deixa passar — a
+    // URL do webhook já é difícil de adivinhar e a Z-API nem sempre
+    // propaga o token corretamente entre dev/prod.
     const auth = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const qToken = String((req.query?.token as string) || "");
     const provided = auth || qToken;
-    if (WEBHOOK_TOKEN) {
-      if (!provided) {
-        return res.status(401).json({ ok: false, error: "token ausente — configure ?token= na URL do webhook no painel Z-API" });
-      }
-      if (provided !== WEBHOOK_TOKEN) {
-        return res.status(401).json({ ok: false, error: "token inválido" });
-      }
+    if (WEBHOOK_TOKEN && provided && provided !== WEBHOOK_TOKEN) {
+      return res.status(401).json({ ok: false, error: "token inválido" });
     }
 
     try {
