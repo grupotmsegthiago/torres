@@ -101,8 +101,14 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
 
   const [vehRes, ag1Res, ag2Res, addr] = await Promise.all([vehicleP, ag1P, ag2P, addrP]);
   const viaturaPlate = (vehRes as any)?.data?.plate;
-  const ag1Name = (ag1Res as any)?.data?.name;
-  const ag2Name = (ag2Res as any)?.data?.name;
+  // Privacidade no grupo do cliente: só primeiro + segundo nome do agente.
+  const shortName = (full?: string | null): string => {
+    if (!full) return "";
+    const parts = String(full).trim().split(/\s+/);
+    return parts.slice(0, 2).join(" ");
+  };
+  const ag1Name = shortName((ag1Res as any)?.data?.name);
+  const ag2Name = shortName((ag2Res as any)?.data?.name);
 
   // Progresso + distância restante (precisa origin/destination lat/lng + posição atual)
   let progressoPct: number | null = null;
