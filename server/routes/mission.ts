@@ -1112,7 +1112,6 @@ Responda APENAS com JSON: {"km_lido": number}`;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
     const { serviceOrderId, message, missionStep, latitude, longitude, photoUrl } = req.body;
-    console.log(`[mission-update] ENTRY emp=${user.employeeId} so=${serviceOrderId} msgLen=${(message||"").length} photoLen=${(photoUrl||"").length} photoPrefix=${String(photoUrl||"").slice(0,30)}`);
     if (!serviceOrderId || !message?.trim()) {
       return res.status(400).json({ message: "OS e mensagem são obrigatórios" });
     }
@@ -1121,8 +1120,6 @@ Responda APENAS com JSON: {"km_lido": number}`;
     if (photoUrl) {
       if (typeof photoUrl === "string" && photoUrl.startsWith("data:image/") && photoUrl.length <= 5 * 1024 * 1024) {
         validatedPhotoUrl = photoUrl;
-      } else {
-        console.warn(`[mission-update] photoUrl REJEITADA: typeof=${typeof photoUrl} startsWithData=${typeof photoUrl === "string" && photoUrl.startsWith("data:image/")} len=${(photoUrl||"").length}`);
       }
     }
 
@@ -1188,42 +1185,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       res.json({ success: true });
 
-      // Fire-and-forget: encaminha foto+legenda pro grupo WhatsApp do cliente
-      // (se cliente tem whatsapp_group_id cadastrado E veio foto+mensagem).
-      // Não bloqueia a resposta pro app mobile.
-      console.log(`[whatsapp-forward] CHECK OS=${so.osNumber} hasPhoto=${!!validatedPhotoUrl} hasMsg=${!!correctedMessage} clientId=${so.clientId}`);
-      if (validatedPhotoUrl && correctedMessage) {
-        (async () => {
-          try {
-            const client = await storage.getClient(so.clientId);
-            const groupId = (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id;
-            console.log(`[whatsapp-forward] OS=${so.osNumber} client=${client?.name || "?"} groupId=${groupId || "(vazio)"}`);
-            if (!groupId) {
-              console.warn(`[whatsapp-forward] OS=${so.osNumber} pulada — cliente sem whatsapp_group_id`);
-              return;
-            }
-            const { sendImageWithCaption, isZapiConfigured } = await import("../lib/zapi.js");
-            if (!isZapiConfigured()) {
-              console.warn(`[whatsapp-forward] Z-API não configurada, pulando OS=${so.osNumber}`);
-              return;
-            }
-            console.log(`[whatsapp-forward] OS=${so.osNumber} → enviando pra grupo ${groupId}...`);
-            const caption = `*Central Torres Vigilancia*\n\n🚨 *${so.osNumber || "OS"}* — ${emp?.name || user.name || "Agente"}\n\n${correctedMessage}`;
-            const result = await sendImageWithCaption({
-              groupOrPhone: String(groupId),
-              imageBase64OrUrl: validatedPhotoUrl,
-              caption,
-            });
-            if (result.ok) {
-              console.log(`[whatsapp-forward] OS=${so.osNumber} → grupo ${groupId} OK msgId=${result.messageId}`);
-            } else {
-              console.error(`[whatsapp-forward] OS=${so.osNumber} → grupo ${groupId} FALHOU: ${result.error}`);
-            }
-          } catch (err: any) {
-            console.error(`[whatsapp-forward] Erro inesperado OS=${so.osNumber}:`, err?.message);
-          }
-        })();
-      }
+      // O encaminhamento pro grupo WhatsApp do cliente é feito pelo cron
+      // `initWhatsappForwardCron` (server/cron-whatsapp-forward.ts) — varre
+      // updates com foto+mensagem ainda não encaminhadas a cada 30s. Assim
+      // funciona pra TODAS as rotas que inserem em mission_updates (não só
+      // esta) e auto-recupera de qualquer falha de rede/Z-API.
     } catch (err: any) {
       console.error("[mission-update] Erro ao salvar:", err.message);
       res.status(500).json({ message: "Erro ao salvar atualização" });
