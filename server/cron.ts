@@ -972,7 +972,22 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
+  // Agente Central: cobra atualização dos vigilantes via WhatsApp quando a OS
+  // está ativa há mais de 1h20min sem update (ou 2h10min se em pernoite).
+  // Re-cobrança a cada 30min até chegar atualização. Roda a cada 5min.
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const { runAgentCentralCheck } = await import("./cron-agent-central");
+      const r = await runAgentCentralCheck();
+      if (r.reminded > 0 || r.skipped_nophone > 0) {
+        log(`CRON AgenteCentral: ${r.scanned} OSs ativas, ${r.reminded} cobranças enviadas, ${r.skipped_nophone} sem telefone`, "cron");
+      }
+    } catch (e: any) {
+      log(`CRON AgenteCentral: Erro: ${e.message}`, "cron");
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | AgenteCentral (a cada 5min — cobra updates via WhatsApp) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
 }
 
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];

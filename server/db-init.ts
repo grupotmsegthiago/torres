@@ -704,6 +704,17 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_estadual TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_group_id TEXT`).catch(() => {});
+    // Tabela de controle do "Agente Central": rastreia última cobrança de
+    // atualização enviada via WhatsApp pra cada OS, pra não spamar (intervalo
+    // mínimo de 30min entre cobranças). Linha é deletada quando o vigilante
+    // posta nova mission_update (reset).
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS agent_central_reminders (
+        service_order_id INTEGER PRIMARY KEY,
+        last_reminded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        reminder_count INTEGER NOT NULL DEFAULT 0
+      )
+    `).catch(() => {});
     // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
     // Permite batidas manuais sem device_id / control_id_user_id (funcionário ainda

@@ -1164,6 +1164,25 @@ Responda APENAS com JSON: {"km_lido": number}`;
         return res.status(500).json({ message: "Erro ao salvar atualização" });
       }
       console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${correctedMessage.substring(0, 50)}"`);
+
+      // Reset do Agente Central ANTES de responder: chegou update novo, zera o
+      // contador de cobranças por gap de tempo. Feito antes do res.json pra
+      // evitar race com o cron (a cada 5min) que poderia cobrar de novo se o
+      // DELETE falhasse silenciosamente em fire-and-forget. Próxima cobrança
+      // só dispara se passar 1h20min (rodando) ou 2h10min (pernoite) sem
+      // nova mission_update. Try/catch isolado pra não derrubar a resposta.
+      try {
+        const resetRes = await supabaseAdmin
+          .from("agent_central_reminders")
+          .delete()
+          .eq("service_order_id", serviceOrderId);
+        if (resetRes.error) {
+          console.warn("[agent-central] reset falhou:", resetRes.error.message);
+        }
+      } catch (e: any) {
+        console.warn("[agent-central] reset exception:", e.message);
+      }
+
       res.json({ success: true });
 
       // Fire-and-forget: encaminha foto+legenda pro grupo WhatsApp do cliente
