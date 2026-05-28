@@ -353,6 +353,16 @@ export function registerWhatsappRoutes(app: Express) {
   // Auth: Bearer token = ZAPI_TOKEN (configurar igual no painel).
   // ─────────────────────────────────────────────────────────────
   app.post("/api/whatsapp/webhook", async (req, res) => {
+    // DEBUG: loga TUDO que chega antes de qualquer validação (pra diagnosticar
+    // se a Z-API está mesmo disparando o webhook).
+    console.log("[whatsapp/webhook] HIT", {
+      ip: req.ip,
+      ua: req.headers["user-agent"],
+      qs: req.query,
+      hasAuth: !!req.headers.authorization,
+      bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body).slice(0, 20) : typeof req.body,
+      bodyType: req.body?.type,
+    });
     // Auth: aceita token via query `?token=<ZAPI_TOKEN>` OU header
     // `Authorization: Bearer <ZAPI_TOKEN>`. O painel da Z-API permite
     // colocar params na URL do webhook, então `?token=` é o caminho
