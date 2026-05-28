@@ -459,6 +459,12 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "gerenciadoras" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_messages" }, () => {
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey[0] === "/api/whatsapp/chats" });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_chats" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
       });
   }
 
