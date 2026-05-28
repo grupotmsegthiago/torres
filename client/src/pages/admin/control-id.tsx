@@ -2581,7 +2581,13 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                     <td className="p-2 text-neutral-400 text-xs">{idx + 1}</td>
                     <td className="p-2 font-mono text-xs">
                       {editingId === p.id ? (
-                        <Input type="datetime-local" value={editTime} onChange={e => setEditTime(e.target.value)} className="h-7 text-xs w-44" />
+                        <Input
+                          type="time"
+                          value={editTime.slice(11, 16)}
+                          onChange={e => setEditTime(`${day.date}T${e.target.value || "00:00"}`)}
+                          className="h-7 text-xs w-28"
+                          data-testid={`input-edit-time-${p.id}`}
+                        />
                       ) : formatDateTime(p.punchAt)}
                     </td>
                     <td className="p-2 text-center">
@@ -2623,8 +2629,14 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
           {adding ? (
             <Card className="p-3 bg-blue-50/40 border-blue-200 flex flex-wrap gap-2 items-end">
               <div>
-                <label className="text-[11px] font-medium text-neutral-600">Data/Hora</label>
-                <Input type="datetime-local" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-8 text-xs w-44" />
+                <label className="text-[11px] font-medium text-neutral-600">Hora (HH:MM)</label>
+                <Input
+                  type="time"
+                  value={newTime.slice(11, 16)}
+                  onChange={e => setNewTime(`${day.date}T${e.target.value || "00:00"}`)}
+                  className="h-8 text-xs w-28"
+                  data-testid="input-new-punch-time"
+                />
               </div>
               <div>
                 <label className="text-[11px] font-medium text-neutral-600">Direção</label>
@@ -2665,19 +2677,19 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-emerald-700 uppercase">Entrada</label>
-                  <Input type="datetime-local" value={dayEntrada} onChange={e => setDayEntrada(e.target.value)} className="h-8 text-xs" data-testid="input-day-entrada" />
+                  <Input type="time" value={dayEntrada.slice(11, 16)} onChange={e => setDayEntrada(`${day.date}T${e.target.value || "00:00"}`)} className="h-8 text-xs w-28" data-testid="input-day-entrada" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-amber-700 uppercase">Início Almoço</label>
-                  <Input type="datetime-local" value={dayLunchOut} onChange={e => setDayLunchOut(e.target.value)} className="h-8 text-xs" data-testid="input-day-lunch-out" />
+                  <Input type="time" value={dayLunchOut.slice(11, 16)} onChange={e => setDayLunchOut(`${day.date}T${e.target.value || "00:00"}`)} className="h-8 text-xs w-28" data-testid="input-day-lunch-out" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-amber-700 uppercase">Retorno Almoço</label>
-                  <Input type="datetime-local" value={dayLunchIn} onChange={e => setDayLunchIn(e.target.value)} className="h-8 text-xs" data-testid="input-day-lunch-in" />
+                  <Input type="time" value={dayLunchIn.slice(11, 16)} onChange={e => setDayLunchIn(`${day.date}T${e.target.value || "00:00"}`)} className="h-8 text-xs w-28" data-testid="input-day-lunch-in" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-red-700 uppercase">Saída</label>
-                  <Input type="datetime-local" value={daySaida} onChange={e => setDaySaida(e.target.value)} className="h-8 text-xs" data-testid="input-day-saida" />
+                  <Input type="time" value={daySaida.slice(11, 16)} onChange={e => setDaySaida(`${day.date}T${e.target.value || "00:00"}`)} className="h-8 text-xs w-28" data-testid="input-day-saida" />
                 </div>
               </div>
               <div className="flex gap-2 justify-end">
