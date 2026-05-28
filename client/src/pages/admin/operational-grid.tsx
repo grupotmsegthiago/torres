@@ -7523,14 +7523,16 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   });
 
   const vtrGroups = useMemo(() => {
-    const map = new Map<string, { osNumber: string; plate: string; agentName: string; updates: any[] }>();
+    const map = new Map<string, { osNumber: string; plate: string; agentName: string; vehicleId?: number; ssxIntegrationCode?: string | null; updates: any[] }>();
     for (const u of updates) {
       const key = u.osNumber || `unknown-${u.id}`;
       if (!map.has(key)) {
         const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
         const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
         const plate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
-        map.set(key, { osNumber: key, plate, agentName: titleCase(u.employeeName || "—"), updates: [] });
+        const vehicleId = matchedVehicle?.id ?? gridItem?.vehicle?.id;
+        const ssxIntegrationCode = (matchedVehicle as any)?.ssxIntegrationCode ?? (gridItem?.vehicle as any)?.ssxIntegrationCode ?? null;
+        map.set(key, { osNumber: key, plate, agentName: titleCase(u.employeeName || "—"), vehicleId, ssxIntegrationCode, updates: [] });
       }
       map.get(key)!.updates.push(u);
     }
@@ -7720,6 +7722,28 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {group.vehicleId && (
+                    <VehicleCamerasHover
+                      vehicleId={group.vehicleId}
+                      plate={group.plate}
+                      noIntegration={!group.ssxIntegrationCode}
+                    >
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors ${
+                          group.ssxIntegrationCode
+                            ? "text-indigo-600 hover:bg-indigo-100"
+                            : "text-neutral-400 hover:bg-neutral-100"
+                        }`}
+                        title={group.ssxIntegrationCode ? "Ver câmeras AO VIVO" : "Sem câmera SSX configurada"}
+                        data-testid={`button-cameras-notif-${group.osNumber}`}
+                        onClick={(e) => { e.stopPropagation(); }}
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                      </span>
+                    </VehicleCamerasHover>
+                  )}
                   <span className={`text-[10px] text-white px-1.5 py-0.5 rounded-full font-bold ${isVtrOffline ? "bg-red-500" : "bg-amber-500"}`}>{group.updates.length}</span>
                   {isExpanded ? <ChevronUp className={`w-4 h-4 ${isVtrOffline ? "text-red-500" : "text-amber-500"}`} /> : <ChevronDown className={`w-4 h-4 ${isVtrOffline ? "text-red-500" : "text-amber-500"}`} />}
                 </div>
