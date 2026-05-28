@@ -1,6 +1,8 @@
 import cron from "node-cron";
 import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured } from "./lib/zapi.js";
+import { haversineDist } from "./routes/_helpers.js";
+import { nominatimReverseGeocode } from "./db-init.js";
 
 const TAG = "[whatsapp-forward-cron]";
 // Janela curta: só encaminha updates recentes. Se uma update ficar
@@ -16,6 +18,132 @@ const CLAIM_STALE_MIN = 5;
 const THROTTLE_PER_GROUP_MIN = 3;
 
 let running = false;
+
+const MISSION_STATUS_LABEL: Record<string, string> = {
+  agendada: "Agendada",
+  aceita: "Aceita",
+  deslocamento_inicio: "Deslocamento ao Início",
+  no_local_origem: "No Local de Origem",
+  em_transito: "Em Trânsito",
+  em_transito_destino: "Em Trânsito Destino",
+  no_local_destino: "No Local de Destino",
+  em_apoio: "Em Apoio",
+  pernoite: "Pernoite",
+  encerrada: "Encerrada",
+  cancelada: "Cancelada",
+  recusada: "Recusada",
+};
+
+function fmtMissionStatus(s?: string | null): string {
+  if (!s) return "";
+  const key = String(s).toLowerCase().trim();
+  if (MISSION_STATUS_LABEL[key]) return MISSION_STATUS_LABEL[key];
+  return key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function fmtBrtDate(iso?: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
+  } catch { return ""; }
+}
+function fmtBrtTime(iso?: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+  } catch { return ""; }
+}
+function fmtEta(km: number): string {
+  if (!isFinite(km) || km <= 0) return "Chegando";
+  const totalMin = Math.round((km / 60) * 60); // 60 km/h média
+  if (totalMin < 60) return `~${totalMin}min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `~${h}h` : `~${h}h${String(m).padStart(2, "0")}`;
+}
+
+export async function buildRichCaption(u: any, so: any, client: any): Promise<string> {
+  const upLat = u.latitude ? parseFloat(u.latitude) : NaN;
+  const upLng = u.longitude ? parseFloat(u.longitude) : NaN;
+  const hasGeo = isFinite(upLat) && isFinite(upLng);
+
+  // Lookups paralelos: viatura + agentes + reverse-geocode
+  const vehicleP = so?.vehicle_id
+    ? supabaseAdmin.from("vehicles").select("plate").eq("id", so.vehicle_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
+  const ag1P = so?.assigned_employee_id
+    ? supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
+  const ag2P = so?.assigned_employee_2_id
+    ? supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_2_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
+  const addrP = hasGeo ? nominatimReverseGeocode(upLat, upLng).catch(() => null) : Promise.resolve(null);
+
+  const [vehRes, ag1Res, ag2Res, addr] = await Promise.all([vehicleP, ag1P, ag2P, addrP]);
+  const viaturaPlate = (vehRes as any)?.data?.plate;
+  const ag1Name = (ag1Res as any)?.data?.name;
+  const ag2Name = (ag2Res as any)?.data?.name;
+
+  // Progresso + distância restante (precisa origin/destination lat/lng + posição atual)
+  let progressoPct: number | null = null;
+  let distRestKm: number | null = null;
+  const oLat = so?.origin_lat != null ? Number(so.origin_lat) : NaN;
+  const oLng = so?.origin_lng != null ? Number(so.origin_lng) : NaN;
+  const dLat = so?.destination_lat != null ? Number(so.destination_lat) : NaN;
+  const dLng = so?.destination_lng != null ? Number(so.destination_lng) : NaN;
+  if (hasGeo && isFinite(dLat) && isFinite(dLng)) {
+    distRestKm = haversineDist(upLat, upLng, dLat, dLng) / 1000;
+  }
+  if (hasGeo && isFinite(oLat) && isFinite(oLng) && isFinite(dLat) && isFinite(dLng)) {
+    const total = haversineDist(oLat, oLng, dLat, dLng);
+    const done = haversineDist(oLat, oLng, upLat, upLng);
+    if (total > 0) {
+      const pct = Math.round((done / total) * 100);
+      progressoPct = Math.max(0, Math.min(99, pct));
+    }
+  }
+
+  const dataStr = fmtBrtDate(u.created_at);
+  const horaStr = fmtBrtTime(u.created_at);
+  const statusLabel = fmtMissionStatus(so?.mission_status).toUpperCase();
+  const opLabel = fmtMissionStatus(so?.mission_status);
+  const clienteNome = String(client?.name || "").toUpperCase();
+  const msgUpper = String(u.message || "").toUpperCase();
+
+  const L: string[] = [];
+  L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
+  L.push(`🚨 *OS ${u.os_number || ""}* | *STATUS:* ${statusLabel || "—"}`);
+  L.push("");
+  if (dataStr || horaStr) L.push(`📅 *DATA:* ${dataStr}   🕐 *HORA:* ${horaStr}`);
+  if (opLabel) L.push(`🏢 *OPERAÇÃO:* ${opLabel}`);
+  if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
+  L.push("");
+  if (so?.origin) L.push(`📍 *ORIGEM:* ${so.origin}`);
+  if (so?.destination) L.push(`🏁 *DESTINO:* ${so.destination}`);
+  L.push("");
+  if (so?.escorted_vehicle_plate) L.push(`🚛 *VEÍCULO:* ${so.escorted_vehicle_plate}`);
+  if (so?.escorted_driver_name) L.push(`👤 *MOTORISTA:* ${so.escorted_driver_name}`);
+  if (so?.escorted_driver_phone) L.push(`📞 *CONTATO:* ${so.escorted_driver_phone}`);
+  L.push("");
+  if (viaturaPlate) L.push(`🚓 *VIATURA:* ${viaturaPlate}`);
+  if (ag1Name) L.push(`👮 *AGENTE 01:* ${ag1Name}`);
+  if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
+  L.push("");
+  if (progressoPct != null) L.push(`📊 *PROGRESSO DA MISSÃO:* ${progressoPct}%`);
+  if (msgUpper) L.push(`📝 *ATUALIZAÇÃO:* ${msgUpper}`);
+  if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
+  L.push("");
+  if (distRestKm != null) L.push(`🚗 *DISTÂNCIA ATÉ DESTINO:* ${Math.round(distRestKm)} km`);
+  if (distRestKm != null) L.push(`⏱️ *PREVISÃO DE CHEGADA:* ${fmtEta(distRestKm)}`);
+  if (hasGeo) {
+    L.push("");
+    L.push(`📍 *LOCALIZAÇÃO:*`);
+    L.push(`https://www.google.com/maps?q=${upLat.toFixed(4)},${upLng.toFixed(4)}&z=17&hl=pt-BR`);
+  }
+
+  // Compacta múltiplas linhas em branco consecutivas
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 
 async function claim(id: number): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MIN * 60 * 1000).toISOString();
@@ -54,7 +182,7 @@ async function processPending(): Promise<void> {
     const cutoff = new Date(Date.now() - LOOKBACK_MIN * 60 * 1000).toISOString();
     const { data: ups, error } = await supabaseAdmin
       .from("mission_updates")
-      .select("id, service_order_id, os_number, employee_name, message, photo_url, created_at")
+      .select("id, service_order_id, os_number, employee_name, message, photo_url, latitude, longitude, created_at")
       .is("whatsapp_forwarded_at", null)
       .not("photo_url", "is", null)
       .not("message", "is", null)
@@ -82,7 +210,8 @@ async function processPending(): Promise<void> {
       }
 
       const { data: so, error: soErr } = await supabaseAdmin.from("service_orders")
-        .select("client_id, status").eq("id", u.service_order_id).maybeSingle();
+        .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate")
+        .eq("id", u.service_order_id).maybeSingle();
       if (soErr) {
         // erro transitório de DB → libera claim pra retentar no próximo ciclo
         await releaseClaim(u.id, `db service_orders: ${soErr.message}`);
@@ -131,7 +260,14 @@ async function processPending(): Promise<void> {
         }
       }
 
-      const caption = `*Central Torres Vigilancia*\n\n🚨 *${u.os_number || "OS"}* — ${u.employee_name || "Agente"}\n\n${msg}`;
+      let caption: string;
+      try {
+        caption = await buildRichCaption(u, so, client);
+      } catch (capErr: any) {
+        // fallback simples se algo der ruim na montagem do caption rico
+        console.warn(`${TAG} caption rico falhou id=${u.id}, usando fallback:`, capErr?.message);
+        caption = `*Central Torres Vigilancia*\n\n🚨 *${u.os_number || "OS"}* — ${u.employee_name || "Agente"}\n\n${msg}`;
+      }
       try {
         const result = await sendImageWithCaption({
           groupOrPhone: String(groupId),
