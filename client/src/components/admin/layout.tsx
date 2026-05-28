@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
+import WhatsAppFab from "@/components/whatsapp-fab";
+import { SiWhatsapp } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 
 // Limpa TUDO (Service Workers, Cache Storage, IndexedDB, sessionStorage,
@@ -152,9 +154,9 @@ const menuSections: MenuSection[] = [
       },
       {
         label: "Comunicação",
-        icon: MessageCircle,
+        icon: SiWhatsapp,
         children: [
-          { path: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
+          { path: "/admin/whatsapp", label: "WhatsApp", icon: SiWhatsapp },
         ],
       },
       {
@@ -245,6 +247,7 @@ const menuSections: MenuSection[] = [
 
 const rootItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
+  { path: "/admin/whatsapp", label: "WhatsApp", icon: SiWhatsapp, iconColor: "text-[#25D366]" },
 ];
 
 // Sino de notificações: pendências de comprovante de pagamento
@@ -571,6 +574,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </main>
       </div>
       <ChatWidget />
+      <WhatsAppFab />
     </div>
   );
 }
