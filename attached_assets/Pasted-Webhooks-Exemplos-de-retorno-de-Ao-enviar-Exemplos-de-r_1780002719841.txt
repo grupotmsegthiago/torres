@@ -1,0 +1,197 @@
+Webhooks
+Exemplos de retorno de Ao enviar
+Exemplos de retorno do webhook de confirmação de envio de mensagens (DeliveryCallback)
+
+Documentation Index
+Fetch the complete documentation index at: https://developer.z-api.io/llms.txt
+
+Use this file to discover all available pages before exploring further.
+
+​
+Retorno do webhook
+​
+Atributos do retorno
+Todos os retornos do webhook Ao enviar possuem os seguintes atributos:
+​
+phone
+string
+Número de telefone de destino da mensagem
+​
+messageId
+string
+Identificador da mensagem no WhatsApp
+​
+zaapId
+string
+Identificador da mensagem na conversa
+​
+instanceId
+string
+Identificador da instância
+​
+momment
+integer
+Momento em que o evento foi disparado (timestamp em milissegundos)
+​
+type
+string
+Tipo do evento da instância, nesse caso será sempre DeliveryCallback
+​
+error
+string
+Presente apenas em casos de erro. Contém a descrição do erro ocorrido no envio da mensagem
+​
+errorCode
+string (enum)
+Código identificador do erro. Presente apenas em casos específicos de erro. Atualmente enviado somente quando o erro for relacionado a restrição temporária de envio de mensagens (shadow ban), com o valor "SHADOW_BAN"
+​
+Exemplos de retorno
+​
+Sucesso
+Quando a mensagem é enviada com sucesso, o retorno não contém o campo error:
+{
+  "phone": "554499999999",
+  "messageId": "A800FB3697F1DE58C48D",
+  "instanceId": "instance.id",
+  "zaapId": "A20DA9C0183A2D35A260F53F5D2B9244",
+  "momment": 1777494009341,
+  "type": "DeliveryCallback"
+}
+​
+Erro
+Quando ocorre um erro no envio, o retorno inclui o campo error com a descrição do problema:
+{
+  "phone": "554499999999",
+  "messageId": "A20DA9C0183A2D35A260F53F5D2B9244",
+  "error": "Phone number does not exist",
+  "instanceId": "instance.id",
+  "zaapId": "A20DA9C0183A2D35A260F53F5D2B9244",
+  "momment": 1777494091684,
+  "type": "DeliveryCallback"
+}
+Não é possível filtrar os eventos recebidos pelo webhook. Todos os eventos de envio — sejam de sucesso ou erro — são disparados juntos, sem distinção de tipo no disparo. O tratamento deve ser feito na sua aplicação verificando a presença ou ausência do campo error no payload recebido.
+​
+Erros possíveis no campo error
+​
+Permissão e Restrições do WhatsApp
+Did not have permission to send this message.
+
+Whatsapp rejected sending this message
+
+Whatsapp did not allow sending this message
+
+The message was not sent due to a likely shadow ban
+
+Does not have permission to send the message
+
+You can't message this group as you don't have permission
+
+This type of message can only be sent in groups
+
+You must accept buttons message terms in panel to send this message.
+
+​
+Timeout e Conexão
+Timeout on send message
+
+Error on send message
+
+​
+Número de Telefone Inválido
+Phone number does not exist
+
+Message has not been sent because it got invalid phone number
+
+​
+Mídia e URL
+Message not send caused by invalid media url
+
+Got a 404 error while trying to send message
+
+The url informed is not a valid url in the media format, apparently it can be an html
+
+Unsupported sticker format: {content-type}
+
+​
+Edição e Tempo Limite de Mensagens
+Message has not been edited because it has been more than 7 days
+
+Comment message has not been sent because it has more than 7 days
+
+​
+Produtos e Catálogo
+Product message has not been sent because provided product id was not found.
+
+Catalog message has not been sent because the catalog was not found.
+
+Product message has not been sent because provided catalog phone must not be a lid.
+
+​
+Pedidos (Orders)
+Order has not been sent because it received invalid currency code
+
+Update order has not been sent because it received invalid request data.
+
+​
+Eventos e Newsletter
+Newsletter poll vote was not sent because of missing identifier.
+
+Event edit message was not sent because the phone is not from a group.
+
+Event edit message was not sent because receive invalid date time.
+
+​
+Status e Respostas
+Status reply has not been sent because the status message was not found
+
+​
+Encaminhamento
+Message does not forward because it was not found
+
+​
+Conversão e Parâmetros
+Message has not been sent because an error occurred in the conversion
+
+Message has not been sent because it got invalid request params.
+
+​
+Tipos de Mensagem Não Suportados em Canais (Newsletters)
+ModifyChat not available to channels.
+
+Call not available to channels.
+
+Call with audio not available to channels.
+
+Document not available to channels.
+
+Button Response not available to channels.
+
+Ptv not available to channels.
+
+Location message not available to channels.
+
+Contacts not available to channels.
+
+Buttons Actions not available to channels.
+
+Buttons not available to channels.
+
+Buttons Link not available to channels.
+
+Options List not available to channels.
+
+Payment not available to channels.
+
+Chat Expiration not available to channels.
+
+SendPinChatMessage not available to channels.
+
+Pix button not available to channels.
+
+​
+Falha no Processamento da Fila
+It was not possible to send message to queue due to request error.
+
+Ao enviar
+Ao receber
+Suportado por
