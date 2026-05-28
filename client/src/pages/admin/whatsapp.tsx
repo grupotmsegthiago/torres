@@ -8,6 +8,7 @@ import {
   Image as ImageIcon, FileText, AlertTriangle, Info, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 interface ChatItem {
   id: string;
@@ -163,6 +164,36 @@ export default function WhatsappPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages.length, selectedChatId]);
+
+  // Realtime: novas mensagens / mudanças de chat aparecem na hora
+  useEffect(() => {
+    const channel = supabase
+      .channel(`whatsapp-page-rt-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_messages" },
+        (payload: any) => {
+          const row = payload.new || payload.old || {};
+          queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
+          if (row.chat_id) {
+            queryClient.invalidateQueries({
+              queryKey: ["/api/whatsapp/chats", row.chat_id, "messages"],
+            });
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_chats" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const sendMutation = useMutation({
     mutationFn: async (text: string) => {

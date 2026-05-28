@@ -407,7 +407,10 @@ export function registerWhatsappRoutes(app: Express) {
 
       if (isPureStatusUpdate) {
         const mid = body?.messageId || body?.ids?.[0];
-        const newStatus = String(body?.status || (isDeliveryCallback ? "delivered" : "")).toLowerCase();
+        const hasError = !!(body?.error || body?.errorMessage);
+        const newStatus = String(
+          body?.status || (hasError ? "failed" : isDeliveryCallback ? "delivered" : ""),
+        ).toLowerCase();
         if (mid && newStatus) {
           await supabaseAdmin
             .from("whatsapp_messages")
