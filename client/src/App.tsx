@@ -27,6 +27,7 @@ const TrackerPage = lazy(() => import("@/pages/admin/tracker"));
 const MissionPage = lazy(() => import("@/pages/admin/mission"));
 const OperationalGridPage = lazy(() => import("@/pages/admin/operational-grid"));
 const CamerasLivePage = lazy(() => import("@/pages/admin/cameras-live"));
+const WhatsappPage = lazy(() => import("@/pages/admin/whatsapp"));
 const AgendaVtrPage = lazy(() => import("@/pages/admin/agenda-vtr"));
 const RelatorioNFPage = lazy(() => import("@/pages/admin/relatorio-nf"));
 const AuditoriaFaturamentoPage = lazy(() => import("@/pages/admin/auditoria-faturamento"));
@@ -235,6 +236,7 @@ function Router() {
         <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
         <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
         <Route path="/admin/cameras-live">{() => <ProtectedRoute component={CamerasLivePage} />}</Route>
+        <Route path="/admin/whatsapp">{() => <ProtectedRoute component={WhatsappPage} />}</Route>
         <Route path="/admin/agenda-vtr">{() => <ProtectedRoute component={AgendaVtrPage} />}</Route>
         <Route path="/admin/relatorio-nf">{() => <ProtectedRoute component={RelatorioNFPage} />}</Route>
         <Route path="/admin/auditoria-faturamento">{() => <ProtectedRoute component={AuditoriaFaturamentoPage} />}</Route>

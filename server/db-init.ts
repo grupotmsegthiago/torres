@@ -1064,6 +1064,49 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_pending_forward ON mission_updates (created_at DESC) WHERE whatsapp_forwarded_at IS NULL AND photo_url IS NOT NULL`).catch(() => {});
     await execSql(`CREATE TABLE IF NOT EXISTS whatsapp_group_throttle (group_id TEXT PRIMARY KEY, last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`).catch(() => {});
 
+    // ────────────────────────────────────────────────────────────────
+    // WhatsApp embarcado — chats + mensagens (populadas via webhook
+    // Z-API + nossas próprias rotas de envio). A Z-API multi-device
+    // não permite buscar histórico antigo via API, então tudo que
+    // aparece aqui veio em tempo real a partir do momento em que o
+    // webhook foi ativado ou do nosso send.
+    // ────────────────────────────────────────────────────────────────
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS whatsapp_chats (
+        chat_id TEXT PRIMARY KEY,
+        name TEXT,
+        is_group BOOLEAN NOT NULL DEFAULT false,
+        last_message_at TIMESTAMPTZ,
+        last_message_text TEXT,
+        last_message_from_me BOOLEAN,
+        unread_count INTEGER NOT NULL DEFAULT 0,
+        pinned BOOLEAN NOT NULL DEFAULT false,
+        archived BOOLEAN NOT NULL DEFAULT false,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_wc_last_msg ON whatsapp_chats (last_message_at DESC NULLS LAST)`).catch(() => {});
+
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id BIGSERIAL PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        zapi_message_id TEXT,
+        from_me BOOLEAN NOT NULL,
+        sender_phone TEXT,
+        sender_name TEXT,
+        type TEXT NOT NULL DEFAULT 'text',
+        body TEXT,
+        media_url TEXT,
+        media_mime TEXT,
+        status TEXT,
+        ts TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_wm_chat_ts ON whatsapp_messages (chat_id, ts DESC)`).catch(() => {});
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_wm_zapi_id ON whatsapp_messages (zapi_message_id) WHERE zapi_message_id IS NOT NULL`).catch(() => {});
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS invoices (
         id SERIAL PRIMARY KEY,
@@ -1353,6 +1396,7 @@ const REALTIME_TABLES = [
   "vehicle_maintenance", "vehicle_assignments",
   "client_vehicles", "client_forwards",
   "mission_photos", "trips", "gerenciadoras",
+  "whatsapp_chats", "whatsapp_messages",
 ];
 
 // Removidas em 2026-05 — eram caras (40 tabelas em Realtime saturava pool)

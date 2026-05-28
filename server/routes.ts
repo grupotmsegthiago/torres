@@ -712,6 +712,7 @@ async function ensureSystemSettingsTable() {
 }
 
   import { registerClientRoutes } from "./routes/clients";
+  import { registerWhatsappRoutes } from "./routes/whatsapp";
   import { registerEmployeeRoutes } from "./routes/employees";
   import { registerVehicleRoutes } from "./routes/vehicles";
   import { registerNotificationRoutes } from "./routes/notifications";
@@ -1332,6 +1333,7 @@ async function ensureSystemSettingsTable() {
 
     // === MODULE ROUTES ===
     registerClientRoutes(app);
+    registerWhatsappRoutes(app);
     registerEmployeeRoutes(app);
     registerVehicleRoutes(app);
     registerNotificationRoutes(app);

@@ -151,6 +151,13 @@ const menuSections: MenuSection[] = [
         ],
       },
       {
+        label: "Comunicação",
+        icon: MessageCircle,
+        children: [
+          { path: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
+        ],
+      },
+      {
         label: "Frota",
         icon: Car,
         children: [

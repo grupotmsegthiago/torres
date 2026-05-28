@@ -184,6 +184,70 @@ export async function listGroups(): Promise<{ ok: boolean; groups: ZapiGroup[]; 
   }
 }
 
+export interface ZapiChat {
+  id: string;
+  name: string;
+  isGroup: boolean;
+  lastMessageTime?: number;
+  unread?: number;
+  pinned?: boolean;
+  archived?: boolean;
+}
+
+/**
+ * Lista TODOS os chats (grupos + 1:1) ordenados pela última mensagem.
+ * Limitação: a Z-API multi-device só expõe chats com atividade recente.
+ * Não retorna histórico de mensagens — só metadados pra montar a sidebar.
+ */
+export async function listAllChats(): Promise<{ ok: boolean; chats: ZapiChat[]; error?: string }> {
+  if (!isZapiConfigured()) {
+    return { ok: false, chats: [], error: "Z-API não configurada" };
+  }
+  const chats: ZapiChat[] = [];
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 20;
+  try {
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const resp = await fetch(`${BASE}/chats?page=${page}&pageSize=${PAGE_SIZE}`, {
+        method: "GET",
+        headers: { "Client-Token": CLIENT_TOKEN },
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await resp.text();
+      if (!resp.ok) return { ok: false, chats, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`) };
+      let parsed: any;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
+      const arr: any[] = Array.isArray(parsed) ? parsed : (parsed?.chats || parsed?.data || []);
+      if (!arr || arr.length === 0) break;
+      for (const chat of arr) {
+        const id = String(chat?.phone || chat?.id || "").trim();
+        if (!id) continue;
+        const isGroup = chat?.isGroup === true || id.endsWith("@g.us") || id.endsWith("-group");
+        const name = String(chat?.name || chat?.groupName || chat?.subject || id).trim();
+        const lastMs = Number(chat?.lastMessageTime || 0) || undefined;
+        chats.push({
+          id,
+          name: name || id,
+          isGroup,
+          lastMessageTime: lastMs,
+          unread: Number(chat?.messagesUnread || chat?.unread || 0) || 0,
+          pinned: String(chat?.pinned) === "true",
+          archived: String(chat?.archived) === "true",
+        });
+      }
+      if (arr.length < PAGE_SIZE) break;
+    }
+    // Dedupe + ordena por último msg desc
+    const byId = new Map<string, ZapiChat>();
+    for (const c of chats) if (!byId.has(c.id)) byId.set(c.id, c);
+    const list = Array.from(byId.values());
+    list.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+    return { ok: true, chats: list };
+  } catch (err: any) {
+    return { ok: false, chats, error: sanitize(err?.message || String(err)) };
+  }
+}
+
 /**
  * Envia mensagem só de texto (caso não tenha foto).
  */
