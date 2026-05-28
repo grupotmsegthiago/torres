@@ -19,6 +19,17 @@ const THROTTLE_PER_GROUP_MIN = 3;
 
 let running = false;
 
+// Só esses marcos da missão vão pro grupo do cliente.
+// Qualquer outro mission_step (foto de arma, viatura, dados do motorista, etc.)
+// fica visível só internamente — não polui o grupo do cliente.
+const FORWARDABLE_STEPS: Record<string, string> = {
+  checkin_chegada_km: "Chegada na Origem",
+  iniciar_missao: "Início de Missão",
+  checkout_km_saida: "Em Deslocamento para o Destino",
+  chegada_destino: "Chegada no Cliente",
+  finalizada: "Fim de Missão",
+};
+
 const MISSION_STATUS_LABEL: Record<string, string> = {
   agendada: "Agendada",
   aceita: "Aceita",
@@ -62,7 +73,7 @@ function fmtEta(km: number): string {
   return m === 0 ? `~${h}h` : `~${h}h${String(m).padStart(2, "0")}`;
 }
 
-export async function buildRichCaption(u: any, so: any, client: any): Promise<string> {
+export async function buildRichCaption(u: any, so: any, client: any, stepLabel?: string | null): Promise<string> {
   const upLat = u.latitude ? parseFloat(u.latitude) : NaN;
   const upLng = u.longitude ? parseFloat(u.longitude) : NaN;
   const hasGeo = isFinite(upLat) && isFinite(upLng);
@@ -130,6 +141,7 @@ export async function buildRichCaption(u: any, so: any, client: any): Promise<st
   if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
   L.push("");
   if (progressoPct != null) L.push(`📊 *PROGRESSO DA MISSÃO:* ${progressoPct}%`);
+  if (stepLabel) L.push(`✅ *MARCO:* ${stepLabel.toUpperCase()}`);
   if (msgUpper) L.push(`📝 *ATUALIZAÇÃO:* ${msgUpper}`);
   if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
   L.push("");
@@ -182,10 +194,11 @@ async function processPending(): Promise<void> {
     const cutoff = new Date(Date.now() - LOOKBACK_MIN * 60 * 1000).toISOString();
     const { data: ups, error } = await supabaseAdmin
       .from("mission_updates")
-      .select("id, service_order_id, os_number, employee_name, message, photo_url, latitude, longitude, created_at")
+      .select("id, service_order_id, os_number, employee_name, message, photo_url, latitude, longitude, mission_step, created_at")
       .is("whatsapp_forwarded_at", null)
       .not("photo_url", "is", null)
       .not("message", "is", null)
+      .in("mission_step", Object.keys(FORWARDABLE_STEPS))
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true })
       .limit(MAX_PER_RUN);
@@ -260,9 +273,10 @@ async function processPending(): Promise<void> {
         }
       }
 
+      const stepLabel = FORWARDABLE_STEPS[String(u.mission_step || "")] || null;
       let caption: string;
       try {
-        caption = await buildRichCaption(u, so, client);
+        caption = await buildRichCaption(u, so, client, stepLabel);
       } catch (capErr: any) {
         // fallback simples se algo der ruim na montagem do caption rico
         console.warn(`${TAG} caption rico falhou id=${u.id}, usando fallback:`, capErr?.message);
