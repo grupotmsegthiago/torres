@@ -9,7 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
-    params: { eventsPerSecond: 2 },
+    // Subido de 2 → 10: com ~38 tabelas nos canais globais (incl. GPS de alta
+    // frequência), o orçamento de 2 eventos/s era consumido pelas tabelas
+    // ruidosas e os eventos do WhatsApp (baixo volume, mas críticos) eram
+    // descartados/atrasados — exigindo F5 pra ver msg nova.
+    params: { eventsPerSecond: 10 },
   },
   global: {
     fetch: (url: RequestInfo | URL, init?: RequestInit) => {

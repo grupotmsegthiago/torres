@@ -136,6 +136,7 @@ export default function WhatsappPage() {
   const { data: chatsData, isLoading: loadingChats, refetch: refetchChats, isFetching: fetchingChats } = useQuery<{ ok: boolean; chats: ChatItem[] }>({
     queryKey: ["/api/whatsapp/chats"],
     refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
   });
 
   const chats = chatsData?.chats || [];
@@ -155,7 +156,8 @@ export default function WhatsappPage() {
   const { data: msgsData, refetch: refetchMsgs } = useQuery<{ ok: boolean; messages: MessageItem[] }>({
     queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
     enabled: !!selectedChatId,
-    refetchInterval: selectedChatId ? 5_000 : false,
+    refetchInterval: selectedChatId ? 3_000 : false,
+    refetchIntervalInBackground: true,
   });
   const messages = msgsData?.messages || [];
 
