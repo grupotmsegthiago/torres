@@ -145,10 +145,39 @@ export async function listGroups(): Promise<{ ok: boolean; groups: ZapiGroup[]; 
 
       if (arr.length < PAGE_SIZE) break; // última página
     }
-    // Dedupe por id e ordena por nome (case-insensitive)
+    // Dedupe por id
     const byId = new Map<string, ZapiGroup>();
     for (const g of groups) if (!byId.has(g.id)) byId.set(g.id, g);
-    const list = Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    const list = Array.from(byId.values());
+
+    // O /chats não retorna o subject do grupo — vem como o próprio id.
+    // Enriquecer via /group-metadata/{phone} em paralelo (concorrência limitada).
+    const CONCURRENCY = 5;
+    let idx = 0;
+    async function worker() {
+      while (idx < list.length) {
+        const i = idx++;
+        const g = list[i];
+        if (g.name && g.name !== g.id) continue; // já tem nome de verdade
+        try {
+          const resp = await fetch(`${BASE}/group-metadata/${encodeURIComponent(g.id)}`, {
+            method: "GET",
+            headers: { "Client-Token": CLIENT_TOKEN },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!resp.ok) continue;
+          const meta = await resp.json().catch(() => null) as any;
+          const realName = String(meta?.subject || meta?.name || "").trim();
+          if (realName) g.name = realName;
+          if (typeof meta?.participants?.length === "number") {
+            g.participantsCount = meta.participants.length;
+          }
+        } catch { /* ignora falha individual */ }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
+
+    list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     return { ok: true, groups: list };
   } catch (err: any) {
     return { ok: false, groups, error: sanitize(err?.message || String(err)) };
