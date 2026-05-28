@@ -978,6 +978,7 @@ import type { Express } from "express";
           trackerId: v.trackerId || v.truckscontrolIdentifier,
           trackerType: v.trackerType || "none",
           truckscontrolIdentifier: v.truckscontrolIdentifier,
+          ssxIntegrationCode: (v as any).ssxIntegrationCode ?? null,
           iconType: v.iconType || "polo",
           photoFront: v.photoFront || null,
           noSignalSince,
