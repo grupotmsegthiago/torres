@@ -22,6 +22,7 @@ import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
 import { sendText, isZapiConfigured } from "./zapi";
 import { normalizePhone } from "./normalize-contact";
+import { buildKmResumoByOsId } from "../cron-whatsapp-forward";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -48,6 +49,20 @@ export function looksLikeSummaryRequest(text: string | null): boolean {
   const t = (text || "").trim();
   if (t.length < 4) return false;
   return RE_RESUMO.test(t);
+}
+
+// Pedido de "km final": alguém marca/responde a conversa de uma OS e escreve
+// "km final" (ou "foto do km final"). O agente traz só os horários + KMs daquela OS.
+const RE_KM_FINAL = /\bkm\s*final\b/i;
+// Negações: "sem km final ainda", "ainda não veio o km final" — NÃO devem disparar.
+const RE_KM_FINAL_NEG = /\b(sem|ainda|n[aã]o)\b/i;
+
+/** Detecta se a mensagem pede o "km final" de uma OS (ignora negações). */
+export function looksLikeFinalKm(text: string | null): boolean {
+  const t = (text || "").trim();
+  if (!RE_KM_FINAL.test(t)) return false;
+  if (RE_KM_FINAL_NEG.test(t)) return false;
+  return true;
 }
 
 const MISSION_STATUS_LABEL_PT: Record<string, string> = {
@@ -533,6 +548,90 @@ export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise
   }
 }
 
+// Throttle em memória pra não reenviar o resumo de KM da mesma OS em rajada
+// (replay de webhook ou várias menções seguidas no grupo).
+const kmFinalThrottle = new Map<string, number>();
+const KM_FINAL_THROTTLE_MS = 60_000;
+
+/**
+ * Resolve a OS de um pedido de "km final": nº de OS no texto/citação (qualquer
+ * status), ou (fallback) a OS mais recente do cliente vinculado ao grupo.
+ */
+async function resolveOsForKmFinal(
+  parsed: ParsedGroupMsg,
+  quotedText: string | null,
+): Promise<{ id: number; os_number: string | null } | null> {
+  const osNum = osNumberFromText(parsed.text) || osNumberFromText(quotedText);
+  if (osNum) {
+    const d = osDigits(osNum);
+    if (d) {
+      const { data: cands } = await supabaseAdmin
+        .from("service_orders")
+        .select("id, os_number, scheduled_date")
+        .ilike("os_number", `%${d}%`)
+        .order("scheduled_date", { ascending: false })
+        .limit(20);
+      const match = ((cands || []) as any[]).find((o) => osDigits(o.os_number || "") === d);
+      if (match) return { id: match.id, os_number: match.os_number };
+    }
+  }
+
+  // Fallback CONSERVADOR: grupo → cliente com EXATAMENTE 1 OS ativa. Nunca
+  // chuta a "mais recente" (mandaria resumo da OS errada em grupo movimentado).
+  try {
+    const { data: cli } = await supabaseAdmin
+      .from("clients")
+      .select("id")
+      .eq("whatsapp_group_id", parsed.chatId)
+      .maybeSingle();
+    if (cli?.id) {
+      const active = await loadActiveOs();
+      if (active.length > 0) {
+        const { data: withClient } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, client_id")
+          .in("id", active.map((o) => o.id));
+        const clientByOs = new Map<number, number>();
+        for (const r of (withClient || []) as any[]) clientByOs.set(r.id, r.client_id);
+        const matches = active.filter((o) => clientByOs.get(o.id) === cli.id);
+        if (matches.length === 1) return { id: matches[0].id, os_number: matches[0].os_number };
+      }
+    }
+  } catch { /* fail-open */ }
+
+  return null;
+}
+
+/**
+ * Responde NO GRUPO com o resumo enxuto (horários + KMs) da OS quando alguém
+ * marca/responde a conversa daquela OS pedindo "km final". Fail-open.
+ */
+export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: string | null): Promise<void> {
+  try {
+    const os = await resolveOsForKmFinal(parsed, quotedText);
+    if (!os) {
+      console.log(`[agent-central-mention] "km final" no grupo ${parsed.chatId} mas OS não identificada — ignorando`);
+      return;
+    }
+    const key = `${parsed.chatId}:${os.id}`;
+    const last = kmFinalThrottle.get(key) || 0;
+    if (Date.now() - last < KM_FINAL_THROTTLE_MS) {
+      console.log(`[agent-central-mention] km-resumo OS ${os.os_number || os.id} ignorado (throttle ${KM_FINAL_THROTTLE_MS / 1000}s)`);
+      return;
+    }
+    const msg = await buildKmResumoByOsId(os.id);
+    if (!msg) {
+      console.log(`[agent-central-mention] km-resumo OS ${os.os_number || os.id} sem dados — ignorando`);
+      return;
+    }
+    kmFinalThrottle.set(key, Date.now());
+    await sendText({ groupOrPhone: parsed.chatId, message: msg });
+    console.log(`[agent-central-mention] km-resumo da OS ${os.os_number || os.id} enviado ao grupo ${parsed.chatId}`);
+  } catch (e: any) {
+    console.warn("[agent-central-mention] handleFinalKmRequest falhou:", e?.message);
+  }
+}
+
 /**
  * Ponto de entrada chamado pelo webhook. Fire-and-forget, nunca lança.
  */
@@ -556,6 +655,16 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     let quotedText = extractQuotedText(rawBody);
     if (!quotedText && quotedId) quotedText = await lookupQuotedBody(quotedId);
     const hasQuoted = !!quotedText || !!quotedId;
+
+    // Pedido de "km final": alguém marca/responde a conversa de uma OS e escreve
+    // "km final". Responde com o resumo enxuto (horários + KMs) daquela OS.
+    // Vem ANTES do gate de update-request porque "km final" sozinho não cheira
+    // a pedido de atualização (sem nº de OS nem keyword).
+    if (looksLikeFinalKm(parsed.text)) {
+      await handleFinalKmRequest(parsed, quotedText);
+      return;
+    }
+
     if (!looksLikeUpdateRequest(parsed.text, hasQuoted)) return;
 
     const text = (parsed.text || "").trim();

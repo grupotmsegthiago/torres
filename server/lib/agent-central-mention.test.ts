@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, shortLocal } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, shortLocal } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -21,6 +21,21 @@ test("isFinalKmUpdate: não confunde com outras fotos nem texto livre", () => {
     "", null, undefined,
   ]) {
     assert.equal(isFinalKmUpdate(m as any), false, `não deveria reconhecer: ${JSON.stringify(m)}`);
+  }
+});
+
+test("looksLikeFinalKm: reconhece pedido de km final no grupo", () => {
+  for (const t of ["km final", "KM FINAL", "Foto do km final", "foto: km final", "manda o km final da OS"]) {
+    assert.equal(looksLikeFinalKm(t), true, `deveria reconhecer: ${t}`);
+  }
+});
+
+test("looksLikeFinalKm: não confunde com texto livre nem negações", () => {
+  for (const t of [
+    "km finalizado, voltando pra base", "qual o km?", "resumo", "bom dia", "", null,
+    "sem km final ainda", "ainda não veio o km final", "não tem km final",
+  ]) {
+    assert.equal(looksLikeFinalKm(t as any), false, `não deveria reconhecer: ${JSON.stringify(t)}`);
   }
 });
 

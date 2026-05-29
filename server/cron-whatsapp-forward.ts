@@ -249,6 +249,61 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Resumo SOB DEMANDA: quando alguém marca/responde a conversa de uma OS pedindo
+// "km final", traz só os horários e os KMs daquela OS (independe do status).
+// Retorna null se a OS não for encontrada. Fail-open no chamador.
+export async function buildKmResumoByOsId(soId: number): Promise<string | null> {
+  const { data: so, error: soErr } = await supabaseAdmin
+    .from("service_orders")
+    .select("id, os_number, mission_started_at, completed_date, scheduled_date")
+    .eq("id", soId)
+    .maybeSingle();
+  if (soErr) console.warn(`${TAG} km-resumo: falha ao ler OS id=${soId}:`, soErr.message);
+  if (!so) return null;
+
+  const updsP = supabaseAdmin
+    .from("mission_updates")
+    .select("mission_step, created_at")
+    .eq("service_order_id", soId)
+    .in("mission_step", ["checkin_chegada_km", "iniciar_missao"])
+    .order("created_at", { ascending: true });
+  const photosP = supabaseAdmin
+    .from("mission_photos")
+    .select("step, km_value, created_at")
+    .eq("service_order_id", soId)
+    .in("step", ["km_saida", "km_final"])
+    .order("created_at", { ascending: true });
+
+  const [updsRes, photosRes] = await Promise.all([updsP, photosP]);
+  const upds = (((updsRes as any)?.data) || []) as Array<{ mission_step: string; created_at: string }>;
+  const photos = (((photosRes as any)?.data) || []) as Array<{ step: string; km_value: number | null; created_at: string }>;
+
+  const chegadaOrigemTs = upds.find(x => x.mission_step === "checkin_chegada_km")?.created_at || null;
+  const inicioOperTs = (so as any).mission_started_at || upds.find(x => x.mission_step === "iniciar_missao")?.created_at || null;
+  const fimOperTs = (so as any).completed_date || null;
+  const inicioPrevistoTs = (so as any).scheduled_date || null;
+
+  const kmInicio = photos.find(p => p.step === "km_saida")?.km_value ?? null;
+  const kmFinal = [...photos].reverse().find(p => p.step === "km_final")?.km_value ?? null;
+  const kmRodado = (kmInicio != null && kmFinal != null && Number(kmFinal) > Number(kmInicio))
+    ? Number(kmFinal) - Number(kmInicio)
+    : null;
+
+  const L: string[] = [];
+  L.push(`🛡️ *CENTRAL TORRES* — OS ${(so as any).os_number || `#${soId}`}`);
+  L.push("");
+  L.push(`🕑 *INÍCIO PREVISTO:* ${fmtBrtDateTime(inicioPrevistoTs)}`);
+  L.push(`🕑 *CHEGADA NA ORIGEM:* ${fmtBrtDateTime(chegadaOrigemTs)}`);
+  L.push(`🧭 *INÍCIO DE OPERAÇÃO:* ${fmtBrtDateTime(inicioOperTs)}`);
+  L.push(`🧭 *FIM DE OPERAÇÃO:* ${fmtBrtDateTime(fimOperTs)}`);
+  L.push("");
+  L.push(`🛣️ *KM INÍCIO:* ${fmtKm(kmInicio)}`);
+  L.push(`🏁 *KM FINAL:* ${fmtKm(kmFinal)}`);
+  L.push(`🚗 *KM RODADO:* ${fmtKm(kmRodado)}`);
+
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function claim(id: number): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MIN * 60 * 1000).toISOString();
   const { data, error } = await supabaseAdmin
