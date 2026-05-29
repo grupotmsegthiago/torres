@@ -73,6 +73,16 @@ function fmtBrtTime(iso?: string | null): string {
     return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
   } catch { return ""; }
 }
+function fmtBrtDateTime(iso?: string | null): string {
+  const d = fmtBrtDate(iso);
+  const t = fmtBrtTime(iso);
+  if (d && t) return `${d}, ${t}`;
+  return d || t || "—";
+}
+function fmtKm(km?: number | null): string {
+  if (km == null || !isFinite(Number(km)) || Number(km) <= 0) return "—";
+  return `${Number(km).toLocaleString("pt-BR")} km`;
+}
 function fmtEta(km: number): string {
   if (!isFinite(km) || km <= 0) return "Chegando";
   const totalMin = Math.round((km / 60) * 60); // 60 km/h média
@@ -172,6 +182,62 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Resumo enxuto enviado no grupo do cliente quando a missão é FINALIZADA.
+// Substitui o card grande (com distância/previsão, que não fazem sentido após o fim).
+// Todos os valores são preenchidos automaticamente a partir dos dados da missão.
+export async function buildFinalizedSummary(u: any, so: any, client: any): Promise<string> {
+  const soId = u.service_order_id;
+
+  // Linha do tempo: chegada na origem + início de operação vêm dos mission_updates.
+  const updsP = supabaseAdmin
+    .from("mission_updates")
+    .select("mission_step, created_at")
+    .eq("service_order_id", soId)
+    .in("mission_step", ["checkin_chegada_km", "iniciar_missao"])
+    .order("created_at", { ascending: true });
+  // KM início/final vêm das fotos de hodômetro.
+  const photosP = supabaseAdmin
+    .from("mission_photos")
+    .select("step, km_value, created_at")
+    .eq("service_order_id", soId)
+    .in("step", ["km_saida", "km_final"])
+    .order("created_at", { ascending: true });
+
+  const [updsRes, photosRes] = await Promise.all([updsP, photosP]);
+  if ((updsRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_updates OS=${u.os_number}:`, (updsRes as any).error.message);
+  if ((photosRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_photos OS=${u.os_number}:`, (photosRes as any).error.message);
+  const upds = ((updsRes as any)?.data || []) as Array<{ mission_step: string; created_at: string }>;
+  const photos = ((photosRes as any)?.data || []) as Array<{ step: string; km_value: number | null; created_at: string }>;
+
+  const chegadaOrigemTs = upds.find(x => x.mission_step === "checkin_chegada_km")?.created_at || null;
+  const inicioOperTs = so?.mission_started_at || upds.find(x => x.mission_step === "iniciar_missao")?.created_at || null;
+  const fimOperTs = so?.completed_date || u.created_at || null;
+  const inicioPrevistoTs = so?.scheduled_date || null;
+
+  const kmInicio = photos.find(p => p.step === "km_saida")?.km_value ?? null;
+  const kmFinal = [...photos].reverse().find(p => p.step === "km_final")?.km_value ?? null;
+
+  const clienteNome = String(client?.name || "").toUpperCase();
+
+  const L: string[] = [];
+  L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
+  L.push(`🚨 *OS ${u.os_number || ""}* | *STATUS:* FINALIZADA`);
+  L.push("");
+  if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
+  if (so?.escorted_vehicle_plate) L.push(`🚛 *VEÍCULO:* ${so.escorted_vehicle_plate}`);
+  if (so?.escorted_driver_name) L.push(`👤 *MOTORISTA:* ${so.escorted_driver_name}`);
+  L.push("");
+  L.push(`🕑 *INÍCIO PREVISTO:* ${fmtBrtDateTime(inicioPrevistoTs)}`);
+  L.push(`🕑 *CHEGADA NA ORIGEM:* ${fmtBrtDateTime(chegadaOrigemTs)}`);
+  L.push(`🧭 *INÍCIO DE OPERAÇÃO:* ${fmtBrtDateTime(inicioOperTs)}`);
+  L.push(`🧭 *FIM DE OPERAÇÃO:* ${fmtBrtDateTime(fimOperTs)}`);
+  L.push("");
+  L.push(`🛣️ *KM INÍCIO:* ${fmtKm(kmInicio)}`);
+  L.push(`🏁 *KM FINAL:* ${fmtKm(kmFinal)}`);
+
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function claim(id: number): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MIN * 60 * 1000).toISOString();
   const { data, error } = await supabaseAdmin
@@ -232,13 +298,16 @@ async function processPending(): Promise<void> {
 
       const photoUrl: string = String(u.photo_url || "");
       const msg: string = String(u.message || "").trim();
-      if (!msg || !photoUrl.startsWith("data:image/")) {
+      // Finalizada usa resumo automático (não depende do texto do agente),
+      // então só a foto é obrigatória. Demais marcos ainda exigem mensagem.
+      const isFinalizadaStep = String(u.mission_step || "") === "finalizada";
+      if (!photoUrl.startsWith("data:image/") || (!isFinalizadaStep && !msg)) {
         await markDone(u.id, "skip: foto/msg inválida");
         continue;
       }
 
       const { data: so, error: soErr } = await supabaseAdmin.from("service_orders")
-        .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate")
+        .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate, scheduled_date, mission_started_at, completed_date")
         .eq("id", u.service_order_id).maybeSingle();
       if (soErr) {
         // erro transitório de DB → libera claim pra retentar no próximo ciclo
@@ -289,9 +358,12 @@ async function processPending(): Promise<void> {
       }
 
       const stepLabel = FORWARDABLE_STEPS[String(u.mission_step || "")] || null;
+      const isFinalizada = String(u.mission_step || "") === "finalizada";
       let caption: string;
       try {
-        caption = await buildRichCaption(u, so, client, stepLabel);
+        caption = isFinalizada
+          ? await buildFinalizedSummary(u, so, client)
+          : await buildRichCaption(u, so, client, stepLabel);
       } catch (capErr: any) {
         // fallback simples se algo der ruim na montagem do caption rico
         console.warn(`${TAG} caption rico falhou id=${u.id}, usando fallback:`, capErr?.message);
