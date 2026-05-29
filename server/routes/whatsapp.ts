@@ -201,6 +201,9 @@ export function registerWhatsappRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
   app.get("/api/whatsapp/chats", requireAuth, requireAdminRole, async (_req, res) => {
     try {
+      // Inbox ao vivo: nunca servir resposta de cache (browser/proxy). Sem isso,
+      // o navegador podia exibir a lista antiga e só atualizar com F5.
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       const { data: dbChats, error } = await supabaseAdmin
         .from("whatsapp_chats")
         .select("*")
@@ -275,6 +278,7 @@ export function registerWhatsappRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
   app.get("/api/whatsapp/chats/:chatId/messages", requireAuth, requireAdminRole, async (req, res) => {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       const chatId = decodeURIComponent(String(req.params.chatId));
       const limit = Math.min(Number(req.query.limit) || 100, 500);
       const { data, error } = await supabaseAdmin
@@ -286,11 +290,16 @@ export function registerWhatsappRoutes(app: Express) {
       if (error) return res.status(500).json({ ok: false, error: error.message });
       const msgs = ((data || []) as MsgRow[]).reverse();
 
-      // Marca como lido — zera unread do chat
+      // Marca como lido — zera unread do chat APENAS quando há algo a zerar.
+      // (Sem o `.gt`, cada poll de 2s gerava um UPDATE → tempestade de eventos
+      // realtime na lista de chats pra todos os usuários. Com o filtro, o evento
+      // de "lido" só dispara uma vez, quando realmente passa de >0 pra 0 — e aí
+      // os outros operadores veem a conversa marcada como lida na hora.)
       await supabaseAdmin
         .from("whatsapp_chats")
         .update({ unread_count: 0, updated_at: new Date().toISOString() })
-        .eq("chat_id", chatId);
+        .eq("chat_id", chatId)
+        .gt("unread_count", 0);
 
       res.json({ ok: true, chatId, messages: msgs });
     } catch (e: any) {
@@ -479,10 +488,12 @@ export function registerWhatsappRoutes(app: Express) {
   // ─────────────────────────────────────────────────────────────
   app.post("/api/whatsapp/chats/:chatId/mark-read", requireAuth, requireAdminRole, async (req, res) => {
     const chatId = decodeURIComponent(String(req.params.chatId));
+    // Só dispara o UPDATE (e o evento realtime de "lido") quando há algo a zerar.
     await supabaseAdmin
       .from("whatsapp_chats")
       .update({ unread_count: 0, updated_at: new Date().toISOString() })
-      .eq("chat_id", chatId);
+      .eq("chat_id", chatId)
+      .gt("unread_count", 0);
     res.json({ ok: true });
   });
 }

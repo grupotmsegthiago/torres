@@ -131,6 +131,7 @@ export default function WhatsappPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [rtStatus, setRtStatus] = useState<"online" | "offline">("offline");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Polling via refetchInterval do próprio React Query (mecanismo ÚNICO).
@@ -140,7 +141,7 @@ export default function WhatsappPage() {
   const { data: chatsData, isLoading: loadingChats, refetch: refetchChats, isFetching: fetchingChats } = useQuery<{ ok: boolean; chats: ChatItem[] }>({
     queryKey: ["/api/whatsapp/chats"],
     refetchOnWindowFocus: true,
-    refetchInterval: 5_000,
+    refetchInterval: 4_000,
     refetchIntervalInBackground: true,
     staleTime: 0,
   });
@@ -163,7 +164,7 @@ export default function WhatsappPage() {
     queryKey: ["/api/whatsapp/chats", selectedChatId, "messages"],
     enabled: !!selectedChatId,
     refetchOnWindowFocus: true,
-    refetchInterval: 3_000,
+    refetchInterval: 2_000,
     refetchIntervalInBackground: true,
     staleTime: 0,
   });
@@ -198,17 +199,22 @@ export default function WhatsappPage() {
         { event: "*", schema: "public", table: "whatsapp_messages" },
         (payload: any) => {
           const row = (payload.new || payload.old) as MessageItem;
+          console.log("[Realtime:wa] msg event", payload.eventType, row?.chat_id);
           bump(row?.chat_id);
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "whatsapp_chats" },
-        () => {
+        (payload: any) => {
+          console.log("[Realtime:wa] chat event", payload.eventType);
           queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/chats"] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("[Realtime:wa] subscription status:", status);
+        setRtStatus(status === "SUBSCRIBED" ? "online" : "offline");
+      });
     return () => {
       supabaseWa.removeChannel(channel);
     };
@@ -377,12 +383,24 @@ export default function WhatsappPage() {
                 </div>
                 <div className="flex items-center gap-4 text-slate-500">
                   <span
-                    className="flex items-center gap-1.5 text-[10px] text-emerald-700"
-                    title="Atualização automática ativa — sem precisar dar F5"
+                    className={cn(
+                      "flex items-center gap-1.5 text-[10px]",
+                      rtStatus === "online" ? "text-emerald-700" : "text-amber-600"
+                    )}
+                    title={
+                      rtStatus === "online"
+                        ? "Conexão ao vivo ativa — mensagens chegam na hora"
+                        : "Sem conexão ao vivo no momento — atualizando a cada 2s automaticamente"
+                    }
                     data-testid="status-whatsapp-live"
                   >
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    ao vivo
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full animate-pulse",
+                        rtStatus === "online" ? "bg-emerald-500" : "bg-amber-500"
+                      )}
+                    />
+                    {rtStatus === "online" ? "ao vivo" : "atualizando"}
                     {msgsUpdatedAt > 0 && (
                       <span className="text-slate-400 font-mono">
                         {new Date(msgsUpdatedAt).toLocaleTimeString("pt-BR", { hour12: false })}
