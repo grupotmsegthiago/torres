@@ -40,6 +40,53 @@ export function looksLikeUpdateRequest(text: string | null, hasQuoted: boolean):
   return RE_OS.test(t) || RE_KEYWORDS.test(t);
 }
 
+// Pedido de RESUMO geral do grupo: panorama das OS do cliente (ativas + finalizadas hoje).
+const RE_RESUMO = /\b(resumo|resum[aã]o|panorama|relat[oó]rio\s+do\s+dia|como\s+est[aã]o\s+as\s+viagens|status\s+geral)\b/i;
+
+/** Detecta se a mensagem é um pedido de resumo geral (não de uma OS específica). */
+export function looksLikeSummaryRequest(text: string | null): boolean {
+  const t = (text || "").trim();
+  if (t.length < 4) return false;
+  return RE_RESUMO.test(t);
+}
+
+const MISSION_STATUS_LABEL_PT: Record<string, string> = {
+  aguardando: "Aguardando", agendada: "Agendada", aceita: "Aceita",
+  deslocamento_inicio: "Deslocamento ao Início", no_local_origem: "No Local de Origem",
+  em_transito: "Em Trânsito", em_transito_destino: "Em Trânsito ao Destino",
+  no_local_destino: "No Local de Destino", em_apoio: "Em Apoio", pernoite: "Pernoite",
+  encerrada: "Encerrada", finalizada: "Finalizada", cancelada: "Cancelada", recusada: "Recusada",
+};
+function fmtStatusPt(s?: string | null): string {
+  const key = String(s || "").toLowerCase().trim();
+  if (MISSION_STATUS_LABEL_PT[key]) return MISSION_STATUS_LABEL_PT[key];
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "—";
+}
+
+/** Encurta um endereço longo para "Cidade/UF" (best-effort). */
+export function shortLocal(s?: string | null): string {
+  if (!s) return "";
+  const t = String(s).replace(/,?\s*Brasil\s*$/i, "").trim();
+  const m = t.match(/([A-Za-zÀ-ÿ'.\s]+?)\s*[-,]\s*([A-Z]{2})\s*$/);
+  if (m) return `${m[1].trim()}/${m[2]}`;
+  const parts = t.split(",").map((p) => p.trim()).filter(Boolean);
+  return parts[parts.length - 1] || t;
+}
+
+/** Início do dia de hoje em BRT (UTC-3), como ISO com offset. */
+function startOfTodayBrtIso(): string {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  return `${today}T00:00:00-03:00`;
+}
+function fmtBrtNow(): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date());
+}
+
 /** Adiciona "55" no início do número se ainda não tem código de país. */
 function toIntlPhone(rawPhone: string | null): string | null {
   const digits = normalizePhone(rawPhone);
@@ -364,6 +411,128 @@ export interface ParsedGroupMsg {
   zapiMessageId: string | null;
 }
 
+interface SummaryOs {
+  id: number;
+  os_number: string | null;
+  mission_status: string | null;
+  status: string | null;
+  origin: string | null;
+  destination: string | null;
+  escorted_vehicle_plate: string | null;
+  completed_date: string | null;
+  mission_started_at: string | null;
+}
+
+/**
+ * Monta o texto do resumo das OS de um cliente (ativas + finalizadas hoje).
+ * Pura: só lê do banco e devolve a string — não envia nada. Retorna null se
+ * o grupo não está vinculado a nenhum cliente. Testável isoladamente.
+ */
+export async function buildClientSummaryByGroup(groupId: string): Promise<string | null> {
+  const { data: cli } = await supabaseAdmin
+    .from("clients")
+    .select("id, name")
+    .eq("whatsapp_group_id", groupId)
+    .maybeSingle();
+  if (!cli?.id) return null;
+
+  const clienteNome = String((cli as any).name || "").toUpperCase();
+  const startIso = startOfTodayBrtIso();
+  const sel = "id, os_number, mission_status, status, origin, destination, escorted_vehicle_plate, completed_date, mission_started_at";
+
+  // Ativas (em andamento, não finalizadas).
+  const { data: activeRows } = await supabaseAdmin
+    .from("service_orders")
+    .select(sel)
+    .eq("client_id", cli.id)
+    .eq("status", "em_andamento");
+  const active = ((activeRows || []) as SummaryOs[])
+    .filter((o) => !FINISHED_MISSION_STATUS.has(String(o.mission_status || "").toLowerCase()))
+    .sort((a, b) => String(a.mission_started_at || "").localeCompare(String(b.mission_started_at || "")));
+
+  // Finalizadas hoje: intervalo fechado-aberto BRT [início de hoje, início de
+  // amanhã); exclui canceladas/recusadas. O limite superior evita que registros
+  // com completed_date futuro (erro de dados) entrem na contagem.
+  const endIso = new Date(new Date(startIso).getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const { data: doneRows } = await supabaseAdmin
+    .from("service_orders")
+    .select(sel)
+    .eq("client_id", cli.id)
+    .gte("completed_date", startIso)
+    .lt("completed_date", endIso)
+    .not("status", "in", "(cancelada,recusada)");
+  const activeIds = new Set(active.map((o) => o.id));
+  const doneToday = ((doneRows || []) as SummaryOs[])
+    .filter((o) => !activeIds.has(o.id))
+    .sort((a, b) => String(b.completed_date || "").localeCompare(String(a.completed_date || "")));
+
+  const L: string[] = [];
+  L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
+  L.push(`📋 *RESUMO DO DIA*${clienteNome ? ` — ${clienteNome}` : ""}`);
+  L.push(`🗓️ ${fmtBrtNow()}`);
+  L.push("");
+  L.push(`🚦 *EM ANDAMENTO:* ${active.length}   |   ✅ *FINALIZADAS HOJE:* ${doneToday.length}`);
+
+  if (active.length === 0 && doneToday.length === 0) {
+    L.push("");
+    L.push(`No momento não há viagens em andamento nem finalizadas hoje.`);
+  }
+
+  if (active.length > 0) {
+    L.push("");
+    L.push(`▶️ *EM ANDAMENTO*`);
+    for (const o of active) {
+      const placa = o.escorted_vehicle_plate || "—";
+      L.push(`• *OS ${o.os_number || `#${o.id}`}* | 🚛 ${placa} | _${fmtStatusPt(o.mission_status)}_`);
+      const rota = [shortLocal(o.origin), shortLocal(o.destination)].filter(Boolean).join(" → ");
+      if (rota) L.push(`   ${rota}`);
+    }
+  }
+
+  if (doneToday.length > 0) {
+    L.push("");
+    L.push(`✅ *FINALIZADAS HOJE*`);
+    for (const o of doneToday) {
+      const placa = o.escorted_vehicle_plate || "—";
+      L.push(`• *OS ${o.os_number || `#${o.id}`}* | 🚛 ${placa}`);
+      const rota = [shortLocal(o.origin), shortLocal(o.destination)].filter(Boolean).join(" → ");
+      if (rota) L.push(`   ${rota}`);
+    }
+  }
+
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// Throttle em memória: evita reenviar resumo ao mesmo grupo em rajada (replay
+// de webhook ou cliente mandando "resumo" várias vezes seguidas). O módulo é
+// cacheado pelo ESM, então o Map persiste entre chamadas do webhook.
+const summaryThrottle = new Map<string, number>();
+const SUMMARY_THROTTLE_MS = 60_000;
+
+/**
+ * Responde NO GRUPO com um panorama das OS do cliente vinculado àquele grupo:
+ * OS ativas (em andamento) + OS finalizadas hoje (BRT). Fail-open.
+ */
+export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise<void> {
+  try {
+    const last = summaryThrottle.get(parsed.chatId) || 0;
+    if (Date.now() - last < SUMMARY_THROTTLE_MS) {
+      console.log(`[agent-central-mention] resumo do grupo ${parsed.chatId} ignorado (throttle ${SUMMARY_THROTTLE_MS / 1000}s)`);
+      return;
+    }
+    const msg = await buildClientSummaryByGroup(parsed.chatId);
+    if (!msg) {
+      console.log(`[agent-central-mention] resumo pedido no grupo ${parsed.chatId} mas grupo não está vinculado a nenhum cliente — ignorando`);
+      return;
+    }
+    summaryThrottle.set(parsed.chatId, Date.now());
+    await sendText({ groupOrPhone: parsed.chatId, message: msg });
+    console.log(`[agent-central-mention] resumo enviado ao grupo ${parsed.chatId}`);
+  } catch (e: any) {
+    console.warn("[agent-central-mention] handleGroupSummaryRequest falhou:", e?.message);
+  }
+}
+
 /**
  * Ponto de entrada chamado pelo webhook. Fire-and-forget, nunca lança.
  */
@@ -371,6 +540,14 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
   try {
     if (!parsed.isGroup || parsed.fromMe) return;
     if (!isZapiConfigured()) return;
+
+    // Pedido de RESUMO geral tem fluxo próprio (panorama do cliente). Só
+    // intercepta se NÃO houver um nº de OS no texto — assim "resumo da 236"
+    // cai no fluxo de atualização daquela OS, não no panorama geral.
+    if (looksLikeSummaryRequest(parsed.text) && !RE_OS.test(parsed.text || "")) {
+      await handleGroupSummaryRequest(parsed);
+      return;
+    }
 
     // Texto da mensagem citada (resposta). Primeiro tenta o conteúdo inline do
     // payload; se não vier, usa o ID da citação pra buscar o corpo no nosso

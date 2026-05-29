@@ -151,7 +151,6 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   L.push(`🚨 *OS ${u.os_number || ""}* | *STATUS:* ${statusLabel || "—"}`);
   L.push("");
   if (dataStr || horaStr) L.push(`📅 *DATA:* ${dataStr}   🕐 *HORA:* ${horaStr}`);
-  if (opLabel) L.push(`🏢 *OPERAÇÃO:* ${opLabel}`);
   if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
   L.push("");
   if (so?.origin) L.push(`📍 *ORIGEM:* ${so.origin}`);
@@ -166,15 +165,14 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
   L.push("");
   if (progressoPct != null) L.push(`📊 *PROGRESSO DA MISSÃO:* ${progressoPct}%`);
-  if (stepLabel) L.push(`✅ *MARCO:* ${stepLabel.toUpperCase()}`);
-  if (msgUpper) L.push(`📝 *ATUALIZAÇÃO:* ${msgUpper}`);
-  if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
-  L.push("");
   if (distRestKm != null) L.push(`🚗 *DISTÂNCIA ATÉ DESTINO:* ${Math.round(distRestKm)} km`);
   if (distRestKm != null) L.push(`⏱️ *PREVISÃO DE CHEGADA:* ${fmtEta(distRestKm)}`);
+  L.push("");
+  if (msgUpper) L.push(`📝 *ATUALIZAÇÃO:* ${msgUpper}`);
+  L.push("");
+  if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
   if (hasGeo) {
-    L.push("");
-    L.push(`📍 *LOCALIZAÇÃO:*`);
+    L.push(`📍 *LINK GOOGLE:*`);
     L.push(`https://www.google.com/maps?q=${upLat.toFixed(4)},${upLng.toFixed(4)}&z=17&hl=pt-BR`);
   }
 
