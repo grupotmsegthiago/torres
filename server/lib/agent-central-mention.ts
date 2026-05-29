@@ -321,6 +321,39 @@ function extractQuotedText(rawBody: any): string | null {
   return null;
 }
 
+/** Pega o ID da mensagem citada (resposta) do payload cru da Z-API. */
+function extractQuotedId(rawBody: any): string | null {
+  if (!rawBody || typeof rawBody !== "object") return null;
+  return (
+    rawBody.referenceMessageId ||
+    rawBody.referencedMessageId ||
+    rawBody.text?.referenceMessageId ||
+    rawBody.image?.referenceMessageId ||
+    rawBody.referencedMessage?.messageId ||
+    rawBody.quotedMsgId ||
+    null
+  );
+}
+
+/**
+ * Busca o corpo de uma mensagem citada no nosso histórico (whatsapp_messages).
+ * A citada costuma ser o nosso próprio card de atualização, que contém "OS TOR-XXXX".
+ */
+async function lookupQuotedBody(messageId: string): Promise<string | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("body")
+      .eq("zapi_message_id", messageId)
+      .limit(1)
+      .maybeSingle();
+    const b = (data as any)?.body;
+    return typeof b === "string" && b.trim() ? b : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ParsedGroupMsg {
   chatId: string;
   isGroup: boolean;
@@ -339,8 +372,14 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     if (!parsed.isGroup || parsed.fromMe) return;
     if (!isZapiConfigured()) return;
 
-    const quotedText = extractQuotedText(rawBody);
-    if (!looksLikeUpdateRequest(parsed.text, !!quotedText)) return;
+    // Texto da mensagem citada (resposta). Primeiro tenta o conteúdo inline do
+    // payload; se não vier, usa o ID da citação pra buscar o corpo no nosso
+    // histórico (normalmente é o nosso card de atualização com "OS TOR-XXXX").
+    const quotedId = extractQuotedId(rawBody);
+    let quotedText = extractQuotedText(rawBody);
+    if (!quotedText && quotedId) quotedText = await lookupQuotedBody(quotedId);
+    const hasQuoted = !!quotedText || !!quotedId;
+    if (!looksLikeUpdateRequest(parsed.text, hasQuoted)) return;
 
     const text = (parsed.text || "").trim();
     const extract = await extractIntent(text || quotedText || "");
