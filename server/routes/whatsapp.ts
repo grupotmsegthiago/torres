@@ -477,6 +477,28 @@ export function registerWhatsappRoutes(app: Express) {
       });
 
       res.json({ ok: true });
+
+      // Agente Central: se a mensagem chegou num GRUPO e não é nossa, dispara o
+      // atendimento de pedidos de atualização (fire-and-forget — nunca bloqueia
+      // nem derruba o webhook). Vide server/lib/agent-central-mention.ts.
+      if (parsed.isGroup && !parsed.fromMe) {
+        import("../lib/agent-central-mention.js")
+          .then(({ handleGroupUpdateRequest }) =>
+            handleGroupUpdateRequest(
+              {
+                chatId: parsed.chatId,
+                isGroup: parsed.isGroup,
+                fromMe: parsed.fromMe,
+                senderName: parsed.senderName,
+                senderPhone: parsed.senderPhone,
+                text: parsed.text,
+                zapiMessageId: parsed.zapiMessageId,
+              },
+              body,
+            ),
+          )
+          .catch((e: any) => console.warn("[whatsapp/webhook] agente-central:", e?.message));
+      }
     } catch (e: any) {
       console.error("[whatsapp/webhook] erro:", e?.message);
       res.status(500).json({ ok: false, error: e?.message || "erro interno" });

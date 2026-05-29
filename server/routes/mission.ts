@@ -1185,6 +1185,20 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       res.json({ success: true });
 
+      // Agente Central: se algum pedido de atualização foi feito DENTRO de um
+      // grupo (ex: "OP. TMSEG X TORRES (EASP)"), encaminha esta atualização de
+      // volta ao grupo mencionando quem pediu. Fire-and-forget, fail-open.
+      import("../lib/agent-central-mention.js")
+        .then(({ fulfillGroupRequests }) =>
+          fulfillGroupRequests({
+            serviceOrderId,
+            osNumber: so.osNumber || null,
+            employeeName: emp?.name || user.name || null,
+            message: correctedMessage,
+          }),
+        )
+        .catch((e: any) => console.warn("[agent-central] fulfill falhou:", e?.message));
+
       // O encaminhamento pro grupo WhatsApp do cliente é feito pelo cron
       // `initWhatsappForwardCron` (server/cron-whatsapp-forward.ts) — varre
       // updates com foto+mensagem ainda não encaminhadas a cada 30s. Assim

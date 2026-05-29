@@ -715,6 +715,29 @@ export async function ensureDbSchema() {
         reminder_count INTEGER NOT NULL DEFAULT 0
       )
     `).catch(() => {});
+    // Pedidos de atualização feitos DENTRO de um grupo WhatsApp (ex:
+    // "OP. TMSEG X TORRES (EASP)"). Quando alguém cobra atualização no grupo,
+    // o Agente Central registra o pedido aqui, cobra os agentes da OS por DM e
+    // responde no grupo. Quando o agente posta a próxima mission_update, o
+    // pedido aberto é resolvido: a atualização é encaminhada de volta pro
+    // grupo mencionando quem pediu, e fulfilled_at é preenchido.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS agent_central_group_requests (
+        id SERIAL PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        service_order_id INTEGER NOT NULL,
+        requester_name TEXT,
+        requester_phone TEXT,
+        source_message_id TEXT,
+        requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        fulfilled_at TIMESTAMPTZ
+      )
+    `).catch(() => {});
+    await execSql(`
+      CREATE INDEX IF NOT EXISTS idx_acgr_open
+      ON agent_central_group_requests (service_order_id)
+      WHERE fulfilled_at IS NULL
+    `).catch(() => {});
     // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
     // Permite batidas manuais sem device_id / control_id_user_id (funcionário ainda
