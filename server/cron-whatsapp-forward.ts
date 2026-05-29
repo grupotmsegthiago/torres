@@ -54,6 +54,19 @@ const MISSION_STATUS_LABEL: Record<string, string> = {
   recusada: "Recusada",
 };
 
+// A foto de "KM Final" (hodômetro no destino) marca o fim prático da missão
+// para o grupo do cliente. Ela chega com mission_step="chegada_destino" e o
+// step "finalizada" não carrega foto (logo nunca é encaminhado). Sem isso, o
+// card de KM Final sairia no formato COMPLETO (com progresso/distância/previsão,
+// que não fazem mais sentido após o fim). Decisão do dono (29/05/2026): card de
+// KM Final deve sair no formato RESUMIDO (buildFinalizedSummary).
+export function isFinalKmUpdate(message?: string | null): boolean {
+  // Casa só a legenda de foto gerada pelo app: "📷 Foto: KM Final — KM N".
+  // Exige o prefixo "foto:" + boundary depois de "final" pra não disparar em
+  // texto livre do agente ("km finalizado", "sem km final", etc.).
+  return /foto:\s*km\s*final\b/i.test(String(message || ""));
+}
+
 function fmtMissionStatus(s?: string | null): string {
   if (!s) return "";
   const key = String(s).toLowerCase().trim();
@@ -356,7 +369,9 @@ async function processPending(): Promise<void> {
       }
 
       const stepLabel = FORWARDABLE_STEPS[String(u.mission_step || "")] || null;
-      const isFinalizada = String(u.mission_step || "") === "finalizada";
+      // Resumo enxuto tanto no step "finalizada" quanto na foto de KM Final
+      // (que vem como "chegada_destino" e é, na prática, o fim da missão).
+      const isFinalizada = String(u.mission_step || "") === "finalizada" || isFinalKmUpdate(u.message);
       let caption: string;
       try {
         caption = isFinalizada

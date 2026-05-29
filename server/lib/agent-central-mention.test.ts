@@ -1,6 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { looksLikeSummaryRequest, shortLocal } from "./agent-central-mention.ts";
+import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
+
+test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
+  for (const m of ["📷 Foto: KM Final — KM 7.239", "Foto: km final", "📷 FOTO: KM FINAL — KM 1.234"]) {
+    assert.equal(isFinalKmUpdate(m), true, `deveria reconhecer: ${m}`);
+  }
+});
+
+test("isFinalKmUpdate: não confunde com outras fotos nem texto livre", () => {
+  for (const m of [
+    "📷 Foto: KM Saída — KM 6.887",
+    "📷 Foto: KM Chegada — KM 6.887",
+    "📷 Foto: Local de Destino",
+    "Missão segue padrão, sem novidades",
+    "km finalizado, voltando pra base",
+    "sem km final ainda",
+    "foto do km final no destino",
+    "", null, undefined,
+  ]) {
+    assert.equal(isFinalKmUpdate(m as any), false, `não deveria reconhecer: ${JSON.stringify(m)}`);
+  }
+});
 
 test("looksLikeSummaryRequest: reconhece pedidos de resumo", () => {
   for (const t of ["resumo", "Resumo do dia", "manda o resumão", "panorama", "como estão as viagens", "status geral"]) {
