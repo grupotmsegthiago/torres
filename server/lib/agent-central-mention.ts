@@ -64,10 +64,14 @@ interface ExtractResult {
 /** Extração via IA: intenção + nº de OS + nomes de agentes citados. */
 async function extractIntent(text: string): Promise<ExtractResult> {
   const fallback: ExtractResult = { isUpdateRequest: false, osNumbers: [], agentNames: [] };
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return fallback;
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey) {
+    console.warn("[agent-central-mention] AI_INTEGRATIONS_OPENAI_API_KEY ausente — extractIntent desativado");
+    return fallback;
+  }
   try {
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0,
@@ -270,10 +274,11 @@ async function buildAck(requesterName: string, osNumber: string | null): Promise
   const nome = firstName(requesterName);
   const saud = nome ? `${nome}, ` : "";
   const fallback = `${saud ? saud.charAt(0).toUpperCase() + saud.slice(1) : ""}entendido! Já estou solicitando a atualização aos agentes. Assim que eles reportarem, retorno aqui.`;
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   if (!apiKey) return fallback;
   try {
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.9,
