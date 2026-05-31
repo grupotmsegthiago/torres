@@ -30,6 +30,24 @@ Neon, não pro Supabase — não confiar).
 - **costDays:** custos fixos/RH são rateados por mês comercial (30 dias), não pelo calendário
   (`Math.min(daysInPeriod, FIXED[period])`).
 
+## Relatório de OS vs Balanço Gerencial — por que os totais divergem
+Os dois painéis NÃO medem a mesma coisa, então faturamento diferente no mesmo mês é
+esperado (não é bug de dado):
+- **Relatório de OS** (`relatorio-os.tsx`): fonte `/api/operational-grid` (lista TODAS as
+  OSs), período por **scheduledDate** (fallback missionStarted/completed), faturamento
+  **recalculado AO VIVO** por OS (`liveCost.faturamento` via operational-grid server-side),
+  inclui agendada/andamento (projeção). Exclui recusada/cancelada.
+- **Balanço Gerencial** (`balanco-gerencial.tsx`): fonte `/api/financial/dashboard`
+  (`byMission` é construído de **escort_billings** — só OSs COM billing), período por
+  `m.data` = **data_missao** (fallback created_at), faturamento = `fat_total` **congelado**.
+  Exclui só recusada.
+- **Verificado (Maio/2026):** somando o billing CONGELADO nos dois conjuntos de OS dá
+  IDÊNTICO (~R$182.5k) e os conjuntos são quase iguais (só 1 OS agendada sem billing
+  difere). Logo a diferença que aparece no painel (Relatório ~R$205.6k vs Balanço ~R$182.4k)
+  vem INTEIRAMENTE do **recálculo ao vivo** do Relatório ser maior que o billing congelado —
+  provável que o live pegue correções de hora-extra/KM que billings antigos congelados não
+  têm (ver regra INTOCÁVEL nº5). O número financeiro consolidado/correto é o do Balanço.
+
 ## Faturamento de OS recusada (regra INTOCÁVEL nº1) — auditoria recorrente
 OS `status="recusada"` deve ter TODOS os `fat_*` do billing = 0, `status=CANCELADO`,
 `observacoes="OS RECUSADA — <cancellation_reason>"`. Auditoria de Maio/2026 achou 7 billings
