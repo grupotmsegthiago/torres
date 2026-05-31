@@ -533,7 +533,10 @@ export default function BalancoGerencialPage() {
         // Sanidade: km deve ser positivo e razoável; descarta hodômetro
         // zerado, troca de viatura ou erro de digitação (>3000 km).
         if (kmGap <= 0 || kmGap > 3000) continue;
-        if (cur.liters <= 0) continue;
+        // Sanidade de litros: um abastecimento real não passa de ~1000 L.
+        // Descarta erro de digitação (ex.: 42400 no lugar de 42,40) que
+        // sozinho derruba a média km/L de toda a frota.
+        if (cur.liters <= 0 || cur.liters > 1000) continue;
         vKm += kmGap;
         vLiters += cur.liters;
       }

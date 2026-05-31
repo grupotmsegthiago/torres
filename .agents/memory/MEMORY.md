@@ -1,0 +1,1 @@
+- [Auditoria do Balanço Gerencial](balanco-gerencial-audit.md) — eficiência km/L é no frontend (sensível a outlier de fueling.liters); como reconciliar RH/Estrutura/Operacional via supabaseAdmin + buildFolhaStats.
