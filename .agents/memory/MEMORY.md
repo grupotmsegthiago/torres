@@ -1,2 +1,3 @@
 - [Auditoria do Balanço Gerencial](balanco-gerencial-audit.md) — eficiência km/L é no frontend (sensível a outlier de fueling.liters); como reconciliar RH/Estrutura/Operacional via supabaseAdmin + buildFolhaStats.
 - [Credenciais em attached_assets](secrets-in-attached-assets.md) — arquivos Pasted-*.txt colados pelo usuário podem ter token real em texto puro; varrer e rotacionar.
+- [Early return em register*Routes](route-registration-early-return.md) — desligar integração com `return` antecipado mata rotas seguintes do arquivo → HTML do Vite → "Unexpected token '<'"; use guards de prefixo.

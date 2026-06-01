@@ -294,9 +294,16 @@ const ticketlogDisabledGuard = (_req: any, res: any, _next: any) =>
 
 export function registerConciliacaoRoutes(app: Express) {
   if (TICKETLOG_DISABLED) {
+    // Bloqueia SÓ os endpoints TicketLog (prefixos abaixo) retornando 503.
+    // Os guards são app.use registrados ANTES das rotas reais, então interceptam
+    // qualquer /api/conciliacao-ticketlog/** e /api/auditoria-pedagios-ticketlog/**
+    // mesmo com os handlers reais ainda registrados depois.
+    // NÃO dar `return` aqui: o restante deste arquivo contém rotas que NÃO são
+    // TicketLog (ex.: /api/controladoria/pedagio-cobrado), e um return antecipado
+    // deixaria essas rotas sem registro -> caem no fallback do Vite (HTML) ->
+    // "Unexpected token '<'" no front. (bug corrigido 2026-06-01)
     app.use("/api/conciliacao-ticketlog", ticketlogDisabledGuard);
     app.use("/api/auditoria-pedagios-ticketlog", ticketlogDisabledGuard);
-    return;
   }
   app.post("/api/conciliacao-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
     try {
