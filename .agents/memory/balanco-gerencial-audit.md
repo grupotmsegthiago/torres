@@ -53,6 +53,22 @@ hora-extra/KM (regra INTOCÁVEL nº5); o dono quer o valor ao vivo, igual nos do
   Teste: `.local/test_inspect_unif_balanco_relatorio.mts` (minta token admin via Supabase generateLink+verifyOtp,
   bate no grid real — NÃO usa executeSql/Neon).
 
+## Painel mensal: faturamento AO VIVO pode ser MUITO maior que o billing congelado (risco de subfaturamento)
+O filtro MENSAL do Balanço é por mês-calendário (dia 01 → último dia), correto.
+O total exibido usa `faturamento_live` (recálculo ao vivo de HE por timestamps reais, INTOCÁVEL nº5).
+Para missões multi-dia "concluída", o billing congelado (`escort_billings.fat_total`) costuma estar
+**SUBfaturado** em HE — o ao vivo pode ser dezenas de milhares de R$ MAIOR (ex.: Maio/2026 ao vivo
+≈ R$ 283,9k vs congelado ≈ R$ 205,7k; um único OS multi-dia tipo TOR-0219 saltou de ~R$ 566 congelado
+pra ~R$ 11,2k ao vivo).
+**Por que importa:** o `gerar-fatura` (server/asaas.ts) e o boletim de medição leem do `escort_billings`
+CONGELADO, não do ao vivo. Se o cron de re-freeze não rodou pós-correção de HE, a empresa FATURA o
+valor antigo subfaturado mesmo o painel mostrando o correto maior. Painel ≠ o que é cobrado.
+**Observado:** `faturamento_live` pode variar entre restarts do servidor enquanto o cron/auto-fix de boot
+reconcilia timestamps/billings — não é o painel "bugado", é o congelado defasado convergindo. Quando o
+usuário reclamar que "o número do mês mudou/está alto", checar TOR-* multi-dia e se o cron re-freeze rodou.
+**Como conferir:** somar `liveCost.faturamento_live` vs `liveCost.faturamento` do `/api/operational-grid`
+no range do mês (script `.local/test_*.mts` com token admin mintado via Supabase generateLink+verifyOtp).
+
 ## Faturamento de OS recusada (regra INTOCÁVEL nº1) — auditoria recorrente
 OS `status="recusada"` deve ter TODOS os `fat_*` do billing = 0, `status=CANCELADO`,
 `observacoes="OS RECUSADA — <cancellation_reason>"`. Auditoria de Maio/2026 achou 7 billings
