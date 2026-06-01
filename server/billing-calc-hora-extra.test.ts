@@ -246,3 +246,35 @@ test("calcularEscolta: agendamento noturno (scheduled_date em ISO UTC) usa data 
   // Se bug do slice → daria 06h30min (perdia 24h).
   assert.ok(r.horas_trabalhadas > 30, `horas_trabalhadas deve ser ~30.5h (não 6.5h), foi ${r.horas_trabalhadas}`);
 });
+
+// REGRESSÃO TOR-0141 (km inicial registrado como "km_saida", não "km_chegada")
+// A OS gravou km_saida=15517 e km_final=15822 (real: 305 km). O cálculo ao vivo lia só
+// "km_chegada" → kmInicial=0 → km_total=15822 → fat_km estourou (~R$ 75k). Aqui validamos
+// a função de cálculo com o km inicial correto (305 km).
+test("calcularFaturamentoLive: km correto (305) não estoura faturamento", () => {
+  const contrato = { valor_acionamento: 480, franquia_horas: 3, franquia_km: 100, valor_hora_extra: 110, valor_km_extra: 4.8, valor_km_carregado: 0, vrp_base: 0 };
+  const r = calcularFaturamentoLive({ horasMissao: 6.32, kmInicial: 15517, kmFinal: 15822, contrato });
+  assert.equal(r.km_total, 305, "km_total deve ser 305 (15822-15517)");
+  // fat_km = (305-100)*4.8 = 984 ; HE = (6.32-3)*110 = 365.2 ; acion = 480 → ~1829
+  assert.ok(r.fat_total < 2500, `fat_total deve ser ~R$ 1.8k, foi ${r.fat_total}`);
+  assert.equal(r.km_absurdo_limitado, false, "km legítimo não deve ser limitado");
+});
+
+// BLINDAGEM: km absurdo SEM rota de referência é limitado por teto físico (140 km/h × horas).
+test("calcularFaturamentoLive: km absurdo sem kmRota é limitado pelo teto físico", () => {
+  const contrato = { valor_acionamento: 480, franquia_horas: 3, franquia_km: 100, valor_hora_extra: 110, valor_km_extra: 4.8, valor_km_carregado: 0, vrp_base: 0 };
+  // km inicial não capturado → odômetro cheio (15822) em missão de 6.32h. Impossível.
+  const r = calcularFaturamentoLive({ horasMissao: 6.32, kmInicial: 0, kmFinal: 15822, contrato });
+  assert.equal(r.km_absurdo_limitado, true, "km absurdo deve ser sinalizado");
+  assert.ok(Math.abs(r.km_total - 6.32 * 140) < 0.01, `km_total limitado ao teto físico (6.32×140≈884.8), foi ${r.km_total}`);
+  assert.ok(r.fat_total < 5000, `fat_total não pode mais estourar (~R$ 75k), foi ${r.fat_total}`);
+});
+
+// BLINDAGEM não atrapalha: COM kmRota, o clamp de rota prevalece (não usa teto físico).
+test("calcularFaturamentoLive: kmRota continua tendo prioridade sobre teto físico", () => {
+  const contrato = { valor_acionamento: 480, franquia_horas: 3, franquia_km: 100, valor_hora_extra: 110, valor_km_extra: 4.8, valor_km_carregado: 0, vrp_base: 0 };
+  const r = calcularFaturamentoLive({ horasMissao: 6.32, kmInicial: 0, kmFinal: 15822, contrato, kmRota: 820 });
+  assert.equal(r.km_rota_limitado, true, "deve limitar pela rota");
+  assert.equal(r.km_absurdo_limitado, false, "com rota, teto físico não age");
+  assert.equal(r.km_total, 820, "km_total = kmRota");
+});

@@ -416,7 +416,12 @@ import type { Express } from "express";
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-            const kmInicial = kmChegadaPhoto?.kmValue || 0;
+            // O hodômetro inicial pode estar registrado como "km_chegada" OU "km_saida"
+            // (campos legados/variações do app mobile). Se faltar o km inicial, o cálculo ao
+            // vivo fazia km_total = km_final - 0 = odômetro cheio (ex.: TOR-0141 ficou 15.822 km
+            // em vez de 305 km, inflando o faturamento em ~R$ 75k). Sempre usar km_saida como
+            // fallback do km inicial.
+            const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
 
             const parseBRT = (v: any) => { const s = String(v); return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z"); };
@@ -716,9 +721,10 @@ import type { Express } from "express";
           ...(() => {
             const photos = photosByOS.get(o.id) || [];
             const kmCheg = photos.find((p: any) => p.step === "km_chegada");
+            const kmSai = photos.find((p: any) => p.step === "km_saida");
             const kmFin = photos.find((p: any) => p.step === "km_final");
             return {
-              kmInicial: kmCheg?.kmValue ?? null,
+              kmInicial: kmCheg?.kmValue ?? kmSai?.kmValue ?? null,
               kmFinal: kmFin?.kmValue ?? null,
             };
           })(),

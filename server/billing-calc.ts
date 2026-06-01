@@ -95,6 +95,7 @@ export function calcularFaturamentoLive(params: {
   franquia_km: number;
   has_acionamento: boolean;
   km_rota_limitado: boolean;
+  km_absurdo_limitado: boolean;
 } {
   const { horasMissao, kmInicial, kmFinal, contrato, kmRota } = params;
   const n2 = (v: any) => Number(v) || 0;
@@ -107,7 +108,20 @@ export function calcularFaturamentoLive(params: {
 
   const kmOdometro = Math.max(0, kmFinal - kmInicial);
   const kmRotaLimitado = kmRota && kmRota > 0 && kmOdometro > kmRota;
-  const kmTotal = kmRotaLimitado ? kmRota : kmOdometro;
+  let kmTotal = kmRotaLimitado ? kmRota : kmOdometro;
+  // Blindagem contra km absurdo: quando NÃO há rota de referência (kmRota), um odômetro
+  // fisicamente impossível (ex.: km inicial não capturado → km_total vira o odômetro cheio)
+  // não pode inflar o faturamento. Teto generoso: nenhuma escolta real mantém média acima de
+  // 140 km/h ao longo da missão inteira (com paradas/pedágios fica MUITO abaixo). Só aplica
+  // com missão de pelo menos 1h pra não penalizar trechos curtos legítimos.
+  let kmAbsurdoLimitado = false;
+  if (!kmRotaLimitado && (!kmRota || kmRota <= 0) && horasMissao >= 1) {
+    const tetoFisico = horasMissao * 140;
+    if (kmTotal > tetoFisico) {
+      kmTotal = tetoFisico;
+      kmAbsurdoLimitado = true;
+    }
+  }
   const kmExcedente = Math.max(0, kmTotal - franquiaKm);
 
   let fatAcionamento = 0;
@@ -140,6 +154,7 @@ export function calcularFaturamentoLive(params: {
     franquia_km: franquiaKm,
     has_acionamento: hasAcionamento,
     km_rota_limitado: !!kmRotaLimitado,
+    km_absurdo_limitado: kmAbsurdoLimitado,
   };
 }
 
