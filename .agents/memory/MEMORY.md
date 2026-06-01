@@ -1,1 +1,2 @@
 - [Auditoria do Balanço Gerencial](balanco-gerencial-audit.md) — eficiência km/L é no frontend (sensível a outlier de fueling.liters); como reconciliar RH/Estrutura/Operacional via supabaseAdmin + buildFolhaStats.
+- [Credenciais em attached_assets](secrets-in-attached-assets.md) — arquivos Pasted-*.txt colados pelo usuário podem ter token real em texto puro; varrer e rotacionar.
