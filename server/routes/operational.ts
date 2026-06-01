@@ -5,7 +5,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
-  import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
@@ -408,6 +408,7 @@ import type { Express } from "express";
           frozen: boolean; fuel_allocated: boolean; fuel_allocated_hint?: any;
           contrato_nome: string | null;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
+          canonico: { faturamento: number; fat_acionamento: number; fat_km: number; fat_km_carregado: number; fat_km_vazio: number; fat_hora_extra: number; fat_adicional_noturno: number; fat_estadia: number; fat_pernoite: number; km_franquia: number; km_excedente: number; horas_trabalhadas: number; receitas_os: number; pedagio: number } | null;
         } | null = null;
 
         if ((o.status === "em_andamento" || o.status === "agendada" || o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta" && o.status !== "recusada") {
