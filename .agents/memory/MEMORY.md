@@ -1,5 +1,5 @@
 - [Auditoria do Balanço Gerencial](balanco-gerencial-audit.md) — eficiência km/L é no frontend (sensível a outlier de fueling.liters); como reconciliar RH/Estrutura/Operacional via supabaseAdmin + buildFolhaStats.
 - [Credenciais em attached_assets](secrets-in-attached-assets.md) — arquivos Pasted-*.txt colados pelo usuário podem ter token real em texto puro; varrer e rotacionar.
 - [Early return em register*Routes](route-registration-early-return.md) — desligar integração com `return` antecipado mata rotas seguintes do arquivo → HTML do Vite → "Unexpected token '<'"; use guards de prefixo.
-- [Conciliação de ponto RHID](rhid-reconciliation.md) — AFD é append-only (404 em PUT/DELETE→corretiva/unsupported); dup em qualquer lado=duplicada; dedup por (func,minuto,device); snapshot pós-export; rotas exigem admin.
+- [Conciliação de ponto RHID](rhid-reconciliation.md) — AFD append-only (404 PUT/DELETE→corretiva/unsupported); dedup import por (func,minuto) c/ adopt-external-id (decideImport), SEM device (prod=1 device); dup qualquer lado=duplicada; rotas exigem admin.
 - [Balanço receita canônica](balanco-canonical-revenue.md) — Balanço usa canonico.faturamento (calcularEscolta); Relatório de OS usa faturamento_live; nunca trocar, só adicionar campos. km_vazio sempre 0 (0/246 billings).

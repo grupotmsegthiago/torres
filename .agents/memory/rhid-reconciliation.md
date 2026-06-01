@@ -16,9 +16,10 @@ Nosso sistema é SEMPRE a verdade. Facial (relógio fixo) → importa pra nós; 
 **Why:** o AFD do RHID podia ter 2 ids no mesmo minuto; classificar como `validado` escondia a divergência do painel/e-mail.
 **Como aplicar:** usar o helper puro `classifyMark(oursCount, rhidCount)` (testável, sem I/O). Regressão em `server/rhid-reconciliation-classify.test.ts`.
 
-## Dedup de import: casar por (employee, minuto, device), não por formato de external_id
-**Why:** o CREATE do RHID devolve id numérico, mas o import do AFD monta `rhid_{id}_{ts}` → dedup por external_id falha → duplica a batida.
-**Como aplicar:** no `syncDevice`, casar batida nova do AFD com a local por (funcionário, minuto BRT, device) e ATUALIZAR o external_id em vez de inserir.
+## Dedup de import: casar por (employee, minuto BRT) e ADOTAR o external_id canônico
+**Why:** o CREATE do RHID devolve id numérico, mas o import do AFD monta `rhid_{id}_{ts}` → dedup por external_id puro falha → duplica a batida (mesma device #1: POST e AFD são ambos do RHID Cloud).
+**Como aplicar:** helper puro `decideImport({externalIdExists, localExternalIdAtMinute, eventExternalId})` em `control-id-parsers.ts`: ext já existe→`skip`; sem batida local no minuto→`insert`; batida local no minuto com ext divergente/null→`adopt-external-id` (UPDATE o external_id da local pelo id, NUNCA insere duplicata). `syncDevice` usa `Map<emp,Map<minuto,{id,externalId}>>`; id=-1 = placeholder do mesmo batch (não adota). Regressão: `server/control-id-import-dedup.test.ts`.
+**Chave é (emp,minuto) SEM device — de propósito:** o matching por minuto NÃO escopa por device, pra que batida manual (`device_id=null`) também dedupe contra a facial do AFD. Architect alertou "risco cross-device" (adotar external_id na linha errada), mas é teórico: produção tem **1 device só** (RHID Cloud #1) e **0** casos de mesmo func+minuto em devices distintos. Só virar (emp,minuto,device) SE adicionarem um 2º device físico — aí a manual null precisaria de tratamento à parte.
 
 ## Snapshot persistido reflete corretivas pós-export
 **Regra:** `runDailyReconciliation` constrói a conciliação ANTES do export. Depois de exportar, faz patch in-memory dos minutos `faltando_no_rhid` recém-exportados → `validado` antes de persistir/enviar e-mail.
