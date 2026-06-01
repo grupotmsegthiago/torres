@@ -83,3 +83,9 @@ id = "RxjN8VbRndSGWlMpoPF00"
 uri = "file://exports/Contrato_Experiencia_AMOSTRA.pdf"
 type = "pdf"
 title = "Contrato de Experiência — Amostra v3 (espaçamentos ajustados)"
+
+[[outputs]]
+id = "Rb0iHyPK_ZNQkOd8lW7kP"
+uri = "file://.local/faturamento_maio_2026.csv"
+type = "table"
+title = "Faturamento Maio/2026 - todas as OSs (recálculo canônico)"
