@@ -275,7 +275,28 @@ export interface ReconActions {
   importSkipped: number;
   exported: number;        // batidas manuais nossas criadas no RHID (corretivas)
   exportFailed: number;
+  exportSkippedNoMapping: number; // batidas faltando_no_rhid NÃO exportadas: funcionário sem vínculo/identidade no RHID
+  exportStuck: number;            // batidas faltando_no_rhid com external_id obsoleto (no RHID em outro minuto) — revisão manual
   errors: string[];
+}
+
+/**
+ * Decide o que fazer com uma batida nossa que a conciliação marcou como
+ * `faltando_no_rhid`. Extraída como função pura pra blindar a regra de
+ * VISIBILIDADE: nenhuma dessas situações pode voltar a ser engolida com um
+ * `continue` silencioso (era a causa de batidas "sumirem" sem rastro).
+ *  - `skip_no_mapping`: funcionário sem mapping/identidade no RHID → impossível
+ *    exportar; carimba erro na batida pra ficar visível.
+ *  - `stuck_external_id`: batida já tem external_id mas o minuto não existe no
+ *    RHID (id obsoleto / aponta pra outro minuto). NÃO re-exporta cego (AFD é
+ *    append-only ⇒ duplicaria); sinaliza pra revisão manual.
+ *  - `export`: caminho normal — cria a corretiva no RHID.
+ */
+export function exportPunchDisposition(opts: { noIdentity: boolean; hasExternalId: boolean }):
+  "skip_no_mapping" | "stuck_external_id" | "export" {
+  if (opts.noIdentity) return "skip_no_mapping";
+  if (opts.hasExternalId) return "stuck_external_id";
+  return "export";
 }
 
 /**
@@ -284,19 +305,29 @@ export interface ReconActions {
  * conciliação (só cria o que ela apontou como ausente) + checagem de external_id.
  * Nosso sistema é a verdade: o RHID passa a ter a marcação correta.
  */
-export async function exportMissingToRhid(recon: ReconResult): Promise<{ exported: number; exportFailed: number; errors: string[]; exportedKeys: Set<string> }> {
-  let exported = 0, exportFailed = 0;
+export async function exportMissingToRhid(recon: ReconResult): Promise<{ exported: number; exportFailed: number; exportSkippedNoMapping: number; exportStuck: number; errors: string[]; exportedKeys: Set<string> }> {
+  let exported = 0, exportFailed = 0, exportSkippedNoMapping = 0, exportStuck = 0;
   const errors: string[] = [];
   const exportedKeys = new Set<string>(); // `${employeeId}|${minuteBRT}` exportados com sucesso
-  if (!recon.deviceId) return { exported, exportFailed, errors, exportedKeys };
+  if (!recon.deviceId) return { exported, exportFailed, exportSkippedNoMapping, exportStuck, errors, exportedKeys };
+
+  const stampError = async (punchId: number, msg: string) => {
+    await supabaseAdmin.from("control_id_punches").update({
+      rhid_sync_error: msg.slice(0, 500),
+    }).eq("id", punchId);
+  };
 
   const { start, end } = resolvePeriod(recon.period.fromYmd, recon.period.toYmd);
   for (const emp of recon.employees) {
-    if (!emp.mappingOk || !emp.rhidUserId) continue;
     const missingMinutes = new Set(emp.marks.filter((m) => m.status === "faltando_no_rhid").map((m) => m.minuteBRT));
     if (!missingMinutes.size) continue;
 
-    // Batidas locais do período pra esse funcionário; só exporta as que não têm external_id ainda.
+    const noIdentity = !emp.mappingOk || !emp.rhidUserId;
+
+    // Batidas locais do período pra esse funcionário. Carregamos sempre (mesmo sem
+    // mapping) pra conseguir CARIMBAR o motivo da falha em cada batida — antes o
+    // funcionário sem mapping era pulado com um `continue` silencioso e as batidas
+    // sumiam sem rastro.
     const { data: punches } = await supabaseAdmin
       .from("control_id_punches")
       .select("id, punch_at, external_id")
@@ -304,15 +335,32 @@ export async function exportMissingToRhid(recon: ReconResult): Promise<{ exporte
       .gte("punch_at", start.toISOString())
       .lt("punch_at", end.toISOString());
 
+    let skippedThisEmp = 0;
     const seen = new Set<string>();
     for (const p of (punches || []) as any[]) {
       const mk = minuteKeyBRT(new Date(p.punch_at));
       if (!missingMinutes.has(mk)) continue;
-      if (p.external_id) continue;     // já exportada
+
+      const disposition = exportPunchDisposition({ noIdentity, hasExternalId: !!p.external_id });
+
+      if (disposition === "skip_no_mapping") {
+        exportSkippedNoMapping++;
+        skippedThisEmp++;
+        await stampError(p.id, "Não exportada pro RHID: funcionário sem vínculo (mapping) ativo no aparelho");
+        continue;
+      }
+      if (disposition === "stuck_external_id") {
+        // Batida já tem external_id porém o minuto não existe no RHID (id obsoleto /
+        // aponta pra outro minuto). NÃO re-exporta cego (AFD append-only ⇒ duplicaria);
+        // torna visível pra revisão manual em vez de engolir.
+        exportStuck++;
+        await stampError(p.id, "Batida com external_id porém ausente no RHID neste minuto — revisar (possível id obsoleto)");
+        continue;
+      }
       if (seen.has(mk)) continue;      // 1 corretiva por minuto
       seen.add(mk);
       try {
-        const result = await createRhidPunch(recon.deviceId, emp.rhidUserId, new Date(p.punch_at), 3);
+        const result = await createRhidPunch(recon.deviceId, emp.rhidUserId!, new Date(p.punch_at), 3);
         const extractedId = extractRhidPunchId(result);
         await supabaseAdmin.from("control_id_punches").update({
           external_id: extractedId ?? String(p.external_id ?? ""),
@@ -323,11 +371,18 @@ export async function exportMissingToRhid(recon: ReconResult): Promise<{ exporte
         exportedKeys.add(`${emp.employeeId}|${mk}`);
       } catch (e: any) {
         exportFailed++;
-        errors.push(`Export ${emp.name} ${mk}: ${e?.message || e}`.slice(0, 200));
+        const m = `${e?.message || e}`;
+        errors.push(`Export ${emp.name} ${mk}: ${m}`.slice(0, 200));
+        // Carimba a falha na própria batida — não some mais silenciosamente.
+        await stampError(p.id, `Falha ao exportar pro RHID: ${m}`);
       }
     }
+    if (skippedThisEmp > 0) {
+      const idWarn = emp.identidadeWarnings.length ? ` (${emp.identidadeWarnings.join("; ")})` : "";
+      errors.push(`Export ${emp.name}: ${skippedThisEmp} batida(s) não exportada(s) — sem vínculo/identidade no RHID${idWarn}`.slice(0, 200));
+    }
   }
-  return { exported, exportFailed, errors, exportedKeys };
+  return { exported, exportFailed, exportSkippedNoMapping, exportStuck, errors, exportedKeys };
 }
 
 // ============================ E-MAIL ============================
@@ -401,7 +456,7 @@ export async function sendReconciliationEmail(recon: ReconResult, actions: Recon
         <td style="padding:8px 14px;background:#faf5ff;border-radius:6px"><b style="color:#9333ea;font-size:20px">${t.duplicadas}</b><br>duplicadas</td>
       </tr>
     </table>
-    <p style="color:#475569">Ações automáticas: importadas <b>${actions.imported}</b> · exportadas (corretivas) <b>${actions.exported}</b> · falhas export <b>${actions.exportFailed}</b> · problemas de identidade <b>${t.identidadeProblemas}</b></p>
+    <p style="color:#475569">Ações automáticas: importadas <b>${actions.imported}</b> · exportadas (corretivas) <b>${actions.exported}</b> · falhas export <b>${actions.exportFailed}</b> · não exportadas (sem vínculo) <b>${actions.exportSkippedNoMapping}</b> · revisar (id obsoleto) <b>${actions.exportStuck}</b> · problemas de identidade <b>${t.identidadeProblemas}</b></p>
     ${probEmployees.length ? `
     <table style="border-collapse:collapse;width:100%;font-size:13px;margin-top:8px">
       <thead><tr style="background:#f8fafc;text-align:left">
@@ -439,7 +494,7 @@ export async function runDailyReconciliation(opts: {
   const doImport = opts.doImport !== false;
   const doExport = opts.doExport !== false;
   const sendEmail = opts.sendEmail !== false;
-  const actions: ReconActions = { imported: 0, importSkipped: 0, exported: 0, exportFailed: 0, errors: [] };
+  const actions: ReconActions = { imported: 0, importSkipped: 0, exported: 0, exportFailed: 0, exportSkippedNoMapping: 0, exportStuck: 0, errors: [] };
 
   // Resolve device (mesma lógica do buildReconciliation)
   let deviceId = opts.deviceId ?? null;
@@ -468,6 +523,8 @@ export async function runDailyReconciliation(opts: {
       const r = await exportMissingToRhid(recon);
       actions.exported = r.exported;
       actions.exportFailed = r.exportFailed;
+      actions.exportSkippedNoMapping = r.exportSkippedNoMapping;
+      actions.exportStuck = r.exportStuck;
       actions.errors.push(...r.errors);
       // Patch o snapshot pra refletir as corretivas recém-criadas: minutos
       // que estavam "faltando_no_rhid" e foram exportados agora viram "validado".

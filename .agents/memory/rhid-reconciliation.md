@@ -26,5 +26,22 @@ Nosso sistema é SEMPRE a verdade. Facial (relógio fixo) → importa pra nós; 
 **Why:** sem o patch, o painel/e-mail mostram divergência que JÁ foi corrigida no mesmo ciclo, minando a confiança.
 **Como aplicar:** `exportMissingToRhid` devolve `exportedKeys` (`employeeId|minuteBRT`) só dos sucessos; o patch só mexe em marca ainda `faltando_no_rhid` presente nesse set, ajustando counts por funcionário E totais 1:1 (há 1 marca por minuto/funcionário, sem duplo ajuste).
 
+## Export NUNCA pode pular batida com `continue` silencioso (visibilidade)
+**Regra:** em `exportMissingToRhid`, toda batida `faltando_no_rhid` que não vira corretiva DEVE carimbar `rhid_sync_error` na própria linha + contar nas actions — nunca sumir sem rastro.
+**Why:** o código antigo pulava silenciosamente (a) funcionário sem mapping/identidade no RHID e (b) batida com `external_id` obsoleto → batidas "sumiam" e o RH não via. Era a causa raiz das batidas mobile/web que nunca chegavam ao RHID.
+**Como aplicar:** helper puro `exportPunchDisposition({noIdentity, hasExternalId})` → `skip_no_mapping` | `stuck_external_id` | `export`. `stuck_external_id` NÃO re-exporta cego (AFD append-only ⇒ duplicaria) — só sinaliza pra revisão manual. Actions ganharam `exportSkippedNoMapping` e `exportStuck` (e-mail + painel control-id.tsx). Regressão: `server/rhid-reconciliation-export-skip.test.ts`.
+
+## Identidade: RHID não devolve PIS; PIS real é dado do dono
+**Regra:** o registro de pessoa do RHID (`fetchUsers`) só traz `id/name/cpf/matricula` — NÃO traz PIS. Pior: o `cpf` lá pode estar errado (já visto: o CPF no RHID não bater com o CPF do funcionário no nosso sistema). Logo o PIS real NUNCA é descobrível do RHID — tem que perguntar ao dono. NUNCA inventar PIS (é relógio de ponto legal, Portaria 1510).
+**Why:** `registerEmployeeInRhid` exige PIS de 11 dígitos; sem ele, novos funcionários não registram. Export de batida de quem JÁ tem mapping NÃO depende de PIS (usa `control_id_user_id` do mapping), então PIS inválido NÃO deve bloquear export — só bloqueia registro de pessoa nova.
+**Como aplicar:** ao corrigir identidade, pedir o PIS real ao dono; o RHID/AFD é append-only, então alinhar batidas tortas exige CREATE de corretivas (aprovação do dono antes, por ser escrita em produção).
+
+## "Batida faltando no RHID" de func JÁ mapeado = torta, não ausente
+**Why:** quando um func mapeado aparece com muitos `faltando_no_rhid`, quase sempre a batida JÁ foi exportada antes (tem `external_id` numérico do CREATE), mas o evento no AFD caiu em OUTRO minuto — então o minuto certo fica `faltando_no_rhid` e o minuto errado fica `faltando_no_local`. Não é batida nunca-enviada.
+**Como aplicar (alinhamento aprovado pelo dono):** AFD é append-only ⇒ não dá pra mover/apagar a errada. O fix é CREATE de corretiva no minuto certo (uma por minuto), aceitando que a errada continua como `faltando_no_local` (divergência pra revisar). Fazer via script `.local/` dedicado e idempotente (rebuild da conciliação ao vivo a cada run ⇒ re-rodar só cria o que ainda falta), NUNCA mudando o default conservador do cron (que só sinaliza `stuck_external_id`). As `duplicadas` à meia-noite (23:59/23:44, admin_manual, ours=1 rhid=2) são artefatos estruturais de day-split — esperadas, revisão manual, não "consertar com TZ". PIS não é derivável do RHID — pedir ao dono (código valida só length 11, não checksum mod-11).
+
+## Drift de batida não é bug de timezone único
+**Why:** investigado num func real (~1 mês): só ~5/116 batidas têm drift entre `punch_at` e o ts embutido no `external_id`, e os offsets são espalhados (dezenas a centenas de min) — não há offset sistemático. Os `±1min` à meia-noite são day-splits; os grandes são batidas manuais genuínas que nunca foram exportadas. Conclusão: não tente "consertar com TZ"; o caminho é exportar corretiva por minuto (com visibilidade) + pedir revisão das tortas.
+
 ## Endpoints de conciliação expõem CPF/PIS → exigem admin
 **Regra:** `GET /api/control-id/reconciliation/last` e `/live` precisam de `requireAdminRole` (além de `requireAuth`). O cron diário roda 05:00 com `{ timezone: "America/Sao_Paulo" }`.

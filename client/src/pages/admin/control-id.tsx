@@ -3003,7 +3003,7 @@ type ReconTotals = {
 };
 type LastRun = {
   id: number; run_at: string; period_from: string; period_to: string; triggered_by: string;
-  totals: ReconTotals; actions: { imported: number; exported: number; exportFailed: number; importSkipped: number; errors: string[] };
+  totals: ReconTotals; actions: { imported: number; exported: number; exportFailed: number; exportSkippedNoMapping?: number; exportStuck?: number; importSkipped: number; errors: string[] };
   detail: ReconEmployeeView[];
 };
 type LiveRecon = {
@@ -3156,11 +3156,13 @@ function ReconciliationTab() {
             <ReconStatCard value={totals.identidadeProblemas} label="identidade" color="border-l-amber-500" icon={<ShieldAlert className="w-5 h-5 text-amber-600" />} />
           </div>
 
-          {lastRun && !live && (lastRun.actions?.imported > 0 || lastRun.actions?.exported > 0 || lastRun.actions?.exportFailed > 0) && (
+          {lastRun && !live && (lastRun.actions?.imported > 0 || lastRun.actions?.exported > 0 || lastRun.actions?.exportFailed > 0 || (lastRun.actions?.exportSkippedNoMapping ?? 0) > 0 || (lastRun.actions?.exportStuck ?? 0) > 0) && (
             <Card className="p-3 text-xs text-neutral-600 flex flex-wrap gap-x-4 gap-y-1">
               <span className="flex items-center gap-1"><Download className="w-3.5 h-3.5 text-blue-500" /> Importadas: <b>{lastRun.actions.imported}</b></span>
               <span className="flex items-center gap-1"><Upload className="w-3.5 h-3.5 text-green-500" /> Corretivas exportadas: <b>{lastRun.actions.exported}</b></span>
               {lastRun.actions.exportFailed > 0 && <span className="flex items-center gap-1 text-red-600"><AlertTriangle className="w-3.5 h-3.5" /> Falhas export: <b>{lastRun.actions.exportFailed}</b></span>}
+              {(lastRun.actions.exportSkippedNoMapping ?? 0) > 0 && <span className="flex items-center gap-1 text-amber-600"><ShieldAlert className="w-3.5 h-3.5" /> Não exportadas (sem vínculo): <b>{lastRun.actions.exportSkippedNoMapping}</b></span>}
+              {(lastRun.actions.exportStuck ?? 0) > 0 && <span className="flex items-center gap-1 text-amber-600"><AlertTriangle className="w-3.5 h-3.5" /> Revisar (id obsoleto): <b>{lastRun.actions.exportStuck}</b></span>}
             </Card>
           )}
 
