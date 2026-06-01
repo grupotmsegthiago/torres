@@ -20,9 +20,9 @@
 
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
-import { sendText, isZapiConfigured } from "./zapi";
+import { sendText, sendImageWithCaption, isZapiConfigured } from "./zapi";
 import { normalizePhone } from "./normalize-contact";
-import { buildKmResumoByOsId } from "../cron-whatsapp-forward";
+import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -625,8 +625,34 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
       return;
     }
     kmFinalThrottle.set(key, Date.now());
-    await sendText({ groupOrPhone: parsed.chatId, message: msg });
-    console.log(`[agent-central-mention] km-resumo da OS ${os.os_number || os.id} enviado ao grupo ${parsed.chatId}`);
+
+    // Tenta mandar a FOTO do KM final com legenda (texto do resumo). Se houver
+    // foto, ela já carrega o resumo na legenda — não duplicamos com sendText.
+    // Sem foto, cai no envio só-texto (fail-open).
+    let sentWithPhoto = false;
+    try {
+      const foto = await getKmFinalPhotoByOsId(os.id);
+      if (foto?.photoData) {
+        const r = await sendImageWithCaption({
+          groupOrPhone: parsed.chatId,
+          imageBase64OrUrl: foto.photoData,
+          caption: msg,
+        });
+        sentWithPhoto = r.ok;
+        if (!r.ok) {
+          console.warn(`[agent-central-mention] km-foto OS ${os.os_number || os.id} falhou: ${r.error} — fallback texto`);
+        }
+      } else {
+        console.log(`[agent-central-mention] OS ${os.os_number || os.id} sem foto de km_final — enviando só texto`);
+      }
+    } catch (e: any) {
+      console.warn(`[agent-central-mention] km-foto OS ${os.os_number || os.id} erro: ${e?.message} — fallback texto`);
+    }
+
+    if (!sentWithPhoto) {
+      await sendText({ groupOrPhone: parsed.chatId, message: msg });
+    }
+    console.log(`[agent-central-mention] km-resumo da OS ${os.os_number || os.id} enviado ao grupo ${parsed.chatId}${sentWithPhoto ? " (com foto)" : " (só texto)"}`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handleFinalKmRequest falhou:", e?.message);
   }

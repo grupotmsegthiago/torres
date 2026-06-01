@@ -304,6 +304,29 @@ export async function buildKmResumoByOsId(soId: number): Promise<string | null> 
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// Busca a FOTO do KM final de uma OS (a mais recente do step "km_final").
+// Retorna o data URL/base64 em photo_data + o km_value pra usar na legenda.
+// Null se a OS não tiver foto de km_final. Fail-open no chamador.
+export async function getKmFinalPhotoByOsId(
+  soId: number,
+): Promise<{ photoData: string; kmValue: number | null } | null> {
+  const { data, error } = await supabaseAdmin
+    .from("mission_photos")
+    .select("photo_data, km_value, created_at")
+    .eq("service_order_id", soId)
+    .eq("step", "km_final")
+    .not("photo_data", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn(`${TAG} km-foto: falha ao ler mission_photos OS id=${soId}:`, error.message);
+    return null;
+  }
+  const row = (data || [])[0] as { photo_data: string | null; km_value: number | null } | undefined;
+  if (!row?.photo_data) return null;
+  return { photoData: row.photo_data, kmValue: row.km_value ?? null };
+}
+
 async function claim(id: number): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MIN * 60 * 1000).toISOString();
   const { data, error } = await supabaseAdmin
