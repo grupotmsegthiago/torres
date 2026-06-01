@@ -53,6 +53,19 @@ hora-extra/KM (regra INTOCÁVEL nº5); o dono quer o valor ao vivo, igual nos do
   Teste: `.local/test_inspect_unif_balanco_relatorio.mts` (minta token admin via Supabase generateLink+verifyOtp,
   bate no grid real — NÃO usa executeSql/Neon).
 
+## CUIDADO: faturamento AO VIVO NÃO é sempre "o mais correto" — ele estoura com km_total ruim
+Os dois painéis (Relatório de OS e Balanço) usam `faturamento_live`, que recomputa KM excedente e HE
+a cada request a partir de `escort_billings.km_total` (vindo da leitura de hodômetro/foto km_final).
+Se esse `km_total` estiver errado, o ao vivo **SUPERfatura** brutalmente — e o congelado pode ser o correto.
+**Caso real (05/05/2026, TOR-0141, Suzano-SP→Volta Redonda-RJ, rota real ~800 km):** `km_total = 15.822 km`
+(≈20× o real, erro de hodômetro/digitação) → `fat_km_extra = (15822−100)×R$4,80 = R$ 75.465,60` →
+`faturamento_live = R$ 76.344,33` vs congelado correto `R$ 1.858,23`. Essa única OS era 96% dos
+"R$ 79.733,23" de um relatório DIÁRIO que o dono questionou. HE dela era só R$ 364 (não era HE, era KM).
+**Lição:** quando um total ao vivo parecer absurdo, abrir a composição do liveCost (fat_km_extra, fat_hora_extra)
+e checar `km_total`/`horas_excedentes` da(s) OS dominante(s) ANTES de assumir HE multi-dia. Origem do dado
+ruim = leitura de km_final (foto/hodômetro). Vale guardar o live contra km absurdo (ex.: cap por km GPS/rota).
+Conecta com o follow-up de auditoria de OSs divergentes: o problema central é qualidade do dado (km e timestamps), não só HE.
+
 ## Painel mensal: faturamento AO VIVO pode ser MUITO maior que o billing congelado (risco de subfaturamento)
 O filtro MENSAL do Balanço é por mês-calendário (dia 01 → último dia), correto.
 O total exibido usa `faturamento_live` (recálculo ao vivo de HE por timestamps reais, INTOCÁVEL nº5).
