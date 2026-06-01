@@ -401,9 +401,11 @@ import type { Express } from "express";
         let liveCost: {
           km_inicial: number; km_atual: number; km_total: number;
           horas_missao: number;
-          faturamento: number; pagamento: number; resultado: number; margem_pct: number;
+          faturamento: number; faturamento_live: number; pagamento: number; resultado: number; margem_pct: number;
+          fat_acionamento: number; fat_hora_extra: number; fat_km_extra: number; receitas_extras: number; horas_excedentes: number;
           custo_combustivel: number; custo_pedagio: number; custo_outros: number; custo_total: number;
           custo_salario: number; custo_diaria: number; custo_manutencao: number; custo_multa: number;
+          frozen: boolean; fuel_allocated: boolean; fuel_allocated_hint?: any;
           contrato_nome: string | null;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
@@ -605,6 +607,10 @@ import type { Express } from "express";
               km_total: useFrozen ? ((o as any).kmTotalCalculado ?? frozenKm) : frozenKm,
               horas_missao: useFrozen ? (Number((o as any).horasMissaoCalculadas) || frozenHoras) : frozenHoras,
               faturamento: useFrozen ? (Number((o as any).fatCalculado) || frozenFat) : frozenFat,
+              // Faturamento SEMPRE recalculado ao vivo (ignora congelamento) — usado pelos
+              // painéis Relatório de OS e Balanço Gerencial, que exibem hora extra em tempo real
+              // inclusive nas concluídas. `frozenFat` aqui é o valor fresco (linha ~552), antes do swap.
+              faturamento_live: frozenFat,
               fat_acionamento: billing.fat_acionamento,
               fat_hora_extra: billing.fat_hora_extra,
               fat_km_extra: billing.fat_km,
@@ -688,11 +694,13 @@ import type { Express } from "express";
           escortedVehiclePlate: o.escortedVehiclePlate || null,
           waypoints: (o as any).waypoints || [],
           employee1: emp1 ? {
+            id: emp1.id,
             name: formatName(emp1.name),
             fullName: emp1.name,
             phone: emp1.phone || null,
           } : null,
           employee2: emp2 ? {
+            id: emp2.id,
             name: formatName(emp2.name),
             fullName: emp2.name,
             phone: emp2.phone || null,

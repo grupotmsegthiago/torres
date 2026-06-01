@@ -30,23 +30,28 @@ Neon, não pro Supabase — não confiar).
 - **costDays:** custos fixos/RH são rateados por mês comercial (30 dias), não pelo calendário
   (`Math.min(daysInPeriod, FIXED[period])`).
 
-## Relatório de OS vs Balanço Gerencial — por que os totais divergem
-Os dois painéis NÃO medem a mesma coisa, então faturamento diferente no mesmo mês é
-esperado (não é bug de dado):
-- **Relatório de OS** (`relatorio-os.tsx`): fonte `/api/operational-grid` (lista TODAS as
-  OSs), período por **scheduledDate** (fallback missionStarted/completed), faturamento
-  **recalculado AO VIVO** por OS (`liveCost.faturamento` via operational-grid server-side),
-  inclui agendada/andamento (projeção). Exclui recusada/cancelada.
-- **Balanço Gerencial** (`balanco-gerencial.tsx`): fonte `/api/financial/dashboard`
-  (`byMission` é construído de **escort_billings** — só OSs COM billing), período por
-  `m.data` = **data_missao** (fallback created_at), faturamento = `fat_total` **congelado**.
-  Exclui só recusada.
-- **Verificado (Maio/2026):** somando o billing CONGELADO nos dois conjuntos de OS dá
-  IDÊNTICO (~R$182.5k) e os conjuntos são quase iguais (só 1 OS agendada sem billing
-  difere). Logo a diferença que aparece no painel (Relatório ~R$205.6k vs Balanço ~R$182.4k)
-  vem INTEIRAMENTE do **recálculo ao vivo** do Relatório ser maior que o billing congelado —
-  provável que o live pegue correções de hora-extra/KM que billings antigos congelados não
-  têm (ver regra INTOCÁVEL nº5). O número financeiro consolidado/correto é o do Balanço.
+## Relatório de OS vs Balanço Gerencial — faturamento UNIFICADO (devem BATER)
+Decisão do dono: os dois painéis devem mostrar o MESMO total de faturamento. Ambos derivam
+o faturamento da MESMA fonte ao vivo `/api/operational-grid` (campo `liveCost.faturamento_live`),
+não do billing congelado.
+**Por que:** o billing congelado (`escort_billings.fat_total`) fica defasado em correções de
+hora-extra/KM (regra INTOCÁVEL nº5); o dono quer o valor ao vivo, igual nos dois painéis.
+**Regras da unificação (não reverter sem ordem):**
+- Faturamento = `liveCost.faturamento_live ?? faturamento` — SEMPRE o recálculo ao vivo
+  (`faturamento_live` ignora congelamento; é o `frozenFat` fresco do operational-grid antes do
+  swap `useFrozen`).
+- Exclusão: SÓ **recusada** fica de fora (o grid já devolve `liveCost=null` em recusada → contribui R$ 0).
+  **Cancelada ENTRA** no total (preserva acionamento + extras; `calcularFaturamentoLive` soma
+  `valor_acionamento` automaticamente).
+- Período: filtro do grid usa `scheduledDate || missionStartedAt || completedDate` (range `from`/`to`).
+- O Balanço reconstrói `missions` a partir do grid (fat=faturamento_live, km=km_total, agente/plate do grid);
+  `pagamento`/`despesas` por OS continuam vindo do billing via `Map(service_order_id)`. Pipeline de
+  CUSTO (expenses TX / RH / fixos) permanece intacto — só a RECEITA foi unificada.
+- **Risco conhecido (lado custo, não receita):** OS no grid sem billing entra com pag=0/desp=0.
+  Mitigado pelo invariante `escort_billings` 1:1 com OS (UNIQUE `uniq_eb_so_id` + cron) — todo OS tem billing.
+- **Verificado (Maio/2026, endpoint real):** Relatório == Balanço == R$ 205.651,98 (diff 0); recusada n=21 = R$ 0.
+  Teste: `.local/test_inspect_unif_balanco_relatorio.mts` (minta token admin via Supabase generateLink+verifyOtp,
+  bate no grid real — NÃO usa executeSql/Neon).
 
 ## Faturamento de OS recusada (regra INTOCÁVEL nº1) — auditoria recorrente
 OS `status="recusada"` deve ter TODOS os `fat_*` do billing = 0, `status=CANCELADO`,

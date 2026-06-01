@@ -45,10 +45,11 @@ interface ReportOS {
   observations: string | null;
   priority: string;
   vehicle: { plate: string; model: string; brand?: string } | null;
-  employee1: { name: string; fullName?: string; phone?: string } | null;
-  employee2: { name: string; fullName?: string; phone?: string } | null;
+  employee1: { id?: number; name: string; fullName?: string; phone?: string } | null;
+  employee2: { id?: number; name: string; fullName?: string; phone?: string } | null;
   liveCost: {
     faturamento: number;
+    faturamento_live?: number;
     pagamento: number;
     custo_combustivel: number;
     custo_pedagio: number;
@@ -478,31 +479,26 @@ export default function RelatorioOSPage() {
     }
     return map;
   }, [financialDash]);
-  const effectiveFat = (o: ReportOS) => {
-    const oficial = billingByOsId.get(o.id);
-    if (oficial && oficial.fat > 0) return oficial.fat;
-    return Number(o.liveCost?.faturamento) || 0;
-  };
-  const effectiveKm = (o: ReportOS) => {
-    const oficial = billingByOsId.get(o.id);
-    if (oficial && oficial.km > 0) return oficial.km;
-    return Number(o.liveCost?.km_total) || 0;
-  };
+  // Faturamento SEMPRE ao vivo: usa o recálculo em tempo real do operational-grid
+  // (`faturamento_live`), que recalcula a hora extra inclusive nas concluídas — não usa
+  // mais o billing congelado. Recusada tem liveCost nulo => 0. Cancelada preserva
+  // acionamento+extras (calcularFaturamentoLive sempre soma o acionamento do contrato).
+  const liveFat = (o: ReportOS) =>
+    Number(o.liveCost?.faturamento_live ?? o.liveCost?.faturamento) || 0;
+  const effectiveFat = (o: ReportOS) => liveFat(o);
+  const effectiveKm = (o: ReportOS) => Number(o.liveCost?.km_total) || 0;
   const effectiveResultado = (o: ReportOS) => {
     const fat = effectiveFat(o);
     const custo = Number(o.liveCost?.custo_total) || 0;
-    const lcFat = Number(o.liveCost?.faturamento) || 0;
-    if (lcFat > 0 && Math.abs(lcFat - fat) > 0.01) {
-      return fat - custo;
-    }
-    return Number(o.liveCost?.resultado) || (fat - custo);
+    return fat - custo;
   };
   const effectiveMargem = (o: ReportOS) => {
     const fat = effectiveFat(o);
     if (fat <= 0) return 0;
     return (effectiveResultado(o) / fat) * 100;
   };
-  const isExcluded = (o: ReportOS) => o.status === "recusada" || o.status === "cancelada";
+  // Só a recusada fica de fora do total (R$ 0,00). Cancelada entra.
+  const isExcluded = (o: ReportOS) => o.status === "recusada";
 
   const { data: invoices = [] } = useQuery<any[]>({ queryKey: ["/api/invoices"], staleTime: 60000 });
   const { data: invoiceMap = {} } = useQuery<Record<string, { invoiceId: number; billingStatus: string }>>({

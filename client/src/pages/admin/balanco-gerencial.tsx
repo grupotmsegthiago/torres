@@ -16,7 +16,7 @@ import {
   Info, Wrench, Building2, UserCog,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { queryClient, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
+import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -286,6 +286,26 @@ export default function BalancoGerencialPage() {
   }, [allEmployees]);
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
+
+  // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
+  // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
+  // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
+  const gridRange = useMemo(() => {
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const fmtDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    return { from: fmtDate(range.start), to: fmtDate(range.end) };
+  }, [range]);
+
+  const { data: gridData = [] } = useQuery<any[]>({
+    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to],
+    queryFn: async () => {
+      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
   // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
   // independente do calendário (meses de 28/29/31 dias usam 30 mesmo assim).
@@ -307,16 +327,60 @@ export default function BalancoGerencialPage() {
     const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
     const endStr = `${range.end.getFullYear()}-${pad(range.end.getMonth() + 1)}-${pad(range.end.getDate())}`;
 
-    const missions = data.byMission.filter(m => {
-      if (!m.data) return false;
-      if (m.status === "RECUSADA" || (m.status || "").toLowerCase() === "recusada") return false;
-      const raw = String(m.data);
-      const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : raw.includes("T") ? raw.split("T")[0] : (() => {
-        const dt = new Date(raw + "T12:00:00");
-        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
-      })();
-      return d >= startStr && d <= endStr;
+    // RECEITA ao vivo vinda do operational-grid (mesma fonte do Relatório de OS). O grid já
+    // filtra o período no servidor (por scheduledDate). Só a RECEITA (fat/km) muda de fonte;
+    // o pagamento/despesa por OS continua vindo do billing (custos intactos).
+    const billingByOs = new Map<number, any>();
+    (data.byMission || []).forEach((m: any) => {
+      const sid = Number(m.service_order_id || 0);
+      if (sid) billingByOs.set(sid, m);
     });
+
+    const toDateStr = (iso: string | null | undefined): string => {
+      if (!iso) return "";
+      const raw = String(iso);
+      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+      const dt = new Date(raw);
+      if (isNaN(dt.getTime())) return "";
+      const b = new Date(dt.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      return `${b.getFullYear()}-${pad(b.getMonth() + 1)}-${pad(b.getDate())}`;
+    };
+
+    const missions = (gridData || [])
+      .filter((o: any) => (o.status || "").toLowerCase() !== "recusada")
+      .map((o: any) => {
+        const sid = Number(o.id);
+        const bill = billingByOs.get(sid);
+        const lc = o.liveCost || {};
+        const fat = Number(lc.faturamento_live ?? lc.faturamento) || 0;
+        const km = Number(lc.km_total) || 0;
+        const pag = bill ? Number(bill.pag_total || 0) : 0;
+        const desp = bill ? Number(bill.despesas || 0) : 0;
+        const startIso = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt || null;
+        return {
+          id: bill?.id ?? sid,
+          service_order_id: sid,
+          os_number: o.osNumber || bill?.os_number || null,
+          data: toDateStr(startIso) || String(startIso || ""),
+          origem: o.origin || bill?.origem || "",
+          destino: o.destination || bill?.destino || "",
+          placa_viatura: o.vehicle?.plate || bill?.placa_viatura || "SEM PLACA",
+          vigilante: o.employee1?.fullName || o.employee1?.name || bill?.vigilante || "SEM AGENTE",
+          vigilante_id: Number(o.employee1?.id || bill?.vigilante_id || 0),
+          vigilante2: o.employee2?.fullName || o.employee2?.name || bill?.vigilante2 || null,
+          vigilante2_id: o.employee2?.id || bill?.vigilante2_id || null,
+          fat_total: fat,
+          pag_total: pag,
+          despesas: desp,
+          lucro: fat - pag - desp,
+          margem: fat > 0 ? ((fat - pag - desp) / fat) * 100 : 0,
+          km_total: km,
+          horas_trabalhadas: bill?.horas_trabalhadas || 0,
+          boletim: bill?.boletim || "",
+          status: o.status,
+          client_name: o.clientName || bill?.client_name || "",
+        };
+      });
 
     const periodExpenses = (data.expenseTransactions || []).filter(t => {
       if (!t.date) return false;
@@ -428,7 +492,7 @@ export default function BalancoGerencialPage() {
       expensesByVehicle,
       periodExpenses,
     };
-  }, [data, range]);
+  }, [data, gridData, range]);
 
   // RH no Balanço Gerencial = visão FLUXO DE CAIXA (sem provisões 13º/férias/1/3).
   // Usa `monthlyOperacional` do backend; fallback p/ `monthly` (compat) e CCT antiga.
