@@ -190,3 +190,35 @@ export function monthToFechamento(monthYear: string): { start: Date; end: Date }
   if (start.getTime() < minStart.getTime()) start = minStart;
   return { start, end };
 }
+
+// ============================ DEDUP DE IMPORT (AFD → local) ============================
+
+/**
+ * Decide o que fazer com um evento do AFD do RHID ao importá-lo para
+ * `control_id_punches`, evitando duplicar uma batida que já existe localmente.
+ *
+ * Contexto: o POST de criação devolve um id numérico, mas o AFD reexporta a mesma
+ * batida com `external_id` em formato `rhid_{id}_{ts}`. O dedup por `external_id`
+ * sozinho falha (formatos diferentes) → batida duplicada. A verdade é o nosso
+ * sistema: se já temos uma batida no mesmo minuto (BRT) pro funcionário, não
+ * inserimos outra. Quando isso acontece e o `external_id` local ainda não é o
+ * canônico do AFD, ADOTAMOS o id do AFD (`adopt-external-id`) pra que os próximos
+ * syncs casem direto por `external_id`.
+ *
+ * @param externalIdExists  o `external_id` do evento já existe em `control_id_punches` (device+id)
+ * @param localExternalIdAtMinute  `external_id` da batida local existente no mesmo minuto;
+ *   `undefined` = não há batida local nesse minuto; `null` = há, mas sem external_id (legado)
+ * @param eventExternalId  id canônico do evento vindo do AFD
+ */
+export type ImportDecision = "insert" | "skip" | "adopt-external-id";
+
+export function decideImport(params: {
+  externalIdExists: boolean;
+  localExternalIdAtMinute: string | null | undefined;
+  eventExternalId: string;
+}): ImportDecision {
+  if (params.externalIdExists) return "skip";
+  if (params.localExternalIdAtMinute === undefined) return "insert";
+  // Já existe batida local nesse minuto: nunca duplica.
+  return params.localExternalIdAtMinute === params.eventExternalId ? "skip" : "adopt-external-id";
+}

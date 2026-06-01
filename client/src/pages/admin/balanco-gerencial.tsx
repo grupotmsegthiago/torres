@@ -352,7 +352,8 @@ export default function BalancoGerencialPage() {
         const sid = Number(o.id);
         const bill = billingByOs.get(sid);
         const lc = o.liveCost || {};
-        const fat = Number(lc.faturamento_live ?? lc.faturamento) || 0;
+        const lcCanon = lc.canonico || null;
+        const fat = Number(lcCanon?.faturamento ?? lc.faturamento_live ?? lc.faturamento) || 0;
         const km = Number(lc.km_total) || 0;
         const pag = bill ? Number(bill.pag_total || 0) : 0;
         const desp = bill ? Number(bill.despesas || 0) : 0;
@@ -370,6 +371,19 @@ export default function BalancoGerencialPage() {
           vigilante2: o.employee2?.fullName || o.employee2?.name || bill?.vigilante2 || null,
           vigilante2_id: o.employee2?.id || bill?.vigilante2_id || null,
           fat_total: fat,
+          fat_acionamento: Number(lcCanon?.fat_acionamento) || 0,
+          fat_km: Number(lcCanon?.fat_km) || 0,
+          fat_km_carregado: Number(lcCanon?.fat_km_carregado) || 0,
+          fat_km_vazio: Number(lcCanon?.fat_km_vazio) || 0,
+          fat_hora_extra: Number(lcCanon?.fat_hora_extra) || 0,
+          fat_adicional_noturno: Number(lcCanon?.fat_adicional_noturno) || 0,
+          fat_estadia: Number(lcCanon?.fat_estadia) || 0,
+          fat_pernoite: Number(lcCanon?.fat_pernoite) || 0,
+          fat_pedagio: Number(lcCanon?.pedagio) || 0,
+          receitas_os: Number(lcCanon?.receitas_os) || 0,
+          km_franquia: Number(lcCanon?.km_franquia) || 0,
+          km_excedente: Number(lcCanon?.km_excedente) || 0,
+          horas_missao: Number(lcCanon?.horas_trabalhadas) || Number(lc.horas_missao) || 0,
           pag_total: pag,
           despesas: desp,
           lucro: fat - pag - desp,
@@ -2383,11 +2397,15 @@ function MissoesTab({ missions }: { missions: any[] }) {
                           <p className="text-[10px] font-black text-green-700 uppercase tracking-wide mb-2">Faturamento</p>
                           <div className="space-y-1 text-xs">
                             {m.fat_acionamento > 0 && <div className="flex justify-between"><span className="text-neutral-500">Acionamento</span><span className="font-bold text-neutral-800">{fmt(m.fat_acionamento)}</span></div>}
-                            {m.fat_km > 0 && <div className="flex justify-between"><span className="text-neutral-500">KM Extra</span><span className="font-bold text-neutral-800">{fmt(m.fat_km)}</span></div>}
+                            {m.fat_km_carregado > 0 && <div className="flex justify-between"><span className="text-neutral-500">KM Carregado</span><span className="font-bold text-neutral-800">{fmt(m.fat_km_carregado)}</span></div>}
+                            {m.fat_km_vazio > 0 && <div className="flex justify-between"><span className="text-neutral-500">KM Vazio</span><span className="font-bold text-neutral-800">{fmt(m.fat_km_vazio)}</span></div>}
+                            {m.fat_km > 0 && !(m.fat_km_carregado > 0 || m.fat_km_vazio > 0) && <div className="flex justify-between"><span className="text-neutral-500">KM Extra</span><span className="font-bold text-neutral-800">{fmt(m.fat_km)}</span></div>}
                             {m.fat_hora_extra > 0 && <div className="flex justify-between"><span className="text-neutral-500">Hora Extra</span><span className="font-bold text-neutral-800">{fmt(m.fat_hora_extra)}</span></div>}
                             {m.fat_adicional_noturno > 0 && <div className="flex justify-between"><span className="text-neutral-500">Adic. Noturno</span><span className="font-bold text-neutral-800">{fmt(m.fat_adicional_noturno)}</span></div>}
                             {m.fat_estadia > 0 && <div className="flex justify-between"><span className="text-neutral-500">Estadia</span><span className="font-bold text-neutral-800">{fmt(m.fat_estadia)}</span></div>}
                             {m.fat_pernoite > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pernoite</span><span className="font-bold text-neutral-800">{fmt(m.fat_pernoite)}</span></div>}
+                            {m.fat_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio (repasse)</span><span className="font-bold text-neutral-800">{fmt(m.fat_pedagio)}</span></div>}
+                            {m.receitas_os > 0 && <div className="flex justify-between"><span className="text-neutral-500">Receitas Extras</span><span className="font-bold text-neutral-800">{fmt(m.receitas_os)}</span></div>}
                             <div className="flex justify-between border-t border-neutral-200 pt-1 mt-1"><span className="font-black text-green-700">TOTAL FATURAMENTO</span><span className="font-black text-green-700">{fmt(m.fat_total)}</span></div>
                           </div>
                         </div>

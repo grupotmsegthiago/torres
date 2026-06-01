@@ -22,6 +22,7 @@ import {
   nameMatchScore,
   monthToFechamento,
   minuteKeyBRT,
+  decideImport,
 } from "./lib/control-id-parsers";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
@@ -648,37 +649,63 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   const mappedEmpIds = Array.from(new Set(
     events.map(e => mapByUserId.get(e.userId)).filter((x): x is number => !!x),
   ));
-  const localMinuteByEmp = new Map<number, Set<string>>();
+  // emp → (minuteKeyBRT → batida local existente nesse minuto). Guardamos id + external_id
+  // pra poder ADOTAR o id canônico do AFD na batida local (em vez de inserir duplicata).
+  // id = -1 marca placeholder de batida recém-inserida neste mesmo batch (sem id real).
+  type LocalHit = { id: number; externalId: string | null };
+  const localMinuteByEmp = new Map<number, Map<string, LocalHit>>();
   if (mappedEmpIds.length) {
     const times = events.map(e => new Date(e.time).getTime()).filter(t => t > 0);
     const minTs = Math.min(...times), maxTs = Math.max(...times);
     const { data: locals } = await supabaseAdmin
       .from("control_id_punches")
-      .select("employee_id, punch_at")
+      .select("id, employee_id, punch_at, external_id")
       .in("employee_id", mappedEmpIds)
       .gte("punch_at", new Date(minTs - 60_000).toISOString())
       .lte("punch_at", new Date(maxTs + 60_000).toISOString());
     for (const l of (locals || []) as any[]) {
       if (l.employee_id == null) continue;
-      const set = localMinuteByEmp.get(Number(l.employee_id)) || new Set<string>();
-      set.add(minuteKeyBRT(new Date(l.punch_at)));
-      localMinuteByEmp.set(Number(l.employee_id), set);
+      const emp = Number(l.employee_id);
+      const m = localMinuteByEmp.get(emp) || new Map<string, LocalHit>();
+      const mk = minuteKeyBRT(new Date(l.punch_at));
+      if (!m.has(mk)) m.set(mk, { id: Number(l.id), externalId: l.external_id ?? null });
+      localMinuteByEmp.set(emp, m);
     }
   }
 
   let saved = 0, mapped = 0, skipped = 0;
   const toInsert: any[] = [];
+  const extIdAdoptions: { id: number; external_id: string }[] = []; // batida local adota id canônico do AFD
   const seenInBatch = new Set<string>(); // dedup intra-batch (RHID às vezes devolve repetido)
   for (const ev of events) {
-    if (existingSet.has(ev.id)) { skipped++; continue; }
     if (seenInBatch.has(ev.id)) { skipped++; continue; }
     seenInBatch.add(ev.id);
     const employeeId = mapByUserId.get(ev.userId) || null;
+    const externalIdExists = existingSet.has(ev.id);
     if (employeeId) {
       const mk = minuteKeyBRT(new Date(ev.time));
-      const set = localMinuteByEmp.get(employeeId);
-      if (set && set.has(mk)) { skipped++; continue; } // já existe batida local nesse minuto
-      if (set) set.add(mk); else localMinuteByEmp.set(employeeId, new Set([mk]));
+      const m = localMinuteByEmp.get(employeeId);
+      const hit = m?.get(mk);
+      const decision = decideImport({
+        externalIdExists,
+        localExternalIdAtMinute: hit ? hit.externalId : undefined,
+        eventExternalId: ev.id,
+      });
+      if (decision === "skip") { skipped++; continue; }
+      if (decision === "adopt-external-id") {
+        // Já existe batida local nesse minuto sem o id canônico: adota o do AFD
+        // (id>0 = batida real persistida; id=-1 = placeholder do mesmo batch, ignora).
+        if (hit && hit.id > 0) { extIdAdoptions.push({ id: hit.id, external_id: ev.id }); hit.externalId = ev.id; }
+        skipped++;
+        continue;
+      }
+      // decision === "insert": registra placeholder pra não duplicar no mesmo batch.
+      if (m) m.set(mk, { id: -1, externalId: ev.id });
+      else localMinuteByEmp.set(employeeId, new Map([[mk, { id: -1, externalId: ev.id }]]));
+    } else if (externalIdExists) {
+      // batida não mapeada que já existe (mesmo external_id): não reinsere.
+      skipped++;
+      continue;
     }
     if (employeeId) mapped++;
     toInsert.push({
@@ -706,6 +733,20 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
         .upsert(chunk, { onConflict: "device_id,external_id", ignoreDuplicates: true });
       if (error) throw new Error(`Erro ao salvar batidas (lote ${i / CHUNK + 1}): ${error.message}`);
     }
+  }
+
+  // Adota o id canônico do AFD nas batidas locais que casaram por minuto mas tinham
+  // external_id divergente (numérico do POST × `rhid_*` do AFD). Sem isso, o dedup
+  // por external_id voltaria a falhar no próximo sync. Volume baixo (re-syncs).
+  if (extIdAdoptions.length > 0) {
+    for (const a of extIdAdoptions) {
+      const { error } = await supabaseAdmin
+        .from("control_id_punches")
+        .update({ external_id: a.external_id })
+        .eq("id", a.id);
+      if (error) console.warn(`[ControlID] Falha ao adotar external_id em punch #${a.id}: ${error.message}`);
+    }
+    console.log(`[ControlID] ${extIdAdoptions.length} batida(s) local(is) adotaram o external_id canônico do AFD.`);
   }
 
   await supabaseAdmin.from("control_id_devices").update({

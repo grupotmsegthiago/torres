@@ -2,3 +2,4 @@
 - [Credenciais em attached_assets](secrets-in-attached-assets.md) — arquivos Pasted-*.txt colados pelo usuário podem ter token real em texto puro; varrer e rotacionar.
 - [Early return em register*Routes](route-registration-early-return.md) — desligar integração com `return` antecipado mata rotas seguintes do arquivo → HTML do Vite → "Unexpected token '<'"; use guards de prefixo.
 - [Conciliação de ponto RHID](rhid-reconciliation.md) — AFD é append-only (404 em PUT/DELETE→corretiva/unsupported); dup em qualquer lado=duplicada; dedup por (func,minuto,device); snapshot pós-export; rotas exigem admin.
+- [Balanço receita canônica](balanco-canonical-revenue.md) — Balanço usa canonico.faturamento (calcularEscolta); Relatório de OS usa faturamento_live; nunca trocar, só adicionar campos. km_vazio sempre 0 (0/246 billings).

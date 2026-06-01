@@ -540,6 +540,55 @@ import type { Express } from "express";
               }
             } catch (_e) {}
 
+            // === Faturamento CANÔNICO (motor calcularEscolta) — usado SÓ pelo Balanço Gerencial ===
+            // Diferente do calcularFaturamentoLive (simplificado), usa timestamps reais (regra #5),
+            // hora extra fracionada por minuto, km misto (carregado/vazio) e adicional noturno.
+            // NÃO altera billings gravados nem o Relatório de OS (que continua em faturamento_live).
+            let canonico: any = null;
+            try {
+              const schedDate = o.scheduledDate ? parseBRT(o.scheduledDate) : null;
+              const schedTime = schedDate ? schedDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+              const esc = calcularEscolta({
+                km_inicial: kmInicial,
+                km_final: kmFinalNorm,
+                km_vazio: 0,
+                horas_missao: horasCalcRaw,
+                horas_estadia: 0,
+                teve_pernoite: false,
+                horario_inicio: startTime,
+                horario_fim: endTime || undefined,
+                horario_agendado: schedTime,
+                inicio_ts: o.missionStartedAt || null,
+                fim_ts: o.completedDate || null,
+                scheduled_date: o.scheduledDate || null,
+                despesas_pedagio: custoPedagio,
+                despesas_combustivel: custoCombustivel,
+                despesas_outras: 0,
+                receitas_os: receitasOsGrid,
+                contrato,
+              } as any);
+              let canonFat = esc.fat_total;
+              if (canonFat === 0 && o.status === "agendada" && o.valorEstimado) {
+                canonFat = Number(o.valorEstimado) || 0;
+              }
+              canonico = {
+                faturamento: Math.round(canonFat * 100) / 100,
+                fat_acionamento: esc.faturamento.acionamento,
+                fat_km: esc.fat_km,
+                fat_km_carregado: esc.faturamento.km_carregado,
+                fat_km_vazio: esc.faturamento.km_vazio,
+                fat_hora_extra: esc.faturamento.hora_extra,
+                fat_adicional_noturno: esc.faturamento.adicional_noturno,
+                fat_estadia: esc.faturamento.estadia,
+                fat_pernoite: esc.faturamento.diaria,
+                km_franquia: esc.km_franquia,
+                km_excedente: esc.km_excedente,
+                horas_trabalhadas: esc.horas_trabalhadas,
+                receitas_os: Math.round(receitasOsGrid * 100) / 100,
+                pedagio: Math.round(custoPedagio * 100) / 100,
+              };
+            } catch (_ce) { canonico = null; }
+
             resultado.faturamento.total += receitasOsGrid + custoPedagio;
             const custoTotal = resultado.pagamento.total + custoCombustivel + custoPedagio + custoOutros;
             const resultadoComCustos = resultado.faturamento.total - custoTotal;
@@ -646,6 +695,7 @@ import type { Express } from "express";
                 valor_km_carregado: contrato.valor_km_carregado || 0,
                 vrp_base: contrato.vrp_base || 0,
               },
+              canonico,
             };
           } catch (e: any) {
             console.error(`[grid] liveCost error OS ${o.osNumber}:`, e.message);
