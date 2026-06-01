@@ -310,7 +310,7 @@ export function initCronJobs() {
       } finally {
         rhidReconRunning = false;
       }
-    });
+    }, { timezone: "America/Sao_Paulo" });
 
     let interReconcileRunning = false;
     cron.schedule("*/5 * * * *", async () => {

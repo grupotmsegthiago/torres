@@ -20,6 +20,19 @@ import { monthToFechamento, nameMatchScore, minuteKeyBRT } from "./lib/control-i
 
 export type MarkStatus = "validado" | "faltando_no_rhid" | "faltando_no_local" | "duplicada";
 
+/**
+ * Classifica um minuto comparando nº de batidas nossas × nº de batidas no RHID.
+ * Pura (sem I/O) pra ser testável. Regra: mais de uma batida no mesmo minuto em
+ * QUALQUER lado (nosso ou RHID) é "duplicada" — divergência real, nunca "validado".
+ */
+export function classifyMark(oursCount: number, rhidCount: number): MarkStatus {
+  const inOurs = oursCount > 0, inRhid = rhidCount > 0;
+  if ((inOurs && oursCount > 1) || (inRhid && rhidCount > 1)) return "duplicada";
+  if (inOurs && inRhid) return "validado";
+  if (inOurs && !inRhid) return "faltando_no_rhid";
+  return "faltando_no_local";
+}
+
 export interface ReconMark {
   minuteBRT: string;        // "YYYY-MM-DD HH:mm" em BRT
   status: MarkStatus;
@@ -204,11 +217,11 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
       const o = oursByMinute.get(minute);
       const r = rhidByMinute.get(minute);
       const inOurs = !!o, inRhid = !!r;
-      let status: MarkStatus;
-      if (inOurs && (o!.count > 1)) { status = "duplicada"; duplicadas++; }
-      else if (inOurs && inRhid) { status = "validado"; validado++; }
-      else if (inOurs && !inRhid) { status = "faltando_no_rhid"; faltandoNoRhid++; }
-      else { status = "faltando_no_local"; faltandoNoLocal++; }
+      const status = classifyMark(o?.count || 0, r?.count || 0);
+      if (status === "duplicada") duplicadas++;
+      else if (status === "validado") validado++;
+      else if (status === "faltando_no_rhid") faltandoNoRhid++;
+      else faltandoNoLocal++;
       marks.push({
         minuteBRT: minute,
         status,
@@ -271,10 +284,11 @@ export interface ReconActions {
  * conciliação (só cria o que ela apontou como ausente) + checagem de external_id.
  * Nosso sistema é a verdade: o RHID passa a ter a marcação correta.
  */
-export async function exportMissingToRhid(recon: ReconResult): Promise<{ exported: number; exportFailed: number; errors: string[] }> {
+export async function exportMissingToRhid(recon: ReconResult): Promise<{ exported: number; exportFailed: number; errors: string[]; exportedKeys: Set<string> }> {
   let exported = 0, exportFailed = 0;
   const errors: string[] = [];
-  if (!recon.deviceId) return { exported, exportFailed, errors };
+  const exportedKeys = new Set<string>(); // `${employeeId}|${minuteBRT}` exportados com sucesso
+  if (!recon.deviceId) return { exported, exportFailed, errors, exportedKeys };
 
   const { start, end } = resolvePeriod(recon.period.fromYmd, recon.period.toYmd);
   for (const emp of recon.employees) {
@@ -306,13 +320,14 @@ export async function exportMissingToRhid(recon: ReconResult): Promise<{ exporte
           rhid_sync_error: extractedId ? null : "RHID criou batida mas não retornou ID",
         }).eq("id", p.id);
         exported++;
+        exportedKeys.add(`${emp.employeeId}|${mk}`);
       } catch (e: any) {
         exportFailed++;
         errors.push(`Export ${emp.name} ${mk}: ${e?.message || e}`.slice(0, 200));
       }
     }
   }
-  return { exported, exportFailed, errors };
+  return { exported, exportFailed, errors, exportedKeys };
 }
 
 // ============================ E-MAIL ============================
@@ -454,6 +469,22 @@ export async function runDailyReconciliation(opts: {
       actions.exported = r.exported;
       actions.exportFailed = r.exportFailed;
       actions.errors.push(...r.errors);
+      // Patch o snapshot pra refletir as corretivas recém-criadas: minutos
+      // que estavam "faltando_no_rhid" e foram exportados agora viram "validado".
+      // Assim o painel/e-mail persistidos não mostram divergência já corrigida.
+      if (r.exportedKeys.size) {
+        for (const emp of recon.employees) {
+          for (const mark of emp.marks) {
+            if (mark.status === "faltando_no_rhid" && r.exportedKeys.has(`${emp.employeeId}|${mark.minuteBRT}`)) {
+              mark.status = "validado";
+              mark.inRhid = true;
+              mark.rhidCount = Math.max(1, mark.rhidCount);
+              emp.counts.faltandoNoRhid--; emp.counts.validado++;
+              recon.totals.faltandoNoRhid--; recon.totals.validado++;
+            }
+          }
+        }
+      }
     } catch (e: any) {
       actions.errors.push(`Export: ${e?.message || e}`.slice(0, 200));
     }

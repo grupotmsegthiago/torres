@@ -536,7 +536,7 @@ export function registerControlIdRoutes(app: Express) {
 
   // ─────── VALIDAÇÃO / CONCILIAÇÃO RHID ───────
   // Última rodada persistida (rápido — não bate no RHID).
-  app.get("/api/control-id/reconciliation/last", requireAuth, async (_req, res) => {
+  app.get("/api/control-id/reconciliation/last", requireAuth, requireAdminRole, async (_req, res) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("rhid_reconciliation_runs")
@@ -552,7 +552,7 @@ export function registerControlIdRoutes(app: Express) {
   });
 
   // Conciliação read-only ao vivo (bate no RHID). fromYmd/toYmd opcionais.
-  app.get("/api/control-id/reconciliation/live", requireAuth, async (req, res) => {
+  app.get("/api/control-id/reconciliation/live", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { fromYmd, toYmd, deviceId } = req.query as any;
       const recon = await buildReconciliation({
