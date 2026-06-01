@@ -134,6 +134,22 @@ export function normalizeEvent(raw: any): ControlIdEvent {
 
 // ============================ NAME MATCHING ============================
 
+/**
+ * Chave "YYYY-MM-DD HH:mm" em BRT a partir de um Date.
+ * Usada para casar batidas por minuto entre o nosso sistema e o RHID,
+ * robusto contra diferença de ms/segundos e de formato de external_id.
+ */
+export function minuteKeyBRT(d: Date): string {
+  const date = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const time = d.toLocaleTimeString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${date} ${time}`;
+}
+
 export function normalizeName(s: string): string {
   return String(s || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")

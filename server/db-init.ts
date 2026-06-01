@@ -447,6 +447,24 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_sync_queue_pending ON rhid_sync_queue (status, next_attempt_at) WHERE status = 'pending'`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_sync_queue_ref ON rhid_sync_queue (kind, ref_id)`);
 
+    // Histórico das rodadas de conciliação de ponto (nosso sistema × RHID/AFD).
+    // Cada linha guarda os totais, as ações automáticas tomadas e o detalhe
+    // completo (por funcionário + tag "validado") da última validação.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS rhid_reconciliation_runs (
+        id BIGSERIAL PRIMARY KEY,
+        run_at TIMESTAMP DEFAULT NOW(),
+        period_from TEXT,
+        period_to TEXT,
+        triggered_by TEXT,
+        totals JSONB,
+        actions JSONB,
+        detail JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_recon_runs_at ON rhid_reconciliation_runs (run_at DESC)`);
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_fines (
         id SERIAL PRIMARY KEY,

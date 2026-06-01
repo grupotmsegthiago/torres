@@ -21,6 +21,7 @@ import {
   nameTokens,
   nameMatchScore,
   monthToFechamento,
+  minuteKeyBRT,
 } from "./lib/control-id-parsers";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
@@ -639,6 +640,32 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     .in("external_id", externalIds);
   const existingSet = new Set((existing || []).map((e: any) => String(e.external_id)));
 
+  // Dedup por MINUTO (BRT) por funcionário: evita duplicar uma batida que já existe
+  // localmente quando o external_id volta do AFD em formato diferente (numérico do
+  // POST vs `rhid_{id}_{ts}` do AFD) — causa histórica de batidas duplicadas.
+  // Nosso sistema é a verdade: se já temos uma batida nesse minuto pro funcionário,
+  // não importamos outra do RHID.
+  const mappedEmpIds = Array.from(new Set(
+    events.map(e => mapByUserId.get(e.userId)).filter((x): x is number => !!x),
+  ));
+  const localMinuteByEmp = new Map<number, Set<string>>();
+  if (mappedEmpIds.length) {
+    const times = events.map(e => new Date(e.time).getTime()).filter(t => t > 0);
+    const minTs = Math.min(...times), maxTs = Math.max(...times);
+    const { data: locals } = await supabaseAdmin
+      .from("control_id_punches")
+      .select("employee_id, punch_at")
+      .in("employee_id", mappedEmpIds)
+      .gte("punch_at", new Date(minTs - 60_000).toISOString())
+      .lte("punch_at", new Date(maxTs + 60_000).toISOString());
+    for (const l of (locals || []) as any[]) {
+      if (l.employee_id == null) continue;
+      const set = localMinuteByEmp.get(Number(l.employee_id)) || new Set<string>();
+      set.add(minuteKeyBRT(new Date(l.punch_at)));
+      localMinuteByEmp.set(Number(l.employee_id), set);
+    }
+  }
+
   let saved = 0, mapped = 0, skipped = 0;
   const toInsert: any[] = [];
   const seenInBatch = new Set<string>(); // dedup intra-batch (RHID às vezes devolve repetido)
@@ -647,6 +674,12 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     if (seenInBatch.has(ev.id)) { skipped++; continue; }
     seenInBatch.add(ev.id);
     const employeeId = mapByUserId.get(ev.userId) || null;
+    if (employeeId) {
+      const mk = minuteKeyBRT(new Date(ev.time));
+      const set = localMinuteByEmp.get(employeeId);
+      if (set && set.has(mk)) { skipped++; continue; } // já existe batida local nesse minuto
+      if (set) set.add(mk); else localMinuteByEmp.set(employeeId, new Set([mk]));
+    }
     if (employeeId) mapped++;
     toInsert.push({
       device_id: deviceId,
@@ -1986,6 +2019,16 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
 //     completo, prontos pra reenviar quando o endpoint for cabeado.
 
 const MAX_RHID_ATTEMPTS = 8;
+
+/**
+ * Erro que sinaliza que a operação NÃO é suportada pelo RHID (ex.: editar/excluir
+ * batida no AFD, que é append-only por lei). Itens que falham assim viram
+ * status='unsupported' — não voltam pra fila nem ficam dando 404 pra sempre.
+ * A correção real (marcação corretiva) é feita pela conciliação diária.
+ */
+export class RhidUnsupportedError extends Error {
+  constructor(message: string) { super(message); this.name = "RhidUnsupportedError"; }
+}
 // backoff em minutos por tentativa: 1, 5, 15, 60, 240, 720, 720, 720
 function backoffMinutes(attempt: number): number {
   const steps = [1, 5, 15, 60, 240, 720, 720, 720];
@@ -2056,6 +2099,17 @@ async function processRhidQueueItem(queueId: number): Promise<void> {
       attempts: (claimed.attempts || 0) + 1,
     }).eq("id", queueId);
   } catch (e: any) {
+    // Operação não suportada pelo RHID (AFD append-only): marca 'unsupported' e PARA.
+    if (e instanceof RhidUnsupportedError) {
+      await supabaseAdmin.from("rhid_sync_queue").update({
+        status: "unsupported",
+        attempts: (claimed.attempts || 0) + 1,
+        last_error: String(e?.message || e).slice(0, 1000),
+        processed_at: new Date().toISOString(),
+        next_attempt_at: null,
+      }).eq("id", queueId);
+      return;
+    }
     const attempts = (claimed.attempts || 0) + 1;
     const giveUp = attempts >= MAX_RHID_ATTEMPTS;
     const nextAttemptAt = giveUp ? null : new Date(Date.now() + backoffMinutes(attempts) * 60_000).toISOString();
@@ -2108,23 +2162,21 @@ async function executeRhidPush(item: any): Promise<any> {
       return result;
     }
     if (op === "update") {
-      if (!item.device_id) throw new Error("device_id ausente");
-      if (!payload.externalId) throw new Error("externalId ausente");
-      const result = await updateRhidPunch(Number(item.device_id), String(payload.externalId), {
-        dateTime: new Date(payload.dateTime),
-      });
-      if (item.ref_id) {
-        await supabaseAdmin.from("control_id_punches").update({
-          rhid_synced_at: new Date().toISOString(),
-          rhid_sync_error: null,
-        }).eq("id", Number(item.ref_id));
-      }
-      return result;
+      // AFD é append-only (Portaria 1510): PUT em batida existente sempre dá 404.
+      // Não editamos no RHID. A conciliação diária cria a marcação corretiva com a
+      // hora certa (deduplicada por minuto contra o AFD) e reporta a batida antiga
+      // como divergência. Aqui só paramos o loop de erro.
+      throw new RhidUnsupportedError(
+        "RHID/AFD não permite editar batida (append-only). Correção tratada pela conciliação diária.",
+      );
     }
     if (op === "delete") {
-      if (!item.device_id) throw new Error("device_id ausente");
-      if (!payload.externalId) throw new Error("externalId ausente");
-      return await deleteRhidPunch(Number(item.device_id), String(payload.externalId));
+      // AFD é append-only: não há como excluir batida registrada. Sem marcação
+      // corretiva possível para exclusão — a conciliação diária reporta a divergência
+      // (batida existe no RHID, não existe em nós) para ajuste manual no portal.
+      throw new RhidUnsupportedError(
+        "RHID/AFD não permite excluir batida (append-only). Divergência reportada na conciliação para ajuste manual.",
+      );
     }
   }
 

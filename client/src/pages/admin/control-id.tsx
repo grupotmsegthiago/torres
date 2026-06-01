@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
-import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText, BarChart3 } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X, Gauge, AlertTriangle, UserX, Hourglass, PlayCircle, MinusCircle, Printer, Eye, DollarSign, TrendingUp, FileText, BarChart3, ShieldCheck, ShieldAlert, Mail, Upload, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import type { Employee } from "@shared/schema";
 import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
@@ -96,6 +96,7 @@ export default function ControlIdPage() {
             <TabsTrigger value="folgas" data-testid="tab-folgas"><CalendarDays className="w-3.5 h-3.5 mr-1" /> Folgas/Faltas</TabsTrigger>
             <TabsTrigger value="painel" data-testid="tab-painel"><Gauge className="w-3.5 h-3.5 mr-1" /> Painel do Mês</TabsTrigger>
             <TabsTrigger value="folha" data-testid="tab-folha"><FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Folha de Ponto</TabsTrigger>
+            <TabsTrigger value="validacao" data-testid="tab-validacao"><ShieldCheck className="w-3.5 h-3.5 mr-1" /> Validação RHID</TabsTrigger>
           </TabsList>
           <TabsContent value="aparelhos" className="mt-4"><DevicesTab /></TabsContent>
           <TabsContent value="mapping" className="mt-4"><MappingTab /></TabsContent>
@@ -103,6 +104,7 @@ export default function ControlIdPage() {
           <TabsContent value="folgas" className="mt-4"><AbsencesTab /></TabsContent>
           <TabsContent value="painel" className="mt-4"><PainelMesTab /></TabsContent>
           <TabsContent value="folha" className="mt-4"><FolhaTab /></TabsContent>
+          <TabsContent value="validacao" className="mt-4"><ReconciliationTab /></TabsContent>
         </Tabs>
       </div>
     </AdminLayout>
@@ -2978,5 +2980,207 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
         </div>
       )}
     </>
+  );
+}
+
+// ============================ VALIDAÇÃO / CONCILIAÇÃO RHID ============================
+
+type ReconMarkView = {
+  minuteBRT: string;
+  status: "validado" | "faltando_no_rhid" | "faltando_no_local" | "duplicada";
+  oursCount: number; rhidCount: number; source?: string | null;
+};
+type ReconEmployeeView = {
+  employeeId: number; name: string; cpf: string | null; pis: string | null;
+  rhidUserId: string | null; rhidName: string | null; mappingOk: boolean;
+  identidadeWarnings: string[];
+  counts: { ours: number; rhid: number; validado: number; faltandoNoRhid: number; faltandoNoLocal: number; duplicadas: number };
+  marks: ReconMarkView[];
+};
+type ReconTotals = {
+  employees: number; validado: number; faltandoNoRhid: number; faltandoNoLocal: number;
+  duplicadas: number; identidadeProblemas: number; semMapping: number;
+};
+type LastRun = {
+  id: number; run_at: string; period_from: string; period_to: string; triggered_by: string;
+  totals: ReconTotals; actions: { imported: number; exported: number; exportFailed: number; importSkipped: number; errors: string[] };
+  detail: ReconEmployeeView[];
+};
+type LiveRecon = {
+  period: { fromYmd: string; toYmd: string }; generatedAt: string;
+  totals: ReconTotals; employees: ReconEmployeeView[];
+};
+
+function ReconStatCard({ value, label, color, icon }: { value: number; label: string; color: string; icon: React.ReactNode }) {
+  return (
+    <Card className={`p-3 flex items-center gap-3 border-l-4 ${color}`}>
+      <div className="opacity-80">{icon}</div>
+      <div>
+        <div className="text-2xl font-bold leading-none" data-testid={`stat-${label}`}>{value}</div>
+        <div className="text-[11px] text-neutral-500 mt-1">{label}</div>
+      </div>
+    </Card>
+  );
+}
+
+function EmployeeReconRow({ emp }: { emp: ReconEmployeeView }) {
+  const [open, setOpen] = useState(false);
+  const hasDiv = emp.counts.faltandoNoRhid > 0 || emp.counts.faltandoNoLocal > 0 || emp.counts.duplicadas > 0;
+  const hasWarn = emp.identidadeWarnings.length > 0;
+  return (
+    <div className="border rounded-lg overflow-hidden" data-testid={`recon-emp-${emp.employeeId}`}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-50 text-left"
+        data-testid={`button-recon-emp-${emp.employeeId}`}
+      >
+        {open ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+        <span className="font-medium text-sm flex-1">{emp.name}</span>
+        {!hasDiv && !hasWarn && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full" data-testid={`tag-validado-${emp.employeeId}`}>
+            <CheckCircle2 className="w-3 h-3" /> validado
+          </span>
+        )}
+        <span className="text-[11px] text-green-700">{emp.counts.validado} ✓</span>
+        {emp.counts.faltandoNoRhid > 0 && <span className="text-[11px] text-red-600" data-testid={`count-falta-rhid-${emp.employeeId}`}>{emp.counts.faltandoNoRhid} ↑RHID</span>}
+        {emp.counts.faltandoNoLocal > 0 && <span className="text-[11px] text-blue-600" data-testid={`count-falta-local-${emp.employeeId}`}>{emp.counts.faltandoNoLocal} ↓nós</span>}
+        {emp.counts.duplicadas > 0 && <span className="text-[11px] text-purple-600">{emp.counts.duplicadas} dup</span>}
+        {hasWarn && <ShieldAlert className="w-4 h-4 text-amber-500" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 bg-neutral-50/60 border-t">
+          {hasWarn && (
+            <div className="mt-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              {emp.identidadeWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+            </div>
+          )}
+          <div className="text-[11px] text-neutral-500 mt-2">
+            RHID: {emp.rhidName || "—"} (id {emp.rhidUserId || "—"}) · CPF {emp.cpf || "—"} · PIS {emp.pis || "—"}
+          </div>
+          {emp.marks.length === 0 ? (
+            <div className="text-[12px] text-neutral-400 mt-2">Sem batidas no período.</div>
+          ) : (
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
+              {emp.marks.map((m, i) => {
+                const cfg = {
+                  validado: { c: "text-green-700 bg-green-50 border-green-200", t: "validado" },
+                  faltando_no_rhid: { c: "text-red-700 bg-red-50 border-red-200", t: "falta no RHID" },
+                  faltando_no_local: { c: "text-blue-700 bg-blue-50 border-blue-200", t: "falta em nós" },
+                  duplicada: { c: "text-purple-700 bg-purple-50 border-purple-200", t: "duplicada" },
+                }[m.status];
+                return (
+                  <div key={i} className={`text-[11px] border rounded px-2 py-1 ${cfg.c}`} title={cfg.t}>
+                    {m.minuteBRT.slice(11)} <span className="opacity-60">· {cfg.t}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReconciliationTab() {
+  const { toast } = useToast();
+  const [live, setLive] = useState<LiveRecon | null>(null);
+  const [onlyProblems, setOnlyProblems] = useState(true);
+
+  const { data: lastRun, isLoading } = useQuery<LastRun | null>({
+    queryKey: ["/api/control-id/reconciliation/last"],
+  });
+
+  const liveMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("GET", "/api/control-id/reconciliation/live");
+      return (await r.json()) as LiveRecon;
+    },
+    onSuccess: (d) => { setLive(d); toast({ title: "Validação ao vivo concluída", description: `${d.totals.validado} validados, ${d.totals.faltandoNoRhid + d.totals.faltandoNoLocal + d.totals.duplicadas} divergências.` }); },
+    onError: (e: any) => toast({ title: "Erro na validação", description: e?.message || String(e), variant: "destructive" }),
+  });
+
+  const runMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/control-id/reconciliation/run", { doImport: true, doExport: true, sendEmail: true });
+      return await r.json();
+    },
+    onSuccess: (d: any) => {
+      toast({ title: "Conciliação completa rodada", description: `Importadas ${d.actions?.imported ?? 0}, corretivas ${d.actions?.exported ?? 0}. ${d.email?.message || ""}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/reconciliation/last"] });
+      setLive(null);
+    },
+    onError: (e: any) => toast({ title: "Erro na conciliação", description: e?.message || String(e), variant: "destructive" }),
+  });
+
+  const totals: ReconTotals | null = live ? live.totals : (lastRun?.totals ?? null);
+  const employees: ReconEmployeeView[] = live ? live.employees : (lastRun?.detail ?? []);
+  const periodLabel = live ? `${live.period.fromYmd} → ${live.period.toYmd}` : (lastRun ? `${lastRun.period_from} → ${lastRun.period_to}` : "—");
+  const whenLabel = live ? `ao vivo · ${new Date(live.generatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : (lastRun ? `${new Date(lastRun.run_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} · ${lastRun.triggered_by}` : "—");
+
+  const shownEmployees = onlyProblems
+    ? employees.filter((e) => e.counts.faltandoNoRhid > 0 || e.counts.faltandoNoLocal > 0 || e.counts.duplicadas > 0 || e.identidadeWarnings.length > 0)
+    : employees;
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <h2 className="font-semibold text-neutral-900 flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-blue-600" /> Validação de Ponto — RHID × Sistema</h2>
+            <p className="text-xs text-neutral-500 mt-0.5">Nosso sistema é a fonte da verdade. Facial → importa pra nós; manual → exporta pro RHID. Período {periodLabel} · {whenLabel}</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => liveMutation.mutate()} disabled={liveMutation.isPending} data-testid="button-validar-live">
+            {liveMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />} Validar agora (sem alterar)
+          </Button>
+          <Button size="sm" onClick={() => { if (confirm("Rodar conciliação COMPLETA?\n\nVai importar batidas faciais faltantes, criar marcações corretivas no RHID e enviar e-mail-resumo. Continuar?")) runMutation.mutate(); }} disabled={runMutation.isPending} data-testid="button-rodar-conciliacao">
+            {runMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1" />} Rodar conciliação completa
+          </Button>
+        </div>
+      </Card>
+
+      {isLoading && !live ? (
+        <Card className="p-8 flex items-center justify-center text-neutral-400"><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Carregando última validação…</Card>
+      ) : !totals ? (
+        <Card className="p-8 text-center text-neutral-500">
+          <ShieldAlert className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
+          Nenhuma validação registrada ainda. Clique em <b>Validar agora</b> para comparar o sistema com o RHID.
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <ReconStatCard value={totals.validado} label="validados" color="border-l-green-500" icon={<CheckCircle2 className="w-5 h-5 text-green-600" />} />
+            <ReconStatCard value={totals.faltandoNoRhid} label="faltam no RHID" color="border-l-red-500" icon={<Upload className="w-5 h-5 text-red-600" />} />
+            <ReconStatCard value={totals.faltandoNoLocal} label="faltam em nós" color="border-l-blue-500" icon={<Download className="w-5 h-5 text-blue-600" />} />
+            <ReconStatCard value={totals.duplicadas} label="duplicadas" color="border-l-purple-500" icon={<ListChecks className="w-5 h-5 text-purple-600" />} />
+            <ReconStatCard value={totals.identidadeProblemas} label="identidade" color="border-l-amber-500" icon={<ShieldAlert className="w-5 h-5 text-amber-600" />} />
+          </div>
+
+          {lastRun && !live && (lastRun.actions?.imported > 0 || lastRun.actions?.exported > 0 || lastRun.actions?.exportFailed > 0) && (
+            <Card className="p-3 text-xs text-neutral-600 flex flex-wrap gap-x-4 gap-y-1">
+              <span className="flex items-center gap-1"><Download className="w-3.5 h-3.5 text-blue-500" /> Importadas: <b>{lastRun.actions.imported}</b></span>
+              <span className="flex items-center gap-1"><Upload className="w-3.5 h-3.5 text-green-500" /> Corretivas exportadas: <b>{lastRun.actions.exported}</b></span>
+              {lastRun.actions.exportFailed > 0 && <span className="flex items-center gap-1 text-red-600"><AlertTriangle className="w-3.5 h-3.5" /> Falhas export: <b>{lastRun.actions.exportFailed}</b></span>}
+            </Card>
+          )}
+
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-neutral-700">Por funcionário ({shownEmployees.length})</h3>
+            <label className="flex items-center gap-2 text-xs text-neutral-500 cursor-pointer">
+              <Switch checked={onlyProblems} onCheckedChange={setOnlyProblems} data-testid="switch-only-problems" />
+              Só com divergência
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            {shownEmployees.length === 0 ? (
+              <Card className="p-6 text-center text-green-700"><CheckCircle2 className="w-6 h-6 mx-auto mb-1" /> Tudo validado — nenhuma divergência.</Card>
+            ) : (
+              shownEmployees.map((emp) => <EmployeeReconRow key={emp.employeeId} emp={emp} />)
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

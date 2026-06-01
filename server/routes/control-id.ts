@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { requireAuth, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import * as ctrl from "../control-id";
+import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
 import { isAtivo } from "./fixed-costs";
 
 export function registerControlIdRoutes(app: Express) {
@@ -528,6 +529,57 @@ export function registerControlIdRoutes(app: Express) {
     try {
       const r = await ctrl.syncAllDevices();
       res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─────── VALIDAÇÃO / CONCILIAÇÃO RHID ───────
+  // Última rodada persistida (rápido — não bate no RHID).
+  app.get("/api/control-id/reconciliation/last", requireAuth, async (_req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("rhid_reconciliation_runs")
+        .select("*")
+        .order("run_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Conciliação read-only ao vivo (bate no RHID). fromYmd/toYmd opcionais.
+  app.get("/api/control-id/reconciliation/live", requireAuth, async (req, res) => {
+    try {
+      const { fromYmd, toYmd, deviceId } = req.query as any;
+      const recon = await buildReconciliation({
+        fromYmd: fromYmd || undefined,
+        toYmd: toYmd || undefined,
+        deviceId: deviceId ? Number(deviceId) : undefined,
+      });
+      res.json(recon);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Roda a conciliação completa AGORA (import + export + valida + grava + e-mail).
+  app.post("/api/control-id/reconciliation/run", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { fromYmd, toYmd, deviceId, doImport, doExport, sendEmail, forceEmail } = req.body || {};
+      const r = await runDailyReconciliation({
+        fromYmd, toYmd,
+        deviceId: deviceId ? Number(deviceId) : undefined,
+        doImport: doImport !== false,
+        doExport: doExport !== false,
+        sendEmail: sendEmail !== false,
+        forceEmail: !!forceEmail,
+        triggeredBy: "manual",
+      });
+      res.json({ totals: r.recon.totals, actions: r.actions, email: r.email, runId: r.runId });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

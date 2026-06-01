@@ -10,6 +10,7 @@ import {
   nameTokens,
   nameMatchScore,
   monthToFechamento,
+  minuteKeyBRT,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -333,4 +334,34 @@ test("fechamento: limites batem com BRT, não com UTC (turno noturno 25→26)", 
   // NÃO deve estar no ciclo de maio (é o último momento de abril).
   const punchBefore = new Date("2026-04-26T01:30:00.000Z"); // 22:30 BRT 25/04
   assert.ok(punchBefore.getTime() < start.getTime(), "22:30 BRT 25/04 deve ser < start de maio");
+});
+
+// ============================================================================
+// minuteKeyBRT — chave de casamento por minuto (BRT) usada na conciliação RHID
+// ============================================================================
+
+test("minuteKeyBRT: bucketiza por minuto em BRT (UTC-3)", () => {
+  // 2026-06-01T12:34:56Z → 09:34 BRT
+  const k = minuteKeyBRT(new Date("2026-06-01T12:34:56.000Z"));
+  assert.equal(k, "2026-06-01 09:34");
+});
+
+test("minuteKeyBRT: ignora segundos/ms (mesma chave para tempos no mesmo minuto)", () => {
+  const a = minuteKeyBRT(new Date("2026-06-01T12:34:00.000Z"));
+  const b = minuteKeyBRT(new Date("2026-06-01T12:34:59.999Z"));
+  assert.equal(a, b);
+});
+
+test("minuteKeyBRT: vira o dia corretamente perto da meia-noite BRT", () => {
+  // 2026-06-02T02:30:00Z → 23:30 BRT do dia 01
+  const k = minuteKeyBRT(new Date("2026-06-02T02:30:00.000Z"));
+  assert.equal(k, "2026-06-01 23:30");
+});
+
+test("minuteKeyBRT: batida do nosso sistema e do AFD no mesmo minuto casam (dedup)", () => {
+  // Mesmo instante, formatos de origem diferentes: ambos devem gerar a mesma chave,
+  // garantindo que a batida facial do AFD não duplique a manual já existente.
+  const ours = minuteKeyBRT(new Date("2026-06-01T11:00:10.000Z"));
+  const afd = minuteKeyBRT(new Date("2026-06-01T11:00:55.000Z"));
+  assert.equal(ours, afd);
 });

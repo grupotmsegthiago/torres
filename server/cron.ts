@@ -9,6 +9,7 @@ import { isSupabaseHealthy } from "./pg-fallback";
 import { getHorasElapsedFromDB, calcularFaturamentoLive, computeBillingPayloadForOs, resolveContractForOs, shouldSkipBillingHours, DEFAULT_BILLING_CONTRACT } from "./billing-calc";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { processRhidSyncQueue } from "./control-id";
+import { runDailyReconciliation } from "./rhid-reconciliation";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { ymdBRT } from "./lib/hours-calc";
 
@@ -291,6 +292,23 @@ export function initCronJobs() {
         log(`CRON RHID-Queue ERRO: ${e?.message}`, "cron");
       } finally {
         rhidQueueRunning = false;
+      }
+    });
+
+    // Conciliação DIÁRIA de ponto (nosso sistema × RHID/AFD) às 05:00 BRT:
+    // importa facial faltante, exporta corretivas, valida e manda e-mail-resumo.
+    let rhidReconRunning = false;
+    cron.schedule("0 5 * * *", async () => {
+      if (rhidReconRunning) return;
+      if (!isSupabaseHealthy()) return;
+      rhidReconRunning = true;
+      try {
+        const r = await runDailyReconciliation({ triggeredBy: "cron" });
+        log(`CRON RHID-Recon: validado=${r.recon.totals.validado} faltamRhid=${r.recon.totals.faltandoNoRhid} faltamLocal=${r.recon.totals.faltandoNoLocal} dup=${r.recon.totals.duplicadas} | imp=${r.actions.imported} exp=${r.actions.exported} | ${r.email.message}`, "cron");
+      } catch (e: any) {
+        log(`CRON RHID-Recon ERRO: ${e?.message}`, "cron");
+      } finally {
+        rhidReconRunning = false;
       }
     });
 
