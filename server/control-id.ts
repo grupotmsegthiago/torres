@@ -214,21 +214,28 @@ export async function fetchEvents(device: DeviceRow, since: Date | null): Promis
 }
 
 async function fetchEventsRhid(device: DeviceRow, since: Date | null): Promise<ControlIdEvent[]> {
-  const token = await getOrLoginToken(device);
-
   const afdUrl = joinUrl(device.base_url, "/customerdb/afd.svc/a");
+  const token = await getOrLoginToken(device);
   let afdRes = await tryFetch(afdUrl, {
     headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
     timeoutMs: 60000,
   });
-  if (afdRes.status === 401 || afdRes.status === 403) {
+  // O RHID Cloud usa SESSÃO ÚNICA por conta: se alguém logar no portal web
+  // (ex.: pra tirar um espelho de ponto), o token salvo do app é invalidado e o
+  // AFD passa a responder HTTP 400 ("NoTokenValue") ou 500 — NÃO 401/403. Por
+  // isso forçamos um login NOVO (ignorando o cache) em QUALQUER falha, não só
+  // auth, e tentamos uma vez. Confirmado: token vazio → 400 NoTokenValue.
+  if (!afdRes.ok) {
     const newToken = await loginDevice(device);
     afdRes = await tryFetch(afdUrl, {
       headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
       timeoutMs: 60000,
     });
   }
-  if (!afdRes.ok) throw new Error(`RHID AFD falhou: HTTP ${afdRes.status}`);
+  if (!afdRes.ok) {
+    const body = await afdRes.text().catch(() => "");
+    throw new Error(`RHID AFD falhou: HTTP ${afdRes.status} ${body.slice(0, 200)}`);
+  }
   const afdData = await afdRes.json();
   return parseRhidAfdRecords(afdData, since);
 }
