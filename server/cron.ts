@@ -994,7 +994,17 @@ export function initCronJobs() {
   // Agente Central: cobra atualização dos vigilantes via WhatsApp quando a OS
   // está ativa há mais de 1h20min sem update (ou 2h10min se em pernoite).
   // Re-cobrança a cada 30min até chegar atualização. Roda a cada 5min.
+  let agentCentralRunning = false;
   cron.schedule("*/5 * * * *", async () => {
+    // Guard de concorrência: o ciclo agora tem pausas humanas (sleep) + IA por
+    // destinatário, então pode passar de 5min com muitas OS. Sem este lock, dois
+    // ciclos rodariam juntos cobrando os MESMOS números — exatamente o padrão de
+    // spam que causou o bloqueio.
+    if (agentCentralRunning) {
+      log("CRON AgenteCentral: ciclo anterior ainda rodando, pulando", "cron");
+      return;
+    }
+    agentCentralRunning = true;
     try {
       const { runAgentCentralCheck } = await import("./cron-agent-central");
       const r = await runAgentCentralCheck();
@@ -1003,6 +1013,8 @@ export function initCronJobs() {
       }
     } catch (e: any) {
       log(`CRON AgenteCentral: Erro: ${e.message}`, "cron");
+    } finally {
+      agentCentralRunning = false;
     }
   });
 

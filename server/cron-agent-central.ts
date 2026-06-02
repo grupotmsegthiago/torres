@@ -25,6 +25,7 @@ import { supabaseAdmin } from "./supabase";
 import { sendText, isZapiConfigured } from "./lib/zapi";
 import { normalizePhone } from "./lib/normalize-contact";
 import { log } from "./lib/logger";
+import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds } from "./lib/whatsapp-humanize";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -185,6 +186,11 @@ export async function runAgentCentralCheck(): Promise<{
 
   const now = new Date();
 
+  // Pacing GLOBAL do ciclo (não por OS): garante pausa humana entre QUALQUER par
+  // de envios, inclusive entre OSs diferentes. Sem isso, o mesmo agente em duas
+  // OSs receberia mensagens quase coladas — o padrão de spam que causou bloqueio.
+  let firstSendGlobal = true;
+
   // 5. Pra cada OS, decide se precisa cobrar
   for (const os of activeOs) {
     const lastUpd = lastUpdateByOs.get(os.id);
@@ -226,21 +232,29 @@ export async function runAgentCentralCheck(): Promise<{
     const lastTime = fmtTimeBRT(baseTimestampStr);
     const elapsed = fmtElapsed(minutesSinceUpdate);
     const estado = pernoite ? "PERNOITE" : "RODANDO";
-
-    const msg = [
-      `*Central Torres*`,
-      ``,
-      `Srs., favor informar atualização via sistema, por gentileza.`,
-      ``,
-      `OS: ${os.os_number || `#${os.id}`}`,
-      `Estado: ${estado}`,
-      `Última atualização: ${lastTime} (${elapsed} atrás)`,
-    ].join("\n");
+    const osLabel = os.os_number || `#${os.id}`;
 
     let sentAny = false;
     for (const p of phones) {
       try {
-        const r = await sendText({ groupOrPhone: p.phone, message: msg });
+        // ANTI-BLOQUEIO: cada agente recebe um texto DIFERENTE (IA + fallback),
+        // nunca o mesmo template — mensagens idênticas em rajada disparam ban.
+        const msg = await buildReminderMessage({
+          osLabel,
+          trigger: "cron",
+          estado,
+          lastTime,
+          elapsed,
+        });
+        // RITMO HUMANO: pausa aleatória entre QUALQUER par de envios do ciclo
+        // (inclusive entre OSs) + "digitando..." antes do disparo.
+        if (!firstSendGlobal) await sleep(humanDelayMs());
+        firstSendGlobal = false;
+        const r = await sendText({
+          groupOrPhone: p.phone,
+          message: msg,
+          delayTypingSeconds: randomTypingSeconds(),
+        });
         if (r.ok) {
           sentAny = true;
           log(`[agent-central] OS ${os.os_number || os.id} → ${p.name} (${p.phone}) OK`, "cron");

@@ -59,6 +59,8 @@ export async function sendImageWithCaption(params: {
   groupOrPhone: string;
   imageBase64OrUrl: string;
   caption: string;
+  /** Segundos mostrando "digitando..." antes de enviar (Z-API delayMessage). Humaniza o envio. */
+  delayMessageSeconds?: number;
 }): Promise<ZapiSendImageResult> {
   if (!isZapiConfigured()) {
     return { ok: false, error: "Z-API não configurada (ZAPI_INSTANCE_ID/ZAPI_TOKEN/ZAPI_CLIENT_TOKEN)" };
@@ -66,11 +68,14 @@ export async function sendImageWithCaption(params: {
   const phone = normalizePhoneOrGroup(params.groupOrPhone);
   if (!phone) return { ok: false, error: "groupOrPhone vazio" };
 
-  const body = {
+  const body: Record<string, any> = {
     phone,
     image: params.imageBase64OrUrl,
     caption: (params.caption || "").slice(0, 1024), // WhatsApp tem limite de ~1024 chars na legenda
   };
+  if (params.delayMessageSeconds && params.delayMessageSeconds > 0) {
+    body.delayMessage = Math.min(15, Math.max(1, Math.round(params.delayMessageSeconds)));
+  }
 
   try {
     const resp = await fetch(`${BASE}/send-image`, {
@@ -254,12 +259,27 @@ export async function listAllChats(): Promise<{ ok: boolean; chats: ZapiChat[]; 
 export async function sendText(params: {
   groupOrPhone: string;
   message: string;
+  /** Segundos mostrando "digitando..." antes de enviar (Z-API delayTyping). Humaniza o envio. */
+  delayTypingSeconds?: number;
+  /** Segundos de atraso antes do disparo (Z-API delayMessage). */
+  delayMessageSeconds?: number;
 }): Promise<ZapiSendImageResult> {
   if (!isZapiConfigured()) {
     return { ok: false, error: "Z-API não configurada" };
   }
   const phone = normalizePhoneOrGroup(params.groupOrPhone);
   if (!phone) return { ok: false, error: "groupOrPhone vazio" };
+
+  const body: Record<string, any> = { phone, message: params.message };
+  // Z-API aceita delayTyping (mostra "digitando...") e delayMessage (atraso antes
+  // do disparo). Ambos humanizam o envio — reduzem o "cara de robô" que dispara
+  // bloqueio. Limites práticos da Z-API: 1–15s.
+  if (params.delayTypingSeconds && params.delayTypingSeconds > 0) {
+    body.delayTyping = Math.min(15, Math.max(1, Math.round(params.delayTypingSeconds)));
+  }
+  if (params.delayMessageSeconds && params.delayMessageSeconds > 0) {
+    body.delayMessage = Math.min(15, Math.max(1, Math.round(params.delayMessageSeconds)));
+  }
 
   try {
     const resp = await fetch(`${BASE}/send-text`, {
@@ -268,8 +288,8 @@ export async function sendText(params: {
         "Content-Type": "application/json",
         "Client-Token": CLIENT_TOKEN,
       },
-      body: JSON.stringify({ phone, message: params.message }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
     });
     const text = await resp.text();
     let parsed: any = null;

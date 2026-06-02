@@ -21,6 +21,7 @@
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
 import { sendText, sendImageWithCaption, isZapiConfigured } from "./zapi";
+import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
 import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
 
@@ -299,21 +300,24 @@ async function cobrarAgentes(os: ActiveOs): Promise<number> {
     .from("employees")
     .select("id, name, phone")
     .in("id", empIds);
-  const msg = [
-    `*Central Torres*`,
-    ``,
-    `Solicitação de atualização recebida pelo cliente.`,
-    `Por gentileza, informe a atualização da missão via sistema agora.`,
-    ``,
-    `OS: ${os.os_number || `#${os.id}`}`,
-  ].join("\n");
+  const osLabel = os.os_number || `#${os.id}`;
 
   let sent = 0;
+  let firstSend = true;
   for (const e of (emps || []) as any[]) {
     const intl = toIntlPhone(e.phone);
     if (!intl) continue;
     try {
-      const r = await sendText({ groupOrPhone: intl, message: msg });
+      // ANTI-BLOQUEIO: texto DIFERENTE por agente (IA + fallback) + ritmo humano
+      // (pausa aleatória entre envios e "digitando..."). Nunca o mesmo template.
+      const msg = await buildReminderMessage({ osLabel, trigger: "client" });
+      if (!firstSend) await sleep(humanDelayMs());
+      firstSend = false;
+      const r = await sendText({
+        groupOrPhone: intl,
+        message: msg,
+        delayTypingSeconds: randomTypingSeconds(),
+      });
       if (r.ok) sent++;
     } catch { /* ignora individual */ }
   }
@@ -541,7 +545,7 @@ export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise
       return;
     }
     summaryThrottle.set(parsed.chatId, Date.now());
-    await sendText({ groupOrPhone: parsed.chatId, message: msg });
+    await sendText({ groupOrPhone: parsed.chatId, message: msg, delayTypingSeconds: randomTypingSeconds() });
     console.log(`[agent-central-mention] resumo enviado ao grupo ${parsed.chatId}`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handleGroupSummaryRequest falhou:", e?.message);
@@ -637,6 +641,7 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
           groupOrPhone: parsed.chatId,
           imageBase64OrUrl: foto.photoData,
           caption: msg,
+          delayMessageSeconds: randomTypingSeconds(),
         });
         sentWithPhoto = r.ok;
         if (!r.ok) {
@@ -650,7 +655,7 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
     }
 
     if (!sentWithPhoto) {
-      await sendText({ groupOrPhone: parsed.chatId, message: msg });
+      await sendText({ groupOrPhone: parsed.chatId, message: msg, delayTypingSeconds: randomTypingSeconds() });
     }
     console.log(`[agent-central-mention] km-resumo da OS ${os.os_number || os.id} enviado ao grupo ${parsed.chatId}${sentWithPhoto ? " (com foto)" : " (só texto)"}`);
   } catch (e: any) {
@@ -744,7 +749,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     const finalMsg = notified > 0
       ? ack
       : `${ack}\n\n_(Obs.: não há contato de WhatsApp cadastrado para os agentes desta OS — acionando por outros meios.)_`;
-    await sendText({ groupOrPhone: parsed.chatId, message: finalMsg });
+    await sendText({ groupOrPhone: parsed.chatId, message: finalMsg, delayTypingSeconds: randomTypingSeconds() });
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }
@@ -797,7 +802,7 @@ export async function fulfillGroupRequests(params: {
       const nomes = Array.from(info.names);
       const saud = nomes.length > 0 ? `${nomes.join(", ")}, ` : "";
       const out = [
-        `*Central Torres* — atualização solicitada`,
+        `*${varyForwardHeader()}*`,
         ``,
         `${saud}segue a atualização da OS ${params.osNumber || `#${params.serviceOrderId}`}:`,
         ``,
@@ -805,7 +810,7 @@ export async function fulfillGroupRequests(params: {
         params.employeeName ? `\n_Agente: ${firstName(params.employeeName)}_` : "",
       ].filter((l) => l !== "").join("\n");
 
-      const r = await sendText({ groupOrPhone: groupId, message: out });
+      const r = await sendText({ groupOrPhone: groupId, message: out, delayTypingSeconds: randomTypingSeconds() });
       if (r.ok) {
         // Já reivindicado (fulfilled_at setado no claim atômico) — só loga.
         console.log(`[agent-central-mention] update da OS ${params.osNumber || params.serviceOrderId} encaminhada ao grupo ${groupId} (pediram: ${nomes.join(", ") || "?"})`);
