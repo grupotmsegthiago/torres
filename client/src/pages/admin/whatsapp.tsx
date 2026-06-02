@@ -146,6 +146,13 @@ export default function WhatsappPage() {
     staleTime: 0,
   });
 
+  const { data: waStatus } = useQuery<{ configured: boolean; connected: boolean; smartphoneConnected: boolean; error?: string }>({
+    queryKey: ["/api/whatsapp/status"],
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+  });
+
   const chats = chatsData?.chats || [];
 
   const filteredChats = useMemo(() => {
@@ -256,6 +263,34 @@ export default function WhatsappPage() {
 
   return (
     <AdminLayout>
+      {waStatus && (
+        <div
+          className={cn(
+            "fixed bottom-4 right-4 z-50 rounded-lg shadow-lg border px-3 py-2 max-w-xs",
+            waStatus.connected
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-red-50 border-red-300 text-red-800"
+          )}
+          data-testid="status-zapi-connection"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <span
+              className={cn(
+                "w-2.5 h-2.5 rounded-full",
+                waStatus.connected ? "bg-emerald-500" : "bg-red-500 animate-pulse"
+              )}
+            />
+            {waStatus.connected ? "WhatsApp conectado" : "WhatsApp DESCONECTADO"}
+          </div>
+          {!waStatus.connected && (
+            <div className="mt-1 text-xs leading-snug">
+              {!waStatus.configured
+                ? "Z-API não configurada (faltam as chaves de acesso)."
+                : 'O celular não está pareado na Z-API. Enquanto estiver assim, o Agente Central não envia cobranças nem responde "resumo". Reconecte lendo o QR Code no painel da Z-API.'}
+            </div>
+          )}
+        </div>
+      )}
       <div className="h-[calc(100vh-4rem)] flex bg-slate-100 -m-6">
         {/* COLUNA 1 — Lista de Conversas */}
         <div className={cn(

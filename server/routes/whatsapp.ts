@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
-import { sendText, sendImageWithCaption, listAllChats, isZapiConfigured } from "../lib/zapi";
+import { sendText, sendImageWithCaption, listAllChats, isZapiConfigured, getConnectionStatus } from "../lib/zapi";
 
 /**
  * Rotas do WhatsApp embarcado.
@@ -195,6 +195,17 @@ function parseWebhookMessage(body: any): {
 }
 
 export function registerWhatsappRoutes(app: Express) {
+  // ─────────────────────────────────────────────────────────────
+  // GET /api/whatsapp/status
+  // Status AO VIVO da conexão Z-API (celular pareado?). É a verdade única
+  // pra saber se o Agente Central consegue enviar E receber ("resumo" etc.).
+  // ─────────────────────────────────────────────────────────────
+  app.get("/api/whatsapp/status", requireAuth, requireAdminRole, async (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    const status = await getConnectionStatus();
+    res.json(status);
+  });
+
   // ─────────────────────────────────────────────────────────────
   // GET /api/whatsapp/chats
   // Lista mesclada: chats do nosso DB + chats recentes da Z-API.

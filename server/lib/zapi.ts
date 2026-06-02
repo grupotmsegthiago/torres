@@ -36,6 +36,48 @@ export function isZapiConfigured(): boolean {
   return Boolean(INSTANCE_ID && TOKEN && CLIENT_TOKEN);
 }
 
+export interface ZapiConnectionStatus {
+  configured: boolean;
+  connected: boolean;
+  smartphoneConnected: boolean;
+  error?: string;
+}
+
+/**
+ * Consulta o status AO VIVO da instância Z-API (GET /status).
+ * `connected:false` significa que o celular não está pareado — nesse estado
+ * a Z-API ACEITA envios (HTTP 200) mas NÃO entrega, e tampouco recebe
+ * mensagens de entrada (o webhook nunca dispara). Por isso é a verdade única
+ * pra saber se o WhatsApp da Central está realmente operante.
+ */
+export async function getConnectionStatus(): Promise<ZapiConnectionStatus> {
+  if (!isZapiConfigured()) {
+    return { configured: false, connected: false, smartphoneConnected: false, error: "Z-API não configurada" };
+  }
+  try {
+    const resp = await fetch(`${BASE}/status`, {
+      headers: { "Client-Token": CLIENT_TOKEN },
+    });
+    const data: any = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return {
+        configured: true,
+        connected: false,
+        smartphoneConnected: false,
+        error: sanitize(String(data?.error || `HTTP ${resp.status}`)),
+      };
+    }
+    return {
+      configured: true,
+      connected: data?.connected === true,
+      smartphoneConnected: data?.smartphoneConnected === true,
+      error: data?.error ? sanitize(String(data.error)) : undefined,
+    };
+  } catch (e: any) {
+    return { configured: true, connected: false, smartphoneConnected: false, error: sanitize(e?.message || "erro de rede") };
+  }
+}
+
 /** Normaliza um group ID — aceita "X-Y", "X-Y@g.us" ou número solto. */
 function normalizePhoneOrGroup(raw: string): string {
   const trimmed = (raw || "").trim();
