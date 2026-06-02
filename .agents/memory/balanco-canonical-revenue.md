@@ -16,3 +16,9 @@ O endpoint `/api/operational-grid` expõe, por OS, dois números de receita ao v
 - No canônico do grid, `km_vazio` é sempre 0: nenhuma fonte (fotos do app dão odômetro total; billings têm km_vazio=0 em 100% dos 246 registros) separa carregado/vazio. Todo km é tratado como carregado — consistente com stored e com o relatório aprovado.
 - `despesas_outras` NÃO entra como receita no canônico do grid (passa 0): "outras" são custo puro, não repasse. Só pedágio e receitas_os entram na receita (igual à linha que soma `receitasOsGrid + custoPedagio`).
 - Custos/pagamento no Balanço continuam vindo do billing armazenado; só a RECEITA virou canônica (decisão de produto "só exibição").
+
+## Atribuição por data de agendamento + projeção (Task junho/2026)
+
+- Cada missão pertence ao dia do seu `scheduled_date` (BRT). O grid (`/api/operational-grid`) e o Balanço já atribuem por `scheduled_date` primeiro (fallback `mission_started_at`/`completed_date`/`created_at` só se nulo). Missão multi-dia conta SÓ no dia do agendamento; nunca deslocada pra "hoje" nem duplicada.
+- **Consequência legítima:** no 1º dia de um período, Semanal/Mensal pode ser MAIOR que o Diário porque inclui missões `agendada` pra dias seguintes do período (não é bug). Auditar via `scheduled_date` antes de tratar como erro.
+- **Projeção (card Faturamento):** a média diária deve usar SÓ o `realizadoFat` (missões com `data <= hoje`), não `totals.fat` (que inclui agendamentos futuros do período) — senão divide total por 1 dia decorrido e infla. Núcleo puro/testável em `client/src/lib/balanco-projection.ts` (`computeProjection`), teste `.local/balanco-projection.test.mts`. Projeção nunca abaixo de realizado+agendado (Math.max).

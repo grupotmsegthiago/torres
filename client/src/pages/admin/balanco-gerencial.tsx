@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
+import { computeProjection } from "@/lib/balanco-projection";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -708,12 +709,28 @@ export default function BalancoGerencialPage() {
             const periodEnd = range.end;
             const elapsed = Math.max(1, Math.floor((Math.min(today.getTime(), periodEnd.getTime()) - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
             const isPast = today > periodEnd;
-            const dailyAvg = totals.fat / elapsed;
-            const projection = isPast ? totals.fat : dailyAvg * daysInPeriod;
+            // ── Realizado × Previsto/Agendado ──────────────────────────────────────
+            // Cada missão é atribuída ao dia do seu agendamento (`m.data`, BRT). O faturamento
+            // do período pode incluir missões AGENDADAS para os próximos dias do período (ainda
+            // não realizadas). Separamos os dois para que a projeção use SÓ o realizado.
+            const pad2p = (x: number) => String(x).padStart(2, "0");
+            const todayBRT = `${today.getFullYear()}-${pad2p(today.getMonth() + 1)}-${pad2p(today.getDate())}`;
+            const realizadoFat = filtered.missions
+              .filter((m: any) => !m.data || m.data <= todayBRT)
+              .reduce((a: number, m: any) => a + (m.fat_total || 0), 0);
+            // Núcleo puro/testável: separa realizado × agendado e calcula a projeção sem inflar.
+            const { agendadoFat, dailyAvg, projection } = computeProjection({
+              realizadoFat,
+              totalFat: totals.fat,
+              elapsedDays: elapsed,
+              daysInPeriod,
+              isPast,
+            });
             const chancePct = metaPeriodo > 0 ? (projection / metaPeriodo) * 100 : 0;
             const chanceColor = chancePct >= 100 ? "text-green-700" : chancePct >= 80 ? "text-amber-600" : "text-red-600";
             const chanceBg = chancePct >= 100 ? "bg-green-50 border-green-200" : chancePct >= 80 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
             const showProjection = period !== "DAY" && totals.fat > 0 && !isPast;
+            const hasAgendado = agendadoFat > 0.005;
 
             return (
               <Card className={`p-4 border-neutral-200 ${mc.icon ? "ring-2 ring-green-400" : ""}`} data-testid="card-faturamento">
@@ -726,6 +743,12 @@ export default function BalancoGerencialPage() {
                 </div>
                 <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
                 <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
+                {hasAgendado && !isPast && (
+                  <p className="text-[10px] text-neutral-400 font-medium mt-0.5" data-testid="text-realizado-agendado">
+                    Realizado <span className="font-bold text-neutral-600 font-mono">{fmt(realizadoFat)}</span>
+                    {" + "}agendado <span className="font-bold text-amber-600 font-mono">{fmt(agendadoFat)}</span>
+                  </p>
+                )}
                 {metaPeriodo > 0 && (
                   <div className="mt-2">
                     <div className="flex items-center justify-between mb-1">
@@ -739,8 +762,11 @@ export default function BalancoGerencialPage() {
                 )}
                 {showProjection && (
                   <div className={`mt-2 rounded-lg border p-2 ${chanceBg}`} data-testid="projection-box">
-                    <p className="text-[10px] font-bold text-neutral-500 uppercase mb-0.5">Projeção para fim do mês</p>
+                    <p className="text-[10px] font-bold text-neutral-500 uppercase mb-0.5">Projeção para fim do período</p>
                     <p className="text-sm font-black font-mono text-neutral-800">{fmt(projection)}</p>
+                    <p className="text-[9px] text-neutral-400 font-medium mt-0.5">
+                      Ritmo realizado: {fmt(dailyAvg)}/dia × {daysInPeriod}d
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
                       <ShieldAlert size={12} className={chanceColor} />
                       <span className={`text-[10px] font-black ${chanceColor}`}>
