@@ -295,10 +295,11 @@ export function initCronJobs() {
       }
     });
 
-    // Conciliação DIÁRIA de ponto (nosso sistema × RHID/AFD) às 05:00 BRT:
+    // Conciliação DIÁRIA de ponto (nosso sistema × RHID/AFD) à MEIA-NOITE BRT (00:00):
     // importa facial faltante, exporta corretivas, valida e manda e-mail-resumo.
+    // O horário é em America/Sao_Paulo (não UTC) — vide { timezone } no fim do schedule.
     let rhidReconRunning = false;
-    cron.schedule("0 5 * * *", async () => {
+    cron.schedule("0 0 * * *", async () => {
       if (rhidReconRunning) return;
       if (!isSupabaseHealthy()) return;
       rhidReconRunning = true;
