@@ -280,29 +280,27 @@ function normalizeFuel(f: string | null | undefined): string {
   return u;
 }
 
-// Integração TicketLog desativada por solicitação do dono (2026-05-25).
-// Bloqueia todos os endpoints (/api/conciliacao-ticketlog/** e
-// /api/auditoria-pedagios-ticketlog/**) retornando 503. Histórico no banco e
-// no financeiro permanece intacto — esta é uma desativação de integração,
-// não uma remoção de dados.
-const TICKETLOG_DISABLED = true;
+// Conciliação manual de Abastecimento × TicketLog REATIVADA (2026-06-02) a
+// pedido do dono: é upload manual on-demand (PDF RFCV / Excel RFCVTITULO), sem
+// cron nem polling — não tem o problema que motivou a desativação automática.
+// A auditoria de pedágios (/api/auditoria-pedagios-ticketlog/**) continua
+// desativada (não foi pedida de volta). Histórico no banco/financeiro intacto.
+const AUDITORIA_PEDAGIOS_DISABLED = true;
 const ticketlogDisabledGuard = (_req: any, res: any, _next: any) =>
   res.status(503).json({
-    message: "Integração TicketLog desativada. Operação indisponível.",
+    message: "Auditoria de pedágios TicketLog desativada. Operação indisponível.",
     code: "TICKETLOG_DISABLED",
   });
 
 export function registerConciliacaoRoutes(app: Express) {
-  if (TICKETLOG_DISABLED) {
-    // Bloqueia SÓ os endpoints TicketLog (prefixos abaixo) retornando 503.
-    // Os guards são app.use registrados ANTES das rotas reais, então interceptam
-    // qualquer /api/conciliacao-ticketlog/** e /api/auditoria-pedagios-ticketlog/**
-    // mesmo com os handlers reais ainda registrados depois.
+  if (AUDITORIA_PEDAGIOS_DISABLED) {
+    // Bloqueia SÓ a auditoria de pedágios. O guard é app.use registrado ANTES
+    // das rotas reais, então intercepta /api/auditoria-pedagios-ticketlog/**
+    // mesmo com o handler real ainda registrado depois.
     // NÃO dar `return` aqui: o restante deste arquivo contém rotas que NÃO são
     // TicketLog (ex.: /api/controladoria/pedagio-cobrado), e um return antecipado
     // deixaria essas rotas sem registro -> caem no fallback do Vite (HTML) ->
     // "Unexpected token '<'" no front. (bug corrigido 2026-06-01)
-    app.use("/api/conciliacao-ticketlog", ticketlogDisabledGuard);
     app.use("/api/auditoria-pedagios-ticketlog", ticketlogDisabledGuard);
   }
   app.post("/api/conciliacao-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
