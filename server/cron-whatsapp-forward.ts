@@ -67,6 +67,26 @@ export function isFinalKmUpdate(message?: string | null): boolean {
   return /foto:\s*km\s*final\b/i.test(String(message || ""));
 }
 
+// Uma update é "card de finalização" (Fim de Missão) quando é o step formal
+// "finalizada" OU a foto de "KM Final" (que chega como chegada_destino e é, na
+// prática, o fim da missão pro grupo do cliente).
+export function isFinalCardUpdate(step?: string | null, message?: string | null): boolean {
+  return String(step || "") === "finalizada" || isFinalKmUpdate(message);
+}
+
+// Trava de finalização: decide se a OS JÁ teve um card de "Fim de Missão"
+// encaminhado. Recebe SÓ updates já enviadas com sucesso (whatsapp_forwarded_at
+// preenchido e SEM erro) e diferentes da update atual. Se qualquer uma delas for
+// um card de finalização, a atual é duplicata e não deve reenviar.
+// Motivo: o app pode registrar a finalização em duplicata (duplo-toque / refluxo
+// offline), gerando várias mission_updates de "KM Final"; o dedup padrão é por
+// linha (whatsapp_forwarded_at), não por OS, então cada linha viraria um card.
+export function alreadyForwardedFinal(
+  priorSentUpdates: Array<{ mission_step?: string | null; message?: string | null }>,
+): boolean {
+  return (priorSentUpdates || []).some((p) => isFinalCardUpdate(p.mission_step, p.message));
+}
+
 function fmtMissionStatus(s?: string | null): string {
   if (!s) return "";
   const key = String(s).toLowerCase().trim();
@@ -395,6 +415,31 @@ async function processPending(): Promise<void> {
         continue;
       }
 
+      // Trava de finalização: só 1 card de "Fim de Missão" por OS no grupo.
+      // Se a OS já teve uma update de finalização ENVIADA com sucesso
+      // (whatsapp_forwarded_at preenchido E sem erro), esta é duplicata → skip.
+      const isFinalizada = isFinalCardUpdate(u.mission_step, u.message);
+      if (isFinalizada) {
+        const { data: priorSent, error: pfErr } = await supabaseAdmin
+          .from("mission_updates")
+          .select("id, mission_step, message")
+          .eq("service_order_id", u.service_order_id)
+          .not("whatsapp_forwarded_at", "is", null)
+          .is("whatsapp_forward_error", null)
+          .neq("id", u.id);
+        if (pfErr) {
+          // erro transitório de DB → libera claim pra retentar no próximo ciclo
+          await releaseClaim(u.id, `db dedup-final: ${pfErr.message}`);
+          console.error(`${TAG} ⟳ id=${u.id} erro transitório DEDUP-FINAL:`, pfErr.message);
+          continue;
+        }
+        if (alreadyForwardedFinal(priorSent || [])) {
+          await markDone(u.id, "skip: fim de missão já enviado pra essa OS");
+          console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} fim de missão duplicado, pulando`);
+          continue;
+        }
+      }
+
       const { data: so, error: soErr } = await supabaseAdmin.from("service_orders")
         .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate, scheduled_date, mission_started_at, completed_date")
         .eq("id", u.service_order_id).maybeSingle();
@@ -449,7 +494,7 @@ async function processPending(): Promise<void> {
       const stepLabel = FORWARDABLE_STEPS[String(u.mission_step || "")] || null;
       // Resumo enxuto tanto no step "finalizada" quanto na foto de KM Final
       // (que vem como "chegada_destino" e é, na prática, o fim da missão).
-      const isFinalizada = String(u.mission_step || "") === "finalizada" || isFinalKmUpdate(u.message);
+      // isFinalizada já calculado acima (trava de finalização).
       let caption: string;
       try {
         caption = isFinalizada
