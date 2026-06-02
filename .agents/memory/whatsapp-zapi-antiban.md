@@ -18,4 +18,8 @@ description: Por que a Central do WhatsApp toma ban e como o sistema mitiga (var
 
 **Gotcha do diagnóstico:** o `GET {BASE}/status` da Z-API pode dar `connected:false / "You are not connected."` enquanto o cron loga "enviado OK" — a Z-API aceita o POST com HTTP 200 e NÃO entrega quando o aparelho está desconectado. "OK" no log NÃO prova entrega. Para verificar de verdade, checar o status ao vivo (`.local/test_inspect_zapi_status.mts`).
 
+**Gotcha "painel Conectado mas robô não funciona":** se o painel da Z-API mostra "Conectado" mas o `GET {BASE}/status` do sistema dá `connected:false`, quase sempre os secrets `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN` apontam pra uma INSTÂNCIA ANTIGA, diferente da que o dono está olhando no painel (instância recriada). Conferir comparando o ID/token do env com o do painel (script `.local/test_inspect_zapi_creds.mts`). O `ZAPI_CLIENT_TOKEN` é da CONTA (não da instância), então normalmente continua válido ao trocar de instância — só instance+token mudam.
+
+**Webhook inbound (comando "resumo" etc.):** o comando só chega se a aba "Webhooks e configurações gerais" da Z-API tiver o campo **"Ao receber"** apontando pra `https://<dominio-publico>/api/whatsapp/webhook`. Z-API conectada mas com "Ao receber" vazio = inbound nunca dispara (o "resumo" não responde mesmo com tudo conectado). Status de conexão e webhook são coisas independentes.
+
 **How to apply:** ao mexer em qualquer envio de WhatsApp da Central, manter variação de texto + pacing + delayTyping; nunca reintroduzir template fixo em rajada nem pacing por-OS.
