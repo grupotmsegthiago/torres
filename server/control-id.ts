@@ -1249,6 +1249,8 @@ export async function buildFolhaStats(
   const dias = await buildFolhaPonto(employeeId, monthYear);
   const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
   const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
+  // Horas noturnas (22h–05h BRT) efetivamente trabalhadas no mês.
+  const horasNoturnas = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
 
   // Pega salário vigente mais recente (cuja effective_date <= último dia do mês)
   const [yyyy, mm] = monthYear.split("-").map(Number);
@@ -1392,6 +1394,12 @@ export async function buildFolhaStats(
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
   const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
   const valorHoraExtra = valorHora * multiplicadorHE;
+  // Adicional noturno: 20% (CCT) SOBRE a hora normal, só sobre as horas
+  // efetivamente trabalhadas entre 22h e 05h. É só o prêmio de 20% — a hora-base
+  // em si já está paga no salário (as horas noturnas são subconjunto das horas
+  // trabalhadas), então NÃO multiplicar por 1.20 aqui pra não pagar a hora 2x.
+  const adicionalNoturnoPct = (CCT as any).adicionalNoturnoPct ?? 20;
+  const adicionalNoturno = +(valorHora * (adicionalNoturnoPct / 100) * horasNoturnas).toFixed(2);
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
@@ -1418,12 +1426,12 @@ export async function buildFolhaStats(
   } catch { /* tabela pode não existir em ambientes antigos */ }
   diarias = +diarias.toFixed(2);
 
-  const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra).toFixed(2);
+  const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
   const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
 
-  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE).
+  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE + adic. noturno).
   // Não-CLT (PJ, fixo): zera FGTS, INSS patronal e seguro de vida.
-  const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra;
+  const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra + adicionalNoturno;
   const fgtsPct = isClt ? ((CCT as any).fgtsPct ?? 8) : 0;
   const inssPatronalPct = isClt ? ((CCT as any).inssPatronalPct ?? 20) : 0;
   const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
@@ -1436,7 +1444,7 @@ export async function buildFolhaStats(
   const custoBase = baseSalaryReal;
   // Para não-CLT, encargosPct efetivo é 0 (custo com encargos = bruto + benefícios).
   const encargosPctEfetivo = isClt ? encargosPct : 0;
-  const custoComEncargos = +((custoBase + periculosidade + custoExtra) * (1 + encargosPctEfetivo / 100) + beneficiosTotal).toFixed(2);
+  const custoComEncargos = +((custoBase + periculosidade + custoExtra + adicionalNoturno) * (1 + encargosPctEfetivo / 100) + beneficiosTotal).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
   let faturamentoBruto = 0;
@@ -1501,6 +1509,10 @@ export async function buildFolhaStats(
     valorHoraExtra: +valorHoraExtra.toFixed(2),
     custoExtra,
     custoBase: +custoBase.toFixed(2),
+    // Adicional noturno (22h–05h) — horas e valor (prêmio de 20% sobre a hora)
+    horasNoturnas: +horasNoturnas.toFixed(2),
+    adicionalNoturno,
+    adicionalNoturnoPct,
     // Novos componentes detalhados (ratados quando mês corrente)
     periculosidade,
     periculosidadePct,
@@ -1966,6 +1978,21 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   return result;
 }
 
+/**
+ * Conta os MINUTOS dentro da faixa noturna (22h–05h BRT) entre dois instantes.
+ * Varre minuto a minuto verificando a hora em America/Sao_Paulo — cobre turnos
+ * que atravessam a meia-noite. Mesma lógica usada em `jornada_calculos` (hr.ts).
+ */
+function nightMinutesBRT(startMs: number, endMs: number): number {
+  if (!(endMs > startMs)) return 0;
+  let count = 0;
+  for (let t = startMs; t < endMs; t += 60000) {
+    const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+    if (h >= 22 || h < 5) count++;
+  }
+  return count;
+}
+
 export async function buildFolhaPonto(employeeId: number, monthYear: string): Promise<any[]> {
   // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
   const { start, end } = monthToFechamento(monthYear);
@@ -2038,9 +2065,20 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
       const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
       entry.extraMin = Math.round(extraMin);
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+      // Minutos noturnos (22h–05h BRT) dentro da jornada efetiva, descontando o
+      // intervalo de almoço se houver 4+ batidas.
+      let noturnoMin = nightMinutesBRT(inMs, outMs);
+      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+        noturnoMin -= nightMinutesBRT(
+          new Date(sorted[1].punch_at).getTime(),
+          new Date(sorted[2].punch_at).getTime(),
+        );
+      }
+      entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
     } else {
       entry.extraMin = 0;
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+      entry.noturnoMin = 0;
     }
     result.push(entry);
   }

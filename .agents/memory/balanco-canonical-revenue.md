@@ -17,7 +17,7 @@ O endpoint `/api/operational-grid` expõe, por OS, dois números de receita ao v
 - `despesas_outras` NÃO entra como receita no canônico do grid (passa 0): "outras" são custo puro, não repasse. Só pedágio e receitas_os entram na receita (igual à linha que soma `receitasOsGrid + custoPedagio`).
 - Custos/pagamento no Balanço continuam vindo do billing armazenado; só a RECEITA virou canônica (decisão de produto "só exibição").
 
-## Atribuição por data de agendamento + projeção (Task junho/2026)
+## Atribuição por data de agendamento + projeção
 
 - Cada missão pertence ao dia do seu `scheduled_date` (BRT). O grid (`/api/operational-grid`) e o Balanço já atribuem por `scheduled_date` primeiro (fallback `mission_started_at`/`completed_date`/`created_at` só se nulo). Missão multi-dia conta SÓ no dia do agendamento; nunca deslocada pra "hoje" nem duplicada.
 - **Consequência legítima:** no 1º dia de um período, Semanal/Mensal pode ser MAIOR que o Diário porque inclui missões `agendada` pra dias seguintes do período (não é bug). Auditar via `scheduled_date` antes de tratar como erro.

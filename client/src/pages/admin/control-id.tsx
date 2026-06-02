@@ -61,6 +61,7 @@ type FolhaStats = {
   daysWorked: number; baseSalary: number; valorHora: number; valorHoraExtra: number;
   custoBase: number; custoExtra: number; custoTotalEstimado: number; encargosPct: number; custoComEncargos: number;
   periculosidade: number; periculosidadePct: number;
+  horasNoturnas?: number; adicionalNoturno?: number; adicionalNoturnoPct?: number;
   valeRefeicao: number; vrDiario: number; diasUteis: number;
   diarias: number; cestaBasica: number;
   vencimentosTotal: number; beneficiosTotal: number;
@@ -1798,6 +1799,13 @@ function FolhaTab() {
                       <div className="text-[10px] text-neutral-400 mt-0.5">{stats.horaExtra.toFixed(2)}h × {fmtBRL(stats.valorHoraExtra)}/h</div>
                     </div>
                     <span className={`font-semibold tabular-nums ${stats.custoExtra > 0 ? "text-orange-700" : "text-neutral-400"}`} data-testid="text-custo-extra">{fmtBRL(stats.custoExtra)}</span>
+                  </div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-neutral-800 font-medium">Adicional Noturno</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{(stats.horasNoturnas ?? 0).toFixed(2)}h (22h–05h) × {stats.adicionalNoturnoPct ?? 20}%</div>
+                    </div>
+                    <span className={`font-semibold tabular-nums ${(stats.adicionalNoturno ?? 0) > 0 ? "text-indigo-700" : "text-neutral-400"}`} data-testid="text-adicional-noturno">{fmtBRL(stats.adicionalNoturno ?? 0)}</span>
                   </div>
                 </div>
               </div>
