@@ -3,4 +3,5 @@
 - [Early return em register*Routes](route-registration-early-return.md) — desligar integração com `return` antecipado mata rotas seguintes do arquivo → HTML do Vite → "Unexpected token '<'"; use guards de prefixo.
 - [Conciliação de ponto RHID](rhid-reconciliation.md) — AFD append-only (404 PUT/DELETE→corretiva/unsupported); dedup import por (func,minuto) c/ adopt-external-id (decideImport), SEM device (prod=1 device); dup qualquer lado=duplicada; rotas exigem admin.
 - [Balanço receita canônica](balanco-canonical-revenue.md) — Balanço usa canonico.faturamento (calcularEscolta); Relatório de OS usa faturamento_live; nunca trocar, só adicionar campos. km_vazio sempre 0 (0/246 billings).
+- [Adicional noturno = só prêmio 20%](payroll-night-additional.md) — adicional noturno é valorHora×0,20×h em TODO o sistema (holerite/custo/Control iD), nunca ×1,20; CLT Art. 73; só pagamento, não faturamento.
 - [WhatsApp forward dedup](whatsapp-forward-dedup.md) — dedup é por-linha (whatsapp_forwarded_at), não por-OS; app duplica finalização → "Fim de Missão" sai 2x; throttle só espaça; trava por-OS resolve.

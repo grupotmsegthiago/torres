@@ -9,7 +9,7 @@
  *   1) Salário proporcional (base ÷ 30 × dias_trabalhados)
  *   2) Periculosidade (30% sobre salário proporcional)
  *   3) Horas Extras (sal_h × 1,60 × horas_extras)
- *   4) Adicional Noturno (sal_h × 1,20 × horas_noturnas)
+ *   4) Adicional Noturno (sal_h × 0,20 × horas_noturnas — só o prêmio; hora-base já no salário)
  *   5) DSR sobre HE + AdicNot
  *   6) Total Bruto Tributável (1+2+3+4+5)
  *   7) INSS progressivo 2025 (com teto)
@@ -113,7 +113,8 @@ export interface PayrollInput {
   horasNoturnas?: number;
   /** Multiplicador HE (default 1.60 = 60% adicional). */
   multiplicadorHE?: number;
-  /** Multiplicador adicional noturno (default 1.20 = 20% adicional). */
+  /** Multiplicador adicional noturno (default 0.20 = só o prêmio de 20%; a hora-base
+   * trabalhada à noite já está paga no salário mensal — CLT Art. 73). */
   multiplicadorAdicNot?: number;
   /** Dias úteis para refeição (seg-sex, exclui feriados). Default 0. */
   diasUteis?: number;
@@ -181,7 +182,7 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     horasExtras = 0,
     horasNoturnas = 0,
     multiplicadorHE = 1.6,
-    multiplicadorAdicNot = 1.2,
+    multiplicadorAdicNot = 0.2,
     diasUteis = 0,
     diasUteisDSR = 25,
     refeicaoDiaria = 0,

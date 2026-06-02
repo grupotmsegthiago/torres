@@ -59,3 +59,43 @@ test("calcularFolha não-CLT preserva vencimentos (salário/peric/HE/VR)", () =>
   assert.ok(f.horasExtrasValor > 0, "HE preservada");
   assert.equal(f.refeicao, 946, "VR preservado (43 × 22)");
 });
+
+test("calcularFolha adicional noturno = só o prêmio de 20% (valorHora × 0.20 × horasNoturnas)", () => {
+  // valorHora = 2200/220 = 10; 10h noturnas → prêmio = 10 × 0.20 × 10 = 20.00
+  const f = calcularFolha({
+    salarioBaseCheio: 2200,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0,
+    horasNoturnas: 10,
+  });
+  assert.equal(f.adicionalNoturnoValor, 20, "deve pagar só o prêmio de 20%, não 1.20× a hora cheia");
+});
+
+test("calcularFolha adicional noturno bate com a fórmula do Control iD (mesmo padrão 20%)", () => {
+  // Mesmo cálculo usado em buildFolhaStats (server/control-id.ts): valorHora × pct × horas.
+  const salarioBaseCheio = 2563.60;
+  const horasMensais = 220;
+  const horasNoturnas = 3.47;
+  const valorHora = salarioBaseCheio / horasMensais;
+  const esperado = +(valorHora * 0.2 * horasNoturnas).toFixed(2);
+  const f = calcularFolha({ salarioBaseCheio, diasTrabalhados: 30, horasMensais, periculosidadePct: 0, horasNoturnas });
+  assert.ok(Math.abs(f.adicionalNoturnoValor - esperado) < 0.02, `holerite (${f.adicionalNoturnoValor}) deve casar com Control iD (${esperado})`);
+});
+
+test("calcularFolha adicional noturno 20% reflete em DSR e baseTributável (não 120%)", () => {
+  // valorHora=10, 10h noturnas → adicional=20 (não 120). diasDescanso=30-25=5.
+  // dsr = (0 HE + 20) × (5/25) = 4. baseTributável = 2200 + 0 + 0 + 20 + 4 = 2224.
+  const f = calcularFolha({
+    salarioBaseCheio: 2200,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0,
+    horasNoturnas: 10,
+    diasUteisDSR: 25,
+    isClt: true,
+  });
+  assert.equal(f.adicionalNoturnoValor, 20);
+  assert.equal(f.dsr, 4, "DSR deve incidir sobre o prêmio de 20 (não sobre 120)");
+  assert.equal(f.baseTributavel, 2224, "base tributável reflete adicional de 20% + DSR");
+});
