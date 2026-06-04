@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, shortLocal } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -48,6 +48,52 @@ test("looksLikeSummaryRequest: reconhece pedidos de resumo", () => {
 test("looksLikeSummaryRequest: ignora conversa fiada e pedidos de OS específica", () => {
   for (const t of ["bom dia", "ok obrigado", "cadê a OS 236", "alguma previsão?", "", "ab"]) {
     assert.equal(looksLikeSummaryRequest(t), false, `não deveria reconhecer: ${JSON.stringify(t)}`);
+  }
+});
+
+test("conversa social cai FORA dos 3 fluxos operacionais (→ conversa natural)", () => {
+  // Mensagens sociais não devem casar com resumo, km final NEM pedido de
+  // atualização. Assim o handler cai no fallback de conversa natural em vez de
+  // silêncio. (looksLikeUpdateRequest com hasQuoted=false.)
+  for (const t of [
+    "bom dia, tudo bem?",
+    "muito obrigado pelo trabalho de vocês!",
+    "vocês são ótimos, parabéns pela equipe",
+    "boa tarde",
+    "valeu demais 🙏",
+  ]) {
+    assert.equal(looksLikeSummaryRequest(t), false, `resumo não deveria casar: ${t}`);
+    assert.equal(looksLikeFinalKm(t), false, `km final não deveria casar: ${t}`);
+    assert.equal(looksLikeUpdateRequest(t, false), false, `update não deveria casar: ${t}`);
+  }
+});
+
+test("sanitizeFinanceiro: bloqueia vazamento de valor/cobrança e desvia pro financeiro", () => {
+  for (const m of [
+    "Olá! A escolta de amanhã fica R$ 1.200, pode confirmar?",
+    "São 800 reais pela diária.",
+    "Te mando o boleto agora.",
+    "Pode pagar via pix.",
+    "Segue o orçamento da operação.",
+    "Sua fatura vence sexta.",
+    "A cobrança será feita amanhã.",
+    "O preço do serviço é fechado.",
+  ]) {
+    const out = sanitizeFinanceiro(m);
+    assert.notEqual(out, m, `deveria trocar a mensagem financeira: ${m}`);
+    assert.match(out, /financeiro/i, `desvio deveria citar o financeiro: ${m}`);
+  }
+});
+
+test("sanitizeFinanceiro: NÃO mexe em conversa social/operacional legítima", () => {
+  for (const m of [
+    "Bom dia, João! Tudo tranquilo por aí?",
+    "Conto com você pra atualizar a missão.",
+    "Vou verificar essa informação e já te retorno.",
+    "Sim, atendemos inclusive nos fins de semana!",
+    "Ficamos felizes em ouvir isso, obrigado pela confiança.",
+  ]) {
+    assert.equal(sanitizeFinanceiro(m), m, `não deveria alterar: ${m}`);
   }
 });
 

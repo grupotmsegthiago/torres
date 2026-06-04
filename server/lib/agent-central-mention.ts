@@ -21,7 +21,7 @@
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
 import { sendText, sendImageWithCaption, isZapiConfigured } from "./zapi";
-import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader } from "./whatsapp-humanize";
+import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
 import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
 
@@ -663,6 +663,131 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
   }
 }
 
+// ── Conversa natural (fallback humanizado) ──────────────────────────────────
+// Quando a mensagem NÃO cai em nenhum fluxo operacional (resumo, km final,
+// pedido de atualização), em vez de ficar calado o robô responde como uma
+// pessoa: cordial, breve, variando as palavras. TRAVAS: nunca inventa dado
+// operacional e nunca fala de valores/financeiro. Só atua em grupo vinculado a
+// um cliente, com throttle pra não virar tempestade nem aumentar risco de ban.
+const naturalReplyThrottle = new Map<string, number>();
+const NATURAL_REPLY_THROTTLE_MS = 15_000;
+
+// Pós-filtro de segurança: mesmo com a trava no prompt, se a IA escapar e citar
+// valor/cobrança/pix/boleto/orçamento, NÃO mandamos pro cliente — trocamos por
+// um desvio neutro pro financeiro. (A trava 1 — não inventar dado operacional —
+// fica só no prompt: detecção por regex daria muitos falsos positivos, ex.
+// "atendemos 24h", "fim de semana".)
+const FINANCEIRO_LEAK =
+  /(r\$\s*\d|\d+\s*(?:reais|mil\s*reais|contos?)|\bpix\b|\bboletos?\b|\bor[çc]ament\w*|\bfatur\w*|\bcobran\w*|\bpre[çc]o\w*)/i;
+const FINANCEIRO_DEFLEXOES = [
+  "Sobre valores, peço que aguarde um pouquinho — nosso setor financeiro retorna pra você por outro canal. 🙏",
+  "Essa parte de valores quem cuida é o nosso financeiro; eles entram em contato com você por outro canal, tá?",
+  "Para questões de valores, o setor financeiro fala diretamente com você por outro canal. Qualquer coisa operacional, estou à disposição!",
+];
+
+/** Bloqueia vazamento financeiro na resposta natural. Fail-safe pro desvio. */
+export function sanitizeFinanceiro(msg: string): string {
+  if (FINANCEIRO_LEAK.test(msg)) {
+    return FINANCEIRO_DEFLEXOES[randInt(0, FINANCEIRO_DEFLEXOES.length - 1)];
+  }
+  return msg;
+}
+
+/**
+ * Gera uma resposta de conversa natural via IA, com guarda-rails. Retorna null
+ * se não houver IA (melhor ficar calado do que mandar template robótico) ou se
+ * a IA falhar. Nunca lança.
+ */
+export async function buildNaturalReply(text: string, senderName: string | null): Promise<string | null> {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey) return null;
+  const nome = firstName(senderName);
+  try {
+    const openai = new OpenAI({ apiKey, baseURL, timeout: 6000, maxRetries: 0 });
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 1.0,
+      max_tokens: 160,
+      messages: [
+        {
+          role: "system",
+          content:
+            `Você é a "Central Torres", atendente HUMANA de uma empresa de escolta/segurança patrimonial, ` +
+            `conversando num grupo de WhatsApp de um CLIENTE. Responda de forma natural, cordial e BREVE ` +
+            `(1 a 2 frases), como uma pessoa de verdade. VARIE SEMPRE as palavras, a saudação e a estrutura — ` +
+            `nunca soe como um robô repetindo um template (isso causa bloqueio do WhatsApp). Português brasileiro, ` +
+            `no máximo 1 emoji (pode não usar nenhum).\n` +
+            `REGRAS INVIOLÁVEIS:\n` +
+            `1) NUNCA invente dados operacionais (horários, locais, KMs, placas, status/posição de missão, prazos, ` +
+            `previsões). Se a pessoa perguntar algo assim e você não tem o dado, diga com naturalidade que vai verificar ` +
+            `e já retorna — sem chutar.\n` +
+            `2) NUNCA fale sobre valores, preços, cobranças, faturamento, boletos ou qualquer assunto financeiro. ` +
+            `Se perguntarem, diga educadamente que o setor financeiro retorna por outro canal.\n` +
+            `3) Não prometa nada específico que dependa de um dado que você não tem.\n` +
+            `Se a pessoa só cumprimentou, agradeceu ou fez conversa social, responda no mesmo tom, simpático e curto. ` +
+            `Responda SÓ com a mensagem, sem aspas.`,
+        },
+        {
+          role: "user",
+          content: `${nome ? `Pessoa que escreveu: ${nome}. ` : ""}Mensagem recebida no grupo: "${text}"`,
+        },
+      ],
+    });
+    const out = response.choices?.[0]?.message?.content?.trim();
+    return out && out.length > 0 ? out : null;
+  } catch (e: any) {
+    console.warn("[agent-central-mention] buildNaturalReply falhou:", e?.message);
+    return null;
+  }
+}
+
+/**
+ * Responde de forma natural quando a mensagem do grupo não casou com nenhum
+ * fluxo operacional. Só atua em grupo vinculado a cliente. Fail-open.
+ */
+export async function handleNaturalConversation(parsed: ParsedGroupMsg): Promise<void> {
+  try {
+    if (!parsed.isGroup || parsed.fromMe) return;
+    const text = (parsed.text || "").trim();
+    if (text.length < 2) return; // mídia pura / vazio → não responde
+
+    // Throttle: não responde em rajada (protege contra storm e contra ban).
+    const last = naturalReplyThrottle.get(parsed.chatId) || 0;
+    if (Date.now() - last < NATURAL_REPLY_THROTTLE_MS) {
+      console.log(`[agent-central-mention] conversa natural no grupo ${parsed.chatId} ignorada (throttle ${NATURAL_REPLY_THROTTLE_MS / 1000}s)`);
+      return;
+    }
+    // Reivindica a janela ANTES de qualquer await — fecha a corrida de webhooks
+    // concorrentes do mesmo grupo (dois passariam no check e disparariam juntos).
+    naturalReplyThrottle.set(parsed.chatId, Date.now());
+
+    // Só conversa em grupo que está vinculado a um cliente (não tagarela em
+    // grupos aleatórios em que o número porventura esteja).
+    const { data: cli } = await supabaseAdmin
+      .from("clients")
+      .select("id")
+      .eq("whatsapp_group_id", parsed.chatId)
+      .maybeSingle();
+    if (!cli?.id) {
+      console.log(`[agent-central-mention] conversa natural no grupo ${parsed.chatId} ignorada (grupo sem cliente vinculado)`);
+      return;
+    }
+
+    const raw = await buildNaturalReply(text, parsed.senderName);
+    if (!raw) return;
+    const reply = sanitizeFinanceiro(raw); // trava financeira pós-geração
+
+    // Ritmo humano: não responder instantâneo (resposta imediata cheira a robô)
+    // + "digitando..." antes do disparo.
+    await sleep(humanDelayMs(2000, 7000));
+    await sendText({ groupOrPhone: parsed.chatId, message: reply, delayTypingSeconds: randomTypingSeconds() });
+    console.log(`[agent-central-mention] resposta natural enviada ao grupo ${parsed.chatId}`);
+  } catch (e: any) {
+    console.warn("[agent-central-mention] handleNaturalConversation falhou:", e?.message);
+  }
+}
+
 /**
  * Ponto de entrada chamado pelo webhook. Fire-and-forget, nunca lança.
  */
@@ -696,15 +821,24 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       return;
     }
 
-    if (!looksLikeUpdateRequest(parsed.text, hasQuoted)) return;
+    // Não cheira a pedido operacional → conversa natural (em vez de silêncio).
+    if (!looksLikeUpdateRequest(parsed.text, hasQuoted)) {
+      await handleNaturalConversation(parsed);
+      return;
+    }
 
     const text = (parsed.text || "").trim();
     const extract = await extractIntent(text || quotedText || "");
-    if (!extract.isUpdateRequest) return;
+    // A IA concluiu que não é pedido de atualização → trata como conversa.
+    if (!extract.isUpdateRequest) {
+      await handleNaturalConversation(parsed);
+      return;
+    }
 
     const { os, via } = await resolveOs({ extract, quotedText, groupId: parsed.chatId });
     if (!os) {
-      console.log(`[agent-central-mention] pedido no grupo ${parsed.chatId} mas OS não resolvida (via=${via})`);
+      console.log(`[agent-central-mention] pedido no grupo ${parsed.chatId} mas OS não resolvida (via=${via}) — respondendo natural`);
+      await handleNaturalConversation(parsed);
       return;
     }
 
