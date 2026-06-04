@@ -117,8 +117,15 @@ export default function SelfiePage() {
     setSubmitting(true);
     try {
       const pos = await getPosition();
+      // O WAF do edge bloqueia (403) qualquer corpo com o prefixo
+      // `data:image/...;base64,`. Enviamos só o base64 cru + o mime; o
+      // servidor remonta o data URI antes de armazenar.
+      const m = /^data:(image\/[\w.+-]+);base64,([\s\S]*)$/.exec(capturedPhoto);
+      const photoMime = m?.[1] || "image/jpeg";
+      const photoData = m?.[2] ?? capturedPhoto;
       await apiRequest("POST", "/api/auth/login-selfie", {
-        photoData: capturedPhoto,
+        photoData,
+        photoMime,
         latitude: pos?.lat || null,
         longitude: pos?.lng || null,
       });

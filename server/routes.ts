@@ -20,6 +20,7 @@ import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
+import { normalizePhotoDataUri } from "./lib/photo-data-uri";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats, setSupabaseRef } from "./pg-fallback";
 import OpenAI from "openai";
@@ -1223,8 +1224,11 @@ async function ensureSystemSettingsTable() {
 
   app.post("/api/auth/login-selfie", requireAuth, async (req, res) => {
     const user = req.user!;
-    const { photoData, latitude, longitude } = req.body;
-    if (!photoData || typeof photoData !== "string" || photoData.length < 1000) {
+    const { latitude, longitude, photoMime } = req.body;
+    // Cliente envia base64 cru (sem prefixo data:) p/ não ser barrado pelo WAF
+    // do edge (403). Remontamos o data URI aqui — armazenamento/exibição inalterados.
+    const photoData = normalizePhotoDataUri(req.body.photoData, photoMime);
+    if (!photoData || photoData.length < 1000) {
       return res.status(400).json({ message: "Foto obrigatória" });
     }
     if (photoData.length > 5_000_000) {
