@@ -347,12 +347,12 @@ async function buildAck(requesterName: string, osNumber: string | null): Promise
     const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.9,
+      temperature: 1.0,
       max_tokens: 120,
       messages: [
         {
           role: "system",
-          content: `Você é a "Central Torres", atendente de uma empresa de escolta/segurança, respondendo num grupo de WhatsApp do cliente. Gere UMA resposta curta (1 a 2 frases), cordial e profissional, confirmando que recebeu o pedido e que VAI solicitar a atualização aos agentes agora, e que retorna assim que tiver. Varie SEMPRE o jeito de falar pra não soar robótico. Português brasileiro. Não use emojis em excesso (no máximo 1). Não invente horários nem dados. Se houver nome da pessoa, cumprimente pelo nome. Responda só com a mensagem, sem aspas.`,
+          content: `Você é a "Central Torres", atendente HUMANA de uma empresa de escolta/segurança, respondendo num grupo de WhatsApp do cliente. Gere UMA resposta curta (1 a 2 frases), cordial e profissional, confirmando que recebeu o pedido e que VAI solicitar a atualização aos agentes agora, e que retorna assim que tiver. VARIE SEMPRE não só as palavras mas a ESTRUTURA da frase: nem toda resposta precisa começar com saudação ou com o nome; alterne entre confirmar primeiro, agradecer, ir direto ao ponto, etc. NUNCA repita o mesmo molde "Olá X, recebi seu pedido... retorno assim que tiver novidades" — isso parece robô e causa bloqueio do WhatsApp. Português brasileiro, natural. No máximo 1 emoji (pode não usar). Não invente horários nem dados. Responda só com a mensagem, sem aspas.`,
         },
         {
           role: "user",
@@ -672,6 +672,36 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
 const naturalReplyThrottle = new Map<string, number>();
 const NATURAL_REPLY_THROTTLE_MS = 15_000;
 
+// Cooldown da CONFIRMAÇÃO de pedido de atualização POR GRUPO (não por OS). O
+// dedupe principal é por OS, mas quando o cliente manda dois pedidos seguidos de
+// OSs DIFERENTES (ex.: "Atualização tor-0259" e "Atualização Edvandro e Vitor"),
+// cada um resolvia uma OS distinta e ambos recebiam um "recebi seu pedido" quase
+// idêntico em sequência — cara de robô, risco de bloqueio. Aqui o ack visível no
+// grupo sai no MÁXIMO uma vez por janela; os agentes continuam sendo cobrados por
+// DM e os pedidos continuam registrados (a resposta real volta via fulfill).
+const ackThrottle = new Map<string, number>();
+const ACK_THROTTLE_MS = 90_000;
+
+/**
+ * Decide se deve mandar o ack visível no grupo agora. Reivindica a janela de
+ * forma atômica (set ANTES de qualquer await no chamador) pra fechar a corrida
+ * de webhooks concorrentes do mesmo grupo. Retorna false se um ack já saiu nos
+ * últimos ACK_THROTTLE_MS — nesse caso o pedido ainda é processado (cobra
+ * agentes, registra), só não duplica a mensagem no grupo. Exposto p/ teste.
+ */
+export function claimAckSlot(chatId: string, now: number = Date.now()): boolean {
+  const last = ackThrottle.get(chatId) || 0;
+  if (now - last < ACK_THROTTLE_MS) return false;
+  ackThrottle.set(chatId, now);
+  return true;
+}
+
+/** Libera o slot reivindicado (usar se o envio do ack falhar — senão o grupo
+ * ficaria até ACK_THROTTLE_MS sem nenhuma confirmação por uma falha de envio). */
+export function releaseAckSlot(chatId: string): void {
+  ackThrottle.delete(chatId);
+}
+
 // Pós-filtro de segurança: mesmo com a trava no prompt, se a IA escapar e citar
 // valor/cobrança/pix/boleto/orçamento, NÃO mandamos pro cliente — trocamos por
 // um desvio neutro pro financeiro. (A trava 1 — não inventar dado operacional —
@@ -863,6 +893,12 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       return;
     }
 
+    // Reivindica o slot de ack do GRUPO antes dos awaits (fecha corrida de
+    // webhooks). Se já mandamos um "recebi seu pedido" neste grupo há pouco
+    // (ex.: dois pedidos seguidos de OSs diferentes), NÃO duplicamos a mensagem
+    // — mas seguimos cobrando os agentes e registrando o pedido normalmente.
+    const sendAck = claimAckSlot(parsed.chatId);
+
     // Cobra os agentes por DM.
     const notified = await cobrarAgentes(os);
 
@@ -878,12 +914,25 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       })
       .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request falhou:", e?.message));
 
+    if (!sendAck) {
+      console.log(`[agent-central-mention] ack do grupo ${parsed.chatId} suprimido (já houve ack recente — evita 2ª msg robótica); agentes cobrados e pedido registrado normalmente`);
+      return;
+    }
+
     // Responde no grupo (cordial, variado).
     const ack = await buildAck(parsed.senderName || "", os.os_number || null);
     const finalMsg = notified > 0
       ? ack
       : `${ack}\n\n_(Obs.: não há contato de WhatsApp cadastrado para os agentes desta OS — acionando por outros meios.)_`;
-    await sendText({ groupOrPhone: parsed.chatId, message: finalMsg, delayTypingSeconds: randomTypingSeconds() });
+    try {
+      const sent = await sendText({ groupOrPhone: parsed.chatId, message: finalMsg, delayTypingSeconds: randomTypingSeconds() });
+      // Se o envio falhou, libera o slot pra não deixar o grupo até 90s sem
+      // nenhuma confirmação por causa de uma falha transitória de transporte.
+      if (!sent?.ok) releaseAckSlot(parsed.chatId);
+    } catch (e) {
+      releaseAckSlot(parsed.chatId);
+      throw e;
+    }
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }

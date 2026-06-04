@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -95,6 +95,24 @@ test("sanitizeFinanceiro: NÃO mexe em conversa social/operacional legítima", (
   ]) {
     assert.equal(sanitizeFinanceiro(m), m, `não deveria alterar: ${m}`);
   }
+});
+
+test("claimAckSlot: 2 pedidos seguidos no MESMO grupo → só 1 ack (anti-robô)", () => {
+  // Cenário real (Thiago): "Atualização tor-0259" e "Atualização Edvandro e
+  // Vitor" segundos depois. São OSs diferentes, então o dedupe por-OS não pega;
+  // o cooldown por-grupo precisa segurar a 2ª confirmação visível.
+  const grupo = "1203630xxxx@g.us";
+  const t0 = 1_000_000_000_000;
+  assert.equal(claimAckSlot(grupo, t0), true, "1º pedido deve mandar ack");
+  assert.equal(claimAckSlot(grupo, t0 + 5_000), false, "2º pedido 5s depois NÃO manda ack");
+  assert.equal(claimAckSlot(grupo, t0 + 60_000), false, "ainda dentro da janela (60s) → sem ack");
+  assert.equal(claimAckSlot(grupo, t0 + 90_001), true, "passou a janela (90s) → ack de novo");
+});
+
+test("claimAckSlot: grupos diferentes não interferem entre si", () => {
+  const t0 = 2_000_000_000_000;
+  assert.equal(claimAckSlot("grupoA@g.us", t0), true);
+  assert.equal(claimAckSlot("grupoB@g.us", t0 + 1_000), true, "grupo B é independente do A");
 });
 
 test("shortLocal: encurta endereços para Cidade/UF", () => {
