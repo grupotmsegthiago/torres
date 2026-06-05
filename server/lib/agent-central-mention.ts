@@ -737,6 +737,252 @@ export function releaseAckSlot(chatId: string): void {
   ackThrottle.delete(chatId);
 }
 
+// ===========================================================================
+// ACK DEFERIDO — "esperar a equipe antes de responder no grupo" (jun/2026)
+// ---------------------------------------------------------------------------
+// Combinado com o dono: quando um cliente pede atualização no grupo, a Central
+// NÃO responde na hora. Ela cobra os agentes por DM imediatamente (garante que
+// a atualização do campo venha), registra o pedido com ack_decide_at = agora +
+// ACK_WINDOW_MIN e fica QUIETA no grupo. Durante a janela:
+//  - se um membro da EQUIPE (telefone em employees) falar no grupo → o ack é
+//    suprimido (resolution 'team_handled'): a equipe está atendendo;
+//  - se a atualização chegar (fulfillGroupRequests marca fulfilled_at) → o ack
+//    é suprimido (resolution 'fulfilled'): a resposta real já saiu;
+//  - se a janela vencer sem equipe e sem atualização → o flush manda o ack
+//    ('sent'): ninguém atendeu, a Central entra.
+// O flush roda a cada 1min (cron) pra dar resposta rápida sem rajada.
+// ===========================================================================
+
+export const ACK_WINDOW_MIN = 5;
+
+/** Sufixo de 8 dígitos do telefone normalizado (""=inválido). Puro. */
+export function phoneSuffix8(phone: string | null): string {
+  const d = normalizePhone(phone);
+  return d && d.length >= 8 ? d.slice(-8) : "";
+}
+
+/** Telefone bate com algum sufixo conhecido da equipe? Puro (testável). */
+export function isTeamSuffixMatch(suffixes: Set<string>, phone: string | null): boolean {
+  const s = phoneSuffix8(phone);
+  return s.length === 8 && suffixes.has(s);
+}
+
+/**
+ * Decisão PURA do flush: dada a lista de acks pendentes vencidos, separa o que
+ * mandar (1 ack por grupo), o que suprimir por já ter sido entregue (fulfilled)
+ * e o que já fica coberto pelo ack do mesmo grupo neste ciclo. Testável.
+ */
+export function planAckFlush<T extends { id: number; group_id: string; fulfilled_at: string | null }>(
+  rows: T[],
+): { toAck: T[]; toSuppressFulfilled: T[]; coveredByGroupAck: T[] } {
+  const toAck: T[] = [];
+  const toSuppressFulfilled: T[] = [];
+  const coveredByGroupAck: T[] = [];
+  const seenGroups = new Set<string>();
+  for (const r of rows) {
+    if (r.fulfilled_at) { toSuppressFulfilled.push(r); continue; }
+    const g = String(r.group_id);
+    if (seenGroups.has(g)) { coveredByGroupAck.push(r); continue; }
+    seenGroups.add(g);
+    toAck.push(r);
+  }
+  return { toAck, toSuppressFulfilled, coveredByGroupAck };
+}
+
+// Cache em memória dos sufixos de telefone da equipe (employees). Evita uma
+// query por mensagem de grupo. TTL curto: novos funcionários entram em até 5min.
+let teamPhoneCache: { suffixes: Set<string>; at: number } | null = null;
+const TEAM_PHONE_TTL_MS = 5 * 60 * 1000;
+
+async function loadTeamPhoneSuffixes(): Promise<Set<string>> {
+  const now = Date.now();
+  if (teamPhoneCache && now - teamPhoneCache.at < TEAM_PHONE_TTL_MS) {
+    return teamPhoneCache.suffixes;
+  }
+  const suffixes = new Set<string>();
+  try {
+    const { data } = await supabaseAdmin
+      .from("employees")
+      .select("phone")
+      .not("phone", "is", null);
+    for (const e of (data || []) as any[]) {
+      const s = phoneSuffix8(e.phone);
+      if (s) suffixes.add(s);
+    }
+  } catch (e: any) {
+    console.warn("[agent-central-mention] loadTeamPhoneSuffixes falhou:", e?.message);
+    // Em falha de leitura, devolve o cache antigo (se houver) pra não tratar
+    // toda a equipe como cliente; senão, set vazio (fail-open: nada suprimido).
+    if (teamPhoneCache) return teamPhoneCache.suffixes;
+  }
+  teamPhoneCache = { suffixes, at: now };
+  return suffixes;
+}
+
+/** É um número da equipe (funcionário)? Usa cache de sufixos. */
+export async function isTeamMemberPhone(phone: string | null): Promise<boolean> {
+  if (!phone) return false;
+  const suffixes = await loadTeamPhoneSuffixes();
+  return isTeamSuffixMatch(suffixes, phone);
+}
+
+/**
+ * Suprime (resolve) os acks deferidos pendentes de um grupo — usado quando um
+ * membro da equipe fala no grupo (a equipe está atendendo). Retorna quantos
+ * pedidos foram suprimidos. Fail-open: nunca lança.
+ */
+export async function suppressPendingAcksForGroup(
+  groupId: string,
+  resolution: "team_handled" | "fulfilled",
+): Promise<number> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("agent_central_group_requests")
+      .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: resolution })
+      .eq("group_id", groupId)
+      .not("ack_decide_at", "is", null)
+      .is("ack_resolved_at", null)
+      .select("id");
+    return (data || []).length;
+  } catch (e: any) {
+    console.warn("[agent-central-mention] suppressPendingAcksForGroup falhou:", e?.message);
+    return 0;
+  }
+}
+
+/** Marca um ack como resolvido com a resolução dada. Fail-open. */
+async function resolveAck(id: number, resolution: "sent" | "team_handled" | "fulfilled"): Promise<void> {
+  await supabaseAdmin
+    .from("agent_central_group_requests")
+    .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: resolution })
+    .eq("id", id)
+    .then(() => {}, (e: any) => console.warn("[agent-central-mention] resolveAck falhou:", e?.message));
+}
+
+/**
+ * Reverte um claim de ack (volta a linha p/ pendente) quando o envio do ack
+ * falhou — assim o próximo flush tenta de novo. Fail-open.
+ */
+async function revertAckClaim(id: number): Promise<void> {
+  await supabaseAdmin
+    .from("agent_central_group_requests")
+    .update({ ack_resolved_at: null, ack_resolution: null })
+    .eq("id", id)
+    .then(() => {}, (e: any) => console.warn("[agent-central-mention] revertAckClaim falhou:", e?.message));
+}
+
+interface PendingAckRow {
+  id: number;
+  group_id: string;
+  service_order_id: number;
+  requester_name: string | null;
+  fulfilled_at: string | null;
+}
+
+/**
+ * Flush dos acks deferidos vencidos. Chamado pelo cron a cada 1min. Para cada
+ * pedido cujo ack_decide_at já passou e que segue sem resolução:
+ *  - já entregue (fulfilled_at) → resolve 'fulfilled' (sem ack);
+ *  - senão → manda o ack no grupo (1 por grupo/ciclo) e resolve 'sent'.
+ * Fail-open: nunca lança. Retorna contadores pro log.
+ */
+export async function flushDeferredGroupAcks(): Promise<{ sent: number; suppressed: number; covered: number }> {
+  const res = { sent: 0, suppressed: 0, covered: 0 };
+  try {
+    if (!isZapiConfigured()) return res;
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await supabaseAdmin
+      .from("agent_central_group_requests")
+      .select("id, group_id, service_order_id, requester_name, fulfilled_at")
+      .not("ack_decide_at", "is", null)
+      .is("ack_resolved_at", null)
+      .lte("ack_decide_at", nowIso)
+      .order("ack_decide_at", { ascending: true });
+    if (error) {
+      console.warn("[agent-central-mention] flushDeferredGroupAcks query falhou:", error.message);
+      return res;
+    }
+    const rows = (due || []) as PendingAckRow[];
+    if (rows.length === 0) return res;
+
+    const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush(rows);
+
+    // 1) Suprime os já entregues (a atualização real já foi ao grupo).
+    for (const r of toSuppressFulfilled) {
+      await resolveAck(r.id, "fulfilled");
+      res.suppressed++;
+    }
+    // 2) Coberto pelo ack do mesmo grupo neste ciclo (não duplica mensagem).
+    for (const r of coveredByGroupAck) {
+      await resolveAck(r.id, "sent");
+      res.covered++;
+    }
+    // 3) Manda o ack (ninguém da equipe atendeu na janela). Busca os nº de OS.
+    if (toAck.length > 0) {
+      const osIds = Array.from(new Set(toAck.map((r) => r.service_order_id)));
+      const osNumById = new Map<number, string | null>();
+      try {
+        const { data: osRows } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, os_number")
+          .in("id", osIds);
+        for (const o of (osRows || []) as any[]) osNumById.set(o.id, o.os_number);
+      } catch { /* segue sem nº de OS */ }
+
+      let firstSend = true;
+      for (const r of toAck) {
+        const gid = String(r.group_id);
+        // Throttle por grupo (mesma trava do fluxo síncrono): no máx 1 ack/janela.
+        if (!claimAckSlot(gid)) { await resolveAck(r.id, "sent"); res.covered++; continue; }
+        // CLAIM ATÔMICO: marca a linha resolvida ANTES de enviar, mas só se ela
+        // AINDA está pendente E não foi entregue. Fecha a corrida com
+        // fulfillGroupRequests/suppressPendingAcksForGroup que podem ter rodado
+        // entre o select e este envio — se qualquer um resolveu/entregou, o
+        // claim devolve 0 linhas e NÃO mandamos ack no grupo (equipe atendendo).
+        let claimedOk = false;
+        try {
+          const { data: claimed } = await supabaseAdmin
+            .from("agent_central_group_requests")
+            .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: "sent" })
+            .eq("id", r.id)
+            .is("ack_resolved_at", null)
+            .is("fulfilled_at", null)
+            .select("id");
+          claimedOk = !!claimed && claimed.length > 0;
+        } catch (e: any) {
+          console.warn("[agent-central-mention] flush claim falhou:", e?.message);
+        }
+        if (!claimedOk) {
+          // Já resolvido/entregue por evento concorrente → não envia.
+          releaseAckSlot(gid);
+          res.covered++;
+          continue;
+        }
+        try {
+          const ack = await buildAck(r.requester_name || "", osNumById.get(r.service_order_id) || null);
+          if (!firstSend) await sleep(humanDelayMs());
+          firstSend = false;
+          const sent = await sendText({ groupOrPhone: gid, message: ack, delayTypingSeconds: randomTypingSeconds() });
+          if (sent?.ok) {
+            res.sent++;
+          } else {
+            // Envio falhou: REVERTE o claim p/ tentar de novo no próximo flush.
+            await revertAckClaim(r.id);
+            releaseAckSlot(gid);
+          }
+        } catch (e: any) {
+          await revertAckClaim(r.id);
+          releaseAckSlot(gid);
+          console.warn("[agent-central-mention] flush ack envio falhou:", e?.message);
+        }
+      }
+    }
+  } catch (e: any) {
+    console.warn("[agent-central-mention] flushDeferredGroupAcks falhou:", e?.message);
+  }
+  return res;
+}
+
 // Pós-filtro de segurança: mesmo com a trava no prompt, se a IA escapar e citar
 // valor/cobrança/pix/boleto/orçamento, NÃO mandamos pro cliente — trocamos por
 // um desvio neutro pro financeiro. (A trava 1 — não inventar dado operacional —
@@ -861,6 +1107,19 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     if (!parsed.isGroup || parsed.fromMe) return;
     if (!isZapiConfigured()) return;
 
+    // EQUIPE ATENDENDO: se quem falou no grupo é um funcionário (telefone em
+    // employees), a Central entende que a equipe já está atendendo e SUPRIME
+    // qualquer ack deferido pendente deste grupo — não "entra" por cima da
+    // equipe. A cobrança por DM ao agente já foi feita no momento do pedido, e a
+    // atualização real ainda volta via fulfillGroupRequests. Não interrompe o
+    // resto do fluxo (o membro da equipe pode pedir resumo/km normalmente).
+    if (parsed.senderPhone && (await isTeamMemberPhone(parsed.senderPhone))) {
+      const n = await suppressPendingAcksForGroup(parsed.chatId, "team_handled");
+      if (n > 0) {
+        console.log(`[agent-central-mention] equipe (${parsed.senderName || parsed.senderPhone}) falou no grupo ${parsed.chatId} — ${n} ack(s) deferido(s) suprimido(s) (equipe atendendo)`);
+      }
+    }
+
     // Marcaram a Central (@menção)? O dono reverteu a "conversa ampla" de jun/2026:
     // fora de assunto de OS, o agente SÓ responde quando for marcado. Sem menção e
     // sem assunto de OS → silêncio.
@@ -944,16 +1203,15 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       return;
     }
 
-    // Reivindica o slot de ack do GRUPO antes dos awaits (fecha corrida de
-    // webhooks). Se já mandamos um "recebi seu pedido" neste grupo há pouco
-    // (ex.: dois pedidos seguidos de OSs diferentes), NÃO duplicamos a mensagem
-    // — mas seguimos cobrando os agentes e registrando o pedido normalmente.
-    const sendAck = claimAckSlot(parsed.chatId);
+    // Cobra os agentes por DM IMEDIATAMENTE (garante que a atualização do campo
+    // venha, mesmo que a equipe assuma a conversa no grupo).
+    await cobrarAgentes(os);
 
-    // Cobra os agentes por DM.
-    const notified = await cobrarAgentes(os);
-
-    // Registra o pedido aberto pra encaminhar a próxima atualização de volta.
+    // ACK DEFERIDO: a Central NÃO responde no grupo agora. Registra o pedido com
+    // ack_decide_at = agora + ACK_WINDOW_MIN e fica quieta. Se um membro da
+    // equipe falar no grupo (ou a atualização chegar) dentro da janela, o ack é
+    // suprimido. Senão, o flush (cron 1min) manda o ack quando a janela vencer.
+    const ackDecideAt = new Date(Date.now() + ACK_WINDOW_MIN * 60 * 1000).toISOString();
     await supabaseAdmin
       .from("agent_central_group_requests")
       .insert({
@@ -962,28 +1220,11 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
         requester_name: parsed.senderName || null,
         requester_phone: parsed.senderPhone || null,
         source_message_id: parsed.zapiMessageId || null,
+        ack_decide_at: ackDecideAt,
       })
       .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request falhou:", e?.message));
 
-    if (!sendAck) {
-      console.log(`[agent-central-mention] ack do grupo ${parsed.chatId} suprimido (já houve ack recente — evita 2ª msg robótica); agentes cobrados e pedido registrado normalmente`);
-      return;
-    }
-
-    // Responde no grupo (cordial, variado).
-    const ack = await buildAck(parsed.senderName || "", os.os_number || null);
-    const finalMsg = notified > 0
-      ? ack
-      : `${ack}\n\n_(Obs.: não há contato de WhatsApp cadastrado para os agentes desta OS — acionando por outros meios.)_`;
-    try {
-      const sent = await sendText({ groupOrPhone: parsed.chatId, message: finalMsg, delayTypingSeconds: randomTypingSeconds() });
-      // Se o envio falhou, libera o slot pra não deixar o grupo até 90s sem
-      // nenhuma confirmação por causa de uma falha transitória de transporte.
-      if (!sent?.ok) releaseAckSlot(parsed.chatId);
-    } catch (e) {
-      releaseAckSlot(parsed.chatId);
-      throw e;
-    }
+    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: agentes cobrados por DM; ack deferido por ${ACK_WINDOW_MIN}min (aguardando a equipe atender antes de responder no grupo)`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }

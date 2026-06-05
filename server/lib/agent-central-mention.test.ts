@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planAckFlush } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -170,4 +170,46 @@ test("regra do dono: social sem menção → IGNORA; OS ou menção → responde
   assert.equal(looksLikeUpdateRequest("Atualização Andre e Carlos", false), true);
   // (c) marcaram o bot numa conversa social → responde (natural)
   assert.equal(isBotMentioned({ ni: BOT, text: { message: `@${BOT} obrigado pelo apoio!` } }), true);
+});
+
+// ===========================================================================
+// ACK DEFERIDO — "esperar a equipe antes de responder no grupo"
+// ===========================================================================
+
+test("phoneSuffix8: extrai os 8 últimos dígitos do telefone normalizado", () => {
+  assert.equal(phoneSuffix8("5511916893018"), "16893018");
+  assert.equal(phoneSuffix8("(11) 91689-3018"), "16893018");
+  assert.equal(phoneSuffix8(null), "");
+  assert.equal(phoneSuffix8("123"), ""); // < 8 dígitos
+});
+
+test("isTeamSuffixMatch: reconhece número da equipe pelos 8 dígitos finais (ignora DDI/formatos)", () => {
+  const equipe = new Set(["16893018", "55304083"]);
+  // mesmo número com DDI 55 + DDD → bate pelos 8 finais
+  assert.equal(isTeamSuffixMatch(equipe, "5511916893018"), true);
+  assert.equal(isTeamSuffixMatch(equipe, "11955304083"), true);
+  // número de cliente que não está na equipe → não bate
+  assert.equal(isTeamSuffixMatch(equipe, "5511999998888"), false);
+  assert.equal(isTeamSuffixMatch(equipe, null), false);
+  assert.equal(isTeamSuffixMatch(equipe, "999"), false);
+});
+
+test("planAckFlush: 1 ack por grupo, suprime já-entregue, cobre duplicados do mesmo grupo", () => {
+  const rows = [
+    { id: 1, group_id: "G1", fulfilled_at: null },          // → ack
+    { id: 2, group_id: "G1", fulfilled_at: null },          // → coberto pelo ack do G1
+    { id: 3, group_id: "G2", fulfilled_at: "2026-06-05" },  // → suprimido (já entregue)
+    { id: 4, group_id: "G3", fulfilled_at: null },          // → ack
+  ];
+  const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush(rows);
+  assert.deepEqual(toAck.map((r) => r.id), [1, 4]);
+  assert.deepEqual(coveredByGroupAck.map((r) => r.id), [2]);
+  assert.deepEqual(toSuppressFulfilled.map((r) => r.id), [3]);
+});
+
+test("planAckFlush: lista vazia → nada a fazer", () => {
+  const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush([]);
+  assert.equal(toAck.length, 0);
+  assert.equal(toSuppressFulfilled.length, 0);
+  assert.equal(coveredByGroupAck.length, 0);
 });

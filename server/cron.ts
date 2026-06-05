@@ -1018,7 +1018,28 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | AgenteCentral (a cada 5min — cobra updates via WhatsApp) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
+  // Agente Central — FLUSH do ack deferido: a cada 1min decide os pedidos cuja
+  // janela de espera (5min) venceu. Se ninguém da equipe atendeu no grupo e a
+  // atualização não chegou, manda o "recebi seu pedido" agora; senão suprime.
+  // Query barata (índice idx_acgr_ack_pending), normalmente 0 linhas.
+  let agentCentralAckRunning = false;
+  cron.schedule("* * * * *", async () => {
+    if (agentCentralAckRunning) return;
+    agentCentralAckRunning = true;
+    try {
+      const { flushDeferredGroupAcks } = await import("./lib/agent-central-mention");
+      const r = await flushDeferredGroupAcks();
+      if (r.sent > 0 || r.suppressed > 0 || r.covered > 0) {
+        log(`CRON AgenteCentral-Ack: ${r.sent} ack(s) enviado(s), ${r.suppressed} suprimido(s) (já entregue), ${r.covered} coberto(s) por ack do grupo`, "cron");
+      }
+    } catch (e: any) {
+      log(`CRON AgenteCentral-Ack: Erro: ${e.message}`, "cron");
+    } finally {
+      agentCentralAckRunning = false;
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | AgenteCentral (a cada 5min — cobra updates via WhatsApp) | AgenteCentral-Ack (a cada 1min — flush do ack deferido) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
 }
 
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];

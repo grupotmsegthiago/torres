@@ -756,6 +756,19 @@ export async function ensureDbSchema() {
       ON agent_central_group_requests (service_order_id)
       WHERE fulfilled_at IS NULL
     `).catch(() => {});
+    // Ack DEFERIDO (jun/2026): a Central espera ACK_WINDOW_MIN antes de responder
+    // no grupo. Se a equipe falar no grupo nesse meio-tempo (ou a atualização
+    // chegar), o ack é suprimido. ack_decide_at = quando decidir; ack_resolved_at
+    // = quando foi decidido; ack_resolution = 'sent'|'team_handled'|'fulfilled'.
+    await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_decide_at TIMESTAMPTZ`).catch(() => {});
+    await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_resolved_at TIMESTAMPTZ`).catch(() => {});
+    await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_resolution TEXT`).catch(() => {});
+    // Índice pro flush: pega só os acks pendentes (deferido e ainda não resolvido).
+    await execSql(`
+      CREATE INDEX IF NOT EXISTS idx_acgr_ack_pending
+      ON agent_central_group_requests (ack_decide_at)
+      WHERE ack_decide_at IS NOT NULL AND ack_resolved_at IS NULL
+    `).catch(() => {});
     // Permite batidas manuais sem external_id (RHID ainda não sincronizou).
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN external_id DROP NOT NULL`).catch(() => {});
     // Permite batidas manuais sem device_id / control_id_user_id (funcionário ainda
