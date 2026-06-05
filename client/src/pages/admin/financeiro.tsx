@@ -1900,6 +1900,12 @@ export default function FinanceiroPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const cancelarAguardandoMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/financial/transactions/${id}/cancelar`),
+    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Lançamento cancelado" }); },
+    onError: (err: Error) => toast({ title: "Erro ao cancelar", description: err.message, variant: "destructive" }),
+  });
+
   const uploadComprovanteMutation = useMutation({
     mutationFn: async ({ id, file }: { id: string; file: File }) => {
       const buf = await file.arrayBuffer();
@@ -3149,45 +3155,55 @@ export default function FinanceiroPage() {
                       <td className="px-4 py-3 text-xs font-bold text-neutral-600">{t.solicitado_por || "—"}</td>
                       <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
                       <td className="px-4 py-3 text-right">
-                        {!isThiagoAprovador ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-100 text-neutral-500 text-[10px] font-black uppercase italic" data-testid={`text-aguardando-readonly-${t.id}`} title="Apenas a diretoria pode aprovar ou recusar">
-                            <Lock size={10} /> Aguardando diretoria
-                          </span>
-                        ) : (
-                        <div className="flex justify-end gap-1.5">
-                          {isSeries && pendingInSeries > 1 ? (
-                            <button
-                              onClick={() => {
-                                const totalValor = aguardandoAprovacao
-                                  .filter(x => x.installment_group === t.installment_group)
-                                  .reduce((s, x) => s + Number(x.amount || 0), 0);
-                                if (confirm(`Aprovar TODAS as ${pendingInSeries} parcelas pendentes desta série de uma vez?\n\nTotal: ${formatCurrency(totalValor)}`)) {
-                                  aprovarSerieMutation.mutate(t.id);
-                                }
-                              }}
-                              disabled={aprovarSerieMutation.isPending}
-                              className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50"
-                              data-testid={`button-aprovar-serie-${t.id}`}
-                              title={`Aprova as ${pendingInSeries} parcelas pendentes da série numa tacada só`}>
-                              <CheckCircle2 size={12} /> Aprovar Série ({pendingInSeries}×)
-                            </button>
-                          ) : (
-                            <button onClick={() => aprovarMutation.mutate(t.id)} disabled={aprovarMutation.isPending}
-                              className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-aprovar-${t.id}`}>
-                              <CheckCircle2 size={12} /> Aprovar
-                            </button>
+                        <div className="flex justify-end gap-1.5 flex-wrap">
+                          {isThiagoAprovador && (
+                            isSeries && pendingInSeries > 1 ? (
+                              <button
+                                onClick={() => {
+                                  const totalValor = aguardandoAprovacao
+                                    .filter(x => x.installment_group === t.installment_group)
+                                    .reduce((s, x) => s + Number(x.amount || 0), 0);
+                                  if (confirm(`Aprovar TODAS as ${pendingInSeries} parcelas pendentes desta série de uma vez?\n\nTotal: ${formatCurrency(totalValor)}`)) {
+                                    aprovarSerieMutation.mutate(t.id);
+                                  }
+                                }}
+                                disabled={aprovarSerieMutation.isPending}
+                                className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50"
+                                data-testid={`button-aprovar-serie-${t.id}`}
+                                title={`Aprova as ${pendingInSeries} parcelas pendentes da série numa tacada só`}>
+                                <CheckCircle2 size={12} /> Aprovar Série ({pendingInSeries}×)
+                              </button>
+                            ) : (
+                              <button onClick={() => aprovarMutation.mutate(t.id)} disabled={aprovarMutation.isPending}
+                                className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-aprovar-${t.id}`}>
+                                <CheckCircle2 size={12} /> Aprovar
+                              </button>
+                            )
                           )}
+                          {/* Editar e Cancelar: disponíveis para TODOS enquanto aguarda aprovação.
+                              Depois de aprovado o lançamento sai desta aba e não pode mais ser cancelado (trava no servidor). */}
                           <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }}
                             className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase flex items-center gap-1" data-testid={`button-editar-aguardando-${t.id}`}
-                            title="Editar este lançamento antes de aprovar/recusar">
+                            title="Editar este lançamento enquanto aguarda aprovação">
                             <Edit size={12} /> Editar
                           </button>
-                          <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
-                            className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
-                            <X size={12} /> Recusar
+                          <button onClick={() => {
+                              if (confirm(`Cancelar este lançamento?\n\n${t.description} — ${formatCurrency(Number(t.amount))}\n\nSó é possível enquanto aguarda aprovação. Depois de aprovado, fale com a diretoria.`)) {
+                                cancelarAguardandoMutation.mutate(t.id);
+                              }
+                            }}
+                            disabled={cancelarAguardandoMutation.isPending}
+                            className="px-2.5 py-1 rounded bg-neutral-600 hover:bg-neutral-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-cancelar-aguardando-${t.id}`}
+                            title="Cancelar este lançamento (só antes da aprovação)">
+                            <X size={12} /> Cancelar
                           </button>
+                          {isThiagoAprovador && (
+                            <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
+                              className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
+                              <X size={12} /> Recusar
+                            </button>
+                          )}
                         </div>
-                        )}
                       </td>
                     </tr>
                     );

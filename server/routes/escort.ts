@@ -7,6 +7,7 @@ import type { Express } from "express";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
+  import { canCancelAguardando } from "../lib/financial-cancel-guard";
 
   export function registerEscortRoutes(app: Express) {
     // ==================== FINANCIAL MODULE ====================
@@ -823,6 +824,39 @@ import type { Express } from "express";
       ], user.name, user.id, "Exclusão manual");
       const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("id", req.params.id);
       if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Cancelar lançamento ainda EM APROVAÇÃO — disponível para o solicitante (admin),
+  // não só diretoria. Só funciona enquanto status === AGUARDANDO_APROVACAO; depois de
+  // aprovado/recusado a rota recusa (a guarda em canCancelAguardando garante isso).
+  app.delete("/api/financial/transactions/:id/cancelar", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const guard = canCancelAguardando(existing);
+      if (!guard.ok) return res.status(guard.code).json({ message: guard.message });
+      // Delete ATÔMICO: condiciona o DELETE a status=AGUARDANDO_APROVACAO para fechar
+      // a janela TOCTOU — se a diretoria aprovar entre o select e o delete, nada é apagado.
+      const { data: deleted, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("status", "AGUARDANDO_APROVACAO")
+        .select();
+      if (error) throw error;
+      if (!deleted || deleted.length === 0) {
+        return res.status(409).json({ message: "Lançamento não está mais aguardando aprovação — não pode ser cancelado." });
+      }
+      await logFinancialAudit("financial_transactions", req.params.id, "DELETE", [
+        { field: "description", old: existing.description, new_val: null },
+        { field: "amount", old: existing.amount, new_val: null },
+        { field: "status", old: existing.status, new_val: "CANCELADO" },
+      ], user.name, user.id, "Cancelado pelo solicitante antes da aprovação");
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

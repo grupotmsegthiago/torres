@@ -214,3 +214,119 @@ formatBRT(date: string | Date | null | undefined): string
 - [ ] Nenhum valor hardcoded — tudo dinâmico do banco
 - [ ] `data-testid` em todos os elementos interativos novos
 - [ ] CRON billing usa `supabaseAdmin.from()` (REST), nunca `storage.getServiceOrders()`
+
+---
+
+## 8. REGRAS INTOCÁVEIS — Financeiro / Faturamento (NUNCA alterar sem ordem explícita do dono)
+
+> Estabelecidas e testadas em produção. Não modificar a lógica subjacente sem pedido direto do dono. Se uma task parecer exigir alteração, **PARE e pergunte antes**.
+
+### 8.1 OS Recusada = faturamento zerado, sempre
+- **Significado de negócio:** "Recusada" = o operacional NÃO atendeu a missão (sem equipe, viatura não saiu, etc.). Nunca pode gerar cobrança.
+- **Regra técnica:**
+  - Quando `service_orders.status = "recusada"`, **todos** os `fat_*` do `escort_billings` associado devem ser **0** (fat_total, fat_acionamento, fat_hora_extra, fat_km, fat_km_carregado, fat_km_vazio, fat_estadia, fat_pernoite, fat_diaria, fat_adicional_noturno, resultado_bruto, resultado_liquido, margem_percentual).
+  - O `bill.status` vira `"CANCELADO"` e `observacoes = "OS RECUSADA — <motivo>"`.
+  - A zeragem é **incondicional** — sobrescreve qualquer status anterior do billing (inclusive CANCELADO/REJEITADA/A_VERIFICAR). Recusada da OS é a verdade final.
+  - Implementação: `server/routes/service-orders.ts`, branch `isRecusada` no PATCH `/api/service-orders/:id`.
+- **NUNCA** voltar a colocar `.in("status", [...])` restritivo nesse UPDATE — foi exatamente o bug histórico que deixou R$ 134.816,50 de cobrança indevida no sistema.
+- **Diferente de "cancelada":** OS cancelada = cliente cancelou mas equipe foi acionada → preserva acionamento + extras. Não zerar billing de cancelada.
+
+### 8.2 Auto-fix nunca toca OS recusada
+- O auto-fix de boot em `server/routes.ts` (que força `mission_status=encerrada` → `status=concluida` em OSs penduradas) **deve excluir `status="recusada"`** do filtro.
+- Sem isso, OSs recusadas com `mission_status=encerrada` viram concluídas no próximo restart e o billing volta a contar como cobrança — bug que vitimou TOR-0172, TOR-0162, TOR-0178 e outras (R$ 9.355,49 recuperados).
+- O filtro correto exclui: `concluida`, `concluída`, `cancelada`, **`recusada`**.
+
+### 8.3 Compressão de foto do app mobile (resolve 413)
+- Foto tirada direto do celular vem em 4–8 MB e estoura o limite do `/api/mission/update` (2 MB padrão).
+- **Regra obrigatória no client:** antes de anexar qualquer foto vinda de `<input type="file">` num upload mobile, redimensionar via canvas para **máx 1280px no maior lado** e re-encodar em **JPEG qualidade 0.7**. Resultado típico: ~80–250 KB.
+- Implementação: `handlePhotoCapture` em `client/src/pages/mobile/missao.tsx`.
+- Backend: `/api/mission/update` está em `PHOTO_UPLOAD_PATHS` (limite 10 MB) como rede de segurança — não remover dessa lista.
+- Não trocar JPEG por PNG nem subir resolução máxima sem motivo — o ganho de qualidade é insignificante e o custo de banda/quota é alto.
+
+### 8.4 Cálculo de faturamento de OS
+- **Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (pelo cliente).** Recusadas e Faturadas/Pagas ficam FORA.
+- Implementação:
+  - Frontend: `client/src/pages/admin/relatorio-faturamento.tsx` — função `isFaturavelBilling` filtra por `_so_status !== "recusada"` e exclui `FATURADO/FATURADA/PAGO/RECUSADA/REJEITADA`. Card "Total p/ Faturamento" usa `approvedTotal` com a mesma regra.
+  - Backend: `POST /api/boletim-medicao/gerar-fatura/:clientId` em `server/asaas.ts` (~linha 2306). Filtra `escort_billings` por `status IN (APROVADA, A_VERIFICAR, PENDENTE, ENVIADA_APROVACAO, CANCELADA, CANCELADO)` e depois faz **segunda passada** excluindo billings cuja OS está com `so.status="recusada"` (mesmo que o `bill.status` ainda não tenha sido atualizado).
+- **NUNCA** remover a segunda passada do gerar-fatura — é a salvaguarda contra billings dessincronizados.
+- **NUNCA** incluir RECUSADA, REJEITADA, FATURADO ou PAGO no filtro do gerar-fatura.
+- Hora extra é fracionada por minuto (não por hora cheia), seguindo `valor_hora_extra` do contrato. Não usar `valor_km_extra` como fallback de HE.
+
+### 8.5 Hora extra usa timestamps reais (multi-dia)
+- **`calcularEscolta`** (em `server/billing-calc.ts`) deve receber `inicio_ts` (mission_started_at), `fim_ts` (completed_date) e `scheduled_date` da OS — em ISO. A duração é calculada por `(fim_ts - inicio_ts_considerado) / 3600000` (ms → horas), o que pega missões que atravessam dias/noites.
+- O fallback antigo (`calcularHorasTrabalhadas` HH:MM com `if (diff<0) diff+=24h`) **só compensa 1 noite**. Para missão que dura >24h ou que atravessa um dia inteiro, perde múltiplos de 24h e subfatura silenciosamente.
+- Caso histórico: TOR-0153 com 35h39min reais foi cobrada como 11h52min (R$ 975 em vez de R$ 3.591), TOR-0159 com 25h40min foi cobrada como 1h40min.
+- Quando `horario_agendado` é anterior a `mission_started_at`, o início de cobrança é `scheduled_date + horario_agendado` (em ms), não `mission_started_at`. A função monta o timestamp a partir do `scheduled_date`.
+- **NUNCA** voltar a calcular HE só com `horario_inicio`/`horario_fim` HH:MM. Sempre passar timestamps reais nos 13 call-sites de `calcularEscolta`.
+- Teste de regressão: `server/billing-calc-hora-extra.test.ts` ("missão de 35h39min (atravessa dia)").
+
+### 8.6 `escort_billings` é 1:1 com `service_orders` — NUNCA usar `.insert()` cego
+- **Significado de negócio:** uma OS pode ter NO MÁXIMO um billing. Se aparece mais de um, alguma rota está inserindo cego sem checar duplicata — e o Excel/boletim mostra a OS duas vezes (uma com KMs reais, outra com KM=0 ou idêntica).
+- **Regra física (banco):** existe `CREATE UNIQUE INDEX uniq_eb_so_id ON escort_billings (service_order_id)` em `server/db-init.ts` — UNIQUE **total** (sem `WHERE`). **NUNCA remover** e **NUNCA voltar a ser parcial**. NULLs em UNIQUE são distintos no Postgres, então billings avulsos (sem OS) continuam OK. Índice parcial (`WHERE service_order_id IS NOT NULL`) **quebra** o `INSERT ... ON CONFLICT (service_order_id)` do `.upsert()` do supabase-js com erro 42P10 silencioso — billing NUNCA persiste e a UI mostra "Sem Cálculo" pra todas as OSs do cron (caso real 25/05/2026: TOR-0215, 0216, 0217, 0219, 0220, 0222 e 5+ outras ficaram sem billing por dias até a correção). Bloqueia duplicação no nível do Postgres.
+- **Regra de código:** todos os caminhos de escrita em `escort_billings` que envolvam uma OS DEVEM usar `.upsert(payload, { onConflict: "service_order_id" })` — operação atômica que aproveita o UNIQUE pra resolver INSERT vs UPDATE sem race condition. Caminhos atuais já convertidos:
+  - `server/routes/mission.ts` — billing de cancelamento de OS + auto-billing no encerramento
+  - `server/routes/escort.ts` — criar billing manual + recalcular billing
+  - `server/cron.ts` — cron de billing (com check de FROZEN_STATUSES preservado ANTES do upsert pra não sobrescrever FATURADO/PAGO)
+  - `server/routes/service-orders.ts` — `/calcular` faz DELETE antes do INSERT dentro do mesmo handler (não vulnerável a self-race)
+- **Quando criar uma nova rota que escreve em `escort_billings`:**
+  - Se tem `service_order_id`, **OBRIGATÓRIO** usar `.upsert(payload, { onConflict: "service_order_id" })`. Nunca `.insert()` cego.
+  - Se NÃO tem `service_order_id` (billing avulso/manual de teste), pode usar `.insert()` — o UNIQUE parcial só vale quando `service_order_id IS NOT NULL`.
+- **Quando o cron precisa pular billing congelado:** fazer o check de `FROZEN_STATUSES.has(status)` ANTES do upsert e dar `return` se for o caso (vide `server/cron.ts` linhas ~1800-1808). NÃO confiar que o upsert vai pular sozinho — ele sobrescreve TUDO.
+- **Histórico:** 21/05/2026 foram detectadas 11 OSs com billing duplicado (TOR-0110, 0121, 0122, 0134, 0137, 0163, 0176, 0183, 0191, 0201, 0214). Causa raiz: 3 caminhos faziam `.insert()` cego (mission.ts cancelamento + escort.ts manual + escort.ts calcular) + race condition em UPSERTs com padrão SELECT-then-INSERT (TOR-0214 teve dois billings criados no mesmo segundo). Limpeza feita em `.local/dedup_billings.mts` + auditoria em `.local/audit_billings_dup.mts`.
+- **Teste de regressão:** `server/cron.test.ts` testes "cron Billing: cria billing para OS concluída sem billing existente" e "atualiza billing PENDENTE em OS ativa" — o mock entende `.upsert(values, { onConflict })` e resolve em INSERT ou UPDATE como o Postgres faz. NÃO remover o suporte a `upsert` do mock.
+
+### 8.7 `mission_costs` precisa de `financial_transaction` espelho pra aparecer no Balanço Gerencial
+- **Significado de negócio:** o Balanço Gerencial (`client/src/pages/admin/balanco-gerencial.tsx` linhas 351-352, 440-441) **NÃO lê** das colunas `despesas_*`/`desp_*` de `escort_billings` pra somar despesas operacionais. Lê SÓ de `financial_transactions` filtradas por `origin_type` (`fueling`, `mission_cost`, `maintenance`). Se uma despesa entra só em `mission_costs` sem virar tx, **some** do agregado do Balanço (continua aparecendo só no detalhe da OS via legacy `despesas_combustivel/despesas_pedagio`).
+- **Regra de código:** toda rota que faz `supabaseAdmin.from("mission_costs").insert(...)` **DEVE** chamar `createAutoTransaction({ origin_type: "mission_cost", origin_id: String(mc.id), ... })` em seguida. **Exceção única:** combustível com `[F#NNN]` no description — esse já está representado em `financial_transactions` com `origin_type=fueling` (criada lá em `mobile.ts:313` / `fleet.ts:415`), e criar uma segunda tx duplicaria a despesa.
+- **Caminhos atuais convertidos:**
+  - `server/routes/mobile.ts:417,431` (pedagio-missao) — já criam tx em `:450`/`:461`
+  - `server/routes/mobile.ts:527` (pedagio-vazio) — já cria tx em `:543`
+  - `server/routes/conciliacao.ts:~1186,1231` (TicketLog batch import) — convertido em 25/05/2026 (antes era a fonte dos 581 pedágios órfãos)
+- **Quando deletar uma `mission_cost`:** sempre chamar `removeAutoTransaction("mission_cost", String(mc.id))` antes do `.delete()` (já feito em `service-orders.ts:1291`, `mission.ts:2066`/`3067`).
+- **Histórico:** auditoria de 25/05/2026 encontrou 10 mission_costs órfãs (R$ 198) + 1 outlier de digitação (mc.id=1488: R$ 169.176,24 era na verdade R$ 169,41 — 1000x errado, fueling F#186 estava correto). Tudo corrigido via `.local/fix_financial_sync.mts`. Cobertura inicial: 1135 tx já existiam corretamente (rota `pedagio-missao` cobria), só faltava o pedágio TicketLog batch e alguns isolados.
+- **Sobre as colunas duplicadas `desp_*` (novas, sempre 0) vs `despesas_*` (legadas, em uso):** `desp_combustivel/desp_pedagio/desp_outras/desp_total` são código morto (ninguém escreve). O cron grava nas legadas `despesas_*` (vide `server/billing-calc.ts:346`). Não unificar agora — é refactor separado. UI lê das legadas no detalhe da OS, e do agregado de tx no totalizador.
+
+### 8.8 Cancelar lançamento financeiro só ANTES da aprovação
+- **Significado de negócio:** quem cria um lançamento (ex.: ADM) pode **editar** e **cancelar** enquanto ele está `AGUARDANDO_APROVACAO`. Depois que a diretoria aprova (ou recusa), o usuário comum não mexe mais — só a diretoria (DELETE com `requireDiretoria`).
+- **Regra de código:** a rota `DELETE /api/financial/transactions/:id/cancelar` (em `server/routes/escort.ts`, `requireAdminRole`) usa a guarda pura `canCancelAguardando` (`server/lib/financial-cancel-guard.ts`): recusa se não existe (404), se é lançamento automático (`origin_type !== "manual"`, 403) ou se o status NÃO é `AGUARDANDO_APROVACAO` (403). Só apaga manual ainda em aprovação. A rota `DELETE /api/financial/transactions/:id` (diretoria) continua intacta para lançamentos já aprovados.
+- **Frontend:** na aba "Aguardando Aprovação" de `client/src/pages/admin/financeiro.tsx`, TODOS veem **Editar** + **Cancelar**; só o aprovador vê **Aprovar/Aprovar Série/Recusar**.
+- Teste de regressão: `server/lib/financial-cancel-guard.test.ts`.
+
+---
+
+## 9. INSPEÇÃO DO SUPABASE ANTES DE MEXER NO BANCO (OBRIGATÓRIO)
+
+Antes de qualquer mudança que toque o banco (criar/alterar/dropar tabela, índice, constraint, trigger, RPC, RLS, ou rodar UPDATE/DELETE em massa), **OBRIGATÓRIO** inspecionar o estado real do Supabase de produção primeiro e mostrar o impacto pro dono ANTES de aplicar. Sem exceção.
+
+**Por que:** o `executeSql({environment:"production"})` do agente aponta pro Neon do Replit (`neondb`), NÃO pro Supabase do projeto. Confiar nele pra "verificar produção" dá falso negativo (foi o que aconteceu na queda de 22/05/2026). O único caminho confiável é consultar o Supabase via `supabaseAdmin` num script `.local/test_inspect_*.mts`.
+
+**Como fazer (template):**
+1. Criar `.local/test_inspect_<assunto>.mts` que importa `supabaseAdmin` de `server/supabase.ts` e usa `supabaseAdmin.rpc("exec_sql", { query: "..." })` pra rodar SELECTs de inspeção em `pg_indexes`, `information_schema.columns`, `pg_constraint`, contagem de linhas afetadas, etc.
+2. Rodar com `tsx .local/test_inspect_<assunto>.mts` e mostrar o resultado pro dono em linguagem clara.
+3. Listar explicitamente o impacto previsto: "vai criar índice X (tabela tem N linhas, vai levar ~Ys)", "vai dropar coluna Y (tem N valores não-nulos)", "esse UNIQUE vai falhar porque tem N duplicatas — preciso dedupar antes".
+4. **Só depois da aprovação do dono**, aplicar a mudança (via `db-init.ts` no boot ou via script com `supabaseAdmin`).
+5. Após aplicar, rodar inspeção de novo pra confirmar o estado final.
+
+**Exceções (não precisa inspecionar antes):**
+- DDL puramente idempotente em tabela nova que o agente está criando do zero no mesmo turno.
+- Leituras só-leitura, debug, ou scripts de diagnóstico.
+
+Se a mudança é destrutiva ou ambígua, na dúvida, inspeciona.
+
+---
+
+## 10. SEO DA LANDING PÚBLICA
+
+A landing pública em `/` é otimizada para Google. Endpoints SEO em `server/index.ts`:
+- `GET /robots.txt` — permite `/`, bloqueia `/admin`, `/mobile`, `/api`
+- `GET /sitemap.xml` — lista a home com `lastmod` em BRT
+- Middleware adiciona header `X-Robots-Tag: noindex, nofollow` em qualquer resposta de `/admin*`, `/mobile*`, `/api*`
+
+A URL canônica é `https://torresvigilancia.com.br`. Pra apontar pra outra URL pública (ex: subdomínio Replit em testes), defina a env var `PUBLIC_SITE_URL` (sem barra final). Sem ela, o sitemap usa o host da requisição como fallback.
+
+Pós-deploy, lembrar de:
+1. Cadastrar o domínio no [Google Search Console](https://search.google.com/search-console) e enviar o sitemap (`https://torresvigilancia.com.br/sitemap.xml`)
+2. Validar o JSON-LD no [Rich Results Test](https://search.google.com/test/rich-results)
+3. Cadastrar a empresa no [Google Meu Negócio](https://www.google.com/business/) com o mesmo endereço dos dados estruturados (Av. Raimundo Pereira de Magalhães, 5720 — Pirituba/SP)
+
+Dados estruturados (`<script type="application/ld+json">` em `client/index.html`) declaram a empresa como `SecurityService` com CNPJ, Alvará PF nº 1.016, endereço, área de atendimento (SP capital, Campinas, Estado de SP) e catálogo de serviços.
