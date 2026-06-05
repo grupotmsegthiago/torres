@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -51,10 +51,10 @@ test("looksLikeSummaryRequest: ignora conversa fiada e pedidos de OS específica
   }
 });
 
-test("conversa social cai FORA dos 3 fluxos operacionais (→ conversa natural)", () => {
+test("conversa social cai FORA dos 3 fluxos operacionais (→ ignorada sem menção)", () => {
   // Mensagens sociais não devem casar com resumo, km final NEM pedido de
-  // atualização. Assim o handler cai no fallback de conversa natural em vez de
-  // silêncio. (looksLikeUpdateRequest com hasQuoted=false.)
+  // atualização. Sem casar em nenhum fluxo e SEM menção à Central, o handler
+  // ignora (silêncio). Só responderia se marcassem o bot. (hasQuoted=false.)
   for (const t of [
     "bom dia, tudo bem?",
     "muito obrigado pelo trabalho de vocês!",
@@ -129,4 +129,45 @@ test("shortLocal: lida com vazio/nulo", () => {
   assert.equal(shortLocal(null), "");
   assert.equal(shortLocal(undefined), "");
   assert.equal(shortLocal(""), "");
+});
+
+// O número da Central (instância Z-API) vem no payload como `ni`/`connectedPhone`.
+const BOT = "5511926839456";
+
+test("isBotMentioned: detecta @menção ao número da Central no texto", () => {
+  // @<numero> é como o WhatsApp embute a menção no corpo da mensagem.
+  assert.equal(isBotMentioned({ ni: BOT, text: { message: `@${BOT} bom dia, tudo certo?` } }), true);
+  // tolera DDI/DDD: menção sem o "55" ainda casa pelos últimos 8 dígitos
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "oi @11926839456 manda ver" } }), true);
+  // legenda de imagem também conta
+  assert.equal(isBotMentioned({ ni: BOT, image: { caption: `@${BOT} olha essa foto` } }), true);
+});
+
+test("isBotMentioned: detecta menção via lista `mentioned` da Z-API", () => {
+  assert.equal(isBotMentioned({ ni: BOT, mentioned: [BOT], text: { message: "alguém aí?" } }), true);
+  assert.equal(isBotMentioned({ ni: BOT, mentioned: ["5511999999999"], text: { message: "oi" } }), false);
+});
+
+test("isBotMentioned: NÃO acusa menção em conversa social ou pedido de OS sem @", () => {
+  // payloads REAIS dos logs de produção (grupo, sem marcar o bot)
+  assert.equal(isBotMentioned({ ni: BOT, isGroup: true, text: { message: "Hoop" } }), false);
+  assert.equal(isBotMentioned({ ni: BOT, isGroup: true, text: { message: "Atualização Andre e Carlos" } }), false);
+  // marcação de OUTRA pessoa não conta como menção ao bot
+  assert.equal(isBotMentioned({ ni: BOT, text: { message: "@5511954563755 cadê você?" } }), false);
+  // sem número do bot no payload → não dá pra afirmar menção
+  assert.equal(isBotMentioned({ text: { message: `@${BOT} oi` } }), false);
+  assert.equal(isBotMentioned(null), false);
+});
+
+test("regra do dono: social sem menção → IGNORA; OS ou menção → responde", () => {
+  // (a) social, sem menção, fora de OS → nenhum fluxo casa E não é menção = silêncio
+  const social = "bom dia, tudo bem?";
+  assert.equal(looksLikeSummaryRequest(social), false);
+  assert.equal(looksLikeFinalKm(social), false);
+  assert.equal(looksLikeUpdateRequest(social, false), false);
+  assert.equal(isBotMentioned({ ni: BOT, text: { message: social } }), false);
+  // (b) assunto de OS → responde (pega no pré-filtro de update)
+  assert.equal(looksLikeUpdateRequest("Atualização Andre e Carlos", false), true);
+  // (c) marcaram o bot numa conversa social → responde (natural)
+  assert.equal(isBotMentioned({ ni: BOT, text: { message: `@${BOT} obrigado pelo apoio!` } }), true);
 });

@@ -402,6 +402,41 @@ function extractQuotedId(rawBody: any): string | null {
 }
 
 /**
+ * Detecta se a mensagem MARCA (@menção) o número da Central (o bot). O dono quer
+ * que o agente só responda quando for marcado OU quando o assunto for OS — esta
+ * função cobre o "marcar". O número do bot vem do payload da Z-API (`connectedPhone`
+ * ou `ni`, a instância conectada). Reconhece tanto a lista `mentioned` (quando a
+ * Z-API a envia) quanto o token `@<numero>` embutido no texto/legenda. Compara
+ * pelos últimos 8 dígitos (tolera DDI/DDD). Exposto p/ teste.
+ */
+export function isBotMentioned(rawBody: any): boolean {
+  if (!rawBody || typeof rawBody !== "object") return false;
+  const bot = normalizePhone(rawBody.connectedPhone ?? rawBody.ni);
+  if (!bot) return false;
+  const last8 = bot.slice(-8);
+  if (last8.length < 8) return false;
+
+  const matchesBot = (raw: unknown): boolean => {
+    const d = normalizePhone(raw);
+    return !!d && (d === bot || d.slice(-8) === last8);
+  };
+
+  // 1. Campo explícito de menção (quando a Z-API envia a lista de marcados).
+  for (const list of [rawBody.mentioned, rawBody.text?.mentioned, rawBody.message?.mentioned]) {
+    if (Array.isArray(list) && list.some(matchesBot)) return true;
+  }
+
+  // 2. Token "@<numero>" dentro do texto/legenda (como o WhatsApp embute a menção).
+  const txt = String(
+    rawBody.text?.message || rawBody.image?.caption || rawBody.video?.caption || rawBody.caption || "",
+  );
+  for (const tok of txt.match(/@(\d{6,15})/g) || []) {
+    if (tok.replace(/\D/g, "").slice(-8) === last8) return true;
+  }
+  return false;
+}
+
+/**
  * Busca o corpo de uma mensagem citada no nosso histórico (whatsapp_messages).
  * A citada costuma ser o nosso próprio card de atualização, que contém "OS TOR-XXXX".
  */
@@ -826,6 +861,18 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     if (!parsed.isGroup || parsed.fromMe) return;
     if (!isZapiConfigured()) return;
 
+    // Marcaram a Central (@menção)? O dono reverteu a "conversa ampla" de jun/2026:
+    // fora de assunto de OS, o agente SÓ responde quando for marcado. Sem menção e
+    // sem assunto de OS → silêncio.
+    const mentioned = isBotMentioned(rawBody);
+    const replyNaturalIfMentioned = async () => {
+      if (mentioned) {
+        await handleNaturalConversation(parsed);
+      } else {
+        console.log(`[agent-central-mention] grupo ${parsed.chatId}: mensagem sem menção e fora de assunto de OS — ignorando (não responde)`);
+      }
+    };
+
     // Pedido de RESUMO geral tem fluxo próprio (panorama do cliente). Só
     // intercepta se NÃO houver um nº de OS no texto — assim "resumo da 236"
     // cai no fluxo de atualização daquela OS, não no panorama geral.
@@ -851,23 +898,27 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       return;
     }
 
-    // Não cheira a pedido operacional → conversa natural (em vez de silêncio).
+    // Não cheira a pedido operacional → só responde se MARCARAM a Central; senão silêncio.
     if (!looksLikeUpdateRequest(parsed.text, hasQuoted)) {
-      await handleNaturalConversation(parsed);
+      await replyNaturalIfMentioned();
       return;
     }
 
     const text = (parsed.text || "").trim();
     const extract = await extractIntent(text || quotedText || "");
-    // A IA concluiu que não é pedido de atualização → trata como conversa.
+    // A IA concluiu que não é pedido de atualização → só responde se marcaram.
     if (!extract.isUpdateRequest) {
-      await handleNaturalConversation(parsed);
+      await replyNaturalIfMentioned();
       return;
     }
 
     const { os, via } = await resolveOs({ extract, quotedText, groupId: parsed.chatId });
     if (!os) {
-      console.log(`[agent-central-mention] pedido no grupo ${parsed.chatId} mas OS não resolvida (via=${via}) — respondendo natural`);
+      // A IA JÁ confirmou que é pedido sobre OS (isUpdateRequest=true), só não
+      // deu pra identificar QUAL OS. Como o assunto É de OS, responde mesmo sem
+      // menção (regra do dono: responder quando o assunto for sobre as OS) — a
+      // resposta natural tem guarda-rails (não inventa dado, desvia financeiro).
+      console.log(`[agent-central-mention] pedido sobre OS no grupo ${parsed.chatId} mas OS não resolvida (via=${via}) — respondendo natural (assunto é de OS)`);
       await handleNaturalConversation(parsed);
       return;
     }
