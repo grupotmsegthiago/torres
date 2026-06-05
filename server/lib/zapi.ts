@@ -78,6 +78,45 @@ export async function getConnectionStatus(): Promise<ZapiConnectionStatus> {
   }
 }
 
+/**
+ * LID (identificador interno do WhatsApp) da PRÓPRIA Central. Desde a migração
+ * do WhatsApp pra LIDs, quando alguém marca o bot num grupo a menção embute o
+ * LID (ex.: "@184147477803257"), NÃO o telefone (`connectedPhone`). Buscamos via
+ * GET /device (campo `lid`, formato "184147477803257@lid") e cacheamos — o LID é
+ * estável por conta. Retorna só os dígitos, ou null (fail-open). Cache de 6h.
+ */
+let _botLidCache: { digits: string | null; at: number } | null = null;
+const BOT_LID_TTL_MS = 6 * 60 * 60 * 1000;
+// Resposta OK mas sem `lid` → TTL curto pra retentar logo (não trava 6h num null).
+const BOT_LID_NULL_TTL_MS = 60 * 1000;
+
+export async function getBotLid(): Promise<string | null> {
+  if (!isZapiConfigured()) return null;
+  if (_botLidCache) {
+    const ttl = _botLidCache.digits ? BOT_LID_TTL_MS : BOT_LID_NULL_TTL_MS;
+    if (Date.now() - _botLidCache.at < ttl) return _botLidCache.digits;
+  }
+  try {
+    const resp = await fetch(`${BASE}/device`, { headers: { "Client-Token": CLIENT_TOKEN } });
+    if (!resp.ok) {
+      // Erro transitório (401/500/429/etc.): NÃO cacheia null — senão a detecção
+      // por LID ficaria desligada por horas. Retorna o último LID conhecido (ou
+      // null) e retenta na próxima chamada.
+      console.warn(`[zapi] getBotLid: GET /device retornou ${resp.status}`);
+      return _botLidCache?.digits ?? null;
+    }
+    const data: any = await resp.json().catch(() => ({}));
+    const lidRaw = typeof data?.lid === "string" ? data.lid : "";
+    const digits = lidRaw.replace(/\D/g, "") || null;
+    // digits null aqui (payload sem `lid`) cacheia com TTL curto, não 6h.
+    _botLidCache = { digits, at: Date.now() };
+    return digits;
+  } catch {
+    // Fail-open: não cacheia o erro (tenta de novo na próxima), não derruba nada.
+    return _botLidCache?.digits ?? null;
+  }
+}
+
 /** Normaliza um group ID — aceita "X-Y", "X-Y@g.us" ou número solto. */
 function normalizePhoneOrGroup(raw: string): string {
   const trimmed = (raw || "").trim();

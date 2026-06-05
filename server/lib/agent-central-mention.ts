@@ -20,7 +20,7 @@
 
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
-import { sendText, sendImageWithCaption, isZapiConfigured } from "./zapi";
+import { sendText, sendImageWithCaption, isZapiConfigured, getBotLid } from "./zapi";
 import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
 import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
@@ -409,14 +409,48 @@ function extractQuotedId(rawBody: any): string | null {
  * Z-API a envia) quanto o token `@<numero>` embutido no texto/legenda. Compara
  * pelos últimos 8 dígitos (tolera DDI/DDD). Exposto p/ teste.
  */
-export function isBotMentioned(rawBody: any): boolean {
+/**
+ * LID da Central (só dígitos), cacheado em memória. Populado por `ensureBotLid()`
+ * (chamado no início do fluxo de grupo) a partir do GET /device da Z-API. Desde a
+ * migração do WhatsApp pra LIDs, a @menção a um participante embute o LID dele, não
+ * o telefone — sem isto a Central não se reconhece quando marcada.
+ */
+let cachedBotLidDigits: string | null = null;
+
+/** Define o LID do bot manualmente (usado em teste). */
+export function setBotLidForTest(lid: string | null): void {
+  cachedBotLidDigits = lid ? String(lid).replace(/\D/g, "") || null : null;
+}
+
+/** Garante que o LID do bot esteja em cache (fail-open, nunca lança). */
+export async function ensureBotLid(): Promise<void> {
+  if (cachedBotLidDigits) return;
+  try {
+    const lid = await getBotLid();
+    if (lid) cachedBotLidDigits = lid;
+  } catch {
+    /* fail-open */
+  }
+}
+
+export function isBotMentioned(rawBody: any, botLid?: string | null): boolean {
   if (!rawBody || typeof rawBody !== "object") return false;
   const bot = normalizePhone(rawBody.connectedPhone ?? rawBody.ni);
   if (!bot) return false;
   const last8 = bot.slice(-8);
   if (last8.length < 8) return false;
 
+  // LID da Central: NÃO passar por normalizePhone (que trunca pra 11 dígitos);
+  // o LID tem ~15 dígitos e precisa casar inteiro.
+  const lidDigits = (botLid ?? cachedBotLidDigits)?.replace(/\D/g, "") || "";
+
   const matchesBot = (raw: unknown): boolean => {
+    const digits = String(raw ?? "").replace(/\D/g, "");
+    if (lidDigits && digits === lidDigits) return true; // menção via LID (match exato)
+    // Tokens longos (>13 díg) são LID/identificadores internos — só casam pelo LID
+    // exato (acima); NÃO casar por sufixo de 8 (evita falso positivo de um LID de
+    // terceiro com os mesmos 8 finais). Telefone vai até 13 díg (DDI+DDD+9 dígitos).
+    if (digits.length > 13) return false;
     const d = normalizePhone(raw);
     return !!d && (d === bot || d.slice(-8) === last8);
   };
@@ -427,11 +461,15 @@ export function isBotMentioned(rawBody: any): boolean {
   }
 
   // 2. Token "@<numero>" dentro do texto/legenda (como o WhatsApp embute a menção).
+  //    Pode ser o telefone (casa pelos 8 finais) OU o LID (casa inteiro).
   const txt = String(
     rawBody.text?.message || rawBody.image?.caption || rawBody.video?.caption || rawBody.caption || "",
   );
   for (const tok of txt.match(/@(\d{6,15})/g) || []) {
-    if (tok.replace(/\D/g, "").slice(-8) === last8) return true;
+    const dg = tok.replace(/\D/g, "");
+    if (lidDigits && dg === lidDigits) return true; // LID exato
+    if (dg.length > 13) continue; // LID-like: só casa exato (acima), nunca por sufixo
+    if (dg.slice(-8) === last8) return true; // telefone: casa pelos 8 finais
   }
   return false;
 }
@@ -1107,6 +1145,10 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     if (!parsed.isGroup || parsed.fromMe) return;
     if (!isZapiConfigured()) return;
 
+    // Garante o LID da Central em cache — sem ele, @menção via LID (padrão novo do
+    // WhatsApp) não é reconhecida e a Central ignora quem a marca. Fail-open.
+    await ensureBotLid();
+
     // EQUIPE ATENDENDO: se quem falou no grupo é um funcionário (telefone em
     // employees), a Central entende que a equipe já está atendendo e SUPRIME
     // qualquer ack deferido pendente deste grupo — não "entra" por cima da
@@ -1184,10 +1226,9 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
 
     console.log(`[agent-central-mention] grupo ${parsed.chatId}: pedido de "${parsed.senderName || "?"}" → OS ${os.os_number || os.id} (via ${via})`);
 
-    // Anti-spam / dedupe: se já há um pedido ABERTO pra esta OS neste grupo
-    // criado nos últimos 10min, não cobra de novo (cobrança repetida geraria
-    // tempestade de DM se o cliente mandar várias mensagens seguidas, ou se o
-    // webhook reprocessar). Também cobre retries de webhook sem zapiMessageId.
+    // Anti-spam / dedupe: já existe um pedido ABERTO pra esta OS neste grupo
+    // criado nos últimos 10min? (cobre cliente repetindo, retry de webhook sem
+    // zapiMessageId, etc.). Usado abaixo pra evitar cobrança/ack duplicados.
     const DEDUPE_MIN = 10;
     const sinceIso = new Date(Date.now() - DEDUPE_MIN * 60 * 1000).toISOString();
     const { data: recent } = await supabaseAdmin
@@ -1198,7 +1239,52 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       .is("fulfilled_at", null)
       .gte("requested_at", sinceIso)
       .limit(1);
-    if (recent && recent.length > 0) {
+    const hasRecentOpen = !!(recent && recent.length > 0);
+
+    // MARCARAM a Central explicitamente (@menção): é um pedido DIRETO ao bot, então
+    // ela responde AGORA — NÃO defere e NÃO cai no silêncio do anti-spam (o dono
+    // pediu "ideal era marcar ele" e espera resposta ao marcar). Ainda cobra os
+    // agentes por DM, mas só se não houver pedido aberto recente (a cobrança já
+    // saiu há pouco → evita tempestade de DM). A resposta natural já tem ritmo
+    // humano + throttle + travas (anti-ban / financeiro).
+    if (mentioned) {
+      // Já vamos responder AO VIVO → suprime qualquer ack deferido pendente desta
+      // OS neste grupo pra o flush (cron) não mandar um ack duplicado depois.
+      // Mantém fulfilled_at intacto: fulfillGroupRequests ainda encaminha a
+      // atualização real quando o agente mexer no campo da OS.
+      await supabaseAdmin
+        .from("agent_central_group_requests")
+        .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: "answered_on_mention" })
+        .eq("group_id", parsed.chatId)
+        .eq("service_order_id", os.id)
+        .not("ack_decide_at", "is", null)
+        .is("ack_resolved_at", null)
+        .then(() => {}, (e: any) => console.warn("[agent-central-mention] suprimir ack (menção) falhou:", e?.message));
+
+      if (!hasRecentOpen) {
+        await cobrarAgentes(os);
+        // Registra o pedido (ack já resolvido, pois respondemos agora) pra que
+        // fulfillGroupRequests encaminhe a atualização real ao grupo depois.
+        await supabaseAdmin
+          .from("agent_central_group_requests")
+          .insert({
+            group_id: parsed.chatId,
+            service_order_id: os.id,
+            requester_name: parsed.senderName || null,
+            requester_phone: parsed.senderPhone || null,
+            source_message_id: parsed.zapiMessageId || null,
+            ack_resolved_at: new Date().toISOString(),
+            ack_resolution: "answered_on_mention",
+          })
+          .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request (menção) falhou:", e?.message));
+      }
+      await handleNaturalConversation(parsed);
+      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → respondeu na hora (OS ${os.os_number || os.id}); sem deferir`);
+      return;
+    }
+
+    // (sem menção) pedido operacional comum → fluxo deferido silencioso.
+    if (hasRecentOpen) {
       console.log(`[agent-central-mention] OS ${os.os_number || os.id} já tem pedido aberto recente no grupo — pulando (anti-spam)`);
       return;
     }

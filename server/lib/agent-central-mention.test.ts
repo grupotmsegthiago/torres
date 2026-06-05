@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planAckFlush } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planAckFlush, setBotLidForTest } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -212,4 +212,50 @@ test("planAckFlush: lista vazia → nada a fazer", () => {
   assert.equal(toAck.length, 0);
   assert.equal(toSuppressFulfilled.length, 0);
   assert.equal(coveredByGroupAck.length, 0);
+});
+
+test("isBotMentioned: @menção via LID (padrão novo do WhatsApp) — token no texto", () => {
+  // Cenário real do bug: o WhatsApp embute o LID do bot (não o telefone) na menção.
+  const BOT = "5511926839456";
+  const LID = "184147477803257@lid"; // GET /device → campo `lid`
+  const body = { connectedPhone: BOT, text: { message: "@184147477803257 atualiza o Reis x Everton" } };
+  // SEM o LID, a Central não se reconhece (era exatamente o "cagou tb" do dono).
+  assert.equal(isBotMentioned(body), false);
+  // COM o LID (via param), reconhece a marcação.
+  assert.equal(isBotMentioned(body, LID), true);
+});
+
+test("isBotMentioned: @menção via LID na lista `mentioned` da Z-API", () => {
+  const BOT = "5511926839456";
+  const LID = "184147477803257";
+  assert.equal(isBotMentioned({ connectedPhone: BOT, mentioned: ["184147477803257@lid"], text: { message: "alguém aí?" } }, LID), true);
+  assert.equal(isBotMentioned({ connectedPhone: BOT, mentioned: ["999999999999999@lid"], text: { message: "oi" } }, LID), false);
+});
+
+test("isBotMentioned: LID casa INTEIRO (não pelos 8 finais) — sem falso positivo", () => {
+  const BOT = "5511926839456"; // last8 do telefone = 26839456
+  const LID = "184147477803257"; // last8 do LID = 47803257
+  // Outro LID com os MESMOS 8 dígitos finais do LID do bot NÃO pode casar.
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@999947803257 oi" } }, LID), false);
+  // O LID exato casa.
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@184147477803257 oi" } }, LID), true);
+});
+
+test("isBotMentioned: setBotLidForTest popula o cache e dispensa o param", () => {
+  const BOT = "5511926839456";
+  setBotLidForTest("184147477803257@lid");
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@184147477803257 atualiza" } }), true);
+  setBotLidForTest(null); // limpa pra não vazar pros outros testes
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@184147477803257 atualiza" } }), false);
+  // Telefone continua casando independente do LID.
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@5511926839456 oi" } }), true);
+});
+
+test("isBotMentioned: LID de terceiro com os 8 finais IGUAIS ao telefone do bot NÃO casa", () => {
+  const BOT = "5511926839456"; // last8 do telefone = 26839456
+  const LID = "184147477803257";
+  // Token de 15 díg (LID-shaped) terminando em 26839456 — sufixo igual ao telefone.
+  // Sem o guard de tamanho, casaria por last8 (falso positivo). Deve dar false.
+  assert.equal(isBotMentioned({ connectedPhone: BOT, text: { message: "@123456726839456 oi" } }, LID), false);
+  assert.equal(isBotMentioned({ connectedPhone: BOT, mentioned: ["123456726839456@lid"], text: { message: "oi" } }, LID), false);
 });
