@@ -87,7 +87,7 @@ Antes de qualquer mudança no banco (DDL, índice, constraint, trigger, RPC, RLS
 - **Real-time Sync:** All significant state changes affecting the UI (e.g., mission status, financial transactions) must trigger `supabase.channel` updates to ensure all open tabs/devices are synchronized.
 - **PWA Cache Busting:** Always bump `APP_VERSION` in `server/constants.ts` for significant deployments to force a hard reset and ensure client-side updates.
 - **BCC Email Formatting:** Always use an array for BCC recipients in `nodemailer` to avoid silent failures with Office365/Outlook.
-- **Critical Business Rules:** Always read `SYSTEM_BRAIN.md` before starting any task to understand core business rules that must not be violated.
+- **Critical Business Rules:** Consult the routing index at the top of `SYSTEM_BRAIN.md` and read only the section(s) relevant to your task — no need to read the whole file. Reading the matching section is **mandatory** before touching financeiro/faturamento (§8), banco/Supabase (§9), or timezone/datas (§1.1).
 
 ## Regras INTOCÁVEIS (NUNCA alterar sem ordem explícita do dono)
 

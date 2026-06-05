@@ -1,6 +1,26 @@
 # 🧠 SYSTEM_BRAIN.md — Contexto Mestre do Torres Vigilância Patrimonial
 
-> **Leia este arquivo ANTES de qualquer tarefa.** Ele contém as regras primordiais, a arquitetura, as dependências e as lições aprendidas que NUNCA devem ser violadas.
+> **Como usar:** NÃO precisa ler o arquivo inteiro. Use o índice abaixo para ler **só a(s) seção(ões) relevante(s)** à sua tarefa.
+> **Obrigatório ler a seção correspondente** antes de mexer em: **financeiro/faturamento (§8)**, **banco/Supabase (§9)**, **timezone/datas (§1.1)**.
+
+## 📑 Índice de roteamento — leia a § conforme a tarefa
+
+| Vou mexer em… | Leia |
+|---|---|
+| Timezone, datas, horários, duração | §1.1, §4 |
+| Faturamento / OS / hora extra / `escort_billings` / `mission_costs` | §1.2, §8 |
+| Banco de dados (DDL, índice, constraint, trigger, RPC, RLS, UPDATE/DELETE em massa) | **§9 (OBRIGATÓRIO)** |
+| Arquitetura de dados (Supabase CRUD, proibições) | §1.3 |
+| Realtime / sincronismo entre abas e dispositivos | §1.4 |
+| Missão (fluxo, chat, aceite, custos) | §1.5 |
+| Onde fica cada arquivo (backend/frontend) | §2 |
+| Versões travadas de dependências | §3 |
+| Por que algo quebrou antes (regressões históricas) | §5 (L001–L006) |
+| Padrões de código / estilo | §6 |
+| Antes de commitar | §7 |
+| SEO da landing pública | §10 |
+
+> ⚠️ As seções marcadas **NUNCA ALTERAR / OBRIGATÓRIO** contêm regras testadas em produção. Se sua task parecer exigir alterá-las, **PARE e pergunte ao dono antes**.
 
 ---
 
