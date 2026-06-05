@@ -75,6 +75,10 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 **SEMPRE TESTE ANTES DE ENTREGAR.** Não dá pra dizer "está pronto" sem rodar o cenário (curl, script tsx que invoca a função, screenshot, ou checar log da requisição real). Se for backend, escrever um script `.local/test_*.mts` que importa a função e exercita o caso. Se for frontend, abrir a página/screenshot. Só falar "pronto" depois que o teste mostrar o comportamento esperado de fato — não confiar só em que "o código parece certo".
 
+**FLUXO PADRÃO DE EDIÇÃO (enxuto — não garimpar o codebase).** Para qualquer tarefa: (1) identificar a área de negócio; (2) abrir o **Mapa de Código por Funcionalidade** em `SYSTEM_BRAIN.md` §2.1 e pegar **só** a Tela + Rota + Lógica daquela linha; (3) ler **só** a(s) seção(ões) do brain indicadas na coluna *Brain* (e o índice de roteamento no topo se a área não estiver no mapa) — não reler o brain inteiro nem o `replit.md` inteiro; (4) **gate obrigatório**: se a tarefa toca financeiro/faturamento ler §8, banco/Supabase ler §9 (e inspecionar Supabase de produção antes de mudar o banco), timezone/datas ler §1.1 — se for mexer numa regra INTOCÁVEL, PARAR e perguntar ao dono antes; (5) editar nos arquivos exatos do mapa; (6) testar (regra "SEMPRE TESTE" acima). Se criar área nova, adicionar a linha no mapa §2.1.
+
+**SEM RELATÓRIO POR TAREFA NAS RESPOSTAS.** Não poluir a resposta com lista de seções lidas, passos seguidos ou checklist do fluxo acima — isso é processo interno. Responder direto: o que mudou e o resultado do teste.
+
 ## Regra de inspeção do Supabase antes de mexer no banco
 
 Antes de qualquer mudança no banco (DDL, índice, constraint, trigger, RPC, RLS, UPDATE/DELETE em massa), **OBRIGATÓRIO** inspecionar o Supabase de produção via `supabaseAdmin` (script `.local/test_inspect_*.mts`) e mostrar o impacto pro dono ANTES de aplicar — o `executeSql({environment:"production"})` aponta pro Neon do Replit, NÃO pro Supabase do projeto. Template completo, exceções e o porquê: **`SYSTEM_BRAIN.md` §9**.

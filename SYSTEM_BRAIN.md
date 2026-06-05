@@ -13,7 +13,8 @@
 | Arquitetura de dados (Supabase CRUD, proibições) | §1.3 |
 | Realtime / sincronismo entre abas e dispositivos | §1.4 |
 | Missão (fluxo, chat, aceite, custos) | §1.5 |
-| Onde fica cada arquivo (backend/frontend) | §2 |
+| Onde mexer numa funcionalidade (área → tela + rota + lógica) | §2.1 |
+| Onde fica cada arquivo (backend/frontend) | §2.2, §2.3 |
 | Versões travadas de dependências | §3 |
 | Por que algo quebrou antes (regressões históricas) | §5 (L001–L006) |
 | Padrões de código / estilo | §6 |
@@ -90,9 +91,38 @@
 
 ---
 
-## 2. MAPA DE ARQUIVOS CRÍTICOS
+## 2. MAPA DE CÓDIGO POR FUNCIONALIDADE
 
-### Backend (server/)
+> **Fluxo padrão de edição:** acha a área na §2.1 → abre **só** a Tela + a Rota + a Lógica daquela linha → lê **só** a(s) seção(ões) da coluna *Brain* → edita → testa (regra "SEMPRE TESTE", veja §7 e `replit.md`). Não garimpe o codebase inteiro; comece pelos arquivos exatos abaixo.
+
+### 2.1 Por área de negócio (Área → Tela → Rota → Lógica → Brain)
+
+> Caminhos: tela = `client/src/pages/...`; rota = `server/routes/...` (ou `server/asaas.ts` / `server/routes.ts`); lógica = `server/...` / `server/lib/...` / `client/src/lib/...`. Itens "memo:" são tópicos em `.agents/memory/`.
+
+| Área | Tela | Rota (endpoints) | Lógica | Brain |
+|------|------|------------------|--------|-------|
+| **Faturamento / boletim** | `admin/relatorio-faturamento.tsx`, `admin/escort-billing.tsx`, `admin/boletim-medicao.tsx`, `admin/auditoria-faturamento.tsx` | `routes/escort.ts` (`/api/escort`, `/api/billing-alerts`), `asaas.ts` (`/api/boletim-medicao/gerar-fatura`) | `billing-calc.ts` (`calcularEscolta`, `calcularFaturamentoLive`) | §1.2, §8.4, §8.6 |
+| **OS / ciclo de vida / step_logs** | `admin/service-orders.tsx`, `admin/relatorio-os.tsx`, `admin/mission.tsx` | `routes/service-orders.ts` (`/api/service-orders`, `/calcular`), `routes/mission.ts` (`/api/mission` lifecycle) | `billing-calc.ts` | §1.5, §8.1, §8.2 |
+| **Hora extra (multi-dia)** | `admin/relatorio-faturamento.tsx`, `admin/escort-billing.tsx` | `routes/escort.ts`, `routes/service-orders.ts` | `billing-calc.ts` → `calcularEscolta` (`inicio_ts`/`fim_ts`/`scheduled_date`) | §8.5 |
+| **Ponto / RH / Holerite** | `admin/ponto-operacional.tsx`, `admin/holerites.tsx`, `admin/timesheets.tsx`, `admin/employees.tsx`, `admin/jornada-diretoria.tsx`, `mobile/ponto.tsx`, `mobile/holerites.tsx` | `routes/hr.ts` (`/api/payslips`, `/api/absences`, `/api/jornada-*`), `routes/employees.ts` (`/api/payroll`, `/api/employee-salaries`), `routes/control-id.ts` (`/api/control-id`), `routes/fleet.ts` (`/api/timesheets`), `routes/mobile.ts` (`/api/ponto-operacional`) | `lib/payroll.ts`, `lib/hours-calc.ts`, `lib/control-id-parsers.ts`, `rhid-reconciliation.ts` | memo: `payroll-night-additional`, `rhid-reconciliation` |
+| **Abastecimento / Frota** | `admin/fueling.tsx`, `admin/relatorio-abastecimento.tsx`, `admin/vehicles.tsx`, `admin/maintenance.tsx`, `mobile/abastecimento.tsx` | `routes/fleet.ts` (`/api/fueling`, `/api/maintenance`, `/api/trips`), `routes/vehicles.ts` (`/api/vehicles`), `routes/mobile.ts` | `telemetry-engine.ts`, `truckscontrol.ts` | §1.2 (combustível), §8.7, §5 (L002, L004) |
+| **Pedágio / TicketLog** | `admin/conciliacao-ticketlog.tsx`, `admin/conferencia-pedagio.tsx` | `routes/conciliacao.ts` (`/api/conciliacao-ticketlog`, `/api/auditoria-pedagios-ticketlog`), `routes/mobile.ts` (pedagio-missao/vazio), `routes/service-orders.ts` (`/api/calculate-tolls`, `/api/toll-plazas`) | `lib/ticketlog-pedagio-csv.ts`, `lib/auditoria-pedagios-ticketlog.ts`, `toll-engine.ts` | §1.2 (pedágio), §8.7 |
+| **Financeiro (lançamentos / aprovação)** | `admin/financeiro.tsx`, `admin/contas-a-pagar.tsx`, `admin/custos-fixos.tsx`, `admin/balanco-gerencial.tsx`, `admin/cotacao-gasto.tsx` | `routes/escort.ts` (`/api/financial/transactions`), `routes/fixed-costs.ts` (`/api/fixed-costs`, `/api/balanco`) | `lib/financial-cancel-guard.ts`, `financial-snapshot.ts` | §8.7, §8.8, memo: `balanco-canonical-revenue` |
+| **PIX / Asaas / NF** | `admin/faturas.tsx`, `admin/relatorio-nf.tsx` | `asaas.ts` (`/api/asaas`, `/api/invoices`, `/api/boletim-medicao`) | `asaas.ts`, `lib/asaas-helpers.ts` | §8.4 |
+| **Boleto / Banco Inter** | `admin/inter-extrato.tsx`, `admin/faturas.tsx` | `routes/inter.ts` (`/api/inter`, `/api/financeiro`) | `lib/inter-webhook-parser.ts` | §1.2 |
+| **Missão / Grid operacional** | `admin/operational-grid.tsx`, `admin/mission.tsx`, `admin/agenda-vtr.tsx`, `admin/tracker.tsx`, `admin/cameras-live.tsx`, `admin/simulador-missao.tsx` | `routes/operational.ts` (`/api/operational-grid`, `/api/vehicle-tracking`), `routes/mission.ts` (`/api/mission`, `/api/missions`) | `billing-calc.ts` (DRE live), `telemetry-engine.ts` | §1.4, §1.5, §5 (L002) |
+| **App mobile do agente** | `mobile/*.tsx` (`missao`, `pedagio`, `abastecimento`, `ocorrencia`, `checklist`, `selfie`, `ponto`) | `routes/mobile.ts` (`/api/mobile`, `/api/ocorrencias`), `routes/mission.ts` (`/api/mission/update`) | `client/src/lib/offlineQueue.ts`, `lib/photo-data-uri.ts` | §8.3, §1.5, memo: `waf-blocks-data-uri` |
+| **Chat de despacho** | `admin/chat.tsx`, `mobile/chat.tsx`, `components/chat-widget.tsx` | `routes/chat.ts` (`/api/chat`) | — | §1.4, §5 (L005, L006) |
+| **WhatsApp / Agente Central** | `admin/whatsapp.tsx` | `routes/whatsapp.ts` (`/api/whatsapp`), `routes/clients.ts` (`/api/whatsapp`) | `lib/zapi.ts`, `lib/whatsapp-humanize.ts`, `lib/agent-central-mention.ts`, `cron-agent-central.ts`, `cron-whatsapp-forward.ts` | memo: `whatsapp-zapi-antiban`, `whatsapp-forward-dedup` |
+| **Landing / SEO** | landing pública em `/` (`client/index.html`) | `server/index.ts` (`/robots.txt`, `/sitemap.xml`, `X-Robots-Tag`) | `server/index.ts` | §10 |
+| **Realtime / sincronismo** | — (afeta todas as telas) | — | `client/src/lib/queryClient.ts` (canais `supabase.channel`) | §1.4 |
+| **Clientes / Fornecedores** | `admin/clients.tsx`, `admin/fornecedores.tsx` | `routes/clients.ts` (`/api/clients`), `routes/fornecedores.ts` (`/api/fornecedores`) | `storage.ts` | §1.3 |
+| **Contratos / Onboarding** | `admin/contratos-experiencia.tsx`, `mobile/contratos.tsx` | `routes/probation-contracts.ts`, `routes/permanent-contracts.ts`, `routes/branded-contracts.ts`, `routes/onboarding.ts` | `contract-pdf.ts`, `permanent-contract-pdf.ts`, `probation-contract-pdf.ts` | §1.3 |
+| **Laudo / OCR de documentos** | `admin/laudo.tsx`, `admin/photo-inspection.tsx` | `routes/mission.ts` (`/api/laudo`) | `lib/correct-text-ai.ts` (OpenAI Vision) | §1.5 |
+
+> Não achou a área aqui? Use o índice de roteamento (topo) pela seção do brain, ou `rg` pelo nome do endpoint/coluna. **Manutenção:** ao criar uma área nova, adicione uma linha aqui; ao mover/renomear/adicionar Tela, Rota ou Lógica de uma área **existente**, atualize a linha correspondente.
+
+### 2.2 Backend (server/)
 | Arquivo | Responsabilidade |
 |---------|-----------------|
 | `server/routes/operational.ts` | Grid Operacional — cálculo de DRE ao vivo, `vehicleFuelCache`, billing live |
@@ -110,7 +140,7 @@
 | `server/db-init.ts` | Inicialização e migrations do banco |
 | `server/storage.ts` | Interface de acesso a dados (`IStorage`) |
 
-### Frontend (client/src/)
+### 2.3 Frontend (client/src/)
 | Arquivo | Responsabilidade |
 |---------|-----------------|
 | `client/src/lib/utils.ts` | `parseUTCDate()`, `formatTimeBRT()`, `formatDateBRT()`, `formatBRT()`, `titleCase()` |
