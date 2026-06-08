@@ -1,2 +1,4 @@
 export_data.sql filter=lfs diff=lfs merge=lfs -text
 export_full_supabase.sql filter=lfs diff=lfs merge=lfs -text
+attached_assets/IMG_2506_1780926965219.dng filter=lfs diff=lfs merge=lfs -text
+attached_assets/IMG_2507_1780926965219.dng filter=lfs diff=lfs merge=lfs -text
