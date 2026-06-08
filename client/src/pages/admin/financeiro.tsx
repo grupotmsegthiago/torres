@@ -26,6 +26,7 @@ import {
   Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import html2canvas from "html2canvas";
+import { filterTransactionsByPeriod } from "@shared/financeiroPeriod";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -2019,9 +2020,6 @@ export default function FinanceiroPage() {
     recusarMutation.mutate({ id, motivo });
   };
 
-  const aguardandoAprovacao = useMemo(() => transactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [transactions]);
-  const recusados = useMemo(() => transactions.filter(t => t.status === "RECUSADA"), [transactions]);
-
   const { data: resumo } = useQuery<any>({ queryKey: ["/api/financial/resumo"] });
 
   const { data: escortContracts = [] } = useQuery<any[]>({ queryKey: ["/api/escort/contracts"] });
@@ -2064,26 +2062,18 @@ export default function FinanceiroPage() {
     },
   });
 
-  const periodFilteredTransactions = useMemo(() => {
-    let list = [...transactions];
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    if (viewPeriod === "DAY") {
-      list = list.filter(t => t.due_date.split("T")[0] === todayStr);
-    } else if (viewPeriod === "WEEK") {
-      // Semana BR: segunda → domingo. dom=0, seg=1, ..., sáb=6 → offset pra segunda = (dow+6)%7.
-      const day = now.getDay();
-      const offsetToMonday = (day + 6) % 7;
-      const monday = new Date(now); monday.setDate(now.getDate() - offsetToMonday);
-      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-      list = list.filter(t => { const d = t.due_date.split("T")[0]; return d >= monday.toISOString().split("T")[0] && d <= sunday.toISOString().split("T")[0]; });
-    } else if (viewPeriod === "MONTH") {
-      list = list.filter(t => { const d = new Date(t.due_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
-    } else if (viewPeriod === "CUSTOM") {
-      list = list.filter(t => { const d = t.due_date.split("T")[0]; return d >= customStartDate && d <= customEndDate; });
-    }
-    return list;
-  }, [transactions, viewPeriod, customStartDate, customEndDate]);
+  // Pendentes (não pagos/vencidos) e aguardando aprovação NUNCA somem do filtro de data
+  // — ficam sempre visíveis mesmo fora do período. Lógica + testes em shared/financeiroPeriod.ts.
+  const periodFilteredTransactions = useMemo(
+    () => filterTransactionsByPeriod(transactions, viewPeriod, customStartDate, customEndDate),
+    [transactions, viewPeriod, customStartDate, customEndDate],
+  );
+
+  // Derivam do conjunto já filtrado por período para que o filtro de data valha também
+  // na aba de aprovação. Aguardando é "sempre visível" (vide periodFilteredTransactions),
+  // então nunca some; recusados respeitam o período selecionado.
+  const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [periodFilteredTransactions]);
+  const recusados = useMemo(() => periodFilteredTransactions.filter(t => t.status === "RECUSADA"), [periodFilteredTransactions]);
 
   const filteredByStep = useMemo(() => {
     const typeFilter = activeStep === "PAGAR" ? "EXPENSE" : activeStep === "RECEBER" ? "INCOME" : null;
@@ -2193,21 +2183,24 @@ export default function FinanceiroPage() {
     link.click();
   };
 
-  const renderFilters = () => (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-neutral-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end" data-testid="filters-panel">
-      <div className="lg:col-span-5">
+  // Filtro de data global — aparece em TODAS as abas do Financeiro. Lembrete: pendentes
+  // (não pagas/vencidas) e aguardando aprovação nunca somem com o período (vide
+  // periodFilteredTransactions); o período só recorta pagos/recusados/históricos.
+  const renderDateFilter = () => (
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-neutral-200 flex flex-col lg:flex-row lg:items-end gap-4" data-testid="date-filter-panel">
+      <div className="flex-1">
         <label className="text-[10px] font-black text-neutral-400 uppercase mb-1.5 block tracking-widest">Período</label>
         <div className="flex gap-1 bg-neutral-50 p-1 rounded-lg border border-neutral-100">
           {([["DAY", "Dia"], ["WEEK", "Semana"], ["MONTH", "Mês"], ["CUSTOM", "Custom"], ["ALL", "Tudo"]] as [ViewPeriod, string][]).map(([id, label]) => (
             <button key={id} onClick={() => setViewPeriod(id)} data-testid={`button-period-${id.toLowerCase()}`}
-              className={`flex-1 px-2 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}>
+              className={`flex-1 px-3 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}>
               {label}
             </button>
           ))}
         </div>
       </div>
       {viewPeriod === "CUSTOM" && (
-        <div className="lg:col-span-3 flex gap-2">
+        <div className="flex gap-2">
           <div className="flex-1">
             <label className="text-[10px] font-bold text-neutral-400 mb-1 block">Início</label>
             <input type="date" className="w-full p-2 border border-neutral-200 rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} data-testid="input-custom-start" />
@@ -2218,7 +2211,12 @@ export default function FinanceiroPage() {
           </div>
         </div>
       )}
-      <div className={`relative ${viewPeriod === "CUSTOM" ? "lg:col-span-1" : "lg:col-span-4"}`}>
+    </div>
+  );
+
+  const renderFilters = () => (
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-neutral-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end" data-testid="filters-panel">
+      <div className="relative lg:col-span-9">
         <label className="text-[10px] font-black text-neutral-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
         <input type="text" placeholder="Fornecedor, cliente..." className="w-full pl-10 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:border-neutral-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search" />
         <Search size={18} className="absolute left-3 bottom-2.5 text-neutral-400" />
@@ -3117,6 +3115,8 @@ export default function FinanceiroPage() {
             })}
           </div>
         </div>
+
+        {renderDateFilter()}
 
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
         {activeStep === "AGUARDANDO" && (
