@@ -26,7 +26,7 @@ import {
   Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import html2canvas from "html2canvas";
-import { filterTransactionsByPeriod } from "@shared/financeiroPeriod";
+import { filterTransactionsByPeriod, brtTodayStr } from "@shared/financeiroPeriod";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -2538,13 +2538,15 @@ export default function FinanceiroPage() {
   );
 
   const renderRelatorio = () => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const paidExpenses = transactions.filter(t => t.type === "EXPENSE" && t.status === "PAID");
-    const paidIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PAID");
-    const overdueExpenses = transactions.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
-    const overdueIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
-    const saldoRealizado = resumo?.saldo_realizado ?? (paidIncomes.reduce((a, t) => a + Number(t.amount), 0) - paidExpenses.reduce((a, t) => a + Number(t.amount), 0));
-    const autoCount = resumo?.lancamentos_auto ?? transactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
+    // Respeita o seletor de período: todas as métricas derivam de
+    // periodFilteredTransactions (pendentes/vencidos permanecem sempre visíveis).
+    const todayStr = brtTodayStr();
+    const paidExpenses = periodFilteredTransactions.filter(t => t.type === "EXPENSE" && t.status === "PAID");
+    const paidIncomes = periodFilteredTransactions.filter(t => t.type === "INCOME" && t.status === "PAID");
+    const overdueExpenses = periodFilteredTransactions.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
+    const overdueIncomes = periodFilteredTransactions.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
+    const saldoRealizado = paidIncomes.reduce((a, t) => a + Number(t.amount), 0) - paidExpenses.reduce((a, t) => a + Number(t.amount), 0);
+    const autoCount = periodFilteredTransactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
     return (
       <div className="space-y-4" data-testid="panel-relatorio">
         {user?.role === "diretoria" && (
@@ -2596,7 +2598,7 @@ export default function FinanceiroPage() {
               <h5 className="text-xs font-black text-neutral-700 uppercase mb-3">Despesas por Categoria</h5>
               {(() => {
                 const catMap = new Map<string, number>();
-                transactions.filter(t => t.type === "EXPENSE").forEach(t => {
+                periodFilteredTransactions.filter(t => t.type === "EXPENSE").forEach(t => {
                   const cat = t.category_name || "Sem categoria";
                   catMap.set(cat, (catMap.get(cat) || 0) + Number(t.amount));
                 });
@@ -2619,7 +2621,7 @@ export default function FinanceiroPage() {
               <h5 className="text-xs font-black text-neutral-700 uppercase mb-3">Receitas por Categoria</h5>
               {(() => {
                 const catMap = new Map<string, number>();
-                transactions.filter(t => t.type === "INCOME").forEach(t => {
+                periodFilteredTransactions.filter(t => t.type === "INCOME").forEach(t => {
                   const cat = t.category_name || "Sem categoria";
                   catMap.set(cat, (catMap.get(cat) || 0) + Number(t.amount));
                 });
@@ -2655,9 +2657,12 @@ export default function FinanceiroPage() {
   );
 
   const renderFechamento = () => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const pendingCount = transactions.filter(t => t.status === "PENDING").length;
-    const overdueCount = transactions.filter(t => t.status === "PENDING" && t.due_date.split("T")[0] < todayStr).length;
+    // Respeita o seletor de período. Pendentes/vencidos são "sempre visíveis"
+    // em periodFilteredTransactions, então o fechamento sinaliza pendências do
+    // período (e qualquer pendência em aberto) sem deixar nada escapar.
+    const todayStr = brtTodayStr();
+    const pendingCount = periodFilteredTransactions.filter(t => t.status === "PENDING").length;
+    const overdueCount = periodFilteredTransactions.filter(t => t.status === "PENDING" && t.due_date.split("T")[0] < todayStr).length;
     const hasPendencies = pendingCount > 0 || overdueCount > 0;
     return (
       <div className="space-y-4" data-testid="panel-fechamento">
