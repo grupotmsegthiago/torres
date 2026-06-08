@@ -2096,7 +2096,7 @@ export default function FinanceiroPage() {
       // Ocultar AGUARDANDO_APROVACAO e RECUSADA das abas operacionais (ficam em sua própria aba)
       list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
     }
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = brtTodayStr();
     if (statusFilter === "PENDING") list = list.filter(t => t.status === "PENDING");
     else if (statusFilter === "PAID") list = list.filter(t => t.status === "PAID");
     else if (statusFilter === "OVERDUE") list = list.filter(t => t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
@@ -2149,12 +2149,12 @@ export default function FinanceiroPage() {
   }, [manualOperationalTx]);
 
   const overduePagar = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = brtTodayStr();
     return manualOperationalTx.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
   }, [manualOperationalTx]);
 
   const overdueReceber = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = brtTodayStr();
     return manualOperationalTx.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
   }, [manualOperationalTx]);
 
@@ -2278,7 +2278,7 @@ export default function FinanceiroPage() {
             ) : list.length === 0 ? (
               <tr><td colSpan={8} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
             ) : list.map(t => {
-              const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < new Date().toISOString().split("T")[0];
+              const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < brtTodayStr();
               return (
                 <tr key={t.id} className={`hover:bg-neutral-50 transition-colors ${isOverdue ? "bg-red-50/50" : ""}`} data-testid={`row-transaction-${t.id}`}>
                   <td className="px-4 py-3">
