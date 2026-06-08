@@ -96,7 +96,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   const [location] = useLocation();
   const { user } = useAuth();
   const isMissionActive = location.startsWith("/mobile/missao");
-  const { denied, position, loading, error, requestPermission } = useGeolocation(isMissionActive);
+  const { denied, position, loading, bootstrapping, error, requestPermission } = useGeolocation(isMissionActive);
   useAuditLog(location);
   useScreenshotDetection(location);
 
@@ -117,7 +117,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         </header>
 
         <main className="flex-1 flex items-center justify-center p-6">
-          {loading ? (
+          {loading || bootstrapping ? (
             <div className="text-center" data-testid="location-loading">
               <Loader2 className="w-10 h-10 text-neutral-400 animate-spin mx-auto mb-4" />
               <p className="text-sm font-bold text-neutral-700">Capturando localização...</p>
