@@ -7,6 +7,9 @@ import {
   profileFromRole,
   getMandatoryDocTypesForProfile,
   getAllDocTypesForProfile,
+  isReciclagemDue,
+  filterReciclagemByCnv,
+  RECICLAGEM_ESCOLTA_TYPE,
 } from "./documents-catalog";
 
 test("profileFromRole: vigilante variants", () => {
@@ -89,4 +92,45 @@ test("Opcionais não entram nos mandatórios (Vacinação + Formação Escolar)"
     assert.ok(!mand.includes("Carteira de Vacinação"), `${profile} não pode ter Vacinação como obrigatório`);
     assert.ok(!mand.includes("Comprovante de Formação Escolar"), `${profile} não pode ter Form. Escolar como obrigatório`);
   }
+});
+
+test("isReciclagemDue: sem data → não cobra", () => {
+  assert.equal(isReciclagemDue(null), false);
+  assert.equal(isReciclagemDue(""), false);
+  assert.equal(isReciclagemDue(undefined), false);
+  assert.equal(isReciclagemDue("data-invalida"), false);
+});
+
+test("isReciclagemDue: < 2 anos não cobra, >= 2 anos cobra", () => {
+  const hoje = "2026-06-09";
+  assert.equal(isReciclagemDue("2025-01-10", hoje), false); // ~1.4 anos
+  assert.equal(isReciclagemDue("2024-06-10", hoje), false); // 1 dia antes de 2 anos
+  assert.equal(isReciclagemDue("2024-06-09", hoje), true);  // exatamente 2 anos
+  assert.equal(isReciclagemDue("2020-01-01", hoje), true);  // bem antigo
+  assert.equal(isReciclagemDue("2024-06-09T00:00:00", hoje), true); // tolera timestamp
+});
+
+test("filterReciclagemByCnv: remove reciclagem quando não cobra, mantém quando cobra", () => {
+  const hoje = "2026-06-09";
+  const base = getMandatoryDocTypesForProfile("vigilante");
+  assert.ok(base.includes(RECICLAGEM_ESCOLTA_TYPE), "vigilante deve ter reciclagem como obrigatório base");
+
+  const semData = filterReciclagemByCnv(base, null, hoje);
+  assert.ok(!semData.includes(RECICLAGEM_ESCOLTA_TYPE), "sem data → reciclagem fora");
+
+  const recente = filterReciclagemByCnv(base, "2025-06-01", hoje);
+  assert.ok(!recente.includes(RECICLAGEM_ESCOLTA_TYPE), "CNV < 2 anos → reciclagem fora");
+
+  const antigo = filterReciclagemByCnv(base, "2023-01-01", hoje);
+  assert.ok(antigo.includes(RECICLAGEM_ESCOLTA_TYPE), "CNV >= 2 anos → reciclagem dentro");
+
+  // não mexe nos outros tipos
+  assert.deepEqual(antigo, base);
+});
+
+test("isReciclagemDue: ano bissexto (29/fev) → vence em 01/mar do 2º ano", () => {
+  // CNV emitido em 29/02/2024; 2026 não é bissexto. Comparação lexical de string
+  // trata o vencimento como "2026-02-29" (inexistente): cobra a partir de 01/mar.
+  assert.equal(isReciclagemDue("2024-02-29", "2026-02-28"), false);
+  assert.equal(isReciclagemDue("2024-02-29", "2026-03-01"), true);
 });

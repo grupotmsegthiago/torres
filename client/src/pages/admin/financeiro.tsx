@@ -61,6 +61,7 @@ type ViewPeriod = "DAY" | "WEEK" | "MONTH" | "CUSTOM" | "ALL";
 
 interface FinancialTransaction {
   id: string;
+  seq: number | null;
   description: string;
   amount: number;
   type: TransactionType;
@@ -2292,6 +2293,9 @@ export default function FinanceiroPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
+                      {t.seq != null && (
+                        <span className="text-[10px] font-mono font-bold text-neutral-400 shrink-0" data-testid={`text-seq-${t.id}`}>#{t.seq}</span>
+                      )}
                       <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
                       {t.origin_type && t.origin_type !== "manual" && (
                         (() => {

@@ -138,6 +138,7 @@ export const employees = pgTable("employees", {
   cnhExpiry: date("cnh_expiry"),
   cnvNumber: text("cnv_number"),
   cnvExpiry: date("cnv_expiry"),
+  cnvIssueDate: date("cnv_issue_date"),
   ctpsNumber: text("ctps_number"),
   ctpsSerie: text("ctps_serie"),
   vestNumber: text("vest_number"),

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
-import { getMandatoryDocTypesForProfile, profileFromRole } from "@shared/documents-catalog";
+import { getMandatoryDocTypesForProfile, profileFromRole, filterReciclagemByCnv } from "@shared/documents-catalog";
 
 /**
  * Onboarding em 4 etapas: Documentação → Contratos → Treinamento → Holerites.
@@ -104,7 +104,10 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   const today = todayBRT();
   const roles = rolesForEmployee(emp.role);
 
-  const reqDocs = getMandatoryDocTypesForProfile(profileFromRole(emp.role));
+  const reqDocs = filterReciclagemByCnv(
+    getMandatoryDocTypesForProfile(profileFromRole(emp.role)),
+    (emp as any).cnvIssueDate,
+  );
   const reqTrainings = Array.from(
     new Map(
       roles.flatMap(r => REQUIRED_TRAININGS[r] || []).map(t => [t.type, t])

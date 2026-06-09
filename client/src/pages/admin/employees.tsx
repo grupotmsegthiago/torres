@@ -46,6 +46,8 @@ import {
   buildRequiredDocsCatalog,
   filterDocsCatalogByRole,
   profileFromRole,
+  isReciclagemDue,
+  RECICLAGEM_ESCOLTA_TYPE,
   type DocItem,
   type DocGroup,
 } from "@shared/documents-catalog";
@@ -740,6 +742,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     cnhExpiry: "",
     cnvNumber: "",
     cnvExpiry: "",
+    cnvIssueDate: "",
     ctpsNumber: "",
     ctpsSerie: "",
     pis: "",
@@ -793,6 +796,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         cnhExpiry: e.cnhExpiry || "",
         cnvNumber: e.cnvNumber || "",
         cnvExpiry: e.cnvExpiry || "",
+        cnvIssueDate: e.cnvIssueDate || "",
         ctpsNumber: e.ctpsNumber || "",
         ctpsSerie: e.ctpsSerie || "",
         pis: e.pis || "",
@@ -1584,6 +1588,11 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
               <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Emissão / Formação</label>
+              <Input type="date" value={form.cnvIssueDate} onChange={(e) => setForm({ ...form, cnvIssueDate: e.target.value })} data-testid="input-employee-cnv-issue-date" />
+              <p className="text-[11px] text-neutral-400 mt-1">A reciclagem só passa a ser cobrada 2 anos após esta data.</p>
             </div>
           </div>
           <div className="mt-3">
@@ -3710,7 +3719,12 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const empIsVig = isVigilanteRole(employee.role);
 
   const ALL_REQUIRED_DOCS_FULL = buildRequiredDocsCatalog();
-  const REQUIRED_DOCS = filterDocsCatalogByRole(ALL_REQUIRED_DOCS_FULL, empIsVig);
+  // Reciclagem de escolta armada só é cobrada 2 anos após a emissão do CNV
+  // (vide isReciclagemDue). Sem data ou < 2 anos → sai do checklist e da contagem.
+  const reciclagemDue = isReciclagemDue((employee as any).cnvIssueDate);
+  const REQUIRED_DOCS = filterDocsCatalogByRole(ALL_REQUIRED_DOCS_FULL, empIsVig)
+    .map(g => reciclagemDue ? g : { ...g, items: g.items.filter(i => i.type !== RECICLAGEM_ESCOLTA_TYPE) })
+    .filter(g => g.items.length > 0);
 
   const getDocStatus = (docType: string) => {
     if (docType === "Fotos 3x4" && employee.photoUrl) return true;

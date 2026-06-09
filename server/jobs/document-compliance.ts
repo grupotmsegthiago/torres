@@ -5,6 +5,8 @@ import {
   filterDocsCatalogByProfile,
   profileFromRole,
   DOCS_WITH_EXPIRY,
+  RECICLAGEM_ESCOLTA_TYPE,
+  isReciclagemDue,
 } from "@shared/documents-catalog";
 
 const ESCOLTA_EMAIL = "escolta@torresseguranca.com.br";
@@ -46,7 +48,7 @@ function isExpired(expiryDate: string): boolean {
 export async function buildDocComplianceReport(): Promise<EmployeeReport[]> {
   const { data: employees, error: empErr } = await supabaseAdmin
     .from("employees")
-    .select("id, name, role, status, photo_url")
+    .select("id, name, role, status, photo_url, cnv_issue_date")
     .eq("status", "ativo")
     .order("name");
   if (empErr) throw new Error(`Falha ao carregar funcionários: ${empErr.message}`);
@@ -77,7 +79,10 @@ export async function buildDocComplianceReport(): Promise<EmployeeReport[]> {
     const missing: { type: string; label: string }[] = [];
     const expired: ExpiredDoc[] = [];
 
-    const mandatory = mandatoryItemsForProfile(emp.role);
+    // Reciclagem de escolta armada só entra como pendência quando o CNV tem >= 2
+    // anos a partir da data de emissão (vide isReciclagemDue). Sem data → não cobra.
+    const mandatory = mandatoryItemsForProfile(emp.role)
+      .filter(it => it.type !== RECICLAGEM_ESCOLTA_TYPE || isReciclagemDue(emp.cnv_issue_date));
     for (const item of mandatory) {
       // Compat: aceita "Antecedentes Criminais" do perfil admin como satisfeito
       // por qualquer um dos dois nomes antigos (Civil/Militar), pra não forçar

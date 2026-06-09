@@ -122,3 +122,32 @@ export const DOCS_WITH_EXPIRY = new Set<string>([
   "CNH",
   "CNV",
 ]);
+
+/** Tipo do doc de reciclagem de escolta armada (cobrança condicional). */
+export const RECICLAGEM_ESCOLTA_TYPE = "Reciclagem Escolta Armada";
+
+function brtToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+/**
+ * Reciclagem de escolta armada só é COBRADA quando o CNV completa 2 anos a partir
+ * da data de emissão/formação. Decidido com o dono (jun/2026):
+ *   - CNV com < 2 anos → NÃO cobra reciclagem.
+ *   - CNV com >= 2 anos → cobra.
+ *   - Sem data de emissão preenchida → NÃO cobra (evita alerta falso até o RH preencher).
+ */
+export function isReciclagemDue(cnvIssueDate?: string | null, today: string = brtToday()): boolean {
+  if (!cnvIssueDate) return false;
+  const [y, m, d] = String(cnvIssueDate).split("T")[0].split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const dueDate = `${y + 2}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return today >= dueDate;
+}
+
+/** Remove a reciclagem de escolta armada da lista de obrigatórios quando ela
+ *  ainda NÃO é cobrada para o CNV daquele funcionário (vide isReciclagemDue). */
+export function filterReciclagemByCnv(types: string[], cnvIssueDate?: string | null, today: string = brtToday()): string[] {
+  if (isReciclagemDue(cnvIssueDate, today)) return types;
+  return types.filter(t => t !== RECICLAGEM_ESCOLTA_TYPE);
+}
