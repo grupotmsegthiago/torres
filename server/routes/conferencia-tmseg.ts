@@ -381,10 +381,14 @@ export async function conciliarBoletim(buffer: Buffer, clientId: number) {
         });
       }
 
-      const missingInSheet = sysRows.filter(s => !s.matched).map(s => ({
-        osNumber: s.osNumber, data: s.data, placa: s.placaRaw, rota: s.rotaCidades,
-        total: s.total, status: s.status,
-      }));
+      // "fora da planilha" só dentro do período informado pela planilha (o buffer ±3d
+      // serve apenas p/ casar missões multi-dia, não p/ listar OS de outros períodos).
+      const missingInSheet = sysRows
+        .filter(s => !s.matched && s.data && s.data >= minDate && s.data <= maxDate)
+        .map(s => ({
+          osNumber: s.osNumber, data: s.data, placa: s.placaRaw, rota: s.rotaCidades,
+          total: s.total, status: s.status,
+        }));
 
       const divergentCount = matchedRows.filter(r => r.hasDivergence).length;
       const extTotal = extRows.reduce((a, r) => a + r.total, 0);
