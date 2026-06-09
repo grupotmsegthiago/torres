@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
-  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video, FileSpreadsheet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import WhatsAppFab from "@/components/whatsapp-fab";
@@ -201,6 +201,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
           { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: Receipt },
           { path: "/admin/conferencia-pedagio", label: "Pedágio: Pago × Cobrado", icon: ShieldCheck },
+          { path: "/admin/conferencia-tmseg", label: "Conferência TM SEG", icon: FileSpreadsheet },
         ],
       },
     ],
