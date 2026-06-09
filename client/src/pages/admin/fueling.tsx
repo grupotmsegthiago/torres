@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { calcKmL } from "@/lib/fuel-kml";
+import { compressImageFile } from "@/lib/image-compress";
 import { computeTicketlogStats } from "@/lib/fuel-ticketlog";
 import { computeUrbanHighwayShare, filterMissionsByPeriod, type ClassifiableMission, type TripShare } from "@/lib/trip-classifier";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -208,7 +209,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     odometerPhoto: fueling?.odometerPhoto || "",
   });
 
-  const handlePhotoUpload = (field: "receiptPhoto" | "pumpPhoto" | "odometerPhoto") => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (field: "receiptPhoto" | "pumpPhoto" | "odometerPhoto") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -219,10 +220,12 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
       toast({ title: "Imagem muito grande", description: "Máx 8 MB.", variant: "destructive" });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setForm(f => ({ ...f, [field]: String(reader.result) }));
-    reader.onerror = () => toast({ title: "Erro ao ler imagem", variant: "destructive" });
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl } = await compressImageFile(file);
+      setForm(f => ({ ...f, [field]: dataUrl }));
+    } catch {
+      toast({ title: "Erro ao ler imagem", variant: "destructive" });
+    }
   };
 
   const gasParsed = parseBRL(form.gasolinePrice);

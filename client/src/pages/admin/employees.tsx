@@ -17,47 +17,14 @@ import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
+import { compressImageFile } from "@/lib/image-compress";
 
 // Anexar foto direto do celular vem em 4-8 MB e estoura o limite do POST
-// (413 request entity too large). Comprime via canvas pra max 1280px no
-// maior lado + JPEG q=0.7 (igual handlePhotoCapture do mobile/missao.tsx).
-// PDF passa direto. Resultado típico: ~80-250 KB.
+// (413 request entity too large) e o payload do Supabase. Comprime via canvas
+// pra max 1024px no maior lado + JPEG q=0.7 (utilitário compartilhado em
+// @/lib/image-compress). PDF passa direto. Resultado típico: 50-150 KB.
 function readAndCompressFile(file: File): Promise<{ dataUrl: string; fileName: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Falha ao ler arquivo"));
-    reader.onload = (ev) => {
-      const originalDataUrl = ev.target!.result as string;
-      if (!file.type.startsWith("image/") || originalDataUrl.startsWith("data:application/pdf")) {
-        resolve({ dataUrl: originalDataUrl, fileName: file.name });
-        return;
-      }
-      const img = new Image();
-      img.onload = () => {
-        const maxSize = 1280;
-        let w = img.width, h = img.height;
-        if (w > maxSize || h > maxSize) {
-          if (w > h) { h = Math.round((h / w) * maxSize); w = maxSize; }
-          else { w = Math.round((w / h) * maxSize); h = maxSize; }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) { resolve({ dataUrl: originalDataUrl, fileName: file.name }); return; }
-        ctx.drawImage(img, 0, 0, w, h);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
-        const origKB = Math.round(originalDataUrl.length * 0.75 / 1024);
-        const newKB = Math.round(compressed.length * 0.75 / 1024);
-        console.log(`[doc-upload] foto comprimida: ${origKB} KB → ${newKB} KB (${w}x${h})`);
-        const baseName = file.name.replace(/\.(png|webp|heic|heif|gif|bmp|tiff?)$/i, "").replace(/\.jpe?g$/i, "");
-        resolve({ dataUrl: compressed, fileName: `${baseName || "foto"}.jpg` });
-      };
-      img.onerror = () => resolve({ dataUrl: originalDataUrl, fileName: file.name });
-      img.src = originalDataUrl;
-    };
-    reader.readAsDataURL(file);
-  });
+  return compressImageFile(file);
 }
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

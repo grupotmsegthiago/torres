@@ -123,7 +123,7 @@ export default function MobileAbastecimentoPage() {
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current || !captureMode) return;
     const cv = canvasRef.current; const video = videoRef.current;
-    cv.width = Math.min(video.videoWidth, 1280); cv.height = Math.min(video.videoHeight, 1280);
+    cv.width = Math.min(video.videoWidth, 1024); cv.height = Math.min(video.videoHeight, 1024);
     const ctx = cv.getContext("2d"); if (!ctx) return;
     ctx.drawImage(video, 0, 0, cv.width, cv.height);
     const dataUrl = cv.toDataURL("image/jpeg", 0.7);
