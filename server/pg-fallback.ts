@@ -378,7 +378,7 @@ let writeQueueReady = false;
 
 export async function enqueueWrite(
   tableName: string,
-  operation: "insert" | "update" | "delete",
+  operation: "insert" | "update" | "delete" | "upsert",
   payload: Record<string, any>,
   filters?: Record<string, any>,
 ): Promise<{ queued: true; queueId: number }> {
@@ -440,6 +440,30 @@ export async function applyViaDirectSql(
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
     const values = cols.map((c) => payload[c]);
     await p.query(`INSERT INTO ${t} (${colsSql}) VALUES (${placeholders})`, values);
+  } else if (operation === "upsert") {
+    // onConflict vem em filters.onConflict (coluna do índice único, ex.: user_id)
+    const conflictCol = filters?.onConflict as string | undefined;
+    const cols = Object.keys(payload);
+    if (cols.length === 0) return;
+    const colsSql = cols.map(quoteIdent).join(", ");
+    const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+    const values = cols.map((c) => payload[c]);
+    if (conflictCol) {
+      const updateSql = cols
+        .filter((c) => c !== conflictCol)
+        .map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
+        .join(", ");
+      // payload só com a coluna de conflito → DO UPDATE SET vazio seria SQL inválido
+      const onConflictClause = updateSql
+        ? `ON CONFLICT (${quoteIdent(conflictCol)}) DO UPDATE SET ${updateSql}`
+        : `ON CONFLICT (${quoteIdent(conflictCol)}) DO NOTHING`;
+      await p.query(
+        `INSERT INTO ${t} (${colsSql}) VALUES (${placeholders}) ${onConflictClause}`,
+        values,
+      );
+    } else {
+      await p.query(`INSERT INTO ${t} (${colsSql}) VALUES (${placeholders})`, values);
+    }
   } else if (operation === "update" && filters) {
     const cols = Object.keys(payload);
     if (cols.length === 0) return;
@@ -498,6 +522,11 @@ export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: 
 
         if (item.operation === "insert") {
           result = await supabaseAdmin.from(item.table_name).insert(payload);
+        } else if (item.operation === "upsert") {
+          const onConflict = filters?.onConflict as string | undefined;
+          result = await supabaseAdmin
+            .from(item.table_name)
+            .upsert(payload, onConflict ? { onConflict } : undefined);
         } else if (item.operation === "update" && filters) {
           let query = supabaseAdmin.from(item.table_name).update(payload);
           for (const [col, val] of Object.entries(filters)) {

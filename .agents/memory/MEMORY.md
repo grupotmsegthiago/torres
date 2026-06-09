@@ -9,3 +9,4 @@
 - [WhatsApp forward dedup](whatsapp-forward-dedup.md) — dedup é por-linha (whatsapp_forwarded_at), não por-OS; app duplica finalização → "Fim de Missão" sai 2x; throttle só espaça; trava por-OS resolve.
 - [Conciliação boletim externo](conferencia-reconciliation.md) — match DATA|PLACA+score com aceite por confiança mínima (único exato OU score>=2); planilha do cliente bate 1:1 com escort_billings, "TORRES" é fornecedor (sem billings).
 - [Gate de GPS mobile](mobile-gps-gate.md) — nunca auto-disparar getCurrentPosition no 1º acesso (prompt/sem Permissions API) → spinner pisca e trava; só auto-capturar se granted; resume via grantedRef; bootstrapping evita flash do botão.
+- [Fila de fallback espelha upsert](fallback-queue-upsert.md) — escrita primária com upsert NÃO pode enfileirar insert cego no fallback; senão flush no recovery floodou unique violation (uniq_agent_loc_user).

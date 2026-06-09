@@ -954,7 +954,9 @@ export class DatabaseStorage implements IStorage {
       return toCamelObj<AgentLocation>(result);
     } catch (err: any) {
       console.warn(`[resilient] agent_locations upsert fallback: ${err.message}`);
-      await enqueueWrite("agent_locations", "insert", payload);
+      // Enfileira como UPSERT (não insert cego) — senão a fila reprocessa um INSERT
+      // que viola uniq_agent_loc_user a cada ping → flood de unique violation no banco.
+      await enqueueWrite("agent_locations", "upsert", payload, { onConflict: "user_id" });
       return toCamelObj<AgentLocation>(payload as any);
     }
   }
