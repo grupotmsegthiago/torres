@@ -175,25 +175,38 @@ import type { Express } from "express";
   app.get("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
       const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
-      let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
       // Lançamentos AGUARDANDO_APROVACAO/RECUSADA são visíveis para TODOS os usuários
       // com acesso ao módulo financeiro (transparência). Apenas a ação de aprovar/recusar
       // continua restrita à diretoria (rotas /aprovar e /recusar usam requireThiago).
-      if (type) query = query.eq("type", type as string);
-      if (status) query = query.eq("status", status as string);
-      if (from) query = query.gte("due_date", from as string);
-      if (to) query = query.lte("due_date", to as string);
-      if (search) query = query.or(`description.ilike.%${search}%,entity_name.ilike.%${search}%,category_name.ilike.%${search}%`);
-      if (String(exclude_mission) === "true") {
+      const buildQuery = () => {
+        let q = supabaseAdmin
+          .from("financial_transactions")
+          .select("*")
+          .order("due_date", { ascending: false })
+          .order("id", { ascending: false });
+        if (type) q = q.eq("type", type as string);
+        if (status) q = q.eq("status", status as string);
+        if (from) q = q.gte("due_date", from as string);
+        if (to) q = q.lte("due_date", to as string);
+        if (search) q = q.or(`description.ilike.%${search}%,entity_name.ilike.%${search}%,category_name.ilike.%${search}%`);
         // Apenas manuais (sem origem automática de missão)
-        query = query.or(`origin_type.is.null,origin_type.eq.manual`);
+        if (String(exclude_mission) === "true") q = q.or(`origin_type.is.null,origin_type.eq.manual`);
+        if (String(only_mission) === "true") q = q.in("origin_type", MISSION_ORIGINS);
+        return q;
+      };
+      // Paginação obrigatória: o Supabase limita cada request a 1000 linhas. Sem
+      // isso, lançamentos além de 1000 "sumiam" da tela (a tabela já passou de 2,3
+      // mil registros) — todas as contas precisam aparecer para rastreabilidade.
+      const PAGE_SIZE = 1000;
+      const all: any[] = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data, error } = await buildQuery().range(offset, offset + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE_SIZE) break;
       }
-      if (String(only_mission) === "true") {
-        query = query.in("origin_type", MISSION_ORIGINS);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      res.json(data || []);
+      res.json(all);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

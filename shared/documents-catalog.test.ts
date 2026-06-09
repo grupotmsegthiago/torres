@@ -27,9 +27,9 @@ test("profileFromRole: admin variants (Aux Limpeza inclusive)", () => {
   assert.equal(profileFromRole(undefined), "admin");
 });
 
-test("Vigilante: 18 obrigatórios + 2 opcionais (não-Dependentes) = 20 no checklist", () => {
+test("Vigilante: 17 obrigatórios + 2 opcionais (não-Dependentes) = 19 no checklist", () => {
   const mandatory = getMandatoryDocTypesForProfile("vigilante");
-  assert.equal(mandatory.length, 18, `vigilante obrigatórios = 18, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
+  assert.equal(mandatory.length, 17, `vigilante obrigatórios = 17, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
   // Splits de antecedentes esperados pro vigilante:
   assert.ok(mandatory.includes("Antecedente Criminal Polícia Civil"));
   assert.ok(mandatory.includes("Antecedente Criminal Polícia Militar"));
@@ -41,14 +41,14 @@ test("Vigilante: 18 obrigatórios + 2 opcionais (não-Dependentes) = 20 no check
   assert.ok(mandatory.includes("Certificado de Reservista"));
 
   const all = getAllDocTypesForProfile("vigilante");
-  assert.equal(all.length, 20, `vigilante total no checklist (sem Dependentes) = 20, recebeu ${all.length}`);
+  assert.equal(all.length, 19, `vigilante total no checklist (sem Dependentes) = 19, recebeu ${all.length}`);
   assert.ok(all.includes("Carteira de Vacinação"));
   assert.ok(all.includes("Comprovante de Formação Escolar"));
 });
 
-test("Admin: 10 obrigatórios + 2 opcionais = 12 no checklist", () => {
+test("Admin: 9 obrigatórios + 2 opcionais = 11 no checklist", () => {
   const mandatory = getMandatoryDocTypesForProfile("admin");
-  assert.equal(mandatory.length, 10, `admin obrigatórios = 10, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
+  assert.equal(mandatory.length, 9, `admin obrigatórios = 9, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
   // Antecedentes unificado no admin:
   assert.ok(mandatory.includes("Antecedentes Criminais"));
   assert.ok(!mandatory.includes("Antecedente Criminal Polícia Civil"));
@@ -67,7 +67,7 @@ test("Admin: 10 obrigatórios + 2 opcionais = 12 no checklist", () => {
   assert.ok(mandatory.includes("CPF"));
 
   const all = getAllDocTypesForProfile("admin");
-  assert.equal(all.length, 12, `admin total no checklist (sem Dependentes) = 12, recebeu ${all.length}`);
+  assert.equal(all.length, 11, `admin total no checklist (sem Dependentes) = 11, recebeu ${all.length}`);
 });
 
 test("Auxiliar de Limpeza usa exatamente o mesmo checklist de Admin", () => {

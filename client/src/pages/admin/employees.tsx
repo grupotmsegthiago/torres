@@ -71,7 +71,7 @@ const CCT_SP_2025 = {
 };
 const ESCOLARIDADE = ["Fundamental", "Médio", "Superior", "Pós-graduação", "Mestrado", "Doutorado"];
 
-const DOCS_WITH_EXPIRY = new Set(["CNH", "CNV", "ASO", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "Certidão de Pontuação CNH"]);
+const DOCS_WITH_EXPIRY = new Set(["CNH", "CNV"]);
 const docRequiresExpiry = (type: string) => DOCS_WITH_EXPIRY.has(type);
 
 function formatCpf(value: string): string {
@@ -581,7 +581,6 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                   <option value="Título de Eleitor">Título de Eleitor</option>
                   <option value="Certificado de Reservista">Certificado de Reservista</option>
                   <option value="Certidão de Pontuação CNH">Certidão de Pontuação CNH</option>
-                  <option value="Dados Bancários">Dados Bancários</option>
                   <option value="Certificado Formação Vigilante">Certificado Formação Vigilante</option>
                   <option value="Certificado Formação Escolta Armada">Certificado Formação Escolta Armada</option>
                   <option value="Reciclagem Escolta Armada">Reciclagem Escolta Armada</option>
@@ -594,9 +593,16 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                   <option value="Contrato Assinado">Contrato Assinado</option>
                   <option value="Certificado Curso">Certificado Curso</option>
                   <option value="Atestado">Atestado</option>
+                  <option value="Diversos">Diversos (nome livre)</option>
                   <option value="Outro">Outro</option>
                 </select>
               </div>
+              {docForm.type === "Diversos" && (
+                <div>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome do Documento *</label>
+                  <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Ex: Carta de referência" data-testid="input-doc-diversos-name" />
+                </div>
+              )}
               <div>
                 <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nº Documento</label>
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Número" data-testid="input-doc-number" />
@@ -605,10 +611,12 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                 <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Emissão</label>
                 <Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue" />
               </div>
-              <div>
-                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade{docRequiresExpiry(docForm.type) ? " *" : ""}</label>
-                <Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
-              </div>
+              {docRequiresExpiry(docForm.type) && (
+                <div>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade *</label>
+                  <Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
+                </div>
+              )}
               <div>
                 <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Foto/PDF</label>
                 <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc">
@@ -644,6 +652,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                           "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`}>{d.type}</span>
                         <div className="min-w-0">
+                          {d.type === "Diversos" && d.notes && <span className="text-xs text-neutral-700 font-medium mr-2">{d.notes}</span>}
                           {d.documentNumber && <span className="text-xs text-neutral-600 font-mono">{d.documentNumber}</span>}
                           {d.expiryDate && (
                             <span className={`text-xs ml-2 px-1.5 py-0.5 rounded font-medium ${
@@ -3687,7 +3696,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     if (w) { w.document.write(contractHtml); w.document.close(); w.print(); }
   };
 
-  const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Dados Bancários", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
+  const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Diversos", "Outro"];
 
 
   // Determina perfil de cobrança documental do funcionário.
@@ -3860,7 +3869,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <h3 className="text-sm font-bold text-neutral-700">Documentos Arquivados</h3>
               <Button size="sm" onClick={() => {
                 if (!showDocForm) {
-                  const available = DOC_TYPES.filter((t) => t === "Outro" || DOCS_WITH_EXPIRY.has(t) || !docs.some((d: any) => d.type === t));
+                  const available = DOC_TYPES.filter((t) => t === "Outro" || t === "Diversos" || DOCS_WITH_EXPIRY.has(t) || !docs.some((d: any) => d.type === t));
                   const firstAvail = available[0] || "Outro";
                   setDocForm(prev => ({ ...prev, type: firstAvail }));
                 }
@@ -3871,17 +3880,24 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
                 <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-doc-type-pasta">
                   {DOC_TYPES.filter((t) => {
-                    if (t === "Outro") return true;
+                    if (t === "Outro" || t === "Diversos") return true;
                     if (DOCS_WITH_EXPIRY.has(t)) return true;
                     return !docs.some((d: any) => d.type === t);
                   }).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
+                {docForm.type === "Diversos" && (
+                  <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Nome do documento *" data-testid="input-doc-diversos-name-pasta" />
+                )}
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Nº do documento" data-testid="input-doc-number-pasta" />
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Emissão</label><Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue-pasta" /></div>
-                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade{docRequiresExpiry(docForm.type) ? " *" : ""}</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
+                  {docRequiresExpiry(docForm.type) && (
+                    <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade *</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
+                  )}
                 </div>
-                <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
+                {docForm.type !== "Diversos" && (
+                  <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
+                )}
                 <div className="flex gap-2 items-center">
                   <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf" onChange={handleFile} />
                   <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc-pasta">
@@ -3911,7 +3927,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <tbody>
                   {docs.map((d: any) => (
                     <tr key={d.id} className="border-b border-neutral-100" data-testid={`row-doc-${d.id}`}>
-                      <td className="px-3 py-2 font-semibold">{d.type}</td>
+                      <td className="px-3 py-2 font-semibold">{d.type}{d.type === "Diversos" && d.notes ? ` — ${d.notes}` : ""}</td>
                       <td className="px-3 py-2 font-mono text-xs">{d.documentNumber || "-"}</td>
                       <td className="px-3 py-2">{fmtDate(d.issueDate)}</td>
                       <td className="px-3 py-2">{d.expiryDate ? (() => { const st = docExpiryStatus(d.expiryDate); return (<span className={`inline-flex items-center gap-1 ${st === "expired" ? "text-red-600 font-bold" : st === "warning" ? "text-amber-600 font-semibold" : ""}`}>{fmtDate(d.expiryDate)}{st === "expired" && <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-bold uppercase">Vencido</span>}{st === "warning" && <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold uppercase">Vencendo</span>}</span>); })() : "-"}</td>

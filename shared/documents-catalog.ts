@@ -52,7 +52,6 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
     { group: "Habilitação e Formação", items: [
       { type: "CNH", label: "CNH / CNV", vigilanteOnly: true },
       { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true },
-      { type: "Dados Bancários", label: "Dados Bancários" },
       // Opcionais (decidido 27/05/2026): aparecem no checklist mas não bloqueiam alerta.
       { type: "Carteira de Vacinação", label: "Carteira de Vacinação", optional: true },
       { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar", optional: true },
@@ -113,13 +112,9 @@ export function getAllDocTypesForProfile(profile: EmployeeProfile): string[] {
     .flatMap(g => g.items.map(i => i.type));
 }
 
-/** Tipos de doc que possuem validade (data de expiração). */
+/** Tipos de doc que possuem validade (data de expiração).
+ *  Decidido com o dono: cobrar validade SOMENTE de CNH e CNV. */
 export const DOCS_WITH_EXPIRY = new Set<string>([
   "CNH",
   "CNV",
-  "ASO",
-  "Certificado Formação Vigilante",
-  "Certificado Formação Escolta Armada",
-  "Reciclagem Escolta Armada",
-  "Certidão de Pontuação CNH",
 ]);
