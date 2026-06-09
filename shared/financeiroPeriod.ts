@@ -46,18 +46,11 @@ export function periodRange(
 }
 
 /**
- * Um lançamento é "sempre visível" no filtro de data quando está pendente:
- * conta não paga (PENDING, inclusive vencida) OU aguardando aprovação da diretoria.
- * Esses NUNCA somem da tela, independente do período escolhido.
- */
-export function isAlwaysVisibleInPeriod(t: PeriodFilterable): boolean {
-  return t.status === "PENDING" || t.status === "AGUARDANDO_APROVACAO";
-}
-
-/**
- * Filtra lançamentos pelo período selecionado, mantendo SEMPRE os pendentes
- * (não pagos/vencidos) e os aguardando aprovação visíveis. Os demais status
- * (pagos, recusados, históricos) são recortados pela data de vencimento.
+ * Filtra lançamentos pelo período selecionado APENAS pela data de vencimento.
+ * Decidido com o dono (jun/2026): o filtro de data deve funcionar normalmente —
+ * mostra exatamente o que cai no período escolhido, independente do status. Não
+ * há mais exceção de "pendente sempre visível"; um pendente vencido fora do
+ * período só aparece quando o período abrange a data dele (ou em "Tudo"/ALL).
  */
 export function filterTransactionsByPeriod<T extends PeriodFilterable>(
   list: T[],
@@ -69,7 +62,6 @@ export function filterTransactionsByPeriod<T extends PeriodFilterable>(
   const range = periodRange(viewPeriod, customStartDate, customEndDate, today);
   if (!range) return [...list];
   return list.filter(t => {
-    if (isAlwaysVisibleInPeriod(t)) return true;
     const d = t.due_date.split("T")[0];
     return d >= range.start && d <= range.end;
   });

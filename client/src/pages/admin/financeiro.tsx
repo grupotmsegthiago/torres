@@ -2062,16 +2062,16 @@ export default function FinanceiroPage() {
     },
   });
 
-  // Pendentes (não pagos/vencidos) e aguardando aprovação NUNCA somem do filtro de data
-  // — ficam sempre visíveis mesmo fora do período. Lógica + testes em shared/financeiroPeriod.ts.
+  // Filtro de data NORMAL: recorta TUDO pela data de vencimento, sem exceção de
+  // "pendente sempre visível" (decidido com o dono jun/2026 — mostra exatamente o
+  // que cai no período). Lógica + testes em shared/financeiroPeriod.ts.
   const periodFilteredTransactions = useMemo(
     () => filterTransactionsByPeriod(transactions, viewPeriod, customStartDate, customEndDate),
     [transactions, viewPeriod, customStartDate, customEndDate],
   );
 
-  // Derivam do conjunto já filtrado por período para que o filtro de data valha também
-  // na aba de aprovação. Aguardando é "sempre visível" (vide periodFilteredTransactions),
-  // então nunca some; recusados respeitam o período selecionado.
+  // Derivam do conjunto já filtrado por período: o filtro de data vale também na
+  // aba de aprovação. Aguardando e recusados respeitam o período selecionado.
   const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [periodFilteredTransactions]);
   const recusados = useMemo(() => periodFilteredTransactions.filter(t => t.status === "RECUSADA"), [periodFilteredTransactions]);
 

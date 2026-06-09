@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   periodRange,
-  isAlwaysVisibleInPeriod,
   filterTransactionsByPeriod,
   type PeriodFilterable,
 } from "./financeiroPeriod.ts";
@@ -27,28 +26,22 @@ test("periodRange CUSTOM usa as datas informadas", () => {
   assert.deepEqual(periodRange("CUSTOM", "2026-01-10", "2026-03-20", "2026-06-08"), { start: "2026-01-10", end: "2026-03-20" });
 });
 
-test("isAlwaysVisibleInPeriod: pendentes e aguardando aprovação nunca somem", () => {
-  assert.equal(isAlwaysVisibleInPeriod(tx("a", "PENDING", "2020-01-01")), true);
-  assert.equal(isAlwaysVisibleInPeriod(tx("b", "AGUARDANDO_APROVACAO", "2020-01-01")), true);
-  assert.equal(isAlwaysVisibleInPeriod(tx("c", "PAID", "2020-01-01")), false);
-  assert.equal(isAlwaysVisibleInPeriod(tx("d", "RECUSADA", "2020-01-01")), false);
-});
-
 test("filterTransactionsByPeriod: ALL devolve tudo", () => {
   const list = [tx("1", "PAID", "2020-01-01"), tx("2", "PENDING", "2026-06-08")];
   assert.equal(filterTransactionsByPeriod(list, "ALL", "", "", "2026-06-08").length, 2);
 });
 
-test("filterTransactionsByPeriod: MONTH recorta pagos fora do período, mas mantém pendentes/vencidos sempre visíveis", () => {
+test("filterTransactionsByPeriod: MONTH recorta TUDO pela data de vencimento (sem exceção de pendente)", () => {
   const list = [
-    tx("pago-mes", "PAID", "2026-06-15"),       // dentro do mês → fica
-    tx("pago-fora", "PAID", "2026-04-15"),       // fora do mês → some
-    tx("pend-vencido", "PENDING", "2026-01-01"), // vencido, fora do mês → sempre visível
-    tx("recusada-fora", "RECUSADA", "2026-04-01"), // fora do mês → some
-    tx("aguardando-fora", "AGUARDANDO_APROVACAO", "2025-12-01"), // sempre visível
+    tx("pago-mes", "PAID", "2026-06-15"),          // dentro do mês → fica
+    tx("pago-fora", "PAID", "2026-04-15"),          // fora do mês → some
+    tx("pend-mes", "PENDING", "2026-06-20"),        // pendente dentro do mês → fica
+    tx("pend-vencido-fora", "PENDING", "2026-01-01"), // pendente vencido fora do mês → some
+    tx("recusada-fora", "RECUSADA", "2026-04-01"),  // fora do mês → some
+    tx("aguardando-fora", "AGUARDANDO_APROVACAO", "2025-12-01"), // fora do mês → some
   ];
   const out = filterTransactionsByPeriod(list, "MONTH", "", "", "2026-06-08").map(t => t.id).sort();
-  assert.deepEqual(out, ["aguardando-fora", "pago-mes", "pend-vencido"]);
+  assert.deepEqual(out, ["pago-mes", "pend-mes"]);
 });
 
 test("filterTransactionsByPeriod: CUSTOM inclui limites (>= start e <= end)", () => {

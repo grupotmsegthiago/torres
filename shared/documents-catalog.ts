@@ -76,6 +76,10 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
 
 /** Filtra o catálogo pra um perfil específico. Remove grupos vazios. */
 export function filterDocsCatalogByProfile(catalog: DocGroup[], profile: EmployeeProfile): DocGroup[] {
+  // Decidido com o dono: funcionário comum (perfil "admin" — Adm/Gerente/
+  // Supervisor/Auxiliar de Limpeza) NÃO tem cobrança de documentos. Checklist e
+  // alertas zerados. Somente cargos operacionais (vigilante) têm cobrança.
+  if (profile === "admin") return [];
   const isVig = profile === "vigilante";
   return catalog
     .map(g => ({

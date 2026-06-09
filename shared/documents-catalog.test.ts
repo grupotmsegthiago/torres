@@ -46,28 +46,16 @@ test("Vigilante: 17 obrigatórios + 2 opcionais (não-Dependentes) = 19 no check
   assert.ok(all.includes("Comprovante de Formação Escolar"));
 });
 
-test("Admin: 9 obrigatórios + 2 opcionais = 11 no checklist", () => {
+test("Admin (funcionário comum): NENHUM documento cobrado — checklist e alertas zerados", () => {
+  // Decidido com o dono: funcionário comum não tem cobrança de documentos.
   const mandatory = getMandatoryDocTypesForProfile("admin");
-  assert.equal(mandatory.length, 9, `admin obrigatórios = 9, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
-  // Antecedentes unificado no admin:
-  assert.ok(mandatory.includes("Antecedentes Criminais"));
-  assert.ok(!mandatory.includes("Antecedente Criminal Polícia Civil"));
-  assert.ok(!mandatory.includes("Antecedente Criminal Polícia Militar"));
-  assert.ok(!mandatory.includes("Certidão de COP"));
-  // Reservista NÃO é obrigatório no admin:
-  assert.ok(!mandatory.includes("Certificado de Reservista"));
-  // CNH/escolta/vigilante NÃO no admin:
-  assert.ok(!mandatory.includes("CNH"));
-  assert.ok(!mandatory.includes("Certificado Formação Vigilante"));
-  assert.ok(!mandatory.includes("Certificado Formação Escolta Armada"));
-  // ASO + Fotos 3x4 + RG + CPF presentes:
-  assert.ok(mandatory.includes("ASO"));
-  assert.ok(mandatory.includes("Fotos 3x4"));
-  assert.ok(mandatory.includes("RG"));
-  assert.ok(mandatory.includes("CPF"));
+  assert.equal(mandatory.length, 0, `admin não deve ter obrigatórios, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
 
   const all = getAllDocTypesForProfile("admin");
-  assert.equal(all.length, 11, `admin total no checklist (sem Dependentes) = 11, recebeu ${all.length}`);
+  assert.equal(all.length, 0, `admin não deve ter itens no checklist, recebeu ${all.length}`);
+
+  const catAdmin = filterDocsCatalogByProfile(buildRequiredDocsCatalog(), "admin");
+  assert.equal(catAdmin.length, 0, "catálogo do admin deve vir vazio (sem grupos)");
 });
 
 test("Auxiliar de Limpeza usa exatamente o mesmo checklist de Admin", () => {
