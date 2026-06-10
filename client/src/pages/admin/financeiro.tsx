@@ -2263,39 +2263,40 @@ export default function FinanceiroPage() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-neutral-900 text-white text-[10px] font-black uppercase tracking-widest">
-              <th className="px-4 py-3">Vencimento</th>
-              <th className="px-4 py-3">Descrição</th>
+              <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">Favorecido</th>
               <th className="px-4 py-3">Categoria</th>
+              <th className="px-4 py-3">Descrição</th>
+              <th className="px-4 py-3">Vencimento</th>
               <th className="px-4 py-3 text-center">Status</th>
               <th className="px-4 py-3 text-center">Conferência</th>
+              <th className="px-4 py-3">Lançado por</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {isLoading ? (
-              <tr><td colSpan={8} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
+              <tr><td colSpan={10} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={8} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
+              <tr><td colSpan={10} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
             ) : list.map(t => {
               const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < brtTodayStr();
               return (
                 <tr key={t.id} className={`hover:bg-neutral-50 transition-colors ${isOverdue ? "bg-red-50/50" : ""}`} data-testid={`row-transaction-${t.id}`}>
                   <td className="px-4 py-3">
-                    <span className={`text-xs font-mono font-bold ${isOverdue ? "text-red-600" : "text-neutral-500"}`}>
-                      {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
+                    <span className="text-[10px] font-mono font-bold text-neutral-400" data-testid={`text-seq-${t.id}`}>{t.seq != null ? `#${t.seq}` : "—"}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs font-bold text-neutral-600 uppercase">{t.entity_name || "Geral"}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-[10px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200 uppercase">
+                      {t.category_name || "—"}
                     </span>
-                    {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
-                    {t.installment_total && t.installment_total > 1 && (
-                      <span className="block text-[8px] font-bold text-neutral-400">{t.installment_number}/{t.installment_total}</span>
-                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      {t.seq != null && (
-                        <span className="text-[10px] font-mono font-bold text-neutral-400 shrink-0" data-testid={`text-seq-${t.id}`}>#{t.seq}</span>
-                      )}
                       <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
                       {t.origin_type && t.origin_type !== "manual" && (
                         (() => {
@@ -2335,12 +2336,13 @@ export default function FinanceiroPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-bold text-neutral-600 uppercase">{t.entity_name || "Geral"}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[10px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200 uppercase">
-                      {t.category_name || "—"}
+                    <span className={`text-xs font-mono font-bold ${isOverdue ? "text-red-600" : "text-neutral-500"}`}>
+                      {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
                     </span>
+                    {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
+                    {t.installment_total && t.installment_total > 1 && (
+                      <span className="block text-[8px] font-bold text-neutral-400">{t.installment_number}/{t.installment_total}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => handleTogglePago(t)} data-testid={`button-toggle-${t.id}`}
@@ -2389,6 +2391,9 @@ export default function FinanceiroPage() {
                     ) : (
                       <span className="text-[9px] font-bold text-neutral-300 italic">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase" data-testid={`text-lancado-por-${t.id}`}>{t.created_by || "—"}</span>
                   </td>
                   <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === "INCOME" ? "text-green-600" : "text-red-600"}`}>
                     {formatCurrency(Number(t.amount))}
