@@ -349,6 +349,7 @@ async function ensureFinancialOriginColumns() {
 ensureFinancialOriginColumns();
 ensureInterTables();
 ensureComprovantesBucket();
+import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
 ensureCategoryHierarchy();
 
 async function ensureCategoryHierarchy() {

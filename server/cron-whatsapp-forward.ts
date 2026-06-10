@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured } from "./lib/zapi.js";
+import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
 
@@ -410,7 +411,9 @@ async function processPending(): Promise<void> {
       // Finalizada usa resumo automático (não depende do texto do agente),
       // então só a foto é obrigatória. Demais marcos ainda exigem mensagem.
       const isFinalizadaStep = String(u.mission_step || "") === "finalizada";
-      if (!photoUrl.startsWith("data:image/") || (!isFinalizadaStep && !msg)) {
+      const isData = photoUrl.startsWith("data:image/");
+      const isPath = isStoragePath(photoUrl);
+      if ((!isData && !isPath) || (!isFinalizadaStep && !msg)) {
         await markDone(u.id, "skip: foto/msg inválida");
         continue;
       }
@@ -505,10 +508,22 @@ async function processPending(): Promise<void> {
         console.warn(`${TAG} caption rico falhou id=${u.id}, usando fallback:`, capErr?.message);
         caption = `*Central Torres Vigilancia*\n\n🚨 *${u.os_number || "OS"}* — ${u.employee_name || "Agente"}\n\n${msg}`;
       }
+      // Foto no storage → gera signed URL na hora (Z-API busca na hora; TTL 5min
+      // é suficiente). base64 legado segue direto.
+      let imageToSend = photoUrl;
+      if (isPath) {
+        const signed = await signMissionPhoto(photoUrl);
+        if (!signed) {
+          await releaseClaim(u.id, "falha ao assinar foto do storage");
+          console.error(`${TAG} ⟳ id=${u.id} OS=${u.os_number}: falha ao assinar foto`);
+          continue;
+        }
+        imageToSend = signed;
+      }
       try {
         const result = await sendImageWithCaption({
           groupOrPhone: String(groupId),
-          imageBase64OrUrl: photoUrl,
+          imageBase64OrUrl: imageToSend,
           caption,
         });
         if (result.ok) {

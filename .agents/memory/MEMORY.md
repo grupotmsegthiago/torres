@@ -21,3 +21,4 @@
 - [PostgREST schema cache após DDL](postgrest-schema-cache-after-ddl.md) — após ALTER TABLE ADD COLUMN, escrita via supabaseAdmin REST pode gravar NULL nas colunas novas até o cache recarregar; emitir `NOTIFY pgrst, 'reload schema'`.
 - [Contadores cumulativos pg_stat](pg-stat-cumulative-counters.md) — tuples_read/written (e afins) são acumulados; p/ "taxa ao longo do tempo" usar delta entre amostras + clamp >=0 + ignorar amostras null (senão pico falso).
 - [Valor Estimado por Tabela de Preços](valor-estimado-tabela.md) — estimativa plana por contrato de escolta (acionamento+km×franquia, ignora rota); recompute em massa NUNCA toca recusada/cancelada (§8.1).
+- [Fotos de mission_updates no Storage](mission-photos-storage.md) — photo_url virou caminho de bucket privado; writers caem em base64 no catch (nunca perdem foto); readers tratam 3 formatos; migração idempotente conc≤5; deploy+sweep+VACUUM são do dono.

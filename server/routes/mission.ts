@@ -1,6 +1,7 @@
 import type { Express } from "express";
   import { storage, toCamelObj, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
+  import { uploadMissionPhoto, resolvePhotoForView, downloadMissionPhotoDataUri } from "../lib/mission-photos";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
@@ -1117,8 +1118,16 @@ Responda APENAS com JSON: {"km_lido": number}`;
     }
 
     let validatedPhotoUrl: string | null = null;
-    if (photoUrl) {
-      if (typeof photoUrl === "string" && photoUrl.startsWith("data:image/") && photoUrl.length <= 5 * 1024 * 1024) {
+    if (photoUrl && typeof photoUrl === "string" && photoUrl.startsWith("data:image/") && photoUrl.length <= 10 * 1024 * 1024) {
+      // Foto sobe pro storage (bucket privado); no banco fica só o caminho.
+      try {
+        validatedPhotoUrl = await uploadMissionPhoto(serviceOrderId, photoUrl);
+      } catch (e: any) {
+        // Fail-safe: se o upload pro storage falhar (storage instável, bucket
+        // ainda não criado no boot, etc.) NÃO perdemos a foto — grava o base64
+        // inline como antes. Os readers tratam base64 legado e o sweep da
+        // migração move pro storage depois (idempotente).
+        console.error("[mission-update] upload foto falhou, fallback base64:", e?.message);
         validatedPhotoUrl = photoUrl;
       }
     }
@@ -1219,7 +1228,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
-      res.json(toCamelArray(results || []));
+      const camel = toCamelArray(results || []) as any[];
+      const resolved = await Promise.all(
+        camel.map(async (m) => ({ ...m, photoUrl: await resolvePhotoForView(m.photoUrl) })),
+      );
+      res.json(resolved);
     } catch (err: any) {
       console.error(`[mission-updates] GET /updates/${osId} error:`, err.message);
       res.json([]);
@@ -1233,7 +1246,9 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const limit = parseInt(req.query.limit as string) || 50;
 
     const stripBase64 = (m: any) => {
-      if (m.photoUrl && typeof m.photoUrl === "string" && m.photoUrl.startsWith("data:")) {
+      // Mascara QUALQUER foto (base64 legado OU caminho de storage) como
+      // "[has_photo]"; o frontend busca a foto real em /updates/:id/photo.
+      if (m.photoUrl && typeof m.photoUrl === "string") {
         return { ...m, photoUrl: "[has_photo]", hasPhoto: true };
       }
       return { ...m, hasPhoto: !!m.photoUrl };
@@ -1289,7 +1304,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       const { data: rows, error } = await supabaseAdmin.from("mission_updates").select("photo_url").eq("id", id).limit(1);
       if (error) throw error;
       if (!rows || rows.length === 0) return res.status(404).json({ message: "Atualização não encontrada" });
-      res.json({ photoUrl: rows[0].photo_url });
+      res.json({ photoUrl: await resolvePhotoForView(rows[0].photo_url) });
     } catch (err: any) {
       console.error(`[mission-updates] photo/${id} error:`, err.message);
       res.status(500).json({ message: "Erro ao buscar foto" });
@@ -1356,8 +1371,10 @@ Responda APENAS com JSON: {"km_lido": number}`;
       const locationLink = update.latitude && update.longitude ? `https://www.google.com/maps?q=${update.latitude},${update.longitude}&z=17&hl=pt-BR` : null;
 
       let photoHtml = "";
-      if (update.photoUrl && update.photoUrl.startsWith("data:image/")) {
-        photoHtml = `<div style="margin:15px 0;text-align:center;"><img src="${update.photoUrl}" style="max-width:100%;max-height:400px;border-radius:8px;border:1px solid #e0e0e0;" alt="Foto da operação" /></div>`;
+      // E-mail precisa ser auto-contido (signed URL expira), então embute base64.
+      const emailPhoto = await downloadMissionPhotoDataUri(update.photoUrl);
+      if (emailPhoto) {
+        photoHtml = `<div style="margin:15px 0;text-align:center;"><img src="${emailPhoto}" style="max-width:100%;max-height:400px;border-radius:8px;border:1px solid #e0e0e0;" alt="Foto da operação" /></div>`;
       }
 
       const htmlBody = `<!DOCTYPE html>
@@ -1579,6 +1596,15 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const alertMsg = kmValue
       ? `📷 Foto: ${stepLabel} — KM ${Number(kmValue).toLocaleString("pt-BR")}`
       : `📷 Foto: ${stepLabel}`;
+    let alertPhotoPath: string | null = null;
+    try {
+      alertPhotoPath = await uploadMissionPhoto(serviceOrderId, photoData);
+    } catch (e: any) {
+      // Fail-safe: nunca perder a foto. Se o upload falhar, grava o base64
+      // inline (legado, tratado pelos readers) e o sweep migra depois.
+      console.error(`[mission-photo] upload foto (alerta) falhou, fallback base64: ${e?.message}`);
+      alertPhotoPath = photoData;
+    }
     try {
       await supabaseAdmin.from("mission_updates").insert({
         service_order_id: serviceOrderId,
@@ -1589,7 +1615,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         mission_step: so.missionStatus || null,
         latitude: latitude || null,
         longitude: longitude || null,
-        photo_url: photoData,
+        photo_url: alertPhotoPath,
         read_by_admin: 0,
       });
       console.log(`[mission-photo] Alert created for OS #${so.osNumber} step=${step}`);
