@@ -11,6 +11,21 @@ import type { Express } from "express";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
 
+  // Valor Estimado a partir da Tabela de Preços (contrato de escolta).
+  // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base.
+  // O excedente (valor_km_extra/valor_hora_extra) só se aplica ALÉM da franquia e
+  // não é conhecido na hora de estimar, então fica fora. Fallback legado (contratos
+  // antigos sem acionamento): preço por km carregado real (sem default fantasma).
+  function estimadoFromContract(c: any): number | null {
+    if (!c) return null;
+    const acion = Number(c.valor_acionamento || 0);
+    if (acion > 0) return acion;
+    const kmRate = Number(c.valor_km_carregado || 0);
+    const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 0);
+    const est = kmRate * franquiaKm;
+    return est > 0 ? est : null;
+  }
+
   export function registerServiceOrderRoutes(app: Express) {
     app.get("/api/service-orders", requireAuth, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -901,10 +916,8 @@ import type { Express } from "express";
           if (cc?.[0]) contractRow = cc[0];
         }
         if (contractRow) {
-          const c = contractRow;
-          const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 50);
-          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * franquiaKm);
-          if (est > 0) (parsed.data as any).valorEstimado = est;
+          const est = estimadoFromContract(contractRow);
+          if (est != null && est > 0) (parsed.data as any).valorEstimado = est;
         }
       } catch (_e) {}
     }
@@ -1145,11 +1158,10 @@ import type { Express } from "express";
     }
     if (parsed.data.escortContractId && parsed.data.escortContractId !== existing?.escortContractId && !parsed.data.valorEstimado) {
       try {
-        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento").eq("id", parsed.data.escortContractId).limit(1);
+        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento, franquia_km").eq("id", parsed.data.escortContractId).limit(1);
         if (cc?.[0]) {
-          const c = cc[0];
-          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * Number(c.franquia_minima_km || 50));
-          if (est > 0) (parsed.data as any).valorEstimado = est;
+          const est = estimadoFromContract(cc[0]);
+          if (est != null && est > 0) (parsed.data as any).valorEstimado = est;
         }
       } catch (_e) {}
     }
@@ -3781,9 +3793,8 @@ import type { Express } from "express";
           }
         }
         if (contractRow) {
-          const franquiaKm = Number(contractRow.franquia_km || 0) || Number(contractRow.franquia_minima_km || 50);
-          const est = (Number(contractRow.valor_acionamento || 0)) + (Number(contractRow.valor_km_carregado || 2.80) * franquiaKm);
-          if (est > 0) {
+          const est = estimadoFromContract(contractRow);
+          if (est != null && est > 0) {
             await supabaseAdmin.from("service_orders").update({ valor_estimado: est }).eq("id", o.id);
             updated++;
             results.push({ osNumber: o.os_number, valorEstimado: est, antigo: o.valor_estimado });

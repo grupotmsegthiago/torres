@@ -849,13 +849,18 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   }, [form.clientId, escortContracts]);
 
   // Calcula o Valor Estimado a partir da Tabela de Preços (contrato de escolta).
-  // Mesma fórmula canônica do backend (server/routes/service-orders.ts):
-  // valor_acionamento + valor_km_carregado * franquia_km.
+  // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base
+  // (mesma lógica de estimadoFromContract no backend). O excedente só se aplica além
+  // da franquia e não é conhecido ao estimar, então fica fora. Fallback legado:
+  // contratos antigos sem acionamento usam preço por km carregado real.
   const computeEstimado = (contractId: string): number | null => {
     const c: any = escortContracts.find(c => c.id === contractId);
     if (!c) return null;
-    const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 50);
-    const est = Number(c.valor_acionamento || 0) + (Number(c.valor_km_carregado || 2.80) * franquiaKm);
+    const acion = Number(c.valor_acionamento || 0);
+    if (acion > 0) return acion;
+    const kmRate = Number(c.valor_km_carregado || 0);
+    const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 0);
+    const est = kmRate * franquiaKm;
     return est > 0 ? est : null;
   };
 
