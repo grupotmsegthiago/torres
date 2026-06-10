@@ -20,10 +20,14 @@ errada — somava km por cima do acionamento (que já cobre a franquia) e, como
 acionamento 4800 / franquia 1000km dava 7600 em vez de 4800. NUNCA reintroduzir o
 default 2.80 nem somar km×franquia ao acionamento.
 
-**Regra ao recalcular em massa:** NUNCA tocar OS `recusada`/`cancelada` — ficam zeradas
-(§8.1 INTOCÁVEL). Recompute é idempotente (só grava quando há delta). Em OS concluída a
-estimativa é só fallback de receita quando `fat=0`; mudar estimativa NÃO recria
-transação já lançada (Balanço não muda retroativo).
+**Regra ao recalcular em massa (recusada x cancelada são DIFERENTES — §8.1):**
+- `recusada` → estimativa SEMPRE R$0,00 (operacional não atendeu; nunca gera cobrança).
+- `cancelada` → NÃO é exceção: cliente cancelou mas equipe foi acionada → preserva
+  acionamento + extras, então recebe a estimativa normal (`valor_acionamento`) como
+  qualquer OS. NÃO pular cancelada nem zerá-la.
+Recompute é idempotente (só grava quando há delta). Em OS concluída a estimativa é só
+fallback de receita quando `fat=0`; mudar estimativa NÃO recria transação já lançada
+(Balanço não muda retroativo).
 
 **How to apply:** usar o helper `estimadoFromContract()` (server/routes/service-orders.ts)
 como fonte única; manter o `computeEstimado` do front em sincronia.
