@@ -31,12 +31,13 @@ interface AiAlert {
   ack_at: string | null;
 }
 
-const TOTAL_SLOTS = 20;
+const TOTAL_SLOTS = 12;
 const CHANNELS = [1, 2] as const;
 
 /**
- * Mosaico de até 20 quadrantes (10 viaturas × 2 câmeras).
- * Pagina quando ultrapassa 20. Modo "Foco" exibe 1 viatura em destaque.
+ * Mosaico de até 12 quadrantes (6 viaturas × 2 câmeras), em grade 4 colunas ×
+ * 3 linhas — quadrantes maiores pra facilitar a leitura na TV da operação.
+ * Pagina quando ultrapassa 12. Modo "Foco" exibe 1 viatura em destaque.
  */
 export default function CamerasLivePage() {
   const [foco, setFoco] = useState<number | null>(null);
@@ -272,7 +273,7 @@ export default function CamerasLivePage() {
 
         {/* Mosaico */}
         {!focoVehicle && vehicles.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" data-testid="grid-mosaic">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3" data-testid="grid-mosaic">
             {visibleTiles.map(({ vehicle, channel }, idx) => (
               <MosaicTile
                 key={`${vehicle.id}-${channel}`}
