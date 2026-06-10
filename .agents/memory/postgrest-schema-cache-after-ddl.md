@@ -1,7 +1,14 @@
 ---
-name: PostgREST schema cache após ALTER TABLE
-description: Por que escritas via supabaseAdmin gravam NULL nas colunas novas logo após ALTER TABLE ADD COLUMN, e como evitar.
+name: PostgREST schema cache após DDL (colunas e funções)
+description: Por que escritas/RPC via supabaseAdmin não enxergam colunas novas (gravam NULL) ou funções novas ("Could not find the function ... in the schema cache") logo após o DDL, e como evitar.
 ---
+
+# Schema cache do PostgREST após DDL
+
+Vale para colunas E funções: após `ALTER TABLE ADD COLUMN` **ou** `CREATE FUNCTION` (via db-init/execSql no boot), o schema cache do PostgREST fica desatualizado por alguns segundos. Solução única para os dois casos: emitir `NOTIFY pgrst, 'reload schema'` logo após o DDL no db-init.
+
+- **Função nova:** `supabaseAdmin.rpc("nome")` falha com erro explícito `Could not find the function public.nome without parameters in the schema cache` até o reload. (Confirmado ao adicionar `db_table_sizes`.)
+- **Coluna nova:** ver abaixo — falha silenciosa, grava NULL.
 
 # Schema cache do PostgREST após ALTER TABLE ADD COLUMN
 

@@ -908,6 +908,39 @@ export async function ensureDbSchema() {
     await execSql(`REVOKE ALL ON FUNCTION public.db_telemetry_snapshot() FROM PUBLIC, anon, authenticated`);
     await execSql(`GRANT EXECUTE ON FUNCTION public.db_telemetry_snapshot() TO service_role`);
 
+    // RPC de monitoramento: top 10 tabelas do schema public por tamanho total
+    // (dados + índices). Read-only sobre catálogo do Postgres; usado na tela
+    // "Banco de Dados". Retorna jsonb array já ordenado decrescente.
+    await execSql(`
+      CREATE OR REPLACE FUNCTION public.db_table_sizes()
+      RETURNS jsonb
+      LANGUAGE sql
+      SECURITY DEFINER
+      SET search_path = public, pg_catalog
+      AS $$
+        SELECT COALESCE(jsonb_agg(t ORDER BY t.total_size_bytes DESC), '[]'::jsonb)
+        FROM (
+          SELECT
+            c.relname AS table_name,
+            pg_size_pretty(pg_table_size(c.oid)) AS data_size,
+            pg_size_pretty(pg_indexes_size(c.oid)) AS index_size,
+            pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+            pg_total_relation_size(c.oid) AS total_size_bytes
+          FROM pg_class c
+          JOIN pg_namespace n ON (n.oid = c.relnamespace)
+          WHERE c.relkind = 'r' AND n.nspname = 'public'
+          ORDER BY pg_total_relation_size(c.oid) DESC
+          LIMIT 10
+        ) t;
+      $$;
+    `);
+    await execSql(`REVOKE ALL ON FUNCTION public.db_table_sizes() FROM PUBLIC, anon, authenticated`);
+    await execSql(`GRANT EXECUTE ON FUNCTION public.db_table_sizes() TO service_role`);
+    // Recarrega o schema cache do PostgREST p/ a nova função ficar visível via
+    // supabaseAdmin.rpc imediatamente (sem isso, a 1ª chamada dá "Could not find
+    // the function ... in the schema cache" até o cache recarregar sozinho).
+    await execSql(`NOTIFY pgrst, 'reload schema'`);
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS login_selfies (
         id SERIAL PRIMARY KEY,

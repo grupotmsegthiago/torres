@@ -54,6 +54,13 @@ type Telemetry = {
     token_failures_recent: Array<{ id: number; employee_name: string | null; error_message: string | null; ip_address: string | null; user_agent: string | null; created_at: string }>;
     brute_force_suspects: Array<{ ip: string; count: number; last_at: string; last_user: string | null; last_error: string | null }>;
   };
+  tableSizes?: Array<{
+    table_name: string;
+    data_size: string;
+    index_size: string;
+    total_size: string;
+    total_size_bytes: number;
+  }>;
 };
 
 function fmtTime(iso: string) {
@@ -138,6 +145,8 @@ export default function DatabasePage() {
   const rt = data?.realtime;
   const history = data?.history24h ?? [];
   const security = data?.security;
+  const tableSizes = data?.tableSizes ?? [];
+  const maxTableBytes = tableSizes.length > 0 ? tableSizes[0].total_size_bytes : 0;
 
   const chartData = history.map((h) => ({
     time: fmtTime(h.sampled_at),
@@ -342,6 +351,54 @@ export default function DatabasePage() {
                 testId="card-tuples-total"
               />
             </div>
+
+            <Card className="p-4 md:p-6" data-testid="table-space-usage">
+              <div className="flex items-center gap-2 mb-1">
+                <HardDrive className="w-5 h-5 text-neutral-700" />
+                <h2 className="text-lg font-semibold text-neutral-900">Uso de Espaço por Tabela</h2>
+              </div>
+              <p className="text-xs text-neutral-500 mb-4">
+                As 10 tabelas que mais ocupam espaço no banco (dados + índices). Ordenadas da maior para a menor.
+              </p>
+              {tableSizes.length === 0 ? (
+                <div className="text-center text-neutral-500 py-12">Sem dados de tamanho disponíveis.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
+                        <th className="py-2 pr-4 font-semibold">Tabela</th>
+                        <th className="py-2 pr-4 font-semibold text-right">Dados</th>
+                        <th className="py-2 pr-4 font-semibold text-right">Índices</th>
+                        <th className="py-2 font-semibold text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableSizes.map((t) => {
+                        const pct = maxTableBytes > 0 ? Math.min(100, Math.max(2, (t.total_size_bytes / maxTableBytes) * 100)) : 0;
+                        return (
+                          <tr
+                            key={t.table_name}
+                            className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50"
+                            data-testid={`row-table-${t.table_name}`}
+                          >
+                            <td className="py-2.5 pr-4">
+                              <div className="font-medium text-neutral-900 font-mono text-xs md:text-sm">{t.table_name}</div>
+                              <div className="mt-1 h-1.5 w-full max-w-[220px] rounded-full bg-neutral-100 overflow-hidden">
+                                <div className="h-full rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-data-${t.table_name}`}>{t.data_size}</td>
+                            <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-index-${t.table_name}`}>{t.index_size}</td>
+                            <td className="py-2.5 text-right font-semibold text-neutral-900 whitespace-nowrap" data-testid={`text-total-${t.table_name}`}>{t.total_size}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
 
             <Card className="p-4 md:p-6" data-testid="chart-latency-24h">
               <div className="flex items-center justify-between mb-4">

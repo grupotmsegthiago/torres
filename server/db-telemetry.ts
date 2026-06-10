@@ -164,6 +164,31 @@ export async function getSecurityEvents24h(supabase: SupabaseClient) {
   };
 }
 
+export type TableSize = {
+  table_name: string;
+  data_size: string;
+  index_size: string;
+  total_size: string;
+  total_size_bytes: number;
+};
+
+// Top 10 tabelas por tamanho total (dados + índices) via RPC read-only.
+export async function getTableSizes(supabase: SupabaseClient): Promise<TableSize[]> {
+  const { data, error } = await supabase.rpc("db_table_sizes");
+  if (error) {
+    console.error("[db-telemetry] db_table_sizes erro:", error.message);
+    return [];
+  }
+  const rows = (data ?? []) as any[];
+  return rows.map((r) => ({
+    table_name: String(r.table_name),
+    data_size: String(r.data_size),
+    index_size: String(r.index_size),
+    total_size: String(r.total_size),
+    total_size_bytes: Number(r.total_size_bytes) || 0,
+  }));
+}
+
 export async function persistSample(supabase: SupabaseClient): Promise<void> {
   try {
     const rt = await getRealtimeTelemetry(supabase);
