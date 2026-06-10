@@ -848,17 +848,22 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     }
   }, [form.clientId, escortContracts]);
 
+  // Calcula o Valor Estimado a partir da Tabela de Preços (contrato de escolta).
+  // Mesma fórmula canônica do backend (server/routes/service-orders.ts):
+  // valor_acionamento + valor_km_carregado * franquia_km.
+  const computeEstimado = (contractId: string): number | null => {
+    const c: any = escortContracts.find(c => c.id === contractId);
+    if (!c) return null;
+    const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 50);
+    const est = Number(c.valor_acionamento || 0) + (Number(c.valor_km_carregado || 2.80) * franquiaKm);
+    return est > 0 ? est : null;
+  };
+
   useEffect(() => {
     if (form.escortContractId && !form.valorEstimado) {
-      const contract = escortContracts.find(c => c.id === form.escortContractId);
-      if (contract) {
-        const acion = Number(contract.valor_acionamento || 0);
-        const kmVal = Number(contract.valor_km_carregado || 0);
-        const franquia = Number(contract.franquia_minima_km || contract.franquia_km || 0);
-        const estimado = acion + (kmVal * franquia);
-        if (estimado > 0) {
-          setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: estimado.toFixed(2).replace(".", ",") });
-        }
+      const est = computeEstimado(form.escortContractId);
+      if (est != null) {
+        setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: est.toFixed(2).replace(".", ",") });
       }
     }
   }, [form.escortContractId]);
@@ -1263,7 +1268,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {form.clientId > 0 && clientContracts.length > 0 && (
                 <div>
                   <FieldLabel>Tabela de Preços</FieldLabel>
-                  <select value={form.escortContractId} onChange={(e) => setForm(prev => ({ ...prev, escortContractId: e.target.value }))} className={selectClass} data-testid="select-os-price-table">
+                  <select value={form.escortContractId} onChange={(e) => {
+                    const id = e.target.value;
+                    setForm(prev => {
+                      const blocked = prev.status === "recusada" || prev.status === "cancelada";
+                      const est = (!blocked && id) ? computeEstimado(id) : null;
+                      return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
+                    });
+                  }} className={selectClass} data-testid="select-os-price-table">
                     <option value="">Selecione...</option>
                     {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
                   </select>
