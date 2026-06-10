@@ -4,7 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -185,6 +185,66 @@ export default function DatabasePage() {
       });
     },
   });
+
+  type VacuumState = {
+    status: "idle" | "running" | "done" | "error";
+    table: string | null;
+    startedAt: number | null;
+    finishedAt: number | null;
+    beforeBytes: number | null;
+    afterBytes: number | null;
+    durationMs: number | null;
+    error: string | null;
+  };
+
+  const [confirmVacuum, setConfirmVacuum] = useState(false);
+  const prevVacuumStatus = useRef<string | null>(null);
+
+  const vacuum = useQuery<VacuumState>({
+    queryKey: ["/api/admin/db-vacuum/status"],
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
+  });
+
+  const startVacuum = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/db-vacuum", { table: "mission_updates" });
+      return res.json();
+    },
+    onSuccess: () => {
+      setConfirmVacuum(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/db-vacuum/status"] });
+      toast({
+        title: "Compactação iniciada",
+        description: "Pode levar alguns minutos. Não feche esta página até terminar.",
+      });
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Não foi possível iniciar",
+        description: e?.message || "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    const cur = vacuum.data?.status;
+    if (prevVacuumStatus.current === "running" && cur === "done") {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/db-telemetry"] });
+      toast({ title: "Banco compactado", description: "Espaço recuperado. O tamanho já foi atualizado." });
+    }
+    if (prevVacuumStatus.current === "running" && cur === "error") {
+      toast({
+        title: "Falha na compactação",
+        description: vacuum.data?.error || "Veja os logs do servidor.",
+        variant: "destructive",
+      });
+    }
+    prevVacuumStatus.current = cur ?? null;
+  }, [vacuum.data?.status]);
+
+  const fmtBytes = (b: number) =>
+    b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : `${(b / 1048576).toFixed(0)} MB`;
 
   if (user && user.role !== "admin" && user.role !== "diretoria") return null;
 
@@ -455,6 +515,56 @@ export default function DatabasePage() {
                       {limitMb > 0
                         ? `${pct.toFixed(1)}% de uso · ${fmt(Math.max(0, limitMb - usedMb))} livres`
                         : "Capacidade não configurada"}
+                    </div>
+                    <div className="mt-3 border-t border-neutral-200/60 pt-3">
+                      {vacuum.data?.status === "running" ? (
+                        <div className="flex items-center gap-2 text-xs text-neutral-700" data-testid="status-vacuum-running">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span>Compactando {vacuum.data.table}… não feche esta página.</span>
+                        </div>
+                      ) : confirmVacuum ? (
+                        <div className="space-y-2" data-testid="confirm-vacuum">
+                          <p className="text-[11px] leading-snug text-neutral-700">
+                            Isso vai <b>travar a tabela de missões por alguns minutos</b> enquanto recupera o espaço.
+                            Faça de preferência de madrugada. Confirmar agora?
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={startVacuum.isPending}
+                              onClick={() => startVacuum.mutate()}
+                              data-testid="button-vacuum-confirm"
+                            >
+                              {startVacuum.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Sim, compactar"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setConfirmVacuum(false)} data-testid="button-vacuum-cancel">
+                              Cancelar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setConfirmVacuum(true)}
+                          data-testid="button-vacuum"
+                        >
+                          <HardDrive className="w-3.5 h-3.5 mr-1.5" /> Compactar banco (recuperar espaço)
+                        </Button>
+                      )}
+                      {vacuum.data?.status === "done" && vacuum.data.beforeBytes != null && vacuum.data.afterBytes != null && (
+                        <div className="mt-2 text-[11px] text-emerald-700" data-testid="text-vacuum-result">
+                          Última compactação ({vacuum.data.table}): {fmtBytes(vacuum.data.beforeBytes)} → {fmtBytes(vacuum.data.afterBytes)}
+                          {" "}em {Math.round((vacuum.data.durationMs || 0) / 1000)}s
+                        </div>
+                      )}
+                      {vacuum.data?.status === "error" && (
+                        <div className="mt-2 text-[11px] text-rose-600" data-testid="text-vacuum-error">
+                          Falha: {vacuum.data.error}
+                        </div>
+                      )}
                     </div>
                   </Card>
                 );

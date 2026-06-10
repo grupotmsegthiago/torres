@@ -896,6 +896,29 @@ async function ensureSystemSettingsTable() {
       }
     });
 
+    // Compacta (VACUUM FULL) uma tabela inchada pra devolver espaço ao disco.
+    // Roda em background numa conexão pg dedicada; o front acompanha o status.
+    app.post("/api/admin/db-vacuum", requireAuth, requireAdminRole, async (req, res) => {
+      try {
+        const { startVacuum } = await import("./lib/db-maintenance");
+        const table = String(req.body?.table || "mission_updates");
+        const started = await startVacuum(table);
+        res.status(202).json({ ok: true, state: started });
+      } catch (err: any) {
+        if (err?.code === "VACUUM_BUSY") {
+          const { getVacuumState } = await import("./lib/db-maintenance");
+          return res.status(409).json({ error: "already_running", state: getVacuumState() });
+        }
+        console.error("[db-vacuum] erro ao iniciar:", err?.message);
+        res.status(500).json({ error: "vacuum_failed", message: err?.message });
+      }
+    });
+
+    app.get("/api/admin/db-vacuum/status", requireAuth, requireAdminRole, async (_req, res) => {
+      const { getVacuumState } = await import("./lib/db-maintenance");
+      res.json(getVacuumState());
+    });
+
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {
     try {
