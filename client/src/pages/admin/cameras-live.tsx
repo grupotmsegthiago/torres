@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2, Tv, PanelLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface SsxVehicle {
   id: number;
@@ -29,6 +30,53 @@ interface AiAlert {
   gravidade: string;
   ocorrido_em: string;
   ack_at: string | null;
+  payload?: any;
+}
+
+/**
+ * Extrai a URL do clipe gravado do evento do payload bruto que a SSX manda no
+ * webhook. Como o formato do payload pode variar, procura primeiro por chaves
+ * conhecidas e, se não achar, varre recursivamente por qualquer URL http(s) que
+ * pareça um vídeo. Retorna null quando não há clipe → o overlay cai pra câmera
+ * ao vivo da viatura.
+ */
+function extractClipUrl(payload: any): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  // Só chaves explicitamente de vídeo/clipe — evita tratar um "url"/"link"
+  // genérico (ex.: link de painel) como clipe e tentar tocá-lo como vídeo.
+  const KNOWN_KEYS = new Set([
+    "videourl", "video_url", "video", "clipurl", "clip_url", "clip",
+    "mediaurl", "media_url", "eventvideo", "eventvideourl",
+    "downloadurl", "download_url", "fileurl", "file_url",
+    "recording", "recordingurl", "recording_url",
+  ]);
+  const looksVideo = (s: string) =>
+    /^https?:\/\//i.test(s) && /\.(mp4|m3u8|mov|avi|webm|ts)(\?|$)/i.test(s);
+  const seen = new Set<any>();
+  function walk(obj: any): string | null {
+    if (!obj || typeof obj !== "object" || seen.has(obj)) return null;
+    seen.add(obj);
+    // 1) chaves conhecidas com valor http(s)
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (typeof v === "string" && KNOWN_KEYS.has(k.toLowerCase()) && /^https?:\/\//i.test(v)) return v;
+    }
+    // 2) qualquer string que pareça URL de vídeo
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (typeof v === "string" && looksVideo(v)) return v;
+    }
+    // 3) desce nos objetos/arrays aninhados
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v && typeof v === "object") {
+        const found = walk(v);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  return walk(payload);
 }
 
 const TOTAL_SLOTS = 12;
@@ -43,6 +91,8 @@ export default function CamerasLivePage() {
   const [foco, setFoco] = useState<number | null>(null);
   const [pagina, setPagina] = useState(0);
   const [alertas, setAlertas] = useState<AiAlert[]>([]);
+  const [alertaOverlay, setAlertaOverlay] = useState<AiAlert | null>(null);
+  const { toast } = useToast();
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Modo TV: esconde sidebar/header do AdminLayout pra exibir só o mosaico
   // (ideal pra projetar na televisão da operação). Lê ?tv=1 da URL pra entrar direto.
@@ -93,6 +143,24 @@ export default function CamerasLivePage() {
     setTvMode((v) => !v);
   }
 
+  async function ackAlert(id: number) {
+    try {
+      const resp = await authFetch(`/api/ssx/alerts/${id}/ack`, { method: "POST" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    } catch (_) {
+      // Falhou no servidor: NÃO marca local nem fecha — senão a diretoria vê
+      // "analisado" sem ter persistido. Mantém o overlay aberto e avisa.
+      toast({
+        title: "Não foi possível marcar como analisado",
+        description: "Verifique a conexão e tente novamente.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAlertas((prev) => prev.map((a) => (a.id === id ? { ...a, ack_at: new Date().toISOString() } : a)));
+    setAlertaOverlay(null);
+  }
+
   const { data, isLoading, error } = useQuery<{ vehicles: SsxVehicle[] }>({
     queryKey: ["/api/ssx/vehicles"],
     refetchInterval: 60_000,
@@ -114,6 +182,9 @@ export default function CamerasLivePage() {
       const a = msg?.payload as AiAlert;
       if (!a) return;
       setAlertas((prev) => [{ ...a, ack_at: null }, ...prev].slice(0, 100));
+      // Abre o vídeo sobreposto automaticamente quando o alerta chega — só se não
+      // houver outro alerta já aberto em análise (não interrompe a diretoria).
+      setAlertaOverlay((prev) => prev ?? { ...a, ack_at: null });
     }).subscribe();
     return () => {
       try { supabase.removeChannel(ch); } catch {}
@@ -159,10 +230,15 @@ export default function CamerasLivePage() {
 
           <div className="flex gap-2 items-center flex-wrap">
             {alertasNaoAck.length > 0 && (
-              <span className="text-xs bg-red-900/40 border border-red-700 text-red-200 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 animate-pulse" data-testid="badge-alertas">
+              <button
+                onClick={() => setAlertaOverlay(alertasNaoAck[0])}
+                className="text-xs bg-red-900/40 border border-red-700 text-red-200 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 animate-pulse hover:bg-red-800/60 cursor-pointer"
+                data-testid="badge-alertas"
+                title="Abrir o último alerta para análise (vídeo sobreposto)"
+              >
                 <Bell className="h-3.5 w-3.5" />
                 {alertasNaoAck.length} alerta(s) IA pendente(s)
-              </span>
+              </button>
             )}
             {totalPages > 1 && !focoVehicle && (
               <>
@@ -295,6 +371,17 @@ export default function CamerasLivePage() {
             ))}
           </div>
         )}
+
+        {/* Vídeo sobreposto pra análise da diretoria: clipe gravado do evento
+            quando a SSX manda o link, senão câmera ao vivo da viatura. */}
+        {alertaOverlay && (
+          <AlertOverlay
+            alert={alertaOverlay}
+            vehicle={vehicles.find((v) => v.id === alertaOverlay.vehicle_id) || null}
+            onClose={() => setAlertaOverlay(null)}
+            onAck={ackAlert}
+          />
+        )}
       </div>
   );
 
@@ -403,6 +490,115 @@ function FocoCamera({ vehicleId, channel }: { vehicleId: number; channel: number
         ) : (
           <HlsVideo src={data?.url} className="w-full h-full" controls />
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Overlay de análise de alerta IA pra diretoria. Mostra o clipe gravado do
+ * evento quando a SSX manda o link no payload; quando não vem clipe, cai pra
+ * câmera ao vivo da viatura (2 canais). Fecha clicando fora ou no botão.
+ */
+function AlertOverlay({
+  alert, vehicle, onClose, onAck,
+}: {
+  alert: AiAlert;
+  vehicle?: SsxVehicle | null;
+  onClose: () => void;
+  onAck: (id: number) => void;
+}) {
+  const clipUrl = useMemo(() => extractClipUrl(alert.payload), [alert.payload]);
+  const isM3u8 = clipUrl ? /\.m3u8(\?|$)/i.test(clipUrl) : false;
+  const quando = (() => {
+    try {
+      return new Date(alert.ocorrido_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    } catch { return alert.ocorrido_em; }
+  })();
+
+  // Esc fecha
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="overlay-alert"
+    >
+      <div
+        className="bg-slate-900 border-2 border-red-600 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-slate-800 bg-red-950/40">
+          <div>
+            <h2 className="text-lg font-bold text-red-100 flex items-center gap-2 flex-wrap">
+              <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+              Alerta IA: <span className="uppercase">{alert.tipo || "evento"}</span>
+              <span className="text-[10px] uppercase bg-red-600 text-white px-2 py-0.5 rounded-full">{alert.gravidade}</span>
+            </h2>
+            <p className="text-xs text-slate-400 font-mono mt-1" data-testid="text-overlay-info">
+              {vehicle
+                ? `${vehicle.frota ? vehicle.frota + " — " : ""}${vehicle.plate}`
+                : `Cód. integração ${alert.integration_code}`} • {quando}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={onClose} data-testid="button-close-overlay">
+            Fechar ✕
+          </Button>
+        </div>
+
+        {/* Vídeo */}
+        <div className="p-4">
+          {clipUrl ? (
+            <>
+              <div className="text-[11px] font-mono text-emerald-400 mb-2">🎬 CLIPE GRAVADO DO EVENTO</div>
+              <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                {isM3u8 ? (
+                  <HlsVideo src={clipUrl} className="w-full h-full" controls autoPlay={false} muted={false} />
+                ) : (
+                  <video
+                    src={clipUrl}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain bg-black"
+                    data-testid="video-clip"
+                  />
+                )}
+              </div>
+            </>
+          ) : vehicle ? (
+            <>
+              <div className="text-[11px] font-mono text-amber-400 mb-2">
+                📡 SEM CLIPE DO EVENTO — CÂMERA AO VIVO DA VIATURA
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {CHANNELS.map((ch) => (
+                  <FocoCamera key={ch} vehicleId={vehicle.id} channel={ch} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-slate-500 py-12 font-mono text-sm" data-testid="text-overlay-empty">
+              Sem clipe do evento e viatura não identificada — não há câmera ao vivo pra exibir.
+            </div>
+          )}
+        </div>
+
+        {/* Rodapé */}
+        <div className="flex justify-end gap-2 p-4 border-t border-slate-800">
+          {!alert.ack_at && (
+            <Button size="sm" onClick={() => onAck(alert.id)} data-testid="button-ack-alert">
+              Marcar como analisado
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onClose}>Fechar</Button>
+        </div>
       </div>
     </div>
   );

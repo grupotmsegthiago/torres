@@ -20,6 +20,9 @@ import { getStreamUrl, pingSsx } from "../ssx-client";
 const ALERT_TIPOS = new Set([
   "celular", "fumando", "fadiga", "panico", "blitz",
   "distracao", "telefone", "sonolencia", "colisao",
+  // Telemetria de condução (ADAS): a SSX também emite eventos de comportamento.
+  "freada_brusca", "frenagem_brusca", "aceleracao_brusca",
+  "curva_brusca", "curva_acentuada", "excesso_velocidade",
 ]);
 
 export function registerSsxRoutes(app: Express) {
