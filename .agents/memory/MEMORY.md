@@ -12,3 +12,4 @@
 - [Fila de fallback espelha upsert](fallback-queue-upsert.md) — escrita primária com upsert NÃO pode enfileirar insert cego no fallback; senão flush no recovery floodou unique violation (uniq_agent_loc_user).
 
 - [Consumidores de pendência documental](doc-pendency-consumers.md) — regra de doc obrigatório por funcionário é recomputada em 4 pontos (o alerta da lista em EmployeesPage escapa); mudança deve tocar todos.
+- [Lista com base64 derruba Supabase](fueling-list-heavy-base64.md) — `/api/fueling` sem ?page trazia 4 fotos base64 (~116MB/210 linhas)→timeout→fallback; padrão: lista leve (allowlist) + detalhe sob demanda; fallback local de leitura é OFF.

@@ -696,16 +696,29 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
   const { toast } = useToast();
   const [aiResult, setAiResult] = useState<any>(null);
 
+  // As fotos (base64) NÃO vêm mais na lista (/api/fueling) por performance —
+  // o registro completo com as fotos é buscado sob demanda só ao abrir o modal.
+  const { data: fullFueling } = useQuery<VehicleFueling>({
+    queryKey: ["/api/fueling", fueling.id],
+    queryFn: async () => {
+      const r = await authFetch(`/api/fueling/${fueling.id}`);
+      if (!r.ok) throw new Error("Erro ao carregar detalhe");
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+  const photoSrc = fullFueling ?? fueling;
+
   const kmInfo = calcKmL(fuelings, fueling);
   const kmL = kmInfo?.kmL ?? null;
   const kmLCombined = kmInfo?.kmLCombined ?? null;
   const kmLSuspect = !!kmInfo?.isSuspect;
 
   const photos = [
-    { label: "Placa do Veículo", url: fueling.platePhoto },
-    { label: "Hodômetro", url: fueling.odometerPhoto },
-    { label: "Bomba", url: fueling.pumpPhoto },
-    { label: "Nota Fiscal / Cupom", url: fueling.receiptPhoto },
+    { label: "Placa do Veículo", url: photoSrc.platePhoto },
+    { label: "Hodômetro", url: photoSrc.odometerPhoto },
+    { label: "Bomba", url: photoSrc.pumpPhoto },
+    { label: "Nota Fiscal / Cupom", url: photoSrc.receiptPhoto },
   ].filter(p => p.url);
 
   const aiValidate = useMutation({
@@ -893,12 +906,12 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
                 <Button
                   size="sm"
                   onClick={() => aiValidate.mutate()}
-                  disabled={!fueling.receiptPhoto}
+                  disabled={!photoSrc.receiptPhoto}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                   data-testid="button-ai-validate"
                 >
                   <ShieldCheck className="w-4 h-4 mr-1" />
-                  {fueling.receiptPhoto ? "Validar com IA" : "Sem foto de NF"}
+                  {photoSrc.receiptPhoto ? "Validar com IA" : "Sem foto de NF"}
                 </Button>
               )}
 

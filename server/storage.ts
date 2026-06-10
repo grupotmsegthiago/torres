@@ -665,8 +665,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVehicleFuelings(): Promise<VehicleFueling[]> {
+    // PERF: a LISTA nunca traz as colunas de foto base64 (receipt_photo,
+    // pump_photo, odometer_photo, plate_photo) — somam dezenas de MB e
+    // estouravam o JSON do Supabase (timeout → fallback). O registro completo
+    // com fotos vem sob demanda via getVehicleFueling(id) / GET /api/fueling/:id.
+    const LIGHT_COLS =
+      "id,vehicle_id,driver_id,date,liters,cost_per_liter,total_cost,km,fuel_type,full_tank,station,notes,latitude,longitude,address,gasoline_price,ethanol_price,fuel_recommendation,recommendation_followed,created_by_user_id,ticketlog_autorizacao,ticketlog_status,ticketlog_nfe_data,ticketlog_codigo_estab,ticketlog_valor_tl,ticketlog_litros_tl,ticketlog_diff_valor,ticketlog_validated_at,ticketlog_message,ticketlog_estab_nome,ticketlog_attempts,ai_validation_status,ai_validation_result,created_at";
     return resilientList<VehicleFueling>("vehicle_fueling", () =>
-      supabaseAdmin.from("vehicle_fueling").select("*").order("created_at", { ascending: false }), "created_at", false);
+      supabaseAdmin.from("vehicle_fueling").select(LIGHT_COLS).order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getVehicleFueling(id: number): Promise<VehicleFueling | undefined> {
