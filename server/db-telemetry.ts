@@ -190,6 +190,34 @@ export async function getTableSizes(supabase: SupabaseClient): Promise<TableSize
   }));
 }
 
+export type TopQuery = {
+  query: string;
+  calls: number;
+  total_ms: number;
+  mean_ms: number;
+  rows: number;
+  cache_hit_pct: number | null;
+};
+
+// Top consultas por carga acumulada (pg_stat_statements) via RPC read-only.
+// É o que permite a IA apontar QUAL consulta deixa o banco lento e a causa.
+export async function getTopQueries(supabase: SupabaseClient): Promise<TopQuery[]> {
+  const { data, error } = await supabase.rpc("db_top_queries");
+  if (error) {
+    console.error("[db-telemetry] db_top_queries erro:", error.message);
+    return [];
+  }
+  const rows = (data ?? []) as any[];
+  return rows.map((r) => ({
+    query: String(r.query ?? ""),
+    calls: Number(r.calls) || 0,
+    total_ms: Number(r.total_ms) || 0,
+    mean_ms: Number(r.mean_ms) || 0,
+    rows: Number(r.rows) || 0,
+    cache_hit_pct: r.cache_hit_pct != null ? Number(r.cache_hit_pct) : null,
+  }));
+}
+
 // ===== Relatório de IA da telemetria (a cada 10 min) =====
 
 export type AiReport = {
@@ -200,22 +228,31 @@ export type AiReport = {
   analysis: string;
 };
 
-const AI_REPORT_SYSTEM_PROMPT = `Você é um analista sênior de banco de dados monitorando um ERP em produção (PostgreSQL/Supabase) de uma empresa de segurança patrimonial. A cada 10 minutos você recebe as métricas atuais do banco em JSON e produz um relatório curto, em português brasileiro, para um GESTOR LEIGO (não técnico).
+const AI_REPORT_SYSTEM_PROMPT = `Você é um analista sênior de banco de dados monitorando um ERP em produção (PostgreSQL/Supabase) de uma empresa de segurança patrimonial. A cada 10 minutos você recebe as métricas atuais do banco em JSON e produz um relatório curto, em português brasileiro, para um GESTOR LEIGO (não técnico) que precisa saber EXATAMENTE o que corrigir.
+
+No JSON de entrada, o campo "consultas_mais_pesadas" lista as consultas que mais consomem o banco (campos: query = trecho do comando SQL; calls = quantas vezes rodou; total_ms = tempo total somado; mean_ms = tempo MÉDIO por execução; rows = linhas devolvidas; cache_hit_pct = % de leitura vinda da memória, baixo = lendo muito do disco). Use ESSA lista para apontar o problema concreto — NUNCA diga apenas "há uma consulta lenta" de forma genérica.
 
 Responda SOMENTE em JSON válido com as chaves:
 - "status": uma de "good" (tudo saudável), "warn" (atenção: algo fora do ideal, mas não crítico) ou "bad" (problema sério que precisa de ação agora).
 - "headline": uma frase curta (máx 80 caracteres) resumindo a situação em linguagem simples.
-- "analysis": 2 a 4 frases curtas, em linguagem simples (sem jargão técnico pesado), explicando o que está bom, o que merece atenção e, se houver problema, o que fazer.
+- "analysis": texto curto em linguagem simples. Quando houver consulta pesada, é OBRIGATÓRIO escrever 3 trechos SEPARADOS POR QUEBRA DE LINHA (\\n), nesta ordem e começando cada um com o rótulo indicado:
+   "Consulta: " QUAL consulta/tela está pesando — identifique pela tabela principal do SQL (ex.: "a listagem de abastecimentos (tabela vehicle_fueling)") e cite o tempo médio (mean_ms) e quantas vezes rodou (calls).
+   "Causa provável: " a explicação que melhor casa com os NÚMEROS — siga esta lógica:
+      • Se mean_ms é alto (>1000ms) mas calls é baixo/moderado (dezenas ou poucas centenas), a causa NÃO é frequência. É a consulta em si: provavelmente está trazendo colunas pesadas (fotos/imagens em base64) com "SELECT *", ou falta um índice na coluna do filtro/ordenação, ou falta paginação (traz a tabela inteira). Se o SQL mostra "SELECT ... .*" sem filtro e a tabela costuma guardar fotos/arquivos, aposte em payload pesado de fotos.
+      • Só aponte "consulta repetida vezes demais" quando calls for realmente altíssimo (milhares) E mean_ms baixo.
+      • cache_hit_pct < 95 indica leitura demais do disco; idle_in_transaction > 0 indica transação presa.
+   "Como corrigir: " ação acionável coerente com a causa (ex.: "não trazer as fotos na listagem — carregar a imagem só quando abrir o item", "paginar os resultados", "criar um índice na coluna usada no filtro", "selecionar só as colunas necessárias em vez de tudo").
+  Se estiver tudo bem, escreva 2-3 frases tranquilizadoras, sem os rótulos.
 
 Critérios de referência:
 - Latência: <300ms boa, 300-1500ms atenção, >1500ms ruim.
-- Cache hit ratio: >=99% ótimo, 95-99% ok, <95% ruim.
+- mean_ms de uma consulta: <100ms ok, 100-1000ms atenção, >1000ms ruim (provável falta de índice ou payload pesado).
+- cache_hit_pct de uma consulta ou cache_hit_ratio geral: >=99% ótimo, 95-99% ok, <95% ruim (lendo demais do disco).
 - Conexões: acima de 90% do máximo é ruim.
-- idle_in_transaction > 0: atenção (transação presa).
-- long_queries > 0: atenção (consultas lentas).
+- idle_in_transaction > 0: atenção (transação presa segurando recursos).
 - Falhas de autenticação altas ou IPs suspeitos: risco de segurança (atenção/ruim).
 - Tabelas muito grandes podem indicar necessidade de limpeza no futuro (informativo, raramente crítico).
-Seja direto e tranquilizador quando estiver tudo bem; seja claro sobre a ação quando houver problema.`;
+Seja direto e tranquilizador quando estiver tudo bem; seja claro e específico sobre a ação quando houver problema. Não invente nomes de tabelas que não estejam no JSON.`;
 
 // Top 10 tabelas por tamanho total (dados + índices) via RPC read-only.
 export async function getAiReports(supabase: SupabaseClient): Promise<AiReport[]> {
@@ -241,10 +278,11 @@ export async function generateAiReport(supabase: SupabaseClient): Promise<AiRepo
     return null;
   }
   try {
-    const [rt, tableSizes, security] = await Promise.all([
+    const [rt, tableSizes, security, topQueries] = await Promise.all([
       getRealtimeTelemetry(supabase),
       getTableSizes(supabase),
       getSecurityEvents24h(supabase),
+      getTopQueries(supabase),
     ]);
 
     const metrics = {
@@ -260,13 +298,21 @@ export async function generateAiReport(supabase: SupabaseClient): Promise<AiRepo
       falhas_auth_24h: security.token_failures_total,
       ips_suspeitos: security.brute_force_suspects.length,
       maiores_tabelas: tableSizes.slice(0, 5).map((t) => `${t.table_name}: ${t.total_size}`),
+      consultas_mais_pesadas: topQueries.map((q) => ({
+        query: q.query,
+        calls: q.calls,
+        total_ms: q.total_ms,
+        mean_ms: q.mean_ms,
+        rows: q.rows,
+        cache_hit_pct: q.cache_hit_pct,
+      })),
     };
 
     const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 400,
+      max_tokens: 700,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: AI_REPORT_SYSTEM_PROMPT },

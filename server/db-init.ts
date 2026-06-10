@@ -950,6 +950,54 @@ export async function ensureDbSchema() {
       );
     `);
 
+    // Diagnóstico de causa raiz: top consultas por carga (pg_stat_statements).
+    // Read-only, SECURITY DEFINER (pra enxergar a view de estatísticas), filtra
+    // ruído de introspecção/realtime e mostra média por chamada + cache hit, pra
+    // a IA apontar QUAL consulta está pesando e o porquê. Extensão já confirmada
+    // (pg_stat_statements 1.11) na inspeção do Supabase de produção.
+    await execSql(`
+      CREATE OR REPLACE FUNCTION public.db_top_queries()
+      RETURNS TABLE (
+        query text,
+        calls bigint,
+        total_ms numeric,
+        mean_ms numeric,
+        rows bigint,
+        cache_hit_pct numeric
+      )
+      LANGUAGE sql
+      SECURITY DEFINER
+      STABLE
+      SET search_path = public, extensions, pg_catalog
+      AS $$
+        SELECT
+          left(regexp_replace(s.query, '\\s+', ' ', 'g'), 300) AS query,
+          s.calls,
+          round(s.total_exec_time)::numeric AS total_ms,
+          round(s.mean_exec_time)::numeric  AS mean_ms,
+          s.rows,
+          CASE WHEN (s.shared_blks_hit + s.shared_blks_read) > 0
+            THEN round(100.0 * s.shared_blks_hit / (s.shared_blks_hit + s.shared_blks_read), 1)
+            ELSE NULL END AS cache_hit_pct
+        FROM pg_stat_statements s
+        WHERE s.calls > 1
+          -- Allowlist: só as consultas de DADOS do app (PostgREST em tabelas public).
+          AND s.query ILIKE '%pgrst_source%'
+          AND s.query ILIKE '%"public"."%'
+          -- Tira plumbing do PostgREST (chamadas de RPC) e a própria telemetria.
+          AND s.query NOT ILIKE '%pgrst_scalar%'
+          AND s.query NOT ILIKE '%db_telemetry_snapshot%'
+          AND s.query NOT ILIKE '%db_top_queries%'
+          AND s.query NOT ILIKE '%db_table_sizes%'
+          AND s.query NOT ILIKE '%db_health_samples%'
+          AND s.query NOT ILIKE '%db_ai_reports%'
+        ORDER BY s.mean_exec_time DESC
+        LIMIT 8
+      $$;
+    `);
+    await execSql(`REVOKE ALL ON FUNCTION public.db_top_queries() FROM PUBLIC, anon, authenticated`);
+    await execSql(`GRANT EXECUTE ON FUNCTION public.db_top_queries() TO service_role`);
+
     // Recarrega o schema cache do PostgREST p/ a nova função/tabela ficarem
     // visíveis via supabaseAdmin imediatamente (sem isso, a 1ª chamada dá "Could
     // not find the function/table ... in the schema cache" até recarregar sozinho).

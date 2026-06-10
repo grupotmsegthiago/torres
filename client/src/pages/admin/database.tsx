@@ -71,6 +71,14 @@ type Telemetry = {
     headline: string;
     analysis: string;
   }>;
+  topQueries?: Array<{
+    query: string;
+    calls: number;
+    total_ms: number;
+    mean_ms: number;
+    rows: number;
+    cache_hit_pct: number | null;
+  }>;
 };
 
 function fmtTime(iso: string) {
@@ -79,6 +87,13 @@ function fmtTime(iso: string) {
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function fmtMs(ms: number) {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 3600000) return `${Math.round(ms / 60000)} min`;
+  return `${(ms / 3600000).toFixed(1)} h`;
 }
 
 function fmtUptime(seconds: number) {
@@ -176,6 +191,7 @@ export default function DatabasePage() {
   const history = data?.history24h ?? [];
   const security = data?.security;
   const tableSizes = data?.tableSizes ?? [];
+  const topQueries = data?.topQueries ?? [];
   const maxTableBytes = tableSizes.length > 0 ? tableSizes[0].total_size_bytes : 0;
 
   const chartData = history.map((h) => ({
@@ -535,6 +551,54 @@ export default function DatabasePage() {
                             <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-data-${t.table_name}`}>{t.data_size}</td>
                             <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-index-${t.table_name}`}>{t.index_size}</td>
                             <td className="py-2.5 text-right font-semibold text-neutral-900 whitespace-nowrap" data-testid={`text-total-${t.table_name}`}>{t.total_size}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            <Card className="p-4 md:p-6" data-testid="table-top-queries">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="w-5 h-5 text-neutral-700" />
+                <h2 className="text-lg font-semibold text-neutral-900">Consultas Mais Pesadas</h2>
+              </div>
+              <p className="text-xs text-neutral-500 mb-4">
+                As consultas que mais consomem o banco desde a última reinicialização. <strong>Tempo médio</strong> alto (acima de 1s) costuma indicar falta de índice ou dados pesados (fotos) sendo trazidos. É daqui que a Análise da IA tira a causa.
+              </p>
+              {topQueries.length === 0 ? (
+                <div className="text-center text-neutral-500 py-12">Sem dados de consultas disponíveis ainda.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-neutral-500 border-b border-neutral-200">
+                        <th className="py-2 pr-4 font-semibold">Consulta (trecho do comando)</th>
+                        <th className="py-2 pr-4 font-semibold text-right">Vezes</th>
+                        <th className="py-2 pr-4 font-semibold text-right">Tempo médio</th>
+                        <th className="py-2 font-semibold text-right">Tempo total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topQueries.map((q, i) => {
+                        const meanColor = q.mean_ms >= 1000 ? "text-rose-600" : q.mean_ms >= 100 ? "text-amber-600" : "text-emerald-600";
+                        return (
+                          <tr
+                            key={i}
+                            className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 align-top"
+                            data-testid={`row-query-${i}`}
+                          >
+                            <td className="py-2.5 pr-4">
+                              <div className="font-mono text-xs text-neutral-800 break-all max-w-[480px]">{q.query}</div>
+                              {q.cache_hit_pct != null && q.cache_hit_pct < 95 && (
+                                <div className="mt-1 text-[11px] text-amber-600">Cache baixo ({q.cache_hit_pct}%) — lendo bastante do disco.</div>
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-calls-${i}`}>{q.calls.toLocaleString("pt-BR")}</td>
+                            <td className={`py-2.5 pr-4 text-right font-semibold whitespace-nowrap ${meanColor}`} data-testid={`text-mean-${i}`}>{fmtMs(q.mean_ms)}</td>
+                            <td className="py-2.5 text-right text-neutral-700 whitespace-nowrap" data-testid={`text-totalms-${i}`}>{fmtMs(q.total_ms)}</td>
                           </tr>
                         );
                       })}

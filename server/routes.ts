@@ -864,15 +864,16 @@ async function ensureSystemSettingsTable() {
 
     app.get("/api/admin/db-telemetry", requireAuth, requireAdminRole, async (_req, res) => {
       try {
-        const { getRealtimeTelemetry, getHistory24h, getSecurityEvents24h, getTableSizes, getAiReports } = await import("./db-telemetry");
-        const [realtime, history24h, security, tableSizes, aiReports] = await Promise.all([
+        const { getRealtimeTelemetry, getHistory24h, getSecurityEvents24h, getTableSizes, getAiReports, getTopQueries } = await import("./db-telemetry");
+        const [realtime, history24h, security, tableSizes, aiReports, topQueries] = await Promise.all([
           getRealtimeTelemetry(supabaseAdmin),
           getHistory24h(supabaseAdmin),
           getSecurityEvents24h(supabaseAdmin),
           getTableSizes(supabaseAdmin),
           getAiReports(supabaseAdmin),
+          getTopQueries(supabaseAdmin),
         ]);
-        res.json({ realtime, history24h, security, tableSizes, aiReports });
+        res.json({ realtime, history24h, security, tableSizes, aiReports, topQueries });
       } catch (err: any) {
         console.error("[db-telemetry] erro:", err?.message);
         res.status(500).json({ error: "telemetry_unavailable", message: err?.message });
