@@ -13,5 +13,6 @@
 - [Fila de fallback espelha upsert](fallback-queue-upsert.md) — escrita primária com upsert NÃO pode enfileirar insert cego no fallback; senão flush no recovery floodou unique violation (uniq_agent_loc_user).
 
 - [Consumidores de pendência documental](doc-pendency-consumers.md) — regra de doc obrigatório por funcionário é recomputada em 4 pontos (o alerta da lista em EmployeesPage escapa); mudança deve tocar todos.
+- [Recalcular billing pela tabela cadastrada](recalc-tabela-congelada.md) — contract_id congela no billing; trocar tabela da OS não propaga (nem na conclusão); endpoint /calcular relê foto (km zerado explode) — recompute via calcularEscolta com KM do billing.
 - [Lista com base64 derruba Supabase](fueling-list-heavy-base64.md) — `/api/fueling` sem ?page trazia 4 fotos base64 (~116MB/210 linhas)→timeout→fallback; padrão: lista leve (allowlist) + detalhe sob demanda; fallback local de leitura é OFF.
 - [Valor Estimado por Tabela de Preços](valor-estimado-tabela.md) — estimativa plana por contrato de escolta (acionamento+km×franquia, ignora rota); recompute em massa NUNCA toca recusada/cancelada (§8.1).
