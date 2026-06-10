@@ -13,6 +13,7 @@ import ExcelJS from "exceljs";
 
 const TOL_MONEY = 0.01; // R$
 const TOL_KM = 1;       // km
+const MATCH_TOL_KM = 5; // km — tolerância p/ casar KM inicial/final (identidade da OS)
 
 function normPlate(v: any): string {
   return String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -100,7 +101,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   total: ["total"],
 };
 
-function findHeaderRow(ws: ExcelJS.Worksheet): { rowIdx: number; cols: Record<string, number> } | null {
+export function findHeaderRow(ws: ExcelJS.Worksheet): { rowIdx: number; cols: Record<string, number> } | null {
   for (let r = 1; r <= Math.min(ws.rowCount, 20); r++) {
     const row = ws.getRow(r);
     const labels: string[] = [];
@@ -115,6 +116,24 @@ function findHeaderRow(ws: ExcelJS.Worksheet): { rowIdx: number; cols: Record<st
     for (const [key, aliases] of Object.entries(HEADER_ALIASES)) {
       for (let c = 1; c <= ws.columnCount; c++) {
         if (aliases.includes(labels[c])) { cols[key] = c; break; }
+      }
+    }
+    // Layout do boletim TORRES (fornecedor) repete o cabeçalho "TOTAL" em várias
+    // seções (KM, horas, valores) e usa "INICIAL/FINAL/TOTAL" sem o prefixo "KM".
+    // Correções por POSIÇÃO p/ não confundir KM TOTAL com VALOR FINAL:
+    //  - VALOR FINAL = a ÚLTIMA coluna "total" (mais à direita). No layout do
+    //    sistema só existe uma "TOTAL", então last === first (sem efeito colateral).
+    let lastTotal = -1;
+    for (let c = 1; c <= ws.columnCount; c++) {
+      if (HEADER_ALIASES.total.includes(labels[c])) lastTotal = c;
+    }
+    if (lastTotal > 0) cols.total = lastTotal;
+    //  - KM TOTAL: sem header "km total" explícito, usar a 1ª "total" logo após a
+    //    coluna de KM FINAL (a total da seção de quilometragem). No layout do
+    //    sistema o "km total" é achado direto, então este fallback não dispara.
+    if (cols.kmTotal == null && cols.kmFinal != null) {
+      for (let c = cols.kmFinal + 1; c <= ws.columnCount; c++) {
+        if (HEADER_ALIASES.total.includes(labels[c])) { cols.kmTotal = c; break; }
       }
     }
     return { rowIdx: r, cols };
@@ -315,7 +334,6 @@ export async function conciliarBoletim(buffer: Buffer, clientId: number) {
       for (const ext of extRows) {
         const key = `${ext.data}|${ext.placa}`;
         const exactCandidates = (sysIndex.get(key) || []).filter(s => !s.matched);
-        const isExact = exactCandidates.length > 0;
         let candidates = exactCandidates;
         // fallback: mesma placa em data ±1 (missões que viram a noite)
         if (!candidates.length && ext.data) {
@@ -325,28 +343,30 @@ export async function conciliarBoletim(buffer: Buffer, clientId: number) {
             if (dd <= 1) candidates.push(s);
           }
         }
-        // pontuação: janela de KM + número da OS + rota
+        // Regra do dono: a OS certa é aquela em que DATA + PLACA + (KM INICIAL **ou**
+        // KM FINAL) batem. O KM (inicial OU final) é OBRIGATÓRIO no aceite — sem ele
+        // não há match confiável, então a linha vira "fora do sistema" em vez de
+        // forçar um par só por data+placa. Nº da OS, KM total e rota só desempatam
+        // entre candidatos que JÁ têm o KM batendo.
         let best: SysRow | null = null;
         let bestScore = -1;
+        let bestKmMatch = false;
         for (const s of candidates) {
+          const kmIniMatch = !!ext.kmInicial && !!s.kmInicial && Math.abs(s.kmInicial - ext.kmInicial) <= MATCH_TOL_KM;
+          const kmFimMatch = !!ext.kmFinal && !!s.kmFinal && Math.abs(s.kmFinal - ext.kmFinal) <= MATCH_TOL_KM;
+          const kmMatch = kmIniMatch || kmFimMatch;
           let score = 0;
+          if (kmIniMatch) score += 3;
+          if (kmFimMatch) score += 3;
           if (ext.numero && s.osNumber && normRoute(ext.numero) === normRoute(s.osNumber)) score += 5;
-          // janela de KM inicial/final
-          if (ext.kmInicial && Math.abs(s.kmInicial - ext.kmInicial) <= 5) score += 3;
-          if (ext.kmFinal && Math.abs(s.kmFinal - ext.kmFinal) <= 5) score += 3;
           if (ext.kmTotal && Math.abs(s.kmTotal - ext.kmTotal) <= 5) score += 2;
-          // rota
           const er = normRoute(ext.rotaCidades), sr = normRoute(s.rotaCidades);
           if (er && sr && (er === sr || er.includes(sr) || sr.includes(er))) score += 2;
-          if (score > bestScore) { bestScore = score; best = s; }
+          // prioriza candidato com KM batendo; entre iguais, o de maior score
+          const better = (kmMatch && !bestKmMatch) || (kmMatch === bestKmMatch && score > bestScore);
+          if (better) { bestScore = score; best = s; bestKmMatch = kmMatch; }
         }
-        // confiança mínima: aceita SE houver candidato único exato (chave data+placa
-        // é forte) OU houver corroboração (score>=2: rota/KM/OS). Senão, não há match
-        // confiável -> tratado como "fora do sistema" em vez de forçar par errado.
-        const accept = !!best && (
-          (isExact && (exactCandidates.length === 1 || bestScore >= 2)) ||
-          (!isExact && bestScore >= 2)
-        );
+        const accept = !!best && bestKmMatch;
         if (!accept) {
           missingInSystem.push(ext);
           continue;
