@@ -17,5 +17,7 @@ NÃO usar o endpoint `POST /api/boletim-medicao/calcular/:osId` para recálculo 
 
 **Why:** o KM real fica salvo no billing; reler foto é fonte instável. Trocar só o contrato e manter KM/timestamps dá o valor correto da tabela sem efeitos colaterais.
 
+**Cuidado com `horario_agendado` defasado no billing:** ao recalcular, derivar o agendado do `scheduled_date` da OS (HH:MM em America/Sao_Paulo), NÃO usar `escort_billings.horario_agendado` cru — ele pode estar defasado (caso TOR-0249: billing="06:00" vs scheduled_date=06:10) e inventar hora extra fantasma quando a franquia de horas é apertada (ex. 3h). §8.5: o início de cobrança se monta a partir do `scheduled_date`. Sempre validar o total recalculado contra o valor confirmado pelo dono antes de gravar (trava de assert).
+
 ## Efeito esperado de aplicar a tabela certa
 Acionamento sobe, mas KM excedente cai (tabelas de rota longa têm franquia_km grande, ex. 200/1000/2600 km, que absorve o KM). Pode reduzir o total líquido. Ex. real (jun/2026): 5 OS do cliente TM SEGURANCA passaram de R$59.379,50 → R$45.616,30 ao trocar da tabela errada "100KM - SUDESTE" (franquia 100) pelas tabelas ORIGEM/rota corretas.
