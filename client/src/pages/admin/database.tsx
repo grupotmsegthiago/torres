@@ -21,7 +21,7 @@ import {
 type Telemetry = {
   realtime: {
     ts: string;
-    node: { cpu_pct: number; mem_mb: number; mem_pct: number; uptime_s: number };
+    node: { cpu_pct: number; mem_mb: number; mem_pct: number; heap_used_mb: number; heap_limit_mb: number; uptime_s: number };
     db: {
       latency_ms: number;
       active_connections: number;
@@ -394,7 +394,7 @@ export default function DatabasePage() {
                 icon={MemoryStick}
                 label="Memória Servidor"
                 value={`${rt.node.mem_mb} MB`}
-                sub={`Heap ${rt.node.mem_pct}% usado`}
+                sub={`Heap ${rt.node.heap_used_mb} de ${rt.node.heap_limit_mb} MB (${rt.node.mem_pct}%)`}
                 accent={accentFor(memHealth)}
                 testId="card-memory"
               />

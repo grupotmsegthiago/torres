@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
+import v8 from "node:v8";
 import { getSupabaseStats } from "./supabase";
 
 type Snapshot = {
@@ -29,6 +30,8 @@ export type RealtimeTelemetry = {
     cpu_pct: number;
     mem_mb: number;
     mem_pct: number;
+    heap_used_mb: number;
+    heap_limit_mb: number;
     uptime_s: number;
   };
   db: {
@@ -64,10 +67,14 @@ function getCpuPct(): number {
 function getMemoryStats() {
   const m = process.memoryUsage();
   const rssMb = Math.round(m.rss / 1024 / 1024);
-  const heapTotalMb = Math.round(m.heapTotal / 1024 / 1024);
   const heapUsedMb = Math.round(m.heapUsed / 1024 / 1024);
-  const heapPct = heapTotalMb > 0 ? Math.round((heapUsedMb / heapTotalMb) * 100) : 0;
-  return { rssMb, heapUsedMb, heapPct };
+  // % de memória "de verdade": heap em uso vs o TETO que o V8 pode crescer
+  // (heap_size_limit). Usar heapUsed/heapTotal dava ~97% sempre — engana,
+  // porque o V8 mantém heapTotal compacto e cresce sob demanda até o teto.
+  // Só vira problema real quando heapUsed se aproxima do heap_size_limit.
+  const heapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024);
+  const heapPct = heapLimitMb > 0 ? Math.round((heapUsedMb / heapLimitMb) * 100) : 0;
+  return { rssMb, heapUsedMb, heapLimitMb, heapPct };
 }
 
 async function dbPing(supabase: SupabaseClient): Promise<{ latencyMs: number; ok: boolean }> {
@@ -104,6 +111,8 @@ export async function getRealtimeTelemetry(supabase: SupabaseClient): Promise<Re
     node: {
       cpu_pct,
       mem_mb: mem.rssMb,
+      heap_used_mb: mem.heapUsedMb,
+      heap_limit_mb: mem.heapLimitMb,
       mem_pct: mem.heapPct,
       uptime_s: Math.round(process.uptime()),
     },
