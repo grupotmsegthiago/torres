@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Database, Cpu, MemoryStick, Activity, Network, AlertTriangle,
   ShieldAlert, Clock, HardDrive, Zap, CheckCircle2, XCircle,
+  Gauge, PauseCircle, ArrowDownUp,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -25,6 +26,10 @@ type Telemetry = {
       total_connections: number;
       max_connections: number;
       db_size_mb: number;
+      cache_hit_ratio: number | null;
+      idle_in_transaction: number;
+      tuples_read: number;
+      tuples_written: number;
       long_queries: Array<{ pid: number; duration_s: number; state: string; query: string; application_name: string | null; client_addr: string | null }>;
     };
     status: "online" | "fallback" | "offline";
@@ -39,6 +44,10 @@ type Telemetry = {
     node_mem_mb: number | null;
     fallback_active: boolean | null;
     db_size_mb: number | null;
+    cache_hit_ratio: number | null;
+    idle_in_transaction: number | null;
+    tuples_read: number | null;
+    tuples_written: number | null;
   }>;
   security: {
     token_failures_total: number;
@@ -137,6 +146,38 @@ export default function DatabasePage() {
     cpu: h.node_cpu_pct ?? 0,
     fallback: h.fallback_active ? 1 : 0,
   }));
+
+  // Tuplas lidas/escritas são contadores ACUMULADOS no Postgres. Para mostrar
+  // o "perfil de carga ao longo do tempo" calculamos o delta entre amostras
+  // (quanto foi lido/escrito naquele intervalo de ~2min). Só geramos um ponto
+  // quando a amostra atual E a anterior têm valores não-nulos — amostras antigas
+  // (anteriores à criação das colunas) ficam null e NÃO podem virar 0, senão a
+  // transição null→valor produziria um pico artificial gigante. Deltas negativos
+  // (reset de estatísticas / restart do banco) são zerados.
+  const tuplesData = history
+    .map((h, i) => {
+      const prev = i > 0 ? history[i - 1] : null;
+      if (
+        !prev ||
+        h.tuples_read == null || h.tuples_written == null ||
+        prev.tuples_read == null || prev.tuples_written == null
+      ) {
+        return null;
+      }
+      return {
+        time: fmtTime(h.sampled_at),
+        leituras: Math.max(0, h.tuples_read - prev.tuples_read),
+        escritas: Math.max(0, h.tuples_written - prev.tuples_written),
+      };
+    })
+    .filter((d): d is { time: string; leituras: number; escritas: number } => d !== null);
+
+  const cacheData = history
+    .filter((h) => h.cache_hit_ratio != null)
+    .map((h) => ({ time: fmtTime(h.sampled_at), cache: Number(h.cache_hit_ratio) }));
+
+  const cacheHit = rt?.db.cache_hit_ratio;
+  const idleInTx = rt?.db.idle_in_transaction ?? 0;
 
   const connPct = rt && rt.db.max_connections > 0
     ? Math.round((rt.db.total_connections / rt.db.max_connections) * 100)
@@ -243,6 +284,65 @@ export default function DatabasePage() {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+              {/* Cache Hit Ratio — card de progresso (ideal > 99%) */}
+              <Card
+                className={`p-5 border bg-gradient-to-br ${
+                  cacheHit == null
+                    ? "from-neutral-500/10 to-neutral-500/5 border-neutral-200 text-neutral-700"
+                    : cacheHit >= 99
+                    ? "from-emerald-500/10 to-emerald-500/5 border-emerald-200 text-emerald-700"
+                    : cacheHit >= 95
+                    ? "from-amber-500/10 to-amber-500/5 border-amber-200 text-amber-700"
+                    : "from-rose-500/10 to-rose-500/5 border-rose-200 text-rose-700"
+                }`}
+                data-testid="card-cache-hit"
+              >
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider opacity-80">
+                  <Gauge className="w-4 h-4" />
+                  <span>Cache Hit Ratio</span>
+                </div>
+                <div className="mt-2 text-3xl font-bold text-neutral-900" data-testid="card-cache-hit-value">
+                  {cacheHit == null ? "—" : `${cacheHit.toFixed(2)}%`}
+                </div>
+                <div className="mt-3 h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      cacheHit == null ? "bg-neutral-400" : cacheHit >= 99 ? "bg-emerald-500" : cacheHit >= 95 ? "bg-amber-500" : "bg-rose-500"
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(0, cacheHit ?? 0))}%` }}
+                  />
+                </div>
+                <div className="text-xs text-neutral-600 mt-1.5">
+                  {cacheHit == null
+                    ? "Sem dados de tabelas ainda"
+                    : cacheHit >= 99
+                    ? "Leitura em memória saudável (ideal ≥ 99%)"
+                    : "Abaixo do ideal — muita leitura em disco"}
+                </div>
+              </Card>
+
+              {/* Idle in Transaction — ideal SEMPRE 0 */}
+              <MetricCard
+                icon={PauseCircle}
+                label="Idle in Transaction"
+                value={idleInTx}
+                sub={idleInTx === 0 ? "Nenhuma transação presa (ideal)" : "Conexões com transação aberta sem commit/rollback"}
+                accent={idleInTx === 0 ? "emerald" : idleInTx <= 2 ? "amber" : "rose"}
+                testId="card-idle-in-tx"
+              />
+
+              {/* Resumo de tuplas acumuladas (detalhe temporal no gráfico abaixo) */}
+              <MetricCard
+                icon={ArrowDownUp}
+                label="Tuplas Processadas (total)"
+                value={`${rt.db.tuples_read.toLocaleString("pt-BR")} L`}
+                sub={`${rt.db.tuples_written.toLocaleString("pt-BR")} escritas · acumulado desde reset`}
+                accent="blue"
+                testId="card-tuples-total"
+              />
+            </div>
+
             <Card className="p-4 md:p-6" data-testid="chart-latency-24h">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -309,6 +409,62 @@ export default function DatabasePage() {
                 )}
               </Card>
             </div>
+
+            <Card className="p-4 md:p-6" data-testid="chart-tuples-24h">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
+                  <ArrowDownUp className="w-5 h-5 text-blue-600" /> Taxa de Escrita vs Leitura — 24h
+                </h2>
+                <p className="text-xs text-neutral-500">
+                  Quantas tuplas (registros) foram lidas e escritas a cada intervalo de amostra (~2min). Ajuda a entender o perfil de carga do banco ao longo do dia.
+                </p>
+              </div>
+              {tuplesData.length === 0 ? (
+                <div className="text-center text-neutral-500 py-12">
+                  Ainda sem histórico suficiente. O comparativo aparece após pelo menos 2 amostras (o coletor registra a cada 2min).
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={tuplesData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="time" stroke="#6b7280" fontSize={11} interval="preserveStartEnd" />
+                    <YAxis stroke="#6b7280" fontSize={11} tickFormatter={(v: number) => v.toLocaleString("pt-BR")} width={70} />
+                    <RechartTooltip
+                      contentStyle={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12 }}
+                      formatter={(v: any, n: string) => [Number(v).toLocaleString("pt-BR") + " tuplas", n === "leituras" ? "Leituras" : "Escritas"]}
+                    />
+                    <Line type="monotone" dataKey="leituras" name="leituras" stroke="#2563eb" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="escritas" name="escritas" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+              <div className="flex items-center gap-4 mt-3 text-xs text-neutral-600">
+                <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-blue-600" /> Leituras (seq + índice)</span>
+                <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-0.5 bg-amber-500" /> Escritas (insert + update + delete)</span>
+              </div>
+            </Card>
+
+            <Card className="p-4 md:p-6" data-testid="chart-cache-24h">
+              <h3 className="text-base font-semibold text-neutral-900 mb-1">Cache Hit Ratio — 24h</h3>
+              <p className="text-xs text-neutral-500 mb-3">Percentual de leituras servidas pela memória ao longo do tempo. O ideal é manter sempre acima de 99% (linha verde).</p>
+              {cacheData.length === 0 ? (
+                <div className="text-center text-neutral-400 py-8 text-sm">Sem histórico de cache ainda.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={cacheData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="time" stroke="#6b7280" fontSize={10} interval="preserveStartEnd" />
+                    <YAxis stroke="#6b7280" fontSize={10} domain={[90, 100]} tickFormatter={(v: number) => `${v}%`} />
+                    <RechartTooltip
+                      contentStyle={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12 }}
+                      formatter={(v: any) => [`${Number(v).toFixed(2)}%`, "Cache Hit"]}
+                    />
+                    <ReferenceLine y={99} stroke="#10b981" strokeDasharray="4 4" label={{ value: "Ideal 99%", fontSize: 10, fill: "#10b981" }} />
+                    <Line type="monotone" dataKey="cache" stroke="#059669" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </Card>
 
             <Card className="p-4 md:p-6" data-testid="long-queries-panel">
               <h2 className="text-lg font-semibold text-neutral-900 mb-3 flex items-center gap-2">

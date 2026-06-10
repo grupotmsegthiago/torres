@@ -15,6 +15,10 @@ type Snapshot = {
     client_addr: string | null;
   }>;
   db_size_mb: number;
+  cache_hit_ratio: number | null;
+  idle_in_transaction: number;
+  tuples_read: number;
+  tuples_written: number;
   sampled_at: string;
 };
 
@@ -33,6 +37,10 @@ export type RealtimeTelemetry = {
     total_connections: number;
     max_connections: number;
     db_size_mb: number;
+    cache_hit_ratio: number | null;
+    idle_in_transaction: number;
+    tuples_read: number;
+    tuples_written: number;
     long_queries: Snapshot["long_queries"];
   };
   status: "online" | "fallback" | "offline";
@@ -105,6 +113,10 @@ export async function getRealtimeTelemetry(supabase: SupabaseClient): Promise<Re
       total_connections: snap?.total_connections ?? 0,
       max_connections: snap?.max_connections ?? 0,
       db_size_mb: snap?.db_size_mb ?? 0,
+      cache_hit_ratio: snap?.cache_hit_ratio != null ? Number(snap.cache_hit_ratio) : null,
+      idle_in_transaction: Number(snap?.idle_in_transaction ?? 0),
+      tuples_read: Number(snap?.tuples_read ?? 0),
+      tuples_written: Number(snap?.tuples_written ?? 0),
       long_queries: snap?.long_queries ?? [],
     },
     status,
@@ -115,7 +127,7 @@ export async function getHistory24h(supabase: SupabaseClient) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("db_health_samples")
-    .select("sampled_at,latency_ms,active_connections,total_connections,long_query_count,node_cpu_pct,node_mem_mb,fallback_active,db_size_mb")
+    .select("sampled_at,latency_ms,active_connections,total_connections,long_query_count,node_cpu_pct,node_mem_mb,fallback_active,db_size_mb,cache_hit_ratio,idle_in_transaction,tuples_read,tuples_written")
     .gte("sampled_at", since)
     .order("sampled_at", { ascending: true })
     .limit(1500);
@@ -166,6 +178,10 @@ export async function persistSample(supabase: SupabaseClient): Promise<void> {
       node_mem_mb: rt.node.mem_mb,
       fallback_active: rt.status !== "online",
       db_size_mb: rt.db.db_size_mb,
+      cache_hit_ratio: rt.db.cache_hit_ratio,
+      idle_in_transaction: rt.db.idle_in_transaction,
+      tuples_read: rt.db.tuples_read,
+      tuples_written: rt.db.tuples_written,
     });
   } catch {
     // silencioso — sampler não pode derrubar nada

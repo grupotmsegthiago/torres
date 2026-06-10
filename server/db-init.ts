@@ -859,6 +859,15 @@ export async function ensureDbSchema() {
       )
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_db_health_sampled ON db_health_samples(sampled_at DESC)`);
+    // Colunas aditivas para histórico das novas métricas (cache, idle-in-tx, tuplas lidas/escritas).
+    await execSql(`ALTER TABLE db_health_samples ADD COLUMN IF NOT EXISTS cache_hit_ratio REAL`);
+    await execSql(`ALTER TABLE db_health_samples ADD COLUMN IF NOT EXISTS idle_in_transaction INTEGER`);
+    await execSql(`ALTER TABLE db_health_samples ADD COLUMN IF NOT EXISTS tuples_read BIGINT`);
+    await execSql(`ALTER TABLE db_health_samples ADD COLUMN IF NOT EXISTS tuples_written BIGINT`);
+    // Recarrega o schema cache do PostgREST imediatamente: sem isso, os primeiros
+    // inserts do sampler (via supabaseAdmin REST) falhariam em silêncio até o cache
+    // recarregar sozinho, gravando NULL nas colunas novas logo após o deploy.
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
 
     // RPC SECURITY DEFINER expõe estatísticas de pg_stat_activity sem dar acesso direto.
     await execSql(`
@@ -884,6 +893,10 @@ export async function ensureDbSchema() {
               AND query NOT ILIKE '%db_telemetry_snapshot%'
           ), '[]'::jsonb),
           'db_size_mb', (pg_database_size(current_database())/1024/1024)::int,
+          'cache_hit_ratio', (SELECT round((sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read) + 0.000001) * 100)::numeric, 2) FROM pg_statio_user_tables),
+          'idle_in_transaction', (SELECT count(*) FROM pg_stat_activity WHERE state='idle in transaction'),
+          'tuples_read', (SELECT COALESCE(sum(seq_tup_read + idx_tup_fetch), 0) FROM pg_stat_user_tables),
+          'tuples_written', (SELECT COALESCE(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) FROM pg_stat_user_tables),
           'sampled_at', now()
         ) INTO r;
         RETURN r;
