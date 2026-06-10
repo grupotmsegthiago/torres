@@ -4948,6 +4948,9 @@ export default function EmployeesPage() {
                 if (g.group === "Dependentes (se necessário)") continue;
                 for (const doc of g.items) {
                   if (doc.optional) continue;
+                  // Reciclagem de escolta armada só é cobrada 2 anos após a emissão
+                  // do CNV (vide isReciclagemDue). Sem data ou < 2 anos → não acusa.
+                  if (doc.type === RECICLAGEM_ESCOLTA_TYPE && !isReciclagemDue((e as any).cnvIssueDate)) continue;
                   if (doc.type === "Fotos 3x4" && e.photoUrl) continue;
                   // Backcompat: Antecedentes Criminais aceita qualquer um dos 3 nomes.
                   if (doc.type === "Antecedentes Criminais") {
