@@ -422,7 +422,13 @@ export default function DatabasePage() {
                 const usedMb = rt.db.db_size_mb;
                 const limitMb = rt.db.db_size_limit_mb || 0;
                 const pct = limitMb > 0 ? (usedMb / limitMb) * 100 : 0;
-                const fmt = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+                const fmt = (mb: number) => {
+                  if (mb >= 1024) {
+                    const gb = mb / 1024;
+                    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+                  }
+                  return `${Math.round(mb)} MB`;
+                };
                 const barColor = pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-blue-500";
                 const cardTone = pct >= 90
                   ? "from-rose-500/10 to-rose-500/5 border-rose-200 text-rose-700"
@@ -435,8 +441,8 @@ export default function DatabasePage() {
                       <HardDrive className="w-4 h-4" />
                       <span>Tamanho do Banco</span>
                     </div>
-                    <div className="mt-2 text-3xl font-bold text-neutral-900" data-testid="card-dbsize-value">
-                      {fmt(usedMb)}
+                    <div className="mt-2 text-2xl font-bold text-neutral-900" data-testid="card-dbsize-value">
+                      {fmt(usedMb)} <span className="text-neutral-400 font-semibold">/ {limitMb > 0 ? fmt(limitMb) : "—"}</span>
                     </div>
                     <div className="mt-3 h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
                       <div
@@ -446,7 +452,9 @@ export default function DatabasePage() {
                       />
                     </div>
                     <div className="text-xs text-neutral-600 mt-1.5" data-testid="text-dbsize-usage">
-                      {pct.toFixed(1)}% de {fmt(limitMb)} usados · {fmt(Math.max(0, limitMb - usedMb))} livres
+                      {limitMb > 0
+                        ? `${pct.toFixed(1)}% de uso · ${fmt(Math.max(0, limitMb - usedMb))} livres`
+                        : "Capacidade não configurada"}
                     </div>
                   </Card>
                 );
