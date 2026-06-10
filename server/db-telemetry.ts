@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import v8 from "node:v8";
 import { getSupabaseStats } from "./supabase";
+import { DB_DISK_LIMIT_MB } from "./constants";
 
 type Snapshot = {
   active_connections: number;
@@ -41,6 +42,7 @@ export type RealtimeTelemetry = {
     total_connections: number;
     max_connections: number;
     db_size_mb: number;
+    db_size_limit_mb: number;
     cache_hit_ratio: number | null;
     idle_in_transaction: number;
     tuples_read: number;
@@ -123,6 +125,7 @@ export async function getRealtimeTelemetry(supabase: SupabaseClient): Promise<Re
       total_connections: snap?.total_connections ?? 0,
       max_connections: snap?.max_connections ?? 0,
       db_size_mb: snap?.db_size_mb ?? 0,
+      db_size_limit_mb: DB_DISK_LIMIT_MB,
       cache_hit_ratio: snap?.cache_hit_ratio != null ? Number(snap.cache_hit_ratio) : null,
       idle_in_transaction: Number(snap?.idle_in_transaction ?? 0),
       tuples_read: Number(snap?.tuples_read ?? 0),

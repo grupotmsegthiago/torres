@@ -29,6 +29,7 @@ type Telemetry = {
       total_connections: number;
       max_connections: number;
       db_size_mb: number;
+      db_size_limit_mb: number;
       cache_hit_ratio: number | null;
       idle_in_transaction: number;
       tuples_read: number;
@@ -417,13 +418,39 @@ export default function DatabasePage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-              <MetricCard
-                icon={HardDrive}
-                label="Tamanho do Banco"
-                value={`${rt.db.db_size_mb} MB`}
-                accent="blue"
-                testId="card-dbsize"
-              />
+              {(() => {
+                const usedMb = rt.db.db_size_mb;
+                const limitMb = rt.db.db_size_limit_mb || 0;
+                const pct = limitMb > 0 ? (usedMb / limitMb) * 100 : 0;
+                const fmt = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+                const barColor = pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-blue-500";
+                const cardTone = pct >= 90
+                  ? "from-rose-500/10 to-rose-500/5 border-rose-200 text-rose-700"
+                  : pct >= 75
+                  ? "from-amber-500/10 to-amber-500/5 border-amber-200 text-amber-700"
+                  : "from-blue-500/10 to-blue-500/5 border-blue-200 text-blue-700";
+                return (
+                  <Card className={`p-5 border bg-gradient-to-br ${cardTone}`} data-testid="card-dbsize">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider opacity-80">
+                      <HardDrive className="w-4 h-4" />
+                      <span>Tamanho do Banco</span>
+                    </div>
+                    <div className="mt-2 text-3xl font-bold text-neutral-900" data-testid="card-dbsize-value">
+                      {fmt(usedMb)}
+                    </div>
+                    <div className="mt-3 h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${barColor}`}
+                        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                        data-testid="bar-dbsize"
+                      />
+                    </div>
+                    <div className="text-xs text-neutral-600 mt-1.5" data-testid="text-dbsize-usage">
+                      {pct.toFixed(1)}% de {fmt(limitMb)} usados · {fmt(Math.max(0, limitMb - usedMb))} livres
+                    </div>
+                  </Card>
+                );
+              })()}
               <MetricCard
                 icon={Clock}
                 label="Queries Lentas (>5s)"
