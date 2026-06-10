@@ -864,17 +864,33 @@ async function ensureSystemSettingsTable() {
 
     app.get("/api/admin/db-telemetry", requireAuth, requireAdminRole, async (_req, res) => {
       try {
-        const { getRealtimeTelemetry, getHistory24h, getSecurityEvents24h, getTableSizes } = await import("./db-telemetry");
-        const [realtime, history24h, security, tableSizes] = await Promise.all([
+        const { getRealtimeTelemetry, getHistory24h, getSecurityEvents24h, getTableSizes, getAiReports } = await import("./db-telemetry");
+        const [realtime, history24h, security, tableSizes, aiReports] = await Promise.all([
           getRealtimeTelemetry(supabaseAdmin),
           getHistory24h(supabaseAdmin),
           getSecurityEvents24h(supabaseAdmin),
           getTableSizes(supabaseAdmin),
+          getAiReports(supabaseAdmin),
         ]);
-        res.json({ realtime, history24h, security, tableSizes });
+        res.json({ realtime, history24h, security, tableSizes, aiReports });
       } catch (err: any) {
         console.error("[db-telemetry] erro:", err?.message);
         res.status(500).json({ error: "telemetry_unavailable", message: err?.message });
+      }
+    });
+
+    // Gera um relatório de IA sob demanda (botão "Atualizar análise agora").
+    app.post("/api/admin/db-telemetry/report", requireAuth, requireAdminRole, async (_req, res) => {
+      try {
+        const { generateAiReport } = await import("./db-telemetry");
+        const report = await generateAiReport(supabaseAdmin);
+        if (!report) {
+          return res.status(503).json({ error: "report_unavailable", message: "Não foi possível gerar a análise agora." });
+        }
+        res.json({ report });
+      } catch (err: any) {
+        console.error("[db-telemetry] gerar report erro:", err?.message);
+        res.status(500).json({ error: "report_failed", message: err?.message });
       }
     });
 

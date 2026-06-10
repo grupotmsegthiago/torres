@@ -936,9 +936,23 @@ export async function ensureDbSchema() {
     `);
     await execSql(`REVOKE ALL ON FUNCTION public.db_table_sizes() FROM PUBLIC, anon, authenticated`);
     await execSql(`GRANT EXECUTE ON FUNCTION public.db_table_sizes() TO service_role`);
-    // Recarrega o schema cache do PostgREST p/ a nova função ficar visível via
-    // supabaseAdmin.rpc imediatamente (sem isso, a 1ª chamada dá "Could not find
-    // the function ... in the schema cache" até o cache recarregar sozinho).
+
+    // Relatórios de IA da telemetria do banco (gerados a cada 10 min). Guardamos
+    // apenas os últimos 6 (poda no app). status: 'good' | 'warn' | 'bad'.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS db_ai_reports (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        status TEXT NOT NULL DEFAULT 'good',
+        headline TEXT NOT NULL DEFAULT '',
+        analysis TEXT NOT NULL DEFAULT '',
+        metrics JSONB
+      );
+    `);
+
+    // Recarrega o schema cache do PostgREST p/ a nova função/tabela ficarem
+    // visíveis via supabaseAdmin imediatamente (sem isso, a 1ª chamada dá "Could
+    // not find the function/table ... in the schema cache" até recarregar sozinho).
     await execSql(`NOTIFY pgrst, 'reload schema'`);
 
     await execSql(`

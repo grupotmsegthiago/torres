@@ -1,14 +1,17 @@
 import AdminLayout from "@/components/admin/layout";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Database, Cpu, MemoryStick, Activity, Network, AlertTriangle,
   ShieldAlert, Clock, HardDrive, Zap, CheckCircle2, XCircle,
-  Gauge, PauseCircle, ArrowDownUp,
+  Gauge, PauseCircle, ArrowDownUp, Brain, RefreshCw, Loader2,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -61,6 +64,13 @@ type Telemetry = {
     total_size: string;
     total_size_bytes: number;
   }>;
+  aiReports?: Array<{
+    id: number;
+    created_at: string;
+    status: "good" | "warn" | "bad";
+    headline: string;
+    analysis: string;
+  }>;
 };
 
 function fmtTime(iso: string) {
@@ -108,9 +118,9 @@ function MetricCard({ icon: Icon, label, value, sub, accent, testId }: {
   const accents: Record<string, string> = {
     blue: "from-blue-500/10 to-blue-500/5 border-blue-200 text-blue-700",
     purple: "from-purple-500/10 to-purple-500/5 border-purple-200 text-purple-700",
-    emerald: "from-emerald-500/10 to-emerald-500/5 border-emerald-200 text-emerald-700",
-    amber: "from-amber-500/10 to-amber-500/5 border-amber-200 text-amber-700",
-    rose: "from-rose-500/10 to-rose-500/5 border-rose-200 text-rose-700",
+    emerald: "from-emerald-500/25 to-emerald-500/10 border-emerald-300 text-emerald-800",
+    amber: "from-amber-500/30 to-amber-500/10 border-amber-300 text-amber-800",
+    rose: "from-rose-500/30 to-rose-500/10 border-rose-400 text-rose-800",
   };
   return (
     <Card className={`p-5 border bg-gradient-to-br ${accents[accent]}`} data-testid={testId}>
@@ -134,10 +144,30 @@ export default function DatabasePage() {
     }
   }, [user, setLocation]);
 
+  const { toast } = useToast();
+
   const { data, isLoading, error } = useQuery<Telemetry>({
     queryKey: ["/api/admin/db-telemetry"],
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
+  });
+
+  const genReport = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/db-telemetry/report");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/db-telemetry"] });
+      toast({ title: "Análise atualizada", description: "A IA gerou um novo relatório da situação." });
+    },
+    onError: () => {
+      toast({
+        title: "Não foi possível gerar agora",
+        description: "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+    },
   });
 
   if (user && user.role !== "admin" && user.role !== "diretoria") return null;
@@ -192,6 +222,35 @@ export default function DatabasePage() {
     ? Math.round((rt.db.total_connections / rt.db.max_connections) * 100)
     : 0;
 
+  // ===== Semáforo: classifica cada métrica em bom / atenção / ruim =====
+  type Health = "good" | "warn" | "bad";
+  const accentFor = (h: Health): "emerald" | "amber" | "rose" =>
+    h === "good" ? "emerald" : h === "warn" ? "amber" : "rose";
+
+  const cpuHealth: Health = !rt ? "good" : rt.node.cpu_pct < 60 ? "good" : rt.node.cpu_pct < 85 ? "warn" : "bad";
+  const memHealth: Health = !rt ? "good" : rt.node.mem_pct < 70 ? "good" : rt.node.mem_pct < 90 ? "warn" : "bad";
+  const connHealth: Health = connPct < 70 ? "good" : connPct < 90 ? "warn" : "bad";
+  const latHealth: Health = !rt ? "good" : rt.db.latency_ms < 300 ? "good" : rt.db.latency_ms < 1500 ? "warn" : "bad";
+  const slowHealth: Health = !rt ? "good" : rt.db.long_queries.length === 0 ? "good" : rt.db.long_queries.length < 3 ? "warn" : "bad";
+  const authHealth: Health = !security
+    ? "good"
+    : security.brute_force_suspects.length > 0
+    ? "bad"
+    : security.token_failures_total > 20
+    ? "warn"
+    : "good";
+  const idleHealth: Health = idleInTx === 0 ? "good" : idleInTx <= 2 ? "warn" : "bad";
+
+  // Visual dos relatórios de IA por status.
+  const aiReports = data?.aiReports ?? [];
+  const aiMeta: Record<Health, { label: string; dot: string; chip: string; ring: string }> = {
+    good: { label: "Tudo bem", dot: "bg-emerald-500", chip: "bg-emerald-100 text-emerald-800 border-emerald-300", ring: "border-emerald-300 bg-emerald-50" },
+    warn: { label: "Atenção", dot: "bg-amber-500", chip: "bg-amber-100 text-amber-800 border-amber-300", ring: "border-amber-300 bg-amber-50" },
+    bad: { label: "Crítico", dot: "bg-red-500", chip: "bg-red-100 text-red-800 border-red-300", ring: "border-red-400 bg-red-50" },
+  };
+  const latestReport = aiReports[0];
+  const olderReports = aiReports.slice(1);
+
   return (
     <AdminLayout>
       <div className="p-4 md:p-6 max-w-[1600px] mx-auto space-y-6" data-testid="page-database">
@@ -207,6 +266,90 @@ export default function DatabasePage() {
           </div>
           {rt && <StatusBadge status={rt.status} />}
         </header>
+
+        {/* Legenda do semáforo: explica as cores pro dono entender rápido */}
+        <Card className="p-4" data-testid="semaforo-legend">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <span className="font-semibold text-neutral-700">Como ler as cores:</span>
+            <span className="flex items-center gap-2" data-testid="legend-good">
+              <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 inline-block" />
+              <span className="text-neutral-700"><strong className="text-emerald-700">Verde</strong> = está bom</span>
+            </span>
+            <span className="flex items-center gap-2" data-testid="legend-warn">
+              <span className="w-3.5 h-3.5 rounded-full bg-amber-500 inline-block" />
+              <span className="text-neutral-700"><strong className="text-amber-700">Amarelo</strong> = mais ou menos, ficar de olho</span>
+            </span>
+            <span className="flex items-center gap-2" data-testid="legend-bad">
+              <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block" />
+              <span className="text-neutral-700"><strong className="text-red-700">Vermelho</strong> = ruim, precisa de atenção</span>
+            </span>
+          </div>
+        </Card>
+
+        {/* Painel de Análise da IA */}
+        <Card className="p-4 md:p-6" data-testid="ai-analysis-panel">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
+                <Brain className="w-5 h-5 text-indigo-600" />
+                Análise da IA
+              </h2>
+              <p className="text-sm text-neutral-600 mt-0.5">
+                Um resumo automático da situação do banco, gerado a cada 10 minutos.
+              </p>
+            </div>
+            <Button
+              onClick={() => genReport.mutate()}
+              disabled={genReport.isPending}
+              variant="outline"
+              data-testid="button-generate-report"
+            >
+              {genReport.isPending
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analisando...</>
+                : <><RefreshCw className="w-4 h-4 mr-2" /> Atualizar análise agora</>}
+            </Button>
+          </div>
+
+          {aiReports.length === 0 ? (
+            <div className="mt-4 text-sm text-neutral-500 bg-neutral-50 border rounded-lg p-4" data-testid="ai-empty">
+              A primeira análise aparece em instantes. Você também pode clicar em "Atualizar análise agora".
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {/* Último relatório em destaque */}
+              <div className={`rounded-xl border p-4 ${aiMeta[latestReport.status].ring}`} data-testid="ai-latest">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${aiMeta[latestReport.status].chip}`}>
+                    <span className={`w-2 h-2 rounded-full ${aiMeta[latestReport.status].dot}`} />
+                    {aiMeta[latestReport.status].label}
+                  </span>
+                  <span className="text-xs text-neutral-500">{fmtDateTime(latestReport.created_at)}</span>
+                </div>
+                <p className="mt-2 font-semibold text-neutral-900" data-testid="ai-latest-headline">{latestReport.headline}</p>
+                <p className="mt-1 text-sm text-neutral-700 whitespace-pre-line" data-testid="ai-latest-analysis">{latestReport.analysis}</p>
+              </div>
+
+              {/* Histórico (5 anteriores) */}
+              {olderReports.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Análises anteriores</p>
+                  {olderReports.map((r) => (
+                    <div key={r.id} className="flex items-start gap-3 border rounded-lg p-3 bg-white" data-testid={`ai-history-${r.id}`}>
+                      <span className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${aiMeta[r.status].dot}`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-neutral-800">{r.headline}</span>
+                          <span className="text-xs text-neutral-400">{fmtDateTime(r.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-neutral-600 mt-0.5 whitespace-pre-line">{r.analysis}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
 
         {isLoading && (
           <Card className="p-8 text-center text-neutral-500" data-testid="loading-state">
@@ -228,7 +371,7 @@ export default function DatabasePage() {
                 label="CPU Servidor (Node)"
                 value={`${rt.node.cpu_pct}%`}
                 sub={`Uptime ${fmtUptime(rt.node.uptime_s)}`}
-                accent="blue"
+                accent={accentFor(cpuHealth)}
                 testId="card-cpu"
               />
               <MetricCard
@@ -236,7 +379,7 @@ export default function DatabasePage() {
                 label="Memória Servidor"
                 value={`${rt.node.mem_mb} MB`}
                 sub={`Heap ${rt.node.mem_pct}% usado`}
-                accent="purple"
+                accent={accentFor(memHealth)}
                 testId="card-memory"
               />
               <MetricCard
@@ -244,7 +387,7 @@ export default function DatabasePage() {
                 label="Conexões PG"
                 value={`${rt.db.total_connections}/${rt.db.max_connections || "?"}`}
                 sub={`${rt.db.active_connections} ativas · ${rt.db.idle_connections} idle · ${connPct}%`}
-                accent="emerald"
+                accent={accentFor(connHealth)}
                 testId="card-connections"
               />
               <MetricCard
@@ -252,7 +395,7 @@ export default function DatabasePage() {
                 label="Latência do Banco"
                 value={`${rt.db.latency_ms} ms`}
                 sub={rt.db.latency_ms < 300 ? "Resposta saudável" : rt.db.latency_ms < 1500 ? "Latência elevada" : "Lentidão crítica"}
-                accent={rt.db.latency_ms < 300 ? "emerald" : rt.db.latency_ms < 1500 ? "amber" : "rose"}
+                accent={accentFor(latHealth)}
                 testId="card-latency"
               />
             </div>
@@ -270,7 +413,7 @@ export default function DatabasePage() {
                 label="Queries Lentas (>5s)"
                 value={rt.db.long_queries.length}
                 sub={rt.db.long_queries.length === 0 ? "Nenhuma travada" : "Verifique abaixo"}
-                accent={rt.db.long_queries.length === 0 ? "emerald" : "amber"}
+                accent={accentFor(slowHealth)}
                 testId="card-longqueries"
               />
               <MetricCard
@@ -280,7 +423,7 @@ export default function DatabasePage() {
                 sub={security && security.brute_force_suspects.length > 0
                   ? `${security.brute_force_suspects.length} IP(s) suspeito(s)`
                   : "Nenhum padrão suspeito"}
-                accent={security && security.brute_force_suspects.length > 0 ? "rose" : "emerald"}
+                accent={accentFor(authHealth)}
                 testId="card-authfails"
               />
               <MetricCard
@@ -337,7 +480,7 @@ export default function DatabasePage() {
                 label="Idle in Transaction"
                 value={idleInTx}
                 sub={idleInTx === 0 ? "Nenhuma transação presa (ideal)" : "Conexões com transação aberta sem commit/rollback"}
-                accent={idleInTx === 0 ? "emerald" : idleInTx <= 2 ? "amber" : "rose"}
+                accent={accentFor(idleHealth)}
                 testId="card-idle-in-tx"
               />
 
@@ -376,6 +519,7 @@ export default function DatabasePage() {
                     <tbody>
                       {tableSizes.map((t) => {
                         const pct = maxTableBytes > 0 ? Math.min(100, Math.max(2, (t.total_size_bytes / maxTableBytes) * 100)) : 0;
+                        const barColor = pct >= 66 ? "bg-rose-500" : pct >= 33 ? "bg-amber-500" : "bg-emerald-500";
                         return (
                           <tr
                             key={t.table_name}
@@ -385,7 +529,7 @@ export default function DatabasePage() {
                             <td className="py-2.5 pr-4">
                               <div className="font-medium text-neutral-900 font-mono text-xs md:text-sm">{t.table_name}</div>
                               <div className="mt-1 h-1.5 w-full max-w-[220px] rounded-full bg-neutral-100 overflow-hidden">
-                                <div className="h-full rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
+                                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
                               </div>
                             </td>
                             <td className="py-2.5 pr-4 text-right text-neutral-600 whitespace-nowrap" data-testid={`text-data-${t.table_name}`}>{t.data_size}</td>
