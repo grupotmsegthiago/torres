@@ -1,0 +1,19 @@
+Preciso unificar a fonte da verdade financeira no sistema para que as telas de "Boletim de Medição" e "Relatório de Faturamento" reflitam IMEDIATAMENTE a correção que fizemos na Ordem de Serviço (onde o Valor Estimado agora puxa estritamente o Valor de Acionamento da tabela de preços, sem somar KM extra por cima da franquia de forma preditiva, e respeitando as regras de status: Recusada = R$ 0,00 e Cancelada = Valor de Acionamento).
+
+Atualmente, essas duas telas (Boletim de Medição e Relatório de Faturamento) ainda podem estar calculando valores no frontend ou usando funções antigas que geram divergências (como o antigo erro de R$ 7.600,00 em vez de R$ 4.800,00 para a tabela TM SEG).
+
+Por favor, faça as seguintes alterações:
+
+1. FONTES DE DADOS (BOLETIM E FATURAMENTO):
+   - Garanta que a tela de "Boletim de Medição" e o "Relatório de Faturamento" busquem o valor financeiro diretamente do banco de dados (da coluna correspondente atualizada da Ordem de Serviço ou da unificação global da fonte da verdade de faturamento).
+   - REMOVA qualquer lógica de cálculo flutuante ou estimativa baseada em "valor_km_carregado" padrão (como os R$ 2,80 fantasmas) que exista nessas telas. Elas devem apenas EXIBIR o valor consolidado.
+
+2. ATUALIZAÇÃO EM TEMPO REAL:
+   - Certifique-se de que, ao alterar ou aplicar uma tabela de preços em uma OS, os estados (states) ou o cache do Supabase (React Query / SWR / Supabase Realtime, dependendo do que estiver usando) invalidem os dados antigos e atualizem as telas de Boletim e Faturamento imediatamente, sem necessidade de dar "F5" forçado na página.
+
+3. ALINHAMENTO COM AS REGRAS DE STATUS:
+   - No Relatório de Faturamento e no Boletim, revalide se os status estão espelhando exatamente o que foi corrigido no script de massa:
+     * OS Recusada: Deve aparecer como R$ 0,00.
+     * OS Cancelada: Deve exibir o valor do Acionamento (conforme a regra de que a equipe foi acionada).
+
+Revise os arquivos de visualização/componentes do Boletim de Medição e do Relatório de Faturamento para garantir que nenhum 'helper' de cálculo antigo esteja ativo neles.

@@ -453,13 +453,26 @@ export default function BoletimMedicaoPage() {
     const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
+  const sumBillingComponents = (b: any, acionFallback = 0) => {
+    const acion = Number(b.fat_acionamento || 0) || acionFallback;
+    return acion + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.receitas_os || 0);
+  };
   const getBillingTotal = (o: any) => {
-    if (o.status === "recusada" || o.status === "cancelada") return 0;
+    // Recusada = operacional não atendeu → R$ 0,00 sempre (§8.1).
+    if (o.status === "recusada") return 0;
     const b = o.billing;
+    // Cancelada = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (§8.1/§8.4).
+    if (o.status === "cancelada") {
+      const acionFallback = Number(o.contractValues?.valor_acionamento || 0);
+      if (!b) return acionFallback;
+      const fatTotal = Number(b.fat_total || 0);
+      if (fatTotal > 0) return fatTotal;
+      return sumBillingComponents(b, acionFallback);
+    }
     if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
     if (fatTotal > 0) return fatTotal;
-    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.receitas_os || 0);
+    return sumBillingComponents(b);
   };
   const totalFaturamento = periodFilteredOs.reduce((acc, o) => acc + getBillingTotal(o), 0);
   const totalFaturado = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
@@ -1178,8 +1191,10 @@ export default function BoletimMedicaoPage() {
                                     <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(computeHorasReais(os)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3.5 text-right">
-                                    {isOsRecusadaOuCancelada ? (
+                                    {os.status === "recusada" ? (
                                       <span className="font-mono font-black text-red-500">R$ 0,00</span>
+                                    ) : os.status === "cancelada" ? (
+                                      <span className="font-mono font-black text-red-700" title="Cliente cancelou após acionamento — cobra acionamento + extras">{fmt(getBillingTotal(os))}</span>
                                     ) : (
                                       <span className="font-mono font-black text-emerald-700">{b ? fmt(getBillingTotal(os)) : "—"}</span>
                                     )}
