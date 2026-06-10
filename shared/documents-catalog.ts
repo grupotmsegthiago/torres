@@ -51,7 +51,8 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
     ]},
     { group: "Habilitação e Formação", items: [
       { type: "CNH", label: "CNH / CNV", vigilanteOnly: true },
-      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true },
+      // Decidido com o dono (jun/2026): Pontuação CNH NÃO é obrigatória (opcional).
+      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH", vigilanteOnly: true, optional: true },
       // Opcionais (decidido 27/05/2026): aparecem no checklist mas não bloqueiam alerta.
       { type: "Carteira de Vacinação", label: "Carteira de Vacinação", optional: true },
       { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar", optional: true },
@@ -67,8 +68,9 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
     ]},
     { group: "Certidões Obrigatórias", items: [
       { type: "Antecedentes Criminais", label: "Antecedentes Criminais", adminOnly: true },
-      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil", vigilanteOnly: true },
-      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar", vigilanteOnly: true },
+      // Decidido com o dono (jun/2026): Antec. Civil e Militar NÃO são obrigatórios (opcionais).
+      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil", vigilanteOnly: true, optional: true },
+      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar", vigilanteOnly: true, optional: true },
       { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)", vigilanteOnly: true },
     ]},
   ];

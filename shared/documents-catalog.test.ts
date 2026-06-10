@@ -30,12 +30,14 @@ test("profileFromRole: admin variants (Aux Limpeza inclusive)", () => {
   assert.equal(profileFromRole(undefined), "admin");
 });
 
-test("Vigilante: 17 obrigatórios + 2 opcionais (não-Dependentes) = 19 no checklist", () => {
+test("Vigilante: 14 obrigatórios + 5 opcionais (não-Dependentes) = 19 no checklist", () => {
   const mandatory = getMandatoryDocTypesForProfile("vigilante");
-  assert.equal(mandatory.length, 17, `vigilante obrigatórios = 17, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
-  // Splits de antecedentes esperados pro vigilante:
-  assert.ok(mandatory.includes("Antecedente Criminal Polícia Civil"));
-  assert.ok(mandatory.includes("Antecedente Criminal Polícia Militar"));
+  assert.equal(mandatory.length, 14, `vigilante obrigatórios = 14, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
+  // Decidido com o dono (jun/2026): Pontuação CNH e Antecedentes (Civil/Militar) NÃO
+  // são obrigatórios — viram opcionais (aparecem no checklist, não contam no alerta).
+  assert.ok(!mandatory.includes("Certidão de Pontuação CNH"));
+  assert.ok(!mandatory.includes("Antecedente Criminal Polícia Civil"));
+  assert.ok(!mandatory.includes("Antecedente Criminal Polícia Militar"));
   assert.ok(!mandatory.includes("Antecedentes Criminais"), "vigilante não usa Antecedentes Criminais unificado");
   // ASO e Fotos 3x4 obrigatórios:
   assert.ok(mandatory.includes("ASO"));
@@ -45,8 +47,12 @@ test("Vigilante: 17 obrigatórios + 2 opcionais (não-Dependentes) = 19 no check
 
   const all = getAllDocTypesForProfile("vigilante");
   assert.equal(all.length, 19, `vigilante total no checklist (sem Dependentes) = 19, recebeu ${all.length}`);
+  // Os opcionais continuam no checklist visual:
   assert.ok(all.includes("Carteira de Vacinação"));
   assert.ok(all.includes("Comprovante de Formação Escolar"));
+  assert.ok(all.includes("Certidão de Pontuação CNH"));
+  assert.ok(all.includes("Antecedente Criminal Polícia Civil"));
+  assert.ok(all.includes("Antecedente Criminal Polícia Militar"));
 });
 
 test("Admin (funcionário comum): NENHUM documento cobrado — checklist e alertas zerados", () => {
@@ -86,11 +92,14 @@ test("Dependentes presente como grupo opcional no checklist visual (não conta n
   assert.ok(!mandatoryVig.some(t => depGroup!.items.some(i => i.type === t)));
 });
 
-test("Opcionais não entram nos mandatórios (Vacinação + Formação Escolar)", () => {
+test("Opcionais não entram nos mandatórios (Vacinação, Form. Escolar, Pontuação CNH, Antec. Civil/Militar)", () => {
   for (const profile of ["vigilante", "admin"] as const) {
     const mand = getMandatoryDocTypesForProfile(profile);
     assert.ok(!mand.includes("Carteira de Vacinação"), `${profile} não pode ter Vacinação como obrigatório`);
     assert.ok(!mand.includes("Comprovante de Formação Escolar"), `${profile} não pode ter Form. Escolar como obrigatório`);
+    assert.ok(!mand.includes("Certidão de Pontuação CNH"), `${profile} não pode ter Pontuação CNH como obrigatório`);
+    assert.ok(!mand.includes("Antecedente Criminal Polícia Civil"), `${profile} não pode ter Antec. Civil como obrigatório`);
+    assert.ok(!mand.includes("Antecedente Criminal Polícia Militar"), `${profile} não pode ter Antec. Militar como obrigatório`);
   }
 });
 
