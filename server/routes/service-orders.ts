@@ -818,6 +818,10 @@ import type { Express } from "express";
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     console.log(`[DEBUG-OS] POST parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
     if (!parsed.data.scheduledDate) return res.status(400).json({ message: "Data do Agendamento é obrigatória" });
+    // Regra: toda OS precisa de uma Tabela de Preços (contrato de escolta) selecionada.
+    if (!parsed.data.escortContractId) {
+      return res.status(400).json({ message: "Selecione uma Tabela de Preços para criar a OS. Se o cliente ainda não tem tabela, cadastre uma em Contratos/Tabelas antes de criar a OS." });
+    }
 
     const employeeIds = [parsed.data.assignedEmployeeId, parsed.data.assignedEmployee2Id].filter((id): id is number => id != null && id > 0);
     const missingDocs: string[] = [];

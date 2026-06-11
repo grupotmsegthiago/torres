@@ -1272,7 +1272,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               {form.clientId > 0 && clientContracts.length > 0 && (
                 <div>
-                  <FieldLabel>Tabela de Preços</FieldLabel>
+                  <FieldLabel>Tabela de Preços *</FieldLabel>
                   <select value={form.escortContractId} onChange={(e) => {
                     const id = e.target.value;
                     setForm(prev => {
@@ -1280,10 +1280,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       const est = (!blocked && id) ? computeEstimado(id) : null;
                       return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
                     });
-                  }} className={selectClass} data-testid="select-os-price-table">
+                  }} className={selectClass} required data-testid="select-os-price-table">
                     <option value="">Selecione...</option>
                     {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
                   </select>
+                  {!form.escortContractId && (
+                    <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
+                  )}
+                </div>
+              )}
+              {form.clientId > 0 && clientContracts.length === 0 && (
+                <div>
+                  <FieldLabel>Tabela de Preços *</FieldLabel>
+                  <p className="text-[11px] text-red-600 mt-1" data-testid="warn-os-no-price-table">Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela em Contratos/Tabelas antes de criar a OS.</p>
                 </div>
               )}
               <div>
@@ -1754,7 +1763,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step })); mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } if (!order && !form.escortContractId) { toast({ title: "Tabela de Preços obrigatória", description: clientContracts.length === 0 ? "Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela antes de criar a OS." : "Selecione uma Tabela de Preços para criar a OS.", variant: "destructive" }); return; } console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step })); mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>
