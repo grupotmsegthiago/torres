@@ -2,6 +2,7 @@ import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
+import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -34,24 +35,6 @@ const BRL_FMT = '"R$ "#,##0.00';
 const thinBorder: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORDER_COLOR } };
 const allBorders: Partial<ExcelJS.Borders> = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
 const noBorder: Partial<ExcelJS.Borders> = { top: {}, left: {}, bottom: {}, right: {} };
-
-const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
-
-// FONTE ÚNICA DA VERDADE do total de uma OS no boletim: soma dos 9 componentes
-// financeiros do escort_billing. Usada de forma IDÊNTICA no e-mail, no anexo Excel,
-// no snapshot congelado e na tela do sistema — garante que os três valores batam.
-const osCanonicalTotal = (b: any) =>
-  round2(
-    Number(b.fat_acionamento || 0) +
-    Number(b.fat_hora_extra || 0) +
-    Number(b.fat_km || 0) +
-    Number(b.fat_adicional_noturno || 0) +
-    Number(b.fat_estadia || 0) +
-    Number(b.fat_pernoite || 0) +
-    Number(b.despesas_pedagio || 0) +
-    Number(b.despesas_outras || 0) +
-    Number(b.receitas_os || 0),
-  );
 
 function fmtHHMM(h: number): string {
   if (isNaN(h) || h <= 0) return "00:00";
@@ -284,10 +267,10 @@ async function generateBoletimExcel(
     const fatPernoite = n(b.fat_pernoite);
     const fatOutras = n(b.despesas_outras);
     const fatReembolso = n(b.receitas_os);
-    // Total da linha = FONTE ÚNICA (9 componentes do billing), idêntico ao e-mail
-    // e ao snapshot. NÃO usar mais `fat_total` persistido nem fallbacks de contrato
-    // aqui — era a origem da divergência entre o anexo Excel e o corpo do e-mail.
-    const fatTotal = osCanonicalTotal(b);
+    // Total da linha ESPELHA o getBillingTotal da tela (fonte que o dono confere):
+    // recusada = R$0 (§8.1); senão fat_total>0 ou soma dos 9 componentes.
+    // Mantém anexo Excel == corpo do e-mail == snapshot == tela.
+    const fatTotal = billingTotalForBoletim(b, so.status);
     grandTotal += fatTotal;
 
     const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;
@@ -312,6 +295,15 @@ async function generateBoletimExcel(
       hrExcedente > 0 ? fmtHHMM(hrExcedente) : "0:00", hrExcedente > 0 ? Number(valorHoraExtra.toFixed(2)) : 0, Number(fatHoraExtra.toFixed(2)),
       Number(fatPedagio.toFixed(2)), Number(fatTotal.toFixed(2)),
     ];
+    // OS recusada: zera as colunas de dinheiro (acionamento/KM extra/hora extra/
+    // pedágio) — o total já é R$0. Linha continua listada com os dados da viagem,
+    // igual à tela, mas sem cobrança.
+    if (so.status === "recusada") {
+      baseRowData[2] = 0;
+      baseRowData[21] = 0;
+      baseRowData[24] = 0;
+      baseRowData[25] = 0;
+    }
     const rowData = isOmegaClient ? [baseRowData[0], baseRowData[1], "", ...baseRowData.slice(2)] : baseRowData;
 
     const row = ws.addRow(rowData);
@@ -590,7 +582,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status")
           .in("id", soIds);
         ordersData = sos || [];
       }
@@ -624,20 +616,24 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const ordersById = new Map((ordersData || []).map((o: any) => [o.id, o]));
       const billingSnapshot = (billingsData || []).map((b: any) => {
         const so = ordersById.get(b.service_order_id) || {};
+        const osStatus = (so as any).status;
+        // recusada: zera TODOS os componentes (não só o total) p/ a página de
+        // aprovação e o Excel exibirem a OS sem cobrança, coerente com a tela.
+        const comp = (v: any) => (osStatus === "recusada" ? 0 : round2(Number(v || 0)));
         return {
           billing_id: String(b.id),
           service_order_id: b.service_order_id,
           os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
-          fat_acionamento: round2(Number(b.fat_acionamento || 0)),
-          fat_hora_extra: round2(Number(b.fat_hora_extra || 0)),
-          fat_km: round2(Number(b.fat_km || 0)),
-          fat_adicional_noturno: round2(Number(b.fat_adicional_noturno || 0)),
-          fat_estadia: round2(Number(b.fat_estadia || 0)),
-          fat_pernoite: round2(Number(b.fat_pernoite || 0)),
-          despesas_pedagio: round2(Number(b.despesas_pedagio || 0)),
-          despesas_outras: round2(Number(b.despesas_outras || 0)),
-          receitas_os: round2(Number(b.receitas_os || 0)),
-          total: osCanonicalTotal(b),
+          fat_acionamento: comp(b.fat_acionamento),
+          fat_hora_extra: comp(b.fat_hora_extra),
+          fat_km: comp(b.fat_km),
+          fat_adicional_noturno: comp(b.fat_adicional_noturno),
+          fat_estadia: comp(b.fat_estadia),
+          fat_pernoite: comp(b.fat_pernoite),
+          despesas_pedagio: comp(b.despesas_pedagio),
+          despesas_outras: comp(b.despesas_outras),
+          receitas_os: comp(b.receitas_os),
+          total: billingTotalForBoletim(b, osStatus),
         };
       });
       const canonicalTotal = round2(billingSnapshot.reduce((sum: number, s: any) => sum + s.total, 0));
