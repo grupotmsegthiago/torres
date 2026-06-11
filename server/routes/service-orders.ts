@@ -124,6 +124,28 @@ import type { Express } from "express";
       ].filter(Boolean))] as number[];
       const kitIds = [...new Set(concluidas.map(o => o.kitId).filter(Boolean))] as number[];
 
+      // Fotos de KM: buscar SÓ os passos de odômetro (km_chegada/km_final) e PAGINAR.
+      // Sem isso, `.in(osIds)` traz todas as fotos das OSs e o Supabase corta em 1000 linhas,
+      // fazendo o KM sumir das OSs mais recentes (ficavam fora do corte) → boletim sem KM.
+      const fetchKmPhotos = async (ids: number[]) => {
+        if (ids.length === 0) return [] as any[];
+        const all: any[] = [];
+        const pageSize = 1000;
+        for (let from = 0; ; from += pageSize) {
+          const { data, error } = await supabaseAdmin
+            .from("mission_photos")
+            .select("service_order_id, step, km_value")
+            .in("service_order_id", ids)
+            .in("step", ["km_chegada", "km_final"])
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          const batch = data || [];
+          all.push(...batch);
+          if (batch.length < pageSize) break;
+        }
+        return all;
+      };
+
       const [allClients, allVehicles, allEmployees, allKits, billingsRes, contractsRes, photosRes] = await Promise.all([
         storage.getClients(),
         storage.getVehicles(),
@@ -133,9 +155,7 @@ import type { Express } from "express";
           ? supabaseAdmin.from("escort_billings").select("*").in("service_order_id", osIds)
           : Promise.resolve({ data: [] as any[] }),
         supabaseAdmin.from("escort_contracts").select("*"),
-        osIds.length > 0
-          ? supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", osIds)
-          : Promise.resolve({ data: [] as any[] }),
+        fetchKmPhotos(osIds).then(data => ({ data })),
       ]);
 
       const clientMap = new Map(allClients.map(c => [c.id, c]));
