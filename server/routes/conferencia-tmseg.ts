@@ -70,14 +70,25 @@ function parseDateBR(v: any): string | null {
   return null;
 }
 
-function extractCity(addr: string): string {
+const UF_RE = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO";
+
+// Extrai a CIDADE de um endereço completo. Endereços BR seguem o padrão
+// "...Logradouro - Bairro, CIDADE - UF, CEP, Brasil" — a cidade é o trecho
+// imediatamente antes da " - UF" (ou ", UF"); quando há vírgula ali, a cidade
+// é a última parte ("BAIRRO, CIDADE"). Sem UF reconhecida, cai no 1º trecho.
+// (A versão antiga pegava o 1º pedaço do endereço, devolvendo o nome do
+// local/empresa — ex.: "MINERAÇÃO TABOCA" — em vez da cidade real.)
+export function extractCity(addr: string): string {
   if (!addr) return "";
-  const parts = addr.toUpperCase().trim().split(/[,\-\/×x]+/).map(p => p.trim()).filter(Boolean);
-  if (parts.length >= 2) {
-    const city = parts.find(p => !/^\d/.test(p) && p.length > 2 && !/^(SP|RJ|MG|PR|SC|RS|BA|GO|MT|MS|PA|AM|CE|PE|MA|PI|RN|PB|SE|AL|TO|RO|AC|AP|RR|ES|DF)$/.test(p));
-    return city || parts[0];
+  const s = addr.toUpperCase().replace(/\s+/g, " ").trim();
+  const m = s.match(new RegExp(`(.+?)\\s*[-,]\\s*(?:${UF_RE})(?=[\\s,.]|$)`));
+  if (m) {
+    const head = m[1].trim();
+    const afterComma = head.split(",").pop()!.trim();
+    return afterComma || head;
   }
-  return parts[0] || addr.toUpperCase().trim();
+  const parts = s.split(/[,\-\/×]+/).map(p => p.trim()).filter(Boolean);
+  return parts[0] || s;
 }
 
 function normRoute(s: string): string {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { findHeaderRow } from "./conferencia-tmseg";
+import { findHeaderRow, extractCity } from "./conferencia-tmseg";
 
 // Letra de coluna (A=1) -> índice 1-based usado pelo exceljs/findHeaderRow.
 function col(letter: string): number {
@@ -60,4 +60,36 @@ test("findHeaderRow: layout do sistema permanece intacto (única 'TOTAL' = AA)",
   assert.equal(cols.kmTotal, col("P"), "km total = coluna P (header explícito 'km total')");
   assert.equal(cols.pedagio, col("Z"), "pedágio = coluna Z");
   assert.equal(cols.total, col("AA"), "valor final = AA (last === first, sem efeito colateral)");
+});
+
+// ---------------------------------------------------------------------------
+// extractCity — puxa a CIDADE do endereço completo (Origem × Destino na
+// Conferência TM SEG). Antes devolvia o 1º trecho (nome do local/empresa).
+// ---------------------------------------------------------------------------
+test("extractCity extrai a cidade real de endereços completos BR", () => {
+  const cases: [string, string][] = [
+    ["Mineração Taboca - Pirapora - Estr. dos Romeiros, 49 - Jardim Bom Jesus, Pirapora do Bom Jesus - SP, 06550-000, Brasil", "PIRAPORA DO BOM JESUS"],
+    ["Brasil Terminal Portuário - Avenida Engenheiro Augusto Barata - Alemoa, Santos - SP, Brasil", "SANTOS"],
+    ["Praça Yara Santini, 1223 - Vicente de Carvalho, Guarujá - SP, Brasil", "GUARUJÁ"],
+    ["Av. Francisco Roveri, 1413 - Jardim Novo Horizonte, Jundiaí - SP, Brasil", "JUNDIAÍ"],
+    ["BTP - Brasil Terminal Portuário - Av. Engenheiro Augusto Barata, s/n - Porto Alemoa, Santos - SP, 11.095-650", "SANTOS"],
+    ["Guarulhos, SP, Brasil", "GUARULHOS"],
+    ["CEVA Logistics - Avenida Francisco Roveri - Parque Residencial Almerinda Chaves, Jundiaí - SP, Brasil", "JUNDIAÍ"],
+    ["Brasília - DF, Brasil", "BRASÍLIA"],
+  ];
+  for (const [addr, expected] of cases) {
+    assert.equal(extractCity(addr), expected, `falhou para: ${addr}`);
+  }
+});
+
+test("extractCity: variantes CIDADE/UF e delimitadores atípicos", () => {
+  assert.equal(extractCity("Santos/SP"), "SANTOS");
+  assert.equal(extractCity("São Paulo / SP"), "SÃO PAULO");
+  assert.equal(extractCity("Rio de Janeiro-RJ"), "RIO DE JANEIRO");
+});
+
+test("extractCity tem fallback sem UF reconhecida e trata vazio", () => {
+  assert.equal(extractCity(""), "");
+  assert.equal(extractCity("200 KM SENT. SERRA - ES"), "200 KM SENT. SERRA");
+  assert.equal(extractCity("PIRAPORA"), "PIRAPORA");
 });

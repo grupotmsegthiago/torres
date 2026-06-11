@@ -22,6 +22,9 @@ Candidatos = mesma `DATA(BRT)|PLACA(normalizada)` (fallback ±1 dia p/ missões 
 ## Lado cliente vs fornecedor (mesma OS, valores comparáveis)
 A planilha do CLIENTE (TM SEG, client_id=6) é o boletim que o sistema gera → bate 1:1 com `escort_billings`. A planilha TORRES (fornecedor) cobre as MESMAS OSs e seu grande total é comparável ao `fat_total` do sistema (ex.: 12.579 vs 12.561 — diferença real pequena, não cost-vs-revenue). Conciliar a planilha TORRES é feito selecionando o cliente TM SEG (não há billings sob o "cliente" TORRES).
 
+## Rota = CIDADE (Origem × Destino), não o nome do local
+`escort_billings.origem/destino` e `service_orders.origin/destination` guardam o ENDEREÇO COMPLETO (ex.: "Mineração Taboca - ... - Pirapora do Bom Jesus - SP, CEP, Brasil"), não a cidade. `extractCity` deve pegar o trecho ANTES do "- UF"/", UF" (e a última parte após vírgula em "BAIRRO, CIDADE"); pegar o 1º pedaço devolve o nome do local/empresa ("MINERAÇÃO TABOCA"). A rota só desempata o match (+2), KM continua sendo o aceite — melhorar a cidade não regride o match.
+
 ## Gotchas
 - Janela de busca: `data_missao` ±3 dias. Aritmética de data SEM `toISOString()` de Date local → `Date.UTC(y,m-1,d)` + `setUTCDate`.
 - `parseNum` aceita BR (`5.947,20`) e US (`5947.2`) e objeto de fórmula do exceljs.
