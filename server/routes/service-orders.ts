@@ -371,6 +371,7 @@ import type { Express } from "express";
         fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
         fat_diaria: n(resultado.fat_pernoite), fat_adicional_noturno: n(resultado.fat_adicional_noturno),
         fat_total: n(resultado.fat_total), receitas_os: n(resultado.receitas_os),
+        despesas_pedagio: n(despPedagioCalc), despesas_combustivel: n(despCombustivelCalc), despesas_outras: n(despOutrasCalc),
         valor_franquia: n(resultado.valor_franquia), valor_km_extra: n(resultado.valor_km_extra),
         pag_vrp: n(resultado.pag_vrp), pag_periculosidade: n(resultado.pag_periculosidade),
         pag_adicional_noturno: n(resultado.pag_adicional_noturno),
