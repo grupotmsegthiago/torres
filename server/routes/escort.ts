@@ -2853,12 +2853,17 @@ import type { Express } from "express";
         vigilante2: b.vigilante2_name || null,
         vigilante2_id: b.vigilante2_id || null,
         fat_total: fat,
+        // fat_total PERSISTIDO no escort_billings = exatamente o valor exibido no Boletim de Medição
+        // (inclui receitas_os, que o calcFat acima NÃO soma). O Balanço Gerencial usa este campo
+        // para refletir 1:1 o boletim. NÃO mexer no fat_total (calcFat) acima — outros consumidores dependem dele.
+        fat_total_boletim: Number(b.fat_total || 0),
         fat_acionamento: Number(b.fat_acionamento || 0),
         fat_hora_extra: Number(b.fat_hora_extra || 0),
         fat_km: Number(b.fat_km || 0),
         fat_adicional_noturno: Number(b.fat_adicional_noturno || 0),
         fat_estadia: Number(b.fat_estadia || 0),
         fat_pernoite: Number(b.fat_pernoite || 0),
+        receitas_os: Number(b.receitas_os || 0),
         pag_total: pag,
         pag_vrp: Number(b.pag_vrp || 0),
         despesas: desp,

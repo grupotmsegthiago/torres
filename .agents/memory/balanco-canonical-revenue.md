@@ -1,21 +1,22 @@
 ---
-name: Balanço Gerencial — receita canônica vs faturamento_live
-description: Por que o Balanço usa um motor de receita diferente do Relatório de OS e quais invariantes manter.
+name: Balanço Gerencial — receita = BOLETIM congelado (fat_total persistido)
+description: O Balanço reflete o fat_total persistido do escort_billings (= Boletim de Medição 1:1); como bater e o que NÃO confundir com o motor ao vivo.
 ---
 
-# Balanço Gerencial usa receita CANÔNICA; Relatório de OS usa faturamento_live
+# Balanço Gerencial usa o BOLETIM DE MEDIÇÃO (fat_total persistido), NÃO o cálculo ao vivo
 
-O endpoint `/api/operational-grid` expõe, por OS, dois números de receita ao vivo no `liveCost`:
-- `faturamento_live` — motor SIMPLIFICADO (`calcularFaturamentoLive`): HE = horas×valor, sem timestamps reais, sem km vazio. Consumido pelo **Relatório de OS**.
-- `canonico.faturamento` — motor CANÔNICO (`calcularEscolta`): HE por timestamps reais (regra #5, multi-dia, fracionada por minuto) + km misto + adicional noturno. Consumido **só pelo Balanço Gerencial**.
+Decisão do dono (ordem explícita): o Balanço Gerencial deve mostrar **o que está no Boletim de Medição** — o `escort_billings.fat_total` PERSISTIDO (congelado). Antes ele usava receita AO VIVO (`canonico.faturamento`/`faturamento_live` do grid); isso foi trocado.
 
-**Why:** o dono pediu (aprovado) que o Balanço refletisse a receita "correta" (ex.: maio/2026 R$209.287,95 em vez de R$189.835,88 do stored), mas SEM alterar billings gravados nem mudar o Relatório de OS. Por isso são campos separados, não um swap de `faturamento_live`.
+**Como bater 1:1 com o boletim:** o boletim (`boletim-medicao.tsx`) e o `escort_billings.fat_total` persistido são idênticos (medido: 0 divergência em 288 billings). O `calcFat` do dashboard (`/api/financial/dashboard` → byMission) **NÃO** bate: ele soma componentes mas **omite `receitas_os`** (divergiu em 115/288, até R$2.050). Por isso o byMission expõe um campo separado **`fat_total_boletim` = `b.fat_total` persistido**, e o Balanço usa ESSE campo (não `bill.fat_total`/calcFat).
+
+**Why:** "o que tiver no boletim de medição é o que precisa trazer no balanço" — fonte de verdade é o documento de medição aprovado/congelado, não recomputo ao vivo (que sub/superfaturava por receitas_os e por divergência do motor ao vivo).
 
 **How to apply / invariantes:**
-- Nunca trocar `faturamento_live` pelo canônico (quebraria o Relatório de OS). Adicionar campos novos.
-- No canônico do grid, `km_vazio` é sempre 0: nenhuma fonte (fotos do app dão odômetro total; billings têm km_vazio=0 em 100% dos 246 registros) separa carregado/vazio. Todo km é tratado como carregado — consistente com stored e com o relatório aprovado.
-- `despesas_outras` NÃO entra como receita no canônico do grid (passa 0): "outras" são custo puro, não repasse. Só pedágio e receitas_os entram na receita (igual à linha que soma `receitasOsGrid + custoPedagio`).
-- Custos/pagamento no Balanço continuam vindo do billing armazenado; só a RECEITA virou canônica (decisão de produto "só exibição").
+- Balanço (`balanco-gerencial.tsx`): receita da missão = `bill.fat_total_boletim` (persistido). Fallback ao vivo (`canonico.faturamento`) SÓ quando a OS não tem boletim (ex.: agendada futura). Cobertura medida: 100% das OS do período já têm boletim → fallback raríssimo.
+- Recusada continua FORA por `service_orders.status==="recusada"` (filtro no map). Existem billings recusados com rótulo antigo/fat>0 persistido (ex.: 36) — não importam, são excluídos pelo status, não pelo billing.
+- NUNCA trocar o `fat_total` (calcFat) do byMission nem o `faturamento_live` do grid — outros consumidores (Relatório de OS, dashboard financeiro) dependem deles. Sempre ADICIONAR campo novo (`fat_total_boletim`).
+- Drill-down do Balanço usa `bill.*` (acionamento, HE, km, adic.noturno, pedágio, estadia, pernoite, receitas_os) p/ somar ~igual ao total; km carregado/vazio em R$ não existem no boletim (mostra tudo como "KM Extra"); `despesas_outras` não tem linha no drill-down (1 OS afetada, só cosmético).
+- Custos/pagamento no Balanço já vinham do billing; só a RECEITA mudou de fonte (ao vivo → boletim congelado). Decisão "só exibição": não recalcula nem grava billing.
 
 ## Atribuição por data de agendamento + projeção
 
