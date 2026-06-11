@@ -1622,11 +1622,39 @@ export default function BoletimMedicaoPage() {
   );
 }
 
+// Guarda de auto-cálculo no nível de módulo (sobrevive a fechar/reabrir o modal):
+// garante que cada OS só dispara o /calcular automático uma vez por sessão da página.
+const autoCalcFiredOs = new Set<number>();
+
 export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, reembolsoValue, setReembolsoValue, acionamentoValue, setAcionamentoValue, horaExtraValue, setHoraExtraValue, kmExtraValue, setKmExtraValue, adNoturnoValue, setAdNoturnoValue, estadiaValue, setEstadiaValue, pernoiteValue, setPernoiteValue, demaisCustosValue, setDemaisCustosValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
   const b = os.billing;
   const status = getBillingStatus(os);
   const isPendente = b?.status === "A_VERIFICAR";
   const isApproved = b && ["APROVADA", "FATURADO", "PAGO"].includes(b.status);
+
+  // Auto-cálculo do boletim pela TABELA da OS: billings em A_VERIFICAR criados cedo pelo
+  // CRON nascem congelados zerados (km_total=0, horas=0, fat_hora_extra=0, fat_km=0 — só
+  // fat_acionamento preenchido) e nunca são recalculados. Quando o boletim é aberto, se ele
+  // tem essa assinatura de "nunca calculado" E existem dados reais (foto de KM ou timestamps
+  // de início/fim da missão), dispara /calcular UMA vez por OS na sessão. O servidor relê as
+  // fotos e o contrato da OS, regrava o billing e a lista é refeita — sem depender do clique
+  // manual em "Calcular". A condição usa AND de todos os campos zerados para não disparar em
+  // billings já calculados nem sobrescrever ajuste manual salvo.
+  useEffect(() => {
+    if (!b || b.status !== "A_VERIFICAR") return;
+    const nuncaCalculado =
+      Number(b.km_total || 0) === 0 &&
+      Number(b.horas_trabalhadas || b.horas_missao || 0) === 0 &&
+      Number(b.fat_hora_extra || 0) === 0 &&
+      Number(b.fat_km || 0) === 0;
+    const temDadosReais =
+      Number(os.km_final || 0) > 0 || (!!os.missionStartedAt && !!os.completedDate);
+    if (nuncaCalculado && temDadosReais && !autoCalcFiredOs.has(os.id) && !calcularMutation.isPending) {
+      autoCalcFiredOs.add(os.id);
+      calcularMutation.mutate(os.id);
+    }
+  }, [os.id, b?.id, b?.status, b?.km_total, b?.horas_trabalhadas, b?.horas_missao, b?.fat_hora_extra, b?.fat_km, os.km_final, os.missionStartedAt, os.completedDate]);
+  const autoCalculando = calcularMutation.isPending && autoCalcFiredOs.has(os.id);
 
   const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b?.km_inicial || 0);
   const kmFim = Number(os.km_final || b?.km_final || 0);
@@ -1746,6 +1774,12 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
 
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 space-y-4">
+            {autoCalculando && (
+              <div className="flex items-center gap-2.5 bg-blue-50 border border-blue-200 p-3 rounded-xl" data-testid="banner-auto-calculando">
+                <Loader2 size={14} className="text-blue-600 flex-shrink-0 animate-spin" />
+                <p className="text-[11px] font-bold text-blue-700">Calculando KM e hora extra pela tabela aplicada na OS…</p>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <InfoCard icon={<User size={13} />} label="Agente(s)" value={os.employee1Name || "—"} sub={os.employee2Name} />
               <InfoCard icon={<Car size={13} />} label="Viatura" value={os.vehiclePlate || "—"} sub={os.vehicleModel} mono />
