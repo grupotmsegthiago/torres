@@ -1783,7 +1783,12 @@ export async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE boletim_approvals ALTER COLUMN billing_ids TYPE TEXT[] USING billing_ids::TEXT[]`);
     await execSql(`ALTER TABLE boletim_approvals ADD COLUMN IF NOT EXISTS sent_by TEXT`);
     await execSql(`ALTER TABLE boletim_approvals ADD COLUMN IF NOT EXISTS sent_by_user_id INTEGER`);
+    // "Foto única no envio": snapshot congelado dos valores por OS no momento do envio.
+    // E-mail, anexo Excel e tela do sistema passam a mostrar SEMPRE este mesmo valor,
+    // mesmo que a OS seja editada depois (boletim já enviado não muda).
+    await execSql(`ALTER TABLE boletim_approvals ADD COLUMN IF NOT EXISTS billing_snapshot JSONB`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_boletim_approvals_client_status ON boletim_approvals(client_id, status)`);
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     console.log("[db-init] boletim_approvals table ensured");
   } catch (e: any) {
     console.error("[db-init] boletim_approvals error:", e.message);

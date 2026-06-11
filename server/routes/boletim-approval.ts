@@ -35,6 +35,24 @@ const thinBorder: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORD
 const allBorders: Partial<ExcelJS.Borders> = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
 const noBorder: Partial<ExcelJS.Borders> = { top: {}, left: {}, bottom: {}, right: {} };
 
+const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+
+// FONTE ÚNICA DA VERDADE do total de uma OS no boletim: soma dos 9 componentes
+// financeiros do escort_billing. Usada de forma IDÊNTICA no e-mail, no anexo Excel,
+// no snapshot congelado e na tela do sistema — garante que os três valores batam.
+const osCanonicalTotal = (b: any) =>
+  round2(
+    Number(b.fat_acionamento || 0) +
+    Number(b.fat_hora_extra || 0) +
+    Number(b.fat_km || 0) +
+    Number(b.fat_adicional_noturno || 0) +
+    Number(b.fat_estadia || 0) +
+    Number(b.fat_pernoite || 0) +
+    Number(b.despesas_pedagio || 0) +
+    Number(b.despesas_outras || 0) +
+    Number(b.receitas_os || 0),
+  );
+
 function fmtHHMM(h: number): string {
   if (isNaN(h) || h <= 0) return "00:00";
   const hrs = Math.floor(h);
@@ -266,7 +284,10 @@ async function generateBoletimExcel(
     const fatPernoite = n(b.fat_pernoite);
     const fatOutras = n(b.despesas_outras);
     const fatReembolso = n(b.receitas_os);
-    const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + adNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso);
+    // Total da linha = FONTE ÚNICA (9 componentes do billing), idêntico ao e-mail
+    // e ao snapshot. NÃO usar mais `fat_total` persistido nem fallbacks de contrato
+    // aqui — era a origem da divergência entre o anexo Excel e o corpo do e-mail.
+    const fatTotal = osCanonicalTotal(b);
     grandTotal += fatTotal;
 
     const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;
@@ -594,23 +615,32 @@ export function registerBoletimApprovalRoutes(app: Express) {
       );
 
       // ============================================================
-      // FONTE ÚNICA DA VERDADE: total canônico calculado server-side
-      // a partir dos 9 componentes financeiros. Ignora `totalValue`
-      // enviado pelo frontend para garantir que e-mail, página de
-      // aprovação e Excel mostrem o MESMO valor.
+      // "FOTO ÚNICA NO ENVIO": congela, por OS, o total da fonte única
+      // (osCanonicalTotal). Esse snapshot é gravado no approval e usado
+      // pelo e-mail, anexo Excel, página de aprovação e tela do sistema —
+      // os 4 mostram SEMPRE o mesmo número, mesmo que a OS seja editada
+      // depois (boletim já enviado não muda). Ignora `totalValue` do front.
       // ============================================================
-      const canonicalTotal = (billingsData || []).reduce((sum: number, b: any) => {
-        return sum
-          + Number(b.fat_acionamento || 0)
-          + Number(b.fat_hora_extra || 0)
-          + Number(b.fat_km || 0)
-          + Number(b.fat_adicional_noturno || 0)
-          + Number(b.fat_estadia || 0)
-          + Number(b.fat_pernoite || 0)
-          + Number(b.despesas_pedagio || 0)
-          + Number(b.despesas_outras || 0)
-          + Number(b.receitas_os || 0);
-      }, 0);
+      const ordersById = new Map((ordersData || []).map((o: any) => [o.id, o]));
+      const billingSnapshot = (billingsData || []).map((b: any) => {
+        const so = ordersById.get(b.service_order_id) || {};
+        return {
+          billing_id: String(b.id),
+          service_order_id: b.service_order_id,
+          os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
+          fat_acionamento: round2(Number(b.fat_acionamento || 0)),
+          fat_hora_extra: round2(Number(b.fat_hora_extra || 0)),
+          fat_km: round2(Number(b.fat_km || 0)),
+          fat_adicional_noturno: round2(Number(b.fat_adicional_noturno || 0)),
+          fat_estadia: round2(Number(b.fat_estadia || 0)),
+          fat_pernoite: round2(Number(b.fat_pernoite || 0)),
+          despesas_pedagio: round2(Number(b.despesas_pedagio || 0)),
+          despesas_outras: round2(Number(b.despesas_outras || 0)),
+          receitas_os: round2(Number(b.receitas_os || 0)),
+          total: osCanonicalTotal(b),
+        };
+      });
+      const canonicalTotal = round2(billingSnapshot.reduce((sum: number, s: any) => sum + s.total, 0));
 
       const token = generateToken();
       const baseUrl = getBaseUrl(req);
@@ -626,6 +656,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         period_end: periodEnd,
         billing_ids: billingIds,
         total_value: canonicalTotal,
+        billing_snapshot: billingSnapshot,
         os_count: osCount || billingIds.length,
         status: "PENDENTE",
         sent_by: user?.name || user?.username || null,
@@ -697,13 +728,37 @@ export function registerBoletimApprovalRoutes(app: Express) {
         for (const v of vs || []) vehiclesMap[String(v.id)] = v.plate;
       }
 
+      // Snapshot congelado no envio: a página de aprovação do cliente deve mostrar
+      // EXATAMENTE os valores que foram enviados, mesmo que a OS tenha sido editada
+      // depois. Sobrescreve os 9 componentes financeiros pelos do snapshot.
+      const snapById = new Map<string, any>(
+        Array.isArray(approval.billing_snapshot)
+          ? approval.billing_snapshot.map((s: any) => [String(s.billing_id), s])
+          : [],
+      );
       const enriched = billings.map((b: any) => {
         const so = orders.find((o: any) => o.id === b.service_order_id);
         // Fallback de data: service_order > escort_billing.data_missao
         const scheduled = so?.scheduled_date || b.data_missao || null;
         const completed = so?.completed_date || null;
+        const snap = snapById.get(String(b.id));
+        const frozen = snap
+          ? {
+              fat_acionamento: snap.fat_acionamento,
+              fat_hora_extra: snap.fat_hora_extra,
+              fat_km: snap.fat_km,
+              fat_adicional_noturno: snap.fat_adicional_noturno,
+              fat_estadia: snap.fat_estadia,
+              fat_pernoite: snap.fat_pernoite,
+              despesas_pedagio: snap.despesas_pedagio,
+              despesas_outras: snap.despesas_outras,
+              receitas_os: snap.receitas_os,
+              fat_total: snap.total,
+            }
+          : {};
         return {
           ...b,
+          ...frozen,
           osNumber: so?.os_number || `OS-${b.service_order_id}`,
           origin: so?.origin || b.origem || "",
           destination: so?.destination || b.destino || "",
@@ -788,15 +843,19 @@ export function registerBoletimApprovalRoutes(app: Express) {
           .select("*")
           .in("id", billingIds);
 
-        let totalCalc = 0;
+        // A fatura usa o valor CONGELADO que o cliente aprovou (total_value do
+        // snapshot), não um recálculo ao vivo — senão a NF/cobrança poderia sair
+        // diferente do boletim aprovado. Só recalcula ao vivo p/ approvals antigos
+        // sem total_value gravado.
+        let totalCalc = round2(Number(approval.total_value) || 0);
         const osDescParts: string[] = [];
+        let liveSum = 0;
         for (const b of (billingsDetail || [])) {
-          const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0);
-          totalCalc += fat;
+          liveSum += osCanonicalTotal(b);
           const osRef = b.boletim_numero || b.os_number || `OS-${b.service_order_id}`;
           osDescParts.push(osRef);
         }
-        if (totalCalc <= 0) totalCalc = Number(approval.total_value) || 0;
+        if (totalCalc <= 0) totalCalc = round2(liveSum);
 
         const periodLabel = `${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}`;
         const description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;

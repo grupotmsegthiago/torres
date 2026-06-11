@@ -24,4 +24,5 @@
 - [VACUUM via conexão pg dedicada](vacuum-via-dedicated-pg.md) — VACUUM não roda via exec_sql/PostgREST (transação); usar pg.Client dedicado statement_timeout=0 em background, claim atômico anti-corrida, allowlist de tabela.
 - [Fotos de mission_updates no Storage](mission-photos-storage.md) — photo_url virou caminho de bucket privado; writers caem em base64 no catch (nunca perdem foto); readers tratam 3 formatos; migração idempotente conc≤5; deploy+sweep+VACUUM são do dono.
 - [Boletim A_VERIFICAR congelado nasce zerado](boletim-frozen-a-verificar.md) — CRON cria billing cedo e A_VERIFICAR∈FROZEN_STATUSES⇒nunca recalcula; boletim zerado/subfaturado=corrigir via botão Calcular/Aprovar (não é bug de cálculo); prévia engana (override "0").
+- [Boletim foto única](boletim-foto-unica.md) — total da OS é congelado no envio (billing_snapshot); tela/e-mail/Excel/aprovação leem o mesmo nº via osCanonicalTotal; duplicata=manter envio mais recente.
 - [Query .in(osIds) corta em 1000](supabase-in-pagination-1000.md) — `.in("service_order_id", osIds)` sem paginar trunca em 1000 linhas e some dado das OSs recentes; filtrar por step + paginar com .range().

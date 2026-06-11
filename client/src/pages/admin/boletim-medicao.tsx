@@ -164,6 +164,10 @@ export default function BoletimMedicaoPage() {
 
   const sentBillingIds = new Set<number>();
   const approvedByClientBillingIds = new Set<number>();
+  // "Foto única no envio": total CONGELADO por OS no momento do envio do boletim.
+  // Para OS de um boletim já enviado/aprovado, a tela mostra ESTE valor (igual ao
+  // e-mail e ao anexo Excel), em vez de recalcular ao vivo — assim os 3 batem.
+  const frozenBillingTotal = new Map<string, number>();
   for (const ba of boletimApprovals) {
     const ids: number[] = ba.billing_ids || [];
     for (const bid of ids) {
@@ -171,6 +175,16 @@ export default function BoletimMedicaoPage() {
         approvedByClientBillingIds.add(bid);
       } else if (ba.status === "PENDENTE") {
         sentBillingIds.add(bid);
+      }
+    }
+    if ((ba.status === "PENDENTE" || ba.status === "APROVADO" || ba.status === "CONFIRMADO") && Array.isArray(ba.billing_snapshot)) {
+      for (const s of ba.billing_snapshot) {
+        // boletimApprovals vem ordenado por created_at DESC (mais novo primeiro).
+        // Em caso de boletins duplicados p/ a mesma OS, mantém o snapshot do envio
+        // MAIS RECENTE (primeiro a aparecer) — não deixa o antigo sobrescrever.
+        if (s && s.billing_id != null && !frozenBillingTotal.has(String(s.billing_id))) {
+          frozenBillingTotal.set(String(s.billing_id), Number(s.total) || 0);
+        }
       }
     }
   }
@@ -461,6 +475,9 @@ export default function BoletimMedicaoPage() {
     // Recusada = operacional não atendeu → R$ 0,00 sempre (§8.1).
     if (o.status === "recusada") return 0;
     const b = o.billing;
+    // Boletim já enviado/aprovado: usa o valor congelado no envio (fonte única),
+    // não recalcula ao vivo — garante que tela = e-mail = anexo Excel.
+    if (b && frozenBillingTotal.has(String(b.id))) return frozenBillingTotal.get(String(b.id))!;
     // Cancelada = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (§8.1/§8.4).
     if (o.status === "cancelada") {
       const acionFallback = Number(o.contractValues?.valor_acionamento || 0);
