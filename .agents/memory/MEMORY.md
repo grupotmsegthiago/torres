@@ -8,7 +8,7 @@
 - [WhatsApp Z-API anti-bloqueio + Agente Central](whatsapp-zapi-antiban.md) — Z-API não-oficial⇒risco ban; mitigar c/ texto variado+pacing+delayTyping; "OK"≠entrega; webhook "Ao receber" zera ao trocar instância; domínio prod real=torresseguranca.com.br; conversa natural IA c/ travas (financeiro pós-filtro, throttle antes do await).
 - [Adicional noturno = só prêmio 20%](payroll-night-additional.md) — adicional noturno é valorHora×0,20×h em TODO o sistema (holerite/custo/Control iD), nunca ×1,20; CLT Art. 73; só pagamento, não faturamento.
 - [WhatsApp forward dedup](whatsapp-forward-dedup.md) — dedup é por-linha (whatsapp_forwarded_at), não por-OS; app duplica finalização → "Fim de Missão" sai 2x; throttle só espaça; trava por-OS resolve.
-- [Conciliação boletim externo](conferencia-reconciliation.md) — match DATA|PLACA+score com aceite por confiança mínima (único exato OU score>=2); planilha do cliente bate 1:1 com escort_billings, "TORRES" é fornecedor (sem billings).
+- [Conciliação boletim externo](conferencia-reconciliation.md) — match em 2 camadas (matchRows): C1 DATA+PLACA+KM(alta), C2 DATA+PLACA+ROTA quando KM=0 (média, mostra divergência); KM prioritário (2 passadas); sem placa fica fora; planilha bate 1:1 com escort_billings.
 - [Gate de GPS mobile](mobile-gps-gate.md) — nunca auto-disparar getCurrentPosition no 1º acesso (prompt/sem Permissions API) → spinner pisca e trava; só auto-capturar se granted; resume via grantedRef; bootstrapping evita flash do botão.
 - [Fila de fallback espelha upsert](fallback-queue-upsert.md) — escrita primária com upsert NÃO pode enfileirar insert cego no fallback; senão flush no recovery floodou unique violation (uniq_agent_loc_user).
 

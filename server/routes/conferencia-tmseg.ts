@@ -95,6 +95,26 @@ function normRoute(s: string): string {
   return String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+// Compara rotas "ORIGEM×DESTINO" por PAR (origem com origem, destino com destino)
+// para evitar falso-positivo de substring entre metades (ex.: "SANTOS×GUARULHOS"
+// casando com "GUARULHOS×X" só porque "GUARULHOS" aparece nos dois). Containment
+// dentro de cada metade ("EMBU" ⊆ "EMBU DAS ARTES") continua valendo.
+function routeMatches(a: string, b: string): boolean {
+  const na = normRoute(a), nb = normRoute(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const halfEq = (x: string, y: string) => {
+    const nx = normRoute(x), ny = normRoute(y);
+    return !!nx && !!ny && (nx === ny || nx.includes(ny) || ny.includes(nx));
+  };
+  const [ao, ad] = a.split("×");
+  const [bo, bd] = b.split("×");
+  if (ao !== undefined && ad !== undefined && bo !== undefined && bd !== undefined) {
+    return halfEq(ao, bo) && halfEq(ad, bd);
+  }
+  return false; // sem o separator × nos dois lados, só aceita igualdade exata (acima)
+}
+
 // Mapeia o cabeçalho do boletim por NOME (robusto a colunas extra tipo PROCESSO).
 const HEADER_ALIASES: Record<string, string[]> = {
   numero: ["nº", "n°", "no", "num"],
@@ -246,6 +266,135 @@ function fmtHHMM(h: number): string {
   return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
+// ---------------------------------------------------------------------------
+// Matching em CAMADAS (aprovado pelo dono):
+//  Camada 1 (confiança ALTA): DATA + PLACA + (KM inicial OU final ±5km).
+//    Regra forte original. Tem PRIORIDADE global — roda 1ª e "reserva" a OS.
+//  Camada 2 (confiança MÉDIA): p/ o que sobrar, DATA(±1) + PLACA + ROTA(cidades)
+//    iguais, comparando os valores. Recupera missões em que o odômetro não foi
+//    lançado (KM=0) — inclusive canceladas/A_VERIFICAR — e EXIBE a divergência
+//    de valor em vez de escondê-la como "fora do sistema".
+//  Ambas exigem PLACA (linhas sem placa continuam em "fora do sistema").
+// ---------------------------------------------------------------------------
+export function matchRows(extRows: ExtRow[], sysRows: SysRow[], minDate: string, maxDate: string) {
+  for (const s of sysRows) s.matched = false;
+
+  const sysIndex = new Map<string, SysRow[]>();
+  for (const s of sysRows) {
+    const key = `${s.data}|${s.placa}`;
+    if (!sysIndex.has(key)) sysIndex.set(key, []);
+    sysIndex.get(key)!.push(s);
+  }
+
+  // candidatos = mesma DATA|PLACA (fallback ±1 dia p/ missões que viram a noite),
+  // sempre só os ainda não reservados. Exige placa (Camadas 1 e 2).
+  const getCandidates = (ext: ExtRow): SysRow[] => {
+    if (!ext.placa) return [];
+    const key = `${ext.data}|${ext.placa}`;
+    const cands = (sysIndex.get(key) || []).filter(s => !s.matched);
+    if (!cands.length && ext.data) {
+      for (const s of sysRows) {
+        if (s.matched || s.placa !== ext.placa || !s.data) continue;
+        const dd = Math.abs((new Date(s.data + "T12:00:00").getTime() - new Date(ext.data + "T12:00:00").getTime()) / 86400000);
+        if (dd <= 1) cands.push(s);
+      }
+    }
+    return cands;
+  };
+
+  const evalPair = (ext: ExtRow, s: SysRow) => {
+    // KM "comparável" = ambos os lados têm o odômetro (inicial OU final) preenchido.
+    // Se nenhum par é comparável, o KM está indisponível → habilita a Camada 2 (rota).
+    const kmIniComparable = !!ext.kmInicial && !!s.kmInicial;
+    const kmFimComparable = !!ext.kmFinal && !!s.kmFinal;
+    const kmComparable = kmIniComparable || kmFimComparable;
+    const kmIniMatch = kmIniComparable && Math.abs(s.kmInicial - ext.kmInicial) <= MATCH_TOL_KM;
+    const kmFimMatch = kmFimComparable && Math.abs(s.kmFinal - ext.kmFinal) <= MATCH_TOL_KM;
+    const kmMatch = kmIniMatch || kmFimMatch;
+    const routeMatch = routeMatches(ext.rotaCidades, s.rotaCidades);
+    let score = 0;
+    if (kmIniMatch) score += 3;
+    if (kmFimMatch) score += 3;
+    if (ext.numero && s.osNumber && normRoute(ext.numero) === normRoute(s.osNumber)) score += 5;
+    if (ext.kmTotal && Math.abs(s.kmTotal - ext.kmTotal) <= 5) score += 2;
+    if (routeMatch) score += 2;
+    return { kmMatch, kmComparable, routeMatch, score };
+  };
+
+  const matchedRows: any[] = [];
+  const matchedExt = new Set<number>();
+
+  const buildMatched = (ext: ExtRow, best: SysRow, matchType: "km" | "rota", score: number) => {
+    best.matched = true;
+    matchedExt.add(ext.linha);
+    const diffKm = ext.kmTotal - best.kmTotal;
+    const diffPedagio = ext.pedagio - best.pedagio;
+    const diffFranq = ext.kmFranq - best.kmFranq;
+    const diffTotal = ext.total - best.total;
+    const fields = {
+      kmTotal: { ext: ext.kmTotal, sys: best.kmTotal, diff: diffKm, diverge: Math.abs(diffKm) > TOL_KM },
+      pedagio: { ext: ext.pedagio, sys: best.pedagio, diff: diffPedagio, diverge: Math.abs(diffPedagio) > TOL_MONEY },
+      kmFranq: { ext: ext.kmFranq, sys: best.kmFranq, diff: diffFranq, diverge: Math.abs(diffFranq) > TOL_KM },
+      total: { ext: ext.total, sys: best.total, diff: diffTotal, diverge: Math.abs(diffTotal) > TOL_MONEY },
+    };
+    const hasDivergence = Object.values(fields).some(f => f.diverge);
+    matchedRows.push({
+      osNumber: best.osNumber,
+      extNumero: ext.numero,
+      data: best.data,
+      placa: best.placaRaw,
+      rotaSistema: best.rotaCidades,
+      rotaPlanilha: ext.rotaCidades,
+      status: best.status,
+      matchScore: score,
+      matchType,
+      matchConfidence: matchType === "km" ? "alta" : "média",
+      fields,
+      hasDivergence,
+      revenueValue: best.revenueValue,
+      custoFornecedor: best.custoFornecedor,
+    });
+  };
+
+  // Passa 1 — KM (alta). KM tem prioridade na disputa pelas OS do sistema.
+  for (const ext of extRows) {
+    let best: SysRow | null = null, bestScore = -1;
+    for (const s of getCandidates(ext)) {
+      const { kmMatch, score } = evalPair(ext, s);
+      if (kmMatch && score > bestScore) { bestScore = score; best = s; }
+    }
+    if (best) buildMatched(ext, best, "km", bestScore);
+  }
+
+  // Passa 2 — ROTA (média) só p/ quem não casou por KM (odômetro não lançado).
+  // Gate: só casa por rota quando o KM está INDISPONÍVEL p/ comparação (faltando
+  // num dos lados). Se ambos têm KM e ele diverge, NÃO força rota — provavelmente
+  // são missões diferentes; a linha fica em "fora do sistema" p/ conferência manual.
+  for (const ext of extRows) {
+    if (matchedExt.has(ext.linha)) continue;
+    let best: SysRow | null = null, bestScore = -1, bestTotalDiff = Infinity;
+    for (const s of getCandidates(ext)) {
+      const { kmComparable, routeMatch, score } = evalPair(ext, s);
+      if (kmComparable || !routeMatch) continue;
+      const td = Math.abs((s.total || 0) - (ext.total || 0));
+      if (score > bestScore || (score === bestScore && td < bestTotalDiff)) {
+        bestScore = score; best = s; bestTotalDiff = td;
+      }
+    }
+    if (best) buildMatched(ext, best, "rota", bestScore);
+  }
+
+  const missingInSystem = extRows.filter(e => !matchedExt.has(e.linha));
+  const missingInSheet = sysRows
+    .filter(s => !s.matched && s.data && s.data >= minDate && s.data <= maxDate)
+    .map(s => ({
+      osNumber: s.osNumber, data: s.data, placa: s.placaRaw, rota: s.rotaCidades,
+      total: s.total, status: s.status,
+    }));
+
+  return { matchedRows, missingInSystem, missingInSheet };
+}
+
 export async function conciliarBoletim(buffer: Buffer, clientId: number) {
       const extRows = await parseBoletim(buffer);
       if (!extRows.length) throw new Error("Nenhuma linha de missão encontrada na planilha.");
@@ -331,95 +480,8 @@ export async function conciliarBoletim(buffer: Buffer, clientId: number) {
         };
       });
 
-      // índice por data|placa
-      const sysIndex = new Map<string, SysRow[]>();
-      for (const s of sysRows) {
-        const key = `${s.data}|${s.placa}`;
-        if (!sysIndex.has(key)) sysIndex.set(key, []);
-        sysIndex.get(key)!.push(s);
-      }
-
-      const matchedRows: any[] = [];
-      const missingInSystem: any[] = [];
-
-      for (const ext of extRows) {
-        const key = `${ext.data}|${ext.placa}`;
-        const exactCandidates = (sysIndex.get(key) || []).filter(s => !s.matched);
-        let candidates = exactCandidates;
-        // fallback: mesma placa em data ±1 (missões que viram a noite)
-        if (!candidates.length && ext.data) {
-          for (const s of sysRows) {
-            if (s.matched || s.placa !== ext.placa || !s.data) continue;
-            const dd = Math.abs((new Date(s.data + "T12:00:00").getTime() - new Date(ext.data + "T12:00:00").getTime()) / 86400000);
-            if (dd <= 1) candidates.push(s);
-          }
-        }
-        // Regra do dono: a OS certa é aquela em que DATA + PLACA + (KM INICIAL **ou**
-        // KM FINAL) batem. O KM (inicial OU final) é OBRIGATÓRIO no aceite — sem ele
-        // não há match confiável, então a linha vira "fora do sistema" em vez de
-        // forçar um par só por data+placa. Nº da OS, KM total e rota só desempatam
-        // entre candidatos que JÁ têm o KM batendo.
-        let best: SysRow | null = null;
-        let bestScore = -1;
-        let bestKmMatch = false;
-        for (const s of candidates) {
-          const kmIniMatch = !!ext.kmInicial && !!s.kmInicial && Math.abs(s.kmInicial - ext.kmInicial) <= MATCH_TOL_KM;
-          const kmFimMatch = !!ext.kmFinal && !!s.kmFinal && Math.abs(s.kmFinal - ext.kmFinal) <= MATCH_TOL_KM;
-          const kmMatch = kmIniMatch || kmFimMatch;
-          let score = 0;
-          if (kmIniMatch) score += 3;
-          if (kmFimMatch) score += 3;
-          if (ext.numero && s.osNumber && normRoute(ext.numero) === normRoute(s.osNumber)) score += 5;
-          if (ext.kmTotal && Math.abs(s.kmTotal - ext.kmTotal) <= 5) score += 2;
-          const er = normRoute(ext.rotaCidades), sr = normRoute(s.rotaCidades);
-          if (er && sr && (er === sr || er.includes(sr) || sr.includes(er))) score += 2;
-          // prioriza candidato com KM batendo; entre iguais, o de maior score
-          const better = (kmMatch && !bestKmMatch) || (kmMatch === bestKmMatch && score > bestScore);
-          if (better) { bestScore = score; best = s; bestKmMatch = kmMatch; }
-        }
-        const accept = !!best && bestKmMatch;
-        if (!accept) {
-          missingInSystem.push(ext);
-          continue;
-        }
-        best!.matched = true;
-        best = best!;
-
-        const diffKm = ext.kmTotal - best.kmTotal;
-        const diffPedagio = ext.pedagio - best.pedagio;
-        const diffFranq = ext.kmFranq - best.kmFranq;
-        const diffTotal = ext.total - best.total;
-        const fields = {
-          kmTotal: { ext: ext.kmTotal, sys: best.kmTotal, diff: diffKm, diverge: Math.abs(diffKm) > TOL_KM },
-          pedagio: { ext: ext.pedagio, sys: best.pedagio, diff: diffPedagio, diverge: Math.abs(diffPedagio) > TOL_MONEY },
-          kmFranq: { ext: ext.kmFranq, sys: best.kmFranq, diff: diffFranq, diverge: Math.abs(diffFranq) > TOL_KM },
-          total: { ext: ext.total, sys: best.total, diff: diffTotal, diverge: Math.abs(diffTotal) > TOL_MONEY },
-        };
-        const hasDivergence = Object.values(fields).some(f => f.diverge);
-        matchedRows.push({
-          osNumber: best.osNumber,
-          extNumero: ext.numero,
-          data: best.data,
-          placa: best.placaRaw,
-          rotaSistema: best.rotaCidades,
-          rotaPlanilha: ext.rotaCidades,
-          status: best.status,
-          matchScore: bestScore,
-          fields,
-          hasDivergence,
-          revenueValue: best.revenueValue,
-          custoFornecedor: best.custoFornecedor,
-        });
-      }
-
-      // "fora da planilha" só dentro do período informado pela planilha (o buffer ±3d
-      // serve apenas p/ casar missões multi-dia, não p/ listar OS de outros períodos).
-      const missingInSheet = sysRows
-        .filter(s => !s.matched && s.data && s.data >= minDate && s.data <= maxDate)
-        .map(s => ({
-          osNumber: s.osNumber, data: s.data, placa: s.placaRaw, rota: s.rotaCidades,
-          total: s.total, status: s.status,
-        }));
+      // Matching em camadas (KM forte → rota quando falta KM). Ver matchRows().
+      const { matchedRows, missingInSystem, missingInSheet } = matchRows(extRows, sysRows, minDate, maxDate);
 
       const divergentCount = matchedRows.filter(r => r.hasDivergence).length;
       const extTotal = extRows.reduce((a, r) => a + r.total, 0);

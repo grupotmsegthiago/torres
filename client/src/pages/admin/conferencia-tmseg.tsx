@@ -19,6 +19,7 @@ interface FieldCmp { ext: number; sys: number; diff: number; diverge: boolean }
 interface MatchedRow {
   osNumber: string; extNumero: string; data: string | null; placa: string;
   rotaSistema: string; rotaPlanilha: string; status: string; matchScore: number;
+  matchType?: "km" | "rota"; matchConfidence?: "alta" | "média";
   fields: { kmTotal: FieldCmp; pedagio: FieldCmp; kmFranq: FieldCmp; total: FieldCmp };
   hasDivergence: boolean; revenueValue: number; custoFornecedor: number;
 }
@@ -322,7 +323,23 @@ function MatchedTable({ rows, emptyText }: { rows: MatchedRow[]; emptyText: stri
                 {r.extNumero && r.extNumero !== r.osNumber && (
                   <div className="text-[11px] text-muted-foreground">plan.: {r.extNumero}</div>
                 )}
-                <Badge variant="outline" className="mt-1 text-[10px]">{r.status || "—"}</Badge>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <Badge variant="outline" className="text-[10px]">{r.status || "—"}</Badge>
+                  {r.matchType && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${r.matchType === "km"
+                        ? "border-emerald-300 text-emerald-700 dark:text-emerald-400"
+                        : "border-amber-300 text-amber-700 dark:text-amber-400"}`}
+                      title={r.matchType === "km"
+                        ? "Casado por data + placa + KM (confiança alta)"
+                        : "Casado por data + placa + rota, pois o KM não estava disponível (confiança média — confira o valor)"}
+                      data-testid={`badge-match-${r.osNumber}`}
+                    >
+                      {r.matchType === "km" ? "✓ KM" : "≈ rota"}
+                    </Badge>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-2 align-top">{fmtDate(r.data)}</td>
               <td className="px-3 py-2 align-top">{r.placa || "—"}</td>

@@ -15,9 +15,15 @@ A planilha pode vir em DOIS layouts distintos, parseados pelo MESMO `findHeaderR
 **Regra de mapeamento (vale p/ ambos):** valor final = a **última** coluna "total"; km total = "km total" explícito OU, se ausente, a 1ª "total" após a coluna de km final. No layout do sistema last===first, então a regra não altera nada lá.
 **Why:** parser antigo (feito p/ o layout do sistema) lia a 1ª "total" (= km total) como valor final no layout TORRES → mostrava "valor final" absurdo (ex.: R$1.344 que era km) e fabricava dezenas de divergências falsas.
 
-## Matching: DATA + PLACA + (KM inicial **ou** KM final) é OBRIGATÓRIO
-Candidatos = mesma `DATA(BRT)|PLACA(normalizada)` (fallback ±1 dia p/ missões que viram a noite). **Aceite exige** KM inicial OU KM final batendo (tol. `MATCH_TOL_KM`=5km). Nº da OS, km total e rota só DESEMPATAM entre candidatos que já têm o KM batendo — não bastam sozinhos.
-**Why (regra do dono):** o nº da planilha do fornecedor (ex.: 4989) NÃO é o nº da OS do sistema (TOR-0194); casar só por data+placa pega a missão errada quando há >1 no dia. O KM físico (odômetro) é a identidade real da OS. KM=0 conta como "ausente" (não casa) — odômetro não registrado não deve casar duas missões zeradas.
+## Matching em CAMADAS (`matchRows`, exportada e testável pura) — aprovado pelo dono
+Candidatos = mesma `DATA(BRT)|PLACA(normalizada)` (fallback ±1 dia p/ missões que viram a noite). **Ambas as camadas exigem PLACA** (linha sem placa fica fora). Duas passadas globais p/ dar prioridade ao KM:
+- **Camada 1 (confiança "alta", `matchType:"km"`):** DATA+PLACA+(KM inicial OU final ±`MATCH_TOL_KM`=5km). Roda 1ª e RESERVA a OS (`s.matched`), então uma missão com KM batendo nunca é roubada pela rota.
+- **Camada 2 (confiança "média", `matchType:"rota"`):** só p/ o que sobrou — DATA(±1)+PLACA+ROTA(cidades iguais via `normRoute`, igual/contido). Entre vários candidatos da mesma rota, desempata pelo TOTAL mais próximo. Casa e **mostra a divergência de valor** em vez de esconder como "fora do sistema".
+- Nº da OS/km total/rota também somam no score (desempate). Frontend mostra badge `✓ KM` (verde) / `≈ rota` (âmbar).
+
+**Why:** a regra antiga "KM obrigatório no aceite" jogava a maioria das não-casadas em "fora do sistema" E a gêmea em "fora da planilha" (dupla-perda), porque boa parte das billings tem **KM=0** (TODAS as canceladas + muitas A_VERIFICAR sem odômetro lançado). Pior: escondia DIVERGÊNCIAS DE VALOR reais (mesma OS, total diferente, mas KM não batia → caía como "não encontrado" em vez de divergência). Camada 2 recupera isso e mostra a divergência. Ausência real (cidade fora de SP não cadastrada) continua corretamente em "fora do sistema". O nº da planilha do fornecedor (5xxx) NUNCA é o nº da OS (TOR-xxxx), então score por número não dispara nesse cliente.
+**Gate da Camada 2:** só dispara quando KM é INCOMPARÁVEL (faltando num dos lados). Se ambos têm KM e ele diverge >5km, NÃO casa por rota (provável missão diferente) — fica p/ conferência manual.
+**Camada 3 (DATA+ROTA+TOTAL p/ canceladas sem placa) foi proposta mas NÃO habilitada** — dono escolheu só Camadas 1+2.
 
 ## Lado cliente vs fornecedor (mesma OS, valores comparáveis)
 A planilha do CLIENTE (TM SEG, client_id=6) é o boletim que o sistema gera → bate 1:1 com `escort_billings`. A planilha TORRES (fornecedor) cobre as MESMAS OSs e seu grande total é comparável ao `fat_total` do sistema (ex.: 12.579 vs 12.561 — diferença real pequena, não cost-vs-revenue). Conciliar a planilha TORRES é feito selecionando o cliente TM SEG (não há billings sob o "cliente" TORRES).
