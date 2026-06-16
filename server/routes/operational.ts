@@ -799,10 +799,17 @@ import type { Express } from "express";
   app.get("/api/vehicle-tracking", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
-    const [allVehicles, orders] = await Promise.all([
+    const [allVehicles, orders, allClients, allEmployees] = await Promise.all([
       storage.getVehicles(),
       storage.getServiceOrders(),
+      storage.getClients(),
+      storage.getEmployees(),
     ]);
+    // Mapas em memória pra evitar N+1: cada enriquecimento de veículo/OS antes
+    // disparava storage.getClient/getEmployee individuais (1 ida ao Supabase por
+    // chamada). Carrega tudo uma vez e resolve por id em memória.
+    const clientMap = new Map(allClients.map((c) => [c.id, c]));
+    const empMap = new Map(allEmployees.map((e) => [e.id, e]));
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const FINISHED_MISSION = ["finalizada", "retorno_base", "chegada_base", "encerrada"];
     const activeOrders = orders.filter(
@@ -1052,9 +1059,9 @@ import type { Express } from "express";
           tracker: trackerData,
           activeOs: linkedOrder
             ? await (async () => {
-                const client = await storage.getClient(linkedOrder.clientId);
-                const emp1 = linkedOrder.assignedEmployeeId ? await storage.getEmployee(linkedOrder.assignedEmployeeId) : null;
-                const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
+                const client = clientMap.get(linkedOrder.clientId) || null;
+                const emp1 = linkedOrder.assignedEmployeeId ? (empMap.get(linkedOrder.assignedEmployeeId) || null) : null;
+                const emp2 = linkedOrder.assignedEmployee2Id ? (empMap.get(linkedOrder.assignedEmployee2Id) || null) : null;
                 const kit = linkedOrder.kitId ? await storage.getWeaponKit(linkedOrder.kitId) : null;
                 const agentLoc1 = linkedOrder.assignedEmployeeId ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployeeId) : null;
                 const agentLoc2 = linkedOrder.assignedEmployee2Id ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployee2Id) : null;
@@ -1135,8 +1142,8 @@ import type { Express } from "express";
           })(),
           lastOs: lastOrderForVehicle
             ? await (async () => {
-                const emp1 = lastOrderForVehicle.assignedEmployeeId ? await storage.getEmployee(lastOrderForVehicle.assignedEmployeeId) : null;
-                const emp2 = lastOrderForVehicle.assignedEmployee2Id ? await storage.getEmployee(lastOrderForVehicle.assignedEmployee2Id) : null;
+                const emp1 = lastOrderForVehicle.assignedEmployeeId ? (empMap.get(lastOrderForVehicle.assignedEmployeeId) || null) : null;
+                const emp2 = lastOrderForVehicle.assignedEmployee2Id ? (empMap.get(lastOrderForVehicle.assignedEmployee2Id) || null) : null;
                 return {
                   id: lastOrderForVehicle.id,
                   osNumber: lastOrderForVehicle.osNumber,
@@ -1163,11 +1170,9 @@ import type { Express } from "express";
             );
             const results = [];
             for (const u of upcoming) {
-              const [cl, e1, e2] = await Promise.all([
-                storage.getClient(u.clientId),
-                u.assignedEmployeeId ? storage.getEmployee(u.assignedEmployeeId) : null,
-                u.assignedEmployee2Id ? storage.getEmployee(u.assignedEmployee2Id) : null,
-              ]);
+              const cl = clientMap.get(u.clientId) || null;
+              const e1 = u.assignedEmployeeId ? (empMap.get(u.assignedEmployeeId) || null) : null;
+              const e2 = u.assignedEmployee2Id ? (empMap.get(u.assignedEmployee2Id) || null) : null;
               results.push({
                 id: u.id,
                 osNumber: u.osNumber,

@@ -393,7 +393,12 @@ export function registerWhatsappRoutes(app: Express) {
         bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body).slice(0, 20) : typeof req.body,
         bodyType: req.body?.type,
       });
-      console.log("[whatsapp/webhook] BODY", JSON.stringify(req.body).slice(0, 2000));
+      // Dump completo do body é CARO por request (serializa base64 de mídia
+      // inteira a cada mensagem) e pesa no event loop. Só liga sob demanda via
+      // WHATSAPP_WEBHOOK_DEBUG=1 quando precisar diagnosticar o formato da Z-API.
+      if (process.env.WHATSAPP_WEBHOOK_DEBUG === "1") {
+        console.log("[whatsapp/webhook] BODY", JSON.stringify(req.body).slice(0, 2000));
+      }
     } catch {}
 
     // Auth: aceita token via query `?token=` OU header `Authorization`

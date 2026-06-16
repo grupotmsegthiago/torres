@@ -411,6 +411,13 @@ export function startTelemetrySampler(supabase: SupabaseClient) {
   // o banco estiver lento (a coleta em si pode chegar perto do timeout de 12s).
   const scheduleSample = (delayMs: number) => {
     const t = setTimeout(async () => {
+      // Em modo fallback (Supabase não-saudável) não martela o banco com a
+      // coleta — ela só piora a crise e estoura no timeout. Reagenda espaçado
+      // e volta ao ritmo normal quando o banco recuperar.
+      if (!getSupabaseStats().healthy) {
+        scheduleSample(SAMPLE_INTERVAL_MS * 2);
+        return;
+      }
       try { await persistSample(supabase); } catch { /* silencioso */ }
       scheduleSample(SAMPLE_INTERVAL_MS);
     }, delayMs);
@@ -422,6 +429,12 @@ export function startTelemetrySampler(supabase: SupabaseClient) {
   // na tela logo que alguém abrir, sem brigar com o boot.
   const scheduleAiReport = (delayMs: number) => {
     const t = setTimeout(async () => {
+      // Idem: nada de gerar relatório de IA (lê o banco + chama OpenAI) durante
+      // o fallback. Reagenda espaçado até o Supabase voltar.
+      if (!getSupabaseStats().healthy) {
+        scheduleAiReport(AI_REPORT_INTERVAL_MS * 2);
+        return;
+      }
       try { await generateAiReport(supabase); } catch { /* silencioso */ }
       scheduleAiReport(AI_REPORT_INTERVAL_MS);
     }, delayMs);

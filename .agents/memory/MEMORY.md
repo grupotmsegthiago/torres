@@ -26,3 +26,4 @@
 - [Boletim A_VERIFICAR congelado nasce zerado](boletim-frozen-a-verificar.md) — CRON cria billing cedo e A_VERIFICAR∈FROZEN_STATUSES⇒nunca recalcula; boletim zerado/subfaturado=corrigir via botão Calcular/Aprovar (não é bug de cálculo); prévia engana (override "0").
 - [Boletim foto única](boletim-foto-unica.md) — total da OS é congelado no envio (billing_snapshot); tela/e-mail/Excel/aprovação leem o mesmo nº via osCanonicalTotal; duplicata=manter envio mais recente.
 - [Query .in(osIds) corta em 1000](supabase-in-pagination-1000.md) — `.in("service_order_id", osIds)` sem paginar trunca em 1000 linhas e some dado das OSs recentes; filtrar por step + paginar com .range().
+- [storage.getX(id) não usa cache de lista](storage-getbyid-no-list-cache.md) — getEmployee/getClient(id) batem no Supabase a cada chamada (N+1 ao agregar N itens); pré-carregue a lista e resolva por Map em memória.
