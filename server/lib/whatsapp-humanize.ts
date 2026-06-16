@@ -58,12 +58,14 @@ export interface ReminderContext {
 const SAUDACOES = [
   "Olá",
   "Oi",
-  "Bom dia/boa tarde",
   "Fala",
   "E aí",
+  "Opa",
+  "Salve",
   "Prezados",
-  "Srs.",
   "Pessoal",
+  "Eai",
+  "Boa",
 ];
 
 const IDENTIDADES = [
@@ -72,6 +74,8 @@ const IDENTIDADES = [
   "da Central de Operações Torres",
   "Central Torres na escuta",
   "aqui é da Central Torres",
+  "é a Central Torres aqui",
+  "Central Torres por aqui",
 ];
 
 const PEDIDOS_CRON = [
@@ -82,6 +86,10 @@ const PEDIDOS_CRON = [
   "dá um retorno da situação pelo aplicativo, por gentileza?",
   "atualiza a missão no sistema pra gente acompanhar?",
   "como está a missão? Registra a atualização no sistema, por favor.",
+  "consegue dar uma atualizada no sistema pra gente?",
+  "tudo certo por aí? Atualiza a missão no app quando puder.",
+  "passa pra gente como está, é só registrar a atualização no sistema.",
+  "lança a atualização no sistema quando der uma brecha?",
 ];
 
 const PEDIDOS_CLIENT = [
@@ -90,6 +98,8 @@ const PEDIDOS_CLIENT = [
   "o cliente está pedindo posição — atualiza a missão no app, por favor?",
   "precisamos repassar a situação ao cliente, registra a atualização no sistema?",
   "cliente solicitou status — manda a atualização da missão pelo sistema, por gentileza?",
+  "o cliente cobrou aqui, consegue atualizar a missão no sistema rapidinho?",
+  "deu uma cobrada do cliente — lança a atualização no app pra gente repassar?",
 ];
 
 const FECHOS = [
@@ -99,11 +109,78 @@ const FECHOS = [
   " Conto com você.",
   " Agradeço!",
   " Fico no aguardo.",
+  " Vlw!",
+  " Abraço!",
+  " Tmj!",
+  " Qualquer coisa, chama.",
 ];
 
 /** Capitaliza a primeira letra. */
 function cap(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+/** Hora atual (0–23) no fuso de Brasília (BRT). */
+function brtHour(): number {
+  const h = parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date()),
+    10,
+  );
+  return Number.isFinite(h) ? h % 24 : 12;
+}
+
+/** Saudação coerente com a hora do dia em BRT ("Bom dia"/"Boa tarde"/"Boa noite"). */
+function saudacaoPorHora(): string {
+  const h = brtHour();
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+// Abreviações/gírias humanas de WhatsApp. Cada par é aplicado de forma
+// PROBABILÍSTICA (não em toda mensagem) pra quebrar o "texto perfeito" que os
+// filtros de spam do WhatsApp procuram — humano abrevia e erra, robô não.
+// NÃO inclui palavras essenciais (atualização/sistema/app/OS) pra não quebrar o
+// sentido nem os anchors de teste.
+const CASUAL_PAIRS: Array<[string, string]> = [
+  ["vocês", "vcs"],
+  ["você", "vc"],
+  ["está", "tá"],
+  ["estou", "tô"],
+  ["para", "pra"],
+  ["por favor", "pfv"],
+  ["por gentileza", "por favor"],
+  ["porque", "pq"],
+  ["também", "tb"],
+  ["qualquer", "qq"],
+  ["mensagem", "msg"],
+  ["quando", "qnd"],
+];
+
+// Bordas de palavra cientes de acento: \b do JS é baseado em [A-Za-z0-9_], então
+// não casa antes/depois de letras acentuadas (você, está) — por isso usamos
+// lookarounds que tratam acentos como letra.
+const CASUAL_RE: Array<[RegExp, string]> = CASUAL_PAIRS.map(([word, repl]) => [
+  new RegExp(`(?<![A-Za-zÀ-ÿ])${word}(?![A-Za-zÀ-ÿ])`, "gi"),
+  repl,
+]);
+
+/**
+ * Aplica abreviações/gírias humanas com probabilidade `prob` POR par (default
+ * 0.4). Resultado: algumas mensagens saem informais ("vc", "tá", "pra"), outras
+ * formais — variação que dificulta a detecção de padrão de robô. Nunca toca em
+ * palavras essenciais (atualização/sistema/app/OS/número da OS).
+ */
+export function casualize(text: string, prob = 0.4): string {
+  let out = text;
+  for (const [re, repl] of CASUAL_RE) {
+    if (Math.random() < prob) out = out.replace(re, repl);
+  }
+  return out;
 }
 
 /**
@@ -112,7 +189,9 @@ function cap(s: string): string {
  * identidade da Central, pedido de atualização no sistema e o número da OS.
  */
 export function buildReminderFallback(ctx: ReminderContext): string {
-  const saud = SAUDACOES[randInt(0, SAUDACOES.length - 1)];
+  // Pool de saudações + a saudação coerente com a hora (aparece às vezes).
+  const saudPool = [...SAUDACOES, saudacaoPorHora(), saudacaoPorHora()];
+  const saud = saudPool[randInt(0, saudPool.length - 1)];
   const ident = IDENTIDADES[randInt(0, IDENTIDADES.length - 1)];
   const pedidos = ctx.trigger === "client" ? PEDIDOS_CLIENT : PEDIDOS_CRON;
   const pedido = pedidos[randInt(0, pedidos.length - 1)];
@@ -129,7 +208,8 @@ export function buildReminderFallback(ctx: ReminderContext): string {
 
   // Monta a frase com a OS embutida no pedido (não numa linha fixa rígida).
   const corpo = `${cap(saud)}, ${ident}. Sobre a missão ${osRef}: ${pedido}${fecho}`.trim();
-  return corpo;
+  // Humaniza: aplica abreviações/gírias de forma probabilística.
+  return casualize(corpo);
 }
 
 /**
@@ -169,7 +249,7 @@ export async function buildReminderMessage(ctx: ReminderContext): Promise<string
             `Você é a "Central Torres", central de uma empresa de escolta/segurança, falando NO PRIVADO com um agente de campo via WhatsApp. ` +
             `Escreva UMA mensagem curta (1 a 2 frases) pedindo que o agente registre a ATUALIZAÇÃO da missão NO SISTEMA/APP. ` +
             `Inclua o número da OS naturalmente. VARIE SEMPRE o jeito de falar, a saudação e a estrutura — NUNCA soe igual a uma mensagem anterior (isso causa bloqueio do WhatsApp). ` +
-            `Tom cordial e profissional, português brasileiro. No máximo 1 emoji (pode não usar). ` +
+            `Tom de conversa REAL de WhatsApp entre colegas de trabalho: pode ser informal e descontraído, usar abreviações comuns às vezes (vc, tá, pra, pq, blz, vlw) e nem sempre pontuação perfeita — soe como uma PESSOA digitando no celular, não como um robô com texto impecável. No máximo 1 emoji (pode não usar). ` +
             `NÃO invente horários, locais nem dados que não foram fornecidos. Responda só com a mensagem, sem aspas.`,
         },
         {
@@ -179,7 +259,8 @@ export async function buildReminderMessage(ctx: ReminderContext): Promise<string
       ],
     });
     const out = response.choices?.[0]?.message?.content?.trim();
-    return out && out.length > 0 ? out : buildReminderFallback(ctx);
+    // Humaniza ainda mais o texto da IA com abreviações probabilísticas.
+    return out && out.length > 0 ? casualize(out) : buildReminderFallback(ctx);
   } catch (e: any) {
     console.warn("[whatsapp-humanize] buildReminderMessage falhou:", e?.message);
     return buildReminderFallback(ctx);

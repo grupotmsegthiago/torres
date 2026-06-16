@@ -10,6 +10,7 @@ import {
   shuffle,
   typingSecondsForMessage,
   reminderIntervalMinutes,
+  casualize,
   type ReminderContext,
 } from "./whatsapp-humanize";
 
@@ -122,4 +123,38 @@ test("reminderIntervalMinutes faz backoff (cresce com count) e nunca < 30min", (
   assert.ok(reminderIntervalMinutes(3) >= 50);
   assert.ok(reminderIntervalMinutes(5) >= 80);
   assert.ok(reminderIntervalMinutes(9) >= 120);
+});
+
+test("casualize com prob=1 aplica abreviações e com prob=0 não mexe", () => {
+  const base = "Você está aqui para atualizar a mensagem porque também é qualquer quando";
+  assert.equal(casualize(base, 0), base, "prob=0 não deveria alterar nada");
+  const abrev = casualize(base, 1);
+  assert.ok(/(^|\s)vc(\s|$)/.test(abrev), `não abreviou você: ${abrev}`);
+  assert.ok(abrev.includes("tá"), `não abreviou está: ${abrev}`);
+  assert.ok(/(^|\s)pra(\s|$)/.test(abrev), `não abreviou para: ${abrev}`);
+  assert.ok(/(^|\s)pq(\s|$)/.test(abrev), `não abreviou porque: ${abrev}`);
+  assert.ok(!/você/i.test(abrev), `deixou 'você' por abreviar: ${abrev}`);
+});
+
+test("casualize NUNCA quebra palavras essenciais (sistema/app/atualização/OS)", () => {
+  const base = "atualize a missão no sistema pelo app (OS TOR-0253)";
+  for (let i = 0; i < 200; i++) {
+    const out = casualize(base, 1);
+    assert.ok(out.includes("sistema"), `perdeu 'sistema': ${out}`);
+    assert.ok(out.includes("app"), `perdeu 'app': ${out}`);
+    assert.ok(out.includes("atualize"), `perdeu 'atualize': ${out}`);
+    assert.ok(out.includes("TOR-0253"), `perdeu OS: ${out}`);
+  }
+});
+
+test("buildReminderFallback continua com OS + pedido mesmo com casualize ligado", () => {
+  const ctx: ReminderContext = { osLabel: "TOR-0253", trigger: "cron" };
+  for (let i = 0; i < 300; i++) {
+    const msg = buildReminderFallback(ctx);
+    assert.ok(msg.includes("TOR-0253"), `sem OS: ${msg}`);
+    assert.ok(
+      /sistema|app|aplicativo|posi[cç][aã]o|situa[cç][aã]o|atualiz/i.test(msg),
+      `sem pedido de atualização: ${msg}`,
+    );
+  }
 });
