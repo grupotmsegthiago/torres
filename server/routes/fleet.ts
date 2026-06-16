@@ -20,10 +20,12 @@ import type { Express } from "express";
   //   provável erro de digitação do hodômetro. Não é afetado pela autorização.
   // Retorna null quando está OK.
   export function validateFuelingKm(
-    km: number,
-    vehicleKm: number,
+    kmRaw: number | null | undefined,
+    vehicleKmRaw: number | null | undefined,
     allowKmOverride: boolean,
   ): { reason: "lower" | "jump"; message: string } | null {
+    const km = Number(kmRaw) || 0;
+    const vehicleKm = Number(vehicleKmRaw) || 0;
     if (km < vehicleKm) {
       if (allowKmOverride) return null;
       return {
