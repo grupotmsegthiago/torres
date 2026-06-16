@@ -7,6 +7,42 @@ import type { Express } from "express";
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
   import { notifyVehicleMaintenance } from "../notifications";
 
+  // Diferença máxima de KM PRA CIMA tolerada num novo abastecimento (proteção
+  // contra digitar o hodômetro errado). Lançamento retroativo (KM menor) é tratado
+  // separadamente por validateFuelingKm com allowKmOverride.
+  export const FUELING_MAX_KM_JUMP = 1500;
+
+  // Decide se um novo abastecimento deve ser BLOQUEADO pela checagem de KM.
+  // - block "lower": KM informado < KM atual do veículo, SEM autorização de
+  //   lançamento retroativo (allowKmOverride). Quando o usuário interno autoriza,
+  //   o retroativo passa.
+  // - block "jump": KM informado é MUITO maior que o atual (> FUELING_MAX_KM_JUMP),
+  //   provável erro de digitação do hodômetro. Não é afetado pela autorização.
+  // Retorna null quando está OK.
+  export function validateFuelingKm(
+    km: number,
+    vehicleKm: number,
+    allowKmOverride: boolean,
+  ): { reason: "lower" | "jump"; message: string } | null {
+    if (km < vehicleKm) {
+      if (allowKmOverride) return null;
+      return {
+        reason: "lower",
+        message: `KM informado (${km}) é menor que o KM atual do veículo (${vehicleKm}). Verifique o hodômetro.`,
+      };
+    }
+    if (vehicleKm > 0 && km >= vehicleKm) {
+      const kmDiff = km - vehicleKm;
+      if (kmDiff > FUELING_MAX_KM_JUMP) {
+        return {
+          reason: "jump",
+          message: `KM informado (${km}) é ${kmDiff} km a mais que o KM atual (${vehicleKm}). Diferença muito grande — verifique o hodômetro.`,
+        };
+      }
+    }
+    return null;
+  }
+
   async function runAiValidation(fuelingId: number) {
     const fueling = await storage.getVehicleFueling(fuelingId);
     if (!fueling) return;
@@ -378,16 +414,17 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
   app.post("/api/fueling", requireAuth, async (req, res) => {
     const parsed = insertVehicleFuelingSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    // Lançamento retroativo: usuário interno pode AUTORIZAR um abastecimento com
+    // KM menor que o atual do veículo (ex.: lançar abastecida antiga esquecida).
+    // O flag vem do form (não é coluna; insertVehicleFuelingSchema descarta).
+    // syncVehicleKmFromFuelings sempre pega o MAIOR km, então o retroativo não
+    // rebaixa o KM atual do veículo.
+    const allowKmOverride = req.body?.allowKmOverride === true;
     if (parsed.data.vehicleId && parsed.data.km) {
       const vehicle = await storage.getVehicle(parsed.data.vehicleId);
-      if (vehicle && parsed.data.km < vehicle.km) {
-        return res.status(400).json({ message: `KM informado (${parsed.data.km}) é menor que o KM atual do veículo (${vehicle.km}). Verifique o hodômetro.` });
-      }
-      if (vehicle && vehicle.km > 0) {
-        const kmDiff = parsed.data.km - vehicle.km;
-        if (kmDiff > 1500) {
-          return res.status(400).json({ message: `KM informado (${parsed.data.km}) é ${kmDiff} km a mais que o KM atual (${vehicle.km}). Diferença muito grande — verifique o hodômetro.` });
-        }
+      if (vehicle) {
+        const kmError = validateFuelingKm(parsed.data.km, vehicle.km, allowKmOverride);
+        if (kmError) return res.status(400).json({ message: kmError.message });
       }
     }
     const { data: existing } = await supabaseAdmin.from("vehicle_fueling")

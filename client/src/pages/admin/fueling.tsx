@@ -207,6 +207,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     receiptPhoto: fueling?.receiptPhoto || "",
     pumpPhoto: fueling?.pumpPhoto || "",
     odometerPhoto: fueling?.odometerPhoto || "",
+    allowKmOverride: false,
   });
 
   const handlePhotoUpload = (field: "receiptPhoto" | "pumpPhoto" | "odometerPhoto") => async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,9 +291,25 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           <Gauge className="w-4 h-4 inline mr-1" />
           KM atual registrado para <strong>{selectedVehicle.plate}</strong>: <strong>{selectedVehicle.km.toLocaleString("pt-BR")} km</strong>
           {form.km > 0 && form.km < selectedVehicle.km && (
-            <span className="ml-2 text-red-600 font-semibold">
-              <AlertTriangle className="w-3 h-3 inline" /> KM informado é menor que o atual!
-            </span>
+            <>
+              <span className="ml-2 text-red-600 font-semibold">
+                <AlertTriangle className="w-3 h-3 inline" /> KM informado é menor que o atual!
+              </span>
+              {!fueling && (
+                <label className="mt-2 flex items-start gap-2 text-amber-800 cursor-pointer" data-testid="label-allow-km-override">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={form.allowKmOverride}
+                    onChange={(e) => setForm({ ...form, allowKmOverride: e.target.checked })}
+                    data-testid="checkbox-allow-km-override"
+                  />
+                  <span>
+                    Autorizar <strong>lançamento retroativo</strong> (KM menor que o atual). Use ao registrar um abastecimento antigo. O KM atual do veículo não será alterado.
+                  </span>
+                </label>
+              )}
+            </>
           )}
         </div>
       )}
