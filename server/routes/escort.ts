@@ -9,6 +9,19 @@ import type { Express } from "express";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
 
+  // Trava de edição de anexos (boleto/NF/comprovante): admin comum só pode
+  // alterar anexos de lançamentos que ELE MESMO criou (created_by == nome).
+  // A Diretoria edita/corrige anexos de qualquer pessoa. Decisão do dono
+  // (16/06/2026). Quando created_by é desconhecido (registros antigos), só a
+  // Diretoria pode mexer — fail-closed pro admin comum.
+  export function canEditTransactionDocs(
+    user: { role?: string | null; name?: string | null } | null | undefined,
+    existing: { created_by?: string | null } | null | undefined,
+  ): boolean {
+    if (user?.role === "diretoria") return true;
+    return !!user?.name && !!existing?.created_by && existing.created_by === user.name;
+  }
+
   export function registerEscortRoutes(app: Express) {
     // ==================== FINANCIAL MODULE ====================
 
@@ -543,6 +556,9 @@ import type { Express } from "express";
 
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (!canEditTransactionDocs(user, existing)) {
+        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+      }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(cleanBase64, "base64");
@@ -597,6 +613,9 @@ import type { Express } from "express";
       if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (!canEditTransactionDocs(user, existing)) {
+        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+      }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(cleanBase64, "base64");
@@ -649,6 +668,9 @@ import type { Express } from "express";
       if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (!canEditTransactionDocs(user, existing)) {
+        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+      }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(cleanBase64, "base64");

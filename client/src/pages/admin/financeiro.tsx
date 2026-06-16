@@ -1827,6 +1827,16 @@ export default function FinanceiroPage() {
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   // Só o Thiago aprova/recusa lançamentos. Outros admins veem a aba mas em modo leitura.
   const isThiagoAprovador = (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br";
+  // Trava de edição de anexos (boleto/NF/comprovante): admin comum só altera
+  // anexos de lançamentos que ele mesmo criou; Diretoria altera de qualquer um.
+  // Espelha a regra do backend (server/routes/escort.ts → canEditTransactionDocs).
+  const canEditDocs = (t: FinancialTransaction) =>
+    user?.role === "diretoria" || (!!user?.name && !!t.created_by && t.created_by === user.name);
+  const blockDocEdit = () => toast({
+    title: "Ação não permitida",
+    description: "Você só pode alterar anexos de lançamentos que você mesmo criou.",
+    variant: "destructive",
+  });
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2361,7 +2371,7 @@ export default function FinanceiroPage() {
                           t.boleto_url ? (
                             <button onClick={() => openDoc(t.id, "boleto")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Boleto anexado" data-testid={`badge-bol-ok-${t.id}`}>1-BOL ✓</button>
                           ) : (
-                            <button onClick={() => handleUploadDoc(t.id, "boleto")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar boleto" data-testid={`badge-bol-pend-${t.id}`}>1-BOL !</button>
+                            <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "boleto") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title={canEditDocs(t) ? "Anexar boleto" : "Só quem criou o lançamento pode anexar"} data-testid={`badge-bol-pend-${t.id}`}>1-BOL !</button>
                           )
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Não aplicável" data-testid={`badge-bol-na-${t.id}`}>1-BOL —</span>
@@ -2371,19 +2381,19 @@ export default function FinanceiroPage() {
                           t.nf_url ? (
                             <button onClick={() => openDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="NF anexada" data-testid={`badge-nf-ok-${t.id}`}>2-NF ✓</button>
                           ) : (
-                            <button onClick={() => handleUploadDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar NF" data-testid={`badge-nf-pend-${t.id}`}>2-NF !</button>
+                            <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "nf") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title={canEditDocs(t) ? "Anexar NF" : "Só quem criou o lançamento pode anexar"} data-testid={`badge-nf-pend-${t.id}`}>2-NF !</button>
                           )
                         ) : t.has_nf === false ? (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-500 border border-neutral-200" title={t.nf_motivo_ausencia || "Sem NF"} data-testid={`badge-nf-na-${t.id}`}>2-NF —</span>
                         ) : (
-                          <button onClick={() => handleUploadDoc(t.id, "nf")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title="Anexar NF" data-testid={`badge-nf-undef-${t.id}`}>2-NF ?</button>
+                          <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "nf") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title={canEditDocs(t) ? "Anexar NF" : "Só quem criou o lançamento pode anexar"} data-testid={`badge-nf-undef-${t.id}`}>2-NF ?</button>
                         )}
                         {/* 3 — COMPROVANTE (só após PAGO) */}
                         {t.status === "PAID" ? (
                           t.comprovante_url ? (
                             <button onClick={() => openComprovante(t.id)} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Comprovante anexado" data-testid={`badge-comp-ok-${t.id}`}>3-COMP ✓</button>
                           ) : (
-                            <button onClick={() => handleUploadComprovante(t.id)} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title="Anexar comprovante" data-testid={`badge-comp-pend-${t.id}`}>3-COMP !</button>
+                            <button onClick={() => canEditDocs(t) ? handleUploadComprovante(t.id) : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 animate-pulse" title={canEditDocs(t) ? "Anexar comprovante" : "Só quem criou o lançamento pode anexar"} data-testid={`badge-comp-pend-${t.id}`}>3-COMP !</button>
                           )
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Após pagamento" data-testid={`badge-comp-na-${t.id}`}>3-COMP —</span>
@@ -2410,7 +2420,7 @@ export default function FinanceiroPage() {
                           <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-600 text-white border border-red-700 animate-pulse">
                             Comprovante pendente
                           </span>
-                          <button onClick={() => handleUploadComprovante(t.id)} disabled={uploadComprovanteMutation.isPending} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" data-testid={`button-upload-comp-${t.id}`}>
+                          <button onClick={() => canEditDocs(t) ? handleUploadComprovante(t.id) : blockDocEdit()} disabled={uploadComprovanteMutation.isPending} title={canEditDocs(t) ? "Anexar comprovante" : "Só quem criou o lançamento pode anexar"} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200" data-testid={`button-upload-comp-${t.id}`}>
                             <Send size={10} /> Anexar
                           </button>
                         </span>
