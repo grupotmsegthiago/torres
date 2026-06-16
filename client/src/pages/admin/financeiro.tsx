@@ -2074,6 +2074,7 @@ export default function FinanceiroPage() {
   // Derivam do conjunto já filtrado por período: o filtro de data vale também na
   // aba de aprovação. Aguardando e recusados respeitam o período selecionado.
   const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [periodFilteredTransactions]);
+  const totalAguardando = useMemo(() => aguardandoAprovacao.reduce((s, t) => s + Number(t.amount || 0), 0), [aguardandoAprovacao]);
   const recusados = useMemo(() => periodFilteredTransactions.filter(t => t.status === "RECUSADA"), [periodFilteredTransactions]);
 
   const filteredByStep = useMemo(() => {
@@ -3138,6 +3139,11 @@ export default function FinanceiroPage() {
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-700" />
               <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Aguardando aprovação da diretoria — {aguardandoAprovacao.length} lançamento(s)</h3>
+              {aguardandoAprovacao.length > 0 && (
+                <span className="ml-auto text-xs font-black text-amber-900 uppercase tracking-widest" data-testid="text-total-aguardando-header">
+                  Total: {formatCurrency(totalAguardando)}
+                </span>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -3149,13 +3155,14 @@ export default function FinanceiroPage() {
                     <th className="px-4 py-3">Fornecedor</th>
                     <th className="px-4 py-3">Categoria</th>
                     <th className="px-4 py-3">Solicitante</th>
+                    <th className="px-4 py-3 text-center">Documentos</th>
                     <th className="px-4 py-3 text-right">Valor</th>
                     <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {aguardandoAprovacao.length === 0 ? (
-                    <tr><td colSpan={8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
+                    <tr><td colSpan={9} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
                   ) : aguardandoAprovacao.map(t => {
                     const isSeries = !!t.installment_group && (t.installment_total || 0) > 1;
                     const pendingInSeries = isSeries ? aguardandoAprovacao.filter(x => x.installment_group === t.installment_group).length : 0;
@@ -3167,6 +3174,28 @@ export default function FinanceiroPage() {
                       <td className="px-4 py-3 text-xs font-bold text-neutral-700 uppercase">{t.entity_name || "—"}</td>
                       <td className="px-4 py-3 text-[10px] font-bold text-neutral-700 uppercase">{t.category_name || "—"}</td>
                       <td className="px-4 py-3 text-xs font-bold text-neutral-600">{t.solicitado_por || "—"}</td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                          {t.boleto_url && (
+                            <button onClick={() => openDoc(t.id, "boleto")} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title="Ver boleto anexado" data-testid={`link-boleto-aguardando-${t.id}`}>
+                              <FileText size={10} /> Boleto
+                            </button>
+                          )}
+                          {t.nf_url && (
+                            <button onClick={() => openDoc(t.id, "nf")} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200" title="Ver nota fiscal anexada" data-testid={`link-nf-aguardando-${t.id}`}>
+                              <FileText size={10} /> NF
+                            </button>
+                          )}
+                          {t.comprovante_url && (
+                            <button onClick={() => openComprovante(t.id)} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Ver comprovante anexado" data-testid={`link-comprovante-aguardando-${t.id}`}>
+                              <FileText size={10} /> Compr.
+                            </button>
+                          )}
+                          {!t.boleto_url && !t.nf_url && !t.comprovante_url && (
+                            <span className="text-[9px] font-bold text-neutral-300 italic" data-testid={`text-sem-doc-aguardando-${t.id}`}>—</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1.5 flex-wrap">
@@ -3223,6 +3252,17 @@ export default function FinanceiroPage() {
                     );
                   })}
                 </tbody>
+                {aguardandoAprovacao.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-neutral-100 border-t-2 border-neutral-300">
+                      <td colSpan={7} className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-neutral-700">
+                        Total a aprovar ({aguardandoAprovacao.length})
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-base text-red-700" data-testid="text-total-aguardando">{formatCurrency(totalAguardando)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
             {recusados.length > 0 && (
