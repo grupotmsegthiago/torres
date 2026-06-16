@@ -11,6 +11,15 @@ import { autoCreateProbationContract, isVigilante } from "./probation-contracts"
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
 
+  // TODAS as colunas do tipo `date` da tabela employees (nomes camelCase do
+  // schema). Inputs vazios ("") precisam virar null antes de gravar no Supabase,
+  // senão o Postgres rejeita com `invalid input syntax for type date: ""`.
+  // Ao adicionar uma nova coluna date em `employees`, incluir aqui — o teste
+  // employees-date-fields.test.ts compara com o schema e falha se faltar alguma.
+  export const EMPLOYEE_DATE_FIELDS = [
+    "birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry", "cnvIssueDate", "vestExpiry",
+  ];
+
   export function registerEmployeeRoutes(app: Express) {
     app.get("/api/employees", requireAuth, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -107,7 +116,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     console.log("[emp-debug POST] rg recebido:", JSON.stringify(body.rg), "| keys:", Object.keys(body).join(","));
-    const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
+    const dateFields = EMPLOYEE_DATE_FIELDS;
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     if (body.rg == null) body.rg = "";
     const matricula = await storage.getNextMatricula();
@@ -189,7 +198,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     console.log(`[emp-debug PATCH ${req.params.id}] rg recebido:`, JSON.stringify(body.rg), "| hasRg:", "rg" in body);
-    const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
+    const dateFields = EMPLOYEE_DATE_FIELDS;
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     delete body.matricula;
     const parsed = insertEmployeeSchema.partial().safeParse(body);
