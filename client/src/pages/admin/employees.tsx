@@ -1730,10 +1730,11 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
-type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "treinamento" | "aceites" | "dependentes";
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "termo-monitoramento" | "treinamento" | "aceites" | "dependentes";
 const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "documentos", label: "Documentos", icon: FileText },
   { key: "contrato", label: "Contrato", icon: ClipboardList },
+  { key: "termo-monitoramento", label: "Termo de Monitoramento", icon: Camera },
   { key: "treinamento", label: "Treinamento", icon: Shield },
   { key: "dependentes", label: "Dependentes", icon: Users },
   { key: "multas", label: "Multas", icon: Ban },
@@ -3705,6 +3706,66 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     if (w) { w.document.write(contractHtml); w.document.close(); w.print(); }
   };
 
+  const generateTermoMonitoramento = () => {
+    const esc = (s: string | null | undefined) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const ano = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 4);
+    const nome = esc(employee.name);
+    const cpf = esc(employee.cpf);
+    const termoHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Termo de Monitoramento - ${nome || "Colaborador"}</title><style>
+      body{font-family:'Times New Roman',serif;margin:0;padding:24px;color:#000;background:#fff}
+      .folha{max-width:780px;margin:0 auto;border:1.5px solid #000;padding:40px 44px;box-sizing:border-box}
+      .header{text-align:center;border-bottom:1px solid #999;padding-bottom:18px;margin-bottom:26px}
+      .header h3{margin:0 0 4px;font-size:15px;text-transform:uppercase}
+      .header .cnpj{font-size:11px;color:#333;margin:2px 0}
+      h1{text-align:center;font-size:15px;text-transform:uppercase;line-height:1.4;margin:18px 0 24px}
+      .meta{font-size:12px;line-height:1.7;margin-bottom:20px}
+      .meta b{display:inline-block;min-width:auto}
+      .local{display:inline-block;margin-top:6px;border:1px solid #ccc;background:#f6f6f6;padding:3px 8px;font-size:12px;font-weight:bold}
+      p{text-align:justify;font-size:13px;line-height:1.7;margin:12px 0}
+      .ident{border:1px solid #ccc;background:#fafafa;padding:12px 14px;margin:14px 0;font-size:13px;line-height:2.2}
+      .ln{display:inline-block;border-bottom:1px solid #000;min-width:240px;padding:0 6px;font-weight:bold}
+      .ln-cpf{display:inline-block;border-bottom:1px solid #000;min-width:170px;padding:0 6px;font-weight:bold;font-family:monospace}
+      ol{font-size:13px;line-height:1.7;padding-left:22px;margin:10px 0}
+      ol li{margin:7px 0}
+      .data{text-align:right;font-size:13px;margin:34px 0 0}
+      .data .ln-d{display:inline-block;border-bottom:1px solid #000;min-width:34px;text-align:center}
+      .data .ln-m{display:inline-block;border-bottom:1px solid #000;min-width:120px;text-align:center}
+      .sigs{display:flex;justify-content:space-between;gap:30px;margin-top:60px}
+      .sig{width:46%;text-align:center}
+      .sig .line{border-top:1px solid #000;padding-top:6px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+      @media print{body{padding:0}.folha{border:1.5px solid #000}}
+    </style></head><body><div class="folha">
+      <div class="header">
+        <h3>Torres Vigilância Patrimonial Ltda</h3>
+        <p class="cnpj">CNPJ: 36.982.392/0001-89</p>
+        <p class="cnpj">Avenida Raimundo Pereira de Magalhães, 5720 – Pirituba, São Paulo/SP</p>
+      </div>
+      <h1>Termo de Ciência e Consentimento sobre Monitoramento por Câmeras de Segurança</h1>
+      <p class="meta"><span class="local">Local de Instalação das Câmeras: Viaturas e Base Operacional</span></p>
+      <div class="ident">
+        Eu, <span class="ln">${nome}</span>, portador(a) do CPF nº <span class="ln-cpf">${cpf}</span>
+      </div>
+      <p>declaro que estou ciente e de acordo com a existência e o funcionamento do sistema de monitoramento por câmeras de segurança instalado nas dependências da empresa acima identificada.</p>
+      <p>As câmeras têm por finalidade exclusiva garantir a segurança patrimonial da empresa, dos colaboradores e clientes, bem como o controle de acesso às dependências e prevenção de incidentes.</p>
+      <p><b>Declaro estar ciente de que:</b></p>
+      <ol>
+        <li>As imagens são armazenadas em ambiente seguro e de acesso restrito;</li>
+        <li>O uso das gravações segue os princípios da Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018);</li>
+        <li>As imagens não serão utilizadas para fins pessoais ou ilícitos, sendo acessadas apenas por pessoas autorizadas;</li>
+        <li>As áreas monitoradas não incluem banheiros, vestiários ou locais de intimidade pessoal;</li>
+        <li>Estou ciente de que o monitoramento ocorre de forma ininterrupta (24 horas por dia, 7 dias por semana).</li>
+      </ol>
+      <p>Por fim, declaro ter sido devidamente informado(a) sobre o uso do sistema de monitoramento e autorizo o tratamento das imagens captadas para os fins mencionados.</p>
+      <p class="data">São Paulo, <span class="ln-d">&nbsp;</span> de <span class="ln-m">&nbsp;</span> de ${ano}.</p>
+      <div class="sigs">
+        <div class="sig"><div class="line">Assinatura do(a) colaborador(a)</div></div>
+        <div class="sig"><div class="line">Assinatura do responsável pela empresa</div></div>
+      </div>
+    </div></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(termoHtml); w.document.close(); w.print(); }
+  };
+
   const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Diversos", "Outro"];
 
 
@@ -3754,6 +3815,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
     contrato: 0,
+    "termo-monitoramento": 0,
     treinamento: 0,
     dependentes: dependents.length,
     multas: fines.length,
@@ -3973,6 +4035,41 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
         {tab === "treinamento" && (
           <TreinamentoTab employeeId={employee.id} />
+        )}
+
+        {tab === "termo-monitoramento" && (
+          <div className="space-y-4">
+            <div className="border border-neutral-200 bg-white rounded-lg p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2"><Camera className="w-4 h-4 text-neutral-600" /> Termo de Ciência e Consentimento sobre Monitoramento</h3>
+                  <p className="text-xs text-neutral-500 mt-1">Documento fixo (LGPD) para assinatura do colaborador junto ao contrato. Já vem preenchido com o nome e o CPF do funcionário.</p>
+                </div>
+                <Button size="sm" onClick={generateTermoMonitoramento} data-testid="button-gerar-termo-monitoramento">
+                  <FileText className="w-4 h-4 mr-1" /> Gerar / Imprimir Termo
+                </Button>
+              </div>
+
+              <div className="border border-neutral-300 rounded-md bg-neutral-50 p-5 text-xs leading-relaxed text-neutral-700 space-y-3" data-testid="preview-termo-monitoramento">
+                <div className="text-center border-b border-neutral-300 pb-3">
+                  <p className="font-bold uppercase text-neutral-900">Torres Vigilância Patrimonial Ltda</p>
+                  <p className="text-[11px] text-neutral-500">CNPJ: 36.982.392/0001-89 — Av. Raimundo Pereira de Magalhães, 5720, Pirituba, São Paulo/SP</p>
+                </div>
+                <p className="text-center font-bold uppercase text-neutral-900">Termo de Ciência e Consentimento sobre Monitoramento por Câmeras de Segurança</p>
+                <p className="font-semibold">Local de Instalação das Câmeras: Viaturas e Base Operacional</p>
+                <p>Eu, <span className="font-bold text-neutral-900">{employee.name || "________"}</span>, portador(a) do CPF nº <span className="font-bold text-neutral-900">{employee.cpf || "____________"}</span>, declaro que estou ciente e de acordo com a existência e o funcionamento do sistema de monitoramento por câmeras de segurança instalado nas dependências da empresa.</p>
+                <p className="font-semibold">Declaro estar ciente de que:</p>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>As imagens são armazenadas em ambiente seguro e de acesso restrito;</li>
+                  <li>O uso das gravações segue os princípios da LGPD (Lei nº 13.709/2018);</li>
+                  <li>As imagens não serão utilizadas para fins pessoais ou ilícitos, sendo acessadas apenas por pessoas autorizadas;</li>
+                  <li>As áreas monitoradas não incluem banheiros, vestiários ou locais de intimidade pessoal;</li>
+                  <li>O monitoramento ocorre de forma ininterrupta (24 horas por dia, 7 dias por semana).</li>
+                </ol>
+                <p className="text-neutral-400 italic">Use o botão acima para gerar a versão de impressão (folha A4 com borda) e colher as assinaturas.</p>
+              </div>
+            </div>
+          </div>
         )}
 
         {tab === "contrato" && (

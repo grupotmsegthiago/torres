@@ -1,0 +1,167 @@
+Para criar uma tela idêntica ao seu documento físico dentro do seu sistema no Replit (usando React e Tailwind CSS, que se adaptam perfeitamente à sua estrutura), o ideal é estruturar um componente pronto.
+
+Como você pediu um prompt completo (provavelmente para alimentar a IA do Replit ou usar como base de geração), preparei as instruções exatas e o código correspondente. Ele já inclui a borda preta estruturada, o layout idêntico e o espaço para o logotipo da Torres.
+
+Prompt para o Replit AI / Cursor
+Se você estiver usando a IA do Replit para gerar ou integrar, pode colar o seguinte comando:
+
+"Crie um componente React chamado TermoMonitoramento utilizando Tailwind CSS para estilização. O componente deve replicar exatamente um documento impresso (estilo folha A4 vertical) com uma borda preta fina ao redor de todo o conteúdo. No topo, adicione um cabeçalho centralizado com um placeholder para o logotipo da empresa 'TORRES' e o título 'TERMO DE CIÊNCIA E CONSENTIMENTO SOBRE MONITORAMENTO POR CÂMERAS DE SEGURANÇA'. O documento deve conter campos de inputs limpos para o Nome, CPF, Data e assinaturas, permitindo o preenchimento digital ou impressão. Siga fielmente o texto legal fornecido, garantindo espaçamento harmônico, visual profissional e clean."
+
+Código Pronto para Importar (React + Tailwind)
+Você pode criar um arquivo TermoMonitoramento.tsx no seu projeto do Replit e colar o código abaixo. Ele já está configurado com as margens e a estilização que você pediu:
+
+TypeScript
+import React, { useState } from 'react';
+
+export default function TermoMonitoramento() {
+  const [nome, setNome] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [dia, setDia] = useState('');
+  const [mes, setMes] = useState('');
+
+  return (
+    <div className="min-h-screen bg-gray-100 py-10 px-4 flex justify-center items-center font-sans antialiased text-gray-900 selection:bg-gray-200">
+      {/* Container "Folha A4" com a borda preta solicitada */}
+      <div className="w-full max-w-[800px] bg-white p-8 md:p-12 shadow-lg border border-black relative">
+        
+        {/* Cabeçalho com Logotipo e Dados da Empresa */}
+        <div className="flex flex-col items-center text-center border-b border-gray-300 pb-6 mb-8">
+          {/* Espaço para o Logotipo da Torres */}
+          <div className="mb-4 flex items-center justify-center border-2 border-dashed border-gray-300 w-48 h-16 text-xs text-gray-400 uppercase tracking-wider font-semibold">
+            [ Logotipo TORRES ]
+          </div>
+          
+          <h1 className="text-lg md:text-xl font-bold tracking-wide uppercase mb-3 text-black max-w-2xl">
+            Termo de Ciência e Consentimento sobre Monitoramento por Câmeras de Segurança
+          </h1>
+          
+          <div className="text-xs text-gray-600 space-y-1 mt-1 font-mono">
+            <p><span className="font-semibold text-gray-800">Empresa:</span> TORRES VIGILÂNCIA PATRIMONIAL LTDA</p>
+            <p><span className="font-semibold text-gray-800">CNPJ:</span> 36.982.392/0001-89</p>
+            <p><span className="font-semibold text-gray-800">Endereço:</span> Avenida Raimundo Pereira de Magalhães, 5720 - Pirituba, São Paulo/SP</p>
+            <p className="mt-2 text-sm font-semibold text-black bg-gray-50 px-3 py-1 inline-block border border-gray-200 rounded">
+              Local de Instalação das Câmeras: Viaturas e Base Operacional
+            </p>
+          </div>
+        </div>
+
+        {/* Corpo do Documento / Identificação */}
+        <div className="space-y-6 text-sm md:text-base leading-relaxed text-justify">
+          <div className="space-y-4 bg-gray-50 p-4 border border-gray-200 rounded-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <label className="font-semibold min-w-[30px] text-gray-700">Eu,</label>
+              <input 
+                type="text" 
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Nome completo do colaborador" 
+                className="flex-1 bg-transparent border-b border-gray-400 focus:border-black focus:outline-none px-1 py-0.5 font-medium transition-colors"
+              />
+            </div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <label className="font-semibold min-w-[110px] text-gray-700">portador(a) do CPF nº</label>
+              <input 
+                type="text" 
+                value={cpf}
+                onChange={(e) => setCpf(e.target.value)}
+                placeholder="000.000.000-00" 
+                className="flex-1 max-w-xs bg-transparent border-b border-gray-400 focus:border-black focus:outline-none px-1 py-0.5 font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <p className="text-gray-800">
+            declaro que estou ciente e de acordo com a existência e o funcionamento do sistema de monitoramento por câmeras de segurança instalado nas dependências da empresa acima identificada.
+          </p>
+
+          <p className="text-gray-800">
+            As câmeras têm por finalidade exclusiva garantir a segurança patrimonial da empresa, dos colaboradores e clientes, bem como o controle de acesso às dependências e prevenção de incidentes.
+          </p>
+
+          {/* Cláusulas de Ciência */}
+          <div className="pt-2">
+            <p className="font-bold mb-3 text-black uppercase tracking-wide text-xs">Declaro estar ciente de que:</p>
+            <ol className="space-y-3 pl-1 text-gray-700">
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-black font-mono">1.</span>
+                <span>As imagens são armazenadas em ambiente seguro e de acesso restrito;</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-black font-mono">2.</span>
+                <span>O uso das gravações segue os princípios da Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018);</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-black font-mono">3.</span>
+                <span>As imagens não serão utilizadas para fins pessoais ou ilícitos, sendo acessadas apenas por pessoas autorizadas;</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-black font-mono">4.</span>
+                <span>As áreas monitoradas não incluem banheiros, vestiários ou locais de intimidade pessoal;</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-black font-mono">5.</span>
+                <span>Estou ciente de que o monitoramento ocorre de forma ininterrupta (24 horas por dia, 7 dias por semana).</span>
+              </li>
+            </ol>
+          </div>
+
+          <p className="text-gray-800 pt-2 font-medium">
+            Por fim, declaro ter sido devidamente informado(a) sobre o uso do sistema de monitoramento e autorizo o tratamento das imagens captadas para os fins mencionados.
+          </p>
+        </div>
+
+        {/* Data e Assinaturas */}
+        <div className="mt-12 pt-4 space-y-12">
+          {/* Data local */}
+          <div className="flex flex-wrap items-center gap-2 text-sm justify-end text-gray-700 font-medium">
+            <span>São Paulo,</span>
+            <input 
+              type="text" 
+              maxLength={2} 
+              value={dia}
+              onChange={(e) => setDia(e.target.value)}
+              placeholder="dd" 
+              className="w-8 text-center bg-transparent border-b border-gray-400 focus:border-black focus:outline-none"
+            />
+            <span>de</span>
+            <input 
+              type="text" 
+              value={mes}
+              onChange={(e) => setMes(e.target.value)}
+              placeholder="mês" 
+              className="w-24 text-center bg-transparent border-b border-gray-400 focus:border-black focus:outline-none"
+            />
+            <span>de 2026.</span>
+          </div>
+
+          {/* Blocos de Assinatura */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10 pt-6">
+            <div className="flex flex-col items-center">
+              <div className="w-full max-w-[280px] border-b border-black mb-2"></div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-gray-600 text-center">
+                Assinatura do(a) colaborador(a)
+              </p>
+            </div>
+            
+            <div className="flex flex-col items-center">
+              <div className="w-full max-w-[280px] border-b border-black mb-2"></div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-gray-600 text-center">
+                Assinatura do responsável pela empresa
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+O que foi ajustado para ficar perfeito:
+Identidade Visual: Mantive as informações institucionais exatas da folha original (CNPJ, Endereço e as regras da LGPD).
+
+Borda solicitada: O elemento principal possui a classe border border-black simulando o enquadramento rígido do papel técnico.
+
+Espaço do Logo: Centralizado logo acima do título principal com marcação clara para você substituir pela tag <img> com o seu arquivo de imagem oficial da Torres.
+
+Deseja que eu integre esse layout com o Supabase ou com alguma tabela de funcionários que você já tenha configurada no sistema?
