@@ -109,6 +109,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     console.log("[emp-debug POST] rg recebido:", JSON.stringify(body.rg), "| keys:", Object.keys(body).join(","));
     const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
+    if (body.rg == null) body.rg = "";
     const matricula = await storage.getNextMatricula();
     body.matricula = matricula;
     const parsed = insertEmployeeSchema.safeParse(body);

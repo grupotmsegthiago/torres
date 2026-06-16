@@ -1397,9 +1397,9 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               </div>
             </div>
             <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RG *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RG</label>
               <div className="flex gap-1">
-                <Input value={form.rg} onChange={(e) => setForm({ ...form, rg: e.target.value })} required className="flex-1" data-testid="input-employee-rg" />
+                <Input value={form.rg} onChange={(e) => setForm({ ...form, rg: e.target.value })} className="flex-1" data-testid="input-employee-rg" />
                 <Input value={form.orgaoEmissor} onChange={(e) => setForm({ ...form, orgaoEmissor: e.target.value.toUpperCase().slice(0, 6) })} placeholder="Órgão" className="w-20" data-testid="input-employee-orgao-emissor" />
                 <select value={form.ufEmissor} onChange={(e) => setForm({ ...form, ufEmissor: e.target.value })} className="w-16 h-10 border border-neutral-300 rounded-lg px-2 text-sm bg-white" data-testid="select-employee-uf-emissor">
                   <option value="">UF</option>
