@@ -269,6 +269,27 @@ import type { Express } from "express";
       }
     };
 
+    // Pagina o `.in("service_order_id", ...)` por lotes de IDs. Resolve #120:
+    // com filtro por período `osIds` pode passar de 300 OS — uma única IN-list
+    // gigante deixa a query lenta E corta silenciosamente em 1000 linhas no
+    // PostgREST (ver memória supabase-in-pagination-1000), perdendo dados das OS
+    // mais recentes. Lotes pequenos mantêm cada request rápido e completo.
+    const fetchByServiceOrderIdsChunked = async (table: string, ids: number[], selectCols: string) => {
+      if (ids.length === 0) return { data: [] as any[] };
+      const CHUNK = 150;
+      const out: any[] = [];
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        try {
+          const { data } = await supabaseAdmin.from(table).select(selectCols).in("service_order_id", slice);
+          if (data) out.push(...data);
+        } catch (e: any) {
+          console.error(`[grid] ${table} chunk query failed: ${e.message}`);
+        }
+      }
+      return { data: out };
+    };
+
     const cachedContracts = memGet<any>("escort_contracts");
     const contractsPromise = cachedContracts
       ? Promise.resolve({ data: cachedContracts })
@@ -279,13 +300,9 @@ import type { Express } from "express";
       storage.getEmployees(),
       safeFrom("mission_updates", osIds, "id, service_order_id, mission_step, message, created_at, read_by_admin, latitude, longitude"),
       truckscontrol.getCachedPositions(),
-      osIds.length > 0
-        ? supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", osIds)
-        : Promise.resolve({ data: [] as any[] }),
+      fetchByServiceOrderIdsChunked("mission_photos", osIds, "service_order_id, step, km_value"),
       contractsPromise,
-      osIds.length > 0
-        ? supabaseAdmin.from("mission_costs").select("service_order_id, amount, category, cost_type, vehicle_id").in("service_order_id", osIds)
-        : Promise.resolve({ data: [] as any[] }),
+      fetchByServiceOrderIdsChunked("mission_costs", osIds, "service_order_id, amount, category, cost_type, vehicle_id"),
     ]);
 
     if (!cachedContracts && contractsRes.data) {

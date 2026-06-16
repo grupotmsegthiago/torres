@@ -413,112 +413,118 @@ export function registerWhatsappRoutes(app: Express) {
       return res.status(401).json({ ok: false, error: "token inválido" });
     }
 
-    try {
-      const body = req.body;
-      const evtType = String(body?.type || "").toLowerCase();
+    // ACK IMEDIATO (resolve #120): a Z-API só precisa do 200 — segurar a
+    // resposta enquanto grava no Supabase (lookup de idempotência + insert +
+    // upsert do chat, todas em série) fazia o webhook estourar quando o banco
+    // ficava lento, travando o event loop por minutos. Respondemos já e
+    // empurramos toda a persistência/IA para fora do caminho da requisição.
+    res.json({ ok: true });
 
-      // Detecta se o payload TEM conteúdo de mensagem (text, image, audio, etc).
-      // A Z-API multi-device às vezes embute um campo `status` mesmo em
-      // mensagens novas (ex: "RECEIVED", "PLAYED") — só tratar como
-      // status-update quando NÃO há conteúdo de msg E o type indica isso.
-      const hasMessageContent = !!(
-        body?.text?.message || body?.image || body?.audio || body?.video ||
-        body?.document || body?.sticker || body?.contact || body?.location ||
-        body?.reaction || body?.poll || body?.listResponseMessage ||
-        body?.buttonsResponseMessage
-      );
-      const isDeliveryCallback = evtType === "deliverycallback" || evtType === "messagestatuscallback";
-      const isPureStatusUpdate = !hasMessageContent && (isDeliveryCallback || evtType.includes("status"));
+    void (async () => {
+      try {
+        const body = req.body;
+        const evtType = String(body?.type || "").toLowerCase();
 
-      if (isPureStatusUpdate) {
-        const mid = body?.messageId || body?.ids?.[0];
-        const hasError = !!(body?.error || body?.errorMessage);
-        const newStatus = String(
-          body?.status || (hasError ? "failed" : isDeliveryCallback ? "delivered" : ""),
-        ).toLowerCase();
-        if (mid && newStatus) {
-          await supabaseAdmin
-            .from("whatsapp_messages")
-            .update({ status: newStatus })
-            .eq("zapi_message_id", mid);
+        // Detecta se o payload TEM conteúdo de mensagem (text, image, audio, etc).
+        // A Z-API multi-device às vezes embute um campo `status` mesmo em
+        // mensagens novas (ex: "RECEIVED", "PLAYED") — só tratar como
+        // status-update quando NÃO há conteúdo de msg E o type indica isso.
+        const hasMessageContent = !!(
+          body?.text?.message || body?.image || body?.audio || body?.video ||
+          body?.document || body?.sticker || body?.contact || body?.location ||
+          body?.reaction || body?.poll || body?.listResponseMessage ||
+          body?.buttonsResponseMessage
+        );
+        const isDeliveryCallback = evtType === "deliverycallback" || evtType === "messagestatuscallback";
+        const isPureStatusUpdate = !hasMessageContent && (isDeliveryCallback || evtType.includes("status"));
+
+        if (isPureStatusUpdate) {
+          const mid = body?.messageId || body?.ids?.[0];
+          const hasError = !!(body?.error || body?.errorMessage);
+          const newStatus = String(
+            body?.status || (hasError ? "failed" : isDeliveryCallback ? "delivered" : ""),
+          ).toLowerCase();
+          if (mid && newStatus) {
+            await supabaseAdmin
+              .from("whatsapp_messages")
+              .update({ status: newStatus })
+              .eq("zapi_message_id", mid);
+          }
+          return;
         }
-        return res.json({ ok: true, ignored: "status_update", type: evtType });
+
+        const parsed = parseWebhookMessage(body);
+        if (!parsed) {
+          console.warn("[whatsapp/webhook] unparseable body — keys:", Object.keys(body || {}));
+          return;
+        }
+
+        // Idempotência: se já temos essa zapi_message_id, ignora
+        if (parsed.zapiMessageId) {
+          const { data: existing } = await supabaseAdmin
+            .from("whatsapp_messages")
+            .select("id")
+            .eq("zapi_message_id", parsed.zapiMessageId)
+            .maybeSingle();
+          if (existing) return;
+        }
+
+        await supabaseAdmin.from("whatsapp_messages").insert({
+          chat_id: parsed.chatId,
+          zapi_message_id: parsed.zapiMessageId,
+          from_me: parsed.fromMe,
+          sender_phone: parsed.senderPhone,
+          sender_name: parsed.senderName,
+          type: parsed.type,
+          body: parsed.text,
+          media_url: parsed.mediaUrl,
+          media_mime: parsed.mediaMime,
+          status: parsed.fromMe ? "sent" : "received",
+          ts: parsed.ts,
+        });
+
+        // Preview pra sidebar
+        const preview = parsed.text || ({
+          image: "📷 Foto", audio: "🎵 Áudio", video: "🎬 Vídeo",
+          document: "📄 Documento", sticker: "Figurinha", contact: "👤 Contato",
+          location: "📍 Localização", other: "Mensagem",
+        } as any)[parsed.type] || "Mensagem";
+
+        await upsertChatFromEvent({
+          chatId: parsed.chatId,
+          name: parsed.chatName,
+          isGroup: parsed.isGroup,
+          lastMessageAt: parsed.ts,
+          lastMessageText: preview,
+          lastMessageFromMe: parsed.fromMe,
+          incrementUnread: !parsed.fromMe,
+        });
+
+        // Agente Central: se a mensagem chegou num GRUPO e não é nossa, dispara o
+        // atendimento de pedidos de atualização (fire-and-forget — nunca bloqueia
+        // nem derruba o webhook). Vide server/lib/agent-central-mention.ts.
+        if (parsed.isGroup && !parsed.fromMe) {
+          import("../lib/agent-central-mention.js")
+            .then(({ handleGroupUpdateRequest }) =>
+              handleGroupUpdateRequest(
+                {
+                  chatId: parsed.chatId,
+                  isGroup: parsed.isGroup,
+                  fromMe: parsed.fromMe,
+                  senderName: parsed.senderName,
+                  senderPhone: parsed.senderPhone,
+                  text: parsed.text,
+                  zapiMessageId: parsed.zapiMessageId,
+                },
+                body,
+              ),
+            )
+            .catch((e: any) => console.warn("[whatsapp/webhook] agente-central:", e?.message));
+        }
+      } catch (e: any) {
+        console.error("[whatsapp/webhook] erro (async):", e?.message);
       }
-
-      const parsed = parseWebhookMessage(body);
-      if (!parsed) {
-        console.warn("[whatsapp/webhook] unparseable body — keys:", Object.keys(body || {}));
-        return res.json({ ok: true, ignored: "unparseable" });
-      }
-
-      // Idempotência: se já temos essa zapi_message_id, ignora
-      if (parsed.zapiMessageId) {
-        const { data: existing } = await supabaseAdmin
-          .from("whatsapp_messages")
-          .select("id")
-          .eq("zapi_message_id", parsed.zapiMessageId)
-          .maybeSingle();
-        if (existing) return res.json({ ok: true, duplicate: parsed.zapiMessageId });
-      }
-
-      await supabaseAdmin.from("whatsapp_messages").insert({
-        chat_id: parsed.chatId,
-        zapi_message_id: parsed.zapiMessageId,
-        from_me: parsed.fromMe,
-        sender_phone: parsed.senderPhone,
-        sender_name: parsed.senderName,
-        type: parsed.type,
-        body: parsed.text,
-        media_url: parsed.mediaUrl,
-        media_mime: parsed.mediaMime,
-        status: parsed.fromMe ? "sent" : "received",
-        ts: parsed.ts,
-      });
-
-      // Preview pra sidebar
-      const preview = parsed.text || ({
-        image: "📷 Foto", audio: "🎵 Áudio", video: "🎬 Vídeo",
-        document: "📄 Documento", sticker: "Figurinha", contact: "👤 Contato",
-        location: "📍 Localização", other: "Mensagem",
-      } as any)[parsed.type] || "Mensagem";
-
-      await upsertChatFromEvent({
-        chatId: parsed.chatId,
-        name: parsed.chatName,
-        isGroup: parsed.isGroup,
-        lastMessageAt: parsed.ts,
-        lastMessageText: preview,
-        lastMessageFromMe: parsed.fromMe,
-        incrementUnread: !parsed.fromMe,
-      });
-
-      res.json({ ok: true });
-
-      // Agente Central: se a mensagem chegou num GRUPO e não é nossa, dispara o
-      // atendimento de pedidos de atualização (fire-and-forget — nunca bloqueia
-      // nem derruba o webhook). Vide server/lib/agent-central-mention.ts.
-      if (parsed.isGroup && !parsed.fromMe) {
-        import("../lib/agent-central-mention.js")
-          .then(({ handleGroupUpdateRequest }) =>
-            handleGroupUpdateRequest(
-              {
-                chatId: parsed.chatId,
-                isGroup: parsed.isGroup,
-                fromMe: parsed.fromMe,
-                senderName: parsed.senderName,
-                senderPhone: parsed.senderPhone,
-                text: parsed.text,
-                zapiMessageId: parsed.zapiMessageId,
-              },
-              body,
-            ),
-          )
-          .catch((e: any) => console.warn("[whatsapp/webhook] agente-central:", e?.message));
-      }
-    } catch (e: any) {
-      console.error("[whatsapp/webhook] erro:", e?.message);
-      res.status(500).json({ ok: false, error: e?.message || "erro interno" });
-    }
+    })();
   });
 
   // ─────────────────────────────────────────────────────────────
