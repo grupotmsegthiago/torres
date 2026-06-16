@@ -7,6 +7,9 @@ import {
   buildReminderFallback,
   buildReminderMessage,
   varyForwardHeader,
+  shuffle,
+  typingSecondsForMessage,
+  reminderIntervalMinutes,
   type ReminderContext,
 } from "./whatsapp-humanize";
 
@@ -82,4 +85,41 @@ test("varyForwardHeader retorna cabeçalho não-vazio e varia", () => {
     set.add(h);
   }
   assert.ok(set.size > 1, "cabeçalho do encaminhamento não varia");
+});
+
+test("shuffle preserva os elementos e não muta o array original", () => {
+  const orig = [1, 2, 3, 4, 5, 6, 7, 8];
+  const out = shuffle(orig);
+  assert.deepEqual(orig, [1, 2, 3, 4, 5, 6, 7, 8], "mutou o array original");
+  assert.deepEqual([...out].sort((a, b) => a - b), orig, "perdeu/ganhou elementos");
+  // Em muitas tentativas, pelo menos uma ordem diferente deve aparecer.
+  let differed = false;
+  for (let i = 0; i < 50 && !differed; i++) {
+    if (shuffle(orig).some((v, idx) => v !== orig[idx])) differed = true;
+  }
+  assert.ok(differed, "shuffle nunca alterou a ordem");
+});
+
+test("typingSecondsForMessage cresce com o tamanho e respeita [3,14] (Z-API <=15)", () => {
+  const curto = typingSecondsForMessage("oi");
+  const longo = typingSecondsForMessage("a".repeat(400));
+  assert.ok(curto >= 3 && curto <= 14, `curto fora do range: ${curto}`);
+  assert.ok(longo >= 3 && longo <= 14, `longo fora do range: ${longo}`);
+  assert.ok(longo >= curto, "mensagem longa não digitou por mais tempo");
+  for (let i = 0; i < 300; i++) {
+    const v = typingSecondsForMessage("x".repeat(randInt(0, 500)));
+    assert.ok(v >= 3 && v <= 14 && Number.isInteger(v), `fora do range: ${v}`);
+  }
+});
+
+test("reminderIntervalMinutes faz backoff (cresce com count) e nunca < 30min", () => {
+  for (let i = 0; i < 300; i++) {
+    assert.ok(reminderIntervalMinutes(0) >= 30, "1ª re-cobrança abaixo de 30min");
+    assert.ok(reminderIntervalMinutes(10) >= 30);
+  }
+  // Backoff: faixas mais altas de count dão intervalo maior que as baixas.
+  assert.ok(reminderIntervalMinutes(0) <= 42);
+  assert.ok(reminderIntervalMinutes(3) >= 50);
+  assert.ok(reminderIntervalMinutes(5) >= 80);
+  assert.ok(reminderIntervalMinutes(9) >= 120);
 });

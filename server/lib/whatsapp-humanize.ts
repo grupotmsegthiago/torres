@@ -201,3 +201,46 @@ const FORWARD_HEADERS = [
 export function varyForwardHeader(): string {
   return FORWARD_HEADERS[randInt(0, FORWARD_HEADERS.length - 1)];
 }
+
+// ── Reforços anti-bloqueio: timing irregular, "digitando" proporcional, ordem ─
+
+/**
+ * Embaralha um array (Fisher-Yates) e devolve uma CÓPIA nova. Usado pra mandar
+ * as cobranças em ordem aleatória a cada ciclo — robô manda sempre na mesma
+ * sequência (mesma OS, mesmo agente primeiro); humano não tem ordem fixa.
+ */
+export function shuffle<T>(arr: T[]): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * Segundos de "digitando..." PROPORCIONAIS ao tamanho da mensagem (humano leva
+ * mais tempo digitando texto maior; robô dispara instantâneo ou com tempo fixo).
+ * ~1s a cada 14 caracteres + jitter, limitado a [minS, maxS] (Z-API máx 15).
+ */
+export function typingSecondsForMessage(msg: string, minS = 3, maxS = 14): number {
+  const base = Math.round((msg?.length || 0) / 14) + randInt(0, 2);
+  return Math.min(maxS, Math.max(minS, base));
+}
+
+/**
+ * Intervalo (minutos) até a PRÓXIMA re-cobrança da MESMA OS, com BACKOFF + jitter.
+ * Robô re-cobra de 30 em 30 min, eternamente e cravado no minuto — padrão óbvio
+ * de automação. Aqui o intervalo cresce conforme o agente ignora (humano cansa
+ * de insistir no mesmo ritmo) e nunca é um número redondo fixo. Sempre >= 30min,
+ * então só REDUZ volume em relação ao comportamento antigo.
+ *
+ * @param count quantas cobranças já saíram pra essa OS (reminder_count).
+ */
+export function reminderIntervalMinutes(count: number): number {
+  const c = Math.max(0, count || 0);
+  if (c <= 2) return 30 + randInt(0, 12);   // ~30–42min
+  if (c <= 4) return 50 + randInt(0, 15);   // ~50–65min
+  if (c <= 6) return 80 + randInt(0, 20);   // ~80–100min
+  return 120 + randInt(0, 30);              // ~120–150min (já insistiu muito)
+}

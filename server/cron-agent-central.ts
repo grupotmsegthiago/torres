@@ -25,7 +25,7 @@ import { supabaseAdmin } from "./supabase";
 import { sendText, isZapiConfigured } from "./lib/zapi";
 import { normalizePhone } from "./lib/normalize-contact";
 import { log } from "./lib/logger";
-import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds } from "./lib/whatsapp-humanize";
+import { buildReminderMessage, sleep, humanDelayMs, typingSecondsForMessage, shuffle, reminderIntervalMinutes } from "./lib/whatsapp-humanize";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -33,7 +33,8 @@ const FINISHED_MISSION_STATUS = new Set([
 
 const GAP_MINUTES_RODANDO = 80;   // 1h20
 const GAP_MINUTES_PERNOITE = 130; // 2h10
-const REMINDER_INTERVAL_MINUTES = 30;
+// Re-cobrança da MESMA OS: intervalo com backoff + jitter via
+// reminderIntervalMinutes(reminder_count) (anti-bloqueio). Antes era 30min cravado.
 
 // Palavras-chave (case-insensitive). Match "pernoite" em qualquer posição.
 // "Saí do pernoite" / "Reinício" / "Reiniciar" cancela o estado pernoite.
@@ -191,8 +192,10 @@ export async function runAgentCentralCheck(): Promise<{
   // OSs receberia mensagens quase coladas — o padrão de spam que causou bloqueio.
   let firstSendGlobal = true;
 
-  // 5. Pra cada OS, decide se precisa cobrar
-  for (const os of activeOs) {
+  // 5. Pra cada OS, decide se precisa cobrar.
+  // ANTI-BLOQUEIO: ordem ALEATÓRIA das OSs a cada ciclo — robô percorre sempre na
+  // mesma sequência; humano não tem ordem fixa.
+  for (const os of shuffle(activeOs)) {
     const lastUpd = lastUpdateByOs.get(os.id);
     const baseTimestampStr = lastUpd?.created_at || os.mission_started_at;
     if (!baseTimestampStr) continue; // sem referência temporal, pula
@@ -210,7 +213,10 @@ export async function runAgentCentralCheck(): Promise<{
     if (existing) {
       const lastRem = new Date(existing.last_reminded_at);
       const minutesSinceReminder = minutesBetween(now, lastRem);
-      if (minutesSinceReminder < REMINDER_INTERVAL_MINUTES) continue;
+      // ANTI-BLOQUEIO: intervalo com BACKOFF + jitter (não mais 30min cravado).
+      // Quanto mais o agente ignora, mais espaçada fica a re-cobrança — menos
+      // mensagens repetidas no mesmo número = menos cara de robô.
+      if (minutesSinceReminder < reminderIntervalMinutes(existing.reminder_count)) continue;
     }
 
     // Coletar destinatários
@@ -235,7 +241,8 @@ export async function runAgentCentralCheck(): Promise<{
     const osLabel = os.os_number || `#${os.id}`;
 
     let sentAny = false;
-    for (const p of phones) {
+    // ANTI-BLOQUEIO: ordem aleatória dos destinatários (não sempre o titular 1º).
+    for (const p of shuffle(phones)) {
       try {
         // ANTI-BLOQUEIO: cada agente recebe um texto DIFERENTE (IA + fallback),
         // nunca o mesmo template — mensagens idênticas em rajada disparam ban.
@@ -246,14 +253,15 @@ export async function runAgentCentralCheck(): Promise<{
           lastTime,
           elapsed,
         });
-        // RITMO HUMANO: pausa aleatória entre QUALQUER par de envios do ciclo
-        // (inclusive entre OSs) + "digitando..." antes do disparo.
-        if (!firstSendGlobal) await sleep(humanDelayMs());
+        // RITMO HUMANO: pausa aleatória mais larga entre QUALQUER par de envios do
+        // ciclo (inclusive entre OSs) + "digitando..." PROPORCIONAL ao tamanho da
+        // mensagem (humano leva mais tempo pra escrever texto maior).
+        if (!firstSendGlobal) await sleep(humanDelayMs(6000, 26000));
         firstSendGlobal = false;
         const r = await sendText({
           groupOrPhone: p.phone,
           message: msg,
-          delayTypingSeconds: randomTypingSeconds(),
+          delayTypingSeconds: typingSecondsForMessage(msg),
         });
         if (r.ok) {
           sentAny = true;
