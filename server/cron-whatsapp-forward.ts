@@ -125,6 +125,40 @@ function fmtEta(km: number): string {
   const m = totalMin % 60;
   return m === 0 ? `~${h}h` : `~${h}h${String(m).padStart(2, "0")}`;
 }
+// Data/hora BRT no formato "DD/MM/AAAA HH:MM" (sem vírgula) — usado no card de
+// Fim de Missão conforme layout pedido pelo dono.
+function fmtBrtDtSpace(iso?: string | null): string {
+  const d = fmtBrtDate(iso);
+  const t = fmtBrtTime(iso);
+  if (d && t) return `${d} ${t}`;
+  return d || t || "—";
+}
+// KM com sufixo "KM" maiúsculo (ex.: "14.219 KM"); "—" quando ausente/zero.
+function fmtKmUpper(km?: number | null): string {
+  if (km == null || !isFinite(Number(km)) || Number(km) <= 0) return "—";
+  return `${Number(km).toLocaleString("pt-BR")} KM`;
+}
+// Extrai a CIDADE de um endereço completo ("..., Campinas - SP, Brasil" → "Campinas").
+// Procura o segmento no formato "Cidade - UF"; se não achar, usa o último
+// segmento não vazio (ignorando "Brasil"). Retorna "" se não der pra extrair.
+export function cidadeFromAddr(addr?: string | null): string {
+  if (!addr) return "";
+  const parts = String(addr).split(",").map(s => s.trim()).filter(Boolean);
+  for (const p of parts) {
+    const m = p.match(/^(.+?)\s*-\s*[A-Z]{2}$/);
+    if (m) return m[1].trim();
+  }
+  const noBrasil = parts.filter(p => !/^brasil$/i.test(p));
+  return noBrasil[noBrasil.length - 1] || parts[0] || "";
+}
+// Rota resumida "Origem → Destino" por cidade; cai pro endereço cru se não der
+// pra extrair a cidade; "" se não houver origem nem destino.
+export function rotaCidades(origin?: string | null, destination?: string | null): string {
+  const co = cidadeFromAddr(origin) || (origin ? String(origin).trim() : "");
+  const cd = cidadeFromAddr(destination) || (destination ? String(destination).trim() : "");
+  if (co && cd) return `${co} → ${cd}`;
+  return co || cd || "";
+}
 
 export async function buildRichCaption(u: any, so: any, client: any, stepLabel?: string | null): Promise<string> {
   const upLat = u.latitude ? parseFloat(u.latitude) : NaN;
@@ -241,31 +275,33 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   const upds = ((updsRes as any)?.data || []) as Array<{ mission_step: string; created_at: string }>;
   const photos = ((photosRes as any)?.data || []) as Array<{ step: string; km_value: number | null; created_at: string }>;
 
-  const chegadaOrigemTs = upds.find(x => x.mission_step === "checkin_chegada_km")?.created_at || null;
   const inicioOperTs = so?.mission_started_at || upds.find(x => x.mission_step === "iniciar_missao")?.created_at || null;
   const fimOperTs = so?.completed_date || u.created_at || null;
-  const inicioPrevistoTs = so?.scheduled_date || null;
 
   const kmInicio = photos.find(p => p.step === "km_saida")?.km_value ?? null;
   const kmFinal = [...photos].reverse().find(p => p.step === "km_final")?.km_value ?? null;
 
-  const clienteNome = String(client?.name || "").toUpperCase();
+  const rota = rotaCidades(so?.origin, so?.destination);
+  const upLat = (u as any)?.latitude ? parseFloat((u as any).latitude) : NaN;
+  const upLng = (u as any)?.longitude ? parseFloat((u as any).longitude) : NaN;
+  const hasGeo = isFinite(upLat) && isFinite(upLng);
 
   const L: string[] = [];
-  L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
-  L.push(`🚨 *OS ${u.os_number || ""}* | *STATUS:* FINALIZADA`);
+  L.push(`*TORRES VIGILÂNCIA PATRIMONIAL*`);
+  L.push(`OS ${u.os_number || ""}`.trim());
   L.push("");
-  if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
-  if (so?.escorted_vehicle_plate) L.push(`🚛 *VEÍCULO:* ${so.escorted_vehicle_plate}`);
-  if (so?.escorted_driver_name) L.push(`👤 *MOTORISTA:* ${so.escorted_driver_name}`);
+  if (rota) L.push(`🛡️ *OPERAÇÃO:* ${rota}`);
   L.push("");
-  L.push(`🕑 *INÍCIO PREVISTO:* ${fmtBrtDateTime(inicioPrevistoTs)}`);
-  L.push(`🕑 *CHEGADA NA ORIGEM:* ${fmtBrtDateTime(chegadaOrigemTs)}`);
-  L.push(`🧭 *INÍCIO DE OPERAÇÃO:* ${fmtBrtDateTime(inicioOperTs)}`);
-  L.push(`🧭 *FIM DE OPERAÇÃO:* ${fmtBrtDateTime(fimOperTs)}`);
+  L.push(`🟢 INÍCIO: *${fmtBrtDtSpace(inicioOperTs)}*`);
+  L.push(`KM INÍCIO: *${fmtKmUpper(kmInicio)}*`);
   L.push("");
-  L.push(`🛣️ *KM INÍCIO:* ${fmtKm(kmInicio)}`);
-  L.push(`🏁 *KM FINAL:* ${fmtKm(kmFinal)}`);
+  L.push(`🔴 FIM: *${fmtBrtDtSpace(fimOperTs)}*`);
+  L.push(`KM FIM: *${fmtKmUpper(kmFinal)}*`);
+  if (hasGeo) {
+    L.push("");
+    L.push(`📍 *LOCALIZAÇÃO:*`);
+    L.push(`https://www.google.com/maps?q=${upLat},${upLng}&z=17&hl=pt-BR`);
+  }
 
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
