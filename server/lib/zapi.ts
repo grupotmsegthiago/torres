@@ -299,17 +299,44 @@ export async function listGroups(): Promise<{ ok: boolean; groups: ZapiGroup[]; 
   const PAGE_SIZE = 50;
   const MAX_PAGES = 10;
 
+  // Busca uma página de /chats com retry. A Z-API às vezes dá timeout ou 5xx
+  // transitório (sobrecarga); sem retry um único soluço derrubava a lista
+  // inteira e jogava o usuário pro "colar ID manualmente". Tenta até 3x com
+  // backoff curto. Erros 4xx (auth/instância errada) NÃO são retentados.
+  async function fetchChatsPage(page: number): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+    let lastErr = "";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const resp = await fetch(`${BASE}/chats?page=${page}&pageSize=${PAGE_SIZE}`, {
+          method: "GET",
+          headers: { "Client-Token": CLIENT_TOKEN },
+          signal: AbortSignal.timeout(15000),
+        });
+        const text = await resp.text();
+        if (resp.ok) return { ok: true, text };
+        // 4xx (exceto 429) = erro permanente, não adianta retentar
+        if (resp.status < 500 && resp.status !== 429) {
+          return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`) };
+        }
+        lastErr = sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+      } catch (e: any) {
+        lastErr = sanitize(e?.message || String(e));
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 800 * attempt));
+    }
+    return { ok: false, error: lastErr };
+  }
+
   try {
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const resp = await fetch(`${BASE}/chats?page=${page}&pageSize=${PAGE_SIZE}`, {
-        method: "GET",
-        headers: { "Client-Token": CLIENT_TOKEN },
-        signal: AbortSignal.timeout(15000),
-      });
-      const text = await resp.text();
-      if (!resp.ok) {
-        return { ok: false, groups, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`) };
+      const pageResult = await fetchChatsPage(page);
+      if (!pageResult.ok) {
+        // Se já juntamos grupos das páginas anteriores, devolve o que temos
+        // (lista parcial é melhor que cair pro modo manual).
+        if (groups.length > 0) break;
+        return { ok: false, groups, error: pageResult.error };
       }
+      const text = pageResult.text;
       let parsed: any;
       try { parsed = JSON.parse(text); } catch { parsed = null; }
       const arr: any[] = Array.isArray(parsed) ? parsed : (parsed?.chats || parsed?.data || []);
