@@ -117,6 +117,99 @@ export async function getBotLid(): Promise<string | null> {
   }
 }
 
+/**
+ * Número OFICIAL da Central (só dígitos). A Central NÃO pode operar de nenhum
+ * outro número — ordem do dono. Se a instância Z-API estiver pareada a um chip
+ * diferente (instância trocada/recriada, QR escaneado do celular errado), TODO
+ * envio é BLOQUEADO em vez de sair do número errado. Override por env
+ * `ZAPI_EXPECTED_PHONE` (só dígitos, com ou sem DDI).
+ */
+const EXPECTED_PHONE_DIGITS = (process.env.ZAPI_EXPECTED_PHONE || "5511926839456").replace(/\D/g, "");
+
+/**
+ * Telefone REALMENTE conectado na instância Z-API (GET /device, campo `phone`).
+ * Cache CURTO (30s) pra bater no /device com frequência sem floodar — assim uma
+ * troca de chip é detectada em <=30s. `_lastConfirmedPhone` guarda o último
+ * número confirmado de verdade pelo /device (sobrevive a erros transitórios).
+ */
+let _connPhoneCache: { digits: string; at: number } | null = null;
+let _lastConfirmedPhone: string | null = null;
+const CONN_PHONE_TTL_MS = 30 * 1000;
+
+export async function getConnectedPhone(): Promise<string | null> {
+  if (!isZapiConfigured()) return null;
+  if (_connPhoneCache && Date.now() - _connPhoneCache.at < CONN_PHONE_TTL_MS) {
+    return _connPhoneCache.digits;
+  }
+  try {
+    const resp = await fetch(`${BASE}/device`, { headers: { "Client-Token": CLIENT_TOKEN } });
+    if (!resp.ok) {
+      console.warn(`[zapi] getConnectedPhone: GET /device retornou ${resp.status}`);
+      return null; // não confirmado nesta tentativa
+    }
+    const data: any = await resp.json().catch(() => ({}));
+    const raw = data?.phone ?? data?.connectedPhone ?? data?.me?.phone ?? "";
+    const digits = String(raw).replace(/\D/g, "");
+    if (digits) {
+      _connPhoneCache = { digits, at: Date.now() };
+      _lastConfirmedPhone = digits;
+      return digits;
+    }
+    return null; // payload sem telefone
+  } catch {
+    return null; // erro de rede → não confirmado
+  }
+}
+
+/** Casa dois telefones pelos 11 dígitos finais (DDD + número), tolerando DDI. */
+function samePhone(a: string, b: string): boolean {
+  return a.slice(-11) === b.slice(-11);
+}
+
+/**
+ * `true` se o número informado é o número OFICIAL da Central (casa pelos 11
+ * dígitos finais). Sem número oficial configurado → sempre `true`. Pura (sem
+ * I/O) pra ser testável.
+ */
+export function isOfficialBotNumber(connectedDigits: string): boolean {
+  if (!EXPECTED_PHONE_DIGITS) return true;
+  return samePhone(String(connectedDigits || "").replace(/\D/g, ""), EXPECTED_PHONE_DIGITS);
+}
+
+/**
+ * Decisão PURA (testável) de liberar ou não o envio, dado o número conectado
+ * agora (`connected`, ou null se não deu pra confirmar) e o último número já
+ * confirmado pelo /device (`lastConfirmed`). FAIL-CLOSED: ordem do dono é "só o
+ * número oficial, nunca outro" — então só libera quando há um número CONHECIDO
+ * (atual ou último confirmado) e ele BATE com o oficial. Nunca confirmado +
+ * sem leitura atual → BLOQUEIA (não arrisca enviar de um número errado).
+ */
+export function decideNumberAllow(connected: string | null, lastConfirmed: string | null): boolean {
+  if (!EXPECTED_PHONE_DIGITS) return true; // feature desligada (sem número oficial)
+  const known = connected ?? lastConfirmed;
+  if (!known) return false; // nunca confirmado → fail-closed
+  return isOfficialBotNumber(known);
+}
+
+/**
+ * Garante que o número conectado na Z-API é o número OFICIAL da Central.
+ * FAIL-CLOSED: bloqueia quando o número conectado é diferente do oficial E
+ * também quando não dá pra confirmar nenhum número (sem leitura atual e sem
+ * último confirmado). Um erro transitório do /device, com um número oficial já
+ * confirmado antes, NÃO bloqueia (usa `_lastConfirmedPhone`).
+ */
+export async function assertExpectedNumber(): Promise<{ ok: boolean; connected?: string }> {
+  const connected = await getConnectedPhone();
+  const ok = decideNumberAllow(connected, _lastConfirmedPhone);
+  return { ok, connected: connected ?? _lastConfirmedPhone ?? undefined };
+}
+
+/** Reseta o cache de número (uso em testes). */
+export function __resetZapiNumberCacheForTests(): void {
+  _connPhoneCache = null;
+  _lastConfirmedPhone = null;
+}
+
 /** Normaliza um group ID — aceita "X-Y", "X-Y@g.us" ou número solto. */
 function normalizePhoneOrGroup(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -148,6 +241,12 @@ export async function sendImageWithCaption(params: {
   }
   const phone = normalizePhoneOrGroup(params.groupOrPhone);
   if (!phone) return { ok: false, error: "groupOrPhone vazio" };
+
+  const numCheck = await assertExpectedNumber();
+  if (!numCheck.ok) {
+    console.error("[zapi] ENVIO BLOQUEADO (send-image): instância conectada num número diferente do oficial da Central. Reconecte o número correto.");
+    return { ok: false, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
+  }
 
   const body: Record<string, any> = {
     phone,
@@ -350,6 +449,12 @@ export async function sendText(params: {
   }
   const phone = normalizePhoneOrGroup(params.groupOrPhone);
   if (!phone) return { ok: false, error: "groupOrPhone vazio" };
+
+  const numCheck = await assertExpectedNumber();
+  if (!numCheck.ok) {
+    console.error("[zapi] ENVIO BLOQUEADO (send-text): instância conectada num número diferente do oficial da Central. Reconecte o número correto.");
+    return { ok: false, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
+  }
 
   const body: Record<string, any> = { phone, message: params.message };
   // Z-API aceita delayTyping (mostra "digitando...") e delayMessage (atraso antes
