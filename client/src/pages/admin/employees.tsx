@@ -3711,10 +3711,13 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     const ano = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 4);
     const nome = esc(employee.name);
     const cpf = esc(employee.cpf);
+    const logoUrl = `${window.location.origin}/logo-torres-dark.jpeg`;
     const termoHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Termo de Monitoramento - ${nome || "Colaborador"}</title><style>
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{font-family:'Times New Roman',serif;margin:0;padding:24px;color:#000;background:#fff}
-      .folha{max-width:780px;margin:0 auto;border:1.5px solid #000;padding:40px 44px;box-sizing:border-box}
+      .folha{max-width:780px;margin:0 auto;border:2px solid #000;padding:40px 44px;box-sizing:border-box}
       .header{text-align:center;border-bottom:1px solid #999;padding-bottom:18px;margin-bottom:26px}
+      .header img.logo{width:120px;height:auto;margin:0 auto 12px;display:block}
       .header h3{margin:0 0 4px;font-size:15px;text-transform:uppercase}
       .header .cnpj{font-size:11px;color:#333;margin:2px 0}
       h1{text-align:center;font-size:15px;text-transform:uppercase;line-height:1.4;margin:18px 0 24px}
@@ -3733,9 +3736,10 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
       .sigs{display:flex;justify-content:space-between;gap:30px;margin-top:60px}
       .sig{width:46%;text-align:center}
       .sig .line{border-top:1px solid #000;padding-top:6px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
-      @media print{body{padding:0}.folha{border:1.5px solid #000}}
+      @media print{body{padding:0}.folha{border:2px solid #000}}
     </style></head><body><div class="folha">
       <div class="header">
+        <img class="logo" src="${logoUrl}" alt="Torres Vigilância Patrimonial" onerror="this.style.display='none'" />
         <h3>Torres Vigilância Patrimonial Ltda</h3>
         <p class="cnpj">CNPJ: 36.982.392/0001-89</p>
         <p class="cnpj">Avenida Raimundo Pereira de Magalhães, 5720 – Pirituba, São Paulo/SP</p>
@@ -4050,8 +4054,9 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 </Button>
               </div>
 
-              <div className="border border-neutral-300 rounded-md bg-neutral-50 p-5 text-xs leading-relaxed text-neutral-700 space-y-3" data-testid="preview-termo-monitoramento">
+              <div className="border-2 border-black rounded-none bg-white p-5 text-xs leading-relaxed text-neutral-700 space-y-3" data-testid="preview-termo-monitoramento">
                 <div className="text-center border-b border-neutral-300 pb-3">
+                  <img src="/logo-torres-dark.jpeg" alt="Torres Vigilância Patrimonial" className="w-24 h-auto mx-auto mb-2 object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                   <p className="font-bold uppercase text-neutral-900">Torres Vigilância Patrimonial Ltda</p>
                   <p className="text-[11px] text-neutral-500">CNPJ: 36.982.392/0001-89 — Av. Raimundo Pereira de Magalhães, 5720, Pirituba, São Paulo/SP</p>
                 </div>
