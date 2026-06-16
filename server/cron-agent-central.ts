@@ -14,7 +14,9 @@
  * - Gap máximo sem update antes de cobrar:
  *    * RODANDO  → 1h20min (80 min)
  *    * PERNOITE → 2h10min (130 min)
- * - Re-cobrança: a cada 30 min se o vigilante não responder.
+ * - Re-cobrança: intervalo com BACKOFF + jitter via reminderIntervalMinutes()
+ *   (cresce conforme o agente ignora; nunca < 30 min) — anti-bloqueio. Antes era
+ *   30 min cravado, o que parecia robô pro WhatsApp.
  * - Destinatários: assignedEmployee + assignedEmployee2 (WhatsApp direto,
  *   NÃO no grupo do cliente). Usa employees.phone normalizado e prefixa "55".
  * - Reset: quando agente posta nova mission_update, a linha em
