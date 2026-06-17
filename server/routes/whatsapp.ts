@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { sendText, sendImageWithCaption, listAllChats, isZapiConfigured, getConnectionStatus } from "../lib/zapi";
+import { getMonitorState } from "../whatsapp-monitor";
 
 /**
  * Rotas do WhatsApp embarcado.
@@ -203,7 +204,9 @@ export function registerWhatsappRoutes(app: Express) {
   app.get("/api/whatsapp/status", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store");
     const status = await getConnectionStatus();
-    res.json(status);
+    // Estado do monitor (desde quando está caído, p/ o painel mostrar).
+    const monitor = getMonitorState();
+    res.json({ ...status, isDown: monitor.isDown, downSince: monitor.downSince });
   });
 
   // ─────────────────────────────────────────────────────────────

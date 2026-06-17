@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { initCronJobs } from "./cron";
 import { initWhatsappForwardCron } from "./cron-whatsapp-forward";
+import { initWhatsappMonitor } from "./whatsapp-monitor";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
@@ -246,6 +247,7 @@ app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now
   const port = parseInt(process.env.PORT || "5000", 10);
   initCronJobs();
   initWhatsappForwardCron();
+  initWhatsappMonitor();
 
   httpServer.listen(
     {
