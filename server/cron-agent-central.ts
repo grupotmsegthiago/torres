@@ -123,6 +123,13 @@ export async function runAgentCentralCheck(): Promise<{
 }> {
   const result = { scanned: 0, reminded: 0, skipped_nophone: 0, skipped_zapi_off: 0 };
 
+  // DESLIGADO (decisão do dono 17/jun/2026): a cobrança PROATIVA por tempo (varrer
+  // OSs ativas e cobrar agentes sem ninguém ter pedido) gerava barulho/risco de
+  // ban no WhatsApp. Agora a Central só cobra quando o cliente pede no grupo
+  // (handleGroupUpdateRequest + escalonamento). Early-return mantém o cron inócuo
+  // e reversível — basta remover este bloco para reativar a varredura abaixo.
+  return result;
+
   if (!isZapiConfigured()) {
     return { ...result, skipped_zapi_off: 1 };
   }

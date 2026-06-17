@@ -1018,28 +1018,28 @@ export function initCronJobs() {
     }
   });
 
-  // Agente Central — FLUSH do ack deferido: a cada 1min decide os pedidos cuja
-  // janela de espera (5min) venceu. Se ninguém da equipe atendeu no grupo e a
-  // atualização não chegou, manda o "recebi seu pedido" agora; senão suprime.
-  // Query barata (índice idx_acgr_ack_pending), normalmente 0 linhas.
+  // Agente Central — FLUSH de escalonamento: a cada 1min decide os pedidos cuja
+  // janela do 1º agente (ESCALATE_AFTER_MIN) venceu. Se o 1º não respondeu e a
+  // equipe não assumiu, cobra o 2º agente por DM (decisão do dono 17/jun/2026: a
+  // Central nunca fala no grupo aqui). Query barata (idx_acgr_ack_pending).
   let agentCentralAckRunning = false;
   cron.schedule("* * * * *", async () => {
     if (agentCentralAckRunning) return;
     agentCentralAckRunning = true;
     try {
-      const { flushDeferredGroupAcks } = await import("./lib/agent-central-mention");
-      const r = await flushDeferredGroupAcks();
-      if (r.sent > 0 || r.suppressed > 0 || r.covered > 0) {
-        log(`CRON AgenteCentral-Ack: ${r.sent} ack(s) enviado(s), ${r.suppressed} suprimido(s) (já entregue), ${r.covered} coberto(s) por ack do grupo`, "cron");
+      const { flushAgentEscalations } = await import("./lib/agent-central-mention");
+      const r = await flushAgentEscalations();
+      if (r.escalated > 0 || r.fulfilled > 0 || r.no_second > 0) {
+        log(`CRON AgenteCentral-Escalonamento: ${r.escalated} 2º agente(s) cobrado(s), ${r.fulfilled} resolvido(s) (1º respondeu), ${r.no_second} sem 2º agente`, "cron");
       }
     } catch (e: any) {
-      log(`CRON AgenteCentral-Ack: Erro: ${e.message}`, "cron");
+      log(`CRON AgenteCentral-Escalonamento: Erro: ${e.message}`, "cron");
     } finally {
       agentCentralAckRunning = false;
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | AgenteCentral (a cada 5min — cobra updates via WhatsApp) | AgenteCentral-Ack (a cada 1min — flush do ack deferido) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | DocCompliance (diário 07:00 BRT) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | ControlID (00:00 e 12:00 BRT) | AgenteCentral (proativo DESATIVADO — só cobra quando pedem no grupo) | AgenteCentral-Escalonamento (a cada 1min — cobra 2º agente se 1º não responder) | CobrançaVencidos (DESATIVADO — só envio manual)", "cron");
 }
 
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];

@@ -293,37 +293,37 @@ async function resolveOs(params: {
 }
 
 /** Cobra os agentes da OS por DM. Retorna nº de agentes notificados. */
+// Cobra SÓ o 1º agente (decisão do dono 17/jun/2026): manda 1 DM ao agente
+// primário (assigned_employee_id; se não houver, usa o 2º como único). O 2º só é
+// cobrado depois, por escalateToSecondAgent, se o 1º não responder na janela.
 async function cobrarAgentes(os: ActiveOs): Promise<number> {
-  const empIds = [os.assigned_employee_id, os.assigned_employee_2_id].filter(Boolean) as number[];
-  if (empIds.length === 0) return 0;
+  const primaryId = os.assigned_employee_id ?? os.assigned_employee_2_id;
+  if (!primaryId) return 0;
   const { data: emps } = await supabaseAdmin
     .from("employees")
     .select("id, name, phone")
-    .in("id", empIds);
+    .eq("id", primaryId)
+    .limit(1);
+  const emp = (emps || [])[0] as any;
+  if (!emp) return 0;
+  const intl = toIntlPhone(emp.phone);
+  if (!intl) return 0;
   const osLabel = os.os_number || `#${os.id}`;
 
   let sent = 0;
-  let firstSend = true;
-  for (const e of (emps || []) as any[]) {
-    const intl = toIntlPhone(e.phone);
-    if (!intl) continue;
-    try {
-      // ANTI-BLOQUEIO: texto DIFERENTE por agente (IA + fallback) + ritmo humano
-      // (pausa aleatória entre envios e "digitando..."). Nunca o mesmo template.
-      const msg = await buildReminderMessage({ osLabel, trigger: "client" });
-      if (!firstSend) await sleep(humanDelayMs());
-      firstSend = false;
-      const r = await sendText({
-        groupOrPhone: intl,
-        message: msg,
-        delayTypingSeconds: randomTypingSeconds(),
-      });
-      if (r.ok) sent++;
-    } catch { /* ignora individual */ }
-  }
+  try {
+    // ANTI-BLOQUEIO: texto variado (IA + fallback) + "digitando...". Nunca template fixo.
+    const msg = await buildReminderMessage({ osLabel, trigger: "client" });
+    const r = await sendText({
+      groupOrPhone: intl,
+      message: msg,
+      delayTypingSeconds: randomTypingSeconds(),
+    });
+    if (r.ok) sent++;
+  } catch { /* ignora */ }
 
   if (sent > 0) {
-    // Marca no agent_central_reminders pra o cron não cobrar de novo já já.
+    // Marca no agent_central_reminders (mantido p/ reversibilidade do cron proativo).
     await supabaseAdmin
       .from("agent_central_reminders")
       .upsert(
@@ -335,36 +335,42 @@ async function cobrarAgentes(os: ActiveOs): Promise<number> {
   return sent;
 }
 
-/** Gera a confirmação variada pro grupo. Fail-open pra frase padrão. */
-async function buildAck(requesterName: string, osNumber: string | null): Promise<string> {
-  const nome = firstName(requesterName);
-  const saud = nome ? `${nome}, ` : "";
-  const fallback = `${saud ? saud.charAt(0).toUpperCase() + saud.slice(1) : ""}entendido! Já estou solicitando a atualização aos agentes. Assim que eles reportarem, retorno aqui.`;
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  if (!apiKey) return fallback;
+// ESCALONAMENTO (decisão do dono 17/jun/2026): cobra o 2º agente por DM, e SÓ se
+// existirem dois agentes distintos (primário já foi cobrado por cobrarAgentes).
+// Usado pelo flush quando o 1º não respondeu na janela. Retorna true se enviou.
+async function escalateToSecondAgent(serviceOrderId: number): Promise<boolean> {
   try {
-    const openai = new OpenAI({ apiKey, baseURL });
-    const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      reasoning_effort: "minimal",
-      max_completion_tokens: 120,
-      messages: [
-        {
-          role: "system",
-          content: `Você é a "Central Torres", atendente HUMANA de uma empresa de escolta/segurança, respondendo num grupo de WhatsApp do cliente. Gere UMA resposta curta (1 a 2 frases), cordial e profissional, confirmando que recebeu o pedido e que VAI solicitar a atualização aos agentes agora, e que retorna assim que tiver. VARIE SEMPRE não só as palavras mas a ESTRUTURA da frase: nem toda resposta precisa começar com saudação ou com o nome; alterne entre confirmar primeiro, agradecer, ir direto ao ponto, etc. NUNCA repita o mesmo molde "Olá X, recebi seu pedido... retorno assim que tiver novidades" — isso parece robô e causa bloqueio do WhatsApp. Português brasileiro, natural. No máximo 1 emoji (pode não usar). Não invente horários nem dados. Responda só com a mensagem, sem aspas.`,
-        },
-        {
-          role: "user",
-          content: `Nome de quem pediu: ${nome || "(desconhecido)"}. ${osNumber ? `OS: ${osNumber}.` : ""}`,
-        },
-      ],
+    const { data: osRows } = await supabaseAdmin
+      .from("service_orders")
+      .select("id, os_number, assigned_employee_id, assigned_employee_2_id")
+      .eq("id", serviceOrderId)
+      .limit(1);
+    const os = (osRows || [])[0] as any;
+    if (!os) return false;
+    const primaryId = os.assigned_employee_id;
+    const secondId = os.assigned_employee_2_id;
+    // Só escalona se há um 2º agente DISTINTO do primário cobrado.
+    if (!primaryId || !secondId || primaryId === secondId) return false;
+    const { data: emps } = await supabaseAdmin
+      .from("employees")
+      .select("id, name, phone")
+      .eq("id", secondId)
+      .limit(1);
+    const emp = (emps || [])[0] as any;
+    if (!emp) return false;
+    const intl = toIntlPhone(emp.phone);
+    if (!intl) return false;
+    const osLabel = os.os_number || `#${os.id}`;
+    const msg = await buildReminderMessage({ osLabel, trigger: "client" });
+    const r = await sendText({
+      groupOrPhone: intl,
+      message: msg,
+      delayTypingSeconds: randomTypingSeconds(),
     });
-    const out = response.choices?.[0]?.message?.content?.trim();
-    return out || fallback;
+    return !!r.ok;
   } catch (e: any) {
-    console.warn("[agent-central-mention] buildAck falhou:", e?.message);
-    return fallback;
+    console.warn("[agent-central-mention] escalateToSecondAgent falhou:", e?.message);
+    return false;
   }
 }
 
@@ -745,53 +751,24 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
 const naturalReplyThrottle = new Map<string, number>();
 const NATURAL_REPLY_THROTTLE_MS = 15_000;
 
-// Cooldown da CONFIRMAÇÃO de pedido de atualização POR GRUPO (não por OS). O
-// dedupe principal é por OS, mas quando o cliente manda dois pedidos seguidos de
-// OSs DIFERENTES (ex.: "Atualização tor-0259" e "Atualização Edvandro e Vitor"),
-// cada um resolvia uma OS distinta e ambos recebiam um "recebi seu pedido" quase
-// idêntico em sequência — cara de robô, risco de bloqueio. Aqui o ack visível no
-// grupo sai no MÁXIMO uma vez por janela; os agentes continuam sendo cobrados por
-// DM e os pedidos continuam registrados (a resposta real volta via fulfill).
-const ackThrottle = new Map<string, number>();
-const ACK_THROTTLE_MS = 90_000;
-
-/**
- * Decide se deve mandar o ack visível no grupo agora. Reivindica a janela de
- * forma atômica (set ANTES de qualquer await no chamador) pra fechar a corrida
- * de webhooks concorrentes do mesmo grupo. Retorna false se um ack já saiu nos
- * últimos ACK_THROTTLE_MS — nesse caso o pedido ainda é processado (cobra
- * agentes, registra), só não duplica a mensagem no grupo. Exposto p/ teste.
- */
-export function claimAckSlot(chatId: string, now: number = Date.now()): boolean {
-  const last = ackThrottle.get(chatId) || 0;
-  if (now - last < ACK_THROTTLE_MS) return false;
-  ackThrottle.set(chatId, now);
-  return true;
-}
-
-/** Libera o slot reivindicado (usar se o envio do ack falhar — senão o grupo
- * ficaria até ACK_THROTTLE_MS sem nenhuma confirmação por uma falha de envio). */
-export function releaseAckSlot(chatId: string): void {
-  ackThrottle.delete(chatId);
-}
-
 // ===========================================================================
-// ACK DEFERIDO — "esperar a equipe antes de responder no grupo" (jun/2026)
+// ESCALONAMENTO SILENCIOSO — "cobra o 1º agente; só o 2º se o 1º não responder"
+// (decisão do dono 17/jun/2026)
 // ---------------------------------------------------------------------------
-// Combinado com o dono: quando um cliente pede atualização no grupo, a Central
-// NÃO responde na hora. Ela cobra os agentes por DM imediatamente (garante que
-// a atualização do campo venha), registra o pedido com ack_decide_at = agora +
-// ACK_WINDOW_MIN e fica QUIETA no grupo. Durante a janela:
-//  - se um membro da EQUIPE (telefone em employees) falar no grupo → o ack é
-//    suprimido (resolution 'team_handled'): a equipe está atendendo;
-//  - se a atualização chegar (fulfillGroupRequests marca fulfilled_at) → o ack
-//    é suprimido (resolution 'fulfilled'): a resposta real já saiu;
-//  - se a janela vencer sem equipe e sem atualização → o flush manda o ack
-//    ('sent'): ninguém atendeu, a Central entra.
-// O flush roda a cada 1min (cron) pra dar resposta rápida sem rajada.
+// Quando um cliente pede atualização no grupo, a Central NÃO fala no grupo. Ela
+// cobra o 1º agente por DM na hora e registra o pedido com ack_decide_at = agora
+// + ESCALATE_AFTER_MIN. Durante a janela:
+//  - se a equipe falar no grupo → resolve 'team_handled' (não escalona);
+//  - se a atualização chegar (fulfillGroupRequests marca fulfilled_at) → resolve
+//    'fulfilled' (o 1º respondeu, não escalona);
+//  - se a janela vencer sem resposta → o flush cobra o 2º agente por DM
+//    ('escalated'); sem 2º agente distinto, resolve 'no_second'.
+// A atualização REAL só chega ao grupo via fulfillGroupRequests (quando o agente
+// reporta) ou via resposta ao vivo se marcarem a Central. Nada de aviso "recebi".
+// O flush roda a cada 1min (cron).
 // ===========================================================================
 
-export const ACK_WINDOW_MIN = 5;
+export const ESCALATE_AFTER_MIN = 8;
 
 /** Sufixo de 8 dígitos do telefone normalizado (""=inválido). Puro. */
 export function phoneSuffix8(phone: string | null): string {
@@ -806,25 +783,21 @@ export function isTeamSuffixMatch(suffixes: Set<string>, phone: string | null): 
 }
 
 /**
- * Decisão PURA do flush: dada a lista de acks pendentes vencidos, separa o que
- * mandar (1 ack por grupo), o que suprimir por já ter sido entregue (fulfilled)
- * e o que já fica coberto pelo ack do mesmo grupo neste ciclo. Testável.
+ * Decisão PURA do flush de escalonamento: separa o que já foi entregue (1º
+ * respondeu, não escalona) do que precisa escalonar (cobra o 2º agente). NÃO
+ * deduplica por grupo — pedidos de OSs diferentes no mesmo grupo escalonam cada
+ * um pro seu 2º agente. Testável.
  */
-export function planAckFlush<T extends { id: number; group_id: string; fulfilled_at: string | null }>(
+export function planEscalations<T extends { fulfilled_at: string | null }>(
   rows: T[],
-): { toAck: T[]; toSuppressFulfilled: T[]; coveredByGroupAck: T[] } {
-  const toAck: T[] = [];
+): { toEscalate: T[]; toSuppressFulfilled: T[] } {
+  const toEscalate: T[] = [];
   const toSuppressFulfilled: T[] = [];
-  const coveredByGroupAck: T[] = [];
-  const seenGroups = new Set<string>();
   for (const r of rows) {
     if (r.fulfilled_at) { toSuppressFulfilled.push(r); continue; }
-    const g = String(r.group_id);
-    if (seenGroups.has(g)) { coveredByGroupAck.push(r); continue; }
-    seenGroups.add(g);
-    toAck.push(r);
+    toEscalate.push(r);
   }
-  return { toAck, toSuppressFulfilled, coveredByGroupAck };
+  return { toEscalate, toSuppressFulfilled };
 }
 
 // Cache em memória dos sufixos de telefone da equipe (employees). Evita uma
@@ -888,8 +861,11 @@ export async function suppressPendingAcksForGroup(
   }
 }
 
-/** Marca um ack como resolvido com a resolução dada. Fail-open. */
-async function resolveAck(id: number, resolution: "sent" | "team_handled" | "fulfilled"): Promise<void> {
+/** Marca um pedido como resolvido com a resolução dada. Fail-open. */
+async function resolveAck(
+  id: number,
+  resolution: "team_handled" | "fulfilled" | "escalated" | "no_second",
+): Promise<void> {
   await supabaseAdmin
     .from("agent_central_group_requests")
     .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: resolution })
@@ -897,126 +873,85 @@ async function resolveAck(id: number, resolution: "sent" | "team_handled" | "ful
     .then(() => {}, (e: any) => console.warn("[agent-central-mention] resolveAck falhou:", e?.message));
 }
 
-/**
- * Reverte um claim de ack (volta a linha p/ pendente) quando o envio do ack
- * falhou — assim o próximo flush tenta de novo. Fail-open.
- */
-async function revertAckClaim(id: number): Promise<void> {
-  await supabaseAdmin
-    .from("agent_central_group_requests")
-    .update({ ack_resolved_at: null, ack_resolution: null })
-    .eq("id", id)
-    .then(() => {}, (e: any) => console.warn("[agent-central-mention] revertAckClaim falhou:", e?.message));
-}
-
-interface PendingAckRow {
+interface PendingEscalationRow {
   id: number;
-  group_id: string;
   service_order_id: number;
-  requester_name: string | null;
   fulfilled_at: string | null;
 }
 
 /**
- * Flush dos acks deferidos vencidos. Chamado pelo cron a cada 1min. Para cada
- * pedido cujo ack_decide_at já passou e que segue sem resolução:
- *  - já entregue (fulfilled_at) → resolve 'fulfilled' (sem ack);
- *  - senão → manda o ack no grupo (1 por grupo/ciclo) e resolve 'sent'.
- * Fail-open: nunca lança. Retorna contadores pro log.
+ * Escalonamento dos pedidos cuja janela do 1º agente venceu. Chamado pelo cron a
+ * cada 1min. Decisão do dono (17/jun/2026): a Central NUNCA fala no grupo aqui.
+ * Para cada pedido com ack_decide_at vencido e ainda sem resolução:
+ *  - já entregue (fulfilled_at) → resolve 'fulfilled' (1º respondeu, nada a fazer);
+ *  - senão → cobra o 2º agente por DM ('escalated'); sem 2º distinto, 'no_second'.
+ * O grupo só recebe a atualização REAL via fulfillGroupRequests. Fail-open.
  */
-export async function flushDeferredGroupAcks(): Promise<{ sent: number; suppressed: number; covered: number }> {
-  const res = { sent: 0, suppressed: 0, covered: 0 };
+export async function flushAgentEscalations(): Promise<{ escalated: number; fulfilled: number; no_second: number }> {
+  const res = { escalated: 0, fulfilled: 0, no_second: 0 };
   try {
     if (!isZapiConfigured()) return res;
     const nowIso = new Date().toISOString();
     const { data: due, error } = await supabaseAdmin
       .from("agent_central_group_requests")
-      .select("id, group_id, service_order_id, requester_name, fulfilled_at")
+      .select("id, service_order_id, fulfilled_at")
       .not("ack_decide_at", "is", null)
       .is("ack_resolved_at", null)
       .lte("ack_decide_at", nowIso)
       .order("ack_decide_at", { ascending: true });
     if (error) {
-      console.warn("[agent-central-mention] flushDeferredGroupAcks query falhou:", error.message);
+      console.warn("[agent-central-mention] flushAgentEscalations query falhou:", error.message);
       return res;
     }
-    const rows = (due || []) as PendingAckRow[];
+    const rows = (due || []) as PendingEscalationRow[];
     if (rows.length === 0) return res;
 
-    const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush(rows);
-
-    // 1) Suprime os já entregues (a atualização real já foi ao grupo).
-    for (const r of toSuppressFulfilled) {
-      await resolveAck(r.id, "fulfilled");
-      res.suppressed++;
-    }
-    // 2) Coberto pelo ack do mesmo grupo neste ciclo (não duplica mensagem).
-    for (const r of coveredByGroupAck) {
-      await resolveAck(r.id, "sent");
-      res.covered++;
-    }
-    // 3) Manda o ack (ninguém da equipe atendeu na janela). Busca os nº de OS.
-    if (toAck.length > 0) {
-      const osIds = Array.from(new Set(toAck.map((r) => r.service_order_id)));
-      const osNumById = new Map<number, string | null>();
+    let firstSend = true;
+    for (const r of rows) {
+      // 1º agente já respondeu (atualização entregue) → não escalona.
+      if (r.fulfilled_at) {
+        await resolveAck(r.id, "fulfilled");
+        res.fulfilled++;
+        continue;
+      }
+      // CLAIM ATÔMICO: marca resolvido ('escalated') ANTES de cobrar o 2º, e só
+      // se a linha AINDA está pendente E não foi entregue. Fecha a corrida com
+      // fulfillGroupRequests/suppressPendingAcksForGroup (1º respondeu / equipe
+      // assumiu entre o select e agora) — se qualquer um resolveu, o claim devolve
+      // 0 linhas e NÃO escalonamos.
+      let claimedOk = false;
       try {
-        const { data: osRows } = await supabaseAdmin
-          .from("service_orders")
-          .select("id, os_number")
-          .in("id", osIds);
-        for (const o of (osRows || []) as any[]) osNumById.set(o.id, o.os_number);
-      } catch { /* segue sem nº de OS */ }
+        const { data: claimed } = await supabaseAdmin
+          .from("agent_central_group_requests")
+          .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: "escalated" })
+          .eq("id", r.id)
+          .is("ack_resolved_at", null)
+          .is("fulfilled_at", null)
+          .select("id");
+        claimedOk = !!claimed && claimed.length > 0;
+      } catch (e: any) {
+        console.warn("[agent-central-mention] flush claim falhou:", e?.message);
+      }
+      if (!claimedOk) continue; // resolvido/entregue por evento concorrente.
 
-      let firstSend = true;
-      for (const r of toAck) {
-        const gid = String(r.group_id);
-        // Throttle por grupo (mesma trava do fluxo síncrono): no máx 1 ack/janela.
-        if (!claimAckSlot(gid)) { await resolveAck(r.id, "sent"); res.covered++; continue; }
-        // CLAIM ATÔMICO: marca a linha resolvida ANTES de enviar, mas só se ela
-        // AINDA está pendente E não foi entregue. Fecha a corrida com
-        // fulfillGroupRequests/suppressPendingAcksForGroup que podem ter rodado
-        // entre o select e este envio — se qualquer um resolveu/entregou, o
-        // claim devolve 0 linhas e NÃO mandamos ack no grupo (equipe atendendo).
-        let claimedOk = false;
-        try {
-          const { data: claimed } = await supabaseAdmin
-            .from("agent_central_group_requests")
-            .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: "sent" })
-            .eq("id", r.id)
-            .is("ack_resolved_at", null)
-            .is("fulfilled_at", null)
-            .select("id");
-          claimedOk = !!claimed && claimed.length > 0;
-        } catch (e: any) {
-          console.warn("[agent-central-mention] flush claim falhou:", e?.message);
-        }
-        if (!claimedOk) {
-          // Já resolvido/entregue por evento concorrente → não envia.
-          releaseAckSlot(gid);
-          res.covered++;
-          continue;
-        }
-        try {
-          const ack = await buildAck(r.requester_name || "", osNumById.get(r.service_order_id) || null);
-          if (!firstSend) await sleep(humanDelayMs());
-          firstSend = false;
-          const sent = await sendText({ groupOrPhone: gid, message: ack, delayTypingSeconds: randomTypingSeconds() });
-          if (sent?.ok) {
-            res.sent++;
-          } else {
-            // Envio falhou: REVERTE o claim p/ tentar de novo no próximo flush.
-            await revertAckClaim(r.id);
-            releaseAckSlot(gid);
-          }
-        } catch (e: any) {
-          await revertAckClaim(r.id);
-          releaseAckSlot(gid);
-          console.warn("[agent-central-mention] flush ack envio falhou:", e?.message);
-        }
+      if (!firstSend) await sleep(humanDelayMs());
+      firstSend = false;
+      const ok = await escalateToSecondAgent(r.service_order_id);
+      if (ok) {
+        res.escalated++;
+      } else {
+        // Sem 2º agente distinto (ou envio falhou) → ajusta a resolução; não
+        // re-tenta (prioridade anti-ban é mandar menos, não insistir).
+        res.no_second++;
+        await supabaseAdmin
+          .from("agent_central_group_requests")
+          .update({ ack_resolution: "no_second" })
+          .eq("id", r.id)
+          .then(() => {}, () => {});
       }
     }
   } catch (e: any) {
-    console.warn("[agent-central-mention] flushDeferredGroupAcks falhou:", e?.message);
+    console.warn("[agent-central-mention] flushAgentEscalations falhou:", e?.message);
   }
   return res;
 }
@@ -1248,23 +1183,14 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     // saiu há pouco → evita tempestade de DM). A resposta natural já tem ritmo
     // humano + throttle + travas (anti-ban / financeiro).
     if (mentioned) {
-      // Já vamos responder AO VIVO → suprime qualquer ack deferido pendente desta
-      // OS neste grupo pra o flush (cron) não mandar um ack duplicado depois.
-      // Mantém fulfilled_at intacto: fulfillGroupRequests ainda encaminha a
-      // atualização real quando o agente mexer no campo da OS.
-      await supabaseAdmin
-        .from("agent_central_group_requests")
-        .update({ ack_resolved_at: new Date().toISOString(), ack_resolution: "answered_on_mention" })
-        .eq("group_id", parsed.chatId)
-        .eq("service_order_id", os.id)
-        .not("ack_decide_at", "is", null)
-        .is("ack_resolved_at", null)
-        .then(() => {}, (e: any) => console.warn("[agent-central-mention] suprimir ack (menção) falhou:", e?.message));
-
+      // Marcaram a Central → responde AO VIVO (o dono quer resposta ao marcar).
+      // Mesmo assim cobra o 1º agente por DM e arma o timer de escalonamento (se
+      // não houver pedido aberto recente): se o 1º não reportar dentro da janela,
+      // o flush cobra o 2º. A atualização REAL ao grupo segue via
+      // fulfillGroupRequests quando o agente mexer no campo da OS.
       if (!hasRecentOpen) {
         await cobrarAgentes(os);
-        // Registra o pedido (ack já resolvido, pois respondemos agora) pra que
-        // fulfillGroupRequests encaminhe a atualização real ao grupo depois.
+        const escalateAt = new Date(Date.now() + ESCALATE_AFTER_MIN * 60 * 1000).toISOString();
         await supabaseAdmin
           .from("agent_central_group_requests")
           .insert({
@@ -1273,31 +1199,29 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
             requester_name: parsed.senderName || null,
             requester_phone: parsed.senderPhone || null,
             source_message_id: parsed.zapiMessageId || null,
-            ack_resolved_at: new Date().toISOString(),
-            ack_resolution: "answered_on_mention",
+            ack_decide_at: escalateAt,
           })
           .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request (menção) falhou:", e?.message));
       }
       await handleNaturalConversation(parsed);
-      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → respondeu na hora (OS ${os.os_number || os.id}); sem deferir`);
+      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → respondeu na hora (OS ${os.os_number || os.id})`);
       return;
     }
 
-    // (sem menção) pedido operacional comum → fluxo deferido silencioso.
+    // (sem menção) pedido operacional comum → escalonamento silencioso.
     if (hasRecentOpen) {
       console.log(`[agent-central-mention] OS ${os.os_number || os.id} já tem pedido aberto recente no grupo — pulando (anti-spam)`);
       return;
     }
 
-    // Cobra os agentes por DM IMEDIATAMENTE (garante que a atualização do campo
-    // venha, mesmo que a equipe assuma a conversa no grupo).
+    // Cobra SÓ o 1º agente por DM IMEDIATAMENTE. A Central NÃO fala no grupo.
     await cobrarAgentes(os);
 
-    // ACK DEFERIDO: a Central NÃO responde no grupo agora. Registra o pedido com
-    // ack_decide_at = agora + ACK_WINDOW_MIN e fica quieta. Se um membro da
-    // equipe falar no grupo (ou a atualização chegar) dentro da janela, o ack é
-    // suprimido. Senão, o flush (cron 1min) manda o ack quando a janela vencer.
-    const ackDecideAt = new Date(Date.now() + ACK_WINDOW_MIN * 60 * 1000).toISOString();
+    // Arma o timer de escalonamento: registra o pedido com ack_decide_at = agora
+    // + ESCALATE_AFTER_MIN. Se o 1º reportar (fulfilled) ou a equipe assumir no
+    // grupo dentro da janela, o pedido é resolvido e não escalona. Senão, o flush
+    // (cron 1min) cobra o 2º agente por DM quando a janela vencer.
+    const ackDecideAt = new Date(Date.now() + ESCALATE_AFTER_MIN * 60 * 1000).toISOString();
     await supabaseAdmin
       .from("agent_central_group_requests")
       .insert({
@@ -1310,7 +1234,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       })
       .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request falhou:", e?.message));
 
-    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: agentes cobrados por DM; ack deferido por ${ACK_WINDOW_MIN}min (aguardando a equipe atender antes de responder no grupo)`);
+    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: 1º agente cobrado por DM; escalonamento p/ 2º armado em ${ESCALATE_AFTER_MIN}min se não houver resposta`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }

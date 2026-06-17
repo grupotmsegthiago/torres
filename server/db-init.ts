@@ -760,10 +760,11 @@ export async function ensureDbSchema() {
       ON agent_central_group_requests (service_order_id)
       WHERE fulfilled_at IS NULL
     `).catch(() => {});
-    // Ack DEFERIDO (jun/2026): a Central espera ACK_WINDOW_MIN antes de responder
-    // no grupo. Se a equipe falar no grupo nesse meio-tempo (ou a atualização
-    // chegar), o ack é suprimido. ack_decide_at = quando decidir; ack_resolved_at
-    // = quando foi decidido; ack_resolution = 'sent'|'team_handled'|'fulfilled'.
+    // ESCALONAMENTO (jun/2026): ao pedir atualização no grupo, a Central cobra o
+    // 1º agente por DM e arma ack_decide_at = agora + ESCALATE_AFTER_MIN. Se o 1º
+    // responder (fulfilled) ou a equipe assumir no grupo, resolve sem escalonar;
+    // senão o flush cobra o 2º agente. ack_resolved_at = quando foi decidido;
+    // ack_resolution = 'team_handled'|'fulfilled'|'escalated'|'no_second' (TEXT livre).
     await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_decide_at TIMESTAMPTZ`).catch(() => {});
     await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_resolved_at TIMESTAMPTZ`).catch(() => {});
     await execSql(`ALTER TABLE agent_central_group_requests ADD COLUMN IF NOT EXISTS ack_resolution TEXT`).catch(() => {});

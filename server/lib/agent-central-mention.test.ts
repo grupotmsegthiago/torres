@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, claimAckSlot, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planAckFlush, setBotLidForTest } from "./agent-central-mention.ts";
+import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planEscalations, setBotLidForTest } from "./agent-central-mention.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -97,24 +97,6 @@ test("sanitizeFinanceiro: NÃO mexe em conversa social/operacional legítima", (
   }
 });
 
-test("claimAckSlot: 2 pedidos seguidos no MESMO grupo → só 1 ack (anti-robô)", () => {
-  // Cenário real (Thiago): "Atualização tor-0259" e "Atualização Edvandro e
-  // Vitor" segundos depois. São OSs diferentes, então o dedupe por-OS não pega;
-  // o cooldown por-grupo precisa segurar a 2ª confirmação visível.
-  const grupo = "1203630xxxx@g.us";
-  const t0 = 1_000_000_000_000;
-  assert.equal(claimAckSlot(grupo, t0), true, "1º pedido deve mandar ack");
-  assert.equal(claimAckSlot(grupo, t0 + 5_000), false, "2º pedido 5s depois NÃO manda ack");
-  assert.equal(claimAckSlot(grupo, t0 + 60_000), false, "ainda dentro da janela (60s) → sem ack");
-  assert.equal(claimAckSlot(grupo, t0 + 90_001), true, "passou a janela (90s) → ack de novo");
-});
-
-test("claimAckSlot: grupos diferentes não interferem entre si", () => {
-  const t0 = 2_000_000_000_000;
-  assert.equal(claimAckSlot("grupoA@g.us", t0), true);
-  assert.equal(claimAckSlot("grupoB@g.us", t0 + 1_000), true, "grupo B é independente do A");
-});
-
 test("shortLocal: encurta endereços para Cidade/UF", () => {
   assert.equal(
     shortLocal("DHL MEDICAMENTO - Avenida Júlia Gaioli - Água Chata, Guarulhos - SP, Brasil"),
@@ -194,24 +176,22 @@ test("isTeamSuffixMatch: reconhece número da equipe pelos 8 dígitos finais (ig
   assert.equal(isTeamSuffixMatch(equipe, "999"), false);
 });
 
-test("planAckFlush: 1 ack por grupo, suprime já-entregue, cobre duplicados do mesmo grupo", () => {
+test("planEscalations: já-entregue suprime (fulfilled), resto escalona — sem dedupe por grupo", () => {
   const rows = [
-    { id: 1, group_id: "G1", fulfilled_at: null },          // → ack
-    { id: 2, group_id: "G1", fulfilled_at: null },          // → coberto pelo ack do G1
-    { id: 3, group_id: "G2", fulfilled_at: "2026-06-05" },  // → suprimido (já entregue)
-    { id: 4, group_id: "G3", fulfilled_at: null },          // → ack
+    { id: 1, group_id: "G1", fulfilled_at: null },          // → escalona (cobra 2º)
+    { id: 2, group_id: "G1", fulfilled_at: null },          // → escalona (OS distinta, mesmo grupo)
+    { id: 3, group_id: "G2", fulfilled_at: "2026-06-05" },  // → suprimido (1º já respondeu)
+    { id: 4, group_id: "G3", fulfilled_at: null },          // → escalona
   ];
-  const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush(rows);
-  assert.deepEqual(toAck.map((r) => r.id), [1, 4]);
-  assert.deepEqual(coveredByGroupAck.map((r) => r.id), [2]);
+  const { toEscalate, toSuppressFulfilled } = planEscalations(rows);
+  assert.deepEqual(toEscalate.map((r) => r.id), [1, 2, 4]);
   assert.deepEqual(toSuppressFulfilled.map((r) => r.id), [3]);
 });
 
-test("planAckFlush: lista vazia → nada a fazer", () => {
-  const { toAck, toSuppressFulfilled, coveredByGroupAck } = planAckFlush([]);
-  assert.equal(toAck.length, 0);
+test("planEscalations: lista vazia → nada a fazer", () => {
+  const { toEscalate, toSuppressFulfilled } = planEscalations([]);
+  assert.equal(toEscalate.length, 0);
   assert.equal(toSuppressFulfilled.length, 0);
-  assert.equal(coveredByGroupAck.length, 0);
 });
 
 test("isBotMentioned: @menção via LID (padrão novo do WhatsApp) — token no texto", () => {
