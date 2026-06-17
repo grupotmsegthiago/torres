@@ -31,9 +31,9 @@ export async function correctAgentMessage(raw: string): Promise<string> {
   try {
     const openai = new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      max_tokens: 400,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 400,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: text },

@@ -839,6 +839,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       console.log("[ocr] Sending to OpenAI...");
       const response = await openai.chat.completions.create({
         model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages: [
           {
             role: "system",
@@ -963,7 +964,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
 
       const response = await openai.chat.completions.create({
-        model: isPdf ? "gpt-5-mini" : "gpt-5-mini",
+        model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages,
       });
 

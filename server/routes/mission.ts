@@ -311,7 +311,8 @@ Responda APENAS com JSON válido (sem markdown):
       }
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages: [
           { role: "system", content: promptText },
           {
@@ -322,7 +323,7 @@ Responda APENAS com JSON válido (sem markdown):
             ],
           },
         ],
-        max_tokens: 600,
+        max_completion_tokens: 600,
       });
 
       let raw = response.choices[0]?.message?.content || "";
@@ -353,12 +354,13 @@ Analise novamente com cuidado cada dígito. Dígitos como 1 e 6, 0 e 6, 1 e 7 po
 Leia o KM total do hodômetro principal (número maior, 4-6 dígitos). IGNORE o trip/parcial.
 Responda APENAS com JSON: {"km_lido": number}`;
               const retryResponse = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: "gpt-5-mini",
+                reasoning_effort: "minimal",
                 messages: [
                   { role: "system", content: retryPrompt },
                   { role: "user", content: [{ type: "text", text: "Releia o hodômetro:" }, { type: "image_url", image_url: { url: photoData } }] },
                 ],
-                max_tokens: 100,
+                max_completion_tokens: 100,
               });
               const retryRaw = retryResponse.choices[0]?.message?.content || "";
               const retryCleaned = retryRaw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();

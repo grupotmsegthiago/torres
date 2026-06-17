@@ -136,9 +136,9 @@ async function extractIntent(text: string): Promise<ExtractResult> {
   try {
     const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      max_tokens: 200,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 200,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -346,9 +346,9 @@ async function buildAck(requesterName: string, osNumber: string | null): Promise
   try {
     const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 1.0,
-      max_tokens: 120,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 120,
       messages: [
         {
           role: "system",
@@ -1055,9 +1055,9 @@ export async function buildNaturalReply(text: string, senderName: string | null)
   try {
     const openai = new OpenAI({ apiKey, baseURL, timeout: 6000, maxRetries: 0 });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 1.0,
-      max_tokens: 160,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 160,
       messages: [
         {
           role: "system",

@@ -213,7 +213,7 @@ export function buildReminderFallback(ctx: ReminderContext): string {
 }
 
 /**
- * Gera uma cobrança VARIADA via IA (gpt-4o-mini, temperatura alta). Cai no
+ * Gera uma cobrança VARIADA via IA (gpt-5-mini, temperatura padrão). Cai no
  * fallback determinístico-aleatório se não houver chave ou a IA falhar.
  * Nunca lança.
  */
@@ -239,9 +239,9 @@ export async function buildReminderMessage(ctx: ReminderContext): Promise<string
     // segurar o cron (que tem pausas humanas no loop). Cai no fallback na hora.
     const openai = new OpenAI({ apiKey, baseURL, timeout: 4000, maxRetries: 0 });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 1.0,
-      max_tokens: 120,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 120,
       messages: [
         {
           role: "system",

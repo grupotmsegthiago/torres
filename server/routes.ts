@@ -1620,6 +1620,7 @@ async function ensureSystemSettingsTable() {
 
       const response = await openai.chat.completions.create({
         model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages: [
           {
             role: "system",
@@ -1827,6 +1828,7 @@ Regras:
 
       const response = await openai.chat.completions.create({
         model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages: [
           { role: "system", content: systemPrompt },
           {

@@ -69,7 +69,8 @@ import type { Express } from "express";
     await supabaseAdmin.from("vehicle_fueling").update({ ai_validation_status: "pendente" }).eq("id", fuelingId);
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
       messages: [
         {
           role: "system",
@@ -103,7 +104,7 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
           ],
         },
       ],
-      max_tokens: 500,
+      max_completion_tokens: 500,
     });
 
     const raw = response.choices[0]?.message?.content || "";

@@ -322,9 +322,9 @@ export async function generateAiReport(supabase: SupabaseClient): Promise<AiRepo
 
     const openai = new OpenAI({ apiKey, baseURL });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      max_tokens: 700,
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 700,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: AI_REPORT_SYSTEM_PROMPT },

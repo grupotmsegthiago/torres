@@ -848,7 +848,8 @@ import type { Express } from "express";
 
       console.log("[ocr-holerite] Enviando para OpenAI...");
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
+        reasoning_effort: "minimal",
         messages: [
           {
             role: "system",
