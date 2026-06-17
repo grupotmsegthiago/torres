@@ -97,7 +97,9 @@ Antes de qualquer mudança no banco (DDL, índice, constraint, trigger, RPC, RLS
 
 Regras estabelecidas e testadas em produção. Não modificar a lógica subjacente sem pedido direto do dono — se uma task parecer exigir alteração, **PARE e pergunte antes**. **Detalhe completo (implementação, casos históricos, testes de regressão) em `SYSTEM_BRAIN.md` §8.** Resumo dos pontos invioláveis:
 
-1. **OS Recusada = faturamento zerado, sempre** — `status="recusada"` zera todos os `fat_*` do billing (incondicional) e marca `CANCELADO`. Nunca pôr `.in("status", [...])` restritivo nesse UPDATE. Diferente de "cancelada" (preserva acionamento + extras).
+1. **OS Recusada = faturamento zerado, sempre** — `status="recusada"` zera todos os `fat_*` do billing (incondicional) e marca `CANCELADO`. Nunca pôr `.in("status", [...])` restritivo nesse UPDATE. Diferente de "cancelada" (ver #1b).
+
+1b. **OS Cancelada = tabela de 100 km do cliente** (ordem do dono, 17/06/2026) — ao cancelar OS de escolta, puxar a "tabela de 100 km" do cliente (contrato `Ativo` com `franquia_km=100` E `franquia_horas=3`; fallback `franquia_km=100`; senão contrato da OS) e recalcular via `calcularEscolta` com km/tempo reais. Dentro da franquia (≤100km/≤3h) ou sem equipe acionada ⇒ só acionamento; excedente ⇒ + km/HE. Billing congelado (APROVADA/FATURADO/FATURADA/PAGO) só marca `CANCELADO`. Helper `server/lib/cancelada-billing.ts`. Detalhe em §8.1b.
 2. **Auto-fix nunca toca OS recusada** — o auto-fix de boot que conclui OSs penduradas deve excluir `recusada` do filtro (além de `concluida`/`concluída`/`cancelada`).
 3. **Compressão de foto mobile (resolve 413)** — fotos de `<input type="file">` redimensionadas via canvas p/ máx 1280px + JPEG q0.7 antes do upload. `/api/mission/update` fica em `PHOTO_UPLOAD_PATHS` (10 MB) como rede de segurança.
 4. **Cálculo de faturamento de OS** — Total p/ Faturamento = Aprovadas + A Verificar + Canceladas; Recusadas/Faturadas/Pagas ficam FORA. Manter a "segunda passada" do gerar-fatura que exclui OS recusada. HE fracionada por minuto via `valor_hora_extra`.

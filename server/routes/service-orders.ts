@@ -7,6 +7,7 @@ import type { Express } from "express";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
+  import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
@@ -1287,11 +1288,63 @@ import type { Express } from "express";
             })
             .eq("service_order_id", Number(req.params.id));
         } else {
-          // cancelada: só marca status como CANCELADO, preserva valores de cobrança
-          await supabaseAdmin.from("escort_billings")
-            .update({ status: "CANCELADO" })
-            .eq("service_order_id", Number(req.params.id))
-            .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+          // cancelada: recalcula o billing pela "tabela de 100 km" do cliente
+          // (acionamento + excedente real de km/horas; dentro da franquia ⇒ só o
+          // acionamento). Regra do dono. Não toca billing já congelado (aprovado/faturado/pago).
+          try {
+            const soId = Number(req.params.id);
+            const { data: existingBill } = await supabaseAdmin.from("escort_billings")
+              .select("id, status").eq("service_order_id", soId).limit(1);
+            const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
+            const billStatus = existingBill?.[0]?.status;
+            if (billStatus && FROZEN.includes(billStatus)) {
+              // congelado: apenas marca como CANCELADO sem mexer nos valores.
+              await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
+            } else {
+              const cb = await computeCanceladaBilling({
+                serviceOrderId: soId,
+                clientId: existing.clientId,
+                escortContractId: existing.escortContractId,
+                scheduledDate: existing.scheduledDate as any,
+                missionStartedAt: existing.missionStartedAt as any,
+                completedDate: (existing.completedDate as any) || new Date().toISOString(),
+                stepLogs: existing.stepLogs as any,
+              });
+              if (cb) {
+                const client = existing.clientId ? await storage.getClient(existing.clientId) : null;
+                const emp = existing.assignedEmployeeId ? await storage.getEmployee(existing.assignedEmployeeId) : null;
+                const vehicle = existing.vehicleId ? await storage.getVehicle(existing.vehicleId) : null;
+                const cancelPayload = {
+                  service_order_id: soId,
+                  client_id: existing.clientId,
+                  client_name: client?.name || "--",
+                  contract_id: cb.contrato.id || null,
+                  ...cb.fatFields,
+                  horario_agendado: cb.horarios.horario_agendado,
+                  horario_inicio: cb.horarios.horario_inicio,
+                  horario_fim: cb.horarios.horario_fim,
+                  vigilante_id: existing.assignedEmployeeId,
+                  vigilante_name: emp?.name || "--",
+                  origem: existing.origin || null,
+                  destino: existing.destination || null,
+                  placa_viatura: vehicle?.plate || null,
+                  data_missao: existing.scheduledDate || existing.missionStartedAt || new Date().toISOString(),
+                  created_by: adminName,
+                  observacoes: `OS CANCELADA — Tabela 100 km${cb.usouTabela100 ? "" : " (fallback: contrato da OS)"}${reason ? " | Motivo: " + reason : ""}`,
+                };
+                // UPSERT atômico via ON CONFLICT (service_order_id) — §8.6.
+                await supabaseAdmin.from("escort_billings").upsert(cancelPayload, { onConflict: "service_order_id" });
+                // Espelha o total na OS p/ o card/listagem refletir a tabela 100km.
+                (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
+                (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
+              } else {
+                // sem tabela de 100km nem contrato vinculado: ao menos marca CANCELADO.
+                await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
+              }
+            }
+          } catch (cancErr: any) {
+            console.error(`[OS-Cancel-Billing PATCH] OS ${req.params.id}:`, cancErr.message);
+          }
         }
       } catch (_e) {}
 

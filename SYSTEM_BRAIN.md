@@ -279,7 +279,21 @@ formatBRT(date: string | Date | null | undefined): string
   - A zeragem é **incondicional** — sobrescreve qualquer status anterior do billing (inclusive CANCELADO/REJEITADA/A_VERIFICAR). Recusada da OS é a verdade final.
   - Implementação: `server/routes/service-orders.ts`, branch `isRecusada` no PATCH `/api/service-orders/:id`.
 - **NUNCA** voltar a colocar `.in("status", [...])` restritivo nesse UPDATE — foi exatamente o bug histórico que deixou R$ 134.816,50 de cobrança indevida no sistema.
-- **Diferente de "cancelada":** OS cancelada = cliente cancelou mas equipe foi acionada → preserva acionamento + extras. Não zerar billing de cancelada.
+- **Diferente de "cancelada":** ver §8.1b. Recusada zera; cancelada cobra pela tabela de 100 km.
+
+### 8.1b OS Cancelada = tabela de 100 km do cliente (ordem do dono, 17/06/2026)
+- **Significado de negócio:** "Cancelada" = o cliente cancelou a missão, mas a equipe foi (ou pôde ter sido) acionada. Não zera como recusada — cobra o **acionamento da tabela de 100 km do cliente** + excedente real, se houver.
+- **Regra técnica:**
+  - Ao cancelar uma OS de escolta, puxar a **"tabela de 100 km"** do cliente = contrato de escolta `Ativo` com `franquia_km=100` **E** `franquia_horas=3`. Fallback: contrato `Ativo` com `franquia_km=100`. Se não houver, usar o contrato vinculado à OS (`escort_contract_id`); se nem isso, só marca `status="CANCELADO"` sem mexer nos valores.
+  - Recalcular o billing via `calcularEscolta` com essa tabela, usando **km e tempo reais** da OS (km das fotos `step_logs`, `mission_started_at`/`completed_date`, `scheduled_date`):
+    - Dentro da franquia (≤100 km **e** ≤3 h) ou sem equipe acionada (tudo zero) ⇒ **só o acionamento** (ex.: R$ 480).
+    - Excedente de km ⇒ acionamento + `km_excedente × valor_km_extra`. Excedente de horas ⇒ acionamento + HE fracionada por minuto.
+  - `bill.status` vira `"CANCELADO"`, `observacoes = "OS CANCELADA — Tabela 100 km …"`, `pag_*=0`, `fat_total` = resultado. Escrita via **upsert `onConflict: service_order_id`** (§8.6).
+  - Espelha o total em `service_orders.valor_estimado` e `fat_calculado` para o card/listagem refletir.
+  - Billing **congelado** (`status ∈ APROVADA/FATURADO/FATURADA/PAGO`) NÃO é recalculado — só marca `CANCELADO`.
+  - Implementação: `server/lib/cancelada-billing.ts` (`getTabela100km` + `computeCanceladaBilling`); chamadores: `POST /api/mission/cancel` (`routes/mission.ts`) e branch cancelada no PATCH `/api/service-orders/:id` (`routes/service-orders.ts`).
+  - Teste de regressão: `server/lib/cancelada-billing.test.ts`. Script de ajuste histórico (01/06/2026→hoje): `.local/test_fix_canceladas_historico.mts` (DRY-RUN sem `--apply`).
+- **NÃO cria `financial_transaction`** no cancelamento — comportamento mantido (cancelamento nunca espelhou tx).
 
 ### 8.2 Auto-fix nunca toca OS recusada
 - O auto-fix de boot em `server/routes.ts` (que força `mission_status=encerrada` → `status=concluida` em OSs penduradas) **deve excluir `status="recusada"`** do filtro.
