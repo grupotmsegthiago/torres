@@ -254,12 +254,12 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
 export async function buildFinalizedSummary(u: any, so: any, client: any): Promise<string> {
   const soId = u.service_order_id;
 
-  // Linha do tempo: chegada na origem + início de operação vêm dos mission_updates.
+  // Linha do tempo: chegada na origem + início de operação + chegada no destino vêm dos mission_updates.
   const updsP = supabaseAdmin
     .from("mission_updates")
     .select("mission_step, created_at")
     .eq("service_order_id", soId)
-    .in("mission_step", ["checkin_chegada_km", "iniciar_missao"])
+    .in("mission_step", ["checkin_chegada_km", "iniciar_missao", "chegada_destino"])
     .order("created_at", { ascending: true });
   // KM início/final vêm das fotos de hodômetro.
   const photosP = supabaseAdmin
@@ -268,8 +268,18 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
     .eq("service_order_id", soId)
     .in("step", ["km_saida", "km_final"])
     .order("created_at", { ascending: true });
+  // Viatura (placa) + agentes 01/02 p/ identificar a equipe no card do cliente.
+  const vehicleP = so?.vehicle_id
+    ? supabaseAdmin.from("vehicles").select("plate").eq("id", so.vehicle_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
+  const ag1P = so?.assigned_employee_id
+    ? supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
+  const ag2P = so?.assigned_employee_2_id
+    ? supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_2_id).maybeSingle()
+    : Promise.resolve({ data: null } as any);
 
-  const [updsRes, photosRes] = await Promise.all([updsP, photosP]);
+  const [updsRes, photosRes, vehRes, ag1Res, ag2Res] = await Promise.all([updsP, photosP, vehicleP, ag1P, ag2P]);
   if ((updsRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_updates OS=${u.os_number}:`, (updsRes as any).error.message);
   if ((photosRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_photos OS=${u.os_number}:`, (photosRes as any).error.message);
   const upds = ((updsRes as any)?.data || []) as Array<{ mission_step: string; created_at: string }>;
@@ -277,9 +287,23 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
 
   const inicioOperTs = so?.mission_started_at || upds.find(x => x.mission_step === "iniciar_missao")?.created_at || null;
   const fimOperTs = so?.completed_date || u.created_at || null;
+  const agendamentoTs = so?.scheduled_date || null;
+  const chegadaDestinoTs = upds.find(x => x.mission_step === "chegada_destino")?.created_at || null;
 
   const kmInicio = photos.find(p => p.step === "km_saida")?.km_value ?? null;
   const kmFinal = [...photos].reverse().find(p => p.step === "km_final")?.km_value ?? null;
+
+  // Privacidade no grupo do cliente: só primeiro + segundo nome do agente.
+  const shortName = (full?: string | null): string => {
+    if (!full) return "";
+    const parts = String(full).trim().split(/\s+/);
+    return parts.slice(0, 2).join(" ");
+  };
+  const ag1Name = shortName((ag1Res as any)?.data?.name);
+  const ag2Name = shortName((ag2Res as any)?.data?.name);
+  const viaturaPlate = (vehRes as any)?.data?.plate || null;
+  const placaVeiculo = so?.escorted_vehicle_plate || null;
+  const clienteNome = String(client?.name || "").toUpperCase();
 
   const rota = rotaCidades(so?.origin, so?.destination);
   const upLat = (u as any)?.latitude ? parseFloat((u as any).latitude) : NaN;
@@ -292,10 +316,19 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   L.push("");
   if (rota) L.push(`🛡️ *OPERAÇÃO:* ${rota}`);
   L.push("");
-  L.push(`🟢 INÍCIO: *${fmtBrtDtSpace(inicioOperTs)}*`);
-  L.push(`KM INÍCIO: *${fmtKmUpper(kmInicio)}*`);
+  if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
+  if (ag1Name) L.push(`👮 *AGENTE 01:* ${ag1Name}`);
+  if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
   L.push("");
-  L.push(`🔴 FIM: *${fmtBrtDtSpace(fimOperTs)}*`);
+  if (placaVeiculo) L.push(`🚛 *PLACA DO VEÍCULO:* ${placaVeiculo}`);
+  if (viaturaPlate) L.push(`🚓 *PLACA VIATURA:* ${viaturaPlate}`);
+  L.push("");
+  L.push(`🕑 *HORÁRIO AGENDAMENTO:* ${fmtBrtDtSpace(agendamentoTs)}`);
+  L.push(`🟢 *INÍCIO DE MISSÃO:* ${fmtBrtDtSpace(inicioOperTs)}`);
+  L.push(`🏁 *CHEGADA NO DESTINO:* ${fmtBrtDtSpace(chegadaDestinoTs)}`);
+  L.push(`🔴 *FIM DE MISSÃO:* ${fmtBrtDtSpace(fimOperTs)}`);
+  L.push("");
+  L.push(`KM INÍCIO: *${fmtKmUpper(kmInicio)}*`);
   L.push(`KM FIM: *${fmtKmUpper(kmFinal)}*`);
   if (hasGeo) {
     L.push("");
