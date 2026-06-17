@@ -8,6 +8,7 @@ import type { Express } from "express";
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
+  import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
 
   // Trava de edição de anexos (boleto/NF/comprovante): admin comum só pode
   // alterar anexos de lançamentos que ELE MESMO criou (created_by == nome).
@@ -1632,11 +1633,16 @@ import type { Express } from "express";
 
       const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
       const safeStatus = VALID_BILLING_STATUSES.includes(body.status) ? body.status : "A_VERIFICAR";
-      const payload = {
+      let payload: any = {
         ...body, client_id: clientId, client_name: clientName,
         status: safeStatus,
         created_by: user.name, boletim_numero: boletimNumero, boletim_gerado: true,
       };
+      // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Criar/upsertar um billing
+      // para uma OS recusada nunca pode introduzir cobrança: força zero (CANCELADO).
+      if (await osIsRecusada(supabaseAdmin, body.service_order_id)) {
+        payload = { ...payload, ...buildRecusadaZeroPayload(null, body.observacoes) };
+      }
       // UPSERT atômico por service_order_id (quando informado) — ON CONFLICT via UNIQUE uniq_eb_so_id.
       // Quando não há OS vinculada, é billing manual avulso ⇒ INSERT normal.
       const r = body.service_order_id
@@ -1689,7 +1695,7 @@ import type { Express } from "express";
 
   app.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
     try {
-      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status").eq("id", req.params.id).single();
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status, service_order_id, observacoes").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
       const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
@@ -1706,12 +1712,17 @@ import type { Express } from "express";
         }
       }
 
-      const updateBody = { ...req.body };
+      let updateBody: any = { ...req.body };
       if (updateBody.status) {
         const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
         if (!VALID_BILLING_STATUSES.includes(updateBody.status)) {
           return res.status(400).json({ message: `Status inválido: ${updateBody.status}. Valores aceitos: ${VALID_BILLING_STATUSES.join(", ")}` });
         }
+      }
+      // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Qualquer edição de billing
+      // de OS recusada é forçada a zero (CANCELADO), sobrescrevendo valores enviados.
+      if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
+        updateBody = { ...updateBody, ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes) };
       }
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
       if (error) throw error;
@@ -1724,12 +1735,18 @@ import type { Express } from "express";
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
-      const updateBody = { ...req.body };
+      let updateBody: any = { ...req.body };
       delete updateBody.id;
       delete updateBody.created_at;
       delete updateBody.created_by;
 
       updateBody.edit_reason = updateBody.edit_reason || `Editado via Boletim por ${req.user!.name}`;
+
+      // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Edição via Boletim de
+      // billing de OS recusada é forçada a zero (CANCELADO).
+      if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
+        updateBody = { ...updateBody, ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes) };
+      }
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
       if (error) throw error;
@@ -1835,10 +1852,17 @@ import type { Express } from "express";
         observacoes: body.observacoes, notas: body.notas,
         status: "A_VERIFICAR", created_by: user.name,
       };
+      // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Submeter boletim de OS
+      // recusada nunca pode introduzir cobrança: sobrescreve o cálculo com zero.
+      let finalPayload2: any = billingPayload2;
+      if (await osIsRecusada(supabaseAdmin, body.service_order_id)) {
+        finalPayload2 = { ...billingPayload2, ...buildRecusadaZeroPayload(null, body.observacoes) };
+        await supabaseAdmin.from("service_orders").update({ fat_calculado: 0 }).eq("id", body.service_order_id);
+      }
       // UPSERT atômico por service_order_id — ON CONFLICT via UNIQUE uniq_eb_so_id (db-init.ts).
       const r2 = body.service_order_id
-        ? await supabaseAdmin.from("escort_billings").upsert(billingPayload2, { onConflict: "service_order_id" }).select().single()
-        : await supabaseAdmin.from("escort_billings").insert(billingPayload2).select().single();
+        ? await supabaseAdmin.from("escort_billings").upsert(finalPayload2, { onConflict: "service_order_id" }).select().single()
+        : await supabaseAdmin.from("escort_billings").insert(finalPayload2).select().single();
       if (r2.error) throw r2.error;
 
       res.json({ ...r2.data, resumo_calculo: resultado });
@@ -1858,6 +1882,15 @@ import type { Express } from "express";
           const { data: existing } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
           if (!existing) { errors++; continue; }
           if (["FATURADO", "PAGO"].includes(existing.status)) { skipped++; continue; }
+          // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Nunca recalcular pelo
+          // contrato (ressuscitaria a cobrança): força zero e zera a OS.
+          if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
+            await supabaseAdmin.from("escort_billings")
+              .update(buildRecusadaZeroPayload(null, existing.observacoes)).eq("id", id);
+            await supabaseAdmin.from("service_orders")
+              .update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
+            success++; continue;
+          }
           if (!existing.contract_id) { errors++; continue; }
 
           const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
@@ -1949,6 +1982,30 @@ import type { Express } from "express";
       const LOCKED_STATUSES = ["FATURADO", "PAGO"];
       if (LOCKED_STATUSES.includes(existing.status)) {
         return res.status(403).json({ message: "Boletim faturado — valores travados. Não é possível alterar." });
+      }
+
+      // §8.1 — OS recusada = faturamento ZERADO, SEMPRE (verdade final, incondicional).
+      // Salvar/recalcular o boletim NUNCA pode ressuscitar a cobrança de uma OS
+      // recusada (bug TOR-0255: ao salvar virava R$ 2.921,67). Força zero e sai.
+      if (existing.service_order_id) {
+        const { data: soRow } = await supabaseAdmin
+          .from("service_orders").select("status")
+          .eq("id", existing.service_order_id).maybeSingle();
+        if (soRow?.status === "recusada") {
+          const zeroPayload = buildRecusadaZeroPayload(null, existing.observacoes);
+          const { data: zeroed, error: zeroErr } = await supabaseAdmin
+            .from("escort_billings").update(zeroPayload).eq("id", req.params.id).select().single();
+          if (zeroErr) throw zeroErr;
+          await supabaseAdmin.from("service_orders")
+            .update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
+          await logSystemAudit({
+            userId: user.id, userName: user.name, userRole: user.role,
+            action: "EDITAR_MEDICAO", targetId: req.params.id, targetType: "escort_billing",
+            details: `OS #${existing.service_order_id} recusada — salvamento forçou faturamento R$ 0,00 (§8.1).`,
+            ipAddress: req.ip,
+          });
+          return res.json(zeroed);
+        }
       }
 
       const {
@@ -2118,6 +2175,19 @@ import type { Express } from "express";
       if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
 
       if (acao === "APROVADA") {
+        // §8.1 — OS recusada nunca pode ser aprovada/faturada (faturamento = R$ 0,00
+        // incondicional). Aprovar recalculava pelo contrato e ressuscitava a cobrança,
+        // além de marcar a OS como concluída (bug TOR-0255). Bloqueia antes de qualquer
+        // recálculo. Para cobrar, é preciso reabrir a OS (status concluída) primeiro.
+        if (billing.service_order_id) {
+          const { data: soRow } = await supabaseAdmin
+            .from("service_orders").select("status")
+            .eq("id", billing.service_order_id).maybeSingle();
+          if (soRow?.status === "recusada") {
+            return res.status(400).json({ message: "OS recusada não pode ser aprovada — o faturamento é sempre R$ 0,00. Reabra a OS (status concluída) antes de aprovar o boletim." });
+          }
+        }
+
         const now = new Date();
         updateData.boletim_numero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
         updateData.boletim_gerado = true;
