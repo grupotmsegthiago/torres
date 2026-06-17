@@ -89,3 +89,9 @@ id = "Rb0iHyPK_ZNQkOd8lW7kP"
 uri = "file://.local/faturamento_maio_2026.csv"
 type = "table"
 title = "Faturamento Maio/2026 - todas as OSs (recálculo canônico)"
+
+[[outputs]]
+id = "HIvpTvS0fA_am3n_WJzfq"
+uri = "file://.local/Boletim_TM_SEGURANCA_JUNHO_corrigido.xlsx"
+type = "table"
+title = "Boletim TM Segurança - Junho (1ª quinzena) - coluna Nº corrigida"
