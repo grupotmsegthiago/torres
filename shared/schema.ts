@@ -311,6 +311,7 @@ export const serviceOrders = pgTable("service_orders", {
   fuelAllocated: boolean("fuel_allocated"),
   cancellationReason: text("cancellation_reason"),
   processoOmega: text("processo_omega"),
+  gtmNumber: text("gtm_number"),
   stepLogs: jsonb("step_logs").default([]),
   waypoints: jsonb("waypoints").default([]),
   createdByUserId: integer("created_by_user_id"),

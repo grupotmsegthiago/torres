@@ -835,6 +835,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     waypoints: ((order as any)?.waypoints || []) as Array<{ address: string; lat: number | null; lng: number | null }>,
     cancellationReason: (order as any)?.cancellationReason || "",
     processoOmega: (order as any)?.processoOmega || "",
+    gtmNumber: (order as any)?.gtmNumber || "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -1343,6 +1344,26 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       className="text-sm border-amber-300 bg-amber-50/30"
                       data-testid="input-os-processo-omega"
                     />
+                  </div>
+                );
+              })()}
+              {(() => {
+                const cliName = (clients.find((c) => c.id === form.clientId)?.name || "").toUpperCase();
+                if (!cliName.includes("TM SEG")) return null;
+                return (
+                  <div>
+                    <FieldLabel>Vínculo GTM</FieldLabel>
+                    <div className="flex items-center">
+                      <span className="inline-flex items-center h-10 px-3 text-sm font-semibold text-neutral-600 bg-neutral-100 border border-r-0 border-neutral-300 rounded-l-lg select-none" data-testid="prefix-os-gtm">GTM-</span>
+                      <Input
+                        value={form.gtmNumber}
+                        onChange={(e) => setForm(prev => ({ ...prev, gtmNumber: e.target.value.replace(/\D/g, "") }))}
+                        placeholder="Ex.: 5456"
+                        inputMode="numeric"
+                        className="text-sm rounded-l-none"
+                        data-testid="input-os-gtm"
+                      />
+                    </div>
                   </div>
                 );
               })()}
@@ -2231,8 +2252,12 @@ export default function ServiceOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedOrders.map((o) => (
-                  <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
+                {paginatedOrders.map((o) => {
+                  const isTmSeg = (getClientName(o.clientId) || "").toUpperCase().includes("TM SEG");
+                  const isEncerradaOuConcluida = o.status === "concluída" || o.status === "concluida" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada";
+                  const gtmPending = isTmSeg && isEncerradaOuConcluida && !String((o as any).gtmNumber || "").trim();
+                  return (
+                  <tr key={o.id} className={`border-b border-neutral-100 hover:bg-neutral-50 ${gtmPending ? "bg-amber-50 border-l-4 border-l-amber-500" : ""}`} data-testid={`row-order-${o.id}`}>
                     <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         {o.osNumber}
@@ -2246,6 +2271,12 @@ export default function ServiceOrdersPage() {
                           );
                         })()}
                       </div>
+                      {gtmPending && (
+                        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 uppercase tracking-wide" title="Vínculo GTM não preenchido — informe o número GTM para fechar a OS" data-testid={`badge-gtm-pendente-${o.id}`}>
+                          <AlertTriangle className="w-3 h-3" />
+                          GTM pendente
+                        </span>
+                      )}
                     </td>
                     <td className="p-2 overflow-hidden">
                       <span className="text-neutral-600 text-xs leading-tight line-clamp-2">{getClientName(o.clientId)}</span>
@@ -2470,7 +2501,8 @@ export default function ServiceOrdersPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

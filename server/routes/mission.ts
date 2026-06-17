@@ -6,7 +6,7 @@ import type { Express } from "express";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
-  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { calcularEscolta, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { logSystemAudit } from "../audit";
@@ -2007,6 +2007,22 @@ Responda APENAS com JSON: {"km_lido": number}`;
             // Espelha o total na OS p/ o card/listagem refletir a tabela 100km (mesmo comportamento do PATCH).
             const cancelTotal = Number(cb.fatFields.fat_total) || 0;
             try { await storage.updateServiceOrder(serviceOrderId, { valorEstimado: cancelTotal, fat_calculado: cancelTotal } as any); } catch (_e) {}
+
+            // Espelho financeiro (INTOCÁVEL §8.7): toda receita de billing precisa de
+            // financial_transaction correspondente, senão some do Balanço Gerencial.
+            if (cancelTotal > 0) {
+              await createAutoTransaction({
+                description: `CANCELAMENTO OS ${so.osNumber} - ${client?.name || "--"} ${vehicle?.plate || ""}`.toUpperCase().trim(),
+                amount: cancelTotal,
+                type: "INCOME",
+                due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+                origin_type: "service_order",
+                origin_id: String(serviceOrderId),
+                category_name: "Receita de Escolta",
+                entity_name: client?.name || "--",
+                created_by: user.name,
+              });
+            }
 
             console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: Tabela 100km (${cb.contrato.name || cb.contrato.id}) — Total R$ ${cancelTotal.toFixed(2)} (acion=${cb.fatFields.fat_acionamento}, HE=${cb.fatFields.fat_hora_extra}, KM=${cb.fatFields.fat_km})`);
           } else {

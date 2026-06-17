@@ -279,6 +279,10 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_clean_notes TEXT`);
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_checklist_confirmed BOOLEAN`);
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false`);
+    // Vínculo GTM (cliente TM SEGURANÇA): guarda SÓ o número (sem o prefixo "GTM-").
+    // O prefixo é fixo na UI. Campo opcional, visível apenas para o cliente TM SEG.
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS gtm_number TEXT`);
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);
