@@ -1150,12 +1150,12 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
 
     const { os, via } = await resolveOs({ extract, quotedText, groupId: parsed.chatId });
     if (!os) {
-      // A IA JÁ confirmou que é pedido sobre OS (isUpdateRequest=true), só não
-      // deu pra identificar QUAL OS. Como o assunto É de OS, responde mesmo sem
-      // menção (regra do dono: responder quando o assunto for sobre as OS) — a
-      // resposta natural tem guarda-rails (não inventa dado, desvia financeiro).
-      console.log(`[agent-central-mention] pedido sobre OS no grupo ${parsed.chatId} mas OS não resolvida (via=${via}) — respondendo natural (assunto é de OS)`);
-      await handleNaturalConversation(parsed);
+      // A IA confirmou que é pedido sobre OS (isUpdateRequest=true), mas não deu
+      // pra identificar QUAL OS. Decisão do dono (17/jun/2026): a Central fica
+      // CALADA no grupo nesse caso — só responde se MARCAREM a Central; senão
+      // silêncio (anti-barulho/anti-ban). Sem OS resolvida não há o que cobrar.
+      console.log(`[agent-central-mention] pedido sobre OS no grupo ${parsed.chatId} mas OS não resolvida (via=${via}) — ${isBotMentioned(rawBody) ? "respondendo (marcaram a Central)" : "silêncio (sem menção)"}`);
+      await replyNaturalIfMentioned();
       return;
     }
 
