@@ -1,0 +1,78 @@
+Para garantir esse controle rígido e evitar o pagamento de imposto duplicado ou falhas operacionais, precisamos implementar validações robustas no backend (onde as notas são geradas via eNotas/PlugNotas/Asaas) e na interface do React.
+
+Aqui está a estratégia de implementação e as regras de negócio para ajustar no seu código do Replit:
+
+1. Bloqueio de Duplicidade (Controle Rígido de Impostos)
+Para impedir que um "erro" ou clique duplo gere uma nova NF para o mesmo período ou OSs já faturadas, precisamos travar isso no banco de dados e desabilitar o botão na interface.
+
+No Banco de Dados (Supabase):
+A melhor garantia é criar uma constraint ou uma validação antes de processar o faturamento. Uma OS nunca pode ter o status de faturada se já estiver vinculada a uma NF ativa.
+
+Validação na API de Faturamento: Antes de chamar a API da Asaas/eNotas, faça um select na sua tabela de notas/faturamento:
+
+TypeScript
+// Exemplo de lógica antes de disparar a emissão
+const { data: jaEmitida } = await supabase
+  .from('faturamentos')
+  .select('id')
+  .in('os_ids', listaDeOsIds) // Verifica se alguma dessas OS já está vinculada
+  .eq('status_nf', 'emitida');
+
+if (jaEmitida && jaEmitida.length > 0) {
+  throw new Error("Uma ou mais OSs selecionadas já possuem Nota Fiscal emitida!");
+}
+Na Interface (React):
+Se a fatura já possui o status NF emitida, o botão de ação para emitir/gerar NF deve ser completamente desabilitado ou ocultado na coluna de "Ações".
+
+2. Obrigatoriedade de OS Vinculada
+Para eliminar o cenário de faturamento "Sem OS" (como na FAT #59 da Multilog), você deve aplicar duas travas:
+
+Validação no Front-end: O sistema só deve permitir avançar para a tela de faturamento ou geração de lote se o array de os_ids não estiver vazio. Se estiver vazio, exiba um badge vermelho impeditivo e bloqueie a ação.
+
+Campos Obrigatórios: No banco, a relação entre a Fatura e a Ordem de Serviço deve exigir integridade. Se for um faturamento global, ele precisa estar atrelado à "OS Mãe".
+
+3. Sincronização e Auditoria (Caso TM Segurança)
+Se você bateu o olho e desconfiou do valor de R$ 133.184,82 (FAT #57) ou de R$ 59.366,24 (FAT #52`) da TM Segurança, o sistema precisa te dar a resposta imediatamente através de um rastreamento (Auditoria).
+
+Para alinhar a Fatura ↔ OS ↔ Boletim de Medição ↔ Relatório:
+
+Ação Direta na Tela: Transforme o badge de quantidade de OSs (ex: 49 OS, 46 OS) em um link/botão clicável que abre um Modal de Auditoria.
+
+O que esse Modal deve mostrar:
+
+A lista de todas as OSs que compõem aquele valor.
+
+O valor individual de cada uma e a soma do combustível/horas.
+
+O link direto para o Boletim de Medição correspondente para conferência rápida.
+
+Supabase Realtime: Garanta que se o valor de uma OS ou Boletim for alterado na origem, o status da Fatura mude para "Desatualizado" ou recalcule o valor automaticamente usando uma Trigger no banco de dados.
+
+4. Alertas Inteligentes e Correção Rápida (NF com Erro)
+Para as faturas com falha (como a FAT #60 e FAT #61 da R.F.M. com o erro "E-mail do cliente incompleto"):
+
+Efeito Visual (Alerta Piscando):
+No CSS/Tailwind do componente de Status, crie uma classe de animação suave para chamar a atenção do operador sem poluir visualmente:
+
+CSS
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.5); }
+  50% { border-color: rgba(239, 68, 68, 1); filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4)); }
+}
+.alerta-piscando {
+  animation: pulse-border 2s infinite;
+}
+Inteligência na Resolução (Ajuste na Hora):
+Em vez de apenas exibir o erro, mapeie os erros mais comuns (ex: e-mail inválido, CNPJ faltando Inscrição Municipal/Estadual) para dar a solução imediata:
+
+Identificação do Erro: O sistema lê a mensagem retornada pela API (eNotas/Asaas).
+
+Botão de Ação Rápida ("Resolver Agora"): Ao lado do erro (ou dentro do botão de ações), coloque um ícone de engrenagem/correção.
+
+Modal de Correção Expressa:
+
+Se o erro for "E-mail incompleto", o modal abre um campo de texto focado diretamente no cadastro de e-mail de faturamento do cliente.
+
+O operador corrige o e-mail ali mesmo, o sistema salva no banco (atualizando o cadastro do cliente para os próximos faturamentos) e já dispara um gatilho automático de Reemitir.
+
+Se precisar que eu te ajude com a estrutura de código específica de alguma dessas partes no React ou com a query do Supabase para fazer o cruzamento dos valores da TM Segurança, é só me mandar o trecho do código atual que estruturamos juntos.
