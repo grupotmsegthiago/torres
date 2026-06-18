@@ -27,6 +27,7 @@
 - [Boletim A_VERIFICAR congelado nasce zerado](boletim-frozen-a-verificar.md) — CRON cria billing cedo e A_VERIFICAR∈FROZEN_STATUSES⇒nunca recalcula; boletim zerado/subfaturado=corrigir via botão Calcular/Aprovar (não é bug de cálculo); prévia engana (override "0").
 - [Boletim foto única](boletim-foto-unica.md) — total da OS é congelado no envio (billing_snapshot); tela/e-mail/Excel/aprovação leem o mesmo nº via osCanonicalTotal; duplicata=manter envio mais recente.
 - [Monitor de conexão Z-API](whatsapp-zapi-monitor.md) — "bot parado" tem 2 modos (desconectado E número errado); UI/health usa isDown, não só connected; monitor só em prod (evita alerta duplicado).
+- [Re-emissão de NFS-e trava no servidor](nfse-reemissao-trava-servidor.md) — endpoint de reprocessar NF exige papel diretoria + estado em erro no backend (não só UI), senão duplicidade fiscal.
 - [Query .in(osIds) corta em 1000](supabase-in-pagination-1000.md) — `.in("service_order_id", osIds)` sem paginar trunca em 1000 linhas e some dado das OSs recentes; filtrar por step + paginar com .range().
 - [Invariante recusada=R$0 em todo writer de billing](recusada-billing-write-paths.md) — §8.1 precisa de guard (osIsRecusada+buildRecusadaZeroPayload) em CADA endpoint que escreve escort_billings (~7), não só na conclusão; novo writer reabre o buraco.
 - [storage.getX(id) não usa cache de lista](storage-getbyid-no-list-cache.md) — getEmployee/getClient(id) batem no Supabase a cada chamada (N+1 ao agregar N itens); pré-carregue a lista e resolva por Map em memória.

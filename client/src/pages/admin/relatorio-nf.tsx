@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -31,6 +31,7 @@ type RelatorioRow = {
   clientName: string;
   clientFantasia: string | null;
   clientCpfCnpj: string | null;
+  clientEmail: string | null;
   description: string | null;
   value: number;
   netValue: number | null;
@@ -43,7 +44,8 @@ type RelatorioRow = {
   nfseUrl: string | null;
   nfseNumber: string | null;
   osCount: number;
-  osList: Array<{ id: number; osNumber: string }>;
+  noLinkReason?: string | null;
+  osList: Array<{ id: number; osNumber: string; value?: number }>;
   rawStatus: string | null;
   rawNfseStatus: string | null;
   nfseErrorMessage: string | null;
@@ -110,6 +112,8 @@ export default function RelatorioNFPage() {
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
+  const [resolverModal, setResolverModal] = useState<{ invoiceId: number; clientName: string; email: string; errorMsg: string | null } | null>(null);
+  const [osModal, setOsModal] = useState<{ clientName: string; nfNumber: string | null; total: number; osList: Array<{ id: number; osNumber: string; value?: number }> } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -332,6 +336,24 @@ export default function RelatorioNFPage() {
       toast({ title: "Fatura reenviada", description: data?.message || "E-mail com boleto e NF enviado ao cliente." });
     },
     onError: (e: any) => toast({ title: "Erro ao reenviar", description: e?.message, variant: "destructive" }),
+  });
+
+  const resolverMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; email: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/resolver-nf-erro`, {
+        method: "POST",
+        body: JSON.stringify({ email: payload.email }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "NF reprocessada", description: data?.message || "E-mail atualizado e NFS-e re-emitida." });
+      setResolverModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Não foi possível resolver", description: e?.message, variant: "destructive" }),
   });
 
   const openNfMirror = async (id: number) => {
@@ -749,37 +771,22 @@ export default function RelatorioNFPage() {
                         {r.clientCpfCnpj && <div className="text-[11px] text-slate-400">{r.clientCpfCnpj}</div>}
                         <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1" data-testid={`os-list-${r.id}`}>
                           {r.osList && r.osList.length > 0 ? (
-                            <div className="relative group/oslist inline-block">
-                              <span
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 cursor-help hover:bg-blue-100 transition-colors"
-                                data-testid={`os-count-${r.id}`}
-                              >
-                                <FileText className="h-2.5 w-2.5" />
-                                {r.osList.length} OS
-                              </span>
-                              <div className="invisible opacity-0 group-hover/oslist:visible group-hover/oslist:opacity-100 transition-opacity absolute z-50 left-0 top-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg p-2 min-w-[220px] max-w-[420px]">
-                                <div className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mb-1">OS vinculadas ({r.osList.length})</div>
-                                <div className="flex flex-wrap gap-x-1.5 gap-y-1">
-                                  {r.osList.map((o) => (
-                                    <Link
-                                      key={o.id}
-                                      href={`/admin/service-orders?os=${o.id}`}
-                                      className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-[11px] px-1 py-0.5 rounded hover:bg-blue-50"
-                                      data-testid={`link-os-${o.id}`}
-                                      title={`Abrir ${o.osNumber}`}
-                                    >
-                                      {o.osNumber}
-                                    </Link>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setOsModal({ clientName: r.clientFantasia || r.clientName, nfNumber: r.nfseNumber, total: Number(r.value || 0), osList: r.osList })}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 cursor-pointer hover:bg-blue-100 hover:border-blue-300 transition-colors"
+                              title="Ver as OS que compõem esta fatura"
+                              data-testid={`os-count-${r.id}`}
+                            >
+                              <FileText className="h-2.5 w-2.5" />
+                              {r.osList.length} OS
+                            </button>
                           ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : r.source === "INVOICE" && r.sourceId > 0 ? (
                             <span
-                              className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded cursor-help italic"
-                              title={r.noLinkReason || "Nenhuma OS aprovada encontrada no banco com este valor para este cliente."}
+                              className="alerta-piscando inline-flex items-center gap-1 text-[10px] font-bold text-white bg-red-600 border border-red-700 px-1.5 py-0.5 rounded cursor-help uppercase tracking-wide"
+                              title={r.noLinkReason || "Nenhuma OS aprovada encontrada no banco com este valor para este cliente. Confira antes de faturar."}
                               data-testid={`text-no-os-${r.id}`}
                             >
                               <AlertTriangle className="h-2.5 w-2.5" /> sem OS
@@ -839,7 +846,7 @@ export default function RelatorioNFPage() {
                       </td>
                       <td className="px-3 py-2 text-center">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}${r.normalizedStatus === "NF_ERRO" ? " alerta-piscando" : ""}`}
                           title={r.normalizedStatus === "NF_ERRO" && r.nfseErrorMessage ? r.nfseErrorMessage : undefined}
                           data-testid={`status-${r.id}`}
                         >
@@ -855,6 +862,16 @@ export default function RelatorioNFPage() {
                             data-testid={`button-nfse-error-${r.id}`}
                           >
                             {r.nfseErrorMessage}
+                          </button>
+                        )}
+                        {isDiretoria && r.normalizedStatus === "NF_ERRO" && r.source === "INVOICE" && r.invoiceId && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
+                            onClick={() => setResolverModal({ invoiceId: r.invoiceId!, clientName: r.clientFantasia || r.clientName, email: r.clientEmail || "", errorMsg: r.nfseErrorMessage })}
+                            data-testid={`button-resolver-nf-${r.id}`}
+                          >
+                            <Wrench className="h-2.5 w-2.5" /> Resolver agora
                           </button>
                         )}
                       </td>
@@ -1729,6 +1746,118 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-duedate"
             >
               {changeDueDateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Alterando…</> : <><CheckCircle2 className="h-4 w-4 mr-1" /> Confirmar alteração</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: auditoria das OS que compõem a fatura */}
+      <Dialog open={!!osModal} onOpenChange={open => { if (!open) setOsModal(null); }}>
+        <DialogContent className="max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <FileText className="h-4 w-4 text-blue-600" />
+              OS desta fatura
+            </DialogTitle>
+          </DialogHeader>
+          {osModal && (
+            <div className="space-y-3">
+              <div className="text-sm text-slate-600">
+                <span className="font-medium text-slate-800">{osModal.clientName}</span>
+                {osModal.nfNumber && <span className="text-slate-400"> · NF {osModal.nfNumber}</span>}
+              </div>
+              <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
+                {osModal.osList.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between gap-3 px-3 py-2" data-testid={`os-modal-row-${o.id}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Link
+                        href={`/admin/service-orders?os=${o.id}`}
+                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-sm truncate"
+                        data-testid={`os-modal-link-${o.id}`}
+                        title={`Abrir ${o.osNumber}`}
+                      >
+                        {o.osNumber}
+                      </Link>
+                      <ExternalLink className="h-3 w-3 text-slate-300 shrink-0" />
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums text-slate-700 shrink-0">
+                      {typeof o.value === "number" ? fmtBRL(o.value) : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                <span className="text-xs text-slate-500">{osModal.osList.length} OS</span>
+                <div className="text-right">
+                  {(() => {
+                    const soma = osModal.osList.reduce((acc, o) => acc + (typeof o.value === "number" ? o.value : 0), 0);
+                    const temValores = osModal.osList.some(o => typeof o.value === "number");
+                    return (
+                      <>
+                        {temValores && (
+                          <div className="text-xs text-slate-500">Soma das OS: <span className="font-semibold tabular-nums text-slate-700">{fmtBRL(soma)}</span></div>
+                        )}
+                        <div className="text-sm font-bold tabular-nums text-emerald-700" data-testid="os-modal-total">Total da fatura: {fmtBRL(osModal.total)}</div>
+                        {temValores && Math.abs(soma - osModal.total) > 0.01 && (
+                          <div className="text-[11px] text-amber-700 mt-0.5">⚠ Soma das OS difere do total da fatura ({fmtBRL(Math.abs(soma - osModal.total))}).</div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOsModal(null)} data-testid="button-close-os-modal">Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: resolver NF com erro (corrige e-mail + re-emite) */}
+      <Dialog open={!!resolverModal} onOpenChange={open => { if (!open && !resolverMutation.isPending) setResolverModal(null); }}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-red-600" />
+              Resolver NF com erro
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              A maioria dos erros de NF é por e-mail do cliente inválido ou ausente. Informe o e-mail correto: ele será salvo no cadastro e a nota será re-emitida automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+          {resolverModal && (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <span className="text-slate-500">Cliente:</span> <span className="font-medium text-slate-800">{resolverModal.clientName}</span>
+              </div>
+              {resolverModal.errorMsg && (
+                <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                  <span className="font-semibold">Erro atual:</span> {resolverModal.errorMsg}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">E-mail do cliente <span className="text-rose-600">*</span></label>
+                <Input
+                  type="email"
+                  value={resolverModal.email}
+                  onChange={e => setResolverModal({ ...resolverModal, email: e.target.value })}
+                  placeholder="financeiro@cliente.com.br"
+                  data-testid="input-resolver-email"
+                />
+                <p className="text-xs text-slate-500 mt-1">Para mais de um e-mail, separe por vírgula. O primeiro vira o e-mail principal.</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolverModal(null)} disabled={resolverMutation.isPending} data-testid="button-cancel-resolver">Cancelar</Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => resolverModal && resolverMutation.mutate({ invoiceId: resolverModal.invoiceId, email: resolverModal.email.trim() })}
+              disabled={resolverMutation.isPending || !resolverModal?.email.trim()}
+              data-testid="button-confirm-resolver"
+            >
+              {resolverMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Reprocessando…</> : <><Wrench className="h-4 w-4 mr-1" /> Salvar e re-emitir</>}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1688,6 +1688,115 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  // Resolver NF com erro: corrige o e-mail do cliente (nosso banco + Asaas) e re-emite a NFS-e.
+  // O erro mais comum de NFS-e é e-mail do tomador inválido/ausente. Aqui o usuário informa
+  // o e-mail correto, gravamos no cadastro, forçamos a atualização no customer do Asaas
+  // (PUT incondicional) e re-emitimos a nota no mesmo passo.
+  app.post("/api/invoices/:id/resolver-nf-erro", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode reprocessar Notas Fiscais." });
+      }
+
+      const id = parseInt(req.params.id);
+      const emailRaw = String((req.body as any)?.email || "").trim();
+      const emails = emailRaw.split(/[;,]\s*/).map((e) => e.trim()).filter(Boolean);
+      const emailValido = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+      if (emails.length === 0 || !emails.every(emailValido)) {
+        return res.status(400).json({ message: "Informe um e-mail válido (separe vários por vírgula)." });
+      }
+
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada." });
+      if (!invoice.asaas_payment_id) {
+        return res.status(400).json({ message: "Fatura sem vínculo com Asaas. A NFS-e só pode ser emitida para cobranças integradas." });
+      }
+
+      // Trava de estado: só reprocessa NF que está REALMENTE com erro. Bloqueia
+      // re-emissão de uma nota já autorizada/emitida (evita duplicidade fiscal).
+      // Espelha a classificação de normalizeInvoiceStatus (ERROR/REJECTED/etc. = erro).
+      const nfStatusUp = String(invoice.nfse_status || "").toUpperCase();
+      const emErro = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatusUp) || !!invoice.nfse_error_message;
+      const jaEmitida = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(nfStatusUp);
+      if (!emErro || jaEmitida) {
+        return res.status(409).json({ message: "Esta fatura não está com NF em erro — reprocessar não é permitido para evitar emissão duplicada. Cancele a NF atual primeiro, se necessário." });
+      }
+
+      const cpfCnpj = String(invoice.client_cpf_cnpj || "").replace(/[^\d]/g, "");
+      if (!cpfCnpj) {
+        return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
+      }
+
+      // 1) Atualiza o e-mail no cadastro do cliente (nosso banco)
+      if (invoice.client_id) {
+        const { error: updErr } = await supabaseAdmin
+          .from("clients")
+          .update({ email_financeiro: emails[0] })
+          .eq("id", invoice.client_id);
+        if (updErr) console.error(`[resolver-nf-erro #${id}] erro ao salvar e-mail no cliente ${invoice.client_id}: ${updErr.message}`);
+      }
+
+      // 2) Força a atualização do e-mail no customer do Asaas (PUT incondicional)
+      try {
+        const search = await asaasRequest("GET", `/customers?cpfCnpj=${cpfCnpj}`);
+        if (search?.data?.length > 0) {
+          const customerId = search.data[0].id;
+          const putPayload: any = { email: emails[0] };
+          const extra = emails.slice(1).join(",");
+          if (extra) putPayload.additionalEmails = extra;
+          await asaasRequest("PUT", `/customers/${customerId}`, putPayload);
+          console.log(`[resolver-nf-erro #${id}] e-mail do customer Asaas ${customerId} atualizado.`);
+        } else {
+          console.warn(`[resolver-nf-erro #${id}] nenhum customer Asaas encontrado para cpfCnpj ${cpfCnpj}.`);
+        }
+      } catch (e: any) {
+        console.error(`[resolver-nf-erro #${id}] falha ao atualizar customer Asaas: ${e.message}`);
+      }
+
+      // 3) Re-emite a NFS-e
+      let result: { id: string; status: string; number?: string };
+      try {
+        result = await emitNfseImmediate({
+          paymentId: invoice.asaas_payment_id,
+          value: parseFloat(invoice.value),
+          description: invoice.description || DESCRICAO_SERVICO_FIXA,
+        });
+      } catch (emitErr: any) {
+        // Persiste o novo erro pra UI continuar sinalizando
+        await supabaseAdmin
+          .from("invoices")
+          .update({ nfse_error_message: emitErr.message, updated_at: new Date().toISOString() })
+          .eq("id", id);
+        return res.status(502).json({ message: `E-mail atualizado, mas a re-emissão falhou: ${emitErr.message}` });
+      }
+
+      const updates: Record<string, any> = {
+        nfse_status: result.status || "AUTHORIZED",
+        nfse_error_message: null,
+        updated_at: new Date().toISOString(),
+      };
+      if (result.number) updates.nfse_number = String(result.number);
+      else if (result.id) updates.nfse_number = String(result.id);
+
+      const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "RESOLVER_NF_ERRO", targetId: invoice.asaas_payment_id, targetType: "invoice",
+        details: `NF com erro resolvida: e-mail corrigido para "${emailRaw}" e NFS-e re-emitida (fatura #${id}). Status: ${result.status}`,
+        ipAddress: (req as any).ip,
+      });
+
+      console.log(`[resolver-nf-erro #${id}] resolvido: e-mail atualizado e NFS-e re-emitida (status ${result.status}).`);
+      res.json({ ...data, nfseResult: result, message: "E-mail atualizado e NFS-e re-emitida." });
+    } catch (err: any) {
+      console.error("[resolver-nf-erro] erro:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/invoices/:id/cancel-nfse", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
@@ -3121,14 +3230,14 @@ export function registerAsaasRoutes(app: Express) {
           ...invClientIds,
           ...openInvClientIds,
         ])) as number[];
-        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean }>();
+        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean; email: string | null }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf")
+            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, email_financeiro, email, email_contratual, email_operacional")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false });
+            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false, email: c.email_financeiro || c.email || c.email_contratual || c.email_operacional || null });
           }
         }
 
@@ -3185,6 +3294,7 @@ export function registerAsaasRoutes(app: Express) {
             clientName: cli?.name || inv.client_name,
             clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
+            clientEmail: cli?.email || null,
             description: inv.description,
             value: Number(inv.value || 0),
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
@@ -3197,7 +3307,7 @@ export function registerAsaasRoutes(app: Express) {
             nfseUrl: inv.nfse_url,
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
             osCount: bills.length,
-            osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
+            osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b), value: billingValor(b) }])).values()),
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             nfseErrorMessage: inv.nfse_error_message || null,
@@ -3311,6 +3421,7 @@ export function registerAsaasRoutes(app: Express) {
             clientName: cli?.name || inv.client_name,
             clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
+            clientEmail: cli?.email || null,
             description: inv.description,
             value: Number(inv.value || 0),
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
