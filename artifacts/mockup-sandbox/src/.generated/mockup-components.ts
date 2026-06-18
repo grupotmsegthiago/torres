@@ -12,7 +12,7 @@ export const modules: ModuleMap = {
   "./components/mockups/grid-veiculo-row/Editorial.tsx": () => import("../components/mockups/grid-veiculo-row/Editorial.tsx"),
   "./components/mockups/grid-veiculo-row/Progresso.tsx": () => import("../components/mockups/grid-veiculo-row/Progresso.tsx"),
   "./components/mockups/ignition-icons/Options.tsx": () => import("../components/mockups/ignition-icons/Options.tsx"),
+  "./components/mockups/pedagio-mobile/PedagioMobile.tsx": () => import("../components/mockups/pedagio-mobile/PedagioMobile.tsx"),
   "./components/mockups/whatsapp-embed/Classic.tsx": () => import("../components/mockups/whatsapp-embed/Classic.tsx"),
-  "./components/mockups/whatsapp-embed/Hybrid.tsx": () => import("../components/mockups/whatsapp-embed/Hybrid.tsx"),
-  "./components/mockups/pedagio-mobile/PedagioMobile.tsx": () => import("../components/mockups/pedagio-mobile/PedagioMobile.tsx")
+  "./components/mockups/whatsapp-embed/Hybrid.tsx": () => import("../components/mockups/whatsapp-embed/Hybrid.tsx")
 };
