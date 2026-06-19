@@ -1243,16 +1243,18 @@ export async function syncAllDevices(): Promise<{ devices: number; totalSaved: n
 export async function buildFolhaStats(
   employeeId: number,
   monthYear: string,
-  opts: { multiplicadorHE?: number } = {},
+  opts: {
+    multiplicadorHE?: number;
+    // Injeção opcional p/ evitar N+1 quando o chamador (ex.: Balanço Gerencial)
+    // já tem o cadastro do funcionário em mãos. Sem isso, consulta como antes.
+    employee?: { role?: string | null; tipo_contratacao?: string | null };
+  } = {},
 ): Promise<any> {
   const multiplicadorHE = opts.multiplicadorHE ?? 1.5; // CLT padrão 50%; CCT é 1.6 (60%)
-  const dias = await buildFolhaPonto(employeeId, monthYear);
-  const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
-  const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
-  // Horas noturnas (22h–05h BRT) efetivamente trabalhadas no mês.
-  const horasNoturnas = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
 
-  // Pega salário vigente mais recente (cuja effective_date <= último dia do mês)
+  // Pega salário vigente mais recente (cuja effective_date <= último dia do mês).
+  // Buscado ANTES do ponto pra injetar horas_mensais em buildFolhaPonto e evitar
+  // que ele releia employee_salaries (mesma row/filtro/ordem) — corta 1 query/func.
   const [yyyy, mm] = monthYear.split("-").map(Number);
   const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
   const { data: salaryRows } = await supabaseAdmin
@@ -1264,14 +1266,25 @@ export async function buildFolhaStats(
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(1);
+  const horasMensaisPonto = salaryRows && salaryRows[0] && (salaryRows[0] as any).horas_mensais
+    ? Number((salaryRows[0] as any).horas_mensais)
+    : 220;
+
+  const dias = await buildFolhaPonto(employeeId, monthYear, { horasMensais: horasMensaisPonto });
+  const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
+  const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
+  // Horas noturnas (22h–05h BRT) efetivamente trabalhadas no mês.
+  const horasNoturnas = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
 
   // Carrega cargo do funcionário pra resolver o CCT correto
-  // (vigilante→vigilancia, limpeza→siemaco).
-  const { data: empRow } = await supabaseAdmin
-    .from("employees")
-    .select("role, tipo_contratacao")
-    .eq("id", employeeId)
-    .limit(1);
+  // (vigilante→vigilancia, limpeza→siemaco). Usa o cadastro injetado se houver.
+  const empRow = opts.employee
+    ? [{ role: opts.employee.role, tipo_contratacao: opts.employee.tipo_contratacao }]
+    : (await supabaseAdmin
+        .from("employees")
+        .select("role, tipo_contratacao")
+        .eq("id", employeeId)
+        .limit(1)).data;
   const empRole = (empRow && empRow[0] && (empRow[0] as any).role) || "";
   // Não-CLT (PJ, fixo, autônomo): zera todos os encargos da empresa.
   // O bruto pago = custo total; não há FGTS, INSS patronal, seguro de vida.
@@ -1993,7 +2006,11 @@ function nightMinutesBRT(startMs: number, endMs: number): number {
   return count;
 }
 
-export async function buildFolhaPonto(employeeId: number, monthYear: string): Promise<any[]> {
+export async function buildFolhaPonto(
+  employeeId: number,
+  monthYear: string,
+  opts: { horasMensais?: number } = {},
+): Promise<any[]> {
   // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
   const { start, end } = monthToFechamento(monthYear);
 
@@ -2009,18 +2026,25 @@ export async function buildFolhaPonto(employeeId: number, monthYear: string): Pr
 
   // Jornada diária base p/ cálculo de HE por dia: horas_mensais ÷ 25 dias úteis.
   // Fallback: 220h / 25 = 8h48min (528 min).
-  const [yyyyJ, mmJ] = monthYear.split("-").map(Number);
-  const monthEndStrJ = new Date(Date.UTC(yyyyJ, mmJ, 0)).toISOString().slice(0, 10);
-  const { data: salRows } = await supabaseAdmin
-    .from("employee_salaries")
-    .select("horas_mensais, effective_date")
-    .eq("employee_id", employeeId)
-    .lte("effective_date", monthEndStrJ)
-    .order("effective_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(1);
-  const horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
+  // `opts.horasMensais` permite que o chamador (buildFolhaStats) injete o valor
+  // já consultado, evitando reler employee_salaries (mesma row/ordem/filtro).
+  let horasMensais: number;
+  if (opts.horasMensais != null) {
+    horasMensais = opts.horasMensais;
+  } else {
+    const [yyyyJ, mmJ] = monthYear.split("-").map(Number);
+    const monthEndStrJ = new Date(Date.UTC(yyyyJ, mmJ, 0)).toISOString().slice(0, 10);
+    const { data: salRows } = await supabaseAdmin
+      .from("employee_salaries")
+      .select("horas_mensais, effective_date")
+      .eq("employee_id", employeeId)
+      .lte("effective_date", monthEndStrJ)
+      .order("effective_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1);
+    horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
+  }
   const jornadaDiariaMin = (horasMensais * 60) / 25;
 
   // Agrupa por dia (BRT)

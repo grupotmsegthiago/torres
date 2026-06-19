@@ -7,6 +7,7 @@ import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { computeWorkedHours } from "../lib/hours-calc";
+import pLimit from "p-limit";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
 const fixedCostInputSchema = insertFixedCostSchema.extend({
@@ -414,7 +415,7 @@ export function registerFixedCostsRoutes(app: Express) {
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, async (req, res) => {
     const { data: employees, error } = await supabaseAdmin
       .from("employees")
-      .select("id, name, status");
+      .select("id, name, status, role, tipo_contratacao");
     if (error) return res.status(500).json({ message: error.message });
 
     const ativos = (employees || []).filter(isAtivo);
@@ -512,14 +513,30 @@ export function registerFixedCostsRoutes(app: Express) {
     const mesRef = String(from).slice(0, 7); // "YYYY-MM"
     const { buildFolhaStats } = await import("../control-id");
 
-    for (const emp of ativos) {
-      let s: any;
-      try {
-        s = await buildFolhaStats(emp.id, mesRef, { multiplicadorHE: 1.6 });
-      } catch (err: any) {
-        console.warn(`[rh-summary] buildFolhaStats(${emp.id}) falhou:`, err?.message || err);
-        continue;
-      }
+    // Calcula a folha de cada agente em PARALELO (limite de concorrência) em vez
+    // de um de cada vez. Passa o cadastro já carregado (role/tipo_contratacao)
+    // pra evitar reler `employees` por funcionário. A acumulação (somas/breakdown)
+    // continua logo abaixo na ordem original de `ativos`, então os totais ficam
+    // bit-idênticos ao cálculo serial anterior.
+    const limit = pLimit(6);
+    const statsByIdx = await Promise.all(
+      ativos.map((emp) => limit(async () => {
+        try {
+          return await buildFolhaStats(emp.id, mesRef, {
+            multiplicadorHE: 1.6,
+            employee: { role: (emp as any).role, tipo_contratacao: (emp as any).tipo_contratacao },
+          });
+        } catch (err: any) {
+          console.warn(`[rh-summary] buildFolhaStats(${emp.id}) falhou:`, err?.message || err);
+          return null;
+        }
+      })),
+    );
+
+    for (let i = 0; i < ativos.length; i++) {
+      const emp = ativos[i];
+      const s: any = statsByIdx[i];
+      if (!s) continue;
 
       const total = Number(s.custoTotalEstimado || 0);
       totalMensal += total;

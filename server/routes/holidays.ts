@@ -49,13 +49,32 @@ export function payrollPeriodRange(year: number, month: number): { from: string;
   return { from: fmt(start), to: fmt(end) };
 }
 
+/** Cache em memória do conjunto de feriados, keyed por faixa (from|to).
+ *  Feriados quase nunca mudam, e telas como Balanço Gerencial chamam
+ *  `loadHolidaySet` uma vez por funcionário (N+1). O cache elimina essas
+ *  consultas repetidas dentro de uma mesma janela. Invalidado em
+ *  qualquer escrita na tabela `holidays` (POST/DELETE abaixo). */
+const HOLIDAY_CACHE_TTL_MS = 5 * 60 * 1000;
+const holidayCache = new Map<string, { set: Set<string>; loadedAt: number }>();
+
+export function invalidateHolidayCache() {
+  holidayCache.clear();
+}
+
 /** Carrega todos os feriados (cache-friendly) e devolve um Set "YYYY-MM-DD". */
 export async function loadHolidaySet(fromISO?: string, toISO?: string): Promise<Set<string>> {
+  const key = `${fromISO || ""}|${toISO || ""}`;
+  const hit = holidayCache.get(key);
+  if (hit && Date.now() - hit.loadedAt < HOLIDAY_CACHE_TTL_MS) {
+    return hit.set;
+  }
   let q = supabaseAdmin.from("holidays").select("date");
   if (fromISO) q = q.gte("date", fromISO);
   if (toISO) q = q.lte("date", toISO);
   const { data } = await q;
-  return new Set((data || []).map((h: any) => String(h.date).slice(0, 10)));
+  const set = new Set((data || []).map((h: any) => String(h.date).slice(0, 10)));
+  holidayCache.set(key, { set, loadedAt: Date.now() });
+  return set;
 }
 
 const insertSchema = z.object({
@@ -83,12 +102,14 @@ export function registerHolidaysRoutes(app: Express) {
       .select()
       .single();
     if (error) return res.status(500).json({ message: error.message });
+    invalidateHolidayCache();
     res.status(201).json(data);
   });
 
   app.delete("/api/holidays/:id", requireAuth, requireAdminRole, async (req, res) => {
     const { error } = await supabaseAdmin.from("holidays").delete().eq("id", Number(req.params.id));
     if (error) return res.status(500).json({ message: error.message });
+    invalidateHolidayCache();
     res.json({ ok: true });
   });
 }
