@@ -123,3 +123,97 @@ export function buildNfseInvoicePayload(opts: {
 export function fmtBRL(val: number): string {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+
+// ---------------------------------------------------------------------------
+// Validação preventiva + captura de erro de NFS-e
+// ---------------------------------------------------------------------------
+
+/** Valida e-mail simples (1 endereço; aceita lista separada por vírgula/;). */
+export function isValidEmail(raw: string | null | undefined): boolean {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  const parts = s.split(/[;,]\s*/).map((e) => e.trim()).filter(Boolean);
+  if (parts.length === 0) return false;
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return parts.every((e) => re.test(e));
+}
+
+/** Mensagem clara e acionável quando a NF não é emitida por falta de e-mail. */
+export const MISSING_EMAIL_NF_MSG =
+  'NF não emitida: e-mail do cliente ausente ou inválido no cadastro. ' +
+  'Preencha o e-mail do cliente e clique em "Resolver agora" para reemitir.';
+
+/**
+ * Decide se a emissão de NF deve ser bloqueada ANTES de chamar o Asaas por
+ * causa de e-mail do cliente faltando/inválido. Opt-in: `undefined` = caller
+ * legado que não informou e-mail ⇒ não bloqueia (mantém comportamento antigo).
+ */
+export function shouldBlockNfEmission(clientEmail: string | undefined): boolean {
+  return clientEmail !== undefined && !isValidEmail(clientEmail);
+}
+
+/** Status de NFS-e que indicam erro/rejeição (espelha normalizeInvoiceStatus). */
+const NF_ERROR_STATUSES = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"];
+const NF_OK_STATUSES = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"];
+
+export function isNfErrorStatus(status: string | null | undefined): boolean {
+  return NF_ERROR_STATUSES.includes(String(status || "").toUpperCase());
+}
+
+export function isNfOkStatus(status: string | null | undefined): boolean {
+  return NF_OK_STATUSES.includes(String(status || "").toUpperCase());
+}
+
+/**
+ * Extrai SÓ a mensagem concreta de erro presente no objeto do Asaas, varrendo
+ * os campos conhecidos. Retorna `null` quando o Asaas não mandou nenhuma
+ * mensagem — assim o caller pode preservar uma mensagem específica já gravada
+ * em vez de sobrescrevê-la por um texto genérico.
+ */
+export function extractConcreteNfErrorMessage(nfObj: any): string | null {
+  const candidates = [
+    nfObj?.rejectionReason,
+    nfObj?.rejectionMessage,
+    nfObj?.statusDescription,
+    nfObj?.errorMessage,
+    nfObj?.error,
+    Array.isArray(nfObj?.errors) ? (nfObj.errors[0]?.description || nfObj.errors[0]?.message || nfObj.errors[0]?.code) : undefined,
+    nfObj?.observations,
+  ];
+  for (const c of candidates) {
+    const s = String(c || "").trim();
+    if (s) return s.slice(0, 1000);
+  }
+  return null;
+}
+
+/** Texto genérico (nunca vazio) quando não há mensagem concreta do Asaas. */
+export function genericNfErrorMessage(status?: string | null): string {
+  const st = String(status || "ERRO").toUpperCase();
+  return `NF com erro no Asaas (status: ${st}). Verifique os dados do cliente (e-mail, endereço, inscrição municipal) e use "Resolver agora" para reemitir.`;
+}
+
+export function extractNfErrorMessage(
+  nfObj: any,
+  status?: string | null,
+): string {
+  return extractConcreteNfErrorMessage(nfObj) ?? genericNfErrorMessage(status || nfObj?.status);
+}
+
+/**
+ * Decide qual mensagem gravar em `nfse_error_message` para um status de erro,
+ * SEM perder detalhe: prioriza a mensagem concreta do Asaas; se não houver,
+ * mantém a mensagem específica já gravada; só cai no genérico se não houver
+ * nada. Retorna `null` quando nada muda (evita escrita desnecessária).
+ */
+export function resolveNfErrorMessage(
+  nfObj: any,
+  status: string | null | undefined,
+  existing: string | null | undefined,
+): string {
+  const concrete = extractConcreteNfErrorMessage(nfObj);
+  if (concrete) return concrete;
+  const prev = String(existing || "").trim();
+  if (prev) return prev;
+  return genericNfErrorMessage(status || nfObj?.status);
+}

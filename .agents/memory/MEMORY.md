@@ -34,3 +34,4 @@
 - [Invariante recusada=R$0 em todo writer de billing](recusada-billing-write-paths.md) — §8.1 precisa de guard (osIsRecusada+buildRecusadaZeroPayload) em CADA endpoint que escreve escort_billings (~7), não só na conclusão; novo writer reabre o buraco.
 - [storage.getX(id) não usa cache de lista](storage-getbyid-no-list-cache.md) — getEmployee/getClient(id) batem no Supabase a cada chamada (N+1 ao agregar N itens); pré-carregue a lista e resolva por Map em memória.
 - [Coluna nova em service_orders some da lista](service-orders-list-allowlist.md) — list endpoint usa allowlist explícita SO_LIST_COLS; coluna nova precisa ser adicionada lá ou volta NULL na listagem (POST/PATCH/getById usam select * e funcionam).
+- [NF Asaas: validação de e-mail + erro mudo](nf-emission-validation.md) — emissão tem ~7 call-sites; validação pré-Asaas é opt-in por call-site (clientEmail), e capture usa resolveNfErrorMessage p/ não sobrescrever msg específica por genérica.
