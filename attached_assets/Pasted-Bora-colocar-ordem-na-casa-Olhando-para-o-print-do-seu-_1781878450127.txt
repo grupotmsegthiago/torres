@@ -1,0 +1,67 @@
+Bora colocar ordem na casa. Olhando para o print do seu Relatório de Notas Fiscais, dá para notar claramente onde o fluxo entre o sistema (via Supabase/Replit), o Asaas e a emissão de notas (PlugNotas/eNotas) está quebrando.
+
+Temos problemas de sincronização de status, dados obrigatórios ausentes e regras de negócio dessincronizadas.
+
+🔍 Diagnóstico dos Problemas Encontrados
+NF com Erro (O grande gargalo atual):
+
+Caso R.F.M. Logística (R$692,83): O próprio sistema já avisa: "E-mail do cliente incompleto". Se o e-mail ou o cadastro do cliente (CNPJ, Inscrição Municipal) estiver inválido ou incompleto no seu banco, a API de notas vai rejeitar na hora.
+
+Caso Multilog (R$1.168,80): Está marcando erro, mas a mensagem exata não aparece. Provavelmente é instabilidade no webhook de retorno ou rejeição de tag fiscal.
+
+"As informações não batem" (Dessincronização de Status):
+
+Você tem faturas marcadas como "Aguardando pagamento (S/ NF)" (como a de R$133.184,82), mas que deveriam disparar a nota automaticamente se o gatilho estivesse correto. Se o Asaas gerou a fatura, o webhook dele precisa avisar seu backend no Replit para acionar a eNotas/PlugNotas.
+
+Falta de Vínculo Operacional:
+
+O primeiro item da Multilog está com a tag vermelha "SEM OS". Sem uma Ordem de Serviço vinculada, os cálculos de impostos ou a busca de dados para a nota podem quebrar no backend.
+
+🛠️ Como corrigir isso no Replit (Passo a Passo)
+Para resolver a bagunça, precisamos blindar o código no seu ambiente do Replit. Vamos focar em três pilares: Validação, Webhooks e Logs de Erro.
+
+1. Validar os dados ANTES de enviar para a API (Evitar Notas com Erro)
+No seu backend (Node.js/TypeScript), antes de fazer o POST para criar a fatura no Asaas ou a NF, você precisa aplicar um validador estrito. Se faltar algo, o sistema nem deve tentar enviar.
+
+TypeScript
+// Exemplo de validação no seu backend do Replit
+function validarDadosCliente(cliente: any) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if (!cliente.email || !emailRegex.test(cliente.email)) {
+    throw new Error(`Validação Falhou: O e-mail do cliente (${cliente.nome}) está ausente ou inválido.`);
+  }
+  if (!cliente.cpfCnpj || cliente.cpfCnpj.length < 11) {
+    throw new Error(`Validação Falhou: CNPJ/CPF inválido para o cliente ${cliente.nome}.`);
+  }
+}
+2. Tratar e expor o erro real da Nota Fiscal
+Atualmente, o botão "Resolver agora" aparece, mas você fica no escuro sobre o que quebrou (exceto o do e-mail). Altere a rota que recebe o retorno da eNotas/PlugNotas para salvar o erro exato que a prefeitura retornou em uma coluna error_message na sua tabela do Supabase.
+
+TypeScript
+// No seu endpoint de webhook que escuta a API de Notas
+app.post('/webhooks/nf-status', async (req, res) => {
+  const { id_fatura, status, motivo_rejeicao } = req.body;
+
+  if (status === 'ERRO') {
+    await supabase
+      .from('faturas')
+      .update({ 
+        status_nf: 'Erro', 
+        mensagem_erro: motivo_rejeicao || 'Erro interno na emissão' 
+      })
+      .eq('id_asaas', id_fatura);
+  }
+  return res.status(200).send('OK');
+});
+Isso vai fazer com que o erro real (ex: "Inscrição Municipal inválida") apareça direto na tela para você.
+
+3. Alinhamento de Status: Asaas vs. Sistema
+Se a fatura foi criada no Asaas, ela precisa retornar o id gerado por eles e salvar na sua tabela. Certifique-se de que o seu webhook do Asaas está escutando o evento PAYMENT_CREATED e PAYMENT_RECEIVED para atualizar sua dashboard em tempo real.
+
+🏃‍♂️ Ações imediatas para limpar o painel hoje:
+Para as duas notas "Com Erro": Vá no cadastro desses dois clientes no seu sistema (R.F.M. e Multilog). Verifique o e-mail, CNPJ e se o endereço está completo. Corrija-os e, só então, clique em "Resolver agora" ou force a sincronização.
+
+Para a nota de R$ 133k (Sem NF): Verifique se o botão de ações permite "Gerar NF" manualmente ou se o código falhou ao tentar enviar o lote devido ao tamanho do payload (por ter muitas OS vinculadas).
+
+Onde você quer mexer primeiro para arrumarmos o código juntos? No endpoint do webhook que recebe os status do Asaas/Notas ou na função de validação que envia os dados?
