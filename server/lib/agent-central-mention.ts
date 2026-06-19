@@ -103,6 +103,55 @@ function fmtBrtNow(): string {
   }).format(new Date());
 }
 
+/** "HH:mm" em BRT a partir de um ISO (timestamps já vêm com offset -03:00). */
+function fmtHoraBrt(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d);
+}
+
+/** "dd/mm às HH:mm" em BRT. */
+function fmtDataHoraBrt(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const data = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit",
+  }).format(d);
+  return `${data} às ${fmtHoraBrt(iso)}`;
+}
+
+/** Tempo decorrido desde um ISO até agora, em PT-BR enxuto ("há 1d 4h"). */
+function fmtDecorrido(iso?: string | null): string {
+  if (!iso) return "";
+  const start = new Date(iso).getTime();
+  if (isNaN(start)) return "";
+  const diff = Date.now() - start;
+  if (diff < 60_000) return "iniciada agora";
+  const totalMin = Math.floor(diff / 60_000);
+  const dias = Math.floor(totalMin / 1440);
+  const horas = Math.floor((totalMin % 1440) / 60);
+  const min = totalMin % 60;
+  if (dias > 0) return `em rota há ${dias}d${horas > 0 ? ` ${horas}h` : ""}`;
+  if (horas > 0) return `em rota há ${horas}h${min > 0 ? ` ${min}min` : ""}`;
+  return `em rota há ${min}min`;
+}
+
+/** Emoji por status de missão (pista visual rápida). */
+const MISSION_STATUS_EMOJI: Record<string, string> = {
+  aguardando: "⏳", agendada: "📅", aceita: "🤝",
+  deslocamento_inicio: "🚗", no_local_origem: "📍",
+  em_transito: "🛣️", em_transito_destino: "🛣️",
+  no_local_destino: "📦", em_apoio: "🛡️", pernoite: "🌙",
+  encerrada: "🏁", finalizada: "🏁",
+};
+function statusEmoji(s?: string | null): string {
+  return MISSION_STATUS_EMOJI[String(s || "").toLowerCase().trim()] || "🚚";
+}
+
 /** Adiciona "55" no início do número se ainda não tem código de país. */
 function toIntlPhone(rawPhone: string | null): string | null {
   const digits = normalizePhone(rawPhone);
@@ -517,6 +566,9 @@ interface SummaryOs {
   origin: string | null;
   destination: string | null;
   escorted_vehicle_plate: string | null;
+  escorted_driver_name: string | null;
+  assigned_employee_id: number | null;
+  assigned_employee_2_id: number | null;
   completed_date: string | null;
   mission_started_at: string | null;
 }
@@ -536,7 +588,7 @@ export async function buildClientSummaryByGroup(groupId: string): Promise<string
 
   const clienteNome = String((cli as any).name || "").toUpperCase();
   const startIso = startOfTodayBrtIso();
-  const sel = "id, os_number, mission_status, status, origin, destination, escorted_vehicle_plate, completed_date, mission_started_at";
+  const sel = "id, os_number, mission_status, status, origin, destination, escorted_vehicle_plate, escorted_driver_name, assigned_employee_id, assigned_employee_2_id, completed_date, mission_started_at";
 
   // Ativas (em andamento, não finalizadas).
   const { data: activeRows } = await supabaseAdmin
@@ -564,39 +616,82 @@ export async function buildClientSummaryByGroup(groupId: string): Promise<string
     .filter((o) => !activeIds.has(o.id))
     .sort((a, b) => String(b.completed_date || "").localeCompare(String(a.completed_date || "")));
 
+  // Nomes da equipe Torres (escolta) das OS ativas — 1 consulta em lote.
+  const empIds = Array.from(new Set(
+    active.flatMap((o) => [o.assigned_employee_id, o.assigned_employee_2_id])
+      .filter((id): id is number => typeof id === "number" && id > 0),
+  ));
+  const nomePorEmp = new Map<number, string>();
+  if (empIds.length > 0) {
+    const { data: emps } = await supabaseAdmin
+      .from("employees")
+      .select("id, name")
+      .in("id", empIds);
+    for (const e of (emps || []) as Array<{ id: number; name: string | null }>) {
+      nomePorEmp.set(e.id, firstName(e.name));
+    }
+  }
+  const equipeDe = (o: SummaryOs): string =>
+    [o.assigned_employee_id, o.assigned_employee_2_id]
+      .map((id) => (typeof id === "number" ? nomePorEmp.get(id) : "") || "")
+      .filter(Boolean)
+      .join(" e ");
+
+  const rotaDe = (o: SummaryOs): string =>
+    [shortLocal(o.origin), shortLocal(o.destination)].filter(Boolean).join(" → ");
+  const DIV = "━━━━━━━━━━━━━━━";
+
   const L: string[] = [];
   L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
-  L.push(`📋 *RESUMO DO DIA*${clienteNome ? ` — ${clienteNome}` : ""}`);
+  L.push(`📋 *Resumo Operacional do Dia*`);
+  if (clienteNome) L.push(`🏢 ${clienteNome}`);
   L.push(`🗓️ ${fmtBrtNow()}`);
-  L.push("");
-  L.push(`🚦 *EM ANDAMENTO:* ${active.length}   |   ✅ *FINALIZADAS HOJE:* ${doneToday.length}`);
+  L.push(DIV);
+  L.push(`🚦 Em andamento: *${active.length}*    ✅ Finalizadas hoje: *${doneToday.length}*`);
 
   if (active.length === 0 && doneToday.length === 0) {
     L.push("");
-    L.push(`No momento não há viagens em andamento nem finalizadas hoje.`);
+    L.push(`Sem viagens em andamento ou finalizadas até o momento. 🚚`);
+    L.push("");
+    L.push(`_Mensagem automática • Torres Vigilância Patrimonial_`);
+    return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   if (active.length > 0) {
     L.push("");
     L.push(`▶️ *EM ANDAMENTO*`);
-    for (const o of active) {
-      const placa = o.escorted_vehicle_plate || "—";
-      L.push(`• *OS ${o.os_number || `#${o.id}`}* | 🚛 ${placa} | _${fmtStatusPt(o.mission_status)}_`);
-      const rota = [shortLocal(o.origin), shortLocal(o.destination)].filter(Boolean).join(" → ");
-      if (rota) L.push(`   ${rota}`);
-    }
+    active.forEach((o, i) => {
+      L.push("");
+      L.push(`*${i + 1}. OS ${o.os_number || `#${o.id}`}*  ${statusEmoji(o.mission_status)} _${fmtStatusPt(o.mission_status)}_`);
+      const rota = rotaDe(o);
+      if (rota) L.push(`📍 ${rota}`);
+      const cargaPartes = [o.escorted_vehicle_plate, o.escorted_driver_name].filter(Boolean).join(" • ");
+      if (cargaPartes) L.push(`🚛 ${cargaPartes}`);
+      const equipe = equipeDe(o);
+      if (equipe) L.push(`🛡️ Equipe Torres: ${equipe}`);
+      const decorrido = fmtDecorrido(o.mission_started_at);
+      if (decorrido) L.push(`🕒 Início ${fmtDataHoraBrt(o.mission_started_at)} · ${decorrido}`);
+    });
   }
 
   if (doneToday.length > 0) {
     L.push("");
+    L.push(DIV);
     L.push(`✅ *FINALIZADAS HOJE*`);
-    for (const o of doneToday) {
+    doneToday.forEach((o, i) => {
+      L.push("");
       const placa = o.escorted_vehicle_plate || "—";
-      L.push(`• *OS ${o.os_number || `#${o.id}`}* | 🚛 ${placa}`);
-      const rota = [shortLocal(o.origin), shortLocal(o.destination)].filter(Boolean).join(" → ");
-      if (rota) L.push(`   ${rota}`);
-    }
+      L.push(`*${i + 1}. OS ${o.os_number || `#${o.id}`}*  •  🚛 ${placa}`);
+      const rota = rotaDe(o);
+      if (rota) L.push(`📍 ${rota}`);
+      const horaFim = fmtHoraBrt(o.completed_date);
+      if (horaFim) L.push(`🏁 Concluída às ${horaFim}`);
+    });
   }
+
+  L.push("");
+  L.push(DIV);
+  L.push(`_Mensagem automática • Torres Vigilância Patrimonial_`);
 
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
