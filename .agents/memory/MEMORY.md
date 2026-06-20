@@ -35,3 +35,4 @@
 - [storage.getX(id) não usa cache de lista](storage-getbyid-no-list-cache.md) — getEmployee/getClient(id) batem no Supabase a cada chamada (N+1 ao agregar N itens); pré-carregue a lista e resolva por Map em memória.
 - [Coluna nova em service_orders some da lista](service-orders-list-allowlist.md) — list endpoint usa allowlist explícita SO_LIST_COLS; coluna nova precisa ser adicionada lá ou volta NULL na listagem (POST/PATCH/getById usam select * e funcionam).
 - [NF Asaas: validação de e-mail + erro mudo](nf-emission-validation.md) — emissão tem ~7 call-sites; validação pré-Asaas é opt-in por call-site (clientEmail), e capture usa resolveNfErrorMessage p/ não sobrescrever msg específica por genérica.
+- [Card do cliente sempre com localização](whatsapp-card-location-required.md) — update de texto não traz GPS; resolver posição por fallback (update→mission_positions→update anterior) p/ link de localização nunca faltar; não usar origem/destino.

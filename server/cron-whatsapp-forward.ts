@@ -160,10 +160,84 @@ export function rotaCidades(origin?: string | null, destination?: string | null)
   return co || cd || "";
 }
 
+// Converte uma coordenada (number ou string) em number; NaN se inválida/ausente.
+export function parseCoord(raw: any): number {
+  if (raw == null || raw === "") return NaN;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+// Monta o link do Google Maps para uma coordenada.
+export function mapsLink(lat: number, lng: number): string {
+  return `https://www.google.com/maps?q=${lat.toFixed(4)},${lng.toFixed(4)}&z=17&hl=pt-BR`;
+}
+
+// Escolhe o PRIMEIRO par de coordenadas válido de uma lista de candidatos,
+// na ordem em que são passados (ordem = prioridade). Retorna null se nenhum servir.
+export function pickCoords(
+  ...candidates: Array<{ lat: any; lng: any } | null | undefined>
+): { lat: number; lng: number } | null {
+  for (const c of candidates) {
+    if (!c) continue;
+    const lat = parseCoord(c.lat);
+    const lng = parseCoord(c.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+  return null;
+}
+
+// Resolve a MELHOR localização conhecida para uma update da missão, garantindo
+// que o card do cliente nunca saia sem o link de localização.
+// Prioridade: (1) GPS da própria update → (2) última posição do breadcrumb da OS
+// (mission_positions) → (3) última update da OS que tinha coordenadas.
+// Decisão do dono (20/06/2026): localização é obrigatória, não pode faltar.
+export async function resolveLivePosition(u: any, soId?: number | null): Promise<{ lat: number; lng: number } | null> {
+  const fromUpdate = pickCoords({ lat: u?.latitude, lng: u?.longitude });
+  if (fromUpdate) return fromUpdate;
+  if (!soId) return null;
+
+  // Fallback 1: última posição do rastreamento da OS.
+  try {
+    const { data } = await supabaseAdmin
+      .from("mission_positions")
+      .select("latitude, longitude")
+      .eq("service_order_id", soId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const fromPos = pickCoords({ lat: (data as any)?.latitude, lng: (data as any)?.longitude });
+    if (fromPos) return fromPos;
+  } catch (e: any) {
+    console.warn(`${TAG} resolveLivePosition: falha em mission_positions OS=${soId}:`, e?.message || e);
+  }
+
+  // Fallback 2: última mission_update da OS que carregava coordenadas.
+  try {
+    const { data } = await supabaseAdmin
+      .from("mission_updates")
+      .select("latitude, longitude")
+      .eq("service_order_id", soId)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const fromPrev = pickCoords({ lat: (data as any)?.latitude, lng: (data as any)?.longitude });
+    if (fromPrev) return fromPrev;
+  } catch (e: any) {
+    console.warn(`${TAG} resolveLivePosition: falha em mission_updates OS=${soId}:`, e?.message || e);
+  }
+
+  return null;
+}
+
 export async function buildRichCaption(u: any, so: any, client: any, stepLabel?: string | null): Promise<string> {
-  const upLat = u.latitude ? parseFloat(u.latitude) : NaN;
-  const upLng = u.longitude ? parseFloat(u.longitude) : NaN;
-  const hasGeo = isFinite(upLat) && isFinite(upLng);
+  // Localização é obrigatória no card do cliente: se a update não trouxe GPS,
+  // cai na última posição conhecida da OS (rastreamento / update anterior).
+  const pos = await resolveLivePosition(u, u?.service_order_id ?? so?.id);
+  const upLat = pos ? pos.lat : NaN;
+  const upLng = pos ? pos.lng : NaN;
+  const hasGeo = pos != null;
 
   // Lookups paralelos: viatura + agentes + reverse-geocode
   const vehicleP = so?.vehicle_id
@@ -241,7 +315,7 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
   if (hasGeo) {
     L.push(`📍 *LINK GOOGLE:*`);
-    L.push(`https://www.google.com/maps?q=${upLat.toFixed(4)},${upLng.toFixed(4)}&z=17&hl=pt-BR`);
+    L.push(mapsLink(upLat, upLng));
   }
 
   // Compacta múltiplas linhas em branco consecutivas
@@ -306,9 +380,12 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   const clienteNome = String(client?.name || "").toUpperCase();
 
   const rota = rotaCidades(so?.origin, so?.destination);
-  const upLat = (u as any)?.latitude ? parseFloat((u as any).latitude) : NaN;
-  const upLng = (u as any)?.longitude ? parseFloat((u as any).longitude) : NaN;
-  const hasGeo = isFinite(upLat) && isFinite(upLng);
+  // Localização obrigatória também no resumo final: cai na última posição
+  // conhecida da OS se a update de fechamento não trouxe GPS.
+  const pos = await resolveLivePosition(u, soId);
+  const upLat = pos ? pos.lat : NaN;
+  const upLng = pos ? pos.lng : NaN;
+  const hasGeo = pos != null;
 
   const L: string[] = [];
   L.push(`*TORRES VIGILÂNCIA PATRIMONIAL*`);
@@ -333,7 +410,7 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   if (hasGeo) {
     L.push("");
     L.push(`📍 *LOCALIZAÇÃO:*`);
-    L.push(`https://www.google.com/maps?q=${upLat},${upLng}&z=17&hl=pt-BR`);
+    L.push(mapsLink(upLat, upLng));
   }
 
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
