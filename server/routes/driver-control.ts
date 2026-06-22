@@ -3,6 +3,14 @@ import { requireAuth, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import { logSystemAudit } from "../audit";
 
+function isSessionParticipant(user: any, session: { driver_id?: number | null; partner_id?: number | null }): boolean {
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "diretoria") return true;
+  const empId = user.employeeId;
+  if (!empId) return false;
+  return empId === session.driver_id || empId === session.partner_id;
+}
+
 export function registerDriverControlRoutes(app: Express) {
 
   app.get("/api/driver-sessions", requireAuth, async (req: Request, res: Response) => {
@@ -55,6 +63,40 @@ export function registerDriverControlRoutes(app: Express) {
     }
   });
 
+  // Candidatos a condutor parceiro: os agentes atribuídos à OS ativa da viatura (exceto o próprio agente).
+  app.get("/api/driver-sessions/os-partners", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const vehicleId = parseInt(req.query.vehicleId as string);
+      if (!vehicleId) return res.json([]);
+      const user = (req as any).user;
+      const isAdminOrDir = user?.role === "admin" || user?.role === "diretoria";
+
+      let query = supabaseAdmin
+        .from("service_orders")
+        .select("id, assigned_employee_id, assigned_employee_2_id")
+        .eq("vehicle_id", vehicleId)
+        .in("status", ["em_andamento", "agendada"]);
+      if (!isAdminOrDir && user?.employeeId) {
+        query = query.or(`assigned_employee_id.eq.${user.employeeId},assigned_employee_2_id.eq.${user.employeeId}`);
+      }
+      const { data: osList } = await query.limit(5);
+
+      const ids = new Set<number>();
+      for (const os of (osList || [])) {
+        if (os.assigned_employee_id) ids.add(os.assigned_employee_id);
+        if (os.assigned_employee_2_id) ids.add(os.assigned_employee_2_id);
+      }
+      if (!isAdminOrDir && user?.employeeId) ids.delete(user.employeeId);
+      if (ids.size === 0) return res.json([]);
+
+      const { data: emps } = await supabaseAdmin.from("employees").select("id, name").in("id", Array.from(ids));
+      res.json(emps || []);
+    } catch (err: any) {
+      console.error("[driver-control] os-partners error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/driver-sessions/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -80,6 +122,7 @@ export function registerDriverControlRoutes(app: Express) {
 
       const user = (req as any).user;
       const isAdminOrDir = user?.role === "admin" || user?.role === "diretoria";
+      let resolvedPartnerId: number | null = partnerId ? parseInt(partnerId) : null;
       if (!isAdminOrDir) {
         if (!user?.employeeId) {
           return res.status(403).json({ message: "Usuário não é funcionário." });
@@ -99,6 +142,16 @@ export function registerDriverControlRoutes(app: Express) {
         if (!validDriverIds.includes(driverId)) {
           return res.status(403).json({ message: "Condutor deve ser um dos agentes atribuídos à OS." });
         }
+        // Parceiro deve ser o outro agente atribuído à OS. Se não informado, deriva automaticamente.
+        if (resolvedPartnerId) {
+          if (resolvedPartnerId === driverId || !validDriverIds.includes(resolvedPartnerId)) {
+            return res.status(403).json({ message: "Parceiro deve ser o outro agente atribuído à OS." });
+          }
+        } else {
+          resolvedPartnerId = validDriverIds.find((id: number) => id !== driverId) || null;
+        }
+      } else if (resolvedPartnerId === driverId) {
+        resolvedPartnerId = null;
       }
 
       const now = new Date();
@@ -122,6 +175,11 @@ export function registerDriverControlRoutes(app: Express) {
 
       const { data: vehicle } = await supabaseAdmin.from("vehicles").select("plate, frota, year").eq("id", vehicleId).single();
       const { data: driver } = await supabaseAdmin.from("employees").select("name").eq("id", driverId).single();
+      let partnerName: string | null = null;
+      if (resolvedPartnerId) {
+        const { data: partner } = await supabaseAdmin.from("employees").select("name").eq("id", resolvedPartnerId).single();
+        partnerName = partner?.name || null;
+      }
 
       const { data: session, error } = await supabaseAdmin.from("driver_sessions").insert({
         vehicle_id: vehicleId,
@@ -129,9 +187,9 @@ export function registerDriverControlRoutes(app: Express) {
         vehicle_prefix: vehicle?.frota || "",
         vehicle_year: vehicle?.year || null,
         driver_id: driverId,
-        partner_id: null,
+        partner_id: resolvedPartnerId,
         driver_name: driver?.name || "Condutor",
-        partner_name: null,
+        partner_name: partnerName,
         km_start: kmStart ? parseInt(kmStart) : null,
         status: "ativo",
         started_at: now.toISOString(),
@@ -171,6 +229,10 @@ export function registerDriverControlRoutes(app: Express) {
       const { data: session, error: sessErr } = await supabaseAdmin.from("driver_sessions")
         .select("*").eq("id", id).eq("status", "ativo").single();
       if (sessErr || !session) return res.status(404).json({ message: "Sessão ativa não encontrada." });
+
+      if (!isSessionParticipant((req as any).user, session)) {
+        return res.status(403).json({ message: "Você não participa desta sessão de condução." });
+      }
 
       const { data: activeShift } = await supabaseAdmin.from("driver_shifts")
         .select("*").eq("session_id", id).eq("is_active", true).single();
@@ -220,11 +282,23 @@ export function registerDriverControlRoutes(app: Express) {
   app.post("/api/driver-sessions/:id/end", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const { kmEnd } = req.body;
+      const { kmEnd, signatureBase64, signatureConfirmed } = req.body;
 
       const { data: session, error: sessErr } = await supabaseAdmin.from("driver_sessions")
         .select("*").eq("id", id).eq("status", "ativo").single();
       if (sessErr || !session) return res.status(404).json({ message: "Sessão ativa não encontrada." });
+
+      if (!isSessionParticipant((req as any).user, session)) {
+        return res.status(403).json({ message: "Você não participa desta sessão de condução." });
+      }
+
+      // Visto do condutor: assinatura desenhada (base64 cru, sem prefixo data: — driblando o WAF) ou confirmação simples.
+      let signatureValue: string | null = null;
+      if (typeof signatureBase64 === "string" && signatureBase64.length > 0) {
+        signatureValue = signatureBase64.replace(/^data:image\/\w+;base64,/, "");
+      } else if (signatureConfirmed) {
+        signatureValue = "CONFIRMADO";
+      }
 
       const now = new Date();
 
@@ -244,6 +318,7 @@ export function registerDriverControlRoutes(app: Express) {
         status: "finalizado",
         ended_at: now.toISOString(),
         km_end: kmEnd ? parseInt(kmEnd) : null,
+        ...(signatureValue ? { driver_signature: signatureValue, signed_at: now.toISOString() } : {}),
       }).eq("id", id).select().single();
       if (updErr) throw updErr;
 

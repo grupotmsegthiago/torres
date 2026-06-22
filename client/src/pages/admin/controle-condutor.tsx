@@ -12,8 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   Car, Play, Square, Clock, User, Gauge, Search,
-  AlertTriangle, Trash2, Eye, RefreshCw, Timer, ChevronDown, ChevronUp, ShieldAlert
+  AlertTriangle, Trash2, Eye, RefreshCw, Timer, ChevronDown, ChevronUp, ShieldAlert,
+  Users, PenLine, FileText, FileSpreadsheet
 } from "lucide-react";
+import jsPDF from "jspdf";
+import { exportFormattedExcel } from "@/lib/excel-export";
 
 function formatDuration(minutes: number) {
   const h = Math.floor(minutes / 60);
@@ -27,6 +30,113 @@ function formatTime(iso: string) {
 
 function formatFullDate(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function normalizeSignature(sig: string | null | undefined): string | null {
+  if (!sig) return null;
+  if (sig === "CONFIRMADO") return null;
+  return sig.startsWith("data:") ? sig : `data:image/png;base64,${sig}`;
+}
+
+function exportSessionPdf(session: any) {
+  const shifts = (session.shifts || []) as any[];
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pw = doc.internal.pageSize.getWidth();
+  let y = 16;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text("Controle de Condutor — Escolta Torres", pw / 2, y, { align: "center" });
+  y += 7;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Sessão #${session.id}`, pw / 2, y, { align: "center" });
+  y += 10;
+
+  const line = (label: string, value: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(`${label}:`, 14, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(value || "—", 55, y);
+    y += 6;
+  };
+
+  line("Viatura (VTR)", `${session.vehicle_prefix ? session.vehicle_prefix + " — " : ""}${session.vehicle_plate || "—"}`);
+  line("Veículo", `${session.vehicle_model || ""} ${session.vehicle_year ? "(" + session.vehicle_year + ")" : ""}`.trim());
+  line("Condutor principal", session.driver_name || "—");
+  if (session.partner_name) line("Parceiro", session.partner_name);
+  line("KM Saída", session.km_start != null ? String(session.km_start) : "—");
+  line("KM Final", session.km_end != null ? String(session.km_end) : "—");
+  line("Início", session.started_at ? formatFullDate(session.started_at) : "—");
+  line("Fim", session.ended_at ? formatFullDate(session.ended_at) : "Em andamento");
+  line("Trocas de direção", String(Math.max(0, shifts.length - 1)));
+  y += 4;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Turnos / Trocas de Direção", 14, y);
+  y += 6;
+  doc.setFontSize(9);
+
+  const cols = [
+    { t: "Condutor", x: 14 },
+    { t: "Início", x: 90 },
+    { t: "Fim", x: 130 },
+    { t: "Duração", x: 170 },
+  ];
+  doc.setFont("helvetica", "bold");
+  cols.forEach(c => doc.text(c.t, c.x, y));
+  y += 1;
+  doc.line(14, y, pw - 14, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  shifts.forEach((s: any) => {
+    if (y > 270) { doc.addPage(); y = 16; }
+    doc.text(String(s.driver_name || "—").slice(0, 34), 14, y);
+    doc.text(s.started_at ? formatTime(s.started_at) : "—", 90, y);
+    doc.text(s.ended_at ? formatTime(s.ended_at) : "Ativo", 130, y);
+    doc.text(formatDuration(Number(s.duration_minutes) || 0), 170, y);
+    y += 6;
+  });
+
+  y += 6;
+  const sig = normalizeSignature(session.driver_signature);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Visto / Assinatura do condutor:", 14, y);
+  y += 4;
+  if (sig) {
+    try { doc.addImage(sig, "PNG", 14, y, 70, 30); } catch { /* ignore */ }
+    y += 32;
+  } else if (session.driver_signature === "CONFIRMADO") {
+    doc.setFont("helvetica", "normal");
+    doc.text("CONFIRMADO (sem desenho de assinatura)", 14, y + 5);
+    y += 10;
+  } else {
+    doc.line(14, y + 12, 90, y + 12);
+    y += 16;
+  }
+
+  doc.save(`controle-condutor-sessao-${session.id}.pdf`);
+}
+
+function exportSessionExcel(session: any) {
+  const shifts = (session.shifts || []) as any[];
+  const rows: (string | number)[][] = shifts.map((s: any) => [
+    s.driver_name || "—",
+    s.started_at ? formatFullDate(s.started_at) : "—",
+    s.ended_at ? formatFullDate(s.ended_at) : "Em andamento",
+    formatDuration(Number(s.duration_minutes) || 0),
+  ]);
+  return exportFormattedExcel({
+    fileName: `controle-condutor-sessao-${session.id}`,
+    sheetName: `Sessão ${session.id}`,
+    title: `Controle de Condutor — Sessão #${session.id}`,
+    subtitle: `VTR ${session.vehicle_plate || "—"} • ${session.driver_name || "—"}${session.partner_name ? " / " + session.partner_name : ""}`,
+    headers: ["Condutor", "Início", "Fim", "Duração"],
+    colWidths: [30, 22, 22, 16],
+    rows,
+  });
 }
 
 export default function ControleCondutorPage() {
@@ -368,7 +478,16 @@ export default function ControleCondutorPage() {
                           <span className="font-bold text-neutral-900">{s.vehicle_prefix || ""}</span>
                           <span className="text-neutral-400 text-xs ml-1">{s.vehicle_plate}</span>
                         </td>
-                        <td className="px-3 py-2 font-medium text-neutral-800">{s.driver_name}</td>
+                        <td className="px-3 py-2 font-medium text-neutral-800">
+                          <button
+                            type="button"
+                            className="text-sky-700 hover:underline font-medium text-left"
+                            onClick={(e) => { e.stopPropagation(); setDriverFilter(String(s.driver_id)); }}
+                            data-testid={`link-driver-${s.id}`}
+                          >
+                            {s.driver_name}
+                          </button>
+                        </td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{formatTime(s.started_at)}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{s.ended_at ? formatTime(s.ended_at) : "—"}</td>
                         <td className="px-3 py-2 text-xs text-neutral-600 font-mono">
@@ -461,10 +580,16 @@ function SessionDetailDialog({ session, onClose, onDelete }: { session: any; onC
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Placa</p>
                 <p className="text-sm font-bold text-neutral-900">{session.vehicle_plate}</p>
               </div>
-              <div className="col-span-2">
+              <div className={session.partner_name ? "" : "col-span-2"}>
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Condutor</p>
                 <p className="text-sm font-bold text-neutral-800">{session.driver_name}</p>
               </div>
+              {session.partner_name && (
+                <div>
+                  <p className="text-[10px] text-neutral-400 font-bold uppercase flex items-center gap-1"><Users className="w-3 h-3" /> Parceiro</p>
+                  <p className="text-sm font-bold text-neutral-800">{session.partner_name}</p>
+                </div>
+              )}
               <div>
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Início</p>
                 <p className="text-xs text-neutral-700">{formatFullDate(session.started_at)}</p>
@@ -537,8 +662,39 @@ function SessionDetailDialog({ session, onClose, onDelete }: { session: any; onC
             </div>
           )}
 
-          <div className="flex items-center gap-2 pt-2 border-t">
-            <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => onDelete(session.id)}>
+          <div>
+            <h3 className="text-xs font-bold text-neutral-500 uppercase mb-2 flex items-center gap-1">
+              <PenLine className="w-3.5 h-3.5" /> Visto / Assinatura do Condutor
+            </h3>
+            {normalizeSignature(session.driver_signature) ? (
+              <div className="bg-white border rounded-lg p-2 flex items-center justify-center">
+                <img
+                  src={normalizeSignature(session.driver_signature)!}
+                  alt="Assinatura do condutor"
+                  className="max-h-32 object-contain"
+                  data-testid="img-signature"
+                />
+              </div>
+            ) : session.driver_signature === "CONFIRMADO" ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                <p className="text-sm font-bold text-emerald-700">CONFIRMADO</p>
+                <p className="text-[10px] text-neutral-500">Encerramento confirmado pelo condutor (sem desenho)</p>
+              </div>
+            ) : (
+              <div className="bg-neutral-50 border rounded-lg p-3 text-center">
+                <p className="text-xs text-neutral-400">Sem assinatura registrada</p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+            <Button variant="outline" size="sm" onClick={() => exportSessionPdf(session)} data-testid="button-export-pdf">
+              <FileText className="w-3.5 h-3.5 mr-1" /> Exportar PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportSessionExcel(session)} data-testid="button-export-excel">
+              <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Planilha
+            </Button>
+            <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 ml-auto" onClick={() => onDelete(session.id)}>
               <Trash2 className="w-3.5 h-3.5 mr-1" /> Excluir
             </Button>
           </div>

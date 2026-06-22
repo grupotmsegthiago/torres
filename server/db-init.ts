@@ -1856,9 +1856,12 @@ export async function ensureCalcMissionRPC() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await execSql(`ALTER TABLE driver_sessions ADD COLUMN IF NOT EXISTS driver_signature TEXT`);
+    await execSql(`ALTER TABLE driver_sessions ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_sessions_status ON driver_sessions(status)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_sessions_vehicle ON driver_sessions(vehicle_id)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_shifts_session ON driver_shifts(session_id)`);
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     console.log("[db-init] driver_sessions + driver_shifts tables ensured");
   } catch (e: any) {
     console.error("[db-init] driver_sessions error:", e.message);

@@ -34,6 +34,7 @@
 - [Invariante recusada=R$0 em todo writer de billing](recusada-billing-write-paths.md) — §8.1 precisa de guard (osIsRecusada+buildRecusadaZeroPayload) em CADA endpoint que escreve escort_billings (~7), não só na conclusão; novo writer reabre o buraco.
 - [storage.getX(id) não usa cache de lista](storage-getbyid-no-list-cache.md) — getEmployee/getClient(id) batem no Supabase a cada chamada (N+1 ao agregar N itens); pré-carregue a lista e resolva por Map em memória.
 - [Coluna nova em service_orders some da lista](service-orders-list-allowlist.md) — list endpoint usa allowlist explícita SO_LIST_COLS; coluna nova precisa ser adicionada lá ou volta NULL na listagem (POST/PATCH/getById usam select * e funcionam).
+- [tsc não é gate limpo](tsc-not-clean-gate.md) — `npm run check`/tsc tem ~425 erros pré-existentes (ex: parseInt(req.params.id) string|string[]); foque só em erros NOVOS dos arquivos editados.
 - [SWR server cache opt-in](swr-server-cache.md) — cachear endpoint pesado compartilhado com tela ao vivo via `withSwrCache` GATED por `?cached=1` (passthrough p/ demais); não muda número, só quando roda; tem singleflight+LRU+force.
 - [Boleto líquido com retenção de INSS](boleto-liquido-inss.md) — cliente retem_inss: boleto Asaas LÍQUIDO (netBoletoValue); NF+invoices.value BRUTOS; aplicar nos 5 caminhos de cobrança em asaas.ts.
 - [Lista de veículos é leve (sem base64)](vehicles-list-lightweight.md) — GET /api/vehicles exclui documento+fotos laterais/traseira (mantém photo_front); tela que edita DEVE buscar o full antes de salvar senão apaga foto.

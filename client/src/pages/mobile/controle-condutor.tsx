@@ -1,15 +1,81 @@
 import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useState, useEffect } from "react";
+import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Car, Play, RefreshCw, Square, Clock, AlertTriangle, User, Gauge, ChevronDown, ChevronUp } from "lucide-react";
+import { Car, Play, RefreshCw, Square, Clock, AlertTriangle, User, Gauge, ChevronDown, ChevronUp, RefreshCcw, Users, Eraser, PenLine } from "lucide-react";
+import { DRIVER_ALERT_SECONDS, DRIVER_ALERT_MS, DRIVER_ALERT_LABEL } from "@shared/driver-control";
+
+function SignaturePad({ onChange }: { onChange: (base64: string | null) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const hasDrawn = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111827";
+
+    const pos = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: (e.clientX - rect.left) * (canvas.width / rect.width), y: (e.clientY - rect.top) * (canvas.height / rect.height) };
+    };
+    const down = (e: PointerEvent) => { e.preventDefault(); drawing.current = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+    const move = (e: PointerEvent) => { if (!drawing.current) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasDrawn.current = true; };
+    const up = () => {
+      if (!drawing.current) return;
+      drawing.current = false;
+      if (hasDrawn.current) onChange(canvas.toDataURL("image/png").replace(/^data:image\/\w+;base64,/, ""));
+    };
+
+    canvas.addEventListener("pointerdown", down);
+    canvas.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, [onChange]);
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    hasDrawn.current = false;
+    onChange(null);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs font-bold text-neutral-700 flex items-center gap-1"><PenLine className="w-3.5 h-3.5" /> Visto do Condutor (assine abaixo)</Label>
+        <button type="button" onClick={clear} className="text-[10px] text-neutral-400 flex items-center gap-1" data-testid="button-clear-signature">
+          <Eraser className="w-3 h-3" /> Limpar
+        </button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={600}
+        height={160}
+        className="w-full h-32 bg-white border-2 border-dashed border-neutral-300 rounded-xl touch-none"
+        style={{ touchAction: "none" }}
+        data-testid="canvas-signature"
+      />
+    </div>
+  );
+}
 
 function formatDuration(minutes: number) {
   const h = Math.floor(minutes / 60);
@@ -34,7 +100,7 @@ function LiveTimer({ startedAt }: { startedAt: string }) {
   const h = Math.floor(elapsed / 3600);
   const m = Math.floor((elapsed % 3600) / 60);
   const s = elapsed % 60;
-  const isAlert = elapsed >= 14400;
+  const isAlert = elapsed >= DRIVER_ALERT_SECONDS;
 
   return (
     <div className={`font-mono text-3xl font-black tabular-nums ${isAlert ? "text-red-500 animate-pulse" : "text-emerald-600"}`} data-testid="text-live-timer">
@@ -48,14 +114,26 @@ export default function MobileControleCondutorPage() {
   const { toast } = useToast();
 
   const [vehicleId, setVehicleId] = useState("");
+  const [partnerId, setPartnerId] = useState("");
   const [kmStart, setKmStart] = useState("");
   const [kmEnd, setKmEnd] = useState("");
+  const [signature, setSignature] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const myEmployeeId = user?.employeeId;
   const myName = user?.name || "Condutor";
 
   const { data: vehicles = [] } = useQuery<any[]>({ queryKey: ["/api/vehicles"] });
+
+  const { data: partnerOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/driver-sessions/os-partners", vehicleId],
+    enabled: !!vehicleId,
+    queryFn: async () => {
+      const r = await authFetch(`/api/driver-sessions/os-partners?vehicleId=${vehicleId}`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
 
   const { data: activeSession, isLoading } = useQuery<any>({
     queryKey: ["/api/driver-sessions/active"],
@@ -78,13 +156,17 @@ export default function MobileControleCondutorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
       setKmStart("");
       setVehicleId("");
+      setPartnerId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const endMutation = useMutation({
-    mutationFn: async ({ sessionId, kmEnd }: { sessionId: number; kmEnd: string }) => {
-      const r = await apiRequest("POST", `/api/driver-sessions/${sessionId}/end`, { kmEnd: kmEnd || undefined });
+    mutationFn: async ({ sessionId, kmEnd, signatureBase64 }: { sessionId: number; kmEnd: string; signatureBase64: string | null }) => {
+      const r = await apiRequest("POST", `/api/driver-sessions/${sessionId}/end`, {
+        kmEnd: kmEnd || undefined,
+        signatureBase64: signatureBase64 || undefined,
+      });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
     },
@@ -93,12 +175,26 @@ export default function MobileControleCondutorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions"] });
       setKmEnd("");
+      setSignature(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const swapMutation = useMutation({
+    mutationFn: async (sessionId: number) => {
+      const r = await apiRequest("POST", `/api/driver-sessions/${sessionId}/swap`, {});
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Direção passada!", description: `Agora dirige: ${data?.newShift?.driver_name || "parceiro"}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const activeShift = activeSession?.shifts?.find((s: any) => s.is_active);
-  const isAlert = activeShift && (Date.now() - new Date(activeShift.started_at).getTime()) >= 14400000;
+  const isAlert = activeShift && (Date.now() - new Date(activeShift.started_at).getTime()) >= DRIVER_ALERT_MS;
 
   if (isLoading) {
     return (
@@ -149,7 +245,7 @@ export default function MobileControleCondutorPage() {
               {isAlert && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2 animate-pulse">
                   <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                  <p className="text-xs text-red-700 font-bold">ATENÇÃO: Condutor ultrapassou 4h de direção contínua!</p>
+                  <p className="text-xs text-red-700 font-bold">ATENÇÃO: Condutor ultrapassou {DRIVER_ALERT_LABEL} de direção contínua!</p>
                 </div>
               )}
 
@@ -163,19 +259,40 @@ export default function MobileControleCondutorPage() {
                 <p className="text-[10px] text-neutral-400">Início: {activeShift ? formatTime(activeShift.started_at) : "—"}</p>
               </div>
 
-              <div className="border-t pt-3 space-y-2">
-                <Label className="text-xs font-bold text-neutral-700">KM Final (para encerrar)</Label>
-                <Input
-                  type="number"
-                  placeholder="Informe o KM atual"
-                  value={kmEnd}
-                  onChange={e => setKmEnd(e.target.value)}
-                  className="h-11"
-                  data-testid="input-km-end"
-                />
+              {activeSession.partner_id && (
+                <div className="border-t pt-3 space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-xs text-neutral-500">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Parceiro: <strong className="text-neutral-800">{activeSession.partner_name || "—"}</strong></span>
+                  </div>
+                  <Button
+                    className="w-full h-12 bg-sky-600 hover:bg-sky-700 text-white font-black text-base rounded-xl"
+                    onClick={() => swapMutation.mutate(activeSession.id)}
+                    disabled={swapMutation.isPending}
+                    data-testid="button-swap-driver"
+                  >
+                    <RefreshCcw className="w-5 h-5 mr-2" />
+                    {swapMutation.isPending ? "PASSANDO..." : "PASSAR DIREÇÃO"}
+                  </Button>
+                </div>
+              )}
+
+              <div className="border-t pt-3 space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-neutral-700">KM Final (para encerrar)</Label>
+                  <Input
+                    type="number"
+                    placeholder="Informe o KM atual"
+                    value={kmEnd}
+                    onChange={e => setKmEnd(e.target.value)}
+                    className="h-11"
+                    data-testid="input-km-end"
+                  />
+                </div>
+                <SignaturePad onChange={setSignature} />
                 <Button
                   className="w-full h-14 bg-red-600 hover:bg-red-700 text-white font-black text-base rounded-xl"
-                  onClick={() => endMutation.mutate({ sessionId: activeSession.id, kmEnd })}
+                  onClick={() => endMutation.mutate({ sessionId: activeSession.id, kmEnd, signatureBase64: signature })}
                   disabled={endMutation.isPending}
                   data-testid="button-end-session"
                 >
@@ -238,6 +355,23 @@ export default function MobileControleCondutorPage() {
               </Select>
             </div>
 
+            {vehicleId && partnerOptions.length > 0 && (
+              <div>
+                <Label className="text-xs font-bold text-neutral-600 flex items-center gap-1"><Users className="w-3.5 h-3.5" /> Condutor Parceiro (rodízio)</Label>
+                <Select value={partnerId} onValueChange={setPartnerId}>
+                  <SelectTrigger className="h-11 mt-1" data-testid="select-partner">
+                    <SelectValue placeholder="Selecione o parceiro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {partnerOptions.map((p: any) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-neutral-400 mt-1">Quem assume o volante na troca de direção.</p>
+              </div>
+            )}
+
             <div>
               <Label className="text-xs font-bold text-neutral-600">KM de Saída</Label>
               <Input
@@ -255,6 +389,7 @@ export default function MobileControleCondutorPage() {
               onClick={() => startMutation.mutate({
                 vehicleId: parseInt(vehicleId),
                 driverId: myEmployeeId,
+                partnerId: partnerId ? parseInt(partnerId) : undefined,
                 kmStart: kmStart || undefined,
               })}
               disabled={startMutation.isPending || !vehicleId || !myEmployeeId}
