@@ -157,7 +157,8 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/vehicles", label: "Veículos", icon: Car },
           { path: "/admin/cameras-live", label: "Câmera AO VIVO", icon: Video },
-          { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
+          // Oculto a pedido do dono (22/06/2026) — manter para reativar se precisar:
+          // { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
           { path: "/admin/maintenance", label: "Manutenção", icon: Wrench },
           { path: "/admin/tracker", label: "Rastreador", icon: MapPin },
           { path: "/admin/controle-condutor", label: "Controle Condutor", icon: Users },
@@ -205,16 +206,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/conferencia-tmseg", label: "Conferência TM SEG", icon: FileSpreadsheet },
         ],
       },
-    ],
-  },
-  {
-    title: "BANCO INTER",
-    icon: Landmark,
-    iconColor: "text-orange-400",
-    adminOnly: true,
-    items: [
-      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet, diretoriaOnly: true },
-      { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark },
     ],
   },
   {
@@ -354,7 +345,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
 
 const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "BANCO INTER": true, "SISTEMA": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
 
   const toggleGroup = useCallback((label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
