@@ -122,19 +122,54 @@ function exportSessionPdf(session: any) {
 
 function exportSessionExcel(session: any) {
   const shifts = (session.shifts || []) as any[];
-  const rows: (string | number)[][] = shifts.map((s: any) => [
-    s.driver_name || "—",
-    s.started_at ? formatFullDate(s.started_at) : "—",
-    s.ended_at ? formatFullDate(s.ended_at) : "Em andamento",
-    formatDuration(Number(s.duration_minutes) || 0),
-  ]);
+  const kmTotal = session.km_end != null && session.km_start != null ? session.km_end - session.km_start : null;
+
+  const driverTotals: Record<string, { name: string; totalMinutes: number; shifts: number }> = {};
+  for (const s of shifts) {
+    const key = String(s.driver_id);
+    if (!driverTotals[key]) driverTotals[key] = { name: s.driver_name, totalMinutes: 0, shifts: 0 };
+    driverTotals[key].totalMinutes += Number(s.duration_minutes) || 0;
+    driverTotals[key].shifts += 1;
+  }
+
+  const rows: (string | number)[][] = [];
+  // Bloco de metadados da sessão
+  rows.push(["DADOS DA SESSÃO", "", "", ""]);
+  rows.push(["Viatura (VTR)", `${session.vehicle_prefix ? session.vehicle_prefix + " — " : ""}${session.vehicle_plate || "—"}`, "Ano", session.vehicle_year ?? "—"]);
+  rows.push(["Condutor principal", session.driver_name || "—", "Parceiro", session.partner_name || "—"]);
+  rows.push(["Início", session.started_at ? formatFullDate(session.started_at) : "—", "Fim", session.ended_at ? formatFullDate(session.ended_at) : "Em andamento"]);
+  rows.push(["KM Saída", session.km_start ?? "—", "KM Final", session.km_end ?? "—"]);
+  rows.push(["KM Total", kmTotal != null ? `${kmTotal} km` : "—", "Total de trocas", Math.max(0, shifts.length - 1)]);
+  rows.push(["", "", "", ""]);
+
+  // Turnos / trocas de direção
+  rows.push(["TURNOS / TROCAS DE DIREÇÃO", "", "", ""]);
+  rows.push(["Condutor", "Início", "Fim", "Duração"]);
+  for (const s of shifts) {
+    rows.push([
+      s.driver_name || "—",
+      s.started_at ? formatFullDate(s.started_at) : "—",
+      s.ended_at ? formatFullDate(s.ended_at) : "Em andamento",
+      formatDuration(Number(s.duration_minutes) || 0),
+    ]);
+  }
+  rows.push(["", "", "", ""]);
+
+  // Tempo por condutor
+  rows.push(["TEMPO POR CONDUTOR", "", "", ""]);
+  rows.push(["Condutor", "Tempo total", "Turnos", ""]);
+  for (const d of Object.values(driverTotals)) {
+    rows.push([d.name, formatDuration(d.totalMinutes), d.shifts, ""]);
+  }
+
   return exportFormattedExcel({
     fileName: `controle-condutor-sessao-${session.id}`,
     sheetName: `Sessão ${session.id}`,
     title: `Controle de Condutor — Sessão #${session.id}`,
     subtitle: `VTR ${session.vehicle_plate || "—"} • ${session.driver_name || "—"}${session.partner_name ? " / " + session.partner_name : ""}`,
-    headers: ["Condutor", "Início", "Fim", "Duração"],
-    colWidths: [30, 22, 22, 16],
+    period: session.started_at ? `Início: ${formatFullDate(session.started_at)}${session.ended_at ? "  •  Fim: " + formatFullDate(session.ended_at) : ""}` : undefined,
+    headers: ["Item", "Valor", "Item", "Valor"],
+    colWidths: [28, 26, 22, 18],
     rows,
   });
 }

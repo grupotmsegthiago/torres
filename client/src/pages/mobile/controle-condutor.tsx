@@ -118,6 +118,7 @@ export default function MobileControleCondutorPage() {
   const [kmStart, setKmStart] = useState("");
   const [kmEnd, setKmEnd] = useState("");
   const [signature, setSignature] = useState<string | null>(null);
+  const [signConfirmed, setSignConfirmed] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   const myEmployeeId = user?.employeeId;
@@ -162,10 +163,11 @@ export default function MobileControleCondutorPage() {
   });
 
   const endMutation = useMutation({
-    mutationFn: async ({ sessionId, kmEnd, signatureBase64 }: { sessionId: number; kmEnd: string; signatureBase64: string | null }) => {
+    mutationFn: async ({ sessionId, kmEnd, signatureBase64, signatureConfirmed }: { sessionId: number; kmEnd: string; signatureBase64: string | null; signatureConfirmed: boolean }) => {
       const r = await apiRequest("POST", `/api/driver-sessions/${sessionId}/end`, {
         kmEnd: kmEnd || undefined,
         signatureBase64: signatureBase64 || undefined,
+        signatureConfirmed: signatureBase64 ? undefined : signatureConfirmed,
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
@@ -176,6 +178,7 @@ export default function MobileControleCondutorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions"] });
       setKmEnd("");
       setSignature(null);
+      setSignConfirmed(false);
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -289,16 +292,31 @@ export default function MobileControleCondutorPage() {
                     data-testid="input-km-end"
                   />
                 </div>
-                <SignaturePad onChange={setSignature} />
+                <SignaturePad onChange={(b) => { setSignature(b); if (b) setSignConfirmed(false); }} />
+                {!signature && (
+                  <label className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer" data-testid="label-confirm-sign">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 w-4 h-4 accent-amber-600"
+                      checked={signConfirmed}
+                      onChange={e => setSignConfirmed(e.target.checked)}
+                      data-testid="checkbox-confirm-sign"
+                    />
+                    <span className="text-xs text-amber-800 font-medium">Confirmo o encerramento da operação como condutor (visto obrigatório).</span>
+                  </label>
+                )}
                 <Button
                   className="w-full h-14 bg-red-600 hover:bg-red-700 text-white font-black text-base rounded-xl"
-                  onClick={() => endMutation.mutate({ sessionId: activeSession.id, kmEnd, signatureBase64: signature })}
-                  disabled={endMutation.isPending}
+                  onClick={() => endMutation.mutate({ sessionId: activeSession.id, kmEnd, signatureBase64: signature, signatureConfirmed: signConfirmed })}
+                  disabled={endMutation.isPending || (!signature && !signConfirmed)}
                   data-testid="button-end-session"
                 >
                   <Square className="w-5 h-5 mr-2" />
                   {endMutation.isPending ? "FINALIZANDO..." : "FINALIZAR OPERAÇÃO"}
                 </Button>
+                {!signature && !signConfirmed && (
+                  <p className="text-[10px] text-neutral-400 text-center">Assine acima ou marque a confirmação para liberar o encerramento.</p>
+                )}
               </div>
 
               {activeSession.shifts && activeSession.shifts.length > 1 && (

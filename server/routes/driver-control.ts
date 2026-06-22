@@ -44,8 +44,9 @@ export function registerDriverControlRoutes(app: Express) {
 
       let query = supabaseAdmin.from("driver_sessions").select("*").eq("status", "ativo");
 
+      // O condutor parceiro também precisa ver a sessão ativa (rodízio bidirecional entre os 2 agentes).
       if (employeeId) {
-        query = query.eq("driver_id", employeeId);
+        query = query.or(`driver_id.eq.${employeeId},partner_id.eq.${employeeId}`);
       }
 
       const { data, error } = await query.limit(1).maybeSingle();
@@ -292,12 +293,16 @@ export function registerDriverControlRoutes(app: Express) {
         return res.status(403).json({ message: "Você não participa desta sessão de condução." });
       }
 
-      // Visto do condutor: assinatura desenhada (base64 cru, sem prefixo data: — driblando o WAF) ou confirmação simples.
+      // Visto do condutor OBRIGATÓRIO ao encerrar: assinatura desenhada (base64 cru,
+      // sem prefixo data: — driblando o WAF) ou confirmação explícita do condutor.
       let signatureValue: string | null = null;
       if (typeof signatureBase64 === "string" && signatureBase64.length > 0) {
         signatureValue = signatureBase64.replace(/^data:image\/\w+;base64,/, "");
       } else if (signatureConfirmed) {
         signatureValue = "CONFIRMADO";
+      }
+      if (!signatureValue) {
+        return res.status(400).json({ message: "Visto do condutor obrigatório: assine ou confirme o encerramento." });
       }
 
       const now = new Date();
