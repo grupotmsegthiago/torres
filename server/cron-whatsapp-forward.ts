@@ -138,6 +138,17 @@ function fmtKmUpper(km?: number | null): string {
   if (km == null || !isFinite(Number(km)) || Number(km) <= 0) return "—";
   return `${Number(km).toLocaleString("pt-BR")} KM`;
 }
+// Duração entre dois timestamps no formato "Xh YYmin" (usa o delta puro, então
+// é independente de timezone). "—" quando faltar uma ponta ou o delta for <= 0.
+function fmtDuracao(aIso?: string | null, bIso?: string | null): string {
+  if (!aIso || !bIso) return "—";
+  const ms = new Date(bIso).getTime() - new Date(aIso).getTime();
+  if (!isFinite(ms) || ms <= 0) return "—";
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}min`;
+}
 // Extrai a CIDADE de um endereço completo ("..., Campinas - SP, Brasil" → "Campinas").
 // Procura o segmento no formato "Cidade - UF"; se não achar, usa o último
 // segmento não vazio (ignorando "Brasil"). Retorna "" se não der pra extrair.
@@ -342,6 +353,16 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
     .eq("service_order_id", soId)
     .in("step", ["km_saida", "km_final"])
     .order("created_at", { ascending: true });
+  // STATUS = última MENSAGEM REAL do agente (texto livre, já corrigido por IA).
+  // O update que dispara o card é um marcador do sistema ("🔄 Finalizada" ou
+  // "📷 Foto: KM Final"), então buscamos a última mensagem genuína à parte.
+  const msgsP = supabaseAdmin
+    .from("mission_updates")
+    .select("message, created_at")
+    .eq("service_order_id", soId)
+    .not("message", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
   // Viatura (placa) + agentes 01/02 p/ identificar a equipe no card do cliente.
   const vehicleP = so?.vehicle_id
     ? supabaseAdmin.from("vehicles").select("plate").eq("id", so.vehicle_id).maybeSingle()
@@ -353,11 +374,12 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
     ? supabaseAdmin.from("employees").select("name").eq("id", so.assigned_employee_2_id).maybeSingle()
     : Promise.resolve({ data: null } as any);
 
-  const [updsRes, photosRes, vehRes, ag1Res, ag2Res] = await Promise.all([updsP, photosP, vehicleP, ag1P, ag2P]);
+  const [updsRes, photosRes, msgsRes, vehRes, ag1Res, ag2Res] = await Promise.all([updsP, photosP, msgsP, vehicleP, ag1P, ag2P]);
   if ((updsRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_updates OS=${u.os_number}:`, (updsRes as any).error.message);
   if ((photosRes as any)?.error) console.warn(`${TAG} resumo: falha ao ler mission_photos OS=${u.os_number}:`, (photosRes as any).error.message);
   const upds = ((updsRes as any)?.data || []) as Array<{ mission_step: string; created_at: string }>;
   const photos = ((photosRes as any)?.data || []) as Array<{ step: string; km_value: number | null; created_at: string }>;
+  const msgs = ((msgsRes as any)?.data || []) as Array<{ message: string; created_at: string }>;
 
   const inicioOperTs = so?.mission_started_at || upds.find(x => x.mission_step === "iniciar_missao")?.created_at || null;
   const fimOperTs = so?.completed_date || u.created_at || null;
@@ -387,31 +409,60 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   const upLng = pos ? pos.lng : NaN;
   const hasGeo = pos != null;
 
+  // Chegada na origem = check-in de KM na origem (mesmo step usado no km-resumo).
+  const chegadaOrigemTs = upds.find(x => x.mission_step === "checkin_chegada_km")?.created_at || null;
+  const gtmNumber = so?.gtm_number ? String(so.gtm_number).trim() : "";
+  const origem = so?.origin ? String(so.origin).trim() : "";
+  const destino = so?.destination ? String(so.destination).trim() : "";
+  const motorista = so?.escorted_driver_name ? String(so.escorted_driver_name).trim() : "";
+  const fone = so?.escorted_driver_phone ? String(so.escorted_driver_phone).trim() : "";
+  const cavalo = placaVeiculo; // escorted_vehicle_plate = placa do cavalo
+  // Total de KM = KM final − KM inicial (só se ambos existem e final > inicial).
+  const kmRodado = (kmInicio != null && kmFinal != null && Number(kmFinal) > Number(kmInicio))
+    ? Number(kmFinal) - Number(kmInicio)
+    : null;
+  // Texto livre do agente no fechamento (vira o complemento do STATUS).
+  // Ignora marcadores do sistema: "🔄 …" (avanço de etapa), "📷 …"/legenda de
+  // foto de KM, e auditoria "AJUSTE MANUAL …" — só queremos a fala do agente.
+  const isSystemMsg = (m: string): boolean =>
+    !m || /^🔄/.test(m) || /^📷/.test(m) || isFinalKmUpdate(m) || /^ajuste manual/i.test(m);
+  const agentMsg = msgs
+    .map(x => String(x?.message || "").trim())
+    .find(m => m && !isSystemMsg(m)) || "";
+  const statusMsg = agentMsg.toUpperCase();
+
   const L: string[] = [];
   L.push(`*TORRES VIGILÂNCIA PATRIMONIAL*`);
-  L.push(`OS ${u.os_number || ""}`.trim());
+  if (u.os_number) L.push(`OS TORRES - ${u.os_number}`);
+  if (gtmNumber) L.push(`OS GTM - ${gtmNumber}`);
   L.push("");
   if (rota) L.push(`🛡️ *OPERAÇÃO:* ${rota}`);
   L.push("");
-  if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
-  if (ag1Name) L.push(`👮 *AGENTE 01:* ${ag1Name}`);
-  if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
+  if (viaturaPlate) L.push(`🚔 *VIATURA:* ${viaturaPlate}`);
+  if (ag1Name) L.push(`🥷 *AGT 1:* ${ag1Name}`);
+  if (ag2Name) L.push(`🥷 *AGT 2:* ${ag2Name}`);
   L.push("");
-  if (placaVeiculo) L.push(`🚛 *PLACA DO VEÍCULO:* ${placaVeiculo}`);
-  if (viaturaPlate) L.push(`🚓 *PLACA VIATURA:* ${viaturaPlate}`);
+  if (clienteNome) L.push(`👔 *CLIENTE:* ${clienteNome}`);
+  if (origem) L.push(`🏦 *ORIGEM:* ${origem}`);
+  if (destino) L.push(`🏭 *DESTINO:* ${destino}`);
+  if (motorista) L.push(`👨‍🦰 *MOTORISTA:* ${motorista}`);
+  if (fone) L.push(`📞 *FONE:* ${fone}`);
+  if (cavalo) L.push(`🚛 *CAVALO:* ${cavalo}`);
   L.push("");
-  L.push(`🕑 *HORÁRIO AGENDAMENTO:* ${fmtBrtDtSpace(agendamentoTs)}`);
-  L.push(`🟢 *INÍCIO DE MISSÃO:* ${fmtBrtDtSpace(inicioOperTs)}`);
-  L.push(`🏁 *CHEGADA NO DESTINO:* ${fmtBrtDtSpace(chegadaDestinoTs)}`);
-  L.push(`🔴 *FIM DE MISSÃO:* ${fmtBrtDtSpace(fimOperTs)}`);
+  L.push(`🕑 *INÍCIO PREVISTO:* ${fmtBrtDateTime(agendamentoTs)}`);
+  L.push(`🕑 *CHEGADA NA ORIGEM:* ${fmtBrtDateTime(chegadaOrigemTs)}`);
+  L.push(`🧭 *INÍCIO DE OPERAÇÃO:* ${fmtBrtDateTime(inicioOperTs)}`);
+  L.push(`🧭 *FIM DE OPERAÇÃO:* ${fmtBrtDateTime(fimOperTs)}`);
   L.push("");
-  L.push(`KM INÍCIO: *${fmtKmUpper(kmInicio)}*`);
-  L.push(`KM FIM: *${fmtKmUpper(kmFinal)}*`);
+  L.push(`🕑 *TOTAL DE HORAS:* ${fmtDuracao(inicioOperTs, fimOperTs)}`);
+  L.push(`🚛 *TOTAL DE KM:* ${fmtKmUpper(kmRodado)}`);
   if (hasGeo) {
     L.push("");
     L.push(`📍 *LOCALIZAÇÃO:*`);
     L.push(mapsLink(upLat, upLng));
   }
+  L.push("");
+  L.push(statusMsg ? `🖋️ *STATUS:* CONCLUÍDA — ${statusMsg}` : `🖋️ *STATUS:* CONCLUÍDA`);
 
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -590,7 +641,7 @@ async function processPending(): Promise<void> {
       }
 
       const { data: so, error: soErr } = await supabaseAdmin.from("service_orders")
-        .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate, scheduled_date, mission_started_at, completed_date")
+        .select("client_id, status, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate, gtm_number, scheduled_date, mission_started_at, completed_date")
         .eq("id", u.service_order_id).maybeSingle();
       if (soErr) {
         // erro transitório de DB → libera claim pra retentar no próximo ciclo
