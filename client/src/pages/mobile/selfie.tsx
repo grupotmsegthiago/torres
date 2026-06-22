@@ -19,28 +19,56 @@ export default function SelfiePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const startingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const startCamera = useCallback(async () => {
+    // Idempotente: evita o "piscar" causado por duas chamadas getUserMedia
+    // concorrentes (mount roda 2 effects) que interrompem o play() → AbortError.
+    if (startingRef.current) return;
+    // Já há um stream ativo? Só reanexa ao <video>, não reinicia a câmera.
+    const liveStream = streamRef.current;
+    if (liveStream && liveStream.getTracks().some(t => t.readyState === "live")) {
+      if (videoRef.current && videoRef.current.srcObject !== liveStream) {
+        videoRef.current.srcObject = liveStream;
+        try { await videoRef.current.play(); } catch { /* AbortError ao reanexar — ok */ }
+      }
+      setCameraActive(true);
+      return;
+    }
+    startingRef.current = true;
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       });
+      // A tela desmontou enquanto o getUserMedia estava pendente? Fecha o stream
+      // recém-aberto pra não deixar a câmera ligada (LED aceso) por vazamento.
+      if (!mountedRef.current) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        // play() pode rejeitar com AbortError se for interrompido — ignoramos.
+        try { await videoRef.current.play(); } catch { /* ok */ }
       }
-      setCameraActive(true);
+      // cameraActive é ligado pelo onLoadedMetadata do <video> (quando o frame
+      // já tem dimensões), garantindo que a captura não pegue videoWidth = 0.
     } catch (err) {
+      setCameraActive(false);
       toast({
         title: "Câmera não disponível",
-        description: "Permita o acesso à câmera para continuar.",
+        description: "Permita o acesso à câmera e tente novamente.",
         variant: "destructive",
       });
+    } finally {
+      startingRef.current = false;
     }
   }, [facingMode, toast]);
 
@@ -53,14 +81,17 @@ export default function SelfiePage() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     startCamera();
     getPosition().then(pos => {
       setLocationInfo(pos);
       setLocationLoading(false);
     });
     return () => {
+      mountedRef.current = false;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
       }
     };
   }, []);
@@ -160,6 +191,8 @@ export default function SelfiePage() {
                 autoPlay
                 playsInline
                 muted
+                onLoadedMetadata={() => setCameraActive(true)}
+                onPlaying={() => setCameraActive(true)}
                 className="w-full h-full object-cover"
                 style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
                 data-testid="video-selfie"
