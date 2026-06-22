@@ -840,6 +840,20 @@ import type { Express } from "express";
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     console.log(`[DEBUG-OS] POST parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
     if (!parsed.data.scheduledDate) return res.status(400).json({ message: "Data do Agendamento é obrigatória" });
+    // Bloqueio operacional: cliente com fatura em cobrança judicial não recebe nova OS.
+    if (parsed.data.clientId) {
+      const { data: judicial } = await supabaseAdmin
+        .from("cobranca_judicial")
+        .select("id, invoice_id, status")
+        .eq("client_id", parsed.data.clientId)
+        .in("status", ["EM_COBRANCA_JUDICIAL", "AJUIZADO", "ACORDO"])
+        .limit(1);
+      if (judicial && judicial.length > 0) {
+        return res.status(403).json({
+          message: "Cliente bloqueado: há fatura em cobrança judicial. Regularize a pendência financeira antes de criar nova OS.",
+        });
+      }
+    }
     // Regra: toda OS precisa de uma Tabela de Preços (contrato de escolta) selecionada.
     if (!parsed.data.escortContractId) {
       return res.status(400).json({ message: "Selecione uma Tabela de Preços para criar a OS. Se o cliente ainda não tem tabela, cadastre uma em Contratos/Tabelas antes de criar a OS." });

@@ -2072,5 +2072,33 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] ticketlog_pedagio_audit_notes_history error:", e.message);
   }
 
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS cobranca_judicial (
+        id SERIAL PRIMARY KEY,
+        invoice_id INTEGER NOT NULL,
+        client_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'EM_COBRANCA_JUDICIAL',
+        motivo TEXT,
+        valor_cobrado NUMERIC(12,2),
+        enviado_por INTEGER,
+        enviado_por_nome TEXT,
+        dossie_snapshot JSONB,
+        dossie_url TEXT,
+        share_token TEXT,
+        share_expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_cobranca_judicial_invoice ON cobranca_judicial(invoice_id)`);
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_cobranca_judicial_token ON cobranca_judicial(share_token) WHERE share_token IS NOT NULL`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_cobranca_judicial_client ON cobranca_judicial(client_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_cobranca_judicial_status ON cobranca_judicial(status)`);
+    console.log("[db-init] cobranca_judicial table ensured");
+  } catch (e: any) {
+    console.error("[db-init] cobranca_judicial error:", e.message);
+  }
+
   await closeDbInitClient();
 }

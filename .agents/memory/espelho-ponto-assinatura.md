@@ -5,7 +5,7 @@ description: Como o espelho de assinatura pareia batidas, calcula noturno/HE e v
 
 # Espelho de ponto para assinatura (buildEspelhoPonto / buildEspelhoRhid)
 
-Lógica isolada em `server/lib/espelho-ponto.ts`, integrada em `buildEspelhoRhid` (`server/control-id.ts`). Renderizada em `EspelhoRhidView` (`client/src/pages/admin/control-id.tsx`).
+Lógica isolada em `server/lib/espelho-ponto.ts`, integrada em `buildEspelhoRhid` (`server/control-id.ts`). Renderizada em `EspelhoRhidView` (`client/src/pages/admin/control-id.tsx`). (Sem PII em exemplos.)
 
 ## Regra de pareamento (NÃO usar pareamento global (0,1)(2,3))
 Pareamento GULOSO com TETO: uma entrada só forma par com a próxima batida se gap ≤ 18h (`HARD_MAX_GAP_MIN`). Senão é ENTRADA ÓRFÃ (sinalizada, severidade ERRO, bloqueia). **Por quê:** pareamento global emparelhava uma entrada órfã com uma saída dias depois → "turno" de 168h. Dados reais de vigilante são esparsos e cheios de batidas únicas (esqueceu de bater) — isso é dado incompleto real, deve ser FLAGGED, não inventar horas.
@@ -13,7 +13,7 @@ Pareamento GULOSO com TETO: uma entrada só forma par com a próxima batida se g
 - Par ≤ 3min (`SHORT_PAIR_WARN_MIN`) → aviso "par muito curto / batida duplicada" (não bloqueia).
 - Turno que cruza meia-noite = UM turno só, atribuído ao dia da ENTRADA; saída marcada "(+1)".
 - Noturno = faixa 22h–05h, varrido minuto a minuto (`nightMinutesBRT`).
-- Há costura segura de marcadores 23:59→00:00 (≤3min) ANTES do pareamento (no-op quando não existem; dados do André não têm).
+- Há costura segura de marcadores 23:59→00:00 (≤3min) ANTES do pareamento (no-op quando não existem; nos dados reais de teste não havia).
 
 ## DECISÃO DO DONO (escopo)
 Aplicar SÓ no espelho de assinatura. NÃO recalcular custos de folha/holerite/Balanço RH — `buildFolhaStats`/`buildFolhaPonto` (custos) ficam intocados. **Por quê:** noturno/HE do espelho são para o documento assinado, não para pagamento.

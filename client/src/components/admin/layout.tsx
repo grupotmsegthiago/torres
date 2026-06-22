@@ -6,7 +6,7 @@ import { queryClient } from "@/lib/queryClient";
 import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar, Gavel,
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video, FileSpreadsheet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -195,6 +195,7 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt },
+          { path: "/admin/cobranca-judicial", label: "Cobrança Judicial", icon: Gavel },
           { path: "/admin/auditoria-faturamento", label: "Auditoria de Ciclo", icon: ShieldCheck },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },

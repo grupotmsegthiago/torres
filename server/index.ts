@@ -12,6 +12,7 @@ import { initWhatsappMonitor } from "./whatsapp-monitor";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
+import { registerCobrancaJudicialRoutes } from "./routes/cobranca-judicial";
 import { registerPushRoutes } from "./routes/push";
 import { APP_VERSION, APP_BUILD_AT } from "./constants";
 
@@ -223,6 +224,7 @@ app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now
   }
   registerAsaasRoutes(app);
   registerDriverControlRoutes(app);
+  registerCobrancaJudicialRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
