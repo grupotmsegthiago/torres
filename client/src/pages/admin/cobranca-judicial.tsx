@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, authFetch, queryClient } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,10 +81,36 @@ export default function CobrancaJudicialPage() {
     enabled: !!invoiceId,
   });
 
+  const [downloading, setDownloading] = useState<"pdf" | "zip" | null>(null);
+
   function handleSearch() {
     const n = parseInt(query.trim().replace(/\D/g, ""), 10);
     if (!n) { toast({ title: "Informe o número da fatura/NF", variant: "destructive" }); return; }
     setInvoiceId(n);
+  }
+
+  async function baixarArquivo(kind: "pdf" | "zip") {
+    if (!invoiceId) return;
+    setDownloading(kind);
+    try {
+      const res = await authFetch(`/api/invoices/${invoiceId}/dossie-juridico/${kind}`);
+      if (!res.ok) {
+        let msg = `Erro ${res.status}`;
+        try { const j = await res.json(); msg = j?.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const filename = m?.[1] || `Dossie_Fatura_${invoiceId}.${kind}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ title: `Falha ao baixar ${kind.toUpperCase()}`, description: e?.message || "Erro", variant: "destructive" });
+    } finally { setDownloading(null); }
   }
 
   async function enviarJuridico() {
@@ -187,15 +213,11 @@ export default function CobrancaJudicialPage() {
                         Enviado por {dossie.judicial.enviado_por_nome || "—"} em {fmtDate(dossie.judicial.created_at)}
                       </Badge>
                     )}
-                    <Button variant="outline" asChild data-testid="button-baixar-pdf">
-                      <a href={`/api/invoices/${invoiceId}/dossie-juridico/pdf`} target="_blank" rel="noreferrer">
-                        <FileText className="w-4 h-4 mr-1" /> PDF do dossiê
-                      </a>
+                    <Button variant="outline" onClick={() => baixarArquivo("pdf")} disabled={downloading !== null} data-testid="button-baixar-pdf">
+                      {downloading === "pdf" ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <FileText className="w-4 h-4 mr-1" />} PDF do dossiê
                     </Button>
-                    <Button variant="outline" asChild data-testid="button-baixar-zip">
-                      <a href={`/api/invoices/${invoiceId}/dossie-juridico/zip`} target="_blank" rel="noreferrer">
-                        <FileArchive className="w-4 h-4 mr-1" /> Pacote ZIP (evidências)
-                      </a>
+                    <Button variant="outline" onClick={() => baixarArquivo("zip")} disabled={downloading !== null} data-testid="button-baixar-zip">
+                      {downloading === "zip" ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <FileArchive className="w-4 h-4 mr-1" />} Pacote ZIP (evidências)
                     </Button>
                   </div>
 
