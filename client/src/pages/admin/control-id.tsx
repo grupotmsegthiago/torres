@@ -42,10 +42,15 @@ type EspelhoRhidData = {
     date: string; label: string; weekday: string;
     marcacoes: string[];
     jornada: { ent1: string; sai1: string; ent2: string; sai2: string; ent3: string; sai3: string };
-    duracao: string; ch: string;
+    duracao: string; noturno?: string; extra?: string; ch: string;
     tratamentos: Array<{ horario: string; ocorr: string; motivo: string }>;
+    issues?: string[];
   }>;
   totalHHMM: string;
+  totalNoturnoHHMM?: string;
+  totalExtraHHMM?: string;
+  validation?: Array<{ date: string; label: string; severity: "erro" | "aviso"; message: string }>;
+  hasBlocking?: boolean;
   horariosContratuais: Array<{ codigo: string; ent1: string; sai1: string; ent2: string; sai2: string }>;
   emitidoEm: string;
 };
@@ -2033,12 +2038,41 @@ function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
         </tbody>
       </table>
 
+      {data.validation && data.validation.length > 0 && (
+        <div
+          className={`no-print rhid-validation ${data.hasBlocking ? "blocking" : "warn"}`}
+          data-testid="panel-espelho-validation"
+          style={{
+            margin: "8px 0",
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: `1px solid ${data.hasBlocking ? "#dc2626" : "#d97706"}`,
+            background: data.hasBlocking ? "#fef2f2" : "#fffbeb",
+            color: data.hasBlocking ? "#991b1b" : "#92400e",
+            fontSize: 12,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {data.hasBlocking
+              ? "⚠ Há batidas incompletas/inconsistentes — revise antes de coletar a assinatura"
+              : "Avisos de conferência (não impedem a assinatura)"}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {data.validation.map((v, i) => (
+              <li key={i} data-testid={`validation-item-${i}`}>
+                <b>[{v.severity === "erro" ? "ERRO" : "AVISO"}]</b> {v.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <table className="rhid-table">
         <thead>
           <tr className="group-row">
             <th rowSpan={2}>DIA</th>
             <th rowSpan={2}>MARCAÇÕES REGISTRADAS<br/>NO PONTO ELETRÔNICO</th>
-            <th colSpan={7}>JORNADA REALIZADA</th>
+            <th colSpan={9}>JORNADA REALIZADA</th>
             <th colSpan={4}>TRATAMENTOS EFETUADOS SOBRE OS DADOS ORIGINAIS</th>
           </tr>
           <tr>
@@ -2046,6 +2080,8 @@ function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
             <th>ENT. 2</th><th>SAÍ. 2</th>
             <th>ENT. 3</th><th>SAÍ. 3</th>
             <th>DURAÇÃO</th>
+            <th>NOTURNO</th>
+            <th>H. EXTRA</th>
             <th>CH</th><th>HORÁRIO</th><th>OCORR</th><th>MOTIVO</th>
           </tr>
         </thead>
@@ -2065,6 +2101,8 @@ function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
                   <td rowSpan={rowspan}>{d.jornada.ent3}</td>
                   <td rowSpan={rowspan}>{d.jornada.sai3}</td>
                   <td className="duracao" rowSpan={rowspan}>{d.duracao}</td>
+                  <td className="duracao" rowSpan={rowspan}>{d.noturno || ""}</td>
+                  <td className="duracao" rowSpan={rowspan}>{d.extra || ""}</td>
                   <td className="ch" rowSpan={rowspan}>{d.ch}</td>
                   <td>{trat[0]?.horario || ""}</td>
                   <td className="ocorr">{trat[0]?.ocorr || ""}</td>
@@ -2083,6 +2121,8 @@ function EspelhoRhidView({ data }: { data: EspelhoRhidData }) {
           <tr className="rhid-total">
             <td colSpan={8} className="text-right"><b>TOTAL</b></td>
             <td className="duracao"><b>{data.totalHHMM}</b></td>
+            <td className="duracao"><b>{data.totalNoturnoHHMM || "00:00"}</b></td>
+            <td className="duracao"><b>{data.totalExtraHHMM || "00:00"}</b></td>
             <td colSpan={4}></td>
           </tr>
         </tbody>
@@ -2142,6 +2182,16 @@ function EspelhoRhidDialog({ employeeId, month, onClose }: { employeeId: number;
   });
 
   function doPrint() {
+    if (data?.hasBlocking) {
+      const blocking = (data.validation || []).filter(v => v.severity === "erro");
+      const lista = blocking.slice(0, 8).map(v => `• ${v.message}`).join("\n");
+      const extra = blocking.length > 8 ? `\n…e mais ${blocking.length - 8}.` : "";
+      const ok = window.confirm(
+        `Este espelho tem ${blocking.length} batida(s) incompleta(s)/inconsistente(s):\n\n${lista}${extra}\n\n` +
+        `Recomenda-se corrigir as marcações antes de coletar a assinatura. Deseja imprimir mesmo assim?`
+      );
+      if (!ok) return;
+    }
     document.body.classList.add("printing-espelho");
     setTimeout(() => {
       window.print();
@@ -2917,6 +2967,15 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
       const data = await Promise.all(ids.map(id =>
         authFetch(`/api/control-id/espelho-rhid/${id}?month=${month}&_=${Date.now()}`, { cache: "no-store", headers: { "Accept": "application/json" } }).then(r => r.json() as Promise<EspelhoRhidData>)
       ));
+      const comPendencia = data.filter(d => d.hasBlocking);
+      if (comPendencia.length > 0) {
+        const nomes = comPendencia.map(d => `• ${d.employee.name} (${(d.validation || []).filter(v => v.severity === "erro").length} pend.)`).join("\n");
+        const ok = window.confirm(
+          `${comPendencia.length} funcionário(s) têm batidas incompletas/inconsistentes:\n\n${nomes}\n\n` +
+          `Recomenda-se corrigir as marcações antes de coletar a assinatura. Deseja imprimir o lote mesmo assim?`
+        );
+        if (!ok) { setLoading(false); return; }
+      }
       setPrintData(data);
       setTimeout(() => {
         document.body.classList.add("printing-espelho");
