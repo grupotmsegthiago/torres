@@ -192,13 +192,27 @@ export default function BalancoGerencialPage() {
   const [refDate, setRefDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
   const [showEficienciaModal, setShowEficienciaModal] = useState(false);
+  const [dataGeradoEm, setDataGeradoEm] = useState<Date | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
 
+  // Tela pesada: abre instantâneo servindo o último cálculo (cache no servidor) e
+  // o backend recalcula sozinho a cada 3h. Botão "Atualizar agora" força na hora.
+  const SWR_3H = 3 * 60 * 60 * 1000;
+
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ["/api/financial/dashboard"],
-    refetchInterval: 600_000,
+    queryKey: ["/api/financial/dashboard", "cached"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/financial/dashboard?cached=1`);
+      const ageHdr = res.headers.get("X-Cache-Age");
+      if (ageHdr != null) setDataGeradoEm(new Date(Date.now() - Number(ageHdr) * 1000));
+      if (!res.ok) throw new Error("Falha ao carregar painel");
+      return res.json();
+    },
+    staleTime: SWR_3H,
+    refetchInterval: SWR_3H,
   });
 
   const { data: allVehicles } = useQuery<any[]>({
@@ -257,8 +271,14 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    queryKey: ["/api/fixed-costs/rh-summary"],
-    refetchInterval: 600_000,
+    queryKey: ["/api/fixed-costs/rh-summary", "cached"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1`);
+      if (!res.ok) throw new Error("Falha ao carregar RH");
+      return res.json();
+    },
+    staleTime: SWR_3H,
+    refetchInterval: SWR_3H,
   });
 
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
@@ -298,13 +318,14 @@ export default function BalancoGerencialPage() {
   }, [range]);
 
   const { data: gridData = [] } = useQuery<any[]>({
-    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to],
+    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
     queryFn: async () => {
-      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}`);
+      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
       if (!res.ok) return [];
       return res.json();
     },
-    staleTime: 60000,
+    staleTime: SWR_3H,
+    refetchInterval: SWR_3H,
   });
 
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
@@ -650,6 +671,30 @@ export default function BalancoGerencialPage() {
     { id: "MISSOES", label: "Missões", icon: Crosshair },
   ];
 
+  // "Atualizar agora": força o servidor a recalcular os 3 endpoints pesados na
+  // hora (?force=1) e recarrega as queries com o número fresquinho.
+  const atualizarAgora = async () => {
+    if (atualizando) return;
+    setAtualizando(true);
+    try {
+      const respostas = await Promise.all([
+        authFetch(`/api/financial/dashboard?cached=1&force=1`),
+        authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1`),
+        authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
+      ]);
+      if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
+      await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "cached"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
+      setDataGeradoEm(new Date());
+      toast({ title: "Atualizado", description: "Dados recalculados agora." });
+    } catch {
+      toast({ title: "Erro ao atualizar", variant: "destructive" });
+    } finally {
+      setAtualizando(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -669,8 +714,16 @@ export default function BalancoGerencialPage() {
             <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => invalidateRelatedQueries("financial")} data-testid="button-refresh-dashboard">
-              <RefreshCw size={14} />
+            <span className="text-[11px] text-neutral-500 font-bold text-right leading-tight" data-testid="text-cache-status">
+              {dataGeradoEm
+                ? `Atualizado ${dataGeradoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                : "Carregando..."}
+              <br />
+              <span className="text-neutral-400">atualiza a cada 3h</span>
+            </span>
+            <Button variant="outline" size="sm" onClick={atualizarAgora} disabled={atualizando} data-testid="button-refresh-dashboard">
+              <RefreshCw size={14} className={atualizando ? "animate-spin" : ""} />
+              <span className="ml-1.5 text-xs font-bold">{atualizando ? "Atualizando" : "Atualizar agora"}</span>
             </Button>
           </div>
         </div>

@@ -7,6 +7,9 @@ import type { Express } from "express";
   import { nominatimGeocode } from "../db-init";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
+  import { withSwrCache } from "../lib/swr-cache";
+
+  const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
   export const lastRecordedPos: Map<number, { lat: number; lng: number; time: number; osId?: number }> = new Map();
@@ -22,9 +25,11 @@ import type { Express } from "express";
   export function registerOperationalRoutes(app: Express) {
     // ====================== OPERATIONAL GRID ======================
 
-  app.get("/api/operational-grid", requireAuth, requireAdminRole, async (_req, res) => {
-    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.set("Pragma", "no-cache");
+  app.get("/api/operational-grid", requireAuth, requireAdminRole, withSwrCache({ baseKey: "operational-grid", ttlMs: SWR_TTL_3H }, async (_req, res) => {
+    if (_req.query?.cached !== "1") {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.set("Pragma", "no-cache");
+    }
     const orders = await storage.getServiceOrders();
     const gridVehicles = await storage.getVehicles();
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -811,7 +816,7 @@ import type { Express } from "express";
     );
 
     res.json(enriched);
-  });
+  }));
 
   app.get("/api/vehicle-tracking", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");

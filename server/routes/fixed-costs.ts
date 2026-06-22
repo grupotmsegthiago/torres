@@ -6,6 +6,8 @@ import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
+import { withSwrCache } from "../lib/swr-cache";
+const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 import { computeWorkedHours } from "../lib/hours-calc";
 import pLimit from "p-limit";
 
@@ -412,7 +414,7 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({ baseKey: "rh-summary", ttlMs: SWR_TTL_3H }, async (req, res) => {
     const { data: employees, error } = await supabaseAdmin
       .from("employees")
       .select("id, name, status, role, tipo_contratacao");
@@ -660,7 +662,7 @@ export function registerFixedCostsRoutes(app: Express) {
       },
       porAgente,
     });
-  });
+  }));
 
   // SUMMARY (rateios prontos)
   app.get("/api/fixed-costs/summary", requireAuth, requireAdminRole, async (_req, res) => {

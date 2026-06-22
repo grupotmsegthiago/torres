@@ -3,6 +3,8 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
   import { logSystemAudit } from "../audit";
+  import { withSwrCache } from "../lib/swr-cache";
+  const SWR_TTL_3H = 3 * 60 * 60 * 1000;
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
@@ -2520,7 +2522,7 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/financial/dashboard", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/financial/dashboard", requireAuth, requireAdminRole, withSwrCache({ baseKey: "financial-dashboard", ttlMs: SWR_TTL_3H }, async (req, res) => {
     try {
       const { data: billingsRaw, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
       if (bErr) throw bErr;
@@ -3102,7 +3104,7 @@ import type { Express } from "express";
         },
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
+  }));
 
   app.get("/api/service-contracts/:id/pdf", requireAuth, requireAdminRole, async (req, res) => {
     try {
