@@ -3828,6 +3828,170 @@ export function registerAsaasRoutes(app: Express) {
     });
 
     // ============================================================
+    // RASTREIO COMPLETO DA FATURA ("rota do dinheiro").
+    // Agrega numa única timeline cronológica TODAS as fontes de
+    // histórico de uma fatura — somente leitura, NÃO altera nada:
+    //   1. Criação da fatura (invoices.created_by / created_at)
+    //   2. Auditoria estruturada (system_audit_logs target=invoice)
+    //   3. Notas append-only (invoices.nfse_observations: baixa
+    //      manual em dinheiro/PIX/transferência + alterações de venc.)
+    //   4. Entrada no banco (inter_extrato_lancamentos.invoice_id) —
+    //      quando o dinheiro de fato caiu na conta
+    //   5. Lançamentos financeiros espelho (financial_transactions)
+    // Responde a "quem marcou recebido em dinheiro" e "quando foi a
+    // transferência dessa nota fiscal".
+    // ============================================================
+    app.get("/api/invoices/:id/rastreio", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const invoiceId = Number(req.params.id);
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        // Normaliza qualquer timestamp p/ ms (sorting). Strings sem offset
+        // são BRT (padrão do sistema); date-only vira meio-dia BRT.
+        const toMs = (raw: any): number => {
+          if (!raw) return 0;
+          let s = String(raw).trim();
+          if (!s) return 0;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s = `${s}T12:00:00-03:00`;
+          else if (/^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(s)) s = `${s}-03:00`;
+          const ms = new Date(s).getTime();
+          return Number.isFinite(ms) ? ms : 0;
+        };
+
+        const events: Array<{ ts: number; at: string | null; kind: string; who: string | null; title: string; detail: string | null; value: number | null }> = [];
+
+        // (1) Criação da fatura
+        let creatorName: string | null = null;
+        if (invoice.created_by) {
+          const { data: u } = await supabaseAdmin.from("users").select("name, email").eq("id", invoice.created_by).maybeSingle();
+          creatorName = u?.name || u?.email || null;
+        }
+        events.push({
+          ts: toMs(invoice.created_at),
+          at: invoice.created_at || null,
+          kind: "criada",
+          who: creatorName,
+          title: "Fatura criada",
+          detail: `Valor ${Number(invoice.value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · venc. ${invoice.due_date || "—"} · ${invoice.gateway === "inter" ? "Banco Inter" : "Asaas"}`,
+          value: Number(invoice.value || 0) || null,
+        });
+
+        // (2) Auditoria estruturada
+        const { data: audits } = await supabaseAdmin
+          .from("system_audit_logs")
+          .select("user_name, user_role, action, details, ip_address, created_at")
+          .eq("target_type", "invoice")
+          .eq("target_id", String(invoiceId))
+          .order("created_at", { ascending: true });
+        for (const a of audits || []) {
+          let detail: string | null = null;
+          try {
+            const d = typeof a.details === "string" ? a.details : JSON.stringify(a.details);
+            detail = d && d !== "null" && d !== "{}" ? d : null;
+          } catch { detail = null; }
+          events.push({
+            ts: toMs(a.created_at),
+            at: a.created_at || null,
+            kind: "auditoria",
+            who: a.user_name || null,
+            title: String(a.action || "Ação").replace(/_/g, " "),
+            detail: [detail, a.ip_address ? `IP ${a.ip_address}` : null].filter(Boolean).join(" · ") || null,
+            value: null,
+          });
+        }
+
+        // (3) Notas append-only (nfse_observations) — baixa manual / vencimento
+        if (invoice.nfse_observations) {
+          const chunks = String(invoice.nfse_observations).split(" | ");
+          for (const c of chunks) {
+            const inner = c.replace(/^\[/, "").replace(/\]$/, "").trim();
+            if (!inner) continue;
+            const whoM = inner.match(/ por (.+?) em /);
+            const tsM = inner.match(/ em (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)/);
+            const valM = inner.match(/R\$\s?([\d.]+)/);
+            const isBaixa = /^Baixa manual/i.test(inner);
+            const isVenc = /^Vencimento alterado/i.test(inner);
+            const methodM = inner.match(/^Baixa manual (\w+)/i);
+            events.push({
+              ts: toMs(tsM?.[1]),
+              at: tsM?.[1] || null,
+              kind: isBaixa ? "baixa" : isVenc ? "vencimento" : "nota",
+              who: whoM?.[1]?.trim() || null,
+              title: isBaixa
+                ? `Baixa manual${methodM ? ` em ${methodM[1].toUpperCase()}` : ""}`
+                : isVenc ? "Vencimento alterado" : "Anotação",
+              detail: inner,
+              value: valM ? Number(valM[1]) || null : null,
+            });
+          }
+        }
+
+        // (4) Entrada bancária real (Banco Inter) — o dinheiro caiu na conta
+        const { data: extrato } = await supabaseAdmin
+          .from("inter_extrato_lancamentos")
+          .select("data_entrada, tipo_transacao, tipo_operacao, valor, titulo, descricao, reconciled_at")
+          .eq("invoice_id", invoiceId)
+          .order("data_entrada", { ascending: true });
+        for (const e of extrato || []) {
+          const credito = String(e.tipo_operacao || "").toUpperCase() === "C";
+          events.push({
+            ts: toMs(e.reconciled_at) || toMs(e.data_entrada),
+            at: e.data_entrada || null,
+            kind: "banco",
+            who: "Banco Inter",
+            title: credito ? "Dinheiro recebido na conta" : "Débito na conta",
+            detail: [e.tipo_transacao, e.titulo, e.descricao].filter(Boolean).join(" · ") || null,
+            value: Number(e.valor || 0) || null,
+          });
+        }
+
+        // (5) Lançamentos financeiros espelho (origin_type="invoice")
+        const { data: fts } = await supabaseAdmin
+          .from("financial_transactions")
+          .select("type, amount, description, category, created_at")
+          .eq("origin_type", "invoice")
+          .eq("origin_id", String(invoiceId))
+          .order("created_at", { ascending: true });
+        for (const f of fts || []) {
+          events.push({
+            ts: toMs(f.created_at),
+            at: f.created_at || null,
+            kind: "financeiro",
+            who: null,
+            title: String(f.type || "").toUpperCase() === "INCOME" ? "Receita registrada no caixa" : "Lançamento financeiro",
+            detail: [f.description, f.category].filter(Boolean).join(" · ") || null,
+            value: Number(f.amount || 0) || null,
+          });
+        }
+
+        events.sort((a, b) => a.ts - b.ts);
+
+        res.json({
+          invoice: {
+            id: invoice.id,
+            client_name: invoice.client_name,
+            value: invoice.value,
+            net_value: invoice.net_value,
+            status: invoice.status,
+            payment_date: invoice.payment_date,
+            due_date: invoice.due_date,
+            gateway: invoice.gateway,
+            asaas_payment_id: invoice.asaas_payment_id,
+            inter_codigo_solicitacao: invoice.inter_codigo_solicitacao,
+            service_order_id: invoice.service_order_id,
+          },
+          events,
+        });
+      } catch (err: any) {
+        console.error("[invoice-rastreio] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
     // Alterar vencimento da fatura (com motivo obrigatório).
     // Atualiza local + Asaas (se houver cobrança ativa). Bloqueia
     // alteração em faturas já pagas/canceladas pra não confundir
