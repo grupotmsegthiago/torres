@@ -1,0 +1,78 @@
+📲 PROMPT – CONTROLE DE CONDUTOR (APP)
+
+Crie um aplicativo chamado “Controle de Condutor – Escolta Torres” com as seguintes funcionalidades:
+
+🔧 1. Estrutura do Formulário (Campos obrigatórios)
+
+O sistema deve conter os seguintes campos:
+
+Prefixo da VTR
+Placa do veículo
+Ano de referência
+Nome do condutor atual
+Nome do condutor parceiro
+⏱️ 2. Controle de Direção (Função principal)
+
+O app deve permitir registrar o rodízio de condutores em tempo real, com botão de ação:
+
+▶️ BOTÃO: "INICIAR CONDUÇÃO"
+Registra automaticamente:
+Data de saída
+Hora de saída
+Nome do condutor ativo
+KM de saída (campo manual ou integrado)
+🔄 BOTÃO: "PASSAR DIREÇÃO"
+Ao clicar:
+Registra automaticamente:
+Data da troca
+Hora da troca
+Salva o tempo de condução do motorista atual
+Alterna automaticamente para o condutor parceiro
+Inicia novo registro com:
+Novo condutor
+Nova data/hora de início
+⏹️ BOTÃO: "FINALIZAR OPERAÇÃO"
+Registra:
+Data de chegada
+Hora de chegada
+KM final
+Encerra o ciclo completo da operação
+📊 3. Histórico e Controle
+
+O sistema deve permitir:
+
+Visualizar histórico completo por:
+Veículo (VTR)
+Condutor
+Data
+Mostrar:
+Tempo total de direção por condutor
+Quantidade de trocas realizadas
+Permitir clicar no nome do condutor e ver todos os registros dele
+⚠️ 4. Regras e Validações
+Não permitir iniciar condução sem preencher:
+VTR
+Condutores
+Não permitir troca sem ter iniciado uma condução
+Alertar caso o condutor ultrapasse tempo definido de direção (ex: 2h ou 3h)
+Todos os registros devem ter:
+Data e hora automática (sem edição manual)
+📝 5. Assinatura / Validação
+Campo: “Visto do condutor”
+Pode ser:
+Assinatura digital ou чекbox de confirmação
+📤 6. Relatório Final
+Gerar relatório automático contendo:
+Todos os registros de condução
+KM inicial e final
+Nome dos condutores
+Horários de troca
+Opção de exportar em:
+PDF
+Planilha
+📌 7. Observação Importante (Baseado no seu modelo)
+
+O sistema deve garantir que:
+
+Todos os dados sejam preenchidos de forma legível e completa
+O relatório final substitua o documento físico exigido pelo operacional
