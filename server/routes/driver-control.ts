@@ -86,15 +86,28 @@ export function registerDriverControlRoutes(app: Express) {
       const user = (req as any).user;
       const isAdminOrDir = user?.role === "admin" || user?.role === "diretoria";
 
+      // Mesma regra do start: OS ativa OU concluída há ≤24h (completed_date, fallback scheduled_date).
+      const ACTIVE_STATUSES = ["em_andamento", "agendada"];
+      const RECENT_DONE_STATUSES = ["concluida", "concluída"];
+      const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
       let query = supabaseAdmin
         .from("service_orders")
-        .select("id, assigned_employee_id, assigned_employee_2_id")
+        .select("id, status, completed_date, scheduled_date, assigned_employee_id, assigned_employee_2_id")
         .eq("vehicle_id", vehicleId)
-        .in("status", ["em_andamento", "agendada"]);
+        .in("status", [...ACTIVE_STATUSES, ...RECENT_DONE_STATUSES]);
       if (!isAdminOrDir && user?.employeeId) {
         query = query.or(`assigned_employee_id.eq.${user.employeeId},assigned_employee_2_id.eq.${user.employeeId}`);
       }
-      const { data: osList } = await query.limit(5);
+      const { data: rawList } = await query.limit(20);
+      const nowMs = Date.now();
+      const osList = (rawList || []).filter((os: any) => {
+        if (ACTIVE_STATUSES.includes(os.status)) return true;
+        const ref = os.completed_date || os.scheduled_date;
+        if (!ref) return false;
+        const refMs = new Date(ref).getTime();
+        if (Number.isNaN(refMs)) return false;
+        return refMs >= nowMs - RECENT_WINDOW_MS;
+      });
 
       const ids = new Set<number>();
       for (const os of (osList || [])) {
@@ -146,16 +159,28 @@ export function registerDriverControlRoutes(app: Express) {
         if (!user?.employeeId) {
           return res.status(403).json({ message: "Usuário não é funcionário." });
         }
-        const { data: relatedOs } = await supabaseAdmin
+        // Libera condução para OS ativa (agendada/em_andamento) OU concluída há ≤24h
+        // (janela contada a partir do completed_date; fallback scheduled_date). Ordem do dono 22/06/2026.
+        const ACTIVE_STATUSES = ["em_andamento", "agendada"];
+        const RECENT_DONE_STATUSES = ["concluida", "concluída"];
+        const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+        const { data: candidateOs } = await supabaseAdmin
           .from("service_orders")
-          .select("id, assigned_employee_id, assigned_employee_2_id")
+          .select("id, status, completed_date, scheduled_date, assigned_employee_id, assigned_employee_2_id")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["em_andamento", "agendada"])
-          .or(`assigned_employee_id.eq.${user.employeeId},assigned_employee_2_id.eq.${user.employeeId}`)
-          .limit(1)
-          .maybeSingle();
+          .in("status", [...ACTIVE_STATUSES, ...RECENT_DONE_STATUSES])
+          .or(`assigned_employee_id.eq.${user.employeeId},assigned_employee_2_id.eq.${user.employeeId}`);
+        const nowMs = Date.now();
+        const relatedOs = (candidateOs || []).find((os: any) => {
+          if (ACTIVE_STATUSES.includes(os.status)) return true;
+          const ref = os.completed_date || os.scheduled_date;
+          if (!ref) return false;
+          const refMs = new Date(ref).getTime();
+          if (Number.isNaN(refMs)) return false;
+          return refMs >= nowMs - RECENT_WINDOW_MS; // concluída dentro da janela de 24h
+        });
         if (!relatedOs) {
-          return res.status(403).json({ message: "Você não está atribuído a uma OS ativa desta viatura." });
+          return res.status(403).json({ message: "Você não está atribuído a uma OS ativa ou recém-concluída (24h) desta viatura." });
         }
         const validDriverIds = [relatedOs.assigned_employee_id, relatedOs.assigned_employee_2_id].filter(Boolean);
         if (!validDriverIds.includes(driverId)) {
