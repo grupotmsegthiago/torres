@@ -1,0 +1,105 @@
+preciso entrar com uma ação de cobrança de um cliente, para isso preciso de um documento completo para o juridico com todas evidências que eu tenho sobre tudo que esta vinculado a Nota FIscal
+
+
+
+ja aproveita e cria um processo para utilizarmos em outros clientes, assim preciso de uma linha do tempo com todas evidências para encaminhar ao juridico com links para download e um documento completo que trata todo passo a passo que teve desde a criação do cliente, até a finalização da nota fiscal e boleto..
+
+
+
+Faça completo para o meu sistema replit do sistema TORRES ..
+
+
+
+crie um processo tipo
+
+
+
+Juridico > Cobrança Judicial > Insira a Fatura ou NF
+
+Para estruturar a cobrança judicial contra o cliente inadimplente e, ao mesmo tempo, padronizar esse fluxo dentro do seu sistema TMSEGo / TORRES no Replit, precisamos dividir o processo em duas partes:
+
+A Estrutura de Dados / Linha do Tempo de Evidências (o dossiê para o jurídico).
+
+O Passo a Passo Operacional (Workflow) que serve de manual para os próximos casos.
+
+Como o seu sistema é integrado via Supabase, o ideal é que esse relatório de evidências puxe os dados automaticamente das suas tabelas de missões, faturamento (Asaas) e notas fiscais (PlugNotas/eNotas).
+
+1. Dossiê de Evidências (Para o Jurídico)
+Este é o layout do documento ou tela de exportação que o seu sistema deve gerar para cada NF inadimplente. Ele organiza os fatos cronologicamente, eliminando qualquer margem de defesa do devedor.
+
+Identificação do Caso
+Razão Social do Cliente: [Nome do Cliente] | CNPJ: [00.000.000/0000-00]
+
+Nota Fiscal Vinculada: Nº [000] | Valor: R$ [0.000,00]
+
+Fatura/Boleto (Asaas): ID pay_xxxxx | Vencimento: [DD/MM/AAAA]
+
+Linha do Tempo Cronológica (Timeline de Provas)
+Abertura do Cadastro & Contrato
+Passo 1
+Evidência: Registro no banco de dados (Tabela clientes).
+
+Provas Anexadas: Contrato de Prestação de Serviços de Escolta/Segurança assinado digitalmente (Link para Download).
+
+Histórico: IP de aceite, e-mail de validação e documentos societários do cliente salvos no Supabase Storage.
+
+Criação da Ordem de Serviço (OS Mãe)
+Passo 2
+Evidência: Vinculação do contrato à operação na tabela ordens_servico.
+
+Provas Anexadas: Espelho da OS com escopo acordado, valores das diárias, taxas de km e franquias (Link para Download).
+
+Execução das Missões (Folha de Ponto e Checklist)
+Passo 3
+Evidência: Fechamento operacional das escalas e rotas (Tabela missoes_executadas).
+
+Provas Anexadas: Log de início e fim da missão (com segundos truncados no sistema), fotos validadas pelo Checklist de IA (placas e veículos) e relatórios de viagem assinados pelo tomador do serviço no destino (Link para Download).
+
+Faturamento e Emissão da NF-e
+Passo 4
+Evidência: Processamento do faturamento na tabela financeiro e integração via API.
+
+Provas Anexadas: XML e PDF da Nota Fiscal de Serviço (NFS-e) emitida via PlugNotas/eNotas; comprovante de entrega/envio da NF por e-mail para o cliente (Link para Download).
+
+Geração do Boleto e Notificações de Cobrança
+Passo 5
+Evidência: Logs de webhook do Asaas (Tabela logs_cobranca).
+
+Provas Anexadas: PDF do boleto/link de pagamento e o histórico completo de notificações (E-mail enviado, SMS recebido e logs de tentativa de contato sem sucesso) (Link para Download).
+
+
+2. Processo Interno no Sistema (Workflow)
+Para padronizar isso no Replit, o processo deve seguir um fluxo visual e auditável de transição de status.
+
+Fluxo de Status da Fatura:
+Pendente ➔ Vencido ➔ Régua de Cobrança (Avisos) ➔ Ajuizado / Jurídico
+
+Quando o operador decide enviar para o jurídico, ele entra na tela da fatura e dispara a ação:
+
+Jurídico > Cobrança Judicial > Insira a Fatura ou NF
+Abaixo está o mapeamento do passo a passo lógico que você deve programar na tela ou no backend do sistema:
+
+1
+Auditoria de Horas e Valores
+Passo 1 - Interno
+O sistema realiza uma checagem automática: verifica se os tempos das missões associadas estão com os segundos truncados corretamente e se o valor cobrado bate exatamente com o contrato (evitando divergências de centavos).
+
+2
+Geração do Pacote de Evidências (ZIP)
+Passo 2 - Automação
+Ao clicar em "Enviar para o Jurídico", o sistema faz um fetch no Supabase Storage e consolida: o contrato assinado, os relatórios das missões, o checklist de IA do veículo, o PDF da NF-e e o histórico de envio do Asaas em um único arquivo compactado.
+
+3
+Disparo de Alerta e Bloqueio Operacional
+Passo 3 - Integração
+O status do cliente muda para Inadimplente - Bloqueado (impedindo a criação de novas OSs). Um e-mail automatizado é disparado para o seu operacional/financeiro (e cópia para supervisão, como o Thiago) formalizando que o contrato foi para a esfera jurídica.
+
+4
+Disponibilização do Link ao Advogado
+Passo 4 - Finalização
+O sistema gera uma URL segura e temporária contendo a Linha do Tempo acima e o botão de download do pacote completo. O jurídico recebe o acesso direto para protocolar a Ação de Execução de Título Extrajudicial (se houver contrato assinado) ou Ação de Cobrança.
+
+
+💡 Dica de Implementação no Replit/React: No seu componente de faturamento, adicione um botão Enviar para Jurídico. Esse botão deve chamar uma função que mude o status da fatura no banco de dados para em_cobranca_judicial e gere uma linha na tabela historico_processos com o auth.uid() do usuário que executou a ação, garantindo total controle sobre quem enviou a cobrança para a justiça.
+
+Precisa da query SQL (Supabase) para estruturar a tabela que vai unificar essas evidências?
