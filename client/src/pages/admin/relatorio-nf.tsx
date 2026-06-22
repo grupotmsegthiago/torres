@@ -9,8 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench, History,
 } from "lucide-react";
+import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
@@ -114,6 +115,7 @@ export default function RelatorioNFPage() {
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
   const [resolverModal, setResolverModal] = useState<{ invoiceId: number; clientName: string; email: string; errorMsg: string | null } | null>(null);
   const [osModal, setOsModal] = useState<{ clientName: string; nfNumber: string | null; total: number; osList: Array<{ id: number; osNumber: string; value?: number }> } | null>(null);
+  const [traceModal, setTraceModal] = useState<{ invoiceId: number; clientName: string; value: number; netValue: number | null; status: string | null; paymentDate: string | null } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -934,6 +936,17 @@ export default function RelatorioNFPage() {
                               <FileText className="h-3.5 w-3.5" />
                             </button>
                           )}
+                          {r.source === "INVOICE" && r.invoiceId && (
+                            <button
+                              type="button"
+                              onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate })}
+                              className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                              title="Rastreio completo (rota do dinheiro)"
+                              data-testid={`button-trace-${r.id}`}
+                            >
+                              <History className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && String(r.rawStatus || "").toUpperCase() === "AGUARDANDO_FATURAMENTO" && (
                             <button
                               type="button"
@@ -1163,6 +1176,17 @@ export default function RelatorioNFPage() {
                             data-testid={`button-paid-open-nf-${r.id}`}
                           >
                             <FileText className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {r.source === "INVOICE" && r.invoiceId && (
+                          <button
+                            type="button"
+                            onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate })}
+                            className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                            title="Rastreio completo (rota do dinheiro)"
+                            data-testid={`button-paid-trace-${r.id}`}
+                          >
+                            <History className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -1862,6 +1886,18 @@ export default function RelatorioNFPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {traceModal && (
+        <InvoiceTraceDialog
+          invoiceId={traceModal.invoiceId}
+          clientName={traceModal.clientName}
+          value={traceModal.value}
+          netValue={traceModal.netValue}
+          status={traceModal.status}
+          paymentDate={traceModal.paymentDate}
+          onClose={() => setTraceModal(null)}
+        />
+      )}
     </AdminLayout>
   );
 }

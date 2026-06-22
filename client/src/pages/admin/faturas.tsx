@@ -17,7 +17,7 @@ import {
   FileText, DollarSign, Calendar, CheckCircle2, XCircle,
   Clock, AlertTriangle, AlertCircle, Send, Copy, Eye, Trash2,
   Building2, Download, Receipt, Mail, MailCheck, MailX,
-  Activity, Bell, History, Landmark, UserCog, FileCheck2, Wallet, PlusCircle,
+  Activity, Bell, History,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -26,6 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 
 interface Invoice {
   id: number;
@@ -686,120 +687,19 @@ export default function FaturasPage() {
           )}
 
           {showTrace && (
-            <InvoiceTraceDialog invoice={showTrace} onClose={() => setShowTrace(null)} />
+            <InvoiceTraceDialog
+              invoiceId={showTrace.id}
+              clientName={showTrace.client_name}
+              value={showTrace.value}
+              netValue={showTrace.net_value}
+              status={showTrace.status}
+              paymentDate={showTrace.payment_date}
+              onClose={() => setShowTrace(null)}
+            />
           )}
         </div>
       </div>
     </AdminLayout>
-  );
-}
-
-interface TraceEvent {
-  ts: number;
-  at: string | null;
-  kind: string;
-  who: string | null;
-  title: string;
-  detail: string | null;
-  value: number | null;
-}
-
-const TRACE_KIND: Record<string, { label: string; icon: any; dot: string; ring: string }> = {
-  criada:     { label: "Criação",     icon: PlusCircle, dot: "bg-indigo-500",  ring: "ring-indigo-100" },
-  auditoria:  { label: "Auditoria",   icon: FileCheck2, dot: "bg-slate-400",   ring: "ring-slate-100" },
-  baixa:      { label: "Baixa manual", icon: UserCog,   dot: "bg-emerald-500", ring: "ring-emerald-100" },
-  vencimento: { label: "Vencimento",  icon: Calendar,   dot: "bg-amber-500",   ring: "ring-amber-100" },
-  banco:      { label: "Banco",       icon: Landmark,   dot: "bg-blue-600",    ring: "ring-blue-100" },
-  financeiro: { label: "Caixa",       icon: Wallet,     dot: "bg-teal-500",    ring: "ring-teal-100" },
-  nota:       { label: "Anotação",    icon: Activity,   dot: "bg-neutral-400", ring: "ring-neutral-100" },
-};
-
-function InvoiceTraceDialog({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
-  const { data, isLoading, isError } = useQuery<{ invoice: any; events: TraceEvent[] }>({
-    queryKey: ["/api/invoices", invoice.id, "rastreio"],
-  });
-
-  const events = data?.events || [];
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="w-5 h-5 text-amber-600" />
-            Rastreio da Fatura #{invoice.id}
-          </DialogTitle>
-          <DialogDescription>
-            Rota completa do dinheiro — quem criou, quem deu baixa, e quando o valor entrou.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="mt-2 rounded-xl border bg-neutral-50 p-3 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <p className="text-sm font-bold text-neutral-900 uppercase" data-testid="text-trace-client">{invoice.client_name}</p>
-            <p className="text-[11px] text-neutral-500">
-              {fmt(invoice.value)}{invoice.net_value && invoice.net_value !== invoice.value ? ` · líquido ${fmt(invoice.net_value)}` : ""}
-              {invoice.payment_date ? ` · pago em ${invoice.payment_date}` : ""}
-            </p>
-          </div>
-          <Badge className={`${(STATUS_MAP[invoice.status] || STATUS_MAP.PENDING).badgeCls} font-bold`}>
-            {(STATUS_MAP[invoice.status] || STATUS_MAP.PENDING).label}
-          </Badge>
-        </div>
-
-        <div className="mt-4">
-          {isLoading && (
-            <div className="flex items-center justify-center py-10 text-neutral-400" data-testid="status-trace-loading">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Carregando rastreio…
-            </div>
-          )}
-          {isError && (
-            <div className="flex items-center gap-2 text-red-600 text-sm py-6" data-testid="status-trace-error">
-              <AlertCircle className="w-4 h-4" /> Não foi possível carregar o rastreio.
-            </div>
-          )}
-          {!isLoading && !isError && events.length === 0 && (
-            <p className="text-sm text-neutral-400 py-6 text-center">Nenhum evento registrado para esta fatura.</p>
-          )}
-
-          {!isLoading && !isError && events.length > 0 && (
-            <ol className="relative space-y-4" data-testid="list-trace-events">
-              {events.map((ev, i) => {
-                const k = TRACE_KIND[ev.kind] || TRACE_KIND.nota;
-                const KIcon = k.icon;
-                const when = ev.ts
-                  ? new Date(ev.ts).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
-                  : (ev.at || "—");
-                return (
-                  <li key={i} className="relative flex gap-3" data-testid={`trace-event-${i}`}>
-                    <div className="flex flex-col items-center">
-                      <span className={`flex items-center justify-center w-8 h-8 rounded-full ${k.dot} text-white ring-4 ${k.ring} shrink-0`}>
-                        <KIcon className="w-4 h-4" />
-                      </span>
-                      {i < events.length - 1 && <span className="w-px flex-1 bg-neutral-200 mt-1" />}
-                    </div>
-                    <div className="pb-1 min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-neutral-900 capitalize">{ev.title}</p>
-                        {ev.value != null && (
-                          <span className="text-sm font-bold text-emerald-700 shrink-0">{fmt(ev.value)}</span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-neutral-500">
-                        {when}{ev.who ? ` · ${ev.who}` : ""}
-                      </p>
-                      {ev.detail && (
-                        <p className="text-xs text-neutral-600 mt-0.5 break-words">{ev.detail}</p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
