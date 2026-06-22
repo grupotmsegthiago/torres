@@ -11,6 +11,13 @@ function isSessionParticipant(user: any, session: { driver_id?: number | null; p
   return empId === session.driver_id || empId === session.partner_id;
 }
 
+function isAdminOrDiretoria(user: any): boolean {
+  return user?.role === "admin" || user?.role === "diretoria";
+}
+
+// Colunas da lista (allowlist): NÃO inclui driver_signature (dado sensível só no detalhe/relatório autorizado).
+const DS_LIST_COLS = "id, vehicle_id, vehicle_plate, vehicle_prefix, vehicle_year, driver_id, partner_id, driver_name, partner_name, km_start, km_end, status, started_at, ended_at, started_by_user_id, notes, signed_at, created_at";
+
 export function registerDriverControlRoutes(app: Express) {
 
   app.get("/api/driver-sessions", requireAuth, async (req: Request, res: Response) => {
@@ -21,7 +28,14 @@ export function registerDriverControlRoutes(app: Express) {
       const dateFrom = req.query.dateFrom as string;
       const dateTo = req.query.dateTo as string;
 
-      let query = supabaseAdmin.from("driver_sessions").select("*").order("created_at", { ascending: false });
+      const user = (req as any).user;
+      let query = supabaseAdmin.from("driver_sessions").select(DS_LIST_COLS).order("created_at", { ascending: false });
+
+      // Não-admin só enxerga sessões em que participa (condutor ou parceiro).
+      if (!isAdminOrDiretoria(user)) {
+        if (!user?.employeeId) return res.json([]);
+        query = query.or(`driver_id.eq.${user.employeeId},partner_id.eq.${user.employeeId}`);
+      }
 
       if (status && status !== "ALL") query = query.eq("status", status);
       if (vehicleId) query = query.eq("vehicle_id", parseInt(vehicleId));
@@ -104,6 +118,10 @@ export function registerDriverControlRoutes(app: Express) {
       const { data, error } = await supabaseAdmin.from("driver_sessions").select("*").eq("id", id).single();
       if (error) throw error;
       if (!data) return res.status(404).json({ message: "Sessão não encontrada" });
+
+      if (!isSessionParticipant((req as any).user, data)) {
+        return res.status(403).json({ message: "Você não tem acesso a esta sessão de condução." });
+      }
 
       const { data: shifts } = await supabaseAdmin.from("driver_shifts").select("*").eq("session_id", id).order("started_at", { ascending: true });
 
@@ -357,6 +375,10 @@ export function registerDriverControlRoutes(app: Express) {
       const { data: session } = await supabaseAdmin.from("driver_sessions").select("*").eq("id", id).single();
       if (!session) return res.status(404).json({ message: "Sessão não encontrada" });
 
+      if (!isSessionParticipant((req as any).user, session)) {
+        return res.status(403).json({ message: "Você não tem acesso a esta sessão de condução." });
+      }
+
       const { data: shifts } = await supabaseAdmin.from("driver_shifts").select("*").eq("session_id", id).order("started_at", { ascending: true });
 
       const driverTotals: Record<string, { name: string; totalMinutes: number; shifts: number }> = {};
@@ -385,6 +407,11 @@ export function registerDriverControlRoutes(app: Express) {
       const plate = (req.query.plate as string || "").toUpperCase().trim();
       const datetime = req.query.datetime as string;
 
+      // Lookup é ferramenta de conciliação (boletim) — restrito a admin/diretoria.
+      if (!isAdminOrDiretoria((req as any).user)) {
+        return res.status(403).json({ message: "Acesso restrito." });
+      }
+
       if (!plate || !datetime) {
         return res.status(400).json({ message: "Placa e data/hora são obrigatórios." });
       }
@@ -392,7 +419,7 @@ export function registerDriverControlRoutes(app: Express) {
       const ts = new Date(datetime).toISOString();
 
       const { data: sessions } = await supabaseAdmin.from("driver_sessions")
-        .select("*")
+        .select(DS_LIST_COLS)
         .ilike("vehicle_plate", `%${plate}%`)
         .lte("started_at", ts)
         .or(`ended_at.gte.${ts},ended_at.is.null`)
@@ -401,7 +428,7 @@ export function registerDriverControlRoutes(app: Express) {
 
       if (!sessions || sessions.length === 0) {
         const { data: closest } = await supabaseAdmin.from("driver_sessions")
-          .select("*")
+          .select(DS_LIST_COLS)
           .ilike("vehicle_plate", `%${plate}%`)
           .lte("started_at", ts)
           .order("started_at", { ascending: false })
