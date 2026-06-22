@@ -1827,14 +1827,15 @@ export default function FinanceiroPage() {
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   // Só o Thiago aprova/recusa lançamentos. Outros admins veem a aba mas em modo leitura.
   const isThiagoAprovador = (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br";
-  // Trava de edição de anexos (boleto/NF/comprovante): admin comum só altera
-  // anexos de lançamentos que ele mesmo criou; Diretoria altera de qualquer um.
+  // Trava de edição de anexos (boleto/NF/comprovante): qualquer pessoa do
+  // administrativo (admin ou diretoria) pode anexar/trocar anexos de qualquer
+  // lançamento, independentemente de quem criou (decisão do dono 20/06/2026).
   // Espelha a regra do backend (server/routes/escort.ts → canEditTransactionDocs).
-  const canEditDocs = (t: FinancialTransaction) =>
-    user?.role === "diretoria" || (!!user?.name && !!t.created_by && t.created_by === user.name);
+  const canEditDocs = (_t: FinancialTransaction) =>
+    user?.role === "diretoria" || user?.role === "admin";
   const blockDocEdit = () => toast({
     title: "Ação não permitida",
-    description: "Você só pode alterar anexos de lançamentos que você mesmo criou.",
+    description: "Você não tem permissão para alterar anexos.",
     variant: "destructive",
   });
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");

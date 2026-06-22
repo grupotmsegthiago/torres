@@ -10,17 +10,18 @@ import type { Express } from "express";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
 
-  // Trava de edição de anexos (boleto/NF/comprovante): admin comum só pode
-  // alterar anexos de lançamentos que ELE MESMO criou (created_by == nome).
-  // A Diretoria edita/corrige anexos de qualquer pessoa. Decisão do dono
-  // (16/06/2026). Quando created_by é desconhecido (registros antigos), só a
-  // Diretoria pode mexer — fail-closed pro admin comum.
+  // Trava de edição de anexos (boleto/NF/comprovante): QUALQUER pessoa do
+  // administrativo (role "admin" ou "diretoria") pode anexar/trocar anexos de
+  // QUALQUER lançamento, independentemente de quem criou. Decisão do dono
+  // (20/06/2026) — antes só quem criou (ou diretoria) podia, mas a equipe
+  // financeira precisava corrigir comprovantes de lançamentos de colegas.
+  // As rotas já exigem requireAdminRole, então funcionário comum não chega aqui;
+  // o segundo parâmetro (lançamento) é mantido só por compatibilidade.
   export function canEditTransactionDocs(
     user: { role?: string | null; name?: string | null } | null | undefined,
-    existing: { created_by?: string | null } | null | undefined,
+    _existing?: { created_by?: string | null } | null | undefined,
   ): boolean {
-    if (user?.role === "diretoria") return true;
-    return !!user?.name && !!existing?.created_by && existing.created_by === user.name;
+    return user?.role === "diretoria" || user?.role === "admin";
   }
 
   export function registerEscortRoutes(app: Express) {
@@ -558,7 +559,7 @@ import type { Express } from "express";
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (!canEditTransactionDocs(user, existing)) {
-        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+        return res.status(403).json({ message: "Sem permissão para alterar anexos deste lançamento." });
       }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
@@ -615,7 +616,7 @@ import type { Express } from "express";
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (!canEditTransactionDocs(user, existing)) {
-        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+        return res.status(403).json({ message: "Sem permissão para alterar anexos deste lançamento." });
       }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
@@ -670,7 +671,7 @@ import type { Express } from "express";
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (!canEditTransactionDocs(user, existing)) {
-        return res.status(403).json({ message: "Você só pode alterar anexos de lançamentos que você mesmo criou." });
+        return res.status(403).json({ message: "Sem permissão para alterar anexos deste lançamento." });
       }
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
