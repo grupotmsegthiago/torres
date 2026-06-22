@@ -9,7 +9,7 @@ import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { withSwrCache } from "../lib/swr-cache";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 import { computeWorkedHours } from "../lib/hours-calc";
-import pLimit from "p-limit";
+import { createLimit } from "../lib/create-limit";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
 const fixedCostInputSchema = insertFixedCostSchema.extend({
@@ -520,7 +520,7 @@ export function registerFixedCostsRoutes(app: Express) {
     // pra evitar reler `employees` por funcionário. A acumulação (somas/breakdown)
     // continua logo abaixo na ordem original de `ativos`, então os totais ficam
     // bit-idênticos ao cálculo serial anterior.
-    const limit = pLimit(6);
+    const limit = createLimit(6);
     const statsByIdx = await Promise.all(
       ativos.map((emp) => limit(async () => {
         try {

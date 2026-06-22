@@ -41,3 +41,4 @@
 - [Auth stale-while-error](auth-stale-while-error.md) — cache serve last-known-good por ~30min SÓ quando Supabase unhealthy; gate !isSupabaseHealthy() obrigatório em todo ramo de erro (até no catch) senão estende sessão revogada.
 - [NF Asaas: validação de e-mail + erro mudo](nf-emission-validation.md) — emissão tem ~7 call-sites; validação pré-Asaas é opt-in por call-site (clientEmail), e capture usa resolveNfErrorMessage p/ não sobrescrever msg específica por genérica.
 - [Card do cliente sempre com localização](whatsapp-card-location-required.md) — update de texto não traz GPS; resolver posição por fallback (update→mission_positions→update anterior) p/ link de localização nunca faltar; não usar origem/destino.
+- [Dep ESM-only quebra no bundle de prod](esm-only-deps-break-prod-bundle.md) — pkg ESM puro (p-limit v7) roda no dev (tsx) mas vira "(0,X.default) is not a function" no CJS de prod; usar util inline + checar dist/index.cjs.
