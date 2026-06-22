@@ -151,8 +151,37 @@ function MobileProtectedRoute({ component: Component, skipSelfieCheck, skipContr
     }
   }, [isLoading, user, setLocation]);
 
+  // GATE 1 (prioritário): contrato. Precisa estar resolvido antes da selfie.
   useEffect(() => {
+    if (user && user.role === "funcionario" && !skipContractCheck) {
+      apiRequest("GET", "/api/mobile/contract-gate")
+        .then(r => r.ok ? r.json() : { blocked: false })
+        .then(data => {
+          if (data.blocked) {
+            setContractOk(false);
+            setLocation("/mobile/contratos");
+          } else {
+            setContractOk(true);
+          }
+          setContractChecked(true);
+        })
+        .catch(() => { setContractOk(true); setContractChecked(true); });
+    } else if (user) {
+      setContractOk(true);
+      setContractChecked(true);
+    }
+  }, [user, skipContractCheck, setLocation]);
+
+  // GATE 2: selfie. Só roda DEPOIS do contrato resolvido e liberado — assim
+  // contrato e selfie nunca competem pelo redirect (causa do flicker).
+  useEffect(() => {
+    if (!contractChecked) return;
     if (user && user.role === "funcionario" && !skipSelfieCheck) {
+      // Contrato ainda bloqueando: não mexe na selfie (contrato vem primeiro).
+      if (!contractOk) {
+        setSelfieChecked(true);
+        return;
+      }
       if (sessionStorage.getItem("selfieOk") === "1") {
         setSelfieOk(true);
         setSelfieChecked(true);
@@ -177,27 +206,7 @@ function MobileProtectedRoute({ component: Component, skipSelfieCheck, skipContr
       setSelfieOk(true);
       setSelfieChecked(true);
     }
-  }, [user, skipSelfieCheck, setLocation]);
-
-  useEffect(() => {
-    if (user && user.role === "funcionario" && !skipContractCheck) {
-      apiRequest("GET", "/api/mobile/contract-gate")
-        .then(r => r.ok ? r.json() : { blocked: false })
-        .then(data => {
-          if (data.blocked) {
-            setLocation("/mobile/contratos");
-            setContractOk(false);
-          } else {
-            setContractOk(true);
-          }
-          setContractChecked(true);
-        })
-        .catch(() => { setContractOk(true); setContractChecked(true); });
-    } else if (user) {
-      setContractOk(true);
-      setContractChecked(true);
-    }
-  }, [user, skipContractCheck, setLocation]);
+  }, [user, skipSelfieCheck, contractChecked, contractOk, setLocation]);
 
   if (isLoading || (!selfieChecked && user) || (!contractChecked && user)) {
     return <LazyFallback />;
@@ -285,7 +294,7 @@ function Router() {
         <Route path="/mobile/controle-condutor">{() => <MobileProtectedRoute component={MobileControleCondutorPage} />}</Route>
         <Route path="/mobile/resumo-financeiro">{() => <MobileProtectedRoute component={MobileResumoFinanceiroPage} skipSelfieCheck />}</Route>
         <Route path="/mobile/holerites">{() => <MobileProtectedRoute component={MobileHoleritesPage} />}</Route>
-        <Route path="/mobile/contratos">{() => <MobileProtectedRoute component={MobileContratosPage} skipContractCheck />}</Route>
+        <Route path="/mobile/contratos">{() => <MobileProtectedRoute component={MobileContratosPage} skipContractCheck skipSelfieCheck />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
         <Route path="/admin/inter-extrato">{() => <ProtectedRoute component={InterExtratoPage} />}</Route>
