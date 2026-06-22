@@ -957,6 +957,23 @@ function buildClosingReportText(gi: GridItem | null | undefined, osNumber: strin
 🔴 *FIM:* ${endStr}    *KM FIM:* ${kmFim}${locBlock}`;
 }
 
+// Busca o formulário COMPLETO de "Fim de Missão" no servidor (idêntico ao auto-forward
+// do CRON). Usado ao compartilhar/copiar o fechamento de uma OS já fora do rastreamento
+// ao vivo. Fallback para o resumo curto local se o endpoint falhar / sem id.
+async function fetchFinalizedSummaryText(soId: number | null | undefined, gi: GridItem | null | undefined, osNumber: string): Promise<string> {
+  const id = soId ?? gi?.id;
+  if (id) {
+    try {
+      const res = await authFetch(`/api/service-orders/${id}/finalized-summary`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.text) return String(data.text);
+      }
+    } catch {}
+  }
+  return buildClosingReportText(gi, osNumber);
+}
+
 let _cachedReportTemplate: string | null = null;
 let _templateFetchedAt = 0;
 
@@ -7780,7 +7797,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             onClick={async () => {
                               const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                               const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                              let reportText = mv ? await generateReportAsync(mv, gi || null) : buildClosingReportText(gi, u.osNumber);
+                              let reportText = mv ? await generateReportAsync(mv, gi || null) : await fetchFinalizedSummaryText(u.serviceOrderId, gi, u.osNumber);
                               let sharePhoto = u.photoUrl;
                               if (sharePhoto === "[has_photo]" && typeof u.id === "number") {
                                 try { const r = await authFetch(`/api/mission/updates/${u.id}/photo`); const d = await r.json(); sharePhoto = d.photoUrl || null; } catch { sharePhoto = null; }
@@ -7819,7 +7836,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                                 onClick={async () => {
                                   const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                                   const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : buildClosingReportText(gi, u.osNumber);
+                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : await fetchFinalizedSummaryText(u.serviceOrderId, gi, u.osNumber);
                                   const ok = await copyTextToClipboard(reportText);
                                   toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
                                   fireCopyAudit(u.id);

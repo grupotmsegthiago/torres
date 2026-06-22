@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { calcularEscolta, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { buildFinalizedSummary } from "../cron-whatsapp-forward";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -1444,6 +1445,35 @@ Responda APENAS com JSON: {"km_lido": number}`;
       if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
       const forwards = await storage.getClientForwardsByOS(id);
       res.json(forwards);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Texto do formulário COMPLETO de "Fim de Missão" (mesmo do auto-forward via CRON).
+  // Usado pelo botão Compartilhar/Copiar da grade operacional p/ que o envio manual
+  // do fechamento saia idêntico ao card automático (e não o resumo curto). Read-only.
+  app.get("/api/service-orders/:id/finalized-summary", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
+      const { data: so } = await supabaseAdmin.from("service_orders").select("*").eq("id", id).maybeSingle();
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+      let client: any = null;
+      if ((so as any).client_id) {
+        const { data: c } = await supabaseAdmin.from("clients").select("name, whatsapp_group_id").eq("id", (so as any).client_id).maybeSingle();
+        client = c;
+      }
+      // Update sintético representando o fechamento (buildFinalizedSummary resolve GPS/KM/horários do banco).
+      const u = {
+        service_order_id: (so as any).id,
+        os_number: (so as any).os_number,
+        created_at: (so as any).completed_date || new Date().toISOString(),
+        latitude: null,
+        longitude: null,
+      };
+      const text = await buildFinalizedSummary(u, so, client);
+      res.json({ text });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
