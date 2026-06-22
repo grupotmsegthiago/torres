@@ -1061,11 +1061,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const emp2 = form.assignedEmployee2Id ? employees.find(e => e.id === form.assignedEmployee2Id) : null;
   const sv = form.vehicleId ? vehicles.find(v => v.id === form.vehicleId) : null;
   const selectedKit = form.kitId ? kits.find(k => k.id === form.kitId) : null;
-  const photos = sv ? [
-    { label: "Dianteira", src: sv.photoFront },
-    { label: "Lateral Esq.", src: sv.photoLeft },
-    { label: "Traseira", src: sv.photoRear },
-    { label: "Lateral Dir.", src: sv.photoRight },
+  // A lista de veículos não traz mais as fotos laterais/traseira (eram pesadas e derrubavam
+  // o Supabase). Buscamos o veículo completo sob demanda só quando um veículo é selecionado.
+  const { data: svFull } = useQuery<any>({
+    queryKey: ["/api/vehicles", form.vehicleId],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: !!form.vehicleId,
+  });
+  const photoSrc: any = svFull || sv;
+  const photos = photoSrc ? [
+    { label: "Dianteira", src: photoSrc.photoFront },
+    { label: "Lateral Esq.", src: photoSrc.photoLeft },
+    { label: "Traseira", src: photoSrc.photoRear },
+    { label: "Lateral Dir.", src: photoSrc.photoRight },
   ].filter(p => p.src) : [];
   const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
 

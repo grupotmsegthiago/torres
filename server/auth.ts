@@ -1,5 +1,6 @@
 import type { Express, RequestHandler } from "express";
 import { supabaseAdmin } from "./supabase";
+import { isSupabaseHealthy } from "./pg-fallback";
 import { storage } from "./storage";
 import type { User } from "@shared/schema";
 
@@ -17,8 +18,14 @@ declare global {
 // storage.getUserBySupabaseUid em CADA request — maior gargalo de heap/latência.
 // Chave = token completo; valor = { user, supabaseUid, expiresAt }.
 // TTL curto (60s) garante revogação rápida (logout/role-change).
-type AuthCacheEntry = { user: User; supabaseUid: string; expiresAt: number };
+type AuthCacheEntry = { user: User; supabaseUid: string; expiresAt: number; staleUntil: number };
 const AUTH_CACHE_TTL_MS = 60_000;
+// Janela "stale" (last-known-good): se o Supabase cair, mantemos a sessão já validada
+// por até 30 min em vez de re-perguntar a cada request. Numa queda, o TTL de 60s expirava
+// e CADA clique de CADA usuário batia no Supabase (enxurrada de "users get" falhando),
+// multiplicando as falhas e travando o sistema em contingência. Logout/role-change limpam
+// o cache (incl. stale), então a revogação continua imediata.
+const AUTH_CACHE_STALE_MS = 30 * 60_000;
 const AUTH_CACHE_MAX = 1000;
 const authCache = new Map<string, AuthCacheEntry>();
 // Índice reverso supabaseUid → Set<token> para invalidação dirigida por usuário
@@ -26,10 +33,13 @@ const authCache = new Map<string, AuthCacheEntry>();
 // efeito imediato sem esperar o TTL de 60s.
 const tokensBySupabaseUid = new Map<string, Set<string>>();
 
-function authCacheGet(token: string): AuthCacheEntry | null {
+function authCacheGet(token: string): { entry: AuthCacheEntry; fresh: boolean } | null {
   const entry = authCache.get(token);
   if (!entry) return null;
-  if (Date.now() >= entry.expiresAt) {
+  const now = Date.now();
+  // Só descarta de vez após a janela stale — antes disso fica disponível como
+  // last-known-good caso o Supabase esteja fora.
+  if (now >= entry.staleUntil) {
     authCache.delete(token);
     tokensBySupabaseUid.get(entry.supabaseUid)?.delete(token);
     return null;
@@ -37,7 +47,7 @@ function authCacheGet(token: string): AuthCacheEntry | null {
   // Move pra "mais recente" (LRU via re-insert)
   authCache.delete(token);
   authCache.set(token, entry);
-  return entry;
+  return { entry, fresh: now < entry.expiresAt };
 }
 
 function authCacheSet(token: string, user: User, supabaseUid: string) {
@@ -50,7 +60,8 @@ function authCacheSet(token: string, user: User, supabaseUid: string) {
       if (oldEntry) tokensBySupabaseUid.get(oldEntry.supabaseUid)?.delete(oldest);
     }
   }
-  authCache.set(token, { user, supabaseUid, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+  const now = Date.now();
+  authCache.set(token, { user, supabaseUid, expiresAt: now + AUTH_CACHE_TTL_MS, staleUntil: now + AUTH_CACHE_STALE_MS });
   let set = tokensBySupabaseUid.get(supabaseUid);
   if (!set) { set = new Set(); tokensBySupabaseUid.set(supabaseUid, set); }
   set.add(token);
@@ -87,19 +98,36 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
 
   const token = authHeader.split(" ")[1];
 
-  // 1) Cache hit — pula chamadas remotas
+  // 1) Cache fresco (< 60s) — pula chamadas remotas
   const cached = authCacheGet(token);
-  if (cached) {
-    req.user = cached.user;
-    req.supabaseUid = cached.supabaseUid;
+  if (cached?.fresh) {
+    req.user = cached.entry.user;
+    req.supabaseUid = cached.entry.supabaseUid;
     return next();
   }
 
-  // 2) Cache miss — valida no Supabase e busca user local
+  // 2) Cache "stale" + Supabase fora → serve last-known-good SEM bater no Supabase.
+  // Corta a enxurrada de validações que só falhariam durante a queda (causa do travamento
+  // em contingência). Quando o Supabase volta, o caminho normal revalida e renova o TTL.
+  if (cached && !isSupabaseHealthy()) {
+    req.user = cached.entry.user;
+    req.supabaseUid = cached.entry.supabaseUid;
+    return next();
+  }
+
+  // 3) Sem cache fresco e Supabase saudável (ou sem stale) — valida no Supabase
   try {
     const { data: { user: supaUser }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !supaUser) {
-      req.user = undefined;
+      // Erro com Supabase fora = falha de conectividade, não token inválido:
+      // mantém a sessão já validada (stale-while-error). Com Supabase saudável,
+      // erro = token realmente inválido → rejeita.
+      if (cached && !isSupabaseHealthy()) {
+        req.user = cached.entry.user;
+        req.supabaseUid = cached.entry.supabaseUid;
+      } else {
+        req.user = undefined;
+      }
       return next();
     }
 
@@ -111,6 +139,13 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
     }
   } catch (err) {
     console.error("[auth] Token verification error:", err);
+    // Exceção (rede/timeout) ao validar → usa last-known-good APENAS se o Supabase
+    // estiver fora. Consistente com a regra: erro com Supabase saudável = rejeita
+    // (não estende sessão revogada/expirada por causa de uma falha transitória local).
+    if (cached && !isSupabaseHealthy()) {
+      req.user = cached.entry.user;
+      req.supabaseUid = cached.entry.supabaseUid;
+    }
   }
   next();
 };

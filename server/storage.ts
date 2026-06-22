@@ -89,6 +89,16 @@ export function memInvalidateAll(): void {
 
 const DISABLE_LOCAL_FALLBACK = (process.env.DISABLE_LOCAL_FALLBACK ?? "true").toLowerCase() !== "false";
 
+// Lista de veículos NÃO traz colunas base64 pesadas (documento + fotos laterais/traseira).
+// Elas inflavam a resposta a ponto de estourar o timeout de 12s (JSON truncado nos logs)
+// e derrubar o circuito do Supabase. photo_front fica (miniatura do grid em tempo real);
+// o documento e as demais fotos vêm sob demanda via getVehicle(id) (select *).
+const VEHICLE_LIST_COLS =
+  "id,plate,model,brand,year,color,chassi,renavam,status,tracker_id,tracker_api_url,tracker_type," +
+  "truckscontrol_identifier,ssx_integration_code,km,initial_km,last_km_update,frota,photo_front,icon_type," +
+  "last_latitude,last_longitude,last_ignition,last_speed,last_gps_signal,last_address,last_position_time," +
+  "stopped_since,ignition_on_since,no_signal_since,last_oil_change_km,notes,created_at";
+
 async function resilientList<T>(
   table: string,
   supaFn: () => Promise<{ data: any[] | null; error: any }>,
@@ -559,7 +569,7 @@ export class DatabaseStorage implements IStorage {
     const cached = memGet<Vehicle>("vehicles");
     if (cached) return cached;
     const result = await resilientList<Vehicle>("vehicles", () =>
-      supabaseAdmin.from("vehicles").select("*").order("created_at", { ascending: false }), "created_at", false);
+      supabaseAdmin.from("vehicles").select(VEHICLE_LIST_COLS).order("created_at", { ascending: false }), "created_at", false);
     memSet("vehicles", result);
     return result;
   }

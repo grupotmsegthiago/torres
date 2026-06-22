@@ -45,6 +45,29 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     notes: vehicle?.notes || "",
   });
 
+  // A LISTA de veículos não traz mais as colunas pesadas (documento + fotos laterais/traseira)
+  // pra não derrubar o Supabase. Ao EDITAR, buscamos o veículo completo e hidratamos o form —
+  // sem isso, salvar mandaria esses campos vazios e APAGARIA documento/fotos existentes.
+  const [photosLoaded, setPhotosLoaded] = useState(!vehicle?.id);
+  const { data: fullVehicle, isError: fullVehicleError } = useQuery<Vehicle>({
+    queryKey: ["/api/vehicles", vehicle?.id],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: !!vehicle?.id,
+  });
+  useEffect(() => {
+    if (fullVehicle && !photosLoaded) {
+      setForm(prev => ({
+        ...prev,
+        documentFile: (fullVehicle as any).documentFile || "",
+        photoFront: fullVehicle.photoFront || "",
+        photoLeft: fullVehicle.photoLeft || "",
+        photoRear: fullVehicle.photoRear || "",
+        photoRight: fullVehicle.photoRight || "",
+      }));
+      setPhotosLoaded(true);
+    }
+  }, [fullVehicle, photosLoaded]);
+
   const lookupPlate = useCallback(async (plate: string) => {
     const clean = plate.replace(/[^a-zA-Z0-9]/g, "");
     if (clean.length < 7) return;
@@ -409,8 +432,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-vehicle-notes" />
         </div>
         <div className="md:col-span-3 flex gap-3">
-          <Button type="submit" disabled={mutation.isPending} data-testid="button-save-vehicle">
-            {mutation.isPending ? "Salvando..." : "Salvar"}
+          <Button type="submit" disabled={mutation.isPending || !photosLoaded} data-testid="button-save-vehicle">
+            {mutation.isPending ? "Salvando..." : !photosLoaded ? (fullVehicleError ? "Erro ao carregar fotos" : "Carregando fotos...") : "Salvar"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
