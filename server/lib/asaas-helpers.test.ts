@@ -4,6 +4,7 @@ import {
   cleanCnpj,
   buildInvoiceDescription,
   buildInssObservation,
+  netBoletoValue,
   buildFiscalPayload,
   buildNfseInvoicePayload,
   fmtBRL,
@@ -76,6 +77,52 @@ test("buildInssObservation: valor com centavos é formatado com vírgula", () =>
   const obs = buildInssObservation(true, 4.5, 45.67);
   assert.match(obs, /R\$ 45,67/);
   assert.match(obs, /4\.50%/);
+});
+
+// ============================================================================
+// netBoletoValue (boleto líquido com retenção de INSS)
+// ============================================================================
+
+test("netBoletoValue: sem retenção mantém o valor bruto no boleto", () => {
+  const r = netBoletoValue(1000, { retemInss: false });
+  assert.equal(r.boleto, 1000);
+  assert.equal(r.inssValor, 0);
+  assert.equal(r.inssAliquota, 0);
+});
+
+test("netBoletoValue: opts ausente = sem retenção", () => {
+  const r = netBoletoValue(1000);
+  assert.equal(r.boleto, 1000);
+  assert.equal(r.inssValor, 0);
+});
+
+test("netBoletoValue: com retenção 11% desconta o INSS do boleto", () => {
+  const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 11 });
+  assert.equal(r.inssValor, 110);
+  assert.equal(r.boleto, 890);
+  assert.equal(r.inssAliquota, 11);
+});
+
+test("netBoletoValue: retenção sem alíquota explícita usa 11% padrão", () => {
+  const r = netBoletoValue(2000, { retemInss: true });
+  assert.equal(r.inssAliquota, 11);
+  assert.equal(r.inssValor, 220);
+  assert.equal(r.boleto, 1780);
+});
+
+test("netBoletoValue: arredonda INSS e boleto a 2 casas (sem dízima)", () => {
+  const r = netBoletoValue(1234.56, { retemInss: true, inssAliquota: 11 });
+  // 1234.56 * 0.11 = 135.8016 -> 135.80 ; 1234.56 - 135.80 = 1098.76
+  assert.equal(r.inssValor, 135.8);
+  assert.equal(r.boleto, 1098.76);
+  // bruto reconstituível a partir do boleto + INSS retido
+  assert.equal(Number((r.boleto + r.inssValor).toFixed(2)), 1234.56);
+});
+
+test("netBoletoValue: alíquota diferente de 11% (ex.: 3,5%)", () => {
+  const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 3.5 });
+  assert.equal(r.inssValor, 35);
+  assert.equal(r.boleto, 965);
 });
 
 // ============================================================================

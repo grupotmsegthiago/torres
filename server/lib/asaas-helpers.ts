@@ -49,6 +49,27 @@ export function buildInssObservation(
   return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
 }
 
+/**
+ * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga) quando
+ * há retenção de INSS. A NF continua sendo emitida pelo valor BRUTO (com a
+ * observação legal da retenção); só a cobrança sai líquida (bruto − INSS retido).
+ *
+ * - Sem retenção: boleto = bruto, inssValor = 0.
+ * - Com retenção: inssValor = bruto × alíquota%, boleto = bruto − inssValor.
+ */
+export function netBoletoValue(
+  grossValue: number,
+  opts?: { retemInss?: boolean; inssAliquota?: number },
+): { boleto: number; inssValor: number; inssAliquota: number } {
+  const retemInss = !!opts?.retemInss;
+  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssValor = retemInss
+    ? Number((grossValue * inssAliquota / 100).toFixed(2))
+    : 0;
+  const boleto = Number((grossValue - inssValor).toFixed(2));
+  return { boleto, inssValor, inssAliquota };
+}
+
 export function buildFiscalPayload(
   value: number,
   clientCpfCnpj: string,

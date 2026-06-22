@@ -16,6 +16,7 @@ import {
   cleanCnpj,
   buildInvoiceDescription,
   buildInssObservation,
+  netBoletoValue,
   buildFiscalPayload,
   todayDateStr,
   buildNfseInvoicePayload as buildNfseInvoicePayloadBase,
@@ -94,6 +95,8 @@ async function sendBillingEmail(invoice: {
   nfse_url?: string | null;
   pix_copia_e_cola?: string | null;
   service_order_id?: number | null;
+  valor_inss_retido?: number | string | null;
+  inss_aliquota?: number | string | null;
 }, clientEmail: string) {
   const transporter = createSmtpTransporter();
   if (!transporter || !clientEmail) {
@@ -102,7 +105,15 @@ async function sendBillingEmail(invoice: {
   }
 
   const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
-  const valueFormatted = invoice.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const fmtMoney = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const valueFormatted = fmtMoney(invoice.value);
+  const inssRetido = Number(invoice.valor_inss_retido || 0);
+  const temInss = inssRetido > 0.005;
+  const inssAliq = Number(invoice.inss_aliquota || 0);
+  const liquidoPagar = temInss ? Number((invoice.value - inssRetido).toFixed(2)) : invoice.value;
+  const liquidoFormatted = fmtMoney(liquidoPagar);
+  const inssFormatted = fmtMoney(inssRetido);
+  const subjectValue = temInss ? liquidoFormatted : valueFormatted;
   const osRef = invoice.service_order_id ? `OS #${invoice.service_order_id}` : "";
 
   const links: string[] = [];
@@ -146,7 +157,13 @@ async function sendBillingEmail(invoice: {
     <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin:0 0 20px;">
       <table style="width:100%;font-size:13px;color:#333;">
         <tr><td style="padding:4px 0;color:#666;">Descrição:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${invoice.description || DESCRICAO_SERVICO_FIXA}</td></tr>
+        ${temInss ? `
+        <tr><td style="padding:4px 0;color:#666;">Valor bruto (serviços):</td><td style="padding:4px 0;text-align:right;">${valueFormatted}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:</td><td style="padding:4px 0;text-align:right;color:#b91c1c;">- ${inssFormatted}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Valor a pagar:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#1a1a2e;text-align:right;">${liquidoFormatted}</td></tr>
+        ` : `
         <tr><td style="padding:4px 0;color:#666;">Valor:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#1a1a2e;text-align:right;">${valueFormatted}</td></tr>
+        `}
         <tr><td style="padding:4px 0;color:#666;">Vencimento:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${dueDateFormatted}</td></tr>
         <tr><td style="padding:4px 0;color:#666;">Forma:</td><td style="padding:4px 0;text-align:right;">${invoice.billing_type === "PIX" ? "PIX" : invoice.billing_type === "CREDIT_CARD" ? "Cartão" : "Boleto"}</td></tr>
       </table>
@@ -172,7 +189,7 @@ async function sendBillingEmail(invoice: {
       from: getSmtpFrom(),
       to: clientEmail,
       bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
-      subject: `Torres Segurança - Fatura ${valueFormatted} - Venc. ${dueDateFormatted}${osRef ? ` - ${osRef}` : ""}`,
+      subject: `Torres Segurança - Fatura ${subjectValue} - Venc. ${dueDateFormatted}${osRef ? ` - ${osRef}` : ""}`,
       html,
     });
 
@@ -817,7 +834,7 @@ export async function emitInvoiceAuto(
   }
 
   const clientId = invoice.client_id;
-  const clientCols = "id, cnpj, cpf, emite_nf, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
+  const clientCols = "id, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
   let clientData: any = null;
   if (clientId) {
     const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
@@ -834,10 +851,16 @@ export async function emitInvoiceAuto(
   const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
   const clientPhone = clientData?.phone || undefined;
   const emiteNf = clientData?.emite_nf === true;
+  const retemInss = clientData?.retem_inss === true;
+  const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
   const totalValue = parseFloat(invoice.value);
   const billingType = opts.billingType || "BOLETO";
 
   if (totalValue <= 0) return { success: false, message: "Valor da fatura é R$ 0,00", nfEmitted: false };
+
+  // Boleto sai LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; a NF
+  // continua bruta (com a observação legal da retenção). invoice.value = bruto.
+  const { boleto: boletoValue, inssValor } = netBoletoValue(totalValue, { retemInss, inssAliquota });
 
   const asaasCustomerId = await findOrCreateAsaasCustomer(
     clientName, cpfCnpj, clientEmail, clientPhone,
@@ -854,7 +877,7 @@ export async function emitInvoiceAuto(
   const paymentPayload: any = {
     customer: asaasCustomerId,
     billingType,
-    value: totalValue,
+    value: boletoValue,
     dueDate: opts.dueDate,
     description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
     externalReference: invoice.external_reference || `FATURA-${invoiceId}`,
@@ -862,10 +885,11 @@ export async function emitInvoiceAuto(
   };
   if (emiteNf) {
     paymentPayload.postalService = false;
-    paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`.substring(0, 500);
+    const inssObs = retemInss ? ` ${buildInssObservation(true, inssAliquota, inssValor)}` : "";
+    paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.${inssObs}`.substring(0, 500);
   }
 
-  console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: R$${totalValue.toFixed(2)} venc=${opts.dueDate}`);
+  console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${opts.dueDate}`);
   const payment = await asaasRequest("POST", "/payments", paymentPayload);
 
   const updates: any = {
@@ -877,6 +901,8 @@ export async function emitInvoiceAuto(
     status: payment.status || "PENDING",
     invoice_url: payment.invoiceUrl,
     bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
+    valor_inss_retido: retemInss ? inssValor : null,
+    inss_aliquota: retemInss ? inssAliquota : null,
     updated_at: new Date().toISOString(),
   };
 
@@ -888,6 +914,8 @@ export async function emitInvoiceAuto(
         value: totalValue,
         description: invoice.description || DESCRICAO_SERVICO_FIXA,
         clientEmail,
+        retemInss,
+        inssAliquota,
       });
       updates.nfse_status = nfResult.status === "AUTHORIZED" || nfResult.status === "SYNCHRONIZED" ? "AUTHORIZED" : nfResult.status;
       if (nfResult.number) updates.nfse_number = String(nfResult.number);
@@ -1306,10 +1334,17 @@ export function registerAsaasRoutes(app: Express) {
           return res.status(400).json({ message: "Valor da cobrança deve ser maior que R$ 0,00. OS recusada/cancelada não pode gerar cobrança." });
         }
 
+        // Boleto LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; NF
+        // continua bruta (value=parsedValue mais abaixo). invoice.value = bruto.
+        const { boleto: boletoValue, inssValor: inssValorBoleto } = netBoletoValue(parsedValue, { retemInss, inssAliquota });
+        if (retemInss) {
+          console.log(`[asaas] Cobrança c/ retenção INSS: bruto=R$${parsedValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)} (INSS R$${inssValorBoleto.toFixed(2)} @ ${inssAliquota}%)`);
+        }
+
         const paymentPayload: any = {
           customer: asaasCustomerId,
           billingType: billingType || "BOLETO",
-          value: parsedValue,
+          value: boletoValue,
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
@@ -1516,6 +1551,8 @@ export function registerAsaasRoutes(app: Express) {
             nfse_url: nf_anexo_url || existing.nfse_url || null,
             pix_copia_e_cola: existing.pix_copia_e_cola,
             service_order_id: existing.service_order_id || null,
+            valor_inss_retido: existing.valor_inss_retido,
+            inss_aliquota: existing.inss_aliquota,
           }, clientEmail).catch(e => console.error(`[billing-email] async error após attach-nf: ${e.message}`));
           console.log(`[billing-email] Disparando envio para ${clientEmail} (fatura #${id} — NF anexada)`);
         } else {
@@ -1572,6 +1609,8 @@ export function registerAsaasRoutes(app: Express) {
         nfse_url: invoice.nfse_url,
         pix_copia_e_cola: invoice.pix_copia_e_cola,
         service_order_id: invoice.service_order_id,
+        valor_inss_retido: invoice.valor_inss_retido,
+        inss_aliquota: invoice.inss_aliquota,
       }, email);
 
       res.json({ success: true, message: `E-mail enviado para ${email}` });
@@ -1989,6 +2028,10 @@ export function registerAsaasRoutes(app: Express) {
       const clientPhone = clientData?.phone || undefined;
       const emiteNf = clientData?.emite_nf === true;
       const totalValue = parseFloat(invoice.value);
+      const retemInss = clientData?.retem_inss === true;
+      const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
+      // Boleto sai LÍQUIDO (bruto − INSS retido); NF e invoices.value continuam BRUTOS.
+      const { boleto: boletoValue, inssValor } = netBoletoValue(totalValue, { retemInss, inssAliquota });
 
       if (totalValue <= 0) return res.status(400).json({ message: "Valor da fatura é R$ 0,00." });
 
@@ -2017,7 +2060,7 @@ export function registerAsaasRoutes(app: Express) {
       const paymentPayload: any = {
         customer: asaasCustomerId,
         billingType: billingType || "BOLETO",
-        value: totalValue,
+        value: boletoValue,
         dueDate,
         description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
         externalReference: invoice.external_reference || `FATURA-${id}`,
@@ -2026,10 +2069,11 @@ export function registerAsaasRoutes(app: Express) {
 
       if (emiteNf) {
         paymentPayload.postalService = false;
-        paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`.substring(0, 500);
+        const inssObs = retemInss ? ` ${buildInssObservation(true, inssAliquota, inssValor)}` : "";
+        paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.${inssObs}`.substring(0, 500);
       }
 
-      console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: R$${totalValue.toFixed(2)} venc=${dueDate}`);
+      console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${dueDate}`);
       const payment = await asaasRequest("POST", "/payments", paymentPayload);
 
       const updates: any = {
@@ -2041,6 +2085,8 @@ export function registerAsaasRoutes(app: Express) {
         status: payment.status || "PENDING",
         invoice_url: payment.invoiceUrl,
         bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
+        valor_inss_retido: retemInss ? inssValor : null,
+        inss_aliquota: retemInss ? inssAliquota : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -2779,7 +2825,7 @@ export function registerAsaasRoutes(app: Express) {
               const payload: any = {
                 customer: spAsaasCustomerId,
                 billingType: billingType || "BOLETO",
-                value: splitValue,
+                value: Number((splitValue - spInssValor).toFixed(2)),
                 dueDate: invoiceDueDate,
                 description: splitDescricao.substring(0, 500),
                 externalReference: `FATURA-SPLIT-${clientId}-${idx + 1}de${splits.length}-${now.getTime()}`,
@@ -2967,7 +3013,7 @@ export function registerAsaasRoutes(app: Express) {
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",
-            value: totalValue,
+            value: Number((totalValue - inssValorConsolidado).toFixed(2)),
             dueDate: invoiceDueDate,
             description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
