@@ -7,9 +7,11 @@ import {
   netBoletoValue,
   buildFiscalPayload,
   buildNfseInvoicePayload,
+  buildValoresObservation,
   fmtBRL,
   INSS_DISPENSA_OBSERVACAO,
   INSS_OBSERVACAO_LEGAL,
+  SIMPLES_NACIONAL_OBSERVACAO,
   CNAE_PRINCIPAL,
   CODIGO_SERVICO_MUNICIPAL,
   CODIGO_SERVICO_MUNICIPAL_CODE,
@@ -161,6 +163,34 @@ test("buildFiscalPayload: valor zero gera retenção zero", () => {
   const p = buildFiscalPayload(0, TORRES_CNPJ, { retemInss: true });
   assert.equal(p.taxes.inss, 11);
   assert.match(p.observations, /R\$ 0,00/);
+});
+
+test("buildFiscalPayload: inclui texto do Simples Nacional e valor bruto", () => {
+  const p = buildFiscalPayload(1000, TORRES_CNPJ);
+  assert.ok(p.observations.includes(SIMPLES_NACIONAL_OBSERVACAO));
+  assert.match(p.observations, /Valor bruto: R\$ 1000,00/);
+});
+
+test("buildFiscalPayload: com INSS mostra bruto, retido e líquido", () => {
+  const p = buildFiscalPayload(1000, TORRES_CNPJ, { retemInss: true });
+  assert.match(p.observations, /Valor bruto: R\$ 1000,00/);
+  assert.match(p.observations, /INSS retido \(11\.00%\): R\$ 110,00/);
+  assert.match(p.observations, /Valor líquido: R\$ 890,00/);
+});
+
+// ============================================================================
+// buildValoresObservation
+// ============================================================================
+
+test("buildValoresObservation: sem INSS mostra só o bruto", () => {
+  assert.equal(buildValoresObservation(1500, false, 0), "Valor bruto: R$ 1500,00.");
+});
+
+test("buildValoresObservation: com INSS calcula líquido = bruto − retido", () => {
+  const out = buildValoresObservation(2000, true, 11);
+  assert.match(out, /Valor bruto: R\$ 2000,00/);
+  assert.match(out, /INSS retido \(11\.00%\): R\$ 220,00/);
+  assert.match(out, /Valor líquido: R\$ 1780,00/);
 });
 
 // ============================================================================

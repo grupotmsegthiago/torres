@@ -16,6 +16,8 @@ export const INSS_OBSERVACAO_LEGAL =
   "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
 export const INSS_DISPENSA_OBSERVACAO =
   "De acordo com o artigo 115 da IN RFB nº 2.110/2022, a contratante fica dispensada de efetuar a retenção de INSS.";
+export const SIMPLES_NACIONAL_OBSERVACAO =
+  "Empresa optante pelo Simples Nacional. Dispensada da retenção de PIS, COFINS e CSLL, conforme art. 30 da Lei nº 10.833/2003.";
 
 export const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -47,6 +49,24 @@ export function buildInssObservation(
 ): string {
   if (!retemInss) return INSS_DISPENSA_OBSERVACAO;
   return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
+}
+
+/**
+ * Texto com valor BRUTO e LÍQUIDO pro corpo da NF (exigência fiscal).
+ * Sem retenção de INSS: bruto == líquido (mostra só o bruto).
+ * Com retenção: bruto, INSS retido e líquido (= bruto − INSS).
+ * O ISS NÃO é tratado aqui (decisão do dono 23/06/2026: não mexer no ISS).
+ */
+export function buildValoresObservation(
+  grossValue: number,
+  retemInss: boolean,
+  inssAliquota: number,
+): string {
+  const brl = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+  if (!retemInss) return `Valor bruto: ${brl(grossValue)}.`;
+  const inssValor = Number((grossValue * inssAliquota / 100).toFixed(2));
+  const liquido = Number((grossValue - inssValor).toFixed(2));
+  return `Valor bruto: ${brl(grossValue)}. INSS retido (${inssAliquota.toFixed(2)}%): ${brl(inssValor)}. Valor líquido: ${brl(liquido)}.`;
 }
 
 /**
@@ -85,7 +105,7 @@ export function buildFiscalPayload(
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs}`.trim(),
+    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(value, retemInss, inssAliquota)}`.trim(),
     taxes: {
       retainIss: false,
       iss: ISS_ALIQUOTA,
@@ -121,7 +141,7 @@ export function buildNfseInvoicePayload(opts: {
     (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
   const payload: Record<string, any> = {
     serviceDescription,
-    observations: `${baseObs} ${inssObs}`.trim(),
+    observations: `${baseObs} ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(opts.value, retemInss, inssAliquota)}`.trim(),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
