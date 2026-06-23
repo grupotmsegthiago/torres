@@ -17,13 +17,13 @@ opções Boleto Bancário **ou** PIX (chave aleatória) e o fecho "Permanecemos 
 disposição...". Competência/Data de Execução são extraídas da descrição da fatura
 (`parseInvoicePeriodInfo`), que segue o formato fixo de `buildInvoiceDescription`.
 
-**Trade-off da chave PIX estática (decisão de negócio do financeiro):**
-o e-mail mostra a chave PIX aleatória da empresa (`EMPRESA_PIX_ALEATORIA`) em vez do
-`pix_copia_e_cola` dinâmico do Asaas. Pagamento nessa chave **não** carrega
-identificador/valor da cobrança ⇒ vira "PIX órfão" e exige baixa manual
-(reconciliação já existe em asaas.ts, mas não é automática como no boleto/PIX Asaas).
-**Por quê:** foi o modelo explícito enviado pelo financeiro. Quem paga via Boleto
-(link Asaas) ainda concilia automático.
+**PIX = copia-e-cola DINÂMICO do Asaas (baixa automática).** O e-mail mostra
+`invoice.pix_copia_e_cola` (código dinâmico da cobrança Asaas), NÃO a chave aleatória
+estática. **Por quê:** o dono reverteu a chave estática (23/06/2026) — pagamento na
+chave estática vira "PIX órfão" (baixa manual); o copia-e-cola dinâmico carrega
+identificador/valor e **reconcilia automático**, igual ao boleto. Quando a fatura não
+tem `pix_copia_e_cola`, a seção PIX é omitida (fica só o Boleto). A const
+`EMPRESA_PIX_ALEATORIA` ainda existe no código mas NÃO é usada no e-mail.
 
 **How to apply:** mudou o texto/campos do e-mail ao cliente? Edite `buildNfClientEmail`
 e os testes em `asaas-helpers.test.ts`. Não recalcular billing aqui — é só e-mail

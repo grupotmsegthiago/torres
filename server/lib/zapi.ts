@@ -229,6 +229,33 @@ export interface ZapiSendImageResult {
  * Envia uma imagem (base64 data URL ou URL pública) com legenda.
  * Funciona pra contato individual e pra grupo.
  */
+// Liga/desliga o delay de mensagem do bot (delayTyping/delayMessage da Z-API,
+// que mostra "digitando..." e atrasa o disparo). Desligado por ordem do dono
+// (23/06/2026): o bot deve responder SEM delay de mensagem. Os call-sites ainda
+// passam delayTypingSeconds/delayMessageSeconds, mas buildSendDelayFields ignora
+// quando desligado — basta voltar para `true` para reativar a humanização.
+export const ZAPI_SEND_DELAYS_ENABLED = false;
+
+/**
+ * Monta os campos de atraso (delayTyping/delayMessage) do payload da Z-API a
+ * partir dos segundos pedidos pelo call-site. Retorna {} quando o delay está
+ * desligado (ZAPI_SEND_DELAYS_ENABLED=false). Função pura/testável.
+ */
+export function buildSendDelayFields(params: {
+  delayTypingSeconds?: number;
+  delayMessageSeconds?: number;
+}): Record<string, number> {
+  if (!ZAPI_SEND_DELAYS_ENABLED) return {};
+  const out: Record<string, number> = {};
+  if (params.delayTypingSeconds && params.delayTypingSeconds > 0) {
+    out.delayTyping = Math.min(15, Math.max(1, Math.round(params.delayTypingSeconds)));
+  }
+  if (params.delayMessageSeconds && params.delayMessageSeconds > 0) {
+    out.delayMessage = Math.min(15, Math.max(1, Math.round(params.delayMessageSeconds)));
+  }
+  return out;
+}
+
 export async function sendImageWithCaption(params: {
   groupOrPhone: string;
   imageBase64OrUrl: string;
@@ -252,10 +279,8 @@ export async function sendImageWithCaption(params: {
     phone,
     image: params.imageBase64OrUrl,
     caption: (params.caption || "").slice(0, 1024), // WhatsApp tem limite de ~1024 chars na legenda
+    ...buildSendDelayFields(params),
   };
-  if (params.delayMessageSeconds && params.delayMessageSeconds > 0) {
-    body.delayMessage = Math.min(15, Math.max(1, Math.round(params.delayMessageSeconds)));
-  }
 
   try {
     const resp = await fetch(`${BASE}/send-image`, {
@@ -483,16 +508,14 @@ export async function sendText(params: {
     return { ok: false, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
   }
 
-  const body: Record<string, any> = { phone, message: params.message };
   // Z-API aceita delayTyping (mostra "digitando...") e delayMessage (atraso antes
-  // do disparo). Ambos humanizam o envio — reduzem o "cara de robô" que dispara
-  // bloqueio. Limites práticos da Z-API: 1–15s.
-  if (params.delayTypingSeconds && params.delayTypingSeconds > 0) {
-    body.delayTyping = Math.min(15, Math.max(1, Math.round(params.delayTypingSeconds)));
-  }
-  if (params.delayMessageSeconds && params.delayMessageSeconds > 0) {
-    body.delayMessage = Math.min(15, Math.max(1, Math.round(params.delayMessageSeconds)));
-  }
+  // do disparo). buildSendDelayFields aplica/zera conforme ZAPI_SEND_DELAYS_ENABLED
+  // (desligado por ordem do dono — bot sem delay de mensagem).
+  const body: Record<string, any> = {
+    phone,
+    message: params.message,
+    ...buildSendDelayFields(params),
+  };
 
   try {
     const resp = await fetch(`${BASE}/send-text`, {

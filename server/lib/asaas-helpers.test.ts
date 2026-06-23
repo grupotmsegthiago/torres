@@ -342,6 +342,7 @@ test("buildNfClientEmail: assunto e corpo seguem o modelo do financeiro", () => 
     bank_slip_url: "https://boleto",
     nfse_url: "https://nf",
     nfse_number: "456",
+    pix_copia_e_cola: "00020126PIXDINAMICOASAAS5204",
   });
   assert.equal(subject, "Prestação de Serviço de Escolta Armada Torres – NF nº 456");
   assert.match(html, /Prezados,/);
@@ -355,9 +356,32 @@ test("buildNfClientEmail: assunto e corpo seguem o modelo do financeiro", () => 
   assert.match(html, /Valor Total da Prestação de Serviço:/);
   assert.match(html, /1\.234,50/);
   assert.match(html, /Boleto Bancário/);
-  assert.match(html, /PIX \(Chave Aleatória\)/);
-  assert.ok(html.includes(EMPRESA_PIX_ALEATORIA));
+  assert.match(html, /PIX \(Copia e Cola\)/);
+  assert.ok(html.includes("00020126PIXDINAMICOASAAS5204"));
   assert.match(html, /Permanecemos à disposição para quaisquer esclarecimentos\./);
+});
+
+test("buildNfClientEmail: PIX dinâmico do Asaas (baixa automática), nunca a chave estática", () => {
+  const { html } = buildNfClientEmail({
+    value: 100,
+    due_date: "2026-07-10",
+    description: "x",
+    nfse_number: "1",
+    pix_copia_e_cola: "00020126BR.GOV.BCB.PIX-DINAMICO",
+  });
+  assert.ok(html.includes("00020126BR.GOV.BCB.PIX-DINAMICO"));
+  assert.equal(html.includes(EMPRESA_PIX_ALEATORIA), false);
+});
+
+test("buildNfClientEmail: sem PIX copia-e-cola omite a seção PIX (só boleto)", () => {
+  const { html } = buildNfClientEmail({
+    value: 100,
+    due_date: "2026-07-10",
+    description: "x",
+    nfse_number: "1",
+  });
+  assert.match(html, /Boleto Bancário/);
+  assert.equal(/PIX \(Copia e Cola\)/.test(html), false);
 });
 
 test("buildNfClientEmail: sem número fiscal usa assunto genérico e '—'", () => {

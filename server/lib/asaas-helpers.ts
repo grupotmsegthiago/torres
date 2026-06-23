@@ -97,7 +97,8 @@ export function formatNfNumber(nfseNumber: string | null | undefined): string | 
  * financeiro). Retorna { subject, html }. Função pura/testável — o envio SMTP
  * fica no chamador (sendBillingEmail). Campos:
  *   Competência / Data de Execução / Nº da NF / Serviço Prestado / Valor Total
- *   + opções de pagamento (Boleto Bancário ou PIX chave aleatória).
+ *   + opções de pagamento (Boleto Bancário ou PIX copia-e-cola dinâmico do Asaas,
+ *     que permite BAIXA AUTOMÁTICA — só aparece quando a fatura tem pix_copia_e_cola).
  * Quando há retenção de INSS, mostra a retenção e o líquido a pagar.
  */
 export function buildNfClientEmail(invoice: {
@@ -108,6 +109,7 @@ export function buildNfClientEmail(invoice: {
   bank_slip_url?: string | null;
   nfse_url?: string | null;
   nfse_number?: string | null;
+  pix_copia_e_cola?: string | null;
   valor_inss_retido?: number | string | null;
   inss_aliquota?: number | string | null;
 }): { subject: string; html: string } {
@@ -120,6 +122,7 @@ export function buildNfClientEmail(invoice: {
   const liquidoFormatted = fmtBRL(liquidoPagar);
   const inssFormatted = fmtBRL(inssRetido);
 
+  const pixCode = String(invoice.pix_copia_e_cola || "").trim();
   const { competencia, dataExecucao } = parseInvoicePeriodInfo(invoice.description, invoice.due_date);
   const nfNumber = formatNfNumber(invoice.nfse_number);
   const subject = nfNumber
@@ -169,13 +172,14 @@ export function buildNfClientEmail(invoice: {
     </p>
     <ul style="font-size:13px;color:#333;line-height:1.6;margin:0 0 16px;padding-left:20px;">
       <li><strong>Boleto Bancário</strong></li>
-      <li><strong>PIX (Chave Aleatória):</strong></li>
+      ${pixCode ? `<li><strong>PIX (Copia e Cola):</strong></li>` : ``}
     </ul>
+    ${pixCode ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin:0 0 20px;">
-      <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:13px;color:#166534;text-align:center;">
-        ${EMPRESA_PIX_ALEATORIA}
+      <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:12px;color:#166534;text-align:center;">
+        ${pixCode}
       </div>
-    </div>
+    </div>` : ``}
     ${links.length > 0 ? `<div style="text-align:center;margin:20px 0;">${links.join("\n")}</div>` : ""}
     <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:20px 0 0;">
       Permanecemos à disposição para quaisquer esclarecimentos.

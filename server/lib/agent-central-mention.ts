@@ -1157,9 +1157,7 @@ export async function handleNaturalConversation(parsed: ParsedGroupMsg): Promise
     if (!raw) return;
     const reply = sanitizeFinanceiro(raw); // trava financeira pós-geração
 
-    // Ritmo humano: não responder instantâneo (resposta imediata cheira a robô)
-    // + "digitando..." antes do disparo.
-    await sleep(humanDelayMs(2000, 7000));
+    // Sem delay de mensagem (ordem do dono 23/06/2026): o bot responde na hora.
     await sendText({ groupOrPhone: parsed.chatId, message: reply, delayTypingSeconds: randomTypingSeconds() });
     console.log(`[agent-central-mention] resposta natural enviada ao grupo ${parsed.chatId}`);
   } catch (e: any) {
