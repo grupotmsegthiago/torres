@@ -42,6 +42,161 @@ export function buildInvoiceDescription(
   return `Referente aos serviços de Escolta Armada - Período: ${inicio} a ${fim} (${mesRef}/${anoRef})`;
 }
 
+/**
+ * Chave PIX aleatória da empresa, exibida como opção de pagamento no e-mail
+ * padrão de envio de NF de Escolta Armada ao cliente (modelo do financeiro).
+ */
+export const EMPRESA_PIX_ALEATORIA = "8165456b-57f5-4a6c-a633-fa0d004a89db";
+
+/**
+ * Extrai Competência (Mês/Ano) e Data de Execução (período) a partir da
+ * descrição da fatura, que segue o formato fixo de buildInvoiceDescription:
+ *   "Referente aos serviços de Escolta Armada - Período: DD/MM/YYYY a DD/MM/YYYY (Mês/Ano)"
+ * Quando a descrição não casa, faz fallback da competência pelo vencimento.
+ */
+export function parseInvoicePeriodInfo(
+  description: string | null | undefined,
+  dueDateISO?: string | null,
+): { competencia: string; dataExecucao: string } {
+  const desc = String(description || "");
+  const m = desc.match(
+    /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})\s*\(([^)]+)\)/i,
+  );
+  if (m) {
+    const inicio = m[1];
+    const fim = m[2];
+    const competencia = m[3].trim();
+    const dataExecucao = inicio === fim ? inicio : `${inicio} a ${fim}`;
+    return { competencia, dataExecucao };
+  }
+  let competencia = "";
+  if (dueDateISO) {
+    const d = new Date(String(dueDateISO).slice(0, 10) + "T12:00:00Z");
+    if (!isNaN(d.getTime())) {
+      competencia = `${MESES_PT[d.getUTCMonth()]}/${d.getUTCFullYear()}`;
+    }
+  }
+  return { competencia, dataExecucao: "" };
+}
+
+/**
+ * Número "limpo" da NF para exibição. nfse_number pode vir como id interno do
+ * Asaas ("inv_...") — que NÃO é número fiscal — e nesse caso retorna null.
+ * Número definitivo e "RPS-N" provisório (usado como fallback em outros pontos
+ * do sistema) são exibidos como estão.
+ */
+export function formatNfNumber(nfseNumber: string | null | undefined): string | null {
+  const n = String(nfseNumber || "").trim();
+  if (!n) return null;
+  if (n.toLowerCase().startsWith("inv_")) return null;
+  return n;
+}
+
+/**
+ * Monta o e-mail PADRÃO de envio de NF de Escolta Armada ao cliente (modelo do
+ * financeiro). Retorna { subject, html }. Função pura/testável — o envio SMTP
+ * fica no chamador (sendBillingEmail). Campos:
+ *   Competência / Data de Execução / Nº da NF / Serviço Prestado / Valor Total
+ *   + opções de pagamento (Boleto Bancário ou PIX chave aleatória).
+ * Quando há retenção de INSS, mostra a retenção e o líquido a pagar.
+ */
+export function buildNfClientEmail(invoice: {
+  client_name?: string | null;
+  value: number;
+  due_date: string;
+  description?: string | null;
+  bank_slip_url?: string | null;
+  nfse_url?: string | null;
+  nfse_number?: string | null;
+  valor_inss_retido?: number | string | null;
+  inss_aliquota?: number | string | null;
+}): { subject: string; html: string } {
+  const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
+  const valueFormatted = fmtBRL(invoice.value);
+  const inssRetido = Number(invoice.valor_inss_retido || 0);
+  const temInss = inssRetido > 0.005;
+  const inssAliq = Number(invoice.inss_aliquota || 0);
+  const liquidoPagar = temInss ? Number((invoice.value - inssRetido).toFixed(2)) : invoice.value;
+  const liquidoFormatted = fmtBRL(liquidoPagar);
+  const inssFormatted = fmtBRL(inssRetido);
+
+  const { competencia, dataExecucao } = parseInvoicePeriodInfo(invoice.description, invoice.due_date);
+  const nfNumber = formatNfNumber(invoice.nfse_number);
+  const subject = nfNumber
+    ? `Prestação de Serviço de Escolta Armada Torres – NF nº ${nfNumber}`
+    : `Prestação de Serviço de Escolta Armada Torres`;
+
+  const links: string[] = [];
+  if (invoice.bank_slip_url) {
+    links.push(`<a href="${invoice.bank_slip_url}" style="display:inline-block;background:#0066cc;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">🏦 BOLETO BANCÁRIO</a>`);
+  }
+  if (invoice.nfse_url) {
+    links.push(`<a href="${invoice.nfse_url}" style="display:inline-block;background:#059669;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📋 NOTA FISCAL</a>`);
+  }
+
+  const infoRow = (label: string, val: string) =>
+    `<tr><td style="padding:5px 0;color:#666;white-space:nowrap;vertical-align:top;">${label}</td><td style="padding:5px 0;font-weight:bold;text-align:right;color:#1a1a2e;">${val}</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;">
+<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <div style="background:#1a1a2e;padding:24px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">Torres Vigilância Patrimonial</h1>
+    <p style="color:#94a3b8;font-size:12px;margin:4px 0 0;">Escolta Armada</p>
+  </div>
+  <div style="padding:24px;">
+    <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px;">Prezados,</p>
+    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:0 0 16px;">
+      Encaminhamos abaixo as informações referentes à prestação de serviço de escolta armada:
+    </p>
+    <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <table style="width:100%;font-size:13px;color:#333;">
+        ${infoRow("Competência:", competencia || "—")}
+        ${infoRow("Data de Execução:", dataExecucao || "—")}
+        ${infoRow("Nº da Nota Fiscal:", nfNumber || "—")}
+        ${infoRow("Serviço Prestado:", "Escolta Armada")}
+        ${infoRow("Valor Total da Prestação de Serviço:", valueFormatted)}
+        ${temInss ? `
+        ${infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`)}
+        ${infoRow("Valor líquido a pagar:", liquidoFormatted)}
+        ` : ``}
+        ${infoRow("Vencimento:", dueDateFormatted)}
+      </table>
+    </div>
+    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:0 0 8px;">
+      Para pagamento, disponibilizamos as seguintes opções:
+    </p>
+    <ul style="font-size:13px;color:#333;line-height:1.6;margin:0 0 16px;padding-left:20px;">
+      <li><strong>Boleto Bancário</strong></li>
+      <li><strong>PIX (Chave Aleatória):</strong></li>
+    </ul>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin:0 0 20px;">
+      <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:13px;color:#166534;text-align:center;">
+        ${EMPRESA_PIX_ALEATORIA}
+      </div>
+    </div>
+    ${links.length > 0 ? `<div style="text-align:center;margin:20px 0;">${links.join("\n")}</div>` : ""}
+    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:20px 0 0;">
+      Permanecemos à disposição para quaisquer esclarecimentos.
+    </p>
+    <p style="font-size:12px;color:#888;line-height:1.5;margin:16px 0 0;">
+      Em caso de dúvidas, entre em contato conosco pelo e-mail 
+      <a href="mailto:diretoria@torresseguranca.com.br" style="color:#1a1a2e;">diretoria@torresseguranca.com.br</a> 
+      ou pelo telefone (11) 96369-6699.
+    </p>
+  </div>
+  <div style="background:#f8f9fa;padding:16px;text-align:center;border-top:1px solid #eee;">
+    <p style="color:#888;font-size:11px;margin:2px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">CNPJ 36.982.392/0001-89</p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ escolta@torresseguranca.com.br</p>
+  </div>
+</div>
+</body></html>`;
+
+  return { subject, html };
+}
+
 export function buildInssObservation(
   retemInss: boolean,
   aliquota: number,

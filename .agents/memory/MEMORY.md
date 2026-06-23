@@ -43,4 +43,5 @@
 - [Card do cliente sempre com localização](whatsapp-card-location-required.md) — update de texto não traz GPS; resolver posição por fallback (update→mission_positions→update anterior) p/ link de localização nunca faltar; não usar origem/destino.
 - [Dep ESM-only quebra no bundle de prod](esm-only-deps-break-prod-bundle.md) — pkg ESM puro (p-limit v7) roda no dev (tsx) mas vira "(0,X.default) is not a function" no CJS de prod; usar util inline + checar dist/index.cjs.
 - [Espelho de ponto p/ assinatura](espelho-ponto-assinatura.md) — pareamento guloso teto 18h (nunca global, evita turno de 168h); noturno 22-05h; órfã=erro bloqueia; SÓ espelho, não toca custos de folha.
+- [E-mail padrão de NF ao cliente](nf-client-email-template.md) — é o sendBillingEmail (só após anexar NF); corpo em buildNfClientEmail; PIX estático = baixa manual (PIX órfão); só e-mail, não toca billing.
 - [Rastreio de fatura (rota do dinheiro)](invoice-money-trace.md) — timeline da fatura agrega 5 fontes sem FK comum; baixa manual dinheiro/PIX só existe em nfse_observations (texto livre, parse regex); só leitura.

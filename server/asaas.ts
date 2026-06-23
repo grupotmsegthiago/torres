@@ -17,6 +17,7 @@ import {
   buildInvoiceDescription,
   buildInssObservation,
   netBoletoValue,
+  buildNfClientEmail,
   buildFiscalPayload,
   todayDateStr,
   buildNfseInvoicePayload as buildNfseInvoicePayloadBase,
@@ -93,6 +94,7 @@ async function sendBillingEmail(invoice: {
   invoice_url?: string | null;
   bank_slip_url?: string | null;
   nfse_url?: string | null;
+  nfse_number?: string | null;
   pix_copia_e_cola?: string | null;
   service_order_id?: number | null;
   valor_inss_retido?: number | string | null;
@@ -104,92 +106,14 @@ async function sendBillingEmail(invoice: {
     return;
   }
 
-  const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
-  const fmtMoney = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const valueFormatted = fmtMoney(invoice.value);
-  const inssRetido = Number(invoice.valor_inss_retido || 0);
-  const temInss = inssRetido > 0.005;
-  const inssAliq = Number(invoice.inss_aliquota || 0);
-  const liquidoPagar = temInss ? Number((invoice.value - inssRetido).toFixed(2)) : invoice.value;
-  const liquidoFormatted = fmtMoney(liquidoPagar);
-  const inssFormatted = fmtMoney(inssRetido);
-  const subjectValue = temInss ? liquidoFormatted : valueFormatted;
-  const osRef = invoice.service_order_id ? `OS #${invoice.service_order_id}` : "";
-
-  const links: string[] = [];
-  if (invoice.invoice_url) {
-    links.push(`<a href="${invoice.invoice_url}" style="display:inline-block;background:#1a1a2e;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📄 VER FATURA</a>`);
-  }
-  if (invoice.bank_slip_url) {
-    links.push(`<a href="${invoice.bank_slip_url}" style="display:inline-block;background:#0066cc;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">🏦 BOLETO BANCÁRIO</a>`);
-  }
-  if (invoice.nfse_url) {
-    links.push(`<a href="${invoice.nfse_url}" style="display:inline-block;background:#059669;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📋 NOTA FISCAL</a>`);
-  }
-
-  let pixSection = "";
-  if (invoice.pix_copia_e_cola) {
-    pixSection = `
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:16px 0;">
-      <p style="font-size:13px;font-weight:bold;color:#166534;margin:0 0 8px;">Pagamento via PIX</p>
-      <p style="font-size:11px;color:#15803d;margin:0 0 8px;">Copie o código abaixo e cole no app do seu banco:</p>
-      <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:11px;color:#374151;">
-        ${invoice.pix_copia_e_cola}
-      </div>
-    </div>`;
-  }
-
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;">
-<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-  <div style="background:#1a1a2e;padding:24px;text-align:center;">
-    <h1 style="color:#fff;font-size:18px;margin:0;">Torres Vigilância Patrimonial</h1>
-    <p style="color:#94a3b8;font-size:12px;margin:4px 0 0;">Faturamento</p>
-  </div>
-  <div style="padding:24px;">
-    <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px;">
-      Prezado(a) <strong>${invoice.client_name}</strong>,
-    </p>
-    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:0 0 16px;">
-      Segue abaixo a cobrança referente aos serviços de escolta armada prestados${osRef ? ` (${osRef})` : ""}.
-    </p>
-    <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin:0 0 20px;">
-      <table style="width:100%;font-size:13px;color:#333;">
-        <tr><td style="padding:4px 0;color:#666;">Descrição:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${invoice.description || DESCRICAO_SERVICO_FIXA}</td></tr>
-        ${temInss ? `
-        <tr><td style="padding:4px 0;color:#666;">Valor bruto (serviços):</td><td style="padding:4px 0;text-align:right;">${valueFormatted}</td></tr>
-        <tr><td style="padding:4px 0;color:#666;">(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:</td><td style="padding:4px 0;text-align:right;color:#b91c1c;">- ${inssFormatted}</td></tr>
-        <tr><td style="padding:4px 0;color:#666;">Valor a pagar:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#1a1a2e;text-align:right;">${liquidoFormatted}</td></tr>
-        ` : `
-        <tr><td style="padding:4px 0;color:#666;">Valor:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#1a1a2e;text-align:right;">${valueFormatted}</td></tr>
-        `}
-        <tr><td style="padding:4px 0;color:#666;">Vencimento:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${dueDateFormatted}</td></tr>
-        <tr><td style="padding:4px 0;color:#666;">Forma:</td><td style="padding:4px 0;text-align:right;">${invoice.billing_type === "PIX" ? "PIX" : invoice.billing_type === "CREDIT_CARD" ? "Cartão" : "Boleto"}</td></tr>
-      </table>
-    </div>
-    ${links.length > 0 ? `<div style="text-align:center;margin:20px 0;">${links.join("\n")}</div>` : ""}
-    ${pixSection}
-    <p style="font-size:12px;color:#888;line-height:1.5;margin:20px 0 0;">
-      Em caso de dúvidas, entre em contato conosco pelo e-mail 
-      <a href="mailto:diretoria@torresseguranca.com.br" style="color:#1a1a2e;">diretoria@torresseguranca.com.br</a> 
-      ou pelo telefone (11) 96369-6699.
-    </p>
-  </div>
-  <div style="background:#f8f9fa;padding:16px;text-align:center;border-top:1px solid #eee;">
-    <p style="color:#888;font-size:11px;margin:2px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
-    <p style="color:#999;font-size:10px;margin:2px 0;">CNPJ 36.982.392/0001-89</p>
-    <p style="color:#999;font-size:10px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ escolta@torresseguranca.com.br</p>
-  </div>
-</div>
-</body></html>`;
+  const { subject, html } = buildNfClientEmail(invoice);
 
   try {
     await transporter.sendMail({
       from: getSmtpFrom(),
       to: clientEmail,
       bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
-      subject: `Torres Segurança - Fatura ${subjectValue} - Venc. ${dueDateFormatted}${osRef ? ` - ${osRef}` : ""}`,
+      subject,
       html,
     });
 
@@ -1549,6 +1473,7 @@ export function registerAsaasRoutes(app: Express) {
             invoice_url: existing.invoice_url,
             bank_slip_url: existing.bank_slip_url,
             nfse_url: nf_anexo_url || existing.nfse_url || null,
+            nfse_number: existing.nfse_number || null,
             pix_copia_e_cola: existing.pix_copia_e_cola,
             service_order_id: existing.service_order_id || null,
             valor_inss_retido: existing.valor_inss_retido,
@@ -1607,6 +1532,7 @@ export function registerAsaasRoutes(app: Express) {
         invoice_url: invoice.invoice_url,
         bank_slip_url: invoice.bank_slip_url,
         nfse_url: invoice.nfse_url,
+        nfse_number: invoice.nfse_number,
         pix_copia_e_cola: invoice.pix_copia_e_cola,
         service_order_id: invoice.service_order_id,
         valor_inss_retido: invoice.valor_inss_retido,

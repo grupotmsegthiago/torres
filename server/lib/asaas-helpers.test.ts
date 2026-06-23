@@ -9,6 +9,10 @@ import {
   buildNfseInvoicePayload,
   buildValoresObservation,
   fmtBRL,
+  EMPRESA_PIX_ALEATORIA,
+  parseInvoicePeriodInfo,
+  formatNfNumber,
+  buildNfClientEmail,
   INSS_DISPENSA_OBSERVACAO,
   INSS_OBSERVACAO_LEGAL,
   SIMPLES_NACIONAL_OBSERVACAO,
@@ -274,4 +278,121 @@ test("fmtBRL: zero formatado corretamente", () => {
   const out = fmtBRL(0);
   assert.match(out, /R\$/);
   assert.match(out, /0,00/);
+});
+
+// ============================================================================
+// parseInvoicePeriodInfo / formatNfNumber / EMPRESA_PIX_ALEATORIA
+// ============================================================================
+
+test("parseInvoicePeriodInfo: extrai competência e período da descrição padrão", () => {
+  const desc = buildInvoiceDescription("Cliente X", "2026-06-01", "2026-06-30");
+  const r = parseInvoicePeriodInfo(desc, "2026-07-10");
+  assert.equal(r.competencia, "Junho/2026");
+  assert.equal(r.dataExecucao, "01/06/2026 a 30/06/2026");
+});
+
+test("parseInvoicePeriodInfo: mesmo dia mostra só a data (sem 'a')", () => {
+  const desc = buildInvoiceDescription("Cliente X", "2026-06-15", "2026-06-15");
+  const r = parseInvoicePeriodInfo(desc, "2026-07-10");
+  assert.equal(r.competencia, "Junho/2026");
+  assert.equal(r.dataExecucao, "15/06/2026");
+});
+
+test("parseInvoicePeriodInfo: fallback de competência pelo vencimento quando descrição não casa", () => {
+  const r = parseInvoicePeriodInfo("Descrição sem período", "2026-03-20");
+  assert.equal(r.competencia, "Março/2026");
+  assert.equal(r.dataExecucao, "");
+});
+
+test("parseInvoicePeriodInfo: descrição e vencimento vazios retorna campos vazios", () => {
+  const r = parseInvoicePeriodInfo(null, null);
+  assert.equal(r.competencia, "");
+  assert.equal(r.dataExecucao, "");
+});
+
+test("formatNfNumber: número fiscal definitivo é retornado", () => {
+  assert.equal(formatNfNumber("12345"), "12345");
+});
+
+test("formatNfNumber: id interno do Asaas (inv_) é tratado como sem número", () => {
+  assert.equal(formatNfNumber("inv_8a9b"), null);
+  assert.equal(formatNfNumber("INV_8a9b"), null);
+});
+
+test("formatNfNumber: vazio/null retorna null", () => {
+  assert.equal(formatNfNumber(""), null);
+  assert.equal(formatNfNumber(null), null);
+  assert.equal(formatNfNumber("   "), null);
+});
+
+test("EMPRESA_PIX_ALEATORIA: é a chave aleatória do modelo do financeiro", () => {
+  assert.equal(EMPRESA_PIX_ALEATORIA, "8165456b-57f5-4a6c-a633-fa0d004a89db");
+});
+
+// ============================================================================
+// buildNfClientEmail
+// ============================================================================
+
+test("buildNfClientEmail: assunto e corpo seguem o modelo do financeiro", () => {
+  const { subject, html } = buildNfClientEmail({
+    client_name: "Cliente X",
+    value: 1234.5,
+    due_date: "2026-07-10",
+    description: buildInvoiceDescription("Cliente X", "2026-06-01", "2026-06-30"),
+    bank_slip_url: "https://boleto",
+    nfse_url: "https://nf",
+    nfse_number: "456",
+  });
+  assert.equal(subject, "Prestação de Serviço de Escolta Armada Torres – NF nº 456");
+  assert.match(html, /Prezados,/);
+  assert.match(html, /Competência:/);
+  assert.match(html, /Junho\/2026/);
+  assert.match(html, /Data de Execução:/);
+  assert.match(html, /01\/06\/2026 a 30\/06\/2026/);
+  assert.match(html, /Nº da Nota Fiscal:/);
+  assert.match(html, /Serviço Prestado:/);
+  assert.match(html, /Escolta Armada/);
+  assert.match(html, /Valor Total da Prestação de Serviço:/);
+  assert.match(html, /1\.234,50/);
+  assert.match(html, /Boleto Bancário/);
+  assert.match(html, /PIX \(Chave Aleatória\)/);
+  assert.ok(html.includes(EMPRESA_PIX_ALEATORIA));
+  assert.match(html, /Permanecemos à disposição para quaisquer esclarecimentos\./);
+});
+
+test("buildNfClientEmail: sem número fiscal usa assunto genérico e '—'", () => {
+  const { subject, html } = buildNfClientEmail({
+    value: 100,
+    due_date: "2026-07-10",
+    description: "Descrição sem período",
+    nfse_number: "inv_abc",
+  });
+  assert.equal(subject, "Prestação de Serviço de Escolta Armada Torres");
+  assert.match(html, /Nº da Nota Fiscal:<\/td><td[^>]*>—/);
+});
+
+test("buildNfClientEmail: com retenção de INSS mostra retenção e líquido a pagar", () => {
+  const { html } = buildNfClientEmail({
+    value: 1000,
+    due_date: "2026-07-10",
+    description: "x",
+    nfse_number: "789",
+    valor_inss_retido: 110,
+    inss_aliquota: 11,
+  });
+  assert.match(html, /Retenção INSS/);
+  assert.match(html, /Valor líquido a pagar:/);
+  assert.match(html, /110,00/);
+  assert.match(html, /890,00/);
+});
+
+test("buildNfClientEmail: sem INSS não mostra linhas de retenção", () => {
+  const { html } = buildNfClientEmail({
+    value: 500,
+    due_date: "2026-07-10",
+    description: "x",
+    nfse_number: "1",
+  });
+  assert.equal(/Retenção INSS/.test(html), false);
+  assert.equal(/Valor líquido a pagar/.test(html), false);
 });
