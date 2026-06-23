@@ -6,11 +6,14 @@ import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
 
 const TAG = "[whatsapp-forward-cron]";
-// Janela curta: só encaminha updates recentes. Se uma update ficar
-// pendente por mais que isso (Z-API fora, cron parado, etc.), é
-// descartada pra evitar despejar backlog antigo no grupo do cliente.
-// Decisão do dono em 28/05/2026.
-const LOOKBACK_MIN = 15;
+// Janela de recuperação: encaminha updates pendentes das últimas N min. Serve
+// pra resistir a quedas curtas (Z-API fora, cron parado por event loop saturado,
+// restart): ao voltar, o robô recupera sozinho o que ficou pendente nesse período.
+// O anti-spam é o THROTTLE_PER_GROUP_MIN (1 msg/3min por grupo), não a janela.
+// Decisão do dono 23/06/2026: aumentar de 15→120 min p/ resistir a quedas.
+// (O backlog histórico anterior a essa mudança foi marcado como ignorado via
+// .local/test_skip_forward_backlog.mts, pra não ser reenviado.)
+const LOOKBACK_MIN = 120;
 const MAX_PER_RUN = 10;
 const CLAIM_STALE_MIN = 5;
 // Anti-spam: no máximo 1 msg a cada N min por grupo de cliente.

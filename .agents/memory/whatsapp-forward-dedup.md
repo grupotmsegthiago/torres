@@ -38,3 +38,25 @@ throttle. Helpers puros testáveis: `isFinalCardUpdate`, `alreadyForwardedFinal`
 - Garantia é forte porque o cron roda single-process (guard `running`) e processa
   o lote sequencialmente; em multi-instância haveria janela de corrida (a trava é
   por leitura, não lock atômico por OS).
+
+# DEV também encaminha pra grupos REAIS de cliente
+
+`initWhatsappForwardCron()` em `server/index.ts` está FORA do `if (NODE_ENV==="production")`
+(esse guard só envolve serveStatic/vite). Logo o ambiente de DEV roda o cron
+contra o Supabase + Z-API de PRODUÇÃO e **manda mensagem de verdade no grupo do
+cliente** (visto: dev enviou `id=9515 OS=TOR-0333 → TM SEGURANCA`).
+
+**How to apply:** antes de mexer em qualquer parâmetro do encaminhador (ex.
+aumentar a janela), assuma que o dev já está despachando ao vivo. Se for ampliar a
+janela de recuperação, marque o backlog histórico como ignorado ANTES
+(`whatsapp_forwarded_at` preenchido + `whatsapp_forward_error="skip: ..."`), via
+`.local/test_skip_forward_backlog.mts`, senão o dev redespeja tudo no cliente.
+
+# LOOKBACK_MIN é janela de RECUPERAÇÃO, não anti-spam
+
+`LOOKBACK_MIN` (cron) = de quantos minutos atrás o robô recupera updates pendentes
+ao voltar de uma queda (Z-API fora, event loop saturado, restart). O anti-spam é
+o `THROTTLE_PER_GROUP_MIN` (1 msg/3min por grupo) — não a janela. Subir a janela
+torna o robô resistente a quedas curtas sem virar flood. Dono aprovou 15→120min
+(23/06/2026); o `tsx` do dev NÃO tem watch, então a mudança só vale após restart
+do workflow.
