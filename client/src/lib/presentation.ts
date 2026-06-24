@@ -182,7 +182,213 @@ function statBox(doc: jsPDF, value: string, label: string, x: number, y: number)
   doc.text(label, x + 28, y + 23, { align: "center" });
 }
 
-export async function generatePresentation(clientName: string) {
+export interface ProposalRoute {
+  origin: string;
+  destination: string;
+  estimated_km: number;
+  estimated_hours: number;
+}
+
+export interface ProposalContract {
+  valor_km_extra: number;
+  valor_hora_extra: number;
+}
+
+export interface ProposalOptions {
+  routes?: ProposalRoute[];
+  contract?: ProposalContract;
+  vehiclePhotos?: string[];
+}
+
+function brl(n: number): string {
+  return "R$ " + (Number(n) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function intBR(n: number): string {
+  return (Number(n) || 0).toLocaleString("pt-BR");
+}
+
+async function loadViaturaB64s(urls: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const u of urls.slice(0, 6)) {
+    try {
+      const img = await loadImage(u);
+      out.push(coverFitToBase64(img, 800, 600));
+    } catch {
+      // ignora foto inválida — não trava a proposta
+    }
+  }
+  return out;
+}
+
+// Página "Nossas Viaturas" — grade com fotos reais da frota (cadastro de veículos).
+function drawViaturasPage(doc: jsPDF, photos: string[], pageNum: number) {
+  doc.addPage();
+  doc.setFillColor(SOFT_BG);
+  doc.rect(0, 0, W, H, "F");
+
+  curvedShape(doc, 170, 110, 200, 150, ACCENT, 0.04);
+
+  doc.setFillColor(ACCENT);
+  doc.rect(0, 0, W, 3, "F");
+  footer(doc, pageNum, "light");
+
+  sectionLabel(doc, 18);
+  sectionTitle(doc, "Nossas Viaturas", 32);
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(MED_GRAY);
+  doc.setFont("helvetica", "normal");
+  doc.text("Frota própria identificada e equipada para operações de escolta armada.", 28, 46);
+
+  const gx = 28, gy = 54, gw = 78, gh = 58, gapX = 7, gapY = 8;
+  photos.slice(0, 6).forEach((p, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const x = gx + col * (gw + gapX);
+    const y = gy + row * (gh + gapY);
+    doc.setFillColor(WHITE);
+    doc.roundedRect(x, y, gw, gh, 3, 3, "F");
+    doc.addImage(p, "JPEG", x + 2, y + 2, gw - 4, gh - 4);
+    doc.setDrawColor(ACCENT);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(x, y, gw, gh, 3, 3, "S");
+  });
+}
+
+// Página "Rotas & Franquias" — replica EXATA do modelo aprovado pelo dono
+// (monocromático preto/branco). ACIONAMENTO = km da rota × valor do km da tabela.
+function drawPriceTablePage(doc: jsPDF, routes: ProposalRoute[], contract: ProposalContract, logoB64: string, pageNum: number) {
+  doc.addPage();
+  doc.setFillColor(SOFT_BG);
+  doc.rect(0, 0, W, H, "F");
+  footer(doc, pageNum, "light");
+
+  const cardX = 16, cardY = 14, cardW = 265, cardH = 178;
+  doc.setFillColor(WHITE);
+  doc.roundedRect(cardX, cardY, cardW, cardH, 4, 4, "F");
+  doc.setDrawColor("#e5e7eb");
+  doc.setLineWidth(0.4);
+  doc.roundedRect(cardX, cardY, cardW, cardH, 4, 4, "S");
+
+  // Cabeçalho: logo + TORRES | ROTAS & FRANQUIAS
+  doc.addImage(logoB64, "JPEG", cardX + 10, cardY + 7, 15, 15);
+  doc.setFontSize(14);
+  doc.setTextColor(DARK);
+  doc.setFont("helvetica", "bold");
+  doc.text("TORRES", cardX + 29, cardY + 15);
+  doc.setFontSize(5.5);
+  doc.setTextColor(MED_GRAY);
+  doc.setFont("helvetica", "bold");
+  doc.text("VIGILÂNCIA PATRIMONIAL", cardX + 29, cardY + 19.5);
+
+  doc.setDrawColor("#d1d5db");
+  doc.setLineWidth(0.5);
+  doc.line(cardX + 70, cardY + 7, cardX + 70, cardY + 22);
+
+  doc.setFontSize(14);
+  doc.setTextColor(DARK);
+  doc.setFont("helvetica", "bold");
+  doc.text("ROTAS & FRANQUIAS", cardX + 76, cardY + 14);
+  doc.setFontSize(6);
+  doc.setTextColor(MED_GRAY);
+  doc.setFont("helvetica", "normal");
+  doc.text("GRUPO TORRES ESCOLTA ARMADA", cardX + 76, cardY + 19.5);
+
+  // Barra preta — título da prestação
+  const barY = cardY + 28, barH = 8;
+  doc.setFillColor(DARK);
+  doc.rect(cardX + 6, barY, cardW - 12, barH, "F");
+  doc.setFontSize(8);
+  doc.setTextColor(WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.text("PRESTAÇÃO DE SERVIÇO DE ESCOLTA ARMADA", W / 2, barY + 5.4, { align: "center" });
+
+  const tableX = cardX + 6, tableW = cardW - 12;
+  const cols = [
+    { label: "ORIGEM", w: 0.155, left: true },
+    { label: "DESTINO", w: 0.175, left: true },
+    { label: "KM FRANQUIA", w: 0.125, left: false },
+    { label: "HORA FRANQUIA", w: 0.135, left: false },
+    { label: "KM EXCEDENTE", w: 0.13, left: false },
+    { label: "HR EXCEDENTE", w: 0.13, left: false },
+    { label: "ACIONAMENTO", w: 0.15, left: false },
+  ];
+  const colX: number[] = [];
+  const colW: number[] = [];
+  let cx = tableX;
+  cols.forEach(c => { colX.push(cx); colW.push(c.w * tableW); cx += c.w * tableW; });
+
+  // Cabeçalho da tabela (preto)
+  const headY = barY + barH + 2, headH = 9;
+  doc.setFillColor(DARK2);
+  doc.rect(tableX, headY, tableW, headH, "F");
+  doc.setFontSize(6);
+  doc.setTextColor(WHITE);
+  doc.setFont("helvetica", "bold");
+  cols.forEach((c, i) => {
+    const tx = c.left ? colX[i] + 3 : colX[i] + colW[i] / 2;
+    doc.text(c.label, tx, headY + 5.7, { align: c.left ? "left" : "center" });
+  });
+
+  // Linhas
+  let ry = headY + headH;
+  const bottomLimit = cardY + cardH - 24;
+  const rowH = Math.max(8, Math.min(12, (bottomLimit - ry) / Math.max(routes.length, 1)));
+  routes.forEach((r, idx) => {
+    if (idx % 2 === 1) {
+      doc.setFillColor("#f3f4f6");
+      doc.rect(tableX, ry, tableW, rowH, "F");
+    }
+    const ty = ry + rowH / 2 + 2;
+    const acion = (Number(r.estimated_km) || 0) * (Number(contract.valor_km_extra) || 0);
+    const vals = [
+      r.origin || "—",
+      r.destination || "—",
+      intBR(r.estimated_km),
+      intBR(r.estimated_hours),
+      brl(contract.valor_km_extra),
+      brl(contract.valor_hora_extra),
+      brl(acion),
+    ];
+    cols.forEach((c, i) => {
+      const tx = c.left ? colX[i] + 3 : colX[i] + colW[i] / 2;
+      let v = vals[i];
+      if (c.left) v = (doc.splitTextToSize(v, colW[i] - 5)[0] || v);
+      doc.setFontSize(6.4);
+      doc.setTextColor(DARK);
+      doc.setFont("helvetica", i === cols.length - 1 ? "bold" : "normal");
+      doc.text(v, tx, ty, { align: c.left ? "left" : "center" });
+    });
+    doc.setDrawColor("#e5e7eb");
+    doc.setLineWidth(0.2);
+    doc.line(tableX, ry + rowH, tableX + tableW, ry + rowH);
+    ry += rowH;
+  });
+
+  // Nota PEDÁGIO À PARTE
+  doc.setFontSize(7);
+  doc.setTextColor(DARK);
+  doc.setFont("helvetica", "bold");
+  doc.text("PEDÁGIO À PARTE", W / 2, ry + 7, { align: "center" });
+
+  // Rodapé preto do card (igual ao modelo)
+  const fY = cardY + cardH - 11;
+  doc.setFillColor(DARK);
+  doc.rect(cardX + 6, fY, cardW - 12, 8, "F");
+  doc.addImage(logoB64, "JPEG", cardX + 9, fY + 1.4, 5.2, 5.2);
+  doc.setFontSize(5.5);
+  doc.setTextColor("#cfcfcf");
+  doc.setFont("helvetica", "bold");
+  doc.text("SEGURANÇA QUE PROTEGE. CONFIANÇA QUE CONDUZ.", cardX + 17, fY + 5, { align: "left" });
+  // faixa diagonal clara no canto inferior direito (monocromática, como no modelo)
+  doc.setFillColor("#3a3a3a");
+  doc.triangle(cardX + cardW - 6 - 16, fY + 8, cardX + cardW - 6, fY + 8, cardX + cardW - 6, fY, "F");
+  doc.setFillColor("#5a5a5a");
+  doc.triangle(cardX + cardW - 6 - 9, fY + 8, cardX + cardW - 6, fY + 8, cardX + cardW - 6, fY + 2, "F");
+}
+
+export async function generatePresentation(clientName: string, opts: ProposalOptions = {}) {
   const [imgTeam, imgGuardRadio, imgEscortRoad, imgVehicle, imgGuardVehicle, imgMonitoramento, logoRaw] = await Promise.all([
     loadImage(imgTeamPath),
     loadImage(imgGuardRadioPath),
@@ -201,6 +407,10 @@ export async function generatePresentation(clientName: string) {
   const monitoramentoB64 = coverFitToBase64(imgMonitoramento, 1200, 600);
   const logoInvB64 = logoToBase64Inverted(logoRaw, 600);
   const logoOrigB64 = coverFitToBase64(logoRaw, 600, 600);
+
+  const viaturaB64s = opts.vehiclePhotos?.length ? await loadViaturaB64s(opts.vehiclePhotos) : [];
+  const frotaImg1 = viaturaB64s[0] || vehicleB64;
+  const frotaImg2 = viaturaB64s[1] || guardVehicleB64;
 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
@@ -627,13 +837,13 @@ export async function generatePresentation(clientName: string) {
   sectionLabel(doc, 18);
   sectionTitle(doc, "Frota e Operação", 32);
 
-  doc.addImage(vehicleB64, "JPEG", 28, 48, 118, 66);
+  doc.addImage(frotaImg1, "JPEG", 28, 48, 118, 66);
   doc.setDrawColor(ACCENT);
   doc.setLineWidth(1);
   doc.line(28, 48, 28, 114);
   doc.line(28, 114, 146, 114);
 
-  doc.addImage(guardVehicleB64, "JPEG", 154, 48, 118, 66);
+  doc.addImage(frotaImg2, "JPEG", 154, 48, 118, 66);
   doc.setDrawColor(ACCENT);
   doc.line(272, 48, 272, 114);
   doc.line(154, 48, 272, 48);
@@ -748,6 +958,19 @@ export async function generatePresentation(clientName: string) {
   doc.text("O cliente tem visibilidade completa da operação, com dados precisos e atualizados em tempo real.", 42, 162);
 
   // ====================================================================
+  //  PÁGINAS DA PROPOSTA — VIATURAS + TABELA DE VALORES (opcionais)
+  // ====================================================================
+  let nextPage = 9;
+  if (viaturaB64s.length > 0) {
+    drawViaturasPage(doc, viaturaB64s, nextPage);
+    nextPage++;
+  }
+  if (opts.routes && opts.routes.length > 0 && opts.contract) {
+    drawPriceTablePage(doc, opts.routes, opts.contract, logoOrigB64, nextPage);
+    nextPage++;
+  }
+
+  // ====================================================================
   //  SLIDE 9 — CONTATO / ENCERRAMENTO
   // ====================================================================
   doc.addPage();
@@ -791,29 +1014,33 @@ export async function generatePresentation(clientName: string) {
 
   doc.setFillColor(DARK3);
   doc.setGState(gState(doc, 0.92));
-  doc.roundedRect(65, 110, 167, 50, 5, 5, "F");
+  doc.roundedRect(65, 110, 167, 58, 5, 5, "F");
   doc.setGState(gState(doc, 1));
   doc.setDrawColor(ACCENT);
   doc.setLineWidth(0.5);
-  doc.roundedRect(65, 110, 167, 50, 5, 5, "S");
+  doc.roundedRect(65, 110, 167, 58, 5, 5, "S");
 
   doc.setFontSize(9);
   doc.setTextColor(ACCENT);
   doc.setFont("helvetica", "bold");
-  doc.text("CONTATO", W / 2, 122, { align: "center" });
+  doc.text("CONTATO", W / 2, 121, { align: "center" });
 
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(WHITE);
   doc.setFont("helvetica", "normal");
-  doc.text("www.torresseguranca.com.br", W / 2, 134, { align: "center" });
+  doc.text("www.torresseguranca.com.br", W / 2, 131, { align: "center" });
 
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor("#c0c0c0");
-  doc.text("comercial@torresseguranca.com.br", W / 2, 143, { align: "center" });
+  doc.text("WhatsApp: (11) 96369-6699   |   Instagram: @grupotorres.seguranca", W / 2, 140, { align: "center" });
+
+  doc.setFontSize(9);
+  doc.setTextColor("#c0c0c0");
+  doc.text("comercial@torresseguranca.com.br", W / 2, 148, { align: "center" });
 
   doc.setFontSize(7.5);
   doc.setTextColor(MED_GRAY);
-  doc.text("CNPJ 36.982.392/0001-89", W / 2, 153, { align: "center" });
+  doc.text("CNPJ 36.982.392/0001-89", W / 2, 157, { align: "center" });
 
   doc.setFontSize(13);
   doc.setTextColor(WHITE);
