@@ -21,10 +21,10 @@
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
 import { sendText, sendImageWithCaption, isZapiConfigured, getBotLid } from "./zapi";
-import { decodeBase64Image, watermarkToDataUrl } from "./photo-watermark";
+import { decodeBase64Image, watermarkToDataUrl, TORRES_CONTACT_FOOTER } from "./photo-watermark";
 import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
-import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
+import { buildKmResumoByOsId, getKmFinalPhotoByOsId, buildRichCaption, isForwardableStep } from "../cron-whatsapp-forward";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -1473,6 +1473,19 @@ export async function fulfillGroupRequests(params: {
   osNumber: string | null;
   employeeName: string | null;
   message: string | null;
+  /**
+   * Se a atualização que disparou esta chamada trouxe FOTO nova E seu step é
+   * encaminhável (isForwardableStep), o card padrão (foto + marca d'água + form
+   * + rodapé) já é enviado ao grupo pelo cron de encaminhamento
+   * (server/cron-whatsapp-forward.ts). Só nesse caso esta função resolve o
+   * pedido (claim) e NÃO envia nada, pra não duplicar o card. Caso contrário
+   * (sem foto, OU foto em step que o cron não encaminha) montamos o MESMO
+   * formulário em texto (com rodapé de contato) e enviamos — senão o pedido
+   * ficaria resolvido sem nenhuma resposta no grupo (drop silencioso).
+   */
+  hadPhoto?: boolean;
+  /** Step da mission_update (resolvido no call-site) — decide se o cron encaminha. */
+  missionStep?: string | null;
 }): Promise<void> {
   try {
     if (!isZapiConfigured()) return;
@@ -1505,20 +1518,74 @@ export async function fulfillGroupRequests(params: {
       if (fn) e.names.add(fn);
     }
 
+    // Atualização COM foto E step encaminhável: o cron já manda o card completo
+    // (foto + form + rodapé). Só marcamos o pedido como resolvido (claim acima)
+    // e saímos, sem mandar uma segunda mensagem. fail-open. Se a foto vier num
+    // step que o cron NÃO encaminha, caímos no card de texto abaixo (senão o
+    // pedido ficaria resolvido sem resposta no grupo).
+    if (params.hadPhoto && isForwardableStep(params.missionStep)) {
+      console.log(`[agent-central-mention] OS ${params.osNumber || params.serviceOrderId}: card com foto será enviado pelo cron de encaminhamento; fulfill apenas resolveu ${open.length} pedido(s).`);
+      return;
+    }
+
+    // Atualização SÓ texto: monta o MESMO formulário do card padrão (sem foto)
+    // + rodapé de contato (logo/Instagram/WhatsApp/site). Reusa buildRichCaption
+    // (server/cron-whatsapp-forward.ts) pra não divergir do layout aprovado.
+    const { data: so } = await supabaseAdmin.from("service_orders")
+      .select("id, client_id, mission_status, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, vehicle_id, assigned_employee_id, assigned_employee_2_id, escorted_driver_name, escorted_driver_phone, escorted_vehicle_plate")
+      .eq("id", params.serviceOrderId).maybeSingle();
+    let client: { name: string | null } | null = null;
+    if ((so as any)?.client_id) {
+      const { data: cl } = await supabaseAdmin.from("clients")
+        .select("name").eq("id", (so as any).client_id).maybeSingle();
+      client = (cl as any) || null;
+    }
+
     const msgBody = (params.message || "").trim();
+    // Objeto "update" sintético pro builder do card: GPS fica nulo (resolveLivePosition
+    // cai na última posição conhecida da OS), data/hora = agora (BRT).
+    const synthUpdate = {
+      os_number: params.osNumber || null,
+      service_order_id: params.serviceOrderId,
+      message: msgBody,
+      created_at: new Date().toISOString(),
+      latitude: null,
+      longitude: null,
+    };
+
     for (const [groupId, info] of Array.from(byGroup.entries())) {
       const nomes = Array.from(info.names);
       const saud = nomes.length > 0 ? `${nomes.join(", ")}, ` : "";
-      const out = [
-        `*${varyForwardHeader()}*`,
-        ``,
-        `${saud}segue a atualização da OS ${params.osNumber || `#${params.serviceOrderId}`}:`,
-        ``,
-        msgBody || "(sem texto)",
-        params.employeeName ? `\n_Agente: ${firstName(params.employeeName)}_` : "",
-      ].filter((l) => l !== "").join("\n");
 
-      const r = await sendText({ groupOrPhone: groupId, message: out, delayTypingSeconds: randomTypingSeconds() });
+      let card: string;
+      try {
+        const rich = so
+          ? await buildRichCaption(synthUpdate, so, client)
+          : "";
+        const header = `${saud}segue a atualização da OS ${params.osNumber || `#${params.serviceOrderId}`}: 👇`;
+        card = [
+          header,
+          "",
+          rich || `📝 *ATUALIZAÇÃO:* ${(msgBody || "(sem texto)").toUpperCase()}`,
+          "",
+          TORRES_CONTACT_FOOTER,
+        ].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+      } catch (capErr: any) {
+        // Fallback ao texto simples se a montagem do card rico falhar (fail-open).
+        console.warn(`[agent-central-mention] card rico falhou OS ${params.osNumber || params.serviceOrderId}, usando texto simples:`, capErr?.message);
+        card = [
+          `*${varyForwardHeader()}*`,
+          ``,
+          `${saud}segue a atualização da OS ${params.osNumber || `#${params.serviceOrderId}`}:`,
+          ``,
+          msgBody || "(sem texto)",
+          params.employeeName ? `\n_Agente: ${firstName(params.employeeName)}_` : "",
+          ``,
+          TORRES_CONTACT_FOOTER,
+        ].filter((l) => l !== "").join("\n");
+      }
+
+      const r = await sendText({ groupOrPhone: groupId, message: card, delayTypingSeconds: randomTypingSeconds() });
       if (r.ok) {
         // Já reivindicado (fulfilled_at setado no claim atômico) — só loga.
         console.log(`[agent-central-mention] update da OS ${params.osNumber || params.serviceOrderId} encaminhada ao grupo ${groupId} (pediram: ${nomes.join(", ") || "?"})`);

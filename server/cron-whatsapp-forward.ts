@@ -54,6 +54,15 @@ const FORWARDABLE_STEPS: Record<string, string> = {
   pernoite: "Pernoite",
 };
 
+// Uma mission_update com FOTO só é encaminhada como card (foto + form + marca
+// d'água) por este cron quando seu mission_step está em FORWARDABLE_STEPS. Fora
+// dessa lista (ex.: status genérico tipo "aguardando"), o cron NÃO encaminha —
+// quem precisa decidir "o cron vai mandar o card?" deve usar este helper pra
+// não dropar a resposta silenciosamente (ver fulfillGroupRequests).
+export function isForwardableStep(step?: string | null): boolean {
+  return Object.prototype.hasOwnProperty.call(FORWARDABLE_STEPS, String(step || ""));
+}
+
 const MISSION_STATUS_LABEL: Record<string, string> = {
   agendada: "Agendada",
   aceita: "Aceita",

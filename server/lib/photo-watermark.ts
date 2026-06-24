@@ -11,6 +11,15 @@ const INSTAGRAM = "@grupotorres.seguranca";
 const WHATSAPP = "(11) 96369-6699";
 const SITE = "www.torresseguranca.com.br";
 
+// Rodapé de contato em TEXTO (logo/Instagram/WhatsApp/site) para mensagens que
+// NÃO carregam foto — espelha as mesmas informações da marca d'água da foto,
+// mantendo uma única fonte de verdade dos contatos da Torres.
+export const TORRES_CONTACT_FOOTER =
+  `🛡️ *Torres Vigilância Patrimonial*\n` +
+  `📸 Instagram: ${INSTAGRAM}\n` +
+  `💬 WhatsApp: ${WHATSAPP}\n` +
+  `🌐 ${SITE}`;
+
 // Cap de tamanho pra manter o payload do envio (base64) razoável.
 const MAX_DIM = 1600;
 // Teto do data URL final mandado ao Z-API. Acima disso, melhor enviar a foto

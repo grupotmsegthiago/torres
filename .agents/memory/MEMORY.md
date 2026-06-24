@@ -47,3 +47,4 @@
 - [Marca d'água nas fotos de grupo](photo-watermark-group-cards.md) — toda foto a grupo de cliente leva logo+contatos (fail-open); assets EMBUTIDOS no bundle (esbuild não copia .local/assets); cobre forward-cron + km-final.
 - [Rastreio de fatura (rota do dinheiro)](invoice-money-trace.md) — timeline da fatura agrega 5 fontes sem FK comum; baixa manual dinheiro/PIX só existe em nfse_observations (texto livre, parse regex); só leitura.
 - [Tela interna WhatsApp espelha só whatsapp_messages](whatsapp-internal-mirror.md) — saída do bot (sendText/sendImageWithCaption) tem que PERSISTIR senão some da tela; webhook+/send não cobrem.
+- [Resposta do bot ao pedido de atualização = card padrão](fulfill-group-card.md) — fulfill só pula envio quando cron REALMENTE encaminha (hadPhoto && isForwardableStep); senão dropa a resposta no grupo.

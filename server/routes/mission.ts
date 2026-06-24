@@ -1160,13 +1160,14 @@ Responda APENAS com JSON: {"km_lido": number}`;
       const { correctAgentMessage } = await import("../lib/correct-text-ai.js");
       const correctedMessage = await correctAgentMessage(message.trim());
 
+      const resolvedMissionStep = missionStep || so.missionStatus || null;
       const { error: insertError } = await supabaseAdmin.from("mission_updates").insert({
         service_order_id: serviceOrderId,
         os_number: so.osNumber || null,
         employee_id: user.employeeId,
         employee_name: emp?.name || user.name || "—",
         message: correctedMessage,
-        mission_step: missionStep || so.missionStatus || null,
+        mission_step: resolvedMissionStep,
         latitude: latitude || null,
         longitude: longitude || null,
         photo_url: validatedPhotoUrl,
@@ -1208,6 +1209,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
             osNumber: so.osNumber || null,
             employeeName: emp?.name || user.name || null,
             message: correctedMessage,
+            hadPhoto: !!validatedPhotoUrl,
+            missionStep: resolvedMissionStep,
           }),
         )
         .catch((e: any) => console.warn("[agent-central] fulfill falhou:", e?.message));
