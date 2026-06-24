@@ -2,10 +2,21 @@ import cron from "node-cron";
 import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured } from "./lib/zapi.js";
 import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
+import { decodeBase64Image, watermarkToDataUrl } from "./lib/photo-watermark.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
 
 const TAG = "[whatsapp-forward-cron]";
+
+// Baixa os bytes de uma imagem (signed URL do storage ou URL pública) p/ buffer,
+// usado pela marca d'água. Cap de 8MB pra evitar surpresa de memória.
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`fetch foto ${res.status}`);
+  const ab = await res.arrayBuffer();
+  if (ab.byteLength > 8 * 1024 * 1024) throw new Error(`foto grande demais (${ab.byteLength}b)`);
+  return Buffer.from(ab);
+}
 // Janela de recuperação: encaminha updates pendentes das últimas N min. Serve
 // pra resistir a quedas curtas (Z-API fora, cron parado por event loop saturado,
 // restart): ao voltar, o robô recupera sozinho o que ficou pendente nesse período.
@@ -719,6 +730,18 @@ async function processPending(): Promise<void> {
           continue;
         }
         imageToSend = signed;
+      }
+      // Marca d'água Torres (logo + contatos) embutida na foto antes do envio.
+      // Fail-open: qualquer falha cai na foto original (nunca segura o card).
+      try {
+        const srcBuf = isData ? decodeBase64Image(photoUrl) : await fetchImageBuffer(imageToSend);
+        if (srcBuf && srcBuf.length > 0) {
+          const wm = await watermarkToDataUrl(srcBuf);
+          if (wm) imageToSend = wm;
+          else console.warn(`${TAG} marca d'água payload grande id=${u.id} OS=${u.os_number}, enviando foto original`);
+        }
+      } catch (wmErr: any) {
+        console.warn(`${TAG} marca d'água falhou id=${u.id} OS=${u.os_number}, enviando foto original:`, wmErr?.message);
       }
       try {
         const result = await sendImageWithCaption({

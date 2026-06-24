@@ -21,6 +21,7 @@
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
 import { sendText, sendImageWithCaption, isZapiConfigured, getBotLid } from "./zapi";
+import { decodeBase64Image, watermarkToDataUrl } from "./photo-watermark";
 import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
 import { buildKmResumoByOsId, getKmFinalPhotoByOsId } from "../cron-whatsapp-forward";
@@ -811,9 +812,20 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
     try {
       const foto = await getKmFinalPhotoByOsId(os.id);
       if (foto?.photoData) {
+        // Marca d'água Torres na foto antes de enviar ao grupo (fail-open).
+        let imageToSend = foto.photoData;
+        try {
+          const srcBuf = decodeBase64Image(foto.photoData);
+          if (srcBuf && srcBuf.length > 0) {
+            const wm = await watermarkToDataUrl(srcBuf);
+            if (wm) imageToSend = wm;
+          }
+        } catch (wmErr: any) {
+          console.warn(`[agent-central-mention] marca d'água km-foto OS ${os.os_number || os.id} falhou, foto original:`, wmErr?.message);
+        }
         const r = await sendImageWithCaption({
           groupOrPhone: parsed.chatId,
-          imageBase64OrUrl: foto.photoData,
+          imageBase64OrUrl: imageToSend,
           caption: msg,
           delayMessageSeconds: randomTypingSeconds(),
         });
