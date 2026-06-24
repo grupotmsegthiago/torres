@@ -244,8 +244,11 @@ export const ZAPI_SEND_DELAYS_ENABLED = false;
 export function buildSendDelayFields(params: {
   delayTypingSeconds?: number;
   delayMessageSeconds?: number;
-}): Record<string, number> {
-  if (!ZAPI_SEND_DELAYS_ENABLED) return {};
+}, force = false): Record<string, number> {
+  // `force` permite que um call-site específico (ex.: a resposta da Central no
+  // grupo quando MARCADA pedindo atualização) mostre "digitando..." mesmo com o
+  // toggle global desligado — sem reativar o delay nos envios em massa do cron.
+  if (!ZAPI_SEND_DELAYS_ENABLED && !force) return {};
   const out: Record<string, number> = {};
   if (params.delayTypingSeconds && params.delayTypingSeconds > 0) {
     out.delayTyping = Math.min(15, Math.max(1, Math.round(params.delayTypingSeconds)));
@@ -495,6 +498,8 @@ export async function sendText(params: {
   delayTypingSeconds?: number;
   /** Segundos de atraso antes do disparo (Z-API delayMessage). */
   delayMessageSeconds?: number;
+  /** Força o "digitando..." mesmo com o toggle global de delay desligado. */
+  forceDelay?: boolean;
 }): Promise<ZapiSendImageResult> {
   if (!isZapiConfigured()) {
     return { ok: false, error: "Z-API não configurada" };
@@ -510,11 +515,11 @@ export async function sendText(params: {
 
   // Z-API aceita delayTyping (mostra "digitando...") e delayMessage (atraso antes
   // do disparo). buildSendDelayFields aplica/zera conforme ZAPI_SEND_DELAYS_ENABLED
-  // (desligado por ordem do dono — bot sem delay de mensagem).
+  // (desligado por ordem do dono — bot sem delay de mensagem), salvo forceDelay.
   const body: Record<string, any> = {
     phone,
     message: params.message,
-    ...buildSendDelayFields(params),
+    ...buildSendDelayFields(params, params.forceDelay),
   };
 
   try {

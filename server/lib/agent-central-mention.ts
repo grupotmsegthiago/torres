@@ -846,6 +846,19 @@ export async function handleFinalKmRequest(parsed: ParsedGroupMsg, quotedText: s
 const naturalReplyThrottle = new Map<string, number>();
 const NATURAL_REPLY_THROTTLE_MS = 15_000;
 
+// Throttle DEDICADO do aviso de cobrança quando MARCAM a Central (separado da
+// conversa natural): marcar é evento explícito e raro, então a resposta no grupo
+// não pode ser engolida por uma resposta natural recente. Curto, só anti-duplicata
+// de webhook.
+const taggedAckThrottle = new Map<string, number>();
+const TAGGED_ACK_THROTTLE_MS = 8_000;
+
+// Cooldown CURTO por OS da cobrança disparada por @menção (anti-duplicata de
+// webhook). Não é a janela de dedupe de pedido aberto (10min): marcar é intenção
+// explícita de insistir, então re-cobra após o cooldown.
+const mentionCobrancaCooldown = new Map<number, number>();
+const MENTION_COBRANCA_COOLDOWN_MS = 60_000;
+
 // ===========================================================================
 // ESCALONAMENTO SILENCIOSO — "cobra o 1º agente; só o 2º se o 1º não responder"
 // (decisão do dono 17/jun/2026)
@@ -1165,6 +1178,94 @@ export async function handleNaturalConversation(parsed: ParsedGroupMsg): Promise
   }
 }
 
+// ── Aviso de cobrança quando MARCAM a Central pedindo atualização ────────────
+// Quando alguém marca a Central no grupo pedindo update, além de cobrar o agente
+// por DM (cobrarAgentes), a Central responde NO GRUPO com um aviso curto e
+// VARIADO ("Opa! Vou verificar...", "Já vou cobrar a equipe!", "Deixa comigo...")
+// — mostrando "digitando..." por ~15s antes (anti-ban, ordem do dono 24/06/2026).
+// O aviso NUNCA inventa dado operacional nem fala de financeiro.
+const ACK_FALLBACKS = [
+  "Opa! Deixa comigo, já vou verificar com a equipe 👍",
+  "Pode deixar! Tô cobrando o time agora e já te retorno.",
+  "Show, vou acionar a equipe agora mesmo e trago a atualização!",
+  "Opa, beleza! Já estou cobrando a equipe pra te atualizar.",
+  "Deixa comigo, é pra isso que tô aqui! Já verifico e retorno.",
+  "Certo! Vou cobrar a equipe agora e já te dou um retorno.",
+  "Entendido! Tô verificando com o time e já volto com a posição.",
+  "Opa! Já vou atrás da equipe pra te trazer a atualização 👍",
+];
+
+async function buildUpdateAck(text: string, senderName: string | null): Promise<string> {
+  const fallback = ACK_FALLBACKS[randInt(0, ACK_FALLBACKS.length - 1)];
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey) return fallback;
+  const nome = firstName(senderName);
+  try {
+    const openai = new OpenAI({ apiKey, baseURL, timeout: 6000, maxRetries: 0 });
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 120,
+      messages: [
+        {
+          role: "system",
+          content:
+            `Você é a "Central Torres", atendente HUMANA de uma empresa de escolta/segurança, ` +
+            `num grupo de WhatsApp de um CLIENTE. O cliente acabou de pedir uma ATUALIZAÇÃO de uma missão. ` +
+            `Responda com UMA frase curta, natural e cordial confirmando que VAI VERIFICAR/COBRAR a equipe e já retorna. ` +
+            `VARIE SEMPRE as palavras (nunca soe como template — isso causa bloqueio do WhatsApp). Português brasileiro, ` +
+            `no máximo 1 emoji. NUNCA invente dado operacional (horários, locais, KMs, status, previsões) e NUNCA fale de ` +
+            `valores/financeiro. NÃO prometa horário específico. Responda SÓ com a frase, sem aspas.`,
+        },
+        {
+          role: "user",
+          content: `${nome ? `Pessoa que pediu: ${nome}. ` : ""}Mensagem recebida: "${text}"`,
+        },
+      ],
+    });
+    const out = response.choices?.[0]?.message?.content?.trim();
+    return out && out.length > 0 ? out : fallback;
+  } catch (e: any) {
+    console.warn("[agent-central-mention] buildUpdateAck falhou, usando fallback:", e?.message);
+    return fallback;
+  }
+}
+
+/**
+ * Responde no grupo confirmando que vai cobrar a equipe, com "digitando..." por
+ * ~15s antes (forceDelay — independe do toggle global de delay). Fail-open.
+ */
+export async function handleTaggedUpdateAck(parsed: ParsedGroupMsg): Promise<void> {
+  try {
+    if (!parsed.isGroup || parsed.fromMe) return;
+
+    // Throttle DEDICADO (curto): só evita duplicata de webhook, não deixa a
+    // resposta ao ser marcado ser engolida por uma conversa natural recente.
+    const last = taggedAckThrottle.get(parsed.chatId) || 0;
+    if (Date.now() - last < TAGGED_ACK_THROTTLE_MS) {
+      console.log(`[agent-central-mention] aviso de cobrança no grupo ${parsed.chatId} ignorado (throttle ${TAGGED_ACK_THROTTLE_MS / 1000}s)`);
+      return;
+    }
+    taggedAckThrottle.set(parsed.chatId, Date.now());
+
+    const raw = await buildUpdateAck((parsed.text || "").trim(), parsed.senderName);
+    const reply = sanitizeFinanceiro(raw); // trava financeira pós-geração
+
+    // ~15s de "digitando..." antes do envio (Z-API delayTyping, máx 15s).
+    // forceDelay liga o "digitando..." mesmo com o toggle global desligado.
+    await sendText({
+      groupOrPhone: parsed.chatId,
+      message: reply,
+      delayTypingSeconds: randInt(13, 15),
+      forceDelay: true,
+    });
+    console.log(`[agent-central-mention] aviso de cobrança enviado ao grupo ${parsed.chatId} (digitando ~15s)`);
+  } catch (e: any) {
+    console.warn("[agent-central-mention] handleTaggedUpdateAck falhou:", e?.message);
+  }
+}
+
 /**
  * Ponto de entrada chamado pelo webhook. Fire-and-forget, nunca lança.
  */
@@ -1277,12 +1378,20 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     // humano + throttle + travas (anti-ban / financeiro).
     if (mentioned) {
       // Marcaram a Central → responde AO VIVO (o dono quer resposta ao marcar).
-      // Mesmo assim cobra o 1º agente por DM e arma o timer de escalonamento (se
-      // não houver pedido aberto recente): se o 1º não reportar dentro da janela,
-      // o flush cobra o 2º. A atualização REAL ao grupo segue via
-      // fulfillGroupRequests quando o agente mexer no campo da OS.
-      if (!hasRecentOpen) {
+      // COBRA o 1º agente por DM SEMPRE que marcam (o dono reclamou que "não cobra"):
+      // a única trava é um cooldown CURTO por OS (anti-duplicata de webhook), não a
+      // janela de 10min do pedido aberto — marcar é intenção explícita de insistir.
+      const lastCob = mentionCobrancaCooldown.get(os.id) || 0;
+      if (Date.now() - lastCob >= MENTION_COBRANCA_COOLDOWN_MS) {
+        mentionCobrancaCooldown.set(os.id, Date.now());
         await cobrarAgentes(os);
+      } else {
+        console.log(`[agent-central-mention] OS ${os.os_number || os.id}: cobrança por menção pulada (cooldown ${MENTION_COBRANCA_COOLDOWN_MS / 1000}s — anti-duplicata)`);
+      }
+      // Arma o timer de escalonamento só se não houver pedido aberto recente (1 timer
+      // por janela): se o 1º não reportar, o flush cobra o 2º. A atualização REAL ao
+      // grupo segue via fulfillGroupRequests quando o agente mexer no campo da OS.
+      if (!hasRecentOpen) {
         const escalateAt = new Date(Date.now() + ESCALATE_AFTER_MIN * 60 * 1000).toISOString();
         await supabaseAdmin
           .from("agent_central_group_requests")
@@ -1296,8 +1405,10 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
           })
           .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request (menção) falhou:", e?.message));
       }
-      await handleNaturalConversation(parsed);
-      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → respondeu na hora (OS ${os.os_number || os.id})`);
+      // Avisa no grupo que vai cobrar a equipe, com "digitando..." ~15s antes
+      // (ordem do dono 24/06/2026). A atualização REAL volta via fulfillGroupRequests.
+      await handleTaggedUpdateAck(parsed);
+      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → cobrou a equipe e avisou no grupo (OS ${os.os_number || os.id})`);
       return;
     }
 
