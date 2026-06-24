@@ -6,6 +6,12 @@ uri = "file://artifacts/mockup-sandbox/public/images/polo-branco.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "mqNpS-_CzndiWzAv-_fd7"
+uri = "file://attached_assets/generated_images/photorealistic_photo_taken_by_b37b.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "i68LQUP0dsB96eUznq5-q"
 uri = "file://public/truckscontrol_debug_login.xml"
@@ -95,3 +101,9 @@ id = "HIvpTvS0fA_am3n_WJzfq"
 uri = "file://.local/Boletim_TM_SEGURANCA_JUNHO_corrigido.xlsx"
 type = "table"
 title = "Boletim TM Segurança - Junho (1ª quinzena) - coluna Nº corrigida"
+
+[[outputs]]
+id = "U6Wbue_tX9-Q_blYHZ27u"
+uri = "file://.local/preview/modelo-marca-dagua.jpg"
+type = "image"
+title = "Modelo — foto do agente com marca d'água Torres"
