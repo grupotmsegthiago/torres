@@ -185,18 +185,15 @@ function statBox(doc: jsPDF, value: string, label: string, x: number, y: number)
 export interface ProposalRoute {
   origin: string;
   destination: string;
-  estimated_km: number;
-  estimated_hours: number;
-}
-
-export interface ProposalContract {
+  franquia_km: number;
+  franquia_horas: number;
   valor_km_extra: number;
   valor_hora_extra: number;
+  valor_acionamento: number;
 }
 
 export interface ProposalOptions {
   routes?: ProposalRoute[];
-  contract?: ProposalContract;
   vehiclePhotos?: string[];
 }
 
@@ -258,7 +255,7 @@ function drawViaturasPage(doc: jsPDF, photos: string[], pageNum: number) {
 
 // Página "Rotas & Franquias" — replica EXATA do modelo aprovado pelo dono
 // (monocromático preto/branco). ACIONAMENTO = km da rota × valor do km da tabela.
-function drawPriceTablePage(doc: jsPDF, routes: ProposalRoute[], contract: ProposalContract, logoB64: string, pageNum: number) {
+function drawPriceTablePage(doc: jsPDF, routes: ProposalRoute[], logoB64: string, pageNum: number) {
   doc.addPage();
   doc.setFillColor(SOFT_BG);
   doc.rect(0, 0, W, H, "F");
@@ -341,14 +338,14 @@ function drawPriceTablePage(doc: jsPDF, routes: ProposalRoute[], contract: Propo
       doc.rect(tableX, ry, tableW, rowH, "F");
     }
     const ty = ry + rowH / 2 + 2;
-    const acion = (Number(r.estimated_km) || 0) * (Number(contract.valor_km_extra) || 0);
+    const acion = (Number(r.valor_acionamento) || 0) || ((Number(r.franquia_km) || 0) * (Number(r.valor_km_extra) || 0));
     const vals = [
       r.origin || "—",
       r.destination || "—",
-      intBR(r.estimated_km),
-      intBR(r.estimated_hours),
-      brl(contract.valor_km_extra),
-      brl(contract.valor_hora_extra),
+      intBR(r.franquia_km),
+      intBR(r.franquia_horas),
+      brl(r.valor_km_extra),
+      brl(r.valor_hora_extra),
       brl(acion),
     ];
     cols.forEach((c, i) => {
@@ -965,8 +962,8 @@ export async function generatePresentation(clientName: string, opts: ProposalOpt
     drawViaturasPage(doc, viaturaB64s, nextPage);
     nextPage++;
   }
-  if (opts.routes && opts.routes.length > 0 && opts.contract) {
-    drawPriceTablePage(doc, opts.routes, opts.contract, logoOrigB64, nextPage);
+  if (opts.routes && opts.routes.length > 0) {
+    drawPriceTablePage(doc, opts.routes, logoOrigB64, nextPage);
     nextPage++;
   }
 

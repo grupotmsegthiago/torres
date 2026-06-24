@@ -1406,13 +1406,10 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<ClientVehicle | null>(null);
   const [vForm, setVForm] = useState({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" });
-  const [selectedRouteIds, setSelectedRouteIds] = useState<Set<string>>(new Set());
-  const [showProposalModal, setShowProposalModal] = useState(false);
-  const [proposalTableId, setProposalTableId] = useState<string>("");
+  const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(new Set());
   const [generatingProposal, setGeneratingProposal] = useState(false);
 
   const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", client.id], queryFn: async () => { const r = await authFetch(`/api/service-contracts?client_id=${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
-  const { data: fleetVehicles = [] } = useQuery<any[]>({ queryKey: ["/api/vehicles"], enabled: showProposalModal, queryFn: async () => { const r = await authFetch("/api/vehicles"); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: priceContracts = [] } = useQuery<EscortContract[]>({ queryKey: ["/api/escort/contracts"] });
   const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await authFetch(`/api/escort/routes?client_id=${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: allBillings = [] } = useQuery<EscortBilling[]>({ queryKey: ["/api/escort/billings"] });
@@ -1423,39 +1420,50 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const clientBillings = allBillings.filter(b => b.client_id === client.id);
   const clientOrders = allServiceOrders.filter(o => o.clientId === client.id);
 
-  const toggleRoute = (id: string) => setSelectedRouteIds(prev => {
+  const toggleTable = (id: string) => setSelectedTableIds(prev => {
     const n = new Set(prev);
     n.has(id) ? n.delete(id) : n.add(id);
     return n;
   });
 
-  const openProposal = () => {
-    if (selectedRouteIds.size === 0) { toast({ title: "Selecione ao menos uma rota", variant: "destructive" }); return; }
-    setProposalTableId(clientPrices.length === 1 ? clientPrices[0].id : "");
-    setShowProposalModal(true);
+  const parseTableRoute = (name: string): { origin: string; destination: string } => {
+    let base = (name || "").trim();
+    const xIdx = base.search(/\s+x\s+\d/i);
+    if (xIdx >= 0) base = base.slice(0, xIdx).trim();
+    const parts = base.split(/\s+-\s+/);
+    if (parts.length >= 2) return { origin: parts[0].trim(), destination: parts.slice(1).join(" - ").trim() };
+    return { origin: base, destination: "" };
   };
 
   const handleGenerateProposal = async () => {
-    const table = clientPrices.find(t => t.id === proposalTableId);
-    if (!table) { toast({ title: "Selecione uma tabela de preços", variant: "destructive" }); return; }
-    const routes = clientRoutes
-      .filter(r => selectedRouteIds.has(r.id))
-      .map(r => ({ origin: r.origin, destination: r.destination, estimated_km: r.estimated_km, estimated_hours: r.estimated_hours }));
-    if (routes.length === 0) { toast({ title: "Nenhuma rota válida selecionada", description: "As rotas selecionadas não foram encontradas. Selecione novamente.", variant: "destructive" }); return; }
-    const vehiclePhotos = (fleetVehicles || [])
-      .map((v: any) => v.photoFront)
-      .filter((p: any): p is string => typeof p === "string" && p.length > 0)
-      .slice(0, 6);
+    const tables = clientPrices.filter(t => selectedTableIds.has(t.id));
+    if (tables.length === 0) { toast({ title: "Selecione ao menos uma tabela", description: "Marque as tabelas de preços que entram na proposta.", variant: "destructive" }); return; }
+    const routes = tables.map(t => {
+      const { origin, destination } = parseTableRoute(t.name || "");
+      return {
+        origin,
+        destination,
+        franquia_km: Number(t.franquia_km) || 0,
+        franquia_horas: Number(t.franquia_horas) || 0,
+        valor_km_extra: Number(t.valor_km_extra) || 0,
+        valor_hora_extra: Number(t.valor_hora_extra) || 0,
+        valor_acionamento: Number(t.valor_acionamento) || 0,
+      };
+    });
     setGeneratingProposal(true);
     try {
-      await generatePresentation(client.name, {
-        routes,
-        contract: { valor_km_extra: table.valor_km_extra, valor_hora_extra: table.valor_hora_extra },
-        vehiclePhotos,
-      });
+      let vehiclePhotos: string[] = [];
+      try {
+        const r = await authFetch("/api/vehicles");
+        const d = await r.json();
+        vehiclePhotos = (Array.isArray(d) ? d : [])
+          .map((v: any) => v.photoFront)
+          .filter((p: any): p is string => typeof p === "string" && p.length > 0)
+          .slice(0, 6);
+      } catch { /* fotos são opcionais; segue sem elas */ }
+      await generatePresentation(client.name, { routes, vehiclePhotos });
       toast({ title: "Proposta gerada", description: "O download do PDF foi iniciado." });
-      setShowProposalModal(false);
-      setSelectedRouteIds(new Set());
+      setSelectedTableIds(new Set());
     } catch {
       toast({ title: "Erro ao gerar proposta", variant: "destructive" });
     } finally {
@@ -1685,7 +1693,13 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><DollarSign size={16} /> Tabela de Preços</h3>
-              <Button onClick={() => { setEditingPrice(null); setShowPriceModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-price"><Plus size={14} className="mr-1" /> Nova Tabela</Button>
+              <div className="flex items-center gap-2">
+                {selectedTableIds.size > 0 && <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{selectedTableIds.size} selecionada{selectedTableIds.size === 1 ? "" : "s"}</span>}
+                <Button onClick={handleGenerateProposal} disabled={generatingProposal || selectedTableIds.size === 0} size="sm" variant="outline" className="border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white text-xs font-black uppercase disabled:opacity-40" data-testid="button-generate-proposal">
+                  {generatingProposal ? <><Loader2 size={14} className="mr-1 animate-spin" /> Gerando…</> : <><FileDown size={14} className="mr-1" /> Gerar Proposta</>}
+                </Button>
+                <Button onClick={() => { setEditingPrice(null); setShowPriceModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-price"><Plus size={14} className="mr-1" /> Nova Tabela</Button>
+              </div>
             </div>
             {clientPrices.length === 0 ? (
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
@@ -1711,7 +1725,21 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                     )}
                   </div>
                   <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-neutral-100 border-b border-neutral-200 text-[10px] font-black text-neutral-500 uppercase tracking-widest">
-                    <div className="col-span-5">Tabela</div>
+                    <div className="col-span-5 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={filtered.length > 0 && filtered.every(cp => selectedTableIds.has(cp.id))}
+                        onChange={e => setSelectedTableIds(prev => {
+                          const n = new Set(prev);
+                          if (e.target.checked) filtered.forEach(cp => n.add(cp.id));
+                          else filtered.forEach(cp => n.delete(cp.id));
+                          return n;
+                        })}
+                        className="w-3.5 h-3.5 accent-neutral-900 shrink-0 cursor-pointer"
+                        data-testid="checkbox-select-all-tables"
+                      />
+                      <span>Selecionar todas</span>
+                    </div>
                     <div className="col-span-2 text-right">Acionamento</div>
                     <div className="col-span-2 text-right">Franquia</div>
                     <div className="col-span-3 text-right">Excedente</div>
@@ -1726,7 +1754,17 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                         className="grid grid-cols-12 gap-2 px-4 py-2.5 hover:bg-neutral-50 cursor-pointer items-center text-xs"
                         data-testid={`row-price-${cp.id}`}
                       >
-                        <div className="col-span-5 font-bold text-neutral-800 truncate">{cp.name || "(sem nome)"}</div>
+                        <div className="col-span-5 font-bold text-neutral-800 truncate flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedTableIds.has(cp.id)}
+                            onClick={e => e.stopPropagation()}
+                            onChange={() => toggleTable(cp.id)}
+                            className="w-3.5 h-3.5 accent-neutral-900 shrink-0 cursor-pointer"
+                            data-testid={`checkbox-price-${cp.id}`}
+                          />
+                          <span className="truncate">{cp.name || "(sem nome)"}</span>
+                        </div>
                         <div className="col-span-2 text-right font-mono font-bold text-emerald-700">{fmt(Number(cp.valor_acionamento || 0))}</div>
                         <div className="col-span-2 text-right font-mono text-neutral-600">{cp.franquia_km || 0}km · {cp.franquia_horas || 0}h</div>
                         <div className="col-span-3 text-right font-mono text-neutral-500">{fmt(Number(cp.valor_km_extra || 0))}/km · {fmt(Number(cp.valor_hora_extra || 0))}/h</div>
@@ -1744,11 +1782,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><Route size={16} /> Rotas Frequentes</h3>
-              <div className="flex items-center gap-2">
-                {selectedRouteIds.size > 0 && <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{selectedRouteIds.size} selecionada{selectedRouteIds.size === 1 ? "" : "s"}</span>}
-                <Button onClick={openProposal} size="sm" variant="outline" className="border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white text-xs font-black uppercase" data-testid="button-generate-proposal"><FileDown size={14} className="mr-1" /> Gerar Proposta</Button>
-                <Button onClick={() => { setEditingRoute(null); setShowRouteModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-route"><Plus size={14} className="mr-1" /> Nova Rota</Button>
-              </div>
+              <Button onClick={() => { setEditingRoute(null); setShowRouteModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-route"><Plus size={14} className="mr-1" /> Nova Rota</Button>
             </div>
             {clientRoutes.length === 0 ? (
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><Route size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhuma rota cadastrada para este cliente</p></Card>
@@ -1789,14 +1823,6 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                         data-testid={`row-route-${r.id}`}
                       >
                         <div className="col-span-7 font-bold text-neutral-800 truncate flex items-center gap-1.5">
-                          <input
-                            type="checkbox"
-                            checked={selectedRouteIds.has(r.id)}
-                            onClick={e => e.stopPropagation()}
-                            onChange={() => toggleRoute(r.id)}
-                            className="w-3.5 h-3.5 accent-neutral-900 shrink-0 cursor-pointer"
-                            data-testid={`checkbox-route-${r.id}`}
-                          />
                           {r.is_noturno && <Moon size={12} className="text-indigo-600 shrink-0" />}
                           <span className="truncate">{r.name}</span>
                         </div>
@@ -2028,36 +2054,6 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
       )}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}
       {showRouteModal && <RouteFormModal onClose={() => { setShowRouteModal(false); setEditingRoute(null); }} editing={editingRoute} clientId={client.id} clientName={client.name} />}
-      {showProposalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !generatingProposal && setShowProposalModal(false)}>
-          <Card className="w-full max-w-md p-6 bg-white" onClick={e => e.stopPropagation()} data-testid="modal-proposal">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-neutral-800 uppercase flex items-center gap-2"><FileDown size={16} /> Gerar Proposta</h3>
-              <button onClick={() => !generatingProposal && setShowProposalModal(false)} className="text-neutral-400 hover:text-neutral-700" data-testid="button-close-proposal"><X size={18} /></button>
-            </div>
-            <p className="text-xs font-bold text-neutral-500 mb-4">{selectedRouteIds.size} rota{selectedRouteIds.size === 1 ? "" : "s"} selecionada{selectedRouteIds.size === 1 ? "" : "s"} para a tabela de valores.</p>
-            <label className="block text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-2">Tabela de preços</label>
-            {clientPrices.length === 0 ? (
-              <p className="text-xs font-bold text-red-500 mb-4">Nenhuma tabela de preços cadastrada para este cliente. Cadastre uma tabela antes de gerar a proposta.</p>
-            ) : (
-              <div className="space-y-2 mb-5 max-h-60 overflow-y-auto">
-                {clientPrices.map(t => (
-                  <label key={t.id} className={`flex items-center gap-2 p-2.5 rounded border cursor-pointer ${proposalTableId === t.id ? "border-neutral-900 bg-neutral-50" : "border-neutral-200 hover:border-neutral-400"}`} data-testid={`option-table-${t.id}`}>
-                    <input type="radio" name="proposalTable" checked={proposalTableId === t.id} onChange={() => setProposalTableId(t.id)} className="accent-neutral-900" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-black text-neutral-800 truncate">{t.name || "Tabela sem nome"}</div>
-                      <div className="text-[10px] font-bold text-neutral-500">KM exc. {fmt(t.valor_km_extra)} · HR exc. {fmt(t.valor_hora_extra)}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-            <Button onClick={handleGenerateProposal} disabled={generatingProposal || !proposalTableId} className="w-full bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-confirm-proposal">
-              {generatingProposal ? <><Loader2 size={14} className="mr-1 animate-spin" /> Gerando PDF…</> : <><FileDown size={14} className="mr-1" /> Gerar PDF da Proposta</>}
-            </Button>
-          </Card>
-        </div>
-      )}
       {selectedMissionId && <MissionDetailModal osId={selectedMissionId} onClose={() => setSelectedMissionId(null)} />}
     </div>
   );
