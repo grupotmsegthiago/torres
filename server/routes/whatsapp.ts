@@ -337,7 +337,10 @@ export function registerWhatsappRoutes(app: Express) {
       const senderShort = senderName.split(/\s+/).slice(0, 2).join(" ");
       const formatted = `*Central Torres - (${senderShort})*:\n${text.trim()}`;
 
-      const r = await sendText({ groupOrPhone: chatId, message: formatted });
+      // persist:false — esta rota grava a mensagem logo abaixo com o nome do
+      // operador logado (sendText gravaria com remetente genérico). Sem isso a
+      // mesma mensagem entraria 2x.
+      const r = await sendText({ groupOrPhone: chatId, message: formatted, persist: false });
       if (!r.ok) return res.status(502).json({ ok: false, error: r.error || "falha Z-API" });
 
       const ts = new Date().toISOString();

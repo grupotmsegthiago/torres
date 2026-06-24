@@ -46,3 +46,4 @@
 - [E-mail padrão de NF ao cliente](nf-client-email-template.md) — é o sendBillingEmail (só após anexar NF); corpo em buildNfClientEmail; PIX = copia-e-cola DINÂMICO do Asaas (baixa automática), não a chave estática; só e-mail, não toca billing.
 - [Marca d'água nas fotos de grupo](photo-watermark-group-cards.md) — toda foto a grupo de cliente leva logo+contatos (fail-open); assets EMBUTIDOS no bundle (esbuild não copia .local/assets); cobre forward-cron + km-final.
 - [Rastreio de fatura (rota do dinheiro)](invoice-money-trace.md) — timeline da fatura agrega 5 fontes sem FK comum; baixa manual dinheiro/PIX só existe em nfse_observations (texto livre, parse regex); só leitura.
+- [Tela interna WhatsApp espelha só whatsapp_messages](whatsapp-internal-mirror.md) — saída do bot (sendText/sendImageWithCaption) tem que PERSISTIR senão some da tela; webhook+/send não cobrem.

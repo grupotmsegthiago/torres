@@ -11,6 +11,8 @@
  * sem o sufixo @g.us — normalizamos pra tolerar os dois formatos.
  */
 
+import { persistOutgoingWhatsappMessage } from "./whatsapp-store";
+
 const INSTANCE_ID = process.env.ZAPI_INSTANCE_ID || "";
 const TOKEN = process.env.ZAPI_TOKEN || "";
 const CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || "";
@@ -265,6 +267,10 @@ export async function sendImageWithCaption(params: {
   caption: string;
   /** Segundos mostrando "digitando..." antes de enviar (Z-API delayMessage). Humaniza o envio. */
   delayMessageSeconds?: number;
+  /** Grava a saída em whatsapp_messages p/ espelhar na tela interna. Default: true. */
+  persist?: boolean;
+  /** Nome exibido como remetente no espelho da tela. */
+  senderName?: string;
 }): Promise<ZapiSendImageResult> {
   if (!isZapiConfigured()) {
     return { ok: false, error: "Z-API não configurada (ZAPI_INSTANCE_ID/ZAPI_TOKEN/ZAPI_CLIENT_TOKEN)" };
@@ -301,7 +307,23 @@ export async function sendImageWithCaption(params: {
     if (!resp.ok) {
       return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
     }
-    return { ok: true, messageId: parsed?.id || parsed?.messageId, raw: parsed };
+    const messageId = parsed?.id || parsed?.messageId;
+    // Espelha na tela interna (whatsapp_messages). Não guardamos base64 na
+    // tabela (memória: lista pesada com base64 derruba Supabase) — só URL http;
+    // base64 fica como mensagem de imagem com a legenda, sem o blob.
+    if (params.persist !== false) {
+      const isHttp = /^https?:\/\//i.test(params.imageBase64OrUrl || "");
+      await persistOutgoingWhatsappMessage({
+        chatId: phone,
+        messageId,
+        type: "image",
+        body: params.caption || null,
+        mediaUrl: isHttp ? params.imageBase64OrUrl : null,
+        mediaMime: isHttp ? "image/jpeg" : null,
+        senderName: params.senderName,
+      });
+    }
+    return { ok: true, messageId, raw: parsed };
   } catch (err: any) {
     return { ok: false, error: sanitize(err?.message || String(err)) };
   }
@@ -500,6 +522,10 @@ export async function sendText(params: {
   delayMessageSeconds?: number;
   /** Força o "digitando..." mesmo com o toggle global de delay desligado. */
   forceDelay?: boolean;
+  /** Grava a saída em whatsapp_messages p/ espelhar na tela interna. Default: true. */
+  persist?: boolean;
+  /** Nome exibido como remetente no espelho da tela. */
+  senderName?: string;
 }): Promise<ZapiSendImageResult> {
   if (!isZapiConfigured()) {
     return { ok: false, error: "Z-API não configurada" };
@@ -536,7 +562,20 @@ export async function sendText(params: {
     let parsed: any = null;
     try { parsed = text ? JSON.parse(text) : null; } catch { /* */ }
     if (!resp.ok) return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
-    return { ok: true, messageId: parsed?.id || parsed?.messageId, raw: parsed };
+    const messageId = parsed?.id || parsed?.messageId;
+    // Espelha na tela interna (whatsapp_messages) — fecha o buraco das cobranças
+    // do bot que não apareciam. O /api/whatsapp/send passa persist:false (ele já
+    // grava com o nome do operador).
+    if (params.persist !== false) {
+      await persistOutgoingWhatsappMessage({
+        chatId: phone,
+        messageId,
+        type: "text",
+        body: params.message,
+        senderName: params.senderName,
+      });
+    }
+    return { ok: true, messageId, raw: parsed };
   } catch (err: any) {
     return { ok: false, error: sanitize(err?.message || String(err)) };
   }
