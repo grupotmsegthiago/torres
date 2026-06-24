@@ -1424,13 +1424,20 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       return;
     }
 
-    // (sem menção) pedido operacional comum → escalonamento silencioso.
+    // (sem menção) pedido operacional comum.
     if (hasRecentOpen) {
       console.log(`[agent-central-mention] OS ${os.os_number || os.id} já tem pedido aberto recente no grupo — pulando (anti-spam)`);
       return;
     }
 
-    // Cobra SÓ o 1º agente por DM IMEDIATAMENTE. A Central NÃO fala no grupo.
+    // A Central RESPONDE no grupo ao detectar um pedido de atualização que é dela
+    // (OS resolvida), mesmo SEM @menção — decisão do dono (24/06/2026): antes ela
+    // só cobrava o agente no privado e ficava calada, e o cliente interpretava
+    // como "ignorando". Agora ela avisa no grupo (mesmo ack do caminho de @menção,
+    // com "digitando..." + throttle próprio + trava financeira) E cobra o 1º
+    // agente por DM. A atualização REAL volta via fulfillGroupRequests quando o
+    // agente reportar. O anti-spam (hasRecentOpen, 10min/OS) limita o ruído/ban.
+    await handleTaggedUpdateAck(parsed);
     await cobrarAgentes(os);
 
     // Arma o timer de escalonamento: registra o pedido com ack_decide_at = agora
@@ -1450,7 +1457,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       })
       .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request falhou:", e?.message));
 
-    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: 1º agente cobrado por DM; escalonamento p/ 2º armado em ${ESCALATE_AFTER_MIN}min se não houver resposta`);
+    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: avisou no grupo + 1º agente cobrado por DM; escalonamento p/ 2º armado em ${ESCALATE_AFTER_MIN}min se não houver resposta`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }
