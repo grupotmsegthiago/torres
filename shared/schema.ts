@@ -177,6 +177,9 @@ export const employeeSalaries = pgTable("employee_salaries", {
   periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
   dependentesIr: integer("dependentes_ir").default(0),
   ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
+  // Modelo Torres (planilha do dono): Vale Alimentação mensal + Assiduidade mensal (benefícios à parte)
+  valeAlimentacaoMensal: decimal("vale_alimentacao_mensal", { precision: 10, scale: 2 }).default("0"),
+  assiduidadeMensal: decimal("assiduidade_mensal", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

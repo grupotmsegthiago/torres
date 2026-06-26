@@ -256,6 +256,8 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     periculosidadePct: "30",
     dependentesIr: "0",
     ajudaCustoMensal: "0",
+    valeAlimentacaoMensal: "0",
+    assiduidadeMensal: "0",
   });
 
   const createMutation = useMutation({
@@ -271,6 +273,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
         valeTransporteMensal: "0", beneficiosOutros: "0",
         encargosPct: "80", horasMensais: "220",
         periculosidadePct: "30", dependentesIr: "0", ajudaCustoMensal: "0",
+        valeAlimentacaoMensal: "0", assiduidadeMensal: "0",
       });
       toast({ title: "Salário cadastrado" });
     },
@@ -353,6 +356,16 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Ajuda de Custo (R$/mês)</label>
                   <Input type="text" inputMode="decimal" value={form.ajudaCustoMensal} onChange={(e) => setForm({ ...form, ajudaCustoMensal: e.target.value })} placeholder="0" data-testid="input-salary-ajuda" />
                   <p className="text-[10px] text-neutral-500 mt-0.5">Valor fixo mensal</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Vale Alimentação (R$/mês)</label>
+                  <Input type="text" inputMode="decimal" value={form.valeAlimentacaoMensal} onChange={(e) => setForm({ ...form, valeAlimentacaoMensal: e.target.value })} placeholder="0" data-testid="input-salary-va" />
+                  <p className="text-[10px] text-neutral-500 mt-0.5">Benefício à parte (planilha)</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Assiduidade (R$/mês)</label>
+                  <Input type="text" inputMode="decimal" value={form.assiduidadeMensal} onChange={(e) => setForm({ ...form, assiduidadeMensal: e.target.value })} placeholder="0" data-testid="input-salary-assiduidade" />
+                  <p className="text-[10px] text-neutral-500 mt-0.5">Prêmio mensal (planilha)</p>
                 </div>
               </div>
               <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !form.baseSalary || !form.effectiveDate} className="w-full mt-3" data-testid="button-save-salary">

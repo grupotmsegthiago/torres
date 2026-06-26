@@ -25,6 +25,7 @@ import {
   minuteKeyBRT,
   decideImport,
 } from "./lib/control-id-parsers";
+import { calcularIRRF } from "./lib/payroll";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
 
@@ -1406,14 +1407,16 @@ export async function buildFolhaStats(
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
-  const valorHora = hoursLimit > 0 ? baseSalary / hoursLimit : 0;
+  // Hora-base inclui periculosidade (Súmula 132 TST) — bate com a planilha do dono
+  // (HE 24,26 = 15,16×1,6 e Noturno 27,29 = 15,16×1,8, onde 15,16 = base×1,3/220).
+  const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
+  const valorHora = hoursLimit > 0 ? (baseSalary * fatorPericVH) / hoursLimit : 0;
   const valorHoraExtra = valorHora * multiplicadorHE;
-  // Adicional noturno: 20% (CCT) SOBRE a hora normal, só sobre as horas
-  // efetivamente trabalhadas entre 22h e 05h. É só o prêmio de 20% — a hora-base
-  // em si já está paga no salário (as horas noturnas são subconjunto das horas
-  // trabalhadas), então NÃO multiplicar por 1.20 aqui pra não pagar a hora 2x.
-  const adicionalNoturnoPct = (CCT as any).adicionalNoturnoPct ?? 20;
-  const adicionalNoturno = +(valorHora * (adicionalNoturnoPct / 100) * horasNoturnas).toFixed(2);
+  // Adicional noturno (modelo Torres, revertido pelo dono): hora cheia 1,80×
+  // (hora + 60% HE + 20% noturno) sobre as horas entre 22h–05h. Antes era só o
+  // prêmio de 20% — ver memória payroll-night-additional.
+  const multiplicadorAdicNot = (CCT as any).multiplicadorAdicNot ?? 1.8;
+  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnas).toFixed(2);
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
@@ -1507,6 +1510,16 @@ export async function buildFolhaStats(
   faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
   faturamentoMargem = +faturamentoMargem.toFixed(2);
 
+  // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
+  // Base tributável = Salário(c/ peric) + HE + Noturno (= vencimentosTotal, já ratado).
+  // INSS 12% fixo; IRRF progressivo (base − INSS); líquido DESCONTA FGTS (regra do dono).
+  // Não entra no custo da empresa (custoTotalEstimado já é o bruto + encargos patronais).
+  const baseTributavelFunc = vencimentosTotal;
+  const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
+  const irrfFuncionario = isClt ? +calcularIRRF(baseTributavelFunc - inssFuncionario, 0).toFixed(2) : 0;
+  const fgtsFuncionario = fgts; // 8% sobre vencimentos (desconta do líquido no modelo Torres)
+  const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario - fgtsFuncionario).toFixed(2);
+
   return {
     employeeId,
     monthYear,
@@ -1523,10 +1536,10 @@ export async function buildFolhaStats(
     valorHoraExtra: +valorHoraExtra.toFixed(2),
     custoExtra,
     custoBase: +custoBase.toFixed(2),
-    // Adicional noturno (22h–05h) — horas e valor (prêmio de 20% sobre a hora)
+    // Adicional noturno (22h–05h) — hora cheia 1,80× (modelo Torres)
     horasNoturnas: +horasNoturnas.toFixed(2),
     adicionalNoturno,
-    adicionalNoturnoPct,
+    multiplicadorAdicNot,
     // Novos componentes detalhados (ratados quando mês corrente)
     periculosidade,
     periculosidadePct,
@@ -1553,6 +1566,12 @@ export async function buildFolhaStats(
     inssPatronalPct,
     seguroVida,
     recolhimentosTotal,
+    // Deduções do FUNCIONÁRIO (modelo Torres — exibição; NÃO entram no custo empresa)
+    baseTributavelFuncionario: +baseTributavelFunc.toFixed(2),
+    inssFuncionario,
+    irrfFuncionario,
+    fgtsFuncionario,
+    liquidoFuncionario,
     encargosPct: encargosPctEfetivo,
     isClt,
     custoComEncargos,

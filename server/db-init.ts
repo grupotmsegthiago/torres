@@ -1902,11 +1902,18 @@ export async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS periculosidade_pct NUMERIC(5,2) DEFAULT 30.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS dependentes_ir INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 0`);
+    // Modelo Torres (planilha do dono): Vale Alimentação + Assiduidade (benefícios à parte)
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_alimentacao_mensal NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS assiduidade_mensal NUMERIC(10,2) DEFAULT 0`);
     // Backfill: registros antigos vêm com NULL → aplica padrão Folha 2025 (vigilantes = 30% periculosidade)
     await execSql(`UPDATE employee_salaries SET periculosidade_pct = 30.00 WHERE periculosidade_pct IS NULL`);
     await execSql(`UPDATE employee_salaries SET dependentes_ir = 0 WHERE dependentes_ir IS NULL`);
     await execSql(`UPDATE employee_salaries SET ajuda_custo_mensal = 0 WHERE ajuda_custo_mensal IS NULL`);
-    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta + folha 2025)");
+    await execSql(`UPDATE employee_salaries SET vale_alimentacao_mensal = 0 WHERE vale_alimentacao_mensal IS NULL`);
+    await execSql(`UPDATE employee_salaries SET assiduidade_mensal = 0 WHERE assiduidade_mensal IS NULL`);
+    // Recarrega o schema cache do PostgREST p/ as novas colunas aparecerem na API REST
+    await execSql(`NOTIFY pgrst, 'reload schema'`);
+    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta + folha 2025 + VA/assiduidade)");
   } catch (e: any) {
     console.error("[db-init] employee_salaries alter error:", e.message);
   }

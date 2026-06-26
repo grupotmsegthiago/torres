@@ -5,17 +5,27 @@
  * contra planilha contábil de referência (caso EDIVANDO):
  *   Bruto R$ 7.359,26 / Deduções R$ 1.817,39 / Provisões R$ 576,13
  *
- * Ordem de cálculo:
- *   1) Salário proporcional (base ÷ 30 × dias_trabalhados)
- *   2) Periculosidade (30% sobre salário proporcional)
- *   3) Horas Extras (sal_h × 1,60 × horas_extras)
- *   4) Adicional Noturno (sal_h × 0,20 × horas_noturnas — só o prêmio; hora-base já no salário)
- *   5) DSR sobre HE + AdicNot
- *   6) Total Bruto Tributável (1+2+3+4+5)
- *   7) INSS progressivo 2025 (com teto)
- *   8) IRRF progressivo 2024+ (base = bruto - INSS - dependentes)
- *   9) FGTS 8% sobre bruto tributável
- *   10) Provisões: 13º, Férias, 1/3, FGTS s/ provisões, INSS s/ provisões
+ * MODELO TORRES (planilha do dono — aprovado 26/06/2026; aplica em TUDO):
+ *   IMPORTANTE: o cadastro guarda `base_salary` SEM periculosidade (ex.: 2.565,31).
+ *   A periculosidade (30%) É somada e é justamente o que chega no "Salário" da
+ *   planilha (2.565,31 × 1,30 = 3.334,90). A "salário" da planilha = base × 1,30.
+ *
+ *   1) Salário proporcional (base ÷ 30 × dias_trabalhados).
+ *   2) Periculosidade somada (salarioProporcional × peric%) → compõe o "Salário"
+ *      da planilha. A hora-base (valorHora) TAMBÉM inclui peric (Súmula 132 TST):
+ *      valorHora = base × (1 + peric%) ÷ horasMensais.
+ *   3) Horas Extras (valorHora × 1,60 × horas_extras)
+ *   4) Hora Noturna (valorHora × 1,80 × horas_noturnas — hora cheia + 60% HE + 20% not).
+ *   5) DSR: NÃO aplicado → aplicarDsr=false.
+ *   6) Total tributável = Salário(c/ peric) + HE + Noturno (sem DSR).
+ *   7) INSS = 12% fixo sobre o total tributável (inssModo="flat", inssFlatPct=12).
+ *   8) IRRF progressivo 2024+ (base = total − INSS − dependentes).
+ *   9) FGTS 8% sobre o total tributável.
+ *   10) Líquido = Total − IRRF − INSS − FGTS − VT (FGTS DESCONTA do líquido).
+ *   11) Provisões: 13º, Férias, 1/3, FGTS s/ provisões, INSS s/ provisões (custo empresa).
+ *
+ * Regra travada revertida pelo dono: adicional noturno passou de 20% (só prêmio)
+ * para hora cheia 1,80× — ver memória payroll-night-additional.
  */
 
 // ===== TABELAS OFICIAIS 2025 =====
@@ -113,9 +123,23 @@ export interface PayrollInput {
   horasNoturnas?: number;
   /** Multiplicador HE (default 1.60 = 60% adicional). */
   multiplicadorHE?: number;
-  /** Multiplicador adicional noturno (default 0.20 = só o prêmio de 20%; a hora-base
-   * trabalhada à noite já está paga no salário mensal — CLT Art. 73). */
+  /** Multiplicador da hora noturna (default 1.80 = hora cheia + 60% HE + 20% noturno,
+   * modelo da planilha do dono). Antes era 0.20 (só o prêmio). */
   multiplicadorAdicNot?: number;
+  /** Aplicar periculosidade separada? Default `false` — no modelo Torres o salário
+   * já inclui a periculosidade, então não se soma 30% por cima. */
+  aplicarPericulosidade?: boolean;
+  /** Aplicar DSR sobre HE/Noturno? Default `false` no modelo Torres. */
+  aplicarDsr?: boolean;
+  /** Modo de cálculo do INSS. Default "flat" (12% fixo, modelo Torres).
+   * "progressivo" usa a tabela oficial 2025 com teto. */
+  inssModo?: "flat" | "progressivo";
+  /** Alíquota fixa de INSS quando inssModo="flat" (default 12 = 12%). */
+  inssFlatPct?: number;
+  /** Descontar o FGTS do líquido do funcionário? Default `true` (modelo Torres). */
+  fgtsNoLiquido?: boolean;
+  /** Valor de VT descontado do líquido (R$). Default 0. */
+  vtDesconto?: number;
   /** Dias úteis para refeição (seg-sex, exclui feriados). Default 0. */
   diasUteis?: number;
   /**
@@ -182,7 +206,13 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     horasExtras = 0,
     horasNoturnas = 0,
     multiplicadorHE = 1.6,
-    multiplicadorAdicNot = 0.2,
+    multiplicadorAdicNot = 1.8,
+    aplicarPericulosidade = true,
+    aplicarDsr = false,
+    inssModo = "flat",
+    inssFlatPct = 12,
+    fgtsNoLiquido = true,
+    vtDesconto = 0,
     diasUteis = 0,
     diasUteisDSR = 25,
     refeicaoDiaria = 0,
@@ -195,15 +225,18 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
 
   // 1) Vencimentos
   const salarioProporcional = r2((salarioBaseCheio / 30) * diasTrabalhados);
-  const periculosidade = r2(salarioProporcional * periculosidadePct);
+  // Periculosidade somada (base do cadastro é SEM peric). Compõe o "Salário" da planilha.
+  const periculosidade = aplicarPericulosidade ? r2(salarioProporcional * periculosidadePct) : 0;
 
-  // Hora cheia baseada no salário CHEIO (sem proporcional, sem peric — convenção CCT)
-  const valorHoraNormal = horasMensais > 0 ? salarioBaseCheio / horasMensais : 0;
+  // Hora cheia baseada no salário CHEIO COM periculosidade (Súmula 132 TST): a peric
+  // integra a base de cálculo de HE e adicional noturno. valorHora = base × (1+peric) ÷ horas.
+  const fatorPeric = aplicarPericulosidade ? 1 + periculosidadePct : 1;
+  const valorHoraNormal = horasMensais > 0 ? (salarioBaseCheio * fatorPeric) / horasMensais : 0;
   const horasExtrasValor = r2(valorHoraNormal * multiplicadorHE * horasExtras);
   const adicionalNoturnoValor = r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
 
-  // DSR sobre HE + Adicional Noturno (fórmula CLT: descanso ÷ úteis_DSR)
-  const dsr = diasUteisDSR > 0
+  // DSR sobre HE + Adicional Noturno — desligado no modelo Torres.
+  const dsr = (aplicarDsr && diasUteisDSR > 0)
     ? r2((horasExtrasValor + adicionalNoturnoValor) * (diasDescanso / diasUteisDSR))
     : 0;
 
@@ -217,7 +250,10 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   const totalBruto = r2(baseTributavel + refeicao + ajudaCusto);
 
   // 2) Deduções — só CLT tem INSS/IRRF/FGTS. Não-CLT (PJ, fixo) zera tudo.
-  const inss = isClt ? calcularINSS(baseTributavel) : 0;
+  // INSS: modelo Torres usa 12% fixo; "progressivo" mantém a tabela oficial com teto.
+  const inss = isClt
+    ? (inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel))
+    : 0;
   const irrf = isClt ? calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
   const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
   const totalDeducoes = r2(inss + irrf);
@@ -239,7 +275,12 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   // (já é o desembolso total). Líquido pro funcionário: CLT desconta INSS/IRRF,
   // não-CLT recebe o bruto integral.
   const custoTotalEmpresa = r2(totalBruto + fgts + totalProvisoes);
-  const liquidoFuncionario = r2(totalBruto - inss - irrf);
+  // Líquido modelo Torres: Total tributável − INSS − IRRF − FGTS − VT.
+  // (FGTS desconta do líquido por decisão do dono; benefícios indenizatórios
+  // como VR/ajuda ficam numa tabela separada e não entram no líquido salarial.)
+  const liquidoFuncionario = r2(
+    baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
+  );
 
   return {
     salarioProporcional,

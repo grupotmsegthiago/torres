@@ -277,7 +277,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     const { baseSalary, effectiveDate, reason, notes,
             valeRefeicaoDiario, cestaBasica, valeTransporteMensal,
             beneficiosOutros, encargosPct, horasMensais,
-            periculosidadePct, dependentesIr, ajudaCustoMensal } = req.body;
+            periculosidadePct, dependentesIr, ajudaCustoMensal,
+            valeAlimentacaoMensal, assiduidadeMensal } = req.body;
     if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
     const payload: any = {
       employeeId: emp.id,
@@ -296,6 +297,9 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     if (periculosidadePct !== undefined && periculosidadePct !== "") payload.periculosidadePct = String(periculosidadePct);
     if (dependentesIr !== undefined && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr);
     if (ajudaCustoMensal !== undefined && ajudaCustoMensal !== "") payload.ajudaCustoMensal = String(ajudaCustoMensal);
+    // Modelo Torres: benefícios à parte (VA + Assiduidade)
+    if (valeAlimentacaoMensal !== undefined && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = String(valeAlimentacaoMensal);
+    if (assiduidadeMensal !== undefined && assiduidadeMensal !== "") payload.assiduidadeMensal = String(assiduidadeMensal);
     const salary = await storage.createEmployeeSalary(payload);
     res.status(201).json(salary);
   });
@@ -481,6 +485,10 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       // Regime de contratação: não-CLT (PJ, fixo) não tem INSS/IRRF/FGTS.
       const isClt = (emp as any).tipoContratacao !== "fixo" && (emp as any).tipo_contratacao !== "fixo";
 
+      // VT desconto (modelo Torres): 6% do salário (c/ peric, proporcional) quando há VT.
+      const salarioComPericProp = baseSalary * (diasTrabalhados / 30) * (1 + periculosidadePct);
+      const vtDesconto = vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
+
       // ===== ENGINE DE FOLHA 2025 (mesmo padrão do custo fixo) =====
       const folha = calcularFolha({
         salarioBaseCheio: baseSalary,
@@ -494,20 +502,28 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         ajudaCustoMensal,
         dependentesIR,
         isClt,
+        vtDesconto,
       });
 
       // Vencimentos visíveis (CLT — base + peric + HE + DSR + adic + benefícios)
       const totalVencimentos = +(folha.totalBruto + cestaMensal + vt + outros).toFixed(2);
+      // Benefícios pagos à parte (não entram no líquido salarial do modelo Torres)
+      const valeAlimentacao = Number(sal.vale_alimentacao_mensal || 0);
+      const assiduidade = Number(sal.assiduidade_mensal || 0);
+      const totalBeneficios = +(folha.refeicao + folha.ajudaCusto + cestaMensal + valeAlimentacao + assiduidade + outros).toFixed(2);
 
-      // Descontos manuais (ocorrências) + descontos legais (INSS + IRRF)
+      // Descontos manuais (ocorrências) + descontos legais (INSS + IRRF + FGTS + VT)
       const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*")
         .eq("employee_id", empId).eq("month", month).eq("year", year);
       const totalDescontosManuais = (discounts || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
-      const totalDeducoesLegais = +(folha.inss + folha.irrf).toFixed(2);
-      const liquido = +(totalVencimentos - totalDescontosManuais - totalDeducoesLegais).toFixed(2);
+      const totalDeducoesLegais = +(folha.inss + folha.irrf + folha.fgts + vtDesconto).toFixed(2);
+      // Líquido salarial modelo Torres = Total tributável − INSS − IRRF − FGTS − VT − descontos manuais.
+      // Benefícios (VR/VA/cesta/assiduidade/ajuda) são pagos à parte (totalBeneficios).
+      const liquido = +(folha.liquidoFuncionario - totalDescontosManuais).toFixed(2);
+      const totalReceber = +(liquido + totalBeneficios).toFixed(2);
 
       // Custo total para a empresa (idêntico ao fixed-costs)
-      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros).toFixed(2);
+      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros + valeAlimentacao + assiduidade).toFixed(2);
 
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
@@ -538,13 +554,24 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           registros: registrosPonto,
           mesRef,
         },
-        // ► Deduções legais (INSS / IRRF / FGTS)
+        // ► Deduções legais (INSS / IRRF / FGTS / VT) — modelo Torres desconta FGTS+VT
         deducoesLegais: {
           inss: folha.inss,
           irrf: folha.irrf,
           fgts: folha.fgts,
+          valeTransporte: vtDesconto,
           dependentesIR,
           total: totalDeducoesLegais,
+        },
+        // ► Benefícios pagos à parte (não entram no líquido salarial)
+        beneficios: {
+          valeRefeicao: folha.refeicao,
+          valeAlimentacao,
+          cestaBasica: cestaMensal,
+          assiduidade,
+          ajudaCusto: folha.ajudaCusto,
+          outros,
+          total: totalBeneficios,
         },
         // ► Provisões mensais (custo da empresa)
         provisoes: {

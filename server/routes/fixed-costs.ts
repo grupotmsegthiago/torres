@@ -503,15 +503,17 @@ export function registerFixedCostsRoutes(app: Express) {
     const porAgente: any[] = [];
     let totalMensal = 0;
     const acc = {
-      base: 0, peric: 0, he: 0, refeicao: 0,
+      base: 0, peric: 0, he: 0, noturno: 0, refeicao: 0,
       fgts: 0, inssPatronal: 0, seguroVida: 0,
       cesta: 0, diarias: 0,
+      inssFunc: 0, irrfFunc: 0, liquidoFunc: 0,
     };
 
-    // Alinhado em 25/05/2026 com a tela Ponto Eletrônico (control-id.tsx → buildFolhaStats):
-    // mesma fórmula de Custo Real (Vencimentos + Benefícios + Recolhimentos), mantendo o
-    // adicional de HE em 60% (CCT) em vez dos 50% legais. Sem provisões, sem DSR, sem
-    // adicional noturno — o Balanço Gerencial é fluxo de caixa do mês, não competência CLT.
+    // Alinhado com a tela Ponto Eletrônico (control-id.tsx → buildFolhaStats):
+    // mesma fórmula de Custo Real (Vencimentos + Benefícios + Recolhimentos), HE em 60%
+    // (CCT) em vez dos 50% legais. Sem provisões, sem DSR. Modelo Torres (26/06/2026):
+    // adicional noturno É incluído (hora cheia 1,80×) e INSS/IRRF/líquido do funcionário
+    // vêm de buildFolhaStats só p/ exibição (NÃO entram no custo da empresa).
     const mesRef = String(from).slice(0, 7); // "YYYY-MM"
     const { buildFolhaStats } = await import("../control-id");
 
@@ -546,6 +548,10 @@ export function registerFixedCostsRoutes(app: Express) {
       const base = Number(s.baseSalary || 0);
       const peric = Number(s.periculosidade || 0);
       const heVal = Number(s.custoExtra || 0);
+      const noturnoVal = Number(s.adicionalNoturno || 0);
+      const inssFuncVal = Number(s.inssFuncionario || 0);
+      const irrfFuncVal = Number(s.irrfFuncionario || 0);
+      const liquidoFuncVal = Number(s.liquidoFuncionario || 0);
       const vrTotal = Number(s.valeRefeicao || 0);
       const cesta = Number(s.cestaBasica || 0);
       // Diárias: usar a mesma fonte que entrou em `custoTotalEstimado` (s.diarias),
@@ -558,9 +564,10 @@ export function registerFixedCostsRoutes(app: Express) {
       const inssPatronal = Number(s.inssPatronal || 0);
       const seguroVida = Number(s.seguroVida || 0);
 
-      acc.base += base; acc.peric += peric; acc.he += heVal;
+      acc.base += base; acc.peric += peric; acc.he += heVal; acc.noturno += noturnoVal;
       acc.refeicao += vrTotal; acc.cesta += cesta; acc.diarias += diariasEmp;
       acc.fgts += fgts; acc.inssPatronal += inssPatronal; acc.seguroVida += seguroVida;
+      acc.inssFunc += inssFuncVal; acc.irrfFunc += irrfFuncVal; acc.liquidoFunc += liquidoFuncVal;
 
       const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
       const horasNormaisMes = Math.min(220, hm.normais);
@@ -579,7 +586,7 @@ export function registerFixedCostsRoutes(app: Express) {
         salarioProporcional: base,
         periculosidade: peric,
         horaExtra: heVal,
-        adicionalNoturno: 0,
+        adicionalNoturno: noturnoVal,
         dsr: 0,
         valorHoraExtra: Number(s.valorHoraExtra || 0),
         // Benefícios
@@ -597,10 +604,10 @@ export function registerFixedCostsRoutes(app: Express) {
         // Compat com UI antiga
         base,
         encargos: fgts + inssPatronal + seguroVida,
-        inss: 0, irrf: 0,
-        totalBruto: base + peric + heVal,
-        totalDeducoes: 0,
-        liquidoFuncionario: base + peric + heVal,
+        inss: inssFuncVal, irrf: irrfFuncVal,
+        totalBruto: base + peric + heVal + noturnoVal,
+        totalDeducoes: +(inssFuncVal + irrfFuncVal).toFixed(2),
+        liquidoFuncionario: liquidoFuncVal,
         decimoTerceiro: 0,
         ferias: 0,
         provisaoTercoFerias: 0,
@@ -641,20 +648,20 @@ export function registerFixedCostsRoutes(app: Express) {
         decimoTerceiro: 0,
         rescisao: 0,
         horaExtra: acc.he,
-        adicionalNoturno: 0,
+        adicionalNoturno: acc.noturno,
         beneficios: acc.refeicao + acc.cesta + acc.diarias,
         // Folha (Ponto Eletrônico)
         salarioProporcional: acc.base,
         periculosidade: acc.peric,
         dsr: 0,
         ajudaCusto: 0,
-        totalBruto: acc.base + acc.peric + acc.he,
-        inss: 0, irrf: 0, fgts: acc.fgts,
+        totalBruto: acc.base + acc.peric + acc.he + acc.noturno,
+        inss: +acc.inssFunc.toFixed(2), irrf: +acc.irrfFunc.toFixed(2), fgts: acc.fgts,
         // Novos campos (encargos empresa)
         inssPatronal: acc.inssPatronal,
         seguroVida: acc.seguroVida,
-        totalDeducoes: 0,
-        liquidoFuncionario: acc.base + acc.peric + acc.he,
+        totalDeducoes: +(acc.inssFunc + acc.irrfFunc).toFixed(2),
+        liquidoFuncionario: +acc.liquidoFunc.toFixed(2),
         provisaoTercoFerias: 0,
         provisaoFGTSsobreFerias13: 0,
         provisaoINSSsobreFerias13: 0,
