@@ -516,8 +516,10 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*")
         .eq("employee_id", empId).eq("month", month).eq("year", year);
       const totalDescontosManuais = (discounts || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
-      const totalDeducoesLegais = +(folha.inss + folha.irrf + folha.fgts + vtDesconto).toFixed(2);
-      // Líquido salarial modelo Torres = Total tributável − INSS − IRRF − FGTS − VT − descontos manuais.
+      // FGTS NÃO desconta do líquido (depósito do empregador) — fica fora do total de deduções.
+      const totalDeducoesLegais = +(folha.inss + folha.irrf + vtDesconto).toFixed(2);
+      // Líquido salarial modelo Torres = Total tributável − INSS − IRRF − VT − descontos manuais.
+      // (FGTS é depósito do empregador, não desconta — decisão do dono 26/06/2026.)
       // Benefícios (VR/VA/cesta/assiduidade/ajuda) são pagos à parte (totalBeneficios).
       const liquido = +(folha.liquidoFuncionario - totalDescontosManuais).toFixed(2);
       const totalReceber = +(liquido + totalBeneficios).toFixed(2);
@@ -554,7 +556,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           registros: registrosPonto,
           mesRef,
         },
-        // ► Deduções legais (INSS / IRRF / FGTS / VT) — modelo Torres desconta FGTS+VT
+        // ► Deduções legais (INSS / IRRF / VT). FGTS é depósito do empregador (informativo,
+        // NÃO entra no total nem desconta do líquido — decisão do dono 26/06/2026).
         deducoesLegais: {
           inss: folha.inss,
           irrf: folha.irrf,

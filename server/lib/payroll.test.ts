@@ -91,7 +91,7 @@ test("modelo Torres: hora noturna = valorHora(c/ peric) × 1.8 × horas", () => 
   assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * 10) < 0.01, "noturno 1.8× sobre hora c/ peric");
 });
 
-test("modelo Torres: INSS 12% fixo + FGTS 8% + líquido desconta FGTS", () => {
+test("modelo Torres: INSS 12% + IRRF 22% fixos + FGTS NÃO desconta do líquido", () => {
   // peric desligada p/ isolar: base = 2200.
   const f = calcularFolha({
     salarioBaseCheio: 2200,
@@ -101,9 +101,10 @@ test("modelo Torres: INSS 12% fixo + FGTS 8% + líquido desconta FGTS", () => {
   });
   assert.equal(f.baseTributavel, 2200, "base = salário (sem peric/dsr)");
   assert.equal(f.inss, 264, "INSS 12% fixo (2200 × 0.12)");
+  assert.equal(f.irrf, 484, "IRRF 22% fixo sobre o bruto (2200 × 0.22)");
   assert.equal(f.fgts, 176, "FGTS 8% (2200 × 0.08)");
-  // líquido = base − inss − irrf − fgts (irrf 0 nessa faixa).
-  assert.equal(f.liquidoFuncionario, +(2200 - 264 - f.irrf - 176).toFixed(2), "líquido desconta FGTS");
+  // líquido = base − inss − irrf (FGTS NÃO desconta do líquido).
+  assert.equal(f.liquidoFuncionario, +(2200 - 264 - 484).toFixed(2), "líquido = base − INSS − IRRF (sem FGTS)");
 });
 
 test("modelo Torres: regressão planilha do dono (caso André)", () => {
@@ -133,8 +134,9 @@ test("modelo Torres: regressão planilha do dono (caso André)", () => {
   assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * horasNoturnas) < 0.01, "Noturno = valorHora(c/peric) × 1.8 × horas");
   assert.equal(f.baseTributavel, +(salarioComPeric + f.horasExtrasValor + f.adicionalNoturnoValor).toFixed(2), "Total = salário(c/peric) + HE + Noturno");
   assert.equal(f.inss, +(f.baseTributavel * 0.12).toFixed(2), "INSS 12% do total");
+  assert.equal(f.irrf, +(f.baseTributavel * 0.22).toFixed(2), "IRRF 22% fixo do total (modelo Torres)");
   assert.equal(f.fgts, +(f.baseTributavel * 0.08).toFixed(2), "FGTS 8% do total");
-  assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf - f.fgts).toFixed(2), "líquido = Total − IRRF − INSS − FGTS");
+  assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf).toFixed(2), "líquido = Total − INSS − IRRF (FGTS NÃO desconta)");
   // Sanidade: total perto dos R$ 8.846 da planilha (difere uns reais pelo artefato HH:MM dela)
   assert.ok(Math.abs(f.baseTributavel - 8846.26) < 25, `Total (${f.baseTributavel}) ~ 8846,26`);
 });

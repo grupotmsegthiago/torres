@@ -25,7 +25,6 @@ import {
   minuteKeyBRT,
   decideImport,
 } from "./lib/control-id-parsers";
-import { calcularIRRF } from "./lib/payroll";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
 
@@ -1512,13 +1511,15 @@ export async function buildFolhaStats(
 
   // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
   // Base tributável = Salário(c/ peric) + HE + Noturno (= vencimentosTotal, já ratado).
-  // INSS 12% fixo; IRRF progressivo (base − INSS); líquido DESCONTA FGTS (regra do dono).
-  // Não entra no custo da empresa (custoTotalEstimado já é o bruto + encargos patronais).
+  // INSS 12% fixo; IRRF 22% fixo sobre o bruto (decisão do dono 26/06/2026 — média do
+  // recolhimento 18–27,5%, NÃO progressivo); líquido NÃO desconta FGTS (depósito do
+  // empregador, decisão do dono 26/06/2026). Não entra no custo da empresa
+  // (custoTotalEstimado já é o bruto + encargos patronais).
   const baseTributavelFunc = vencimentosTotal;
   const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
-  const irrfFuncionario = isClt ? +calcularIRRF(baseTributavelFunc - inssFuncionario, 0).toFixed(2) : 0;
-  const fgtsFuncionario = fgts; // 8% sobre vencimentos (desconta do líquido no modelo Torres)
-  const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario - fgtsFuncionario).toFixed(2);
+  const irrfFuncionario = isClt ? +(baseTributavelFunc * 0.22).toFixed(2) : 0;
+  const fgtsFuncionario = fgts; // 8% sobre vencimentos — NÃO desconta do líquido (modelo Torres)
+  const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
 
   return {
     employeeId,

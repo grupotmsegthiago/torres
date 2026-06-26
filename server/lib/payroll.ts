@@ -19,9 +19,13 @@
  *   5) DSR: NÃO aplicado → aplicarDsr=false.
  *   6) Total tributável = Salário(c/ peric) + HE + Noturno (sem DSR).
  *   7) INSS = 12% fixo sobre o total tributável (inssModo="flat", inssFlatPct=12).
- *   8) IRRF progressivo 2024+ (base = total − INSS − dependentes).
+ *   8) IRRF = 22% fixo sobre o total tributável (irrfModo="flat", irrfFlatPct=22).
+ *      Decisão do dono (26/06/2026): a alíquota real varia 18–27,5%, então usa-se a
+ *      média de 22% direto sobre o bruto. NÃO usa tabela progressiva. Ver memória
+ *      payroll-irrf-flat.
  *   9) FGTS 8% sobre o total tributável.
- *   10) Líquido = Total − IRRF − INSS − FGTS − VT (FGTS DESCONTA do líquido).
+ *   10) Líquido = Total − IRRF − INSS − VT (FGTS NÃO desconta do líquido —
+ *      é depósito do empregador; decisão do dono 26/06/2026, fgtsNoLiquido=false).
  *   11) Provisões: 13º, Férias, 1/3, FGTS s/ provisões, INSS s/ provisões (custo empresa).
  *
  * Regra travada revertida pelo dono: adicional noturno passou de 20% (só prêmio)
@@ -136,7 +140,14 @@ export interface PayrollInput {
   inssModo?: "flat" | "progressivo";
   /** Alíquota fixa de INSS quando inssModo="flat" (default 12 = 12%). */
   inssFlatPct?: number;
-  /** Descontar o FGTS do líquido do funcionário? Default `true` (modelo Torres). */
+  /** Modo de cálculo do IRRF. Default "flat" (22% fixo sobre o bruto, modelo Torres).
+   * "progressivo" usa a tabela oficial 2024 (base = total − INSS − dependentes). */
+  irrfModo?: "flat" | "progressivo";
+  /** Alíquota fixa de IRRF quando irrfModo="flat" (default 22 = 22%, média do
+   * recolhimento 18–27,5% por decisão do dono). Aplicada direto sobre o bruto. */
+  irrfFlatPct?: number;
+  /** Descontar o FGTS do líquido do funcionário? Default `false` — o FGTS é
+   * depósito do empregador e não desconta do salário (decisão do dono 26/06/2026). */
   fgtsNoLiquido?: boolean;
   /** Valor de VT descontado do líquido (R$). Default 0. */
   vtDesconto?: number;
@@ -211,7 +222,9 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     aplicarDsr = false,
     inssModo = "flat",
     inssFlatPct = 12,
-    fgtsNoLiquido = true,
+    irrfModo = "flat",
+    irrfFlatPct = 22,
+    fgtsNoLiquido = false,
     vtDesconto = 0,
     diasUteis = 0,
     diasUteisDSR = 25,
@@ -254,7 +267,13 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   const inss = isClt
     ? (inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel))
     : 0;
-  const irrf = isClt ? calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
+  // IRRF: modelo Torres usa 22% fixo direto sobre o bruto (média do recolhimento
+  // real 18–27,5%, decisão do dono). "progressivo" mantém a tabela oficial 2024.
+  const irrf = isClt
+    ? (irrfModo === "flat"
+        ? r2(baseTributavel * (irrfFlatPct / 100))
+        : calcularIRRF(baseTributavel, inss, dependentesIR))
+    : 0;
   const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
   const totalDeducoes = r2(inss + irrf);
 
@@ -275,9 +294,10 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   // (já é o desembolso total). Líquido pro funcionário: CLT desconta INSS/IRRF,
   // não-CLT recebe o bruto integral.
   const custoTotalEmpresa = r2(totalBruto + fgts + totalProvisoes);
-  // Líquido modelo Torres: Total tributável − INSS − IRRF − FGTS − VT.
-  // (FGTS desconta do líquido por decisão do dono; benefícios indenizatórios
-  // como VR/ajuda ficam numa tabela separada e não entram no líquido salarial.)
+  // Líquido modelo Torres: Total tributável − INSS − IRRF − VT.
+  // (FGTS NÃO desconta do líquido — é depósito do empregador, decisão do dono
+  // 26/06/2026; fica fgtsNoLiquido=false. Benefícios indenizatórios como VR/ajuda
+  // ficam numa tabela separada e não entram no líquido salarial.)
   const liquidoFuncionario = r2(
     baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
   );
