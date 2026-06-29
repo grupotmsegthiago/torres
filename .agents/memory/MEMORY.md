@@ -52,3 +52,4 @@
 - [Proposta comercial do cliente](proposta-comercial-cliente.md) — PDF "Gerar Proposta" (rotas marcadas + tabela) via generatePresentation; ACIONAMENTO = estimated_km × valor_km_extra (ordem do dono).
 - [Tela interna WhatsApp espelha só whatsapp_messages](whatsapp-internal-mirror.md) — saída do bot (sendText/sendImageWithCaption) tem que PERSISTIR senão some da tela; webhook+/send não cobrem.
 - [Resposta do bot ao pedido de atualização = card padrão](fulfill-group-card.md) — fulfill só pula envio quando cron REALMENTE encaminha (hadPhoto && isForwardableStep); senão dropa a resposta no grupo.
+- [Virada de dia BRT em filtros de período](brt-day-pivot-filter.md) — filtro por dia-calendário BRT não pode usar new Date() cru sob TZ=UTC (madrugada sem offset escorrega -1 dia); usar brtDateKey (server/lib/brt-date.ts).

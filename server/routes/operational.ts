@@ -8,6 +8,7 @@ import type { Express } from "express";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
   import { withSwrCache } from "../lib/swr-cache";
+  import { brtDateKey } from "../lib/brt-date";
 
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 
@@ -40,9 +41,12 @@ import type { Express } from "express";
 
     const activeOrders = orders.filter(
       (o) => {
-        const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
-        const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
-        const msBRT = o.missionStartedAt ? new Date(o.missionStartedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        // Blindagem de virada de dia: extrai a data-calendário BRT robusta ao processo em UTC, para que
+        // um timestamp BRT-nativo SEM offset não escorregue p/ o dia anterior na madrugada e derrube a OS
+        // do filtro de período. Ver server/lib/brt-date.ts (SYSTEM_BRAIN §1.1).
+        const sdBRT = brtDateKey(o.scheduledDate);
+        const cdBRT = brtDateKey(o.completedDate);
+        const msBRT = brtDateKey(o.missionStartedAt);
 
         if (isDateRange) {
           const matchDate = sdBRT || msBRT || cdBRT;
