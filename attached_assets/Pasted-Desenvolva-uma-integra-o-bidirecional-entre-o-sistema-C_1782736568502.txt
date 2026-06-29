@@ -1,0 +1,61 @@
+Desenvolva uma integração bidirecional entre o sistema *Control ID (controle de ponto/facial)* e a plataforma *Torres*, garantindo que os dois sistemas mantenham as informações sincronizadas em tempo real.
+
+### Objetivo da integração:
+
+Fazer com que qualquer lançamento, alteração ou ajuste de ponto realizado em um dos sistemas seja automaticamente replicado no outro sistema.
+
+### Regras de sincronização:
+
+1. *Quando houver marcação no Control ID:*
+
+* Toda marcação realizada no Control ID deve ser enviada automaticamente para a plataforma Torres.
+* Isso deve funcionar tanto para:
+
+  * Marcações realizadas automaticamente através do reconhecimento facial do colaborador;
+  * Marcações inseridas manualmente pelo administrador no Control ID.
+* A Torres deve receber:
+
+  * Colaborador;
+  * Data;
+  * Horário da marcação;
+  * Tipo de registro (entrada, saída, intervalo, retorno);
+  * Identificação do equipamento/origem;
+  * Alterações ou correções realizadas posteriormente.
+
+2. *Quando houver lançamento manual na plataforma Torres:*
+
+* Toda marcação inserida ou alterada manualmente dentro da Torres deve ser enviada automaticamente para o Control ID.
+* O Control ID deve atualizar o registro correspondente mantendo os dados sincronizados.
+
+3. *Sincronização bidirecional:*
+
+* Os sistemas devem funcionar como uma via dupla de comunicação:
+
+  * Control ID → Torres
+  * Torres → Control ID
+* Qualquer inclusão, edição ou exclusão de registro deve gerar uma atualização no outro sistema.
+
+4. *Controle de duplicidade:*
+
+* Criar uma lógica para evitar que a mesma marcação seja enviada várias vezes.
+* Cada registro deve possuir um identificador único de sincronização (ID externo).
+
+5. *Histórico e auditoria:*
+   Criar um registro de logs contendo:
+
+* Data e hora da sincronização;
+* Sistema de origem;
+* Sistema destino;
+* Usuário responsável pela alteração;
+* Status da integração (sucesso ou erro);
+* Mensagem de erro caso ocorra falha.
+
+6. *Atualização automática:*
+
+* A integração deve funcionar de forma automática sem necessidade de intervenção manual.
+* Utilizar API/Webhook ou outro método disponível do Control ID para comunicação em tempo real.
+* Caso a comunicação fique indisponível, criar uma fila de sincronização para reenviar os dados posteriormente.
+
+### Resultado esperado:
+
+O colaborador poderá registrar o ponto pelo reconhecimento facial no Control ID ou o gestor poderá realizar ajustes pela plataforma Torres, e ambos os sistemas deverão sempre apresentar exatamente as mesmas informações de jornada e marcações.
