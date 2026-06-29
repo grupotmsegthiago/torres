@@ -14,7 +14,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
   Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert, AlertTriangle,
-  Info, Wrench, Building2, UserCog,
+  Info, Wrench, Building2, UserCog, Lock,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -433,6 +433,10 @@ export default function BalancoGerencialPage() {
           horas_trabalhadas: bill?.horas_trabalhadas || 0,
           boletim: bill?.boletim || "",
           status: o.status,
+          // Origem do faturamento desta linha: `true` = valor TRAVADO num boletim conferido/congelado
+          // (APROVADA/FATURADO/PAGO) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
+          // — entra em "Em Aberto". Mesma flag que decide useBoletim acima.
+          is_frozen: useBoletim,
           client_name: o.clientName || bill?.client_name || "",
         };
       });
@@ -584,8 +588,15 @@ export default function BalancoGerencialPage() {
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
     const horas = filtered.agents.reduce((a, ag) => a + (ag.horas_trabalhadas || 0), 0);
+    // Quebra do faturamento por origem: FINALIZADO/CONGELADO (valor travado em boletim aprovado/
+    // faturado/pago — blindado contra erro de digitação do agente) vs EM ABERTO/PREVISÃO (motor
+    // canônico ao vivo). A soma das duas = `fat` (total do período).
+    const fatCongelado = filtered.missions.reduce((a, m) => a + (m.is_frozen ? m.fat_total : 0), 0);
+    const fatAberto = fat - fatCongelado;
+    const countCongelado = filtered.missions.filter((m: any) => m.is_frozen).length;
     return {
       fat, pag, desp: despReais, lucro, margem, km, horas, total: filtered.missions.length,
+      fatCongelado, fatAberto, countCongelado,
       desp_combustivel: despFin.fueling,
       desp_pedagio: despFin.mission_cost,
       desp_manutencao: despFin.maintenance,
@@ -815,6 +826,32 @@ export default function BalancoGerencialPage() {
                 </div>
                 <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
                 <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
+                {totals.fat > 0 && (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5" data-testid="breakdown-faturamento">
+                    <div
+                      className="rounded-lg bg-green-50 border border-green-200 px-2 py-1.5"
+                      title="Valor TRAVADO em boletim conferido e aprovado/faturado/pago. Blindado contra erro de digitação na ponta — não recalcula ao vivo."
+                    >
+                      <div className="flex items-center gap-1">
+                        <Lock size={10} className="text-green-700" />
+                        <span className="text-[9px] font-black text-green-700 uppercase leading-tight">Finalizado</span>
+                      </div>
+                      <p className="text-sm font-black text-green-700 font-mono leading-tight" data-testid="text-fat-congelado">{fmt(totals.fatCongelado)}</p>
+                      <span className="text-[9px] text-green-600/80 font-bold">{totals.countCongelado} {totals.countCongelado === 1 ? "boletim" : "boletins"}</span>
+                    </div>
+                    <div
+                      className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5"
+                      title="Previsão recalculada AO VIVO (motor canônico) para OSs ainda sem boletim aprovado — em andamento ou pendentes de fechamento."
+                    >
+                      <div className="flex items-center gap-1">
+                        <Activity size={10} className="text-amber-600" />
+                        <span className="text-[9px] font-black text-amber-600 uppercase leading-tight">Em Aberto</span>
+                      </div>
+                      <p className="text-sm font-black text-amber-600 font-mono leading-tight" data-testid="text-fat-aberto">{fmt(totals.fatAberto)}</p>
+                      <span className="text-[9px] text-amber-600/80 font-bold">{totals.total - totals.countCongelado} previsão</span>
+                    </div>
+                  </div>
+                )}
                 {hasAgendado && !isPast && (
                   <p className="text-[10px] text-neutral-400 font-medium mt-0.5" data-testid="text-realizado-agendado">
                     Realizado <span className="font-bold text-neutral-600 font-mono">{fmt(realizadoFat)}</span>
