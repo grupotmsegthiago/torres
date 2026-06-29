@@ -1,0 +1,27 @@
+Para garantir que o Replit (ou qualquer IA) faça os cálculos de faturamento exatamente sob a sua nova regra de negócio, você precisa de um prompt de conferência cruzada e validação lógica.
+
+Como o sistema foi atualizado para usar o motor canônico ao vivo nas duas telas (Relatório de OS e Balanço Gerencial por data de agendamento), o prompt abaixo vai guiar a IA a validar o código atual em produção, forçando-a a checar as regras de "Canceladas" e "Recusadas".
+
+Copie e cole o texto abaixo no chat do Replit:
+
+📋 Prompt de Validação para colar no Replit
+Plaintext
+Preciso validar se as alterações de faturamento nas telas de Relatório de OS e Balanço Gerencial estão 100% corretas e aplicando as regras financeiras de forma idêntica. Faça uma varredura no código atual e me prove o seguinte:
+
+1. REGRA DE RECUSADAS: Abra o arquivo do Relatório de OS e do Balanço Gerencial. Localize onde o faturamento é somado/exibido por linha e nos totais. Me mostre o trecho de código que garante que se a OS tiver status 'recusada' (ou 'recusado'), o valor final calculado é forçado para R$ 0,00.
+
+2. REGRA DE CANCELADAS: Verifique a regra para OS 'cancelada'. O código está respeitando a precedência? Se houver um boletim de medição congelado (fat_total_boletim) com valor maior que 0, ele usa esse valor? Se não houver boletim, o motor cai no cálculo canônico ao vivo (calcularEscolta), que por padrão trará apenas o valor do acionamento (franquia)? Me mostre a linha exata onde essa validação foi feita em ambas as telas.
+
+3. PARIDADE DE EXIBIÇÃO: Garanta que o cálculo canônico (effectiveFat ou equivalente) está sendo repassado idêntico para:
+   - A linha da tabela principal.
+   - O popover/tooltip de detalhes de faturamento.
+   - O modal de resumo da OS (OSSummaryModal).
+   - O card/widget de totalizadores no topo da página.
+
+Por favor, não imagine as respostas. Leia os arquivos correspondentes (ex: client/src/pages/admin/relatorio-os.tsx e as rotas/componentes do Balanço Gerencial) e me traga as evidências do código em formato de texto para confirmarmos que o faturamento está blindado.
+O que esse prompt faz na prática?
+Força a IA a ler o código real: Em vez de ela apenas dizer "está tudo bem", ela terá que abrir os arquivos editados e extrair as linhas exatas de código.
+
+Valida os Casos de Borda: Ela vai testar a lógica exata de que Recusada = R$ 0 e de que Cancelada busca o boletim ou cai no acionamento base.
+
+Garante a consistência: Evita que a tabela mostre um valor e o modal de resumo ou o card de totalizadores mostre outro.
