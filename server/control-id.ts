@@ -24,6 +24,7 @@ import {
   monthToFechamento,
   minuteKeyBRT,
   decideImport,
+  rhidNumericCore,
 } from "./lib/control-id-parsers";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
@@ -649,6 +650,35 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     .in("external_id", externalIds);
   const existingSet = new Set((existing || []).map((e: any) => String(e.external_id)));
 
+  // Dedup por ID NUMÉRICO da RHID: uma batida que NÓS criamos via POST guarda o
+  // external_id puro (ex. "15215"); o AFD reexporta a MESMA batida como
+  // `rhid_15215_{ts}`. Quando a RHID grava o horário "encaixado" na escala
+  // (minuto diferente do que digitamos), o dedup por minuto falha e duplicaria —
+  // mas o id é o mesmo. Carregamos as batidas locais cujo external_id puro casa
+  // com o id de algum evento do AFD pra ADOTAR o id canônico em vez de inserir.
+  const eventCores = Array.from(new Set(
+    events.map(e => rhidNumericCore(e.id)).filter((x): x is string => !!x),
+  ));
+  const localByCore = new Map<string, { id: number; externalId: string | null; employeeId: string | null }>();
+  if (eventCores.length) {
+    const CORE_CHUNK = 500;
+    for (let i = 0; i < eventCores.length; i += CORE_CHUNK) {
+      const chunk = eventCores.slice(i, i + CORE_CHUNK);
+      const { data: localNum } = await supabaseAdmin
+        .from("control_id_punches")
+        .select("id, external_id, employee_id")
+        .eq("device_id", deviceId)
+        .in("external_id", chunk);
+      for (const l of (localNum || []) as any[]) {
+        localByCore.set(String(l.external_id), {
+          id: Number(l.id),
+          externalId: String(l.external_id),
+          employeeId: l.employee_id != null ? String(l.employee_id) : null,
+        });
+      }
+    }
+  }
+
   // Dedup por MINUTO (BRT) por funcionário: evita duplicar uma batida que já existe
   // localmente quando o external_id volta do AFD em formato diferente (numérico do
   // POST vs `rhid_{id}_{ts}` do AFD) — causa histórica de batidas duplicadas.
@@ -690,6 +720,30 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     seenInBatch.add(ev.id);
     const employeeId = mapByUserId.get(ev.userId) || null;
     const externalIdExists = existingSet.has(ev.id);
+
+    // 1ª passada de dedup: pelo ID NUMÉRICO da RHID. Se já temos localmente a
+    // batida que NÓS criamos via POST (external_id puro, ex. "15215") e o AFD
+    // está reexportando a MESMA batida (`rhid_15215_...`), adotamos o id canônico
+    // na batida local e NÃO inserimos — mesmo que a RHID tenha mudado o horário
+    // (escala "encaixada"). A Torres é a verdade: o horário digitado fica.
+    const core = rhidNumericCore(ev.id);
+    if (core) {
+      const idHit = localByCore.get(core);
+      // Só adota quando:
+      //  (a) há batida local com external_id puro == core (a que NÓS criamos via POST);
+      //  (b) o id canônico ainda NÃO existe (senão o UPDATE violaria o unique
+      //      device_id+external_id — caso de duplicata HISTÓRICA, limpeza à parte);
+      //  (c) o funcionário BATE. O id do AFD usa `rec.id || personId` (parseRhidAfdRecords),
+      //      então o core PODE ser um personId quando falta o id do registro; exigir o
+      //      mesmo employee_id evita casar batidas de funcionários diferentes por engano.
+      const sameEmployee = employeeId != null && idHit?.employeeId === employeeId;
+      if (idHit && idHit.id > 0 && idHit.externalId === core && !externalIdExists && sameEmployee) {
+        extIdAdoptions.push({ id: idHit.id, external_id: ev.id });
+        idHit.externalId = ev.id; // marca como canônico (evita reprocessar no mesmo batch)
+        skipped++;
+        continue;
+      }
+    }
     if (employeeId) {
       const mk = minuteKeyBRT(new Date(ev.time));
       const m = localMinuteByEmp.get(employeeId);

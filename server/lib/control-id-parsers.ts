@@ -210,6 +210,25 @@ export function monthToFechamento(monthYear: string): { start: Date; end: Date }
  *   `undefined` = não há batida local nesse minuto; `null` = há, mas sem external_id (legado)
  * @param eventExternalId  id canônico do evento vindo do AFD
  */
+/**
+ * Extrai o id numérico da RHID de um `external_id`, seja no formato canônico do
+ * AFD (`rhid_{id}_{ts}`) ou no formato puro devolvido pelo POST de criação
+ * (`{id}`). Retorna `null` quando não há id numérico reconhecível (ex.: legado).
+ *
+ * Usado pra casar uma batida que NÓS criamos via POST (external_id numérico, ex.
+ * "15215") com a mesma batida reexportada pelo AFD (`rhid_15215_...`) — mesmo
+ * quando a RHID gravou o horário "encaixado" na escala (minuto diferente), o id
+ * é o mesmo. Sem isso, o dedup por minuto falha e a batida duplica.
+ */
+export function rhidNumericCore(externalId: string | null | undefined): string | null {
+  if (externalId == null) return null;
+  const s = String(externalId).trim();
+  const m = s.match(/^rhid_(\d+)_\d+$/);
+  if (m) return m[1];
+  if (/^\d+$/.test(s)) return s;
+  return null;
+}
+
 export type ImportDecision = "insert" | "skip" | "adopt-external-id";
 
 export function decideImport(params: {
