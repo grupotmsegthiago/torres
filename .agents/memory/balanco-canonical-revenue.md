@@ -26,3 +26,11 @@ Decisão do dono (ordem explícita **29/06/2026**, via user_query): **as DUAS te
 - Cada missão pertence ao dia do seu `scheduled_date` (BRT). O grid (`/api/operational-grid`) e o Balanço atribuem por `scheduled_date` primeiro (fallback `mission_started_at`/`completed_date`/`created_at` só se nulo). Missão multi-dia conta SÓ no dia do agendamento; nunca deslocada pra "hoje" nem duplicada.
 - **Consequência legítima:** no 1º dia de um período, Semanal/Mensal pode ser MAIOR que o Diário porque inclui missões `agendada` pra dias seguintes do período (não é bug). Auditar via `scheduled_date` antes de tratar como erro.
 - **Projeção (card Faturamento):** a média diária deve usar SÓ o `realizadoFat` (missões com `data <= hoje`), não `totals.fat` (que inclui agendamentos futuros do período) — senão divide total por 1 dia decorrido e infla. Núcleo puro/testável em `client/src/lib/balanco-projection.ts` (`computeProjection`), teste `.local/balanco-projection.test.mts`. Projeção nunca abaixo de realizado+agendado (Math.max).
+
+## Auditar/replicar o número do Balanço fora do app (script)
+
+Para reconciliar o total do painel sem HTTP (auth exige JWT real do Supabase), replicar a lógica reusando as MESMAS funções de `server/billing-calc.ts`. Gotchas que fazem o número NÃO bater:
+- **Janela MENSAL = mês-calendário inteiro** (`01..último dia 23:59:59`), NÃO "≤ agora". `getDateRange("MONTH")` → grid `from/to`. Auditar "≤ now" dá MENOS (corta agendadas do resto do mês) — é cut analítico, não o headline.
+- **CONGELADO = `escort_billings.fat_total` cru** (a coluna chama-se `fat_total`; o byMission a expõe como `fat_total_boletim` e como `n`). Não existe coluna `fat_total_boletim` na tabela — query com esse nome volta vazia e zera o congelado.
+- **Assimetria do `kmRota`:** o bloco CANÔNICO do grid (`liveCost.canonico`, operational.ts) NÃO passa `kmRota` ao `calcularEscolta` — só o `calcularFaturamentoLive` (faturamento_live) usa. Passar `kmRota` no canônico limita o odômetro e diverge o EM ABERTO. Replicar sem `kmRota`.
+- **EM ABERTO deriva** (HE acumula por minuto + status muda) ⇒ ~0,2% de diferença vs print é esperado; só o CONGELADO bate 1:1. Script de referência: `.local/test_audit_balanco_junho.mts` (read-only).
