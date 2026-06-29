@@ -1,5 +1,6 @@
 - [Auditoria do Balanço Gerencial](balanco-gerencial-audit.md) — eficiência km/L é no frontend (sensível a outlier de fueling.liters); como reconciliar RH/Estrutura/Operacional via supabaseAdmin + buildFolhaStats.
 - [Balanço RH baixo = dado faltando](balanco-rh-data-completeness.md) — "RH·Folha Real" não bate com planilha do dono = salário não cadastrado ou ponto incompleto, NÃO bug de fórmula; diagnosticar antes de mexer em payroll.
+- [PJ/sem-registro no custo de RH](balanco-pj-sem-registro-rh.md) — p/ pôr custo de fixed_costs no RH: employee ativo + tipo_contratacao="fixo" + salário flat (peric/encargos/benefícios 0) e desativar o fixed_cost; admin/limpeza peric=0.
 - [Credenciais em attached_assets](secrets-in-attached-assets.md) — arquivos Pasted-*.txt colados pelo usuário podem ter token real em texto puro; varrer e rotacionar.
 - [Early return em register*Routes](route-registration-early-return.md) — desligar integração com `return` antecipado mata rotas seguintes do arquivo → HTML do Vite → "Unexpected token '<'"; use guards de prefixo.
 - [Conciliação de ponto RHID](rhid-reconciliation.md) — AFD append-only (404 PUT/DELETE→corretiva/unsupported); dedup import por (func,minuto) c/ adopt-external-id (decideImport), SEM device (prod=1 device); dup qualquer lado=duplicada; rotas exigem admin.
