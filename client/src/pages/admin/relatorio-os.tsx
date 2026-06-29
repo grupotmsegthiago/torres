@@ -134,7 +134,7 @@ function getTodayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, inspectionSummary }: { os: ReportOS; onClose: () => void; onNavigateFinanceiro: (id: number) => void; onNavigatePhotos: (id: number) => void; inspectionSummary?: { total: number; approved: number; rejected: number; pending: number } | null }) {
+function OSSummaryModal({ os, fatTotal, resultado, margem, onClose, onNavigateFinanceiro, onNavigatePhotos, inspectionSummary }: { os: ReportOS; fatTotal: number; resultado: number; margem: number; onClose: () => void; onNavigateFinanceiro: (id: number) => void; onNavigatePhotos: (id: number) => void; inspectionSummary?: { total: number; approved: number; rejected: number; pending: number } | null }) {
   const lc = os.liveCost;
   const cv = lc?.contrato_valores;
   const sNorm = os.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
@@ -322,11 +322,11 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, i
               <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <TrendingUp className="w-3.5 h-3.5" /> Receita (Faturamento)
               </h4>
-              <MoneyRow label="Acionamento" value={lc?.fat_acionamento || 0} color="text-emerald-700" />
-              <MoneyRow label="KM Extra" value={lc?.fat_km_extra || 0} color="text-emerald-700" />
-              <MoneyRow label="Hora Extra" value={lc?.fat_hora_extra || 0} color="text-emerald-700" />
+              <MoneyRow label="Acionamento" value={(lc as any)?.canonico?.fat_acionamento ?? lc?.fat_acionamento ?? 0} color="text-emerald-700" />
+              <MoneyRow label="KM Extra" value={(lc as any)?.canonico?.fat_km ?? lc?.fat_km_extra ?? 0} color="text-emerald-700" />
+              <MoneyRow label="Hora Extra" value={(lc as any)?.canonico?.fat_hora_extra ?? lc?.fat_hora_extra ?? 0} color="text-emerald-700" />
               <div className="my-2 border-t-2 border-emerald-200" />
-              <MoneyRow label="TOTAL FATURAMENTO" value={lc?.faturamento || 0} color="text-emerald-700" bold />
+              <MoneyRow label="TOTAL FATURAMENTO" value={fatTotal} color="text-emerald-700" bold />
 
               {cv && (
                 <>
@@ -388,7 +388,7 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, i
             <div className="grid grid-cols-3 gap-6">
               <div className="text-center">
                 <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Receita</p>
-                <p className="text-xl font-black text-emerald-600" data-testid="text-summary-receita">{fmtBRL(lc?.faturamento || 0)}</p>
+                <p className="text-xl font-black text-emerald-600" data-testid="text-summary-receita">{fmtBRL(fatTotal)}</p>
               </div>
               <div className="text-center">
                 <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Despesas</p>
@@ -396,11 +396,11 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, i
               </div>
               <div className="text-center">
                 <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Resultado</p>
-                <p className={`text-xl font-black ${(lc?.resultado || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-summary-resultado">
-                  {fmtBRL(lc?.resultado || 0)}
+                <p className={`text-xl font-black ${resultado >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-summary-resultado">
+                  {fmtBRL(resultado)}
                 </p>
-                <p className={`text-xs font-bold mt-0.5 ${(lc?.margem_pct || 0) >= 40 ? "text-emerald-500" : (lc?.margem_pct || 0) >= 20 ? "text-amber-500" : "text-red-500"}`}>
-                  Margem: {(lc?.margem_pct || 0).toFixed(1)}%
+                <p className={`text-xs font-bold mt-0.5 ${margem >= 40 ? "text-emerald-500" : margem >= 20 ? "text-amber-500" : "text-red-500"}`}>
+                  Margem: {margem.toFixed(1)}%
                 </p>
               </div>
             </div>
@@ -466,26 +466,34 @@ export default function RelatorioOSPage() {
 
   const { data: financialDash } = useQuery<{ byMission?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
   const billingByOsId = useMemo(() => {
-    const map = new Map<number, { fat: number; km: number; pedagio: number }>();
+    const map = new Map<number, { fat: number; boletim: number; km: number; pedagio: number }>();
     const missions = financialDash?.byMission || [];
     for (const m of missions) {
       const sid = Number(m.service_order_id);
       if (!sid) continue;
       map.set(sid, {
         fat: Number(m.fat_total) || 0,
+        boletim: Number(m.fat_total_boletim) || 0,
         km: Number(m.km_total) || 0,
         pedagio: Number(m.despesas_pedagio) || 0,
       });
     }
     return map;
   }, [financialDash]);
-  // Faturamento SEMPRE ao vivo: usa o recálculo em tempo real do operational-grid
-  // (`faturamento_live`), que recalcula a hora extra inclusive nas concluídas — não usa
-  // mais o billing congelado. Recusada tem liveCost nulo => 0. Cancelada preserva
-  // acionamento+extras (calcularFaturamentoLive sempre soma o acionamento do contrato).
+  // Dono (ordem explícita 29/06/2026): faturamento = recálculo real ao vivo via motor CANÔNICO
+  // (calcularEscolta — km/horas reais, HE por minuto, adic. noturno), MESMA fonte do Balanço
+  // Gerencial. Antes usava `faturamento_live` (motor simplificado, superfaturava). Recusada tem
+  // liveCost nulo => 0. EXCEÇÃO: cancelada usa o BOLETIM congelado (§8.1b — tabela 100 km, que o
+  // motor canônico não aplica).
   const liveFat = (o: ReportOS) =>
-    Number(o.liveCost?.faturamento_live ?? o.liveCost?.faturamento) || 0;
-  const effectiveFat = (o: ReportOS) => liveFat(o);
+    Number((o.liveCost as any)?.canonico?.faturamento ?? o.liveCost?.faturamento_live ?? o.liveCost?.faturamento) || 0;
+  const effectiveFat = (o: ReportOS) => {
+    if ((o.status || "").toLowerCase() === "cancelada") {
+      const b = billingByOsId.get(Number(o.id));
+      if (b && Number(b.boletim) > 0) return Number(b.boletim);
+    }
+    return liveFat(o);
+  };
   const effectiveKm = (o: ReportOS) => Number(o.liveCost?.km_total) || 0;
   const effectiveResultado = (o: ReportOS) => {
     const fat = effectiveFat(o);
@@ -498,7 +506,8 @@ export default function RelatorioOSPage() {
     return (effectiveResultado(o) / fat) * 100;
   };
   // Só a recusada fica de fora do total (R$ 0,00). Cancelada entra.
-  const isExcluded = (o: ReportOS) => o.status === "recusada";
+  const isExcluded = (o: ReportOS) =>
+    (o.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === "recusada";
 
   const { data: invoices = [] } = useQuery<any[]>({ queryKey: ["/api/invoices"], staleTime: 60000 });
   const { data: invoiceMap = {} } = useQuery<Record<string, { invoiceId: number; billingStatus: string }>>({
@@ -922,10 +931,10 @@ export default function RelatorioOSPage() {
                     const sNorm = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
                     const cfg = statusConfig[sNorm] || statusConfig.pendente;
                     const StatusIcon = cfg.icon;
-                    const fat = o.liveCost?.faturamento || 0;
+                    const fat = effectiveFat(o);
                     const custoT = o.liveCost?.custo_total || 0;
-                    const result = o.liveCost?.resultado || 0;
-                    const margem = o.liveCost?.margem_pct || 0;
+                    const result = effectiveResultado(o);
+                    const margem = effectiveMargem(o);
                     const agents = [o.employee1?.name, o.employee2?.name].filter(Boolean).join(" / ") || "—";
                     const route = `${truncRoute(o.origin, 20)} → ${truncRoute(o.destination, 20)}`;
                     return (
@@ -957,9 +966,9 @@ export default function RelatorioOSPage() {
                         </td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtDateShort(o.completedDate)}</td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtTime(o.completedDate)}</td>
-                        <td className={`px-2 py-2 text-right whitespace-nowrap ${(o.liveCost?.fat_hora_extra || 0) > 0 ? "font-black text-amber-600" : "font-bold text-emerald-700"}`} data-testid={`text-faturamento-${o.id}`}>
+                        <td className={`px-2 py-2 text-right whitespace-nowrap ${((o.liveCost as any)?.canonico?.fat_hora_extra ?? o.liveCost?.fat_hora_extra ?? 0) > 0 ? "font-black text-amber-600" : "font-bold text-emerald-700"}`} data-testid={`text-faturamento-${o.id}`}>
                           {fat > 0 ? (
-                            (o.liveCost?.fat_hora_extra || 0) > 0 ? (
+                            ((o.liveCost as any)?.canonico?.fat_hora_extra ?? o.liveCost?.fat_hora_extra ?? 0) > 0 ? (
                               <Popover>
                                 <PopoverTrigger asChild>
                                   <button className="inline-flex items-center gap-1 hover:underline" data-testid={`btn-fat-detail-${o.id}`}>
@@ -976,9 +985,9 @@ export default function RelatorioOSPage() {
                                     const lc = o.liveCost!;
                                     const cv = lc.contrato_valores;
                                     const items: { label: string; v: number; highlight?: boolean }[] = [
-                                      { label: "Acionamento", v: lc.fat_acionamento || 0 },
-                                      { label: "KM excedente", v: lc.fat_km_extra || 0 },
-                                      { label: `Hora extra (${(lc.horas_excedentes || 0).toFixed(1)}h × ${fmtBRL(cv?.valor_hora_extra || 0)})`, v: lc.fat_hora_extra || 0, highlight: true },
+                                      { label: "Acionamento", v: (lc as any)?.canonico?.fat_acionamento ?? lc.fat_acionamento ?? 0 },
+                                      { label: "KM excedente", v: (lc as any)?.canonico?.fat_km ?? lc.fat_km_extra ?? 0 },
+                                      { label: `Hora extra (${(lc.horas_excedentes || 0).toFixed(1)}h × ${fmtBRL(cv?.valor_hora_extra || 0)})`, v: (lc as any)?.canonico?.fat_hora_extra ?? lc.fat_hora_extra ?? 0, highlight: true },
                                     ];
                                     return (
                                       <div className="space-y-1">
@@ -1165,6 +1174,9 @@ export default function RelatorioOSPage() {
       {selectedOs && (
         <OSSummaryModal
           os={selectedOs}
+          fatTotal={effectiveFat(selectedOs)}
+          resultado={effectiveResultado(selectedOs)}
+          margem={effectiveMargem(selectedOs)}
           onClose={() => setSelectedOs(null)}
           onNavigateFinanceiro={() => { setSelectedOs(null); navigate(`/admin/financeiro?search=${selectedOs!.osNumber}`); }}
           onNavigatePhotos={() => { setSelectedOs(null); navigate(`/admin/photo-inspection/${selectedOs!.id}`); }}

@@ -375,12 +375,15 @@ export default function BalancoGerencialPage() {
         const bill = billingByOs.get(sid);
         const lc = o.liveCost || {};
         const lcCanon = lc.canonico || null;
-        // O Balanço Gerencial reflete o BOLETIM DE MEDIÇÃO: usa o fat_total PERSISTIDO no
-        // escort_billings (campo bill.fat_total_boletim), que bate 1:1 com o que aparece no boletim
-        // (inclui receitas_os e pedágio). Recusada já é filtrada por status (L354). Só usa o cálculo
-        // ao vivo como fallback quando a OS ainda não tem boletim (ex.: agendada futura).
+        // Dono (ordem explícita 29/06/2026): RECEITA = recálculo real ao vivo via motor CANÔNICO
+        // (calcularEscolta — km/horas reais, HE por minuto, adic. noturno), MESMA fonte do Relatório
+        // de OS. Não usa mais o boletim congelado. Recusada já é filtrada por status (L372).
+        // EXCEÇÃO: OS cancelada mantém o valor do BOLETIM congelado (§8.1b — tabela 100 km; o motor
+        // canônico do grid roda o contrato da OS, NÃO a tabela 100 km, então não pode substituir).
         const liveFat = Number(lcCanon?.faturamento ?? lc.faturamento_live ?? lc.faturamento) || 0;
-        const fat = bill ? (Number(bill.fat_total_boletim) || 0) : liveFat;
+        const isCancelada = (o.status || "").toLowerCase() === "cancelada";
+        const useBoletim = isCancelada && !!bill && Number(bill.fat_total_boletim) > 0;
+        const fat = useBoletim ? (Number(bill.fat_total_boletim) || 0) : liveFat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
         const pag = bill ? Number(bill.pag_total || 0) : 0;
         const desp = bill ? Number(bill.despesas || 0) : 0;
@@ -401,19 +404,19 @@ export default function BalancoGerencialPage() {
           // Detalhamento (drill-down) também vem do BOLETIM quando há boletim, pra somar exatamente
           // ao fat_total. Sem boletim, cai pro cálculo ao vivo (lcCanon). O boletim não separa
           // km carregado/vazio em R$ → mostra tudo como "KM Extra" (fat_km) com carregado/vazio = 0.
-          fat_acionamento: Number(bill ? bill.fat_acionamento : lcCanon?.fat_acionamento) || 0,
-          fat_km: Number(bill ? bill.fat_km : lcCanon?.fat_km) || 0,
-          fat_km_carregado: Number(bill ? 0 : lcCanon?.fat_km_carregado) || 0,
-          fat_km_vazio: Number(bill ? 0 : lcCanon?.fat_km_vazio) || 0,
-          fat_hora_extra: Number(bill ? bill.fat_hora_extra : lcCanon?.fat_hora_extra) || 0,
-          fat_adicional_noturno: Number(bill ? bill.fat_adicional_noturno : lcCanon?.fat_adicional_noturno) || 0,
-          fat_estadia: Number(bill ? bill.fat_estadia : lcCanon?.fat_estadia) || 0,
-          fat_pernoite: Number(bill ? bill.fat_pernoite : lcCanon?.fat_pernoite) || 0,
-          fat_pedagio: Number(bill ? bill.despesas_pedagio : lcCanon?.pedagio) || 0,
-          receitas_os: Number(bill ? bill.receitas_os : lcCanon?.receitas_os) || 0,
-          km_franquia: Number(bill ? bill.km_franquia : lcCanon?.km_franquia) || 0,
-          km_excedente: Number(bill ? bill.km_excedente : lcCanon?.km_excedente) || 0,
-          horas_missao: Number(bill ? bill.horas_trabalhadas : lcCanon?.horas_trabalhadas) || Number(lc.horas_missao) || 0,
+          fat_acionamento: Number(useBoletim ? bill.fat_acionamento : lcCanon?.fat_acionamento) || 0,
+          fat_km: Number(useBoletim ? bill.fat_km : lcCanon?.fat_km) || 0,
+          fat_km_carregado: Number(useBoletim ? 0 : lcCanon?.fat_km_carregado) || 0,
+          fat_km_vazio: Number(useBoletim ? 0 : lcCanon?.fat_km_vazio) || 0,
+          fat_hora_extra: Number(useBoletim ? bill.fat_hora_extra : lcCanon?.fat_hora_extra) || 0,
+          fat_adicional_noturno: Number(useBoletim ? bill.fat_adicional_noturno : lcCanon?.fat_adicional_noturno) || 0,
+          fat_estadia: Number(useBoletim ? bill.fat_estadia : lcCanon?.fat_estadia) || 0,
+          fat_pernoite: Number(useBoletim ? bill.fat_pernoite : lcCanon?.fat_pernoite) || 0,
+          fat_pedagio: Number(useBoletim ? bill.despesas_pedagio : lcCanon?.pedagio) || 0,
+          receitas_os: Number(useBoletim ? bill.receitas_os : lcCanon?.receitas_os) || 0,
+          km_franquia: Number(useBoletim ? bill.km_franquia : lcCanon?.km_franquia) || 0,
+          km_excedente: Number(useBoletim ? bill.km_excedente : lcCanon?.km_excedente) || 0,
+          horas_missao: Number(useBoletim ? bill.horas_trabalhadas : lcCanon?.horas_trabalhadas) || Number(lc.horas_missao) || 0,
           pag_total: pag,
           despesas: desp,
           lucro: fat - pag - desp,
