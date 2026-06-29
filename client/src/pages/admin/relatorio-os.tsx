@@ -85,6 +85,11 @@ interface ReportOS {
 
 const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+// Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
+// O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo. Só boletins
+// não-aprovados (A_VERIFICAR) recalculam ao vivo. MESMA regra do Balanço Gerencial.
+const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+
 const statusConfig: Record<string, { label: string; color: string; bg: string; icon: any }> = {
   concluida: { label: "Concluída", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   "concluída": { label: "Concluída", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
@@ -466,7 +471,7 @@ export default function RelatorioOSPage() {
 
   const { data: financialDash } = useQuery<{ byMission?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
   const billingByOsId = useMemo(() => {
-    const map = new Map<number, { fat: number; boletim: number; km: number; pedagio: number }>();
+    const map = new Map<number, { fat: number; boletim: number; km: number; pedagio: number; status?: string }>();
     const missions = financialDash?.byMission || [];
     for (const m of missions) {
       const sid = Number(m.service_order_id);
@@ -476,6 +481,7 @@ export default function RelatorioOSPage() {
         boletim: Number(m.fat_total_boletim) || 0,
         km: Number(m.km_total) || 0,
         pedagio: Number(m.despesas_pedagio) || 0,
+        status: m.status, // status do BOLETIM (escort_billings), não da OS
       });
     }
     return map;
@@ -488,10 +494,11 @@ export default function RelatorioOSPage() {
   const liveFat = (o: ReportOS) =>
     Number((o.liveCost as any)?.canonico?.faturamento ?? o.liveCost?.faturamento_live ?? o.liveCost?.faturamento) || 0;
   const effectiveFat = (o: ReportOS) => {
-    if ((o.status || "").toLowerCase() === "cancelada") {
-      const b = billingByOsId.get(Number(o.id));
-      if (b && Number(b.boletim) > 0) return Number(b.boletim);
-    }
+    const b = billingByOsId.get(Number(o.id));
+    const isCancelada = (o.status || "").toLowerCase() === "cancelada";
+    const billFrozen = !!b && FROZEN_BILLING_STATUSES.has(String(b.status || "").toUpperCase());
+    // Cancelada (§8.1b) ou boletim aprovado/faturado/pago: respeita o valor congelado do boletim.
+    if ((isCancelada || billFrozen) && b && Number(b.boletim) > 0) return Number(b.boletim);
     return liveFat(o);
   };
   const effectiveKm = (o: ReportOS) => Number(o.liveCost?.km_total) || 0;

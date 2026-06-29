@@ -305,7 +305,7 @@ import type { Express } from "express";
       storage.getEmployees(),
       safeFrom("mission_updates", osIds, "id, service_order_id, mission_step, message, created_at, read_by_admin, latitude, longitude"),
       truckscontrol.getCachedPositions(),
-      fetchByServiceOrderIdsChunked("mission_photos", osIds, "service_order_id, step, km_value"),
+      fetchByServiceOrderIdsChunked("mission_photos", osIds, "service_order_id, step, km_value, created_at"),
       contractsPromise,
       fetchByServiceOrderIdsChunked("mission_costs", osIds, "service_order_id, amount, category, cost_type, vehicle_id"),
     ]);
@@ -333,6 +333,19 @@ import type { Express } from "express";
       arr.push(p);
       photosByOS.set(p.serviceOrderId, arr);
     }
+
+    // Quando uma OS tem mais de uma foto do mesmo step (ex.: km_final batido errado e depois
+    // corrigido pelo agente), `.find` pegava a PRIMEIRA (stale), inflando o faturamento ao vivo
+    // (ex.: TOR-0334 lia 38.829 em vez da correção 27.046 → R$61k em vez de R$5.144). A foto
+    // correta é sempre a MAIS RECENTE (maior created_at).
+    const latestPhotoByStep = (photos: any[], step: string): any | undefined => {
+      let best: any | undefined;
+      for (const p of photos) {
+        if (p.step !== step) continue;
+        if (!best || new Date(p.createdAt || 0).getTime() >= new Date(best.createdAt || 0).getTime()) best = p;
+      }
+      return best;
+    };
 
     const allContracts = contractsRes.data || [];
     const contractById = new Map(allContracts.map((c: any) => [c.id, c]));
@@ -438,7 +451,7 @@ import type { Express } from "express";
             const photos = photosByOS.get(o.id) || [];
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
-            const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+            const kmFinalPhoto = latestPhotoByStep(photos, "km_final");
             // O hodômetro inicial pode estar registrado como "km_chegada" OU "km_saida"
             // (campos legados/variações do app mobile). Se faltar o km inicial, o cálculo ao
             // vivo fazia km_total = km_final - 0 = odômetro cheio (ex.: TOR-0141 ficou 15.822 km
@@ -795,7 +808,7 @@ import type { Express } from "express";
             const photos = photosByOS.get(o.id) || [];
             const kmCheg = photos.find((p: any) => p.step === "km_chegada");
             const kmSai = photos.find((p: any) => p.step === "km_saida");
-            const kmFin = photos.find((p: any) => p.step === "km_final");
+            const kmFin = latestPhotoByStep(photos, "km_final");
             return {
               kmInicial: kmCheg?.kmValue ?? kmSai?.kmValue ?? null,
               kmFinal: kmFin?.kmValue ?? null,

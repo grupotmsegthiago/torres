@@ -21,6 +21,11 @@ import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
+// Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
+// O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
+// ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
+const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -375,14 +380,17 @@ export default function BalancoGerencialPage() {
         const bill = billingByOs.get(sid);
         const lc = o.liveCost || {};
         const lcCanon = lc.canonico || null;
-        // Dono (ordem explícita 29/06/2026): RECEITA = recálculo real ao vivo via motor CANÔNICO
+        // Dono (ordem 29/06/2026, reconciliada): RECEITA = recálculo real ao vivo via motor CANÔNICO
         // (calcularEscolta — km/horas reais, HE por minuto, adic. noturno), MESMA fonte do Relatório
-        // de OS. Não usa mais o boletim congelado. Recusada já é filtrada por status (L372).
-        // EXCEÇÃO: OS cancelada mantém o valor do BOLETIM congelado (§8.1b — tabela 100 km; o motor
-        // canônico do grid roda o contrato da OS, NÃO a tabela 100 km, então não pode substituir).
+        // de OS — MAS só para boletins NÃO aprovados (A_VERIFICAR). Recusada já é filtrada (L372).
+        // EXCEÇÕES que mantêm o BOLETIM congelado:
+        //   - OS cancelada (§8.1b — tabela 100 km; o motor canônico roda o contrato da OS, não a 100 km);
+        //   - boletim APROVADA/FATURADO/PAGO — valor conferido e travado por uma pessoa, é a verdade e
+        //     não pode ser sobrescrito por recálculo ao vivo (que pode ler foto de km duplicada).
         const liveFat = Number(lcCanon?.faturamento ?? lc.faturamento_live ?? lc.faturamento) || 0;
         const isCancelada = (o.status || "").toLowerCase() === "cancelada";
-        const useBoletim = isCancelada && !!bill && Number(bill.fat_total_boletim) > 0;
+        const billFrozen = !!bill && FROZEN_BILLING_STATUSES.has(String(bill.status || "").toUpperCase());
+        const useBoletim = (isCancelada || billFrozen) && !!bill && Number(bill.fat_total_boletim) > 0;
         const fat = useBoletim ? (Number(bill.fat_total_boletim) || 0) : liveFat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
         const pag = bill ? Number(bill.pag_total || 0) : 0;
