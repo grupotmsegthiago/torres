@@ -1,0 +1,82 @@
+Aqui está o prompt mestre completo, estruturado e com nível de produção (produção profissional) para você mandar no Replit. Ele já abrange o fluxo de ponta a ponta: o app do vigilante, o fluxo de assinatura digital/facial, a visão do administrador e o Dashboard completo do RH.
+
+Prompt para o Replit
+Objetivo Geral:
+
+Implementar um módulo completo e robusto de Gestão e Assinatura Digital de Contratos e Documentos (RH) dentro do sistema TMSEGo. Este módulo deve integrar o App do Vigilante (Mobile/PWA), o Painel do Administrador (para auditoria/impressão) e uma Dashboard Gerencial do RH para controle de pendências.
+
+1. Aplicativo do Vigilante (Interface Mobile)
+Nova Opção no Menu: Adicionar um item chamado "Contratos" no menu principal do vigilante, sem bloquear o acesso às demais funções do aplicativo.
+
+Tela Inicial de Contratos:
+
+Área de Alertas: Se houver algum documento pendente, exibir um banner amigável de lembrete no topo: "Você possui X documentos aguardando sua assinatura."
+
+Listagem Filtrada: Dividir a tela em duas abas ou categorias bem claras: "Pendentes" e "Assinados".
+
+Tipos de Documento: Identificar visualmente a categoria de cada item (ex: Contrato de Trabalho, Termo de Benefício [como o Termo Flash], LGPD, Regulamento Interno).
+
+Fluxo de Assinatura:
+
+Ao clicar em um documento pendente, o vigilante abre o documento para leitura na íntegra.
+
+No final do documento, incluir o botão "Assinar Digitalmente".
+
+Validação Facial + Digital: Ao clicar em assinar, o sistema deve acionar a câmera do dispositivo do vigilante para capturar uma foto de validação facial (armazenando a imagem e os metadados como IP, data, hora e geolocalização da assinatura no banco de dados para segurança jurídica) e colher a assinatura digital do colaborador.
+
+2. Visão do Administrador (Gerenciamento Individual)
+Perfil do Funcionário: Na tela de cadastro/detalhes de cada colaborador, adicionar uma aba de histórico chamada "Documentos e Contratos".
+
+Ações Disponíveis:
+
+Visualizar Status: Ver o histórico completo de quando o documento foi emitido, quando foi visualizado e a data exata da assinatura com a foto do reconhecimento facial.
+
+Download e Impressão: Opção de gerar o PDF final com a folha de assinatura eletrônica (contendo o carimbo de autenticação jurídica e os dados coletados) para arquivamento digital ou impressão física (window.print()).
+
+3. Dashboard Gerencial do RH (Painel Web de Controle 100%)
+Criar uma tela de controle centralizada dedicada à equipe de Recursos Humanos com as seguintes métricas e listagens de forma visual e scannável:
+
+Indicadores em Cards (Métricas Rápidas):
+
+Total de Documentos Emitidos (Mês/Período)
+
+Taxa de Conformidade (% de documentos assinados vs. pendentes)
+
+Documentos Pendentes (Quantidade total que aguarda assinatura)
+
+Avisos de Urgência (Documentos pendentes há mais de 7 dias)
+
+Gráficos Auxiliares:
+
+Gráfico de rosca ou barras mostrando o status por tipo de documento (ex: quantos Termos Flash já foram assinados e quantos faltam).
+
+Tabela de Controle Operacional (Grid Principal):
+
+Uma tabela robusta com colunas para: Colaborador, Tipo de Documento, Data de Emissão, Status (Pendente / Assinado) e um botão de ação rápida para "Enviar Lembrete" (enviando uma notificação ou alerta direto no app do vigilante).
+
+Filtros dinâmicos por status (Ver apenas Pendentes), por tipo de contrato, e busca por nome do colaborador.
+
+4. Estrutura de Banco de Dados e Backend (Supabase)
+Tabela employee_documents: Criar ou adaptar a tabela para gerenciar essa arquitetura:
+
+id (uuid)
+
+employee_id (fkey para a tabela de funcionários)
+
+document_type (text - ex: 'contrato_servico', 'beneficio_flash', 'outros')
+
+title (text)
+
+content (text/html - o texto original do contrato sem alterações)
+
+status (text - 'pending', 'signed')
+
+created_at (timestamp)
+
+signed_at (timestamp, nullable)
+
+signature_metadata (jsonb - para guardar IP, localização, modelo do celular)
+
+facial_auth_url (text - caminho da foto guardada no Storage do Supabase para conferência do RH)
+
+Diretrizes de Implementação: Refatore o código atual utilizando TypeScript e garanta que os componentes de interface no React sejam limpos, com feedbacks visuais em tempo real utilizando os recursos de Realtime do Supabase onde for necessário para o RH ver as assinaturas entrando ao vivo.
