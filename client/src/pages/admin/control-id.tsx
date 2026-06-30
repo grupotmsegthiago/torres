@@ -60,7 +60,7 @@ type FolhaDay = {
   date: string; clockIn: string | null; lunchOut: string | null; lunchIn: string | null;
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
   punches?: FolhaPunch[];
-  extraMin?: number; jornadaDiariaMin?: number;
+  extraMin?: number; jornadaDiariaMin?: number; noturnoMin?: number; workedMin?: number; normaisMin?: number;
 };
 type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
@@ -1597,6 +1597,13 @@ function fmtBRL(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Minutos -> "HH:MM" (ex.: 1199 -> "19:59"). Hora sem teto de 2 dígitos para
+// somatórios mensais (ex.: 28771 -> "479:31"); minutos sempre com 2 dígitos.
+function hhmm(min: number | null | undefined): string {
+  const m = Math.max(0, Math.round(Number(min || 0)));
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 function FolhaTab() {
   const { toast } = useToast();
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
@@ -1909,7 +1916,9 @@ function FolhaTab() {
                   <th className="p-2 text-center font-medium text-neutral-600">Saída Almoço</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Volta Almoço</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Saída</th>
-                  <th className="p-2 text-right font-medium text-neutral-600">Horas</th>
+                  <th className="p-2 text-right font-medium text-neutral-600">Normais</th>
+                  <th className="p-2 text-right font-medium text-neutral-600">Trabalhado</th>
+                  <th className="p-2 text-right font-medium text-neutral-600">Noturno</th>
                   <th className="p-2 text-right font-medium text-neutral-600">H. Extra</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
                   <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
@@ -1923,10 +1932,12 @@ function FolhaTab() {
                     <td className="p-2 text-center font-mono text-xs">{d.lunchOut || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.lunchIn || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.clockOut || "—"}</td>
-                    <td className="p-2 text-right font-bold text-blue-600">{d.hoursWorked || "—"}</td>
+                    <td className="p-2 text-right tabular-nums text-neutral-700" data-testid={`text-normais-${d.date}`}>{d.clockIn && d.clockOut ? hhmm(d.normaisMin) : "—"}</td>
+                    <td className="p-2 text-right font-bold text-blue-600 tabular-nums" data-testid={`text-trabalhado-${d.date}`}>{d.clockIn && d.clockOut ? hhmm(d.workedMin) : "—"}</td>
+                    <td className="p-2 text-right tabular-nums text-indigo-600" data-testid={`text-noturno-${d.date}`}>{d.noturnoMin && d.noturnoMin > 0 ? hhmm(d.noturnoMin) : <span className="text-neutral-300">—</span>}</td>
                     <td className="p-2 text-right text-xs tabular-nums" data-testid={`text-extra-${d.date}`}>
                       {d.extraMin && d.extraMin > 0 ? (
-                        <span className="font-semibold text-orange-600">+{(d.extraMin / 60).toFixed(2)}</span>
+                        <span className="font-semibold text-orange-600">+{hhmm(d.extraMin)}</span>
                       ) : (
                         <span className="text-neutral-300">—</span>
                       )}
@@ -1945,16 +1956,21 @@ function FolhaTab() {
                   </tr>
                 ))}
                 {stats && (() => {
+                  const totalNormaisMin = folha.reduce((s, d) => s + (Number(d.normaisMin) || 0), 0);
+                  const totalWorkedMin = folha.reduce((s, d) => s + (Number(d.workedMin) || 0), 0);
+                  const totalNoturnoMin = folha.reduce((s, d) => s + (Number(d.noturnoMin) || 0), 0);
                   const totalExtraMin = folha.reduce((s, d) => s + (Number(d.extraMin) || 0), 0);
                   return (
                     <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
                       <td className="p-2" colSpan={5}>Total no mês ({stats.daysWorked} dias)</td>
-                      <td className="p-2 text-right text-blue-700">{stats.hoursWorked.toFixed(2)}h</td>
+                      <td className="p-2 text-right text-neutral-700 tabular-nums" data-testid="text-total-normais">{hhmm(totalNormaisMin)}</td>
+                      <td className="p-2 text-right text-blue-700 tabular-nums" data-testid="text-total-trabalhado">{hhmm(totalWorkedMin)}</td>
+                      <td className="p-2 text-right text-indigo-700 tabular-nums" data-testid="text-total-noturno">{totalNoturnoMin > 0 ? hhmm(totalNoturnoMin) : "—"}</td>
                       <td className="p-2 text-right text-orange-600 tabular-nums" data-testid="text-total-extra-dia">
-                        {totalExtraMin > 0 ? `+${(totalExtraMin / 60).toFixed(2)}` : "—"}
+                        {totalExtraMin > 0 ? `+${hhmm(totalExtraMin)}` : "—"}
                       </td>
                       <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
-                        {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{stats.horaExtra.toFixed(2)}h</span>}
+                        {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{hhmm(Math.round(stats.horaExtra * 60))}</span>}
                       </td>
                     </tr>
                   );

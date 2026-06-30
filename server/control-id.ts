@@ -2089,6 +2089,11 @@ export async function buildFolhaPonto(
     horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
   }
   const jornadaDiariaMin = (horasMensais * 60) / 25;
+  // NORMAIS no estilo do cartão Control iD: jornada prevista do dia 04:00–23:59
+  // = 19h59 (1199 min). É o teto das horas "normais"; o que passar disso o cartão
+  // mostra como extra. Só EXIBIÇÃO — não altera custo de folha (a H. Extra de
+  // pagamento continua sobre jornadaDiariaMin = horas_mensais ÷ 25).
+  const NORMAL_DAILY_CAP_MIN = 1199;
 
   // Agrupa por dia (BRT)
   const dayMap = new Map<string, any[]>();
@@ -2129,6 +2134,8 @@ export async function buildFolhaPonto(
         workedMin -= lunchMin;
       }
       entry.hoursWorked = (workedMin / 60).toFixed(2);
+      entry.workedMin = Math.round(workedMin);
+      entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
       const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
       entry.extraMin = Math.round(extraMin);
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
@@ -2143,6 +2150,8 @@ export async function buildFolhaPonto(
       }
       entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
     } else {
+      entry.workedMin = 0;
+      entry.normaisMin = 0;
       entry.extraMin = 0;
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
       entry.noturnoMin = 0;
