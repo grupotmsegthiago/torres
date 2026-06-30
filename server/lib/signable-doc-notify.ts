@@ -6,9 +6,27 @@
  * Ver memory whatsapp-zapi-antiban.
  */
 import OpenAI from "openai";
-import { sendText } from "./zapi";
+import { sendText, assertExpectedNumber } from "./zapi";
 import { casualize, randInt, randomTypingSeconds, sleep, humanDelayMs } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
+
+/**
+ * Resultado de UMA tentativa de aviso por WhatsApp, p/ o RH enxergar quando o
+ * vigilante NÃO foi avisado (antes era um boolean descartado):
+ *  - "enviado"     → a mensagem saiu de fato pra Z-API.
+ *  - "sem_telefone"→ funcionário sem telefone cadastrado (nada a enviar).
+ *  - "bloqueado"   → gate FAIL-CLOSED do número oficial barrou (chip da Central errado).
+ *  - "falha"       → Z-API recusou/erro de rede ao enviar.
+ */
+export type DocNotifyStatus = "enviado" | "sem_telefone" | "bloqueado" | "falha";
+
+export interface DocNotifyTarget {
+  docId: number;
+  emp: any;
+}
+
+/** Persiste o status do aviso de um documento (callback dado pela camada de rotas). */
+export type PersistDocNotify = (docId: number, status: DocNotifyStatus) => void | Promise<void>;
 
 export function toIntlPhone(rawPhone: string | null | undefined): string | null {
   const digits = normalizePhone(rawPhone);
@@ -288,13 +306,25 @@ export function notifyEmployeeDocSignedBackground(emp: any, docTitle: string): v
   );
 }
 
-/** Notifica UM colaborador. Best-effort: nunca lança; loga e segue. */
-export async function notifyEmployeeDoc(emp: any, docTitle: string, isReminder = false): Promise<boolean> {
+/**
+ * Notifica UM colaborador. Best-effort: nunca lança; loga e segue.
+ * Retorna o STATUS da tentativa (antes era um boolean descartado) p/ o RH ver
+ * quando o vigilante não foi avisado. Ordem dos casos importa: sem telefone →
+ * gate de número oficial bloqueado → envio.
+ */
+export async function notifyEmployeeDoc(emp: any, docTitle: string, isReminder = false): Promise<DocNotifyStatus> {
   try {
     const intl = toIntlPhone(emp?.phone);
     if (!intl) {
       console.warn(`[signable-docs:notify] funcionário #${emp?.id} sem telefone cadastrado — WhatsApp não enviado`);
-      return false;
+      return "sem_telefone";
+    }
+    // Gate FAIL-CLOSED do número oficial: se a Central está pareada no número
+    // errado, NENHUM envio sai — sinaliza "bloqueado" em vez de "falha" genérica.
+    const gate = await assertExpectedNumber();
+    if (!gate.ok) {
+      console.warn(`[signable-docs:notify] gate de número oficial bloqueou aviso p/ #${emp?.id} (chip da Central errado)`);
+      return "bloqueado";
     }
     const msg = await buildDocNotifyMessage(docTitle, emp?.name, isReminder);
     const r = await sendText({
@@ -303,24 +333,42 @@ export async function notifyEmployeeDoc(emp: any, docTitle: string, isReminder =
       delayTypingSeconds: randomTypingSeconds(),
       senderName: "RH Torres",
     });
-    if (!r.ok) console.warn(`[signable-docs:notify] envio falhou p/ #${emp?.id}: ${r.error}`);
-    return !!r.ok;
+    if (!r.ok) {
+      console.warn(`[signable-docs:notify] envio falhou p/ #${emp?.id}: ${r.error}`);
+      // O sendText reavalia o gate internamente; se barrou lá, classifica como bloqueado.
+      return /número oficial|número diferente/i.test(r.error || "") ? "bloqueado" : "falha";
+    }
+    return "enviado";
   } catch (e: any) {
     console.warn(`[signable-docs:notify] erro ao notificar #${emp?.id}:`, e?.message);
-    return false;
+    return "falha";
   }
 }
 
 /**
  * Dispara o aviso em background (não bloqueia a resposta HTTP). No lote, aplica
  * PACING GLOBAL entre destinatários (amortecedor anti-ban principal da Z-API).
+ * Opcionalmente PERSISTE o status de cada tentativa via `persist(docId, status)`
+ * para o RH enxergar quem não foi avisado.
  */
-export function notifyEmployeesDocBackground(emps: any[], docTitle: string, isReminder = false): void {
-  const list = (emps || []).filter(Boolean);
+export function notifyDocsBackground(
+  targets: DocNotifyTarget[],
+  docTitle: string,
+  isReminder = false,
+  persist?: PersistDocNotify,
+): void {
+  const list = (targets || []).filter((t) => t && t.emp);
   if (!list.length) return;
   (async () => {
     for (let i = 0; i < list.length; i++) {
-      await notifyEmployeeDoc(list[i], docTitle, isReminder);
+      const status = await notifyEmployeeDoc(list[i].emp, docTitle, isReminder);
+      if (persist && list[i].docId) {
+        try {
+          await persist(list[i].docId, status);
+        } catch (e: any) {
+          console.warn(`[signable-docs:notify] persist status falhou doc#${list[i].docId}:`, e?.message);
+        }
+      }
       if (i < list.length - 1) await sleep(humanDelayMs(6000, 26000));
     }
   })().catch((e) => console.warn("[signable-docs:notify] dispatcher falhou:", e?.message));

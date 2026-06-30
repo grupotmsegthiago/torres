@@ -615,11 +615,17 @@ export async function ensureDbSchema() {
         signature_metadata JSONB,
         reminder_count INTEGER DEFAULT 0,
         last_reminder_at TIMESTAMP,
+        whatsapp_notify_status TEXT,
+        whatsapp_notify_at TIMESTAMP,
         created_by INTEGER,
         created_by_name TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `).catch(() => {});
+    // Status da última tentativa de aviso por WhatsApp (enviado/sem_telefone/bloqueado/falha)
+    // p/ o RH ver quando o vigilante NÃO foi avisado (telefone faltando ou gate de número oficial).
+    await execSql(`ALTER TABLE employee_signable_documents ADD COLUMN IF NOT EXISTS whatsapp_notify_status TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_signable_documents ADD COLUMN IF NOT EXISTS whatsapp_notify_at TIMESTAMP`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_employee ON employee_signable_documents (employee_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_status ON employee_signable_documents (assinatura_status)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_type ON employee_signable_documents (document_type)`).catch(() => {});

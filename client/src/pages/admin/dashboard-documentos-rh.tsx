@@ -20,8 +20,17 @@ interface DashRow {
   createdAt: string;
   assinadoEm: string | null;
   reminderCount: number;
+  whatsappNotifyStatus: "enviado" | "sem_telefone" | "bloqueado" | "falha" | null;
+  whatsappNotifyAt: string | null;
   ageDays: number;
 }
+
+const WA_NOTIFY_META: Record<string, { label: string; cls: string; title: string }> = {
+  enviado: { label: "WhatsApp enviado", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "O aviso saiu pelo WhatsApp." },
+  sem_telefone: { label: "Sem telefone", cls: "bg-amber-50 text-amber-700 border-amber-200", title: "Funcionário sem telefone cadastrado — aviso NÃO enviado." },
+  bloqueado: { label: "Bloqueado (nº Central)", cls: "bg-red-50 text-red-700 border-red-200", title: "A Central está pareada no número errado — nenhum aviso saiu. Reconecte o número oficial." },
+  falha: { label: "Falha no envio", cls: "bg-red-50 text-red-700 border-red-200", title: "A Z-API recusou o envio ou houve erro de rede — aviso NÃO entregue." },
+};
 interface DashData {
   cards: { emitidosPeriodo: number; assinados: number; pendentes: number; urgentes: number; conformidade: number; totalAll: number; periodDays: number };
   byType: { type: string; label: string; assinados: number; pendentes: number }[];
@@ -60,6 +69,15 @@ export default function DashboardDocumentosRHPage() {
 
   const cards = data?.cards;
 
+  const undelivered = useMemo(() => {
+    const rows = data?.rows || [];
+    return {
+      bloqueado: rows.filter(r => r.whatsappNotifyStatus === "bloqueado").length,
+      semTelefone: rows.filter(r => r.whatsappNotifyStatus === "sem_telefone").length,
+      falha: rows.filter(r => r.whatsappNotifyStatus === "falha").length,
+    };
+  }, [data]);
+
   return (
     <AdminLayout>
       <div className="p-6 space-y-6">
@@ -77,6 +95,29 @@ export default function DashboardDocumentosRHPage() {
             ))}
           </div>
         </div>
+
+        {!isLoading && undelivered.bloqueado > 0 && (
+          <div className="rounded-2xl border border-red-300 bg-red-50 p-4 flex items-start gap-3" data-testid="alert-wa-bloqueado">
+            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-red-800">
+              <p className="font-black">A Central de WhatsApp está no número errado — {undelivered.bloqueado} aviso(s) de documento NÃO saíram.</p>
+              <p className="text-red-700">O envio está bloqueado porque o chip pareado não é o número oficial da Central. Reconecte o número correto para que os vigilantes voltem a ser avisados.</p>
+            </div>
+          </div>
+        )}
+        {!isLoading && (undelivered.semTelefone > 0 || undelivered.falha > 0) && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3" data-testid="alert-wa-naoentregue">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-800">
+              <p className="font-black">Alguns vigilantes podem não ter sido avisados por WhatsApp.</p>
+              <p className="text-amber-700">
+                {undelivered.semTelefone > 0 ? `${undelivered.semTelefone} sem telefone cadastrado. ` : ""}
+                {undelivered.falha > 0 ? `${undelivered.falha} com falha no envio. ` : ""}
+                Veja a coluna "Aviso WhatsApp" na tabela abaixo.
+              </p>
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-neutral-400" /></div>
@@ -126,6 +167,7 @@ export default function DashboardDocumentosRHPage() {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Funcionário</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Documento</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Aviso WhatsApp</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Emitido</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Assinado em</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase">Ações</th>
@@ -133,7 +175,7 @@ export default function DashboardDocumentosRHPage() {
                   </thead>
                   <tbody>
                     {filteredRows.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-10 text-neutral-400">Nenhum documento encontrado.</td></tr>
+                      <tr><td colSpan={7} className="text-center py-10 text-neutral-400">Nenhum documento encontrado.</td></tr>
                     ) : filteredRows.map(r => {
                       const assinado = r.assinaturaStatus === "assinado";
                       const urgent = !assinado && r.ageDays > 7;
@@ -149,6 +191,19 @@ export default function DashboardDocumentosRHPage() {
                             ) : (
                               <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-amber-50 text-amber-700 border border-amber-200">PENDENTE</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {(() => {
+                              const meta = r.whatsappNotifyStatus ? WA_NOTIFY_META[r.whatsappNotifyStatus] : null;
+                              if (!meta) {
+                                return <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-neutral-100 text-neutral-400 border border-neutral-200" title="Aviso por WhatsApp ainda não processado." data-testid={`wa-status-${r.id}`}>—</span>;
+                              }
+                              return (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold border ${meta.cls}`} title={`${meta.title}${r.whatsappNotifyAt ? ` (${brtDateTime(r.whatsappNotifyAt)})` : ""}`} data-testid={`wa-status-${r.id}`}>
+                                  {meta.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-xs text-neutral-500">{brtDateTime(r.createdAt)}</td>
                           <td className="px-4 py-3 text-xs text-neutral-500">{brtDateTime(r.assinadoEm)}</td>

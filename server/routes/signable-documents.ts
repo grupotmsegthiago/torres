@@ -3,7 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
-import { notifyEmployeesDocBackground, notifyEmployeeDocSignedBackground, notifyRhDocSignedBackground } from "../lib/signable-doc-notify";
+import { notifyDocsBackground, notifyEmployeeDocSignedBackground, notifyRhDocSignedBackground, type DocNotifyStatus } from "../lib/signable-doc-notify";
 import {
   getTemplate,
   listTemplates,
@@ -108,6 +108,14 @@ function buildDataUri(rawBase64?: string | null, mime?: string | null, legacyDat
     }
   }
   return null;
+}
+
+/** Grava na linha do documento o status da tentativa de aviso por WhatsApp (best-effort). */
+async function persistWhatsappNotify(docId: number, status: DocNotifyStatus): Promise<void> {
+  await supabaseAdmin
+    .from(TABLE)
+    .update({ whatsapp_notify_status: status, whatsapp_notify_at: brtTimestamp() })
+    .eq("id", docId);
 }
 
 async function loadEmployeeMap(ids?: number[]): Promise<Map<number, any>> {
@@ -235,7 +243,8 @@ export function registerSignableDocumentRoutes(app: Express) {
       const { data, error } = await supabaseAdmin.from(TABLE).insert(payload).select().single();
       if (error) return res.status(500).json({ message: error.message });
       // Avisa o vigilante no WhatsApp (best-effort, em background — não segura a resposta).
-      notifyEmployeesDocBackground([emp], data.title, false);
+      // Persiste o status p/ o RH ver se o aviso chegou (enviado/sem_telefone/bloqueado/falha).
+      notifyDocsBackground([{ docId: data.id, emp }], data.title, false, persistWhatsappNotify);
       res.json(toCamelObj(data));
     } catch (err: any) {
       console.error("[signable-docs:emit]", err);
@@ -274,10 +283,11 @@ export function registerSignableDocumentRoutes(app: Express) {
       const { data, error } = await supabaseAdmin.from(TABLE).insert(rows).select();
       if (error) return res.status(500).json({ message: error.message });
       // Avisa cada vigilante no WhatsApp (best-effort, em background com pacing anti-ban).
-      const notifyEmps = (data || [])
-        .map((d: any) => empMap.get(d.employee_id))
-        .filter(Boolean);
-      notifyEmployeesDocBackground(notifyEmps, title || tpl.title, false);
+      // Persiste por documento o status do aviso p/ o RH ver quem não foi avisado.
+      const notifyTargets = (data || [])
+        .map((d: any) => ({ docId: d.id, emp: empMap.get(d.employee_id) }))
+        .filter((t: any) => t.emp);
+      notifyDocsBackground(notifyTargets, title || tpl.title, false, persistWhatsappNotify);
       res.json({ created: data?.length || 0, items: toCamelArray(data || []) });
     } catch (err: any) {
       console.error("[signable-docs:bulk]", err);
@@ -291,7 +301,7 @@ export function registerSignableDocumentRoutes(app: Express) {
       const employeeId = req.query.employeeId ? Number(req.query.employeeId) : null;
       let q = supabaseAdmin
         .from(TABLE)
-        .select("id, employee_id, document_type, title, status, assinatura_status, visualizado_em, assinado_em, reminder_count, last_reminder_at, created_by_name, created_at")
+        .select("id, employee_id, document_type, title, status, assinatura_status, visualizado_em, assinado_em, reminder_count, last_reminder_at, whatsapp_notify_status, whatsapp_notify_at, created_by_name, created_at")
         .order("created_at", { ascending: false });
       if (employeeId) q = q.eq("employee_id", employeeId);
       const { data, error } = await q.limit(500);
@@ -488,10 +498,10 @@ export function registerSignableDocumentRoutes(app: Express) {
         .select()
         .single();
       if (error) return res.status(500).json({ message: error.message });
-      // Lembrete ativo via WhatsApp (best-effort, em background).
+      // Lembrete ativo via WhatsApp (best-effort, em background) — persiste o status.
       const empMap = await loadEmployeeMap([rows[0].employee_id]);
       const emp = empMap.get(rows[0].employee_id);
-      if (emp) notifyEmployeesDocBackground([emp], rows[0].title || data.title, true);
+      if (emp) notifyDocsBackground([{ docId: rows[0].id, emp }], rows[0].title || data.title, true, persistWhatsappNotify);
       res.json(toCamelObj(data));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -512,7 +522,7 @@ export function registerSignableDocumentRoutes(app: Express) {
 
       const { data: all, error } = await supabaseAdmin
         .from(TABLE)
-        .select("id, employee_id, document_type, title, status, assinatura_status, assinado_em, reminder_count, created_at")
+        .select("id, employee_id, document_type, title, status, assinatura_status, assinado_em, reminder_count, whatsapp_notify_status, whatsapp_notify_at, created_at")
         .order("created_at", { ascending: false })
         .limit(2000);
       if (error) return res.status(500).json({ message: error.message });
@@ -549,6 +559,8 @@ export function registerSignableDocumentRoutes(app: Express) {
           createdAt: d.created_at,
           assinadoEm: d.assinado_em,
           reminderCount: d.reminder_count || 0,
+          whatsappNotifyStatus: d.whatsapp_notify_status || null,
+          whatsappNotifyAt: d.whatsapp_notify_at || null,
           ageDays: Math.floor((nowMs - new Date(d.created_at).getTime()) / (24 * 3600 * 1000)),
         });
       }

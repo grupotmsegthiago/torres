@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback, notifyEmployeeDoc, notifyEmployeesDocBackground, buildRhDocSignedFallback, resolveRhRecipient } from "./signable-doc-notify";
+import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback, notifyEmployeeDoc, notifyDocsBackground, buildRhDocSignedFallback, resolveRhRecipient } from "./signable-doc-notify";
 
 test("toIntlPhone adiciona DDI 55 em número nacional (10/11 dígitos)", () => {
   assert.equal(toIntlPhone("11926839456"), "5511926839456");
@@ -94,27 +94,28 @@ test("buildDocSignedFallback funciona sem nome do funcionário", () => {
 // NUNCA lança — a emissão do documento segue normal e o WhatsApp só é pulado.
 // O envio real passa por sendText (server/lib/zapi.ts), que tem a trava
 // FAIL-CLOSED de número OFICIAL da Central (ver memory whatsapp-zapi-antiban):
-// número errado / instância sem confirmação ⇒ envio bloqueado, mas como esta
-// camada é best-effort, o bloqueio também só vira `false`, nunca exceção.
+// número errado / instância sem confirmação ⇒ envio bloqueado. Agora a camada
+// devolve o STATUS da tentativa (enviado/sem_telefone/bloqueado/falha) p/ o RH,
+// em vez do boolean descartado — mas continua best-effort, nunca lança.
 
-test("notifyEmployeeDoc é best-effort: sem telefone retorna false e NÃO lança", async () => {
+test("notifyEmployeeDoc é best-effort: sem telefone retorna 'sem_telefone' e NÃO lança", async () => {
   const r = await notifyEmployeeDoc({ id: 1, name: "Sem Telefone", phone: null }, "Termo de Ciência", false);
-  assert.equal(r, false, "sem telefone não envia");
+  assert.equal(r, "sem_telefone", "sem telefone não envia");
 });
 
-test("notifyEmployeeDoc é best-effort: telefone vazio/ inválido retorna false e NÃO lança", async () => {
-  assert.equal(await notifyEmployeeDoc({ id: 2, name: "X", phone: "" }, "Doc", false), false);
-  assert.equal(await notifyEmployeeDoc({ id: 3, name: "Y", phone: "   " }, "Doc", true), false);
+test("notifyEmployeeDoc é best-effort: telefone vazio/ inválido retorna 'sem_telefone' e NÃO lança", async () => {
+  assert.equal(await notifyEmployeeDoc({ id: 2, name: "X", phone: "" }, "Doc", false), "sem_telefone");
+  assert.equal(await notifyEmployeeDoc({ id: 3, name: "Y", phone: "   " }, "Doc", true), "sem_telefone");
   // funcionário undefined também não pode quebrar (rota pode passar lixo)
-  assert.equal(await notifyEmployeeDoc(undefined as any, "Doc", false), false);
+  assert.equal(await notifyEmployeeDoc(undefined as any, "Doc", false), "sem_telefone");
 });
 
-test("notifyEmployeesDocBackground não lança com lista vazia/nula", () => {
+test("notifyDocsBackground não lança com lista vazia/nula", () => {
   // Dispara em background; o que importa aqui é que a CHAMADA síncrona da rota
   // não lança nem agenda nada com entrada vazia.
-  assert.doesNotThrow(() => notifyEmployeesDocBackground([], "Doc", false));
-  assert.doesNotThrow(() => notifyEmployeesDocBackground(null as any, "Doc", false));
-  assert.doesNotThrow(() => notifyEmployeesDocBackground([null, undefined] as any, "Doc", false));
+  assert.doesNotThrow(() => notifyDocsBackground([], "Doc", false));
+  assert.doesNotThrow(() => notifyDocsBackground(null as any, "Doc", false));
+  assert.doesNotThrow(() => notifyDocsBackground([null, undefined] as any, "Doc", false));
 });
 
 test("buildRhDocSignedFallback cita QUEM assinou e QUAL documento", () => {
