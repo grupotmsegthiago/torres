@@ -1319,7 +1319,7 @@ export async function buildFolhaStats(
     employee?: { role?: string | null; tipo_contratacao?: string | null };
   } = {},
 ): Promise<any> {
-  const multiplicadorHE = opts.multiplicadorHE ?? 1.5; // CLT padrão 50%; CCT é 1.6 (60%)
+  const multiplicadorHE = opts.multiplicadorHE ?? 1.6; // CCT vigilância = 60% (HE 24,26 = 15,16×1,6). CLT mínimo é 50%, mas o sistema usa a CCT.
 
   // Pega salário vigente mais recente (cuja effective_date <= último dia do mês).
   // Buscado ANTES do ponto pra injetar horas_mensais em buildFolhaPonto e evitar
