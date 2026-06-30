@@ -27,6 +27,14 @@ function formatElapsed(entradaISO: string) {
   return `${h}h${String(m).padStart(2, "0")}`;
 }
 
+// Horas decimais -> "HH:MM" com sinal (ex.: 7.5 -> "07:30"; -1.25 -> "-01:15").
+function hhmmH(hours: number | null | undefined): string {
+  const totalMin = Math.round(Number(hours || 0) * 60);
+  const sign = totalMin < 0 ? "-" : "";
+  const m = Math.abs(totalMin);
+  return `${sign}${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 function getMesOptions() {
   const opts: { value: string; label: string }[] = [];
   const now = new Date();
@@ -202,12 +210,12 @@ export default function PontoOperacionalPage() {
                           </div>
                         </div>
                         <p className="text-sm font-bold text-neutral-700 tabular-nums whitespace-nowrap">
-                          {r.totalHoras.toFixed(1)}h <span className="text-neutral-300 font-normal">/ {r.limiteHoras}h</span>
+                          {hhmmH(r.totalHoras)} <span className="text-neutral-300 font-normal">/ {hhmmH(r.limiteHoras)}</span>
                         </p>
                       </div>
                       {r.horasExtras > 0 && (
                         <p className="text-[10px] text-red-600 font-medium mt-1">
-                          +{r.horasExtras.toFixed(1)}h extras • Custo: R$ {r.custoHoraExtra.toFixed(2)} (50% folha: R$ {r.bonusFuncionario.toFixed(2)} | 50% empresa: R$ {r.custoEmpresa.toFixed(2)})
+                          +{hhmmH(r.horasExtras)} extras • Custo: R$ {r.custoHoraExtra.toFixed(2)} (50% folha: R$ {r.bonusFuncionario.toFixed(2)} | 50% empresa: R$ {r.custoEmpresa.toFixed(2)})
                         </p>
                       )}
                     </div>
@@ -240,7 +248,7 @@ export default function PontoOperacionalPage() {
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-200">FP</span>
                                 )}
                                 <p className="text-xs font-bold text-neutral-900">
-                                  {reg.status === "aberto" ? formatElapsed(reg.entrada) : `${Number(reg.horas_decimal).toFixed(1)}h`}
+                                  {reg.status === "aberto" ? formatElapsed(reg.entrada) : hhmmH(Number(reg.horas_decimal))}
                                 </p>
                                 {reg.origem !== "folha_ponto" && (
                                   <button

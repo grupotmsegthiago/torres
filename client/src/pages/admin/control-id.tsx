@@ -1533,15 +1533,15 @@ function PainelMesTab() {
                         <span className="text-neutral-300">—</span>
                       )}
                     </td>
-                    <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{r.hoursWorked.toFixed(2)}h</td>
+                    <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{hhmmH(r.hoursWorked)}</td>
                     <td className="p-2">
                       <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
                         <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="text-[10px] text-neutral-500 mt-0.5">{pct.toFixed(0)}% de {r.hoursLimit}h</div>
+                      <div className="text-[10px] text-neutral-500 mt-0.5">{pct.toFixed(0)}% de {hhmmH(r.hoursLimit)}</div>
                     </td>
                     <td className={`p-2 text-right font-semibold tabular-nums ${r.hoursRemaining < 0 ? "text-red-600" : r.hoursRemaining < 22 ? "text-orange-600" : "text-neutral-700"}`}>
-                      {r.hoursRemaining < 0 ? `+${Math.abs(r.hoursRemaining).toFixed(1)}h extra` : `${r.hoursRemaining.toFixed(1)}h`}
+                      {r.hoursRemaining < 0 ? `+${hhmmH(Math.abs(r.hoursRemaining))} extra` : hhmmH(r.hoursRemaining)}
                     </td>
                     <td className="p-2 text-center text-xs text-neutral-500">{r.daysWorked}</td>
                   </tr>
@@ -1602,6 +1602,12 @@ function fmtBRL(n: number | null | undefined): string {
 function hhmm(min: number | null | undefined): string {
   const m = Math.max(0, Math.round(Number(min || 0)));
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+// Horas decimais -> "HH:MM" com sinal (ex.: 1.5 -> "01:30"; -2.25 -> "-02:15").
+function hhmmH(hours: number | null | undefined): string {
+  const totalMin = Math.round(Number(hours || 0) * 60);
+  return (totalMin < 0 ? "-" : "") + hhmm(Math.abs(totalMin));
 }
 
 function FolhaTab() {
@@ -1672,8 +1678,8 @@ function FolhaTab() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 no-print">
             <StatCard
               title="Horas trabalhadas"
-              value={`${stats.hoursWorked.toFixed(2)}h`}
-              sub={`de ${stats.hoursLimit}h · ${stats.percentUsed.toFixed(0)}%`}
+              value={hhmmH(stats.hoursWorked)}
+              sub={`de ${hhmmH(stats.hoursLimit)} · ${stats.percentUsed.toFixed(0)}%`}
               Icon={Clock}
               color="blue"
               progress={Math.min(100, stats.percentUsed)}
@@ -1681,14 +1687,14 @@ function FolhaTab() {
             />
             <StatCard
               title="Hora Extra"
-              value={`${stats.horaExtra.toFixed(2)}h`}
-              sub={stats.horaExtra > 0 ? `${fmtBRL(stats.valorHoraExtra)}/h × ${stats.horaExtra.toFixed(1)}` : "Sem horas extras"}
+              value={hhmmH(stats.horaExtra)}
+              sub={stats.horaExtra > 0 ? `${fmtBRL(stats.valorHoraExtra)}/h × ${hhmmH(stats.horaExtra)}` : "Sem horas extras"}
               Icon={TrendingUp}
               color={stats.horaExtra > 0 ? "orange" : "neutral"}
             />
             <StatCard
               title="Restantes p/ limite"
-              value={`${stats.horasRestantes.toFixed(2)}h`}
+              value={hhmmH(stats.horasRestantes)}
               sub={stats.horasRestantes <= 0 ? "Limite atingido" : "Antes de virar HE"}
               Icon={Hourglass}
               color={stats.horasRestantes <= 0 ? "red" : stats.horasRestantes < 22 ? "amber" : "emerald"}
@@ -1810,14 +1816,14 @@ function FolhaTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Hora Extra</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">{stats.horaExtra.toFixed(2)}h × {fmtBRL(stats.valorHoraExtra)}/h</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{hhmmH(stats.horaExtra)} × {fmtBRL(stats.valorHoraExtra)}/h</div>
                     </div>
                     <span className={`font-semibold tabular-nums ${stats.custoExtra > 0 ? "text-orange-700" : "text-neutral-400"}`} data-testid="text-custo-extra">{fmtBRL(stats.custoExtra)}</span>
                   </div>
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Adicional Noturno</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">{(stats.horasNoturnas ?? 0).toFixed(2)}h (22h–05h) × {(stats.multiplicadorAdicNot ?? 1.8).toFixed(2).replace(".", ",")} (hora cheia)</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{hhmmH(stats.horasNoturnas ?? 0)} (22h–05h) × {(stats.multiplicadorAdicNot ?? 1.8).toFixed(2).replace(".", ",")} (hora cheia)</div>
                     </div>
                     <span className={`font-semibold tabular-nums ${(stats.adicionalNoturno ?? 0) > 0 ? "text-indigo-700" : "text-neutral-400"}`} data-testid="text-adicional-noturno">{fmtBRL(stats.adicionalNoturno ?? 0)}</span>
                   </div>
@@ -2318,7 +2324,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
     <div className="space-y-3 no-print">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <StatCard title="Funcionários ativos" value={String(totals.funcionarios)} sub={`${totals.comBatidas} com batidas no ciclo`} Icon={Users} color="blue" />
-        <StatCard title="Horas totais" value={`${totals.horas.toFixed(1)}h`} sub={`${totals.horaExtra > 0 ? `+${totals.horaExtra.toFixed(1)}h extras` : "Sem horas extras"}`} Icon={Clock} color={totals.horaExtra > 0 ? "orange" : "blue"} />
+        <StatCard title="Horas totais" value={hhmmH(totals.horas)} sub={`${totals.horaExtra > 0 ? `+${hhmmH(totals.horaExtra)} extras` : "Sem horas extras"}`} Icon={Clock} color={totals.horaExtra > 0 ? "orange" : "blue"} />
         <StatCard title="Custo estimado" value={fmtBRL(totals.custoTotal)} sub={`Base ${fmtBRL(totals.custoBase)} + HE ${fmtBRL(totals.custoExtra)}`} Icon={DollarSign} color="emerald" />
         <StatCard title="Custo c/ encargos" value={fmtBRL(totals.custoEncargos)} sub={totals.semSalario > 0 ? `${totals.semSalario} sem salário cadastrado` : "Inclui encargos sociais"} Icon={TrendingUp} color={totals.semSalario > 0 ? "amber" : "emerald"} />
       </div>
@@ -2338,7 +2344,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
                 <XAxis type="number" stroke="#6b7280" fontSize={11} />
                 <YAxis type="category" dataKey="name" stroke="#374151" fontSize={11} width={120} />
                 <RTooltip
-                  formatter={(v: any, key: any, item: any) => key === "horas" ? [`${(v as number).toFixed(2)}h (${item.payload.pct.toFixed(0)}%)`, "Horas"] : [`${(v as number).toFixed(2)}h`, "Hora extra"]}
+                  formatter={(v: any, key: any, item: any) => key === "horas" ? [`${hhmmH(v as number)} (${item.payload.pct.toFixed(0)}%)`, "Horas"] : [`${hhmmH(v as number)}`, "Hora extra"]}
                   labelFormatter={(label, items: any[]) => items?.[0]?.payload?.fullName || label}
                 />
                 <Bar dataKey="horas" fill="#3b82f6" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d: any) => onSelect(d.employeeId)}>
@@ -2430,7 +2436,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
                     {!r.hasSalary && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">sem salário</span>}
                   </td>
                   <td className="p-2 text-center text-xs text-neutral-500">{r.daysWorked}</td>
-                  <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{r.hoursWorked.toFixed(2)}h</td>
+                  <td className="p-2 text-right font-bold text-blue-600 tabular-nums">{hhmmH(r.hoursWorked)}</td>
                   <td className="p-2">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-neutral-200 rounded-full h-1.5 overflow-hidden">
@@ -2440,7 +2446,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
                     </div>
                   </td>
                   <td className={`p-2 text-right tabular-nums font-medium ${r.horaExtra > 0 ? "text-orange-600" : "text-neutral-300"}`}>
-                    {r.horaExtra > 0 ? `${r.horaExtra.toFixed(2)}h` : "—"}
+                    {r.horaExtra > 0 ? hhmmH(r.horaExtra) : "—"}
                   </td>
                   <td className="p-2 text-right tabular-nums text-neutral-600">{r.hasSalary ? fmtBRL(r.baseSalary) : "—"}</td>
                   <td className="p-2 text-right tabular-nums font-bold text-emerald-700">{r.hasSalary ? fmtBRL(r.custoTotalEstimado) : "—"}</td>
@@ -2452,9 +2458,9 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
               <tr className="bg-blue-50 font-bold border-t-2 border-blue-300">
                 <td className="p-2">TOTAL ({totals.funcionarios} funcionários)</td>
                 <td className="p-2 text-center text-xs">—</td>
-                <td className="p-2 text-right text-blue-700 tabular-nums">{totals.horas.toFixed(2)}h</td>
+                <td className="p-2 text-right text-blue-700 tabular-nums">{hhmmH(totals.horas)}</td>
                 <td className="p-2"></td>
-                <td className="p-2 text-right text-orange-600 tabular-nums">{totals.horaExtra > 0 ? `${totals.horaExtra.toFixed(2)}h` : "—"}</td>
+                <td className="p-2 text-right text-orange-600 tabular-nums">{totals.horaExtra > 0 ? hhmmH(totals.horaExtra) : "—"}</td>
                 <td className="p-2 text-right tabular-nums text-neutral-600">{fmtBRL(totals.custoBase)}</td>
                 <td className="p-2 text-right tabular-nums text-emerald-700">{fmtBRL(totals.custoTotal)}</td>
                 <td className="p-2 text-right tabular-nums text-neutral-700">{fmtBRL(totals.custoEncargos)}</td>
@@ -2836,7 +2842,7 @@ function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employee
           </div>
           <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded p-2">
             <span className="text-xs text-neutral-600">Total trabalhado:</span>
-            <span className="font-bold text-blue-700">{day.hoursWorked || "—"}h</span>
+            <span className="font-bold text-blue-700">{day.workedMin != null ? hhmm(day.workedMin) : "—"}</span>
           </div>
           <div>
             <div className="text-xs font-semibold text-neutral-600 mb-1">Todas as batidas registradas no aparelho:</div>

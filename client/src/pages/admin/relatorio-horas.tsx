@@ -41,12 +41,12 @@ type Resp = {
 type Funcionario = { id: number; name: string; matricula?: string | null; status?: string };
 
 function fmtH(h: number) {
-  if (!h) return "0h00";
+  if (!h) return "0:00";
   const sign = h < 0 ? "-" : "";
-  const abs = Math.abs(h);
-  const hh = Math.floor(abs);
-  const mm = Math.round((abs - hh) * 60);
-  return `${sign}${hh}h${String(mm).padStart(2, "0")}`;
+  let total = Math.round(Math.abs(h) * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${sign}${hh}:${String(mm).padStart(2, "0")}`;
 }
 
 function fmtDateBR(iso: string) {

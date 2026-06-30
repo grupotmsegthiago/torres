@@ -28,6 +28,17 @@ function readAndCompressFile(file: File): Promise<{ dataUrl: string; fileName: s
 }
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Horas decimais -> "HH:MM" (ex.: 1.5 -> "01:30"). Aceita string legada já em
+// "HH:MM" (passa direto) e devolve "—" para valor inválido (não inventa 00:00).
+function hhmmH(hours: number | string | null | undefined): string {
+  if (typeof hours === "string" && hours.includes(":")) return hours;
+  const n = Number(hours);
+  if (!isFinite(n)) return "—";
+  const totalMin = Math.round(n * 60);
+  const sign = totalMin < 0 ? "-" : "";
+  const m = Math.abs(totalMin);
+  return `${sign}${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
 function fmtDate(d?: string | null) {
   if (!d) return "—";
   const iso = String(d).split("T")[0];
@@ -2408,7 +2419,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                       <td className="px-3 py-2">{t.lunchOut || "-"}</td>
                       <td className="px-3 py-2">{t.lunchIn || "-"}</td>
                       <td className="px-3 py-2">{t.clockOut || "-"}</td>
-                      <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
+                      <td className="px-3 py-2">{t.overtime ? hhmmH(t.overtime) : "-"}</td>
                       <td className="px-3 py-2 text-center">{t.clockInLat ? <MapPin className="w-3.5 h-3.5 text-green-500 inline" /> : <span className="text-neutral-300">-</span>}</td>
                       <td className="px-3 py-2 flex items-center gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openPontoDetalhe(t.id)} disabled={loadingDetalhe} title="Ver Relatorio Completo"><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
@@ -2630,8 +2641,8 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
       `═══════════════════ VENCIMENTOS ═══════════════════`,
       `Salário Base${propLabel}: ${fmtR(v.salarioBase)}`,
       `Periculosidade (30%)${propLabel}: ${fmtR(v.periculosidade)}`,
-      summary.horasExtras?.horas > 0 ? `Horas Extras (${summary.horasExtras.horas}h via Ponto iD): ${fmtR(v.horasExtrasValor || 0)}` : "",
-      summary.horasExtras?.noturnas > 0 ? `Adicional Noturno (${summary.horasExtras.noturnas}h): ${fmtR(v.adicionalNoturnoValor || 0)}` : "",
+      summary.horasExtras?.horas > 0 ? `Horas Extras (${hhmmH(Number(summary.horasExtras.horas))} via Ponto iD): ${fmtR(v.horasExtrasValor || 0)}` : "",
+      summary.horasExtras?.noturnas > 0 ? `Adicional Noturno (${hhmmH(Number(summary.horasExtras.noturnas))}): ${fmtR(v.adicionalNoturnoValor || 0)}` : "",
       v.dsr > 0 ? `DSR sobre HE/Noturno: ${fmtR(v.dsr)}` : "",
       `Vale Refeição${propLabel}: ${fmtR(v.valeRefeicao)}`,
       summary.cestaBasicaIIAplicada
@@ -2809,7 +2820,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                         Horas Extras
                         <span className="text-[9px] bg-indigo-200/60 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
                       </div>
-                      <div className="text-[10px] text-indigo-500 mt-0.5">{summary.horasExtras.horas}h × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
+                      <div className="text-[10px] text-indigo-500 mt-0.5">{hhmmH(Number(summary.horasExtras.horas))} × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
                     </div>
                     <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(summary.vencimentos.horasExtrasValor || 0)}</span>
                   </div>
@@ -2821,7 +2832,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                         Adicional Noturno
                         <span className="text-[9px] bg-violet-200/60 text-violet-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
                       </div>
-                      <div className="text-[10px] text-violet-500 mt-0.5">{summary.horasExtras.noturnas}h × valor hora × 1,20</div>
+                      <div className="text-[10px] text-violet-500 mt-0.5">{hhmmH(Number(summary.horasExtras.noturnas))} × valor hora × 1,20</div>
                     </div>
                     <span className="text-sm font-bold text-violet-700 tabular-nums">+ {fmtR(summary.vencimentos.adicionalNoturnoValor || 0)}</span>
                   </div>
@@ -4491,7 +4502,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                       <td className="px-3 py-2">{t.lunchOut || "-"}</td>
                       <td className="px-3 py-2">{t.lunchIn || "-"}</td>
                       <td className="px-3 py-2">{t.clockOut || "-"}</td>
-                      <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
+                      <td className="px-3 py-2">{t.overtime ? hhmmH(t.overtime) : "-"}</td>
                       <td className="px-3 py-2 text-center">{hasGeo ? <MapPin className="w-3.5 h-3.5 text-green-500 inline" /> : hasPhoto ? <Camera className="w-3.5 h-3.5 text-blue-400 inline" /> : <span className="text-neutral-300">-</span>}</td>
                       <td className="px-3 py-2 flex items-center gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openPontoDetalhe(t.id)} disabled={loadingDetalhe} title="Ver Relatorio Completo" data-testid={`button-ponto-detail-${t.id}`}><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>

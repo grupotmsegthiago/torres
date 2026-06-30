@@ -11,6 +11,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2 } from "lucide-react";
 import type { Timesheet, Employee } from "@shared/schema";
 
+// Horas decimais -> "HH:MM" (ex.: 8.5 -> "08:30"). Aceita string legada já em
+// "HH:MM" (passa direto) e devolve "—" para valor inválido (não inventa 00:00).
+function hhmmH(hours: number | string | null | undefined): string {
+  if (typeof hours === "string" && hours.includes(":")) return hours;
+  const n = Number(hours);
+  if (!isFinite(n)) return "—";
+  const totalMin = Math.round(n * 60);
+  const sign = totalMin < 0 ? "-" : "";
+  const m = Math.abs(totalMin);
+  return `${sign}${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 function TimesheetForm({ timesheet, employees, onClose }: {
   timesheet?: Timesheet; employees: Employee[]; onClose: () => void;
 }) {
@@ -174,7 +186,7 @@ export default function TimesheetsPage() {
                     <td className="p-3 text-neutral-600">{t.checkInLunch || "-"}</td>
                     <td className="p-3 text-neutral-600">{t.checkOut || "-"}</td>
                     <td className="p-3 text-neutral-600">{(t as any).checkOutDate || "-"}</td>
-                    <td className="p-3 text-neutral-600">{t.hoursWorked || "-"}</td>
+                    <td className="p-3 text-neutral-600">{t.hoursWorked ? hhmmH(t.hoursWorked) : "-"}</td>
                     <td className="p-3 text-right">
                       <Button variant="ghost" size="icon" onClick={() => { setEditItem(t); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
                       {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm("Excluir este ponto?")) deleteMutation.mutate(t.id); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>}

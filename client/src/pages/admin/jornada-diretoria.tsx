@@ -83,7 +83,12 @@ export default function JornadaDiretoriaPage() {
     return { label: "NORMAL", color: "bg-emerald-500 text-white" };
   };
 
-  const fmtH = (v: any) => Number(v || 0).toFixed(1) + "h";
+  const fmtH = (v: any) => {
+    const totalMin = Math.round(Number(v || 0) * 60);
+    const sign = totalMin < 0 ? "-" : "";
+    const m = Math.abs(totalMin);
+    return `${sign}${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  };
 
   const exportExcel = () => {
     const rows = filtered.map((r: any) => ({
