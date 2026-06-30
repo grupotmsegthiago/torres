@@ -17,6 +17,7 @@ import nodemailer from "nodemailer";
 import { supabaseAdmin } from "./supabase";
 import { fetchAllEvents, syncDevice, createRhidPunch, type DeviceRow } from "./control-id";
 import { monthToFechamento, nameMatchScore, minuteKeyBRT } from "./lib/control-id-parsers";
+import { getLockedPeriods, isDateLocked } from "./lib/locked-periods";
 
 export type MarkStatus = "validado" | "faltando_no_rhid" | "faltando_no_local" | "duplicada";
 
@@ -317,6 +318,10 @@ export async function exportMissingToRhid(recon: ReconResult): Promise<{ exporte
     }).eq("id", punchId);
   };
 
+  // TRAVA DE PERÍODO FECHADO POR FOLHA: não exportar corretivas pro RHID de batidas
+  // dentro de um período fechado — o período não deve mais ser tocado pela automação.
+  const lockedPeriods = await getLockedPeriods(recon.deviceId);
+
   const { start, end } = resolvePeriod(recon.period.fromYmd, recon.period.toYmd);
   for (const emp of recon.employees) {
     const missingMinutes = new Set(emp.marks.filter((m) => m.status === "faltando_no_rhid").map((m) => m.minuteBRT));
@@ -340,6 +345,8 @@ export async function exportMissingToRhid(recon: ReconResult): Promise<{ exporte
     for (const p of (punches || []) as any[]) {
       const mk = minuteKeyBRT(new Date(p.punch_at));
       if (!missingMinutes.has(mk)) continue;
+      // Período fechado por folha: não cria corretiva no RHID (período congelado).
+      if (isDateLocked(p.punch_at, lockedPeriods)) continue;
 
       const disposition = exportPunchDisposition({ noIdentity, hasExternalId: !!p.external_id });
 

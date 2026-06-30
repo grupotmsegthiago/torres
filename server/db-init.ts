@@ -469,6 +469,23 @@ export async function ensureDbSchema() {
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_rhid_recon_runs_at ON rhid_reconciliation_runs (run_at DESC)`);
 
+    // Períodos FECHADOS por folha: a reconciliação diária NÃO reimporta (full backfill)
+    // nem exporta corretivas pro RHID de batidas cuja data BRT caia num período fechado.
+    // Evita que o cron desfaça o fechamento da folha (ressuscitando batidas brutas do AFD).
+    // device_id NULL = vale pra todos os aparelhos. Destravar (DELETE) é exclusivo da diretoria.
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS control_id_locked_periods (
+        id SERIAL PRIMARY KEY,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        device_id INTEGER,
+        note TEXT,
+        locked_by TEXT,
+        locked_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_locked_periods_range ON control_id_locked_periods (start_date, end_date)`);
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_fines (
         id SERIAL PRIMARY KEY,

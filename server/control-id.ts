@@ -27,6 +27,7 @@ import {
   rhidNumericCore,
   dedupPunchesByCore,
 } from "./lib/control-id-parsers";
+import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
 
@@ -712,13 +713,21 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     }
   }
 
-  let saved = 0, mapped = 0, skipped = 0;
+  // TRAVA DE PERÍODO FECHADO POR FOLHA: batidas cuja data BRT cai num período
+  // fechado NÃO são (re)importadas — senão o full backfill ressuscitaria as batidas
+  // brutas do AFD que o cartão corrigido já não mostra, desfazendo o fechamento.
+  // Destravar é exclusivo da diretoria (DELETE /api/control-id/locked-periods/:id).
+  const lockedPeriods: LockedPeriod[] = await getLockedPeriods(deviceId);
+
+  let saved = 0, mapped = 0, skipped = 0, skippedLocked = 0;
   const toInsert: any[] = [];
   const extIdAdoptions: { id: number; external_id: string }[] = []; // batida local adota id canônico do AFD
   const seenInBatch = new Set<string>(); // dedup intra-batch (RHID às vezes devolve repetido)
   for (const ev of events) {
     if (seenInBatch.has(ev.id)) { skipped++; continue; }
     seenInBatch.add(ev.id);
+    // Período fechado por folha: ignora a batida por completo (não insere nem adota id).
+    if (isDateLocked(ev.time, lockedPeriods)) { skipped++; skippedLocked++; continue; }
     const employeeId = mapByUserId.get(ev.userId) || null;
     const externalIdExists = existingSet.has(ev.id);
 
@@ -819,10 +828,10 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   await supabaseAdmin.from("control_id_devices").update({
     last_sync_at: new Date().toISOString(),
     last_sync_status: "ok",
-    last_sync_message: `${saved} nova(s), ${mapped} mapeada(s), ${skipped} duplicada(s)`,
+    last_sync_message: `${saved} nova(s), ${mapped} mapeada(s), ${skipped} duplicada(s)${skippedLocked ? `, ${skippedLocked} em período fechado` : ""}`,
   }).eq("id", deviceId);
 
-  console.log(`[ControlID] Sync device #${deviceId}: ${events.length} eventos, ${saved} novos, ${mapped} mapeados`);
+  console.log(`[ControlID] Sync device #${deviceId}: ${events.length} eventos, ${saved} novos, ${mapped} mapeados${skippedLocked ? `, ${skippedLocked} ignorados (período fechado por folha)` : ""}`);
   return { fetched: events.length, saved, mapped, skipped, message: `${saved} batida(s) nova(s)` };
 }
 

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { requireAuth, requireAdminRole } from "../auth";
+import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
@@ -580,6 +580,64 @@ export function registerControlIdRoutes(app: Express) {
         triggeredBy: "manual",
       });
       res.json({ totals: r.recon.totals, actions: r.actions, email: r.email, runId: r.runId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─────── PERÍODOS FECHADOS POR FOLHA (trava de import/export da reconciliação) ───────
+  // Um período fechado impede que o full backfill diário reimporte batidas brutas do
+  // AFD (ressuscitando duplicatas) e que o export crie corretivas pro RHID nesse
+  // intervalo. Criar/listar: admin. DESTRAVAR (DELETE): exclusivo da diretoria.
+  app.get("/api/control-id/locked-periods", requireAuth, async (_req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("control_id_locked_periods")
+        .select("*")
+        .order("start_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/control-id/locked-periods", requireAuth, requireAdminRole, async (req: any, res) => {
+    try {
+      const { startDate, endDate, deviceId, note } = req.body || {};
+      const ymd = /^\d{4}-\d{2}-\d{2}$/;
+      if (!ymd.test(String(startDate)) || !ymd.test(String(endDate))) {
+        return res.status(400).json({ message: "startDate e endDate são obrigatórios no formato YYYY-MM-DD." });
+      }
+      if (String(startDate) > String(endDate)) {
+        return res.status(400).json({ message: "startDate não pode ser depois de endDate." });
+      }
+      const { data, error } = await supabaseAdmin
+        .from("control_id_locked_periods")
+        .insert({
+          start_date: startDate,
+          end_date: endDate,
+          device_id: deviceId == null || deviceId === "" ? null : Number(deviceId),
+          note: note ? String(note).slice(0, 500) : null,
+          locked_by: req.user?.name || req.user?.email || "admin",
+        })
+        .select("*")
+        .single();
+      if (error) throw new Error(error.message);
+      res.status(201).json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // DESTRAVAR um período: só a DIRETORIA pode reabrir pra reimport/reexport.
+  app.delete("/api/control-id/locked-periods/:id", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "id inválido." });
+      const { error } = await supabaseAdmin.from("control_id_locked_periods").delete().eq("id", id);
+      if (error) throw new Error(error.message);
+      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

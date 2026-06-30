@@ -38,6 +38,22 @@ qualquer caminho que sincronize com a nuvem propaga a destruição pro RHID.
   a reconciliação com `doImport:false,doExport:false` até fechar a folha; (c) limpar
   as extras no próprio AFD/RHID (lado do dono). Sem isso, o reset é só temporário.
 
+## TRAVA de período fechado por folha (opção A, implementada 30/06/2026)
+- Tabela `control_id_locked_periods` (intervalo de datas BRT inclusivo; `device_id`
+  NULL = todos). `server/lib/locked-periods.ts`: `getLockedPeriods(deviceId?)` +
+  `isDateLocked(punchAt, periods)` (puro, usa `brtDateKey`). Import (`syncDevice`,
+  guard ANTES de insert/adoção de external_id) e export (`exportMissingToRhid`)
+  PULAM batidas cuja data BRT cai num período fechado ⇒ o fullBackfill da meia-noite
+  não ressuscita mais as extras.
+- **`getLockedPeriods` é FAIL-CLOSED** (decisão pós code review): erro REAL de leitura
+  LANÇA (aborta o sync/export) em vez de retornar [] — senão um blip de rede na
+  reconciliação rodaria SEM trava e desfaria o fechamento. Só "tabela não existe"
+  (pré-DDL, `isMissingTableError`) é fail-open. Callers (`runDailyReconciliation`,
+  `syncAllDevices`, rotas) já têm try/catch ⇒ o throw aborta sem derrubar o processo.
+- **Destravar é exclusivo da diretoria**: `DELETE /api/control-id/locked-periods/:id`
+  com `requireDiretoria`. Criar/listar = admin/auth. A trava só roda no app DEPLOYADO
+  após publish (o guard está no código, não no banco).
+
 ## Convenções de gravação
 - `punch_at` é gravado com offset BRT explícito: `${YYYY-MM-DD}T${HH:MM}:00-03:00`
   (NÃO UTC, apesar do comentário no schema dizer "UTC"). Confirme contra um cartão
