@@ -151,6 +151,112 @@ export async function buildDocSignedMessage(docTitle: string, empName?: string |
   return buildDocSignedFallback(docTitle, nome);
 }
 
+/**
+ * Resolve o destinatário do aviso ao RH (grupo ou número). Prioridade:
+ *   RH_WHATSAPP_GROUP (id de grupo) > RH_WHATSAPP_PHONE (número avulso).
+ * Grupo passa cru (Z-API resolve); número é normalizado p/ formato internacional.
+ * Retorna null quando nada está configurado (aviso ao RH simplesmente não sai).
+ */
+export function resolveRhRecipient(): string | null {
+  const group = (process.env.RH_WHATSAPP_GROUP || "").trim();
+  if (group) return group;
+  const phone = (process.env.RH_WHATSAPP_PHONE || "").trim();
+  if (phone) return toIntlPhone(phone);
+  return null;
+}
+
+/** Aviso VARIADO ao RH (sem IA) — quem assinou qual documento. Nunca repete byte-a-byte. */
+export function buildRhDocSignedFallback(docTitle: string, empName?: string | null, empRole?: string | null): string {
+  const nome = (empName || "").trim() || "Um colaborador";
+  const cargo = (empRole || "").trim();
+  const cargoPart = cargo ? ` (${cargo})` : "";
+  const saudPool = ["Aviso do RH", "Atualização RH", "RH Torres", "Info RH", "Sistema RH"];
+  const corpoPool = [
+    `${nome}${cargoPart} acabou de assinar o documento "${docTitle}".`,
+    `assinatura recebida: ${nome}${cargoPart} assinou "${docTitle}".`,
+    `${nome}${cargoPart} concluiu a assinatura do documento "${docTitle}".`,
+    `o documento "${docTitle}" foi assinado por ${nome}${cargoPart}.`,
+    `acabou de entrar a assinatura de ${nome}${cargoPart} no documento "${docTitle}".`,
+  ];
+  const fechoPool = [
+    " Já consta como assinado no painel.",
+    " Disponível no dashboard de documentos.",
+    " Registro disponível no sistema.",
+    "",
+  ];
+  const saud = saudPool[randInt(0, saudPool.length - 1)];
+  const corpo = corpoPool[randInt(0, corpoPool.length - 1)];
+  const fecho = fechoPool[randInt(0, fechoPool.length - 1)];
+  return casualize(`${saud}: ${corpo}${fecho}`);
+}
+
+/** Gera o aviso ao RH via IA (gpt-5-mini) com fallback variado. Nunca lança. */
+export async function buildRhDocSignedMessage(docTitle: string, empName?: string | null, empRole?: string | null): Promise<string> {
+  const nome = (empName || "").trim();
+  const cargo = (empRole || "").trim();
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (apiKey) {
+    try {
+      // Timeout curto + sem retry: IA lenta NÃO pode segurar o disparo.
+      const openai = new OpenAI({ apiKey, baseURL, timeout: 4000, maxRetries: 0 });
+      const resp = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        reasoning_effort: "minimal",
+        max_completion_tokens: 120,
+        messages: [
+          {
+            role: "system",
+            content:
+              `Você é o sistema da "Torres Vigilância" avisando a EQUIPE DE RH (interno) via WhatsApp. ` +
+              `Escreva UMA mensagem curta (1 a 2 frases) avisando que o colaborador acabou de ASSINAR o documento "${docTitle}", já registrado no sistema. ` +
+              `É um aviso INTERNO pro RH (não fale com o colaborador). Deixe claro QUEM assinou e QUAL documento. ` +
+              `VARIE SEMPRE o jeito de falar e a estrutura — NUNCA soe igual a uma mensagem anterior (isso causa bloqueio do WhatsApp). ` +
+              `Tom direto e profissional de aviso de sistema. No máximo 1 emoji (pode não usar). ` +
+              `NÃO invente links, prazos nem dados que não foram fornecidos. Responda só com a mensagem, sem aspas.`,
+          },
+          { role: "user", content: `Colaborador: ${nome || "colaborador"}${cargo ? ` — ${cargo}` : ""}` },
+        ],
+      });
+      const out = resp.choices?.[0]?.message?.content?.trim();
+      if (out && out.length > 0) return casualize(out);
+    } catch (e: any) {
+      console.warn("[signable-docs:notify] IA (aviso RH) falhou, usando fallback:", e?.message);
+    }
+  }
+  return buildRhDocSignedFallback(docTitle, nome, cargo);
+}
+
+/** Avisa o GRUPO/RESPONSÁVEL do RH que um documento foi assinado. Best-effort: nunca lança. */
+export async function notifyRhDocSigned(docTitle: string, empName?: string | null, empRole?: string | null): Promise<boolean> {
+  try {
+    const dest = resolveRhRecipient();
+    if (!dest) {
+      console.warn("[signable-docs:notify] RH sem destinatário configurado (defina RH_WHATSAPP_GROUP ou RH_WHATSAPP_PHONE) — aviso ao RH não enviado");
+      return false;
+    }
+    const msg = await buildRhDocSignedMessage(docTitle, empName, empRole);
+    const r = await sendText({
+      groupOrPhone: dest,
+      message: msg,
+      delayTypingSeconds: randomTypingSeconds(),
+      senderName: "Sistema Torres",
+    });
+    if (!r.ok) console.warn(`[signable-docs:notify] aviso ao RH falhou: ${r.error}`);
+    return !!r.ok;
+  } catch (e: any) {
+    console.warn("[signable-docs:notify] erro ao avisar o RH:", e?.message);
+    return false;
+  }
+}
+
+/** Dispara o aviso ao RH em background (não bloqueia a resposta HTTP). */
+export function notifyRhDocSignedBackground(docTitle: string, empName?: string | null, empRole?: string | null): void {
+  notifyRhDocSigned(docTitle, empName, empRole).catch((e) =>
+    console.warn("[signable-docs:notify] dispatcher aviso RH falhou:", e?.message),
+  );
+}
+
 /** Notifica UM colaborador da CONFIRMAÇÃO de assinatura. Best-effort: nunca lança. */
 export async function notifyEmployeeDocSigned(emp: any, docTitle: string): Promise<boolean> {
   try {

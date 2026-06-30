@@ -3,7 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
-import { notifyEmployeesDocBackground, notifyEmployeeDocSignedBackground } from "../lib/signable-doc-notify";
+import { notifyEmployeesDocBackground, notifyEmployeeDocSignedBackground, notifyRhDocSignedBackground } from "../lib/signable-doc-notify";
 import {
   getTemplate,
   listTemplates,
@@ -414,11 +414,14 @@ export function registerSignableDocumentRoutes(app: Express) {
         .select()
         .single();
       if (error) return res.status(500).json({ message: error.message });
-      // Confirmação ativa via WhatsApp ao próprio funcionário (best-effort, background).
+      // Confirmação ativa via WhatsApp ao próprio funcionário + aviso ao RH (best-effort, background).
       try {
+        const docTitle = doc.title || updated?.title;
         const empMap = await loadEmployeeMap([doc.employee_id]);
         const emp = empMap.get(doc.employee_id);
-        if (emp) notifyEmployeeDocSignedBackground(emp, doc.title || updated?.title);
+        if (emp) notifyEmployeeDocSignedBackground(emp, docTitle);
+        // Fecha o loop: avisa o grupo/responsável do RH quem assinou qual documento.
+        notifyRhDocSignedBackground(docTitle, emp?.name, emp?.role);
       } catch (e: any) {
         console.warn(`[signable-docs:sign] confirmação WhatsApp falhou doc#${id}:`, e?.message);
       }

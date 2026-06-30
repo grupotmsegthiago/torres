@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback, notifyEmployeeDoc, notifyEmployeesDocBackground } from "./signable-doc-notify";
+import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback, notifyEmployeeDoc, notifyEmployeesDocBackground, buildRhDocSignedFallback, resolveRhRecipient } from "./signable-doc-notify";
 
 test("toIntlPhone adiciona DDI 55 em número nacional (10/11 dígitos)", () => {
   assert.equal(toIntlPhone("11926839456"), "5511926839456");
@@ -115,4 +115,52 @@ test("notifyEmployeesDocBackground não lança com lista vazia/nula", () => {
   assert.doesNotThrow(() => notifyEmployeesDocBackground([], "Doc", false));
   assert.doesNotThrow(() => notifyEmployeesDocBackground(null as any, "Doc", false));
   assert.doesNotThrow(() => notifyEmployeesDocBackground([null, undefined] as any, "Doc", false));
+});
+
+test("buildRhDocSignedFallback cita QUEM assinou e QUAL documento", () => {
+  const msg = buildRhDocSignedFallback("Termo de Ciência", "João da Silva", "Vigilante");
+  assert.ok(msg.includes("Termo de Ciência"), "deve citar o título do documento");
+  assert.ok(msg.includes("João da Silva"), "deve citar o nome de quem assinou");
+  assert.ok(msg.includes("Vigilante"), "deve citar o cargo quando informado");
+});
+
+test("buildRhDocSignedFallback sinaliza que foi ASSINADO (não pede assinatura)", () => {
+  for (let i = 0; i < 50; i++) {
+    const msg = buildRhDocSignedFallback("Aviso de Férias", "Ana", "Escolta");
+    assert.match(msg, /assin/i, `deve sinalizar assinatura: ${msg}`);
+    assert.ok(!/pendente|aguardando|falta assinar/i.test(msg), `não deve sinalizar pendência: ${msg}`);
+  }
+});
+
+test("buildRhDocSignedFallback funciona sem nome/cargo do funcionário", () => {
+  const msg = buildRhDocSignedFallback("Termo de Ciência", "", "");
+  assert.ok(msg.includes("Termo de Ciência"));
+  assert.ok(msg.length > 0);
+});
+
+test("buildRhDocSignedFallback é VARIADO (anti-ban Z-API) — não repete byte-a-byte", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    seen.add(buildRhDocSignedFallback("Termo de Ciência", "João", "Vigilante"));
+  }
+  assert.ok(seen.size > 10, `esperava muitos textos distintos, obteve ${seen.size}`);
+});
+
+test("resolveRhRecipient prioriza grupo, cai pro número, e null sem config", () => {
+  const origGroup = process.env.RH_WHATSAPP_GROUP;
+  const origPhone = process.env.RH_WHATSAPP_PHONE;
+  try {
+    delete process.env.RH_WHATSAPP_GROUP;
+    delete process.env.RH_WHATSAPP_PHONE;
+    assert.equal(resolveRhRecipient(), null);
+
+    process.env.RH_WHATSAPP_PHONE = "11926839456";
+    assert.equal(resolveRhRecipient(), "5511926839456");
+
+    process.env.RH_WHATSAPP_GROUP = "120363000000000000@g.us";
+    assert.equal(resolveRhRecipient(), "120363000000000000@g.us");
+  } finally {
+    if (origGroup === undefined) delete process.env.RH_WHATSAPP_GROUP; else process.env.RH_WHATSAPP_GROUP = origGroup;
+    if (origPhone === undefined) delete process.env.RH_WHATSAPP_PHONE; else process.env.RH_WHATSAPP_PHONE = origPhone;
+  }
 });
