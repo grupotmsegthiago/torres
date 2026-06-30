@@ -11,17 +11,14 @@ Batidas importadas do PDF do RHID (`source = folha_pdf_import`) trazem **marcado
 - **Espelho RHID** (`buildEspelhoRhid`→`buildEspelhoPonto`): costura `23:59↔00:00` (≤3min) mas o teto `HARD_MAX_GAP_MIN = 18h` transforma o turno longo resultante em **órfã descartada** ⇒ **SUB-conta** (ex.: 06-03 vira 01:00).
 
 **Caso medido (FERNANDO DIAS COLONHEZI, id 26, competência 2026-06, ciclo 26/05→25/06):**
-- Folha (card "Horas Trabalhadas"): **479:31**
-- Espelho RHID oficial (botão na tela): **129:03**
+- Folha (card "Horas Trabalhadas") ANTES: **479:31** (= soma do `workedMin` cru)
 - Número correto segundo o dono (fonte RHID externa): **447:27**
 
-Testei vários algoritmos de pareamento sobre as batidas atuais: costura+cap 18h=129:03, cap 24h=351:29, cap 30h+=479:47, sem marcadores=132:48. **NENHUM reproduz 447:27.**
+**SOLUÇÃO (ordem do dono, jun/2026):** o `447:27` É derivável — é a soma da coluna **"Normais"** (cada dia capado ao teto diário `NORMAL_DAILY_CAP_MIN = 1199min = 19:59`). 13 dias do import excedem 19:59 (fantasma da meia-noite); o excedente é lixo. **Fix aplicado:** em `buildFolhaPonto` (`server/control-id.ts`), capar `workedMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN)` logo após descontar almoço (antes de `entry.hoursWorked`/`workedMin`/`normaisMin`/`extraMin`). E em `buildFolhaStats`, somar `hoursWorked` em **minutos** (`sum(workedMin)/60`), não somar `toFixed(2)` por dia (acúmulo dava 447:24, 3min a menos). Resultado: card 447:27 exato, HE = 447:27−220 = 227:27, noturno intacto (125:08, calculado do span in/out, não do workedMin).
 
-**Conclusão:** o `447:27` NÃO é derivável das batidas que estão no banco — o import diverge do RHID real. NÃO é bug de "contar refeição" (refeição já é descontada em dia de 4 batidas) nem de fórmula de pareamento; é **dado de import corrompido** (mesma raiz do follow-up "Eliminar batidas duplicadas no espelho/folha"). Para bater 447:27 é preciso corrigir/reimportar os dados ou ter a regra exata de pareamento de turno noturno do RHID — decisão do dono.
+**Why:** ninguém trabalha >19:59 num dia; o teto remove só o fantasma 00:00/23:59 do `folha_pdf_import` e não afeta quem nunca passa de 19:59. O sintoma ("conta com refeição") engana — a causa é a marcação sintética do import.
 
-**Why:** evita gastar esforço tentando "consertar a fórmula" da folha; o sintoma ("conta com refeição") engana — a causa é a marcação sintética 00:00/23:59 do import.
-
-**How to apply:** quando horas trabalhadas da folha/espelho não baterem com o RHID, primeiro inspecionar as batidas (`source`, marcadores 00:00/23:59) ANTES de mexer em pareamento; não tocar lógica de folha (INTOCÁVEL §8) sem ordem; lembrar decisão 22/06 (espelho NÃO alimenta folha de pagamento — cabeçalho de `server/lib/espelho-ponto.ts`).
+**How to apply:** quando horas trabalhadas da folha não baterem com o RHID, conferir se a soma da coluna "Normais" (capada a 19:59/dia) bate com o alvo do dono ANTES de suspeitar de bug; o teto diário já corrige. Espelho RHID é função separada (`buildEspelhoRhid`) e NÃO alimenta folha de pagamento (cabeçalho `server/lib/espelho-ponto.ts`).
 
 ## Taxa de HE (CCT vigilância)
 `buildFolhaStats` tinha default `multiplicadorHE = 1.5` (CLT 50%); o resto do sistema (payroll.ts, fixed-costs/Balanço RH) usa **1.6 (CCT 60%)**. Alinhado o default para 1.6. valorHora ≈ 15,16 (base×1,3/220); ×1,6 com precisão cheia = 24,25, mas o dono usa 24,26 (arredonda a hora p/ centavo ANTES: 15,16×1,6=24,256→24,26). Normal 15,16 e Noturna 27,29 (×1,8) já batem. A diferença de 1 centavo no HE é só arredondamento do valor-hora.

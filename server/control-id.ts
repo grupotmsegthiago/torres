@@ -1340,7 +1340,10 @@ export async function buildFolhaStats(
     : 220;
 
   const dias = await buildFolhaPonto(employeeId, monthYear, { horasMensais: horasMensaisPonto });
-  const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.hoursWorked) || 0), 0);
+  // Soma em MINUTOS (workedMin já capado a 19:59/dia) e converte no fim, evitando
+  // o erro de ~3min do acúmulo de toFixed(2) por dia — assim "Horas Trabalhadas"
+  // bate exatamente com a soma das Normais (ex.: FERNANDO jun/2026 = 447:27).
+  const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
   const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
   // Horas noturnas (22h–05h BRT) efetivamente trabalhadas no mês.
   const horasNoturnas = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
@@ -1478,7 +1481,9 @@ export async function buildFolhaStats(
   // (HE 24,26 = 15,16×1,6 e Noturno 27,29 = 15,16×1,8, onde 15,16 = base×1,3/220).
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? (baseSalary * fatorPericVH) / hoursLimit : 0;
-  const valorHoraExtra = valorHora * multiplicadorHE;
+  // Arredonda o valor-hora ao centavo ANTES de aplicar o multiplicador, batendo
+  // com a CCT do dono: 15,16 × 1,6 = 24,26 (em vez de 15,1586×1,6 = 24,25).
+  const valorHoraExtra = (Math.round(valorHora * 100) / 100) * multiplicadorHE;
   // Adicional noturno (modelo Torres, revertido pelo dono): hora cheia 1,80×
   // (hora + 60% HE + 20% noturno) sobre as horas entre 22h–05h. Antes era só o
   // prêmio de 20% — ver memória payroll-night-additional.
@@ -2133,6 +2138,13 @@ export async function buildFolhaPonto(
         const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
         workedMin -= lunchMin;
       }
+      // Teto diário de jornada (NORMAL_DAILY_CAP_MIN = 19:59). Remove a
+      // duplicação da meia-noite criada pelos marcadores sintéticos 00:00/23:59
+      // do import (folha_pdf_import): ninguém trabalha >19:59 num dia, então o
+      // excedente é fantasma. Com o teto, "Horas Trabalhadas" passa a ser igual à
+      // soma das "Normais" e bate com o RHID oficial (ex.: FERNANDO jun/2026 =
+      // 447:27). Ordem explícita do dono (INTOCÁVEL §8).
+      workedMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = Math.round(workedMin);
       entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
