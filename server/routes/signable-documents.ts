@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
+import { notifyEmployeesDocBackground } from "../lib/signable-doc-notify";
 import {
   getTemplate,
   listTemplates,
@@ -110,7 +111,7 @@ function buildDataUri(rawBase64?: string | null, mime?: string | null, legacyDat
 }
 
 async function loadEmployeeMap(ids?: number[]): Promise<Map<number, any>> {
-  let q = supabaseAdmin.from("employees").select("id, name, cpf, role, matricula, status");
+  let q = supabaseAdmin.from("employees").select("id, name, cpf, role, matricula, status, phone");
   if (ids && ids.length) q = q.in("id", ids);
   const { data } = await q;
   const map = new Map<number, any>();
@@ -233,6 +234,8 @@ export function registerSignableDocumentRoutes(app: Express) {
 
       const { data, error } = await supabaseAdmin.from(TABLE).insert(payload).select().single();
       if (error) return res.status(500).json({ message: error.message });
+      // Avisa o vigilante no WhatsApp (best-effort, em background — não segura a resposta).
+      notifyEmployeesDocBackground([emp], data.title, false);
       res.json(toCamelObj(data));
     } catch (err: any) {
       console.error("[signable-docs:emit]", err);
@@ -270,6 +273,11 @@ export function registerSignableDocumentRoutes(app: Express) {
 
       const { data, error } = await supabaseAdmin.from(TABLE).insert(rows).select();
       if (error) return res.status(500).json({ message: error.message });
+      // Avisa cada vigilante no WhatsApp (best-effort, em background com pacing anti-ban).
+      const notifyEmps = (data || [])
+        .map((d: any) => empMap.get(d.employee_id))
+        .filter(Boolean);
+      notifyEmployeesDocBackground(notifyEmps, title || tpl.title, false);
       res.json({ created: data?.length || 0, items: toCamelArray(data || []) });
     } catch (err: any) {
       console.error("[signable-docs:bulk]", err);
@@ -459,7 +467,7 @@ export function registerSignableDocumentRoutes(app: Express) {
   app.post("/api/signable-documents/:id/reminder", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
-      const { data: rows } = await supabaseAdmin.from(TABLE).select("id, assinatura_status, reminder_count").eq("id", id).limit(1);
+      const { data: rows } = await supabaseAdmin.from(TABLE).select("id, employee_id, title, assinatura_status, reminder_count").eq("id", id).limit(1);
       if (!rows?.length) return res.status(404).json({ message: "Documento não encontrado" });
       if (rows[0].assinatura_status === "assinado") return res.status(400).json({ message: "Documento já assinado" });
       const { data, error } = await supabaseAdmin
@@ -469,6 +477,10 @@ export function registerSignableDocumentRoutes(app: Express) {
         .select()
         .single();
       if (error) return res.status(500).json({ message: error.message });
+      // Lembrete ativo via WhatsApp (best-effort, em background).
+      const empMap = await loadEmployeeMap([rows[0].employee_id]);
+      const emp = empMap.get(rows[0].employee_id);
+      if (emp) notifyEmployeesDocBackground([emp], rows[0].title || data.title, true);
       res.json(toCamelObj(data));
     } catch (err: any) {
       res.status(500).json({ message: err.message });

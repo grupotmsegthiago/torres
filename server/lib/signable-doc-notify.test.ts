@@ -1,0 +1,59 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { toIntlPhone, firstName, buildDocNotifyFallback } from "./signable-doc-notify";
+
+test("toIntlPhone adiciona DDI 55 em número nacional (10/11 dígitos)", () => {
+  assert.equal(toIntlPhone("11926839456"), "5511926839456");
+  assert.equal(toIntlPhone("(11) 92683-9456"), "5511926839456");
+  assert.equal(toIntlPhone("1133334444"), "551133334444");
+});
+
+test("toIntlPhone preserva número já com DDI (>=12 dígitos)", () => {
+  assert.equal(toIntlPhone("5511926839456"), "5511926839456");
+});
+
+test("toIntlPhone retorna null quando não há telefone (best-effort)", () => {
+  assert.equal(toIntlPhone(null), null);
+  assert.equal(toIntlPhone(undefined), null);
+  assert.equal(toIntlPhone(""), null);
+  assert.equal(toIntlPhone("   "), null);
+});
+
+test("firstName extrai só o primeiro nome", () => {
+  assert.equal(firstName("João da Silva"), "João");
+  assert.equal(firstName("  Maria  "), "Maria");
+  assert.equal(firstName(null), "");
+});
+
+test("buildDocNotifyFallback inclui o título do documento e a instrução de assinar no App", () => {
+  const msg = buildDocNotifyFallback("Termo de Ciência", "João", false);
+  assert.ok(msg.includes("Termo de Ciência"), "deve citar o título do documento");
+  assert.match(msg, /App do Vigilante/i);
+  assert.match(msg, /Documentos/i);
+});
+
+test("buildDocNotifyFallback de lembrete sinaliza pendência", () => {
+  // Roda várias vezes para cobrir os textos variados do pool de lembrete.
+  let pendenteHits = 0;
+  for (let i = 0; i < 50; i++) {
+    const msg = buildDocNotifyFallback("Aviso de Férias", "Ana", true);
+    assert.ok(msg.includes("Aviso de Férias"));
+    if (/pendente|aguardando|lembrar|falta assinar/i.test(msg)) pendenteHits++;
+  }
+  assert.ok(pendenteHits > 0, "lembrete deve sinalizar pendência em alguma variação");
+});
+
+test("buildDocNotifyFallback é VARIADO (anti-ban Z-API) — não repete byte-a-byte", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    seen.add(buildDocNotifyFallback("Termo de Ciência", "João", false));
+  }
+  // Com 6×4×4 combinações + casualize probabilístico, esperamos alta variedade.
+  assert.ok(seen.size > 10, `esperava muitos textos distintos, obteve ${seen.size}`);
+});
+
+test("buildDocNotifyFallback funciona sem nome do funcionário", () => {
+  const msg = buildDocNotifyFallback("Termo de Ciência", "", false);
+  assert.ok(msg.includes("Termo de Ciência"));
+  assert.ok(msg.length > 0);
+});
