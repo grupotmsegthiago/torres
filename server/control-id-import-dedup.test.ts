@@ -142,6 +142,21 @@ test("dedupPunchesByCore: dados limpos (sem duplicata) = no-op, não altera nada
   assert.deepEqual(ids(out), [40, 41, 42]);
 });
 
+test("dedupPunchesByCore: múltiplos rhid_{mesmoCore} no mesmo dia + 1 puro-numérico → todas as reexportações somem (comportamento da duplicata 'hard')", () => {
+  // Trava do comportamento esperado p/ o caso real: a RHID reexporta a MESMA
+  // batida várias vezes no mesmo dia (rhid_14506_t1, _t2). Existindo a canônica
+  // puro-numérica "14506", todas as cópias rhid_14506_* daquele dia são descartadas.
+  // (As batidas REAIS distintas têm cores numéricos próprios — não colidem aqui.)
+  const rows = [
+    { id: 60, punch_at: "2026-05-04T08:00:00.000Z", external_id: "14506" },          // canônica (POST)
+    { id: 61, punch_at: "2026-05-04T08:00:00.000Z", external_id: "rhid_14506_1" },   // reexportação 1
+    { id: 62, punch_at: "2026-05-04T11:00:00.000Z", external_id: "rhid_14506_2" },   // reexportação 2 (mesmo dia)
+    { id: 63, punch_at: "2026-05-04T20:00:00.000Z", external_id: "14507" },          // OUTRA batida real (core próprio)
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [60, 63], "mantém a canônica e a outra batida real; some toda reexportação do core 14506 no dia");
+});
+
 test("dedupPunchesByCore: external_id null/legado é preservado", () => {
   const rows = [
     { id: 50, punch_at: "2026-05-04T08:00:00.000Z", external_id: null },
