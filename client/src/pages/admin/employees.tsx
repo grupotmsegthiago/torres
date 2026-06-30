@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard } from "lucide-react";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
@@ -4945,6 +4945,70 @@ export default function EmployeesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
+  const [termoSel, setTermoSel] = useState<Set<number>>(new Set());
+  const toggleTermoSel = (id: number) => setTermoSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const formatCpfMask = (cpf: string | null | undefined) => {
+    const d = (cpf || "").replace(/\D/g, "");
+    return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "");
+  };
+  const generateTermosFlash = (emps: Employee[]) => {
+    if (!emps.length) { toast({ title: "Selecione ao menos um colaborador" }); return; }
+    const esc = (s: string | null | undefined) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const EMPRESA = "TORRES VIGILÂNCIA PATRIMONIAL LTDA";
+    const CIDADE = "São Paulo";
+    const logoUrl = `${window.location.origin}/logo-torres-dark.jpeg`;
+    const folha = (e: Employee) => {
+      const nome = esc(e.name);
+      const cpf = esc(formatCpfMask(e.cpf));
+      return `<div class="folha">
+        <div class="header">
+          <img class="logo" src="${logoUrl}" alt="Torres Vigilância Patrimonial" onerror="this.style.display='none'" />
+          <h3>Torres Vigilância Patrimonial Ltda</h3>
+          <p class="cnpj">CNPJ: 36.982.392/0001-89</p>
+        </div>
+        <h1>Termo de Recebimento de Cartão de Benefícios e Diárias</h1>
+        <p>Eu, <b>${nome}</b>, portador(a) do CPF nº <b>${cpf}</b>, colaborador(a) da empresa <b>${EMPRESA}</b>, declaro, para os devidos fins, que nesta data recebi o Cartão Flash, destinado ao pagamento de benefícios e diárias concedidos pela empresa.</p>
+        <p><b>Declaro estar ciente de que:</b></p>
+        <ul>
+          <li>O cartão é de uso pessoal e intransferível;</li>
+          <li>Os créditos disponibilizados no cartão serão utilizados exclusivamente para os fins determinados pela empresa, conforme suas políticas internas;</li>
+          <li>É de minha responsabilidade realizar o cadastro e ativação do cartão por meio do aplicativo da Flash, bem como zelar pela guarda, conservação e utilização adequada do mesmo;</li>
+          <li>Em caso de perda, furto, roubo ou qualquer ocorrência que comprometa a segurança do cartão, comprometo-me a comunicar imediatamente a empresa e a Flash pelos canais oficiais;</li>
+          <li>O recebimento do cartão não implica, por si só, na disponibilização imediata de saldo, ficando os créditos condicionados aos lançamentos realizados pela empresa.</li>
+        </ul>
+        <p>Por ser a expressão da verdade, firmo o presente Termo de Recebimento.</p>
+        <p class="data">Local e Data: ${esc(CIDADE)}, ______ de ___________________ de 2026.</p>
+        <div class="assin">
+          <p>Colaborador(a): <b>${nome}</b></p>
+          <p>Assinatura: _____________________________________</p>
+          <p>Empresa: ${EMPRESA}</p>
+          <p>Responsável pela Entrega: _____________________________________</p>
+          <p>Assinatura: _____________________________________</p>
+        </div>
+      </div>`;
+    };
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Termo Cartão Flash${emps.length === 1 ? ` - ${esc(emps[0].name)}` : ` (${emps.length})`}</title><style>
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:'Times New Roman',serif;margin:0;padding:24px;color:#000;background:#fff}
+      .folha{max-width:780px;margin:0 auto 24px;border:2px solid #000;padding:40px 44px;box-sizing:border-box;page-break-after:always}
+      .folha:last-child{page-break-after:auto;margin-bottom:0}
+      .header{text-align:center;border-bottom:1px solid #999;padding-bottom:18px;margin-bottom:26px}
+      .header img.logo{width:120px;height:auto;margin:0 auto 12px;display:block}
+      .header h3{margin:0 0 4px;font-size:15px;text-transform:uppercase}
+      .header .cnpj{font-size:11px;color:#333;margin:2px 0}
+      h1{text-align:center;font-size:15px;text-transform:uppercase;line-height:1.4;margin:18px 0 24px}
+      p{text-align:justify;font-size:13px;line-height:1.7;margin:12px 0}
+      ul{font-size:13px;line-height:1.7;padding-left:22px;margin:10px 0}
+      ul li{margin:7px 0;text-align:justify}
+      .data{margin-top:30px;font-weight:bold}
+      .assin{margin-top:34px;font-size:13px;line-height:2.2}
+      .assin p{margin:6px 0;text-align:left}
+      @media print{body{padding:0}.folha{border:2px solid #000}}
+    </style></head><body>${emps.map(folha).join("")}<script>window.onload=()=>{setTimeout(()=>window.print(),300)};<\/script></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); }
+    else toast({ title: "Permita pop-ups para gerar os termos", variant: "destructive" });
+  };
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: docsSummary = {} } = useQuery<Record<string, string[]>>({ queryKey: ["/api/employee-documents-summary"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: salariesBulk = {} } = useQuery<Record<number, { baseSalary: number; effectiveDate: string }>>({
@@ -5239,12 +5303,48 @@ export default function EmployeesPage() {
               const totalEmpPages = Math.ceil(filtered.length / EMP_PER_PAGE);
               const safeEmpPage = Math.min(empPage, totalEmpPages || 1);
               const paginated = filtered.slice((safeEmpPage - 1) * EMP_PER_PAGE, safeEmpPage * EMP_PER_PAGE);
+              const allFilteredSelected = filtered.length > 0 && filtered.every(e => termoSel.has(e.id));
               return (
               <>
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-200 bg-neutral-50/60 flex-wrap">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-semibold text-neutral-600">Termo Cartão Flash:</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTermoSel(allFilteredSelected ? new Set() : new Set(filtered.map(e => e.id)))}
+                  data-testid="button-termo-select-all"
+                >
+                  {allFilteredSelected ? "Desmarcar todos" : "Selecionar todos"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={termoSel.size === 0}
+                  onClick={() => generateTermosFlash((employees || []).filter(e => termoSel.has(e.id)))}
+                  data-testid="button-termo-generate-selected"
+                >
+                  <CreditCard className="w-4 h-4 mr-1" /> Gerar Termos Selecionados ({termoSel.size})
+                </Button>
+                {termoSel.size > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => setTermoSel(new Set())} data-testid="button-termo-clear">Limpar seleção</Button>
+                )}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="table-employees">
                   <thead className="bg-neutral-50 border-b border-neutral-200">
                     <tr>
+                      <th className="px-3 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 cursor-pointer accent-emerald-600"
+                          checked={allFilteredSelected}
+                          onChange={() => setTermoSel(allFilteredSelected ? new Set() : new Set(filtered.map(e => e.id)))}
+                          title="Selecionar todos para o Termo Flash"
+                          aria-label="Selecionar todos os funcionários para o Termo Flash"
+                          data-testid="checkbox-termo-select-all"
+                        />
+                      </th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Foto</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Matrícula</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
@@ -5281,6 +5381,16 @@ export default function EmployeesPage() {
                         "bg-neutral-50 text-neutral-400 border-neutral-200";
                       return (
                       <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(e)} data-testid={`row-employee-${e.id}`}>
+                        <td className="px-3 py-3" onClick={(ev) => ev.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 cursor-pointer accent-emerald-600"
+                            checked={termoSel.has(e.id)}
+                            onChange={() => toggleTermoSel(e.id)}
+                            aria-label={`Selecionar ${e.name} para o Termo Flash`}
+                            data-testid={`checkbox-termo-${e.id}`}
+                          />
+                        </td>
                         <td className="p-3">
                           <div className="w-8 h-8 rounded-full bg-neutral-100 overflow-hidden">
                             {e.photoUrl ? (
@@ -5358,6 +5468,9 @@ export default function EmployeesPage() {
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="sm" onClick={() => setPastaEmployee(e)} title="Abrir Pasta" data-testid={`button-pasta-${e.id}`}>
                               <FolderOpen className="w-4 h-4 text-neutral-700" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => generateTermosFlash([e])} title="Emitir Termo Flash" data-testid={`button-termo-flash-${e.id}`}>
+                              <CreditCard className="w-4 h-4 text-emerald-600" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => setAccessEmployee(e)} title="Criar Acesso" data-testid={`button-create-access-${e.id}`}>
                               <KeyRound className="w-4 h-4 text-blue-600" />

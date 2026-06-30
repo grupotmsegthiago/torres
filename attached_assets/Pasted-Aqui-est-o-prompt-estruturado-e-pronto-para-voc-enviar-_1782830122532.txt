@@ -1,0 +1,56 @@
+Aqui está o prompt estruturado e pronto para você enviar ao Replit. Ele foi desenhado para criar a interface de emissão e gerar o documento exatamente com o texto da imagem, mantendo o padrão do seu sistema.
+
+Prompt para o Replit
+Contexto e Objetivo: Preciso criar uma nova funcionalidade no sistema para emissão do Termo de Recebimento de Cartão de Benefícios e Diárias (Cartão Flash). O sistema deve permitir a emissão individual (buscando os dados do funcionário selecionado) e também a emissão em massa (em pacote), onde posso selecionar múltiplos funcionários ou todos de uma vez para gerar os termos.
+
+Requisitos de UI/Interface (Frontend):
+
+Filtros e Seleção: Uma tela que liste os colaboradores ativos, com um checkbox ao lado de cada nome para seleção manual, um botão "Selecionar Todos" e um botão principal "Gerar Termos Selecionados".
+
+Ações Individuais: Na tabela de funcionários, adicione um botão de ação rápida "Emitir Termo Flash" diretamente na linha de cada colaborador.
+
+Visualização/Impressão: Os termos gerados devem abrir em um layout de impressão limpo (window.print()), com quebra de página automática (page-break-after: always) entre o termo de um funcionário e outro quando emitido em massa.
+
+Regra de Negócio e Dados:
+O sistema deve buscar dinamicamente do banco de dados (Supabase/tabela de funcionários/colaboradores) os seguintes campos para preencher o documento:
+
+Nome do Colaborador
+
+CPF do Colaborador
+
+Razão Social da Empresa vinculada ao contrato/colaborador
+
+Data Atual (para o campo Local e Data, formatada como: Cidade, DD de Mês de YYYY)
+
+Texto Mandatório (Fidelidade Absoluta): O documento gerado para impressão deve seguir exatamente o texto abaixo, sem alterações, apenas substituindo as variáveis dinâmicas indicadas entre {{ }}:
+
+Plaintext
+TERMO DE RECEBIMENTO DE CARTÃO DE BENEFÍCIOS E DIÁRIAS
+
+Eu, {{nome_colaborador}}, portador(a) do CPF nº {{cpf_colaborador}}, colaborador(a) da empresa {{razao_social_empresa}}, declaro, para os devidos fins, que nesta data recebi o Cartão Flash, destinado ao pagamento de benefícios e diárias concedidos pela empresa.
+
+Declaro estar ciente de que:
+• O cartão é de uso pessoal e intransferível;
+• Os créditos disponibilizados no cartão serão utilizados exclusivamente para os fins determinados pela empresa, conforme suas políticas internas;
+• É de minha responsabilidade realizar o cadastro e ativação do cartão por meio do aplicativo da Flash, bem como zelar pela guarda, conservação e utilização adequada do mesmo;
+• Em caso de perda, furto, roubo ou qualquer ocorrência que comprometa a segurança do cartão, comprometo-me a comunicar imediatamente a empresa e a Flash pelos canais oficiais;
+• O recebimento do cartão não implica, por si só, na disponibilização imediata de saldo, ficando os créditos condicionados aos lançamentos realizados pela empresa.
+
+Por ser a expressão da verdade, firmo o presente Termo de Recebimento.
+
+
+Local e Data: {{cidade_empresa}}, ______ de ___________________ de 2026.
+Colaborador(a): {{nome_colaborador}}
+Assinatura: _____________________________________
+Empresa: {{razao_social_empresa}}
+Responsável pela Entrega: _____________________________________
+Assinatura: _____________________________________
+Diretrizes de Implementação:
+
+Crie o componente de UI utilizando o padrão do projeto (React + TypeScript + Tailwind CSS se aplicável).
+
+Se certifique de que o CPF venha com a máscara correta (000.000.000-00).
+
+Deixe o campo do ano fixo/dinâmico como 2026 conforme o escopo atual.
+
+Crie a rota e o container de impressão de forma isolada para que os elementos da dashboard (sidebar, navbar) fiquem ocultos no papel/PDF.
