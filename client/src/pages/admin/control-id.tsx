@@ -16,6 +16,7 @@ import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, Che
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import type { Employee } from "@shared/schema";
 import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
+import { isBoundaryPunchTime } from "@shared/punch-time";
 
 const formatBRT = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -2518,10 +2519,15 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
     const errs: string[] = [];
     for (const s of slots) {
       try {
+        // Num "dia completo" os horários são digitados de propósito e há batidas
+        // intermediárias reais — então 00:00/23:59 nas pontas são legítimos
+        // (jornada contínua que vira a meia-noite), não placeholder. Auto-confirma.
+        const body: any = { employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction };
+        if (isBoundaryPunchTime(s.time)) body.force = true;
         const r = await authFetch("/api/control-id/manual-punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction }),
+          body: JSON.stringify(body),
         });
         const d = await r.json();
         if (!r.ok) throw new Error(d.message);
@@ -2882,10 +2888,14 @@ function AddDayDialog({ employeeId, defaultDate, onClose, onChanged }: { employe
     const errs: string[] = [];
     for (const s of slots) {
       try {
+        // Dia completo: horários digitados de propósito com batidas intermediárias
+        // reais — 00:00/23:59 nas pontas são jornada contínua, não placeholder.
+        const body: any = { employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction };
+        if (isBoundaryPunchTime(s.time)) body.force = true;
         const r = await authFetch("/api/control-id/manual-punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction }),
+          body: JSON.stringify(body),
         });
         const d = await r.json();
         if (!r.ok) throw new Error(d.message);

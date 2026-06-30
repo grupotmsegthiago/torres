@@ -54,3 +54,4 @@
 - [Resposta do bot ao pedido de atualização = card padrão](fulfill-group-card.md) — fulfill só pula envio quando cron REALMENTE encaminha (hadPhoto && isForwardableStep); senão dropa a resposta no grupo.
 - [Virada de dia BRT em filtros de período](brt-day-pivot-filter.md) — filtro por dia-calendário BRT não pode usar new Date() cru sob TZ=UTC (madrugada sem offset escorrega -1 dia); usar brtDateKey (server/lib/brt-date.ts).
 - [Assinatura digital de documentos RH](signable-docs-module.md) — employee_signable_documents; biometria em BUCKET PRIVADO (signed URL/data URI p/ PDF), WAF-safe write+Zod; canvas→submit passa dataURL direto (não setState); content_html só de template (XSS); "visualizado" é o client que dispara.
+- [Plantão: 00:00/23:59 em batida manual](plantao-boundary-punch.md) — backend bloqueia como placeholder; fluxo dia-completo auto-envia force (isBoundaryPunchTime), batida única exige checkbox; nunca baixar o guard.
