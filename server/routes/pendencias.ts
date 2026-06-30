@@ -98,7 +98,25 @@ export function registerPendenciasRoutes(app: Express) {
           vencido: String(d.expiry_date).slice(0, 10) < today,
         }));
 
-      const total = holerites.length + probacao.length + definitivo.length + documentos.length;
+      // ---- Documentos assináveis RH pendentes (não assinados) ----
+      const { data: signRaw } = await supabaseAdmin
+        .from("employee_signable_documents")
+        .select("id, employee_id, document_type, title, assinatura_status, created_at")
+        .neq("assinatura_status", "assinado")
+        .order("created_at", { ascending: false })
+        .limit(80);
+      const assinaveis = (signRaw || [])
+        .filter((d: any) => empMap.get(d.employee_id)?.status === "ativo")
+        .map((d: any) => ({
+          id: d.id,
+          employeeId: d.employee_id,
+          employeeName: empMap.get(d.employee_id)?.name || "—",
+          documentType: d.document_type,
+          title: d.title,
+          createdAt: String(d.created_at).slice(0, 10),
+        }));
+
+      const total = holerites.length + probacao.length + definitivo.length + documentos.length + assinaveis.length;
 
       res.json({
         total,
@@ -106,6 +124,7 @@ export function registerPendenciasRoutes(app: Express) {
         probacao: { count: probacao.length, items: probacao.slice(0, 10) },
         definitivo: { count: definitivo.length, items: definitivo.slice(0, 10) },
         documentos: { count: documentos.length, items: documentos.slice(0, 10) },
+        assinaveis: { count: assinaveis.length, items: assinaveis.slice(0, 10) },
         generatedAt: new Date().toISOString(),
       });
     } catch (err: any) {

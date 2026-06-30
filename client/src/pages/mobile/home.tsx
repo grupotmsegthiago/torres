@@ -157,6 +157,13 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Experiência (45 dias)</p>
             </div>
           </Link>
+          <Link href="/mobile/documentos">
+            <div className="bg-white rounded-2xl border border-amber-200 p-4 text-center active:bg-amber-50 transition-colors" data-testid="link-documentos">
+              <FileText className="w-6 h-6 text-amber-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Documentos</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Assinar termos</p>
+            </div>
+          </Link>
           <Link href="/mobile/checklist">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-checklist">
               <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />

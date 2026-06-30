@@ -56,6 +56,7 @@ const InterExtratoPage = lazy(() => import("@/pages/admin/inter-extrato"));
 const ContasAPagarPage = lazy(() => import("@/pages/admin/contas-a-pagar"));
 const HoleritesPage = lazy(() => import("@/pages/admin/holerites"));
 const ContratosExperienciaPage = lazy(() => import("@/pages/admin/contratos-experiencia"));
+const DashboardDocumentosRHPage = lazy(() => import("@/pages/admin/dashboard-documentos-rh"));
 const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
 const JornadaDiretoriaPage = lazy(() => import("@/pages/admin/jornada-diretoria"));
 const ChatPage = lazy(() => import("@/pages/admin/chat"));
@@ -83,6 +84,7 @@ const MobileControleCondutorPage = lazy(() => import("@/pages/mobile/controle-co
 const MobileResumoFinanceiroPage = lazy(() => import("@/pages/mobile/resumo-financeiro"));
 const MobileHoleritesPage = lazy(() => import("@/pages/mobile/holerites"));
 const MobileContratosPage = lazy(() => import("@/pages/mobile/contratos"));
+const MobileDocumentosPage = lazy(() => import("@/pages/mobile/documentos"));
 
 function LazyFallback() {
   return (
@@ -274,6 +276,7 @@ function Router() {
         <Route path="/admin/cobranca-judicial">{() => <ProtectedRoute component={CobrancaJudicialPage} />}</Route>
         <Route path="/admin/holerites">{() => <ProtectedRoute component={HoleritesPage} />}</Route>
         <Route path="/admin/contratos-experiencia">{() => <ProtectedRoute component={ContratosExperienciaPage} />}</Route>
+        <Route path="/admin/documentos-rh">{() => <ProtectedRoute component={DashboardDocumentosRHPage} />}</Route>
         <Route path="/admin/jornada-diretoria">{() => <ProtectedRoute component={JornadaDiretoriaPage} />}</Route>
         <Route path="/admin/chat">{() => <ProtectedRoute component={ChatPage} />}</Route>
         <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
@@ -297,6 +300,7 @@ function Router() {
         <Route path="/mobile/resumo-financeiro">{() => <MobileProtectedRoute component={MobileResumoFinanceiroPage} skipSelfieCheck />}</Route>
         <Route path="/mobile/holerites">{() => <MobileProtectedRoute component={MobileHoleritesPage} />}</Route>
         <Route path="/mobile/contratos">{() => <MobileProtectedRoute component={MobileContratosPage} skipContractCheck skipSelfieCheck />}</Route>
+        <Route path="/mobile/documentos">{() => <MobileProtectedRoute component={MobileDocumentosPage} />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
         <Route path="/admin/inter-extrato">{() => <ProtectedRoute component={InterExtratoPage} />}</Route>

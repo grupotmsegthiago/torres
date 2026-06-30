@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard, FileSignature, Bell } from "lucide-react";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
@@ -1743,9 +1743,10 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
-type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "termo-monitoramento" | "treinamento" | "aceites" | "dependentes";
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "termo-monitoramento" | "treinamento" | "aceites" | "dependentes" | "assinaturas";
 const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "documentos", label: "Documentos", icon: FileText },
+  { key: "assinaturas", label: "Documentos p/ Assinar", icon: FileSignature },
   { key: "contrato", label: "Contrato", icon: ClipboardList },
   { key: "termo-monitoramento", label: "Termo de Monitoramento", icon: Camera },
   { key: "treinamento", label: "Treinamento", icon: Shield },
@@ -3831,6 +3832,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
+    assinaturas: 0,
     contrato: 0,
     "termo-monitoramento": 0,
     treinamento: 0,
@@ -4881,6 +4883,9 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
             )}
           </div>
         )}
+        {tab === "assinaturas" && (
+          <EmployeeSignableDocsTab employeeId={employee.id} />
+        )}
       </Card>
       {showBrandedContractPasta && (
         <BrandedContractDialog
@@ -4891,6 +4896,143 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           entityName={employee.name}
           defaults={{ nome: employee.name, documento: employee.cpf || "", endereco: employee.address || "", cargo: employee.role || "" }}
         />
+      )}
+    </div>
+  );
+}
+
+function EmployeeSignableDocsTab({ employeeId }: { employeeId: number }) {
+  const { toast } = useToast();
+  const [emitType, setEmitType] = useState<string>("beneficio_flash");
+  const [evidence, setEvidence] = useState<any | null>(null);
+  const { data: docs = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/signable-documents", employeeId],
+    queryFn: async () => { const r = await authFetch(`/api/signable-documents?employeeId=${employeeId}`); return r.json(); },
+  });
+
+  const emitMutation = useMutation({
+    mutationFn: async () => { const r = await apiRequest("POST", "/api/signable-documents", { employeeId, documentType: emitType }); return r.json(); },
+    onSuccess: () => {
+      toast({ title: "Documento enviado", description: "O colaborador assina pelo App do Vigilante." });
+      queryClient.invalidateQueries({ queryKey: ["/api/signable-documents", employeeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hr/signable-documents/dashboard"] });
+    },
+    onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const reminderMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest("POST", `/api/signable-documents/${id}/reminder`, {}),
+    onSuccess: () => { toast({ title: "Lembrete enviado" }); queryClient.invalidateQueries({ queryKey: ["/api/signable-documents", employeeId] }); },
+    onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+
+  const openEvidence = async (id: number) => {
+    try { const r = await authFetch(`/api/signable-documents/${id}/signature`); setEvidence(await r.json()); }
+    catch (e: any) { toast({ title: "Erro ao carregar evidência", description: e.message, variant: "destructive" }); }
+  };
+
+  const fmt = (d?: string | null) => d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <FileSignature className="w-4 h-4 text-indigo-600" />
+        <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Documentos para Assinatura Digital</h3>
+        <div className="flex items-center gap-2 ml-auto">
+          <select value={emitType} onChange={(e) => setEmitType(e.target.value)} className="text-xs border border-neutral-300 rounded-md px-2 py-1.5 bg-white" data-testid="select-emit-type">
+            <option value="beneficio_flash">Termo Cartão Flash</option>
+            <option value="lgpd">Termo LGPD</option>
+            <option value="regulamento">Regulamento Interno</option>
+            <option value="contrato_servico">Contrato de Serviço</option>
+            <option value="outros">Outro documento</option>
+          </select>
+          <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={emitMutation.isPending} onClick={() => emitMutation.mutate()} data-testid="button-emit-signable">
+            <Plus className="w-3.5 h-3.5 mr-1" /> Enviar p/ Assinatura
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-neutral-400" /></div>
+      ) : docs.length === 0 ? (
+        <p className="text-xs text-neutral-400 text-center py-6">Nenhum documento enviado para assinatura.</p>
+      ) : (
+        <div className="border border-neutral-200 rounded-xl overflow-hidden">
+          <table className="w-full text-xs" data-testid="table-employee-signable">
+            <thead>
+              <tr className="bg-neutral-50 border-b">
+                <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Documento</th>
+                <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Status</th>
+                <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Emitido</th>
+                <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Assinado em</th>
+                <th className="text-right px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {docs.map((d) => {
+                const assinado = d.assinaturaStatus === "assinado";
+                return (
+                  <tr key={d.id} className="hover:bg-neutral-50" data-testid={`row-signable-${d.id}`}>
+                    <td className="px-3 py-2 font-medium">{d.title}</td>
+                    <td className="px-3 py-2">
+                      <Badge className={assinado ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-amber-100 text-amber-800 hover:bg-amber-100"}>
+                        {assinado ? "✅ Assinado" : "🟡 Pendente"}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 text-neutral-500">{fmt(d.createdAt)}</td>
+                    <td className="px-3 py-2 text-neutral-500">{fmt(d.assinadoEm)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => window.open(`/api/signable-documents/${d.id}/pdf`, "_blank")} data-testid={`button-pdf-${d.id}`}>
+                        <FileText className="w-3.5 h-3.5" />
+                      </Button>
+                      {assinado ? (
+                        <Button size="sm" variant="outline" className="h-7" onClick={() => openEvidence(d.id)} data-testid={`button-evidence-${d.id}`}>
+                          <Eye className="w-3.5 h-3.5 mr-1" /> Evidência
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-7" disabled={reminderMutation.isPending} onClick={() => reminderMutation.mutate(d.id)} data-testid={`button-remind-${d.id}`}>
+                          <Bell className="w-3.5 h-3.5 mr-1" /> Lembrar{d.reminderCount > 0 ? ` (${d.reminderCount})` : ""}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {evidence && (
+        <Dialog open={!!evidence} onOpenChange={(o) => !o && setEvidence(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader><DialogTitle>Evidência de Assinatura</DialogTitle></DialogHeader>
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                {evidence.assinaturaFacialFoto && (
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-neutral-500 mb-1">Reconhecimento Facial</p>
+                    <img src={evidence.assinaturaFacialFoto} alt="Facial" className="w-full rounded-lg border" data-testid="img-evidence-facial" />
+                  </div>
+                )}
+                {evidence.assinaturaDesenho && (
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-neutral-500 mb-1">Assinatura Manuscrita</p>
+                    <img src={evidence.assinaturaDesenho} alt="Assinatura" className="w-full rounded-lg border bg-white" data-testid="img-evidence-signature" />
+                  </div>
+                )}
+              </div>
+              <div className="bg-neutral-50 rounded-lg p-3 space-y-1 text-neutral-600">
+                <p><strong>Assinado em:</strong> {fmt(evidence.assinadoEm)}</p>
+                {evidence.assinaturaIp && <p><strong>IP:</strong> {evidence.assinaturaIp}</p>}
+                {evidence.assinaturaUserAgent && <p className="break-all"><strong>Dispositivo:</strong> {evidence.assinaturaUserAgent}</p>}
+                {evidence.signatureMetadata?.geo?.lat && (
+                  <p><strong>Geo:</strong> {evidence.signatureMetadata.geo.lat}, {evidence.signatureMetadata.geo.lng}</p>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
@@ -4947,6 +5089,20 @@ export default function EmployeesPage() {
   const isDiretoria = user?.role === "diretoria";
   const [termoSel, setTermoSel] = useState<Set<number>>(new Set());
   const toggleTermoSel = (id: number) => setTermoSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [signableType, setSignableType] = useState<string>("beneficio_flash");
+  const sendSignableMutation = useMutation({
+    mutationFn: async (vars: { employeeIds: number[]; documentType: string }) => {
+      const res = await apiRequest("POST", "/api/signable-documents/bulk", vars);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: `Documento enviado para ${data.created} colaborador(es)`, description: "Eles assinam pelo App do Vigilante (Documentos)." });
+      setTermoSel(new Set());
+      queryClient.invalidateQueries({ queryKey: ["/api/signable-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hr/signable-documents/dashboard"] });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" }),
+  });
   const formatCpfMask = (cpf: string | null | undefined) => {
     const d = (cpf || "").replace(/\D/g, "");
     return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "");
@@ -5329,6 +5485,31 @@ export default function EmployeesPage() {
                 {termoSel.size > 0 && (
                   <Button size="sm" variant="ghost" onClick={() => setTermoSel(new Set())} data-testid="button-termo-clear">Limpar seleção</Button>
                 )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <FileSignature className="w-4 h-4 text-indigo-600" />
+                  <span className="text-xs font-semibold text-neutral-600">Assinatura digital:</span>
+                  <select
+                    value={signableType}
+                    onChange={(e) => setSignableType(e.target.value)}
+                    className="text-xs border border-neutral-300 rounded-md px-2 py-1.5 bg-white"
+                    data-testid="select-signable-type"
+                  >
+                    <option value="beneficio_flash">Termo Cartão Flash</option>
+                    <option value="lgpd">Termo LGPD</option>
+                    <option value="regulamento">Regulamento Interno</option>
+                    <option value="contrato_servico">Contrato de Serviço</option>
+                    <option value="outros">Outro documento</option>
+                  </select>
+                  <Button
+                    size="sm"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    disabled={termoSel.size === 0 || sendSignableMutation.isPending}
+                    onClick={() => sendSignableMutation.mutate({ employeeIds: Array.from(termoSel), documentType: signableType })}
+                    data-testid="button-send-signable"
+                  >
+                    <FileSignature className="w-4 h-4 mr-1" /> Enviar p/ Assinatura ({termoSel.size})
+                  </Button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="table-employees">

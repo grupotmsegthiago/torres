@@ -592,6 +592,38 @@ export async function ensureDbSchema() {
     `).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_employee ON employee_probation_contracts (employee_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_probation_status ON employee_probation_contracts (assinatura_status)`).catch(() => {});
+
+    // ===== Documentos assináveis de RH (Termo Flash, LGPD, regulamento, etc.) =====
+    // Novo módulo de assinatura digital genérica — NÃO confundir com
+    // employee_documents (documentos de identidade/compliance).
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS employee_signable_documents (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        document_type TEXT NOT NULL DEFAULT 'beneficio_flash',
+        title TEXT NOT NULL,
+        content_html TEXT,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        visualizado_em TIMESTAMP,
+        assinatura_status TEXT NOT NULL DEFAULT 'pendente',
+        assinado_em TIMESTAMP,
+        assinatura_facial_foto TEXT,
+        assinatura_desenho TEXT,
+        assinatura_termo TEXT,
+        assinatura_ip TEXT,
+        assinatura_user_agent TEXT,
+        signature_metadata JSONB,
+        reminder_count INTEGER DEFAULT 0,
+        last_reminder_at TIMESTAMP,
+        created_by INTEGER,
+        created_by_name TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_employee ON employee_signable_documents (employee_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_status ON employee_signable_documents (assinatura_status)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_signable_docs_type ON employee_signable_documents (document_type)`).catch(() => {});
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_diretoria BOOLEAN DEFAULT FALSE`).catch(() => {});
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_by INTEGER`).catch(() => {});
     await execSql(`ALTER TABLE employee_probation_contracts ADD COLUMN IF NOT EXISTS bypass_by_name TEXT`).catch(() => {});

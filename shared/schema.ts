@@ -588,6 +588,40 @@ export const insertEmployeeProbationContractSchema = createInsertSchema(employee
 export type InsertEmployeeProbationContract = z.infer<typeof insertEmployeeProbationContractSchema>;
 export type EmployeeProbationContract = typeof employeeProbationContracts.$inferSelect;
 
+// Documentos assináveis genéricos de RH (Termo Flash, LGPD, regulamento, etc.).
+// Emitidos pelo admin, distribuídos ao app do vigilante e assinados pelo
+// funcionário com reconhecimento facial + assinatura manuscrita — mesmo
+// vocabulário de colunas de assinatura das tabelas de contrato/holerite.
+export const employeeSignableDocuments = pgTable("employee_signable_documents", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  documentType: text("document_type").notNull().default("beneficio_flash"), // beneficio_flash | lgpd | regulamento | contrato_servico | outros
+  title: text("title").notNull(),
+  contentHtml: text("content_html"),
+  // Ciclo de vida: pendente -> visualizado -> assinado
+  status: text("status").notNull().default("pendente"),
+  visualizadoEm: timestamp("visualizado_em"),
+  // Assinatura digital (mesmo padrão de probation/holerite)
+  assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
+  assinadoEm: timestamp("assinado_em"),
+  assinaturaFacialFoto: text("assinatura_facial_foto"),
+  assinaturaDesenho: text("assinatura_desenho"),
+  assinaturaTermo: text("assinatura_termo"),
+  assinaturaIp: text("assinatura_ip"),
+  assinaturaUserAgent: text("assinatura_user_agent"),
+  signatureMetadata: jsonb("signature_metadata"), // { lat, lng, accuracy, capturedAt }
+  // Lembrete in-app (sem canal externo nesta entrega)
+  reminderCount: integer("reminder_count").default(0),
+  lastReminderAt: timestamp("last_reminder_at"),
+  createdBy: integer("created_by"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeSignableDocumentSchema = createInsertSchema(employeeSignableDocuments).omit({ id: true, createdAt: true });
+export type InsertEmployeeSignableDocument = z.infer<typeof insertEmployeeSignableDocumentSchema>;
+export type EmployeeSignableDocument = typeof employeeSignableDocuments.$inferSelect;
+
 // Dependentes do funcionário (filhos para abatimento de IRRF + outros)
 export const employeeDependents = pgTable("employee_dependents", {
   id: serial("id").primaryKey(),

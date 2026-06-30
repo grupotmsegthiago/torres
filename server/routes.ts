@@ -741,6 +741,7 @@ async function ensureSystemSettingsTable() {
   import { registerProbationContractRoutes } from "./routes/probation-contracts";
   import { registerPermanentContractRoutes } from "./routes/permanent-contracts";
   import { registerPendenciasRoutes } from "./routes/pendencias";
+  import { registerSignableDocumentRoutes } from "./routes/signable-documents";
   import { registerOnboardingRoutes } from "./routes/onboarding";
   import { registerFornecedoresRoutes } from "./routes/fornecedores";
   import { registerSsxRoutes } from "./routes/ssx";
@@ -1395,6 +1396,7 @@ async function ensureSystemSettingsTable() {
     registerProbationContractRoutes(app);
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);
+    registerSignableDocumentRoutes(app);
     registerOnboardingRoutes(app);
     registerSsxRoutes(app);
     registerFornecedoresRoutes(app);

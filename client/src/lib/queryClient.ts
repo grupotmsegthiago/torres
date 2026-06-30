@@ -501,6 +501,12 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheets" }, () => {
         _invalidateLocal("hr");
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_signable_documents" }, () => {
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ queryKey: ["/api/signable-documents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/mobile/my-signable-documents"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/hr/signable-documents/dashboard"] });
+      })
       // holerites removida do Realtime global em 2026-05 (gerado em lote
       // mensal, não precisa push permanente; quem gerar holerite já
       // invalida o cache no client da mutation).

@@ -28,6 +28,7 @@ function PendenciasCard() {
     { key: "probacao", label: "Contratos de Experiência pendentes", icon: ShieldCheck, color: "indigo", href: "/admin/contratos-experiencia", payload: data.probacao, render: (it: any) => `${it.employeeName} — início ${fmtBR(it.startDate)} (${it.funcao})` },
     { key: "definitivo", label: "Contratos Definitivos pendentes", icon: ShieldCheck, color: "emerald", href: "/admin/employees", payload: data.definitivo, render: (it: any) => `${it.employeeName} — início ${fmtBR(it.startDate)} (${it.funcao})` },
     { key: "documentos", label: "Documentos vencendo / vencidos", icon: FileWarning, color: "red", href: "/admin/employees", payload: data.documentos, render: (it: any) => `${it.employeeName} — ${it.type} (${it.vencido ? "VENCIDO" : "vence"} ${fmtBR(it.expirationDate)})` },
+    { key: "assinaveis", label: "Documentos RH pendentes de assinatura", icon: FileText, color: "violet", href: "/admin/documentos-rh", payload: data.assinaveis, render: (it: any) => `${it.employeeName} — ${it.title}` },
   ];
 
   return (
@@ -51,6 +52,7 @@ function PendenciasCard() {
             indigo: "border-indigo-200 bg-indigo-50/40 text-indigo-800",
             emerald: "border-emerald-200 bg-emerald-50/40 text-emerald-800",
             red: "border-red-200 bg-red-50/40 text-red-800",
+            violet: "border-violet-200 bg-violet-50/40 text-violet-800",
           };
           return (
             <div key={s.key} className={`rounded-lg border p-3 ${colorMap[s.color]}`} data-testid={`pendencia-${s.key}`}>
