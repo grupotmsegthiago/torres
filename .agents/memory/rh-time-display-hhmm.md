@@ -24,3 +24,17 @@ HH:MM, AJUSTE"). Decimal de horas confunde quem confere folha contra os PDFs Con
   Excel (ex.: jornada-diretoria) continua **numérico** (`toFixed`), não string HH:MM.
 - Percentuais (%), valores R$ e ticks de gráfico ficam como estão.
 - `cargaHoraria` (carga mensal de config, ex.: "220h") NÃO é duração de jornada — não converter.
+
+## Armadilha: campo novo no backend exige RESTART do workflow (HMR só recarrega o cliente)
+
+Sintoma que pegou: na folha do Control iD, colunas Noturno/H.Extra (campos antigos)
+apareciam mas Normais/Trabalhado vinham `00:00`. Causa NÃO era display nem cálculo —
+era o servidor Node (tsx) rodando código antigo: o commit adicionou
+`entry.workedMin`/`entry.normaisMin` em `buildFolhaPonto` (`server/control-id.ts`),
+mas o dev server não reinicia com HMR (HMR só recarrega o frontend Vite).
+
+**Regra:** ao adicionar/alterar campo retornado por endpoint em `server/*.ts`,
+REINICIAR o workflow "Start application" antes de validar/concluir — `npm run check`
+e HMR limpo NÃO provam que o backend novo está no ar. **Diagnóstico rápido:** se uns
+campos do mesmo objeto vêm certos e outros (recém-adicionados) vêm 0/undefined no
+mesmo ramo de código, é servidor desatualizado, não bug de lógica.
