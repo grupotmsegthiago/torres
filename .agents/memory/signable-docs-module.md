@@ -8,7 +8,10 @@ description: Padrões e armadilhas do módulo employee_signable_documents (emiti
 Tabela `employee_signable_documents` (Supabase). Backend em `server/routes/signable-documents.ts` (supabaseAdmin direto, sem inchar IStorage) + templates em `server/lib/signable-doc-templates.ts`. App vigilante `client/src/pages/mobile/documentos.tsx`, dashboard `client/src/pages/admin/dashboard-documentos-rh.tsx`, emissão em `employees.tsx`.
 
 ## Decisões duráveis
-- **Imagens (facial/desenho) como data URI nas colunas**, não bucket — consistência com infra de assinatura existente (probation/payslips) e baixo volume. **Why:** reuso do display de evidência. WRITE é WAF-safe: client manda base64 cru + mime (`splitDataUri`), server remonta `data:<mime>;base64,<raw>` — POSTar `data:image...` literal é bloqueado pelo WAF (ver waf-blocks-data-uri).
+- **Imagens (facial/desenho) vão pro BUCKET PRIVADO `signable-docs`**, não data URI no banco. **Why:** code review barrou data URI de biometria inflando o banco; padrão é o de `mission-photos` (bucket privado + signed URL curto na leitura). Helper: `server/lib/signable-doc-storage.ts` (`uploadSignableImage` grava o CAMINHO; `resolveSignableImage`→signed URL p/ evidência admin; `downloadSignableImageDataUri`→data URI auto-contido p/ PDF). Coluna guarda o caminho; leitura sempre resolve.
+- **WRITE continua WAF-safe:** client manda base64 cru + mime, server remonta e SÓ ENTÃO sobe pro bucket — POSTar `data:image...` literal é bloqueado pelo WAF (ver waf-blocks-data-uri).
+- **Fallback nunca perde evidência:** se o upload pro bucket falhar, o writer grava o data URI cru na coluna (catch), igual writers de mission-photos. Readers (`resolveSignableImage`/`downloadSignableImageDataUri`) tratam os 3 formatos: caminho de bucket, `data:` legado e `http(s)`.
+- **Validação Zod obrigatória** em toda rota nova (emit/bulk/sign/dashboard) via `safeParse`+`zodError` — code review barra rota sem validação de input.
 
 ## Armadilhas (já corrigidas — não regredir)
 - **Captura em canvas → submit no mesmo clique não pode depender de setState.** O dataURL do canvas/foto deve ser passado DIRETO como argumento da mutation (`mutate(sig)`), nunca lido de `useState` logo após `setState(...)` (assíncrono ⇒ envia null no 1º clique). Vale p/ qualquer fluxo captura+envio imediato.

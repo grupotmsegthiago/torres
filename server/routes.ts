@@ -350,6 +350,7 @@ ensureFinancialOriginColumns();
 ensureInterTables();
 ensureComprovantesBucket();
 import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
+import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
 ensureCategoryHierarchy();
 
 async function ensureCategoryHierarchy() {

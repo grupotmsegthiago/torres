@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { z } from "zod";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
@@ -10,9 +11,61 @@ import {
   DOC_TYPE_LABELS,
   type SignableDocType,
 } from "../lib/signable-doc-templates";
+import {
+  uploadSignableImage,
+  resolveSignableImage,
+  downloadSignableImageDataUri,
+} from "../lib/signable-doc-storage";
 
 const TABLE = "employee_signable_documents";
 const CNPJ = "36.982.392/0001-89";
+
+// ===== Schemas Zod (validação forte das rotas novas) =====
+const emitSchema = z.object({
+  employeeId: z.coerce.number().int().positive(),
+  documentType: z.string().min(1).optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+});
+
+const bulkSchema = z.object({
+  employeeIds: z.array(z.coerce.number().int().positive()).min(1),
+  documentType: z.string().min(1).optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+});
+
+const geoSchema = z
+  .object({
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+    accuracy: z.number().optional(),
+  })
+  .partial()
+  .optional();
+
+const signSchema = z
+  .object({
+    // formato novo WAF-safe (base64 cru + mime)
+    facialFotoBase64: z.string().min(1).optional(),
+    facialFotoMime: z.string().optional(),
+    assinaturaBase64: z.string().min(1).optional(),
+    assinaturaMime: z.string().optional(),
+    // legado: data URI completo
+    facialFoto: z.string().optional(),
+    assinaturaDesenho: z.string().optional(),
+    termoAceito: z.literal(true, { errorMap: () => ({ message: "É necessário aceitar o termo de ciência" }) }),
+    termoTexto: z.string().max(4000).optional(),
+    geo: geoSchema,
+  })
+  .refine((d) => !!(d.facialFotoBase64 || d.facialFoto), { message: "Foto facial obrigatória", path: ["facialFotoBase64"] })
+  .refine((d) => !!(d.assinaturaBase64 || d.assinaturaDesenho), { message: "Assinatura digital obrigatória", path: ["assinaturaBase64"] });
+
+const dashboardQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+});
+
+function zodError(res: any, err: z.ZodError) {
+  return res.status(400).json({ message: err.errors[0]?.message || "Dados inválidos", errors: err.errors });
+}
 
 function todayBrtIso(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -155,9 +208,10 @@ export function registerSignableDocumentRoutes(app: Express) {
   // ===== Emitir documento (individual) — admin =====
   app.post("/api/signable-documents", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
-      const { employeeId, documentType, title } = req.body || {};
-      const empId = Number(employeeId);
-      if (!empId) return res.status(400).json({ message: "employeeId obrigatório" });
+      const parsed = emitSchema.safeParse(req.body || {});
+      if (!parsed.success) return zodError(res, parsed.error);
+      const { employeeId, documentType, title } = parsed.data;
+      const empId = employeeId;
       const type = (documentType || "beneficio_flash") as SignableDocType;
       const tpl = getTemplate(type);
 
@@ -189,9 +243,10 @@ export function registerSignableDocumentRoutes(app: Express) {
   // ===== Emitir documento (lote) — admin =====
   app.post("/api/signable-documents/bulk", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
-      const { employeeIds, documentType, title } = req.body || {};
-      const ids = Array.isArray(employeeIds) ? employeeIds.map(Number).filter(Boolean) : [];
-      if (!ids.length) return res.status(400).json({ message: "employeeIds obrigatório" });
+      const parsed = bulkSchema.safeParse(req.body || {});
+      if (!parsed.success) return zodError(res, parsed.error);
+      const { employeeIds, documentType, title } = parsed.data;
+      const ids = Array.from(new Set(employeeIds));
       const type = (documentType || "beneficio_flash") as SignableDocType;
       const tpl = getTemplate(type);
 
@@ -287,17 +342,18 @@ export function registerSignableDocumentRoutes(app: Express) {
   app.post("/api/signable-documents/:id/sign", requireAuth, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
+      const parsed = signSchema.safeParse(req.body || {});
+      if (!parsed.success) return zodError(res, parsed.error);
       const {
         facialFotoBase64, facialFotoMime, assinaturaBase64, assinaturaMime,
         facialFoto, assinaturaDesenho, // legado (data URI)
-        termoAceito, termoTexto, geo,
-      } = req.body || {};
+        termoTexto, geo,
+      } = parsed.data;
 
       const facialUri = buildDataUri(facialFotoBase64, facialFotoMime, facialFoto);
       const assinaturaUri = buildDataUri(assinaturaBase64, assinaturaMime, assinaturaDesenho);
       if (!facialUri) return res.status(400).json({ message: "Foto facial obrigatória" });
       if (!assinaturaUri) return res.status(400).json({ message: "Assinatura digital obrigatória" });
-      if (!termoAceito) return res.status(400).json({ message: "É necessário aceitar o termo de ciência" });
 
       const { data: rows } = await supabaseAdmin.from(TABLE).select("*").eq("id", id).limit(1);
       if (!rows?.length) return res.status(404).json({ message: "Documento não encontrado" });
@@ -307,6 +363,21 @@ export function registerSignableDocumentRoutes(app: Express) {
       }
       if (doc.assinatura_status === "assinado") {
         return res.status(400).json({ message: "Documento já assinado" });
+      }
+
+      // Sobe as evidências (facial/assinatura) pro bucket PRIVADO e grava o caminho.
+      // Fallback: se o upload falhar, grava o data URI cru pra nunca perder a evidência jurídica.
+      let facialStored = facialUri;
+      let assinaturaStored = assinaturaUri;
+      try {
+        facialStored = await uploadSignableImage(id, "facial", facialUri, facialFotoMime);
+      } catch (e: any) {
+        console.warn(`[signable-docs:sign] upload facial falhou (fallback base64) doc#${id}:`, e?.message);
+      }
+      try {
+        assinaturaStored = await uploadSignableImage(id, "assinatura", assinaturaUri, assinaturaMime || "image/png");
+      } catch (e: any) {
+        console.warn(`[signable-docs:sign] upload assinatura falhou (fallback base64) doc#${id}:`, e?.message);
       }
 
       const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
@@ -324,8 +395,8 @@ export function registerSignableDocumentRoutes(app: Express) {
           status: "assinado",
           assinatura_status: "assinado",
           assinado_em: brtTimestamp(),
-          assinatura_facial_foto: facialUri,
-          assinatura_desenho: assinaturaUri,
+          assinatura_facial_foto: facialStored,
+          assinatura_desenho: assinaturaStored,
           assinatura_termo: termoTexto || "Declaro que li e estou de acordo com o conteúdo deste documento, reconhecendo a validade jurídica desta assinatura eletrônica nos termos da Lei 14.063/2020 e da MP 2.200-2/2001.",
           assinatura_ip: ip,
           assinatura_user_agent: ua,
@@ -348,7 +419,11 @@ export function registerSignableDocumentRoutes(app: Express) {
       const id = Number(req.params.id);
       const { data: rows } = await supabaseAdmin.from(TABLE).select("*").eq("id", id).limit(1);
       if (!rows?.length) return res.status(404).json({ message: "Documento não encontrado" });
-      res.json(toCamelObj(rows[0]));
+      const doc = toCamelObj(rows[0]) as any;
+      // Resolve caminhos do bucket privado em signed URLs de curta duração (não vaza o caminho cru).
+      doc.assinaturaFacialFoto = await resolveSignableImage(rows[0].assinatura_facial_foto);
+      doc.assinaturaDesenho = await resolveSignableImage(rows[0].assinatura_desenho);
+      res.json(doc);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -365,6 +440,10 @@ export function registerSignableDocumentRoutes(app: Express) {
       const isAdmin = req.user.role === "admin" || req.user.role === "diretoria";
       const isOwner = req.user.employeeId && req.user.employeeId === doc.employee_id;
       if (!isAdmin && !isOwner) return res.status(403).send("Acesso negado");
+
+      // PDF precisa ser auto-contido pro print → baixa as imagens do bucket como data URI.
+      doc.assinatura_facial_foto = await downloadSignableImageDataUri(doc.assinatura_facial_foto);
+      doc.assinatura_desenho = await downloadSignableImageDataUri(doc.assinatura_desenho);
 
       const empMap = await loadEmployeeMap([doc.employee_id]);
       const emp = empMap.get(doc.employee_id);
@@ -399,7 +478,9 @@ export function registerSignableDocumentRoutes(app: Express) {
   // ===== Dashboard gerencial RH (admin) =====
   app.get("/api/hr/signable-documents/dashboard", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
-      const days = Number(req.query.days) || 30;
+      const parsedQ = dashboardQuerySchema.safeParse(req.query || {});
+      if (!parsedQ.success) return zodError(res, parsedQ.error);
+      const days = parsedQ.data.days;
       const fromDate = (() => {
         const d = new Date(todayBrtIso() + "T00:00:00-03:00");
         d.setDate(d.getDate() - days);
