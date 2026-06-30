@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback } from "./signable-doc-notify";
+import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback, notifyEmployeeDoc, notifyEmployeesDocBackground } from "./signable-doc-notify";
 
 test("toIntlPhone adiciona DDI 55 em número nacional (10/11 dígitos)", () => {
   assert.equal(toIntlPhone("11926839456"), "5511926839456");
@@ -87,4 +87,32 @@ test("buildDocSignedFallback funciona sem nome do funcionário", () => {
   const msg = buildDocSignedFallback("Termo de Ciência", "");
   assert.ok(msg.includes("Termo de Ciência"));
   assert.ok(msg.length > 0);
+});
+
+// ===== Entrega best-effort (não quebra a emissão/lembrete) =====
+// Estes testes garantem que a falta de telefone (ou um funcionário inválido)
+// NUNCA lança — a emissão do documento segue normal e o WhatsApp só é pulado.
+// O envio real passa por sendText (server/lib/zapi.ts), que tem a trava
+// FAIL-CLOSED de número OFICIAL da Central (ver memory whatsapp-zapi-antiban):
+// número errado / instância sem confirmação ⇒ envio bloqueado, mas como esta
+// camada é best-effort, o bloqueio também só vira `false`, nunca exceção.
+
+test("notifyEmployeeDoc é best-effort: sem telefone retorna false e NÃO lança", async () => {
+  const r = await notifyEmployeeDoc({ id: 1, name: "Sem Telefone", phone: null }, "Termo de Ciência", false);
+  assert.equal(r, false, "sem telefone não envia");
+});
+
+test("notifyEmployeeDoc é best-effort: telefone vazio/ inválido retorna false e NÃO lança", async () => {
+  assert.equal(await notifyEmployeeDoc({ id: 2, name: "X", phone: "" }, "Doc", false), false);
+  assert.equal(await notifyEmployeeDoc({ id: 3, name: "Y", phone: "   " }, "Doc", true), false);
+  // funcionário undefined também não pode quebrar (rota pode passar lixo)
+  assert.equal(await notifyEmployeeDoc(undefined as any, "Doc", false), false);
+});
+
+test("notifyEmployeesDocBackground não lança com lista vazia/nula", () => {
+  // Dispara em background; o que importa aqui é que a CHAMADA síncrona da rota
+  // não lança nem agenda nada com entrada vazia.
+  assert.doesNotThrow(() => notifyEmployeesDocBackground([], "Doc", false));
+  assert.doesNotThrow(() => notifyEmployeesDocBackground(null as any, "Doc", false));
+  assert.doesNotThrow(() => notifyEmployeesDocBackground([null, undefined] as any, "Doc", false));
 });
