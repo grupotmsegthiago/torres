@@ -25,6 +25,7 @@ import {
   minuteKeyBRT,
   decideImport,
   rhidNumericCore,
+  dedupPunchesByCore,
 } from "./lib/control-id-parsers";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
@@ -736,7 +737,11 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
       //  (c) o funcionário BATE. O id do AFD usa `rec.id || personId` (parseRhidAfdRecords),
       //      então o core PODE ser um personId quando falta o id do registro; exigir o
       //      mesmo employee_id evita casar batidas de funcionários diferentes por engano.
-      const sameEmployee = employeeId != null && idHit?.employeeId === employeeId;
+      // employeeId vem como number (mapByUserId) e idHit.employeeId é guardado
+      // como string — compara normalizando p/ string, senão `5 === "5"` é sempre
+      // false e a adoção por id canônico NUNCA dispara (= duplicata).
+      const sameEmployee = employeeId != null && idHit?.employeeId != null
+        && String(idHit.employeeId) === String(employeeId);
       if (idHit && idHit.id > 0 && idHit.externalId === core && !externalIdExists && sameEmployee) {
         extIdAdoptions.push({ id: idHit.id, external_id: ev.id });
         idHit.externalId = ev.id; // marca como canônico (evita reprocessar no mesmo batch)
@@ -1661,13 +1666,18 @@ export async function buildEspelhoRhid(employeeId: number, fromYmd: string, toYm
     .maybeSingle();
   const employee = empData || {};
 
-  const { data: punches } = await supabaseAdmin
+  const { data: punchesRaw } = await supabaseAdmin
     .from("control_id_punches")
-    .select("id, punch_at, direction, source, control_id_user_id")
+    .select("id, punch_at, direction, source, control_id_user_id, external_id")
     .eq("employee_id", employeeId)
     .gte("punch_at", start.toISOString())
     .lte("punch_at", end.toISOString())
     .order("punch_at", { ascending: true });
+
+  // Colapsa a duplicata "hard" (POST da Torres + reexportação do AFD do mesmo id
+  // no mesmo dia) antes do espelho. O dedup por minuto interno do buildEspelhoPonto
+  // não pega a duplicata "drift" (RHID encaixa o horário noutro minuto).
+  const punches = dedupPunchesByCore((punchesRaw || []) as any[]);
 
   // Jornada diária contratual (p/ horas extras no espelho) — leitura apenas,
   // NÃO altera custos de folha. horas_mensais ÷ 25 dias; fallback 220h.
@@ -2033,15 +2043,20 @@ export async function buildFolhaPonto(
   // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
   const { start, end } = monthToFechamento(monthYear);
 
-  const { data: punches } = await supabaseAdmin
+  const { data: punchesRaw } = await supabaseAdmin
     .from("control_id_punches")
-    .select("id, punch_at, direction, source, control_id_user_id")
+    .select("id, punch_at, direction, source, control_id_user_id, external_id")
     .eq("employee_id", employeeId)
     .gte("punch_at", start.toISOString())
     .lt("punch_at", end.toISOString())
     .order("punch_at", { ascending: true });
 
-  if (!punches || punches.length === 0) return [];
+  if (!punchesRaw || punchesRaw.length === 0) return [];
+
+  // Colapsa a duplicata "hard" (batida da Torres via POST + reexportação do AFD
+  // do mesmo id no mesmo dia) ANTES de mapear colunas/horas. Mantém a batida da
+  // Torres. Sem isso, a cópia vira "almoço" fantasma e zera a jornada do dia.
+  const punches = dedupPunchesByCore(punchesRaw as any[]);
 
   // Jornada diária base p/ cálculo de HE por dia: horas_mensais ÷ 25 dias úteis.
   // Fallback: 220h / 25 = 8h48min (528 min).

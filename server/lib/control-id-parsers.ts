@@ -229,6 +229,50 @@ export function rhidNumericCore(externalId: string | null | undefined): string |
   return null;
 }
 
+/**
+ * Colapsa, PARA EXIBIÇÃO (espelho/folha), a duplicata "hard": a mesma batida
+ * gravada 2x — uma que NÓS criamos via POST (`external_id` numérico puro, ex.
+ * "14506") e a reexportação do AFD do RHID (`rhid_14506_{ts}`) do MESMO id no
+ * MESMO dia BRT. Mantém a batida da Torres (verdade: horário digitado) e descarta
+ * a cópia do AFD.
+ *
+ * SEGURANÇA (não funde batidas distintas):
+ *  - só descarta uma linha `rhid_{core}_{ts}` quando existe uma linha puro-numérica
+ *    com EXATAMENTE esse `core` NO MESMO dia BRT. O id puro vem do POST e é único
+ *    por batida; o `rhid_{core}` do mesmo dia é a reexportação da mesma batida.
+ *  - grupos só-AFD (`rhid_*` sem a puro-numérica) NÃO são tocados — ali o `core`
+ *    pode ser um personId compartilhado por batidas diferentes (fallback de
+ *    `parseRhidAfdRecords`), então fundir apagaria batida real.
+ *
+ * NÃO altera custos quando os dados já estão limpos (sem duplicata = no-op).
+ * Quando há duplicata, corrige a jornada (a cópia inflava o almoço/zerava horas).
+ */
+export function dedupPunchesByCore<T extends { punch_at: string | Date; external_id?: string | null }>(
+  punches: T[],
+): T[] {
+  // core puro-numérico -> dias BRT em que existe a batida canônica (POST).
+  const pureCoreDays = new Map<string, Set<string>>();
+  for (const p of punches) {
+    const ext = p.external_id == null ? "" : String(p.external_id).trim();
+    if (/^\d+$/.test(ext)) {
+      const day = minuteKeyBRT(new Date(p.punch_at)).slice(0, 10);
+      const set = pureCoreDays.get(ext) || new Set<string>();
+      set.add(day);
+      pureCoreDays.set(ext, set);
+    }
+  }
+  if (pureCoreDays.size === 0) return punches;
+  return punches.filter((p) => {
+    const ext = p.external_id == null ? "" : String(p.external_id).trim();
+    const m = ext.match(/^rhid_(\d+)_\d+$/);
+    if (!m) return true; // não é reexportação do AFD
+    const days = pureCoreDays.get(m[1]);
+    if (!days) return true; // sem canônica puro-numérica desse core
+    const day = minuteKeyBRT(new Date(p.punch_at)).slice(0, 10);
+    return !days.has(day); // descarta a reexportação do mesmo dia
+  });
+}
+
 export type ImportDecision = "insert" | "skip" | "adopt-external-id";
 
 export function decideImport(params: {

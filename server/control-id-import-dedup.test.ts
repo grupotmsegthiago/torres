@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideImport, rhidNumericCore } from "./lib/control-id-parsers";
+import { decideImport, rhidNumericCore, dedupPunchesByCore } from "./lib/control-id-parsers";
 
 test("decideImport: external_id já existe localmente → skip (idempotência)", () => {
   assert.equal(
@@ -85,4 +85,69 @@ test("dedup por id: batida manual (external_id numérico) casa com o AFD reexpor
 
 test("dedup por id: batidas de funcionários diferentes NÃO colidem (ids distintos)", () => {
   assert.notEqual(rhidNumericCore("rhid_15215_1"), rhidNumericCore("rhid_15216_1"));
+});
+
+// ============================================================================
+// dedupPunchesByCore — colapso de exibição (espelho/folha) da duplicata "hard"
+// ============================================================================
+
+const ids = (rows: any[]) => rows.map((r) => r.id);
+
+test("dedupPunchesByCore: descarta a reexportação do AFD do mesmo id no mesmo dia, mantém a batida da Torres (POST)", () => {
+  // mesma batida 05:00 gravada 2x: POST "14506" + AFD rhid_14506_...
+  const rows = [
+    { id: 1, punch_at: "2026-05-04T08:00:00.000Z", external_id: "14506" },            // 05:00 BRT (POST)
+    { id: 2, punch_at: "2026-05-04T08:00:00.000Z", external_id: "rhid_14506_1777881600000" }, // 05:00 BRT (AFD)
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [1], "mantém só a batida da Torres (puro-numérica)");
+});
+
+test("dedupPunchesByCore: pega a duplicata 'drift' (AFD encaixado noutro minuto do MESMO dia)", () => {
+  // core 14184: POST 00:01 BRT vs AFD 12:15 BRT — minuto diferente, dedup por minuto falharia.
+  const rows = [
+    { id: 10, punch_at: "2026-05-12T03:01:00.000Z", external_id: "14184" },           // 00:01 BRT
+    { id: 11, punch_at: "2026-05-12T15:15:00.000Z", external_id: "rhid_14184_1778598900000" }, // 12:15 BRT
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [10], "mantém o horário digitado da Torres e descarta o fantasma do AFD");
+});
+
+test("dedupPunchesByCore: NÃO toca grupos só-AFD (core pode ser personId compartilhado)", () => {
+  // sem batida puro-numérica → nada a colapsar (evita apagar batida real distinta).
+  const rows = [
+    { id: 20, punch_at: "2026-05-04T08:00:00.000Z", external_id: "rhid_999_1" },
+    { id: 21, punch_at: "2026-05-04T20:00:00.000Z", external_id: "rhid_999_2" },
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [20, 21], "grupos só-AFD permanecem intactos");
+});
+
+test("dedupPunchesByCore: reexportação em OUTRO dia NÃO é descartada (segurança contra colisão de personId)", () => {
+  const rows = [
+    { id: 30, punch_at: "2026-05-04T08:00:00.000Z", external_id: "14506" },            // 05/04
+    { id: 31, punch_at: "2026-05-09T08:00:00.000Z", external_id: "rhid_14506_999" },   // 09/05 (dia diferente)
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [30, 31], "só colapsa quando é o mesmo dia BRT");
+});
+
+test("dedupPunchesByCore: dados limpos (sem duplicata) = no-op, não altera nada", () => {
+  const rows = [
+    { id: 40, punch_at: "2026-05-04T08:00:00.000Z", external_id: "14506" },
+    { id: 41, punch_at: "2026-05-04T16:20:00.000Z", external_id: "14507" },
+    { id: 42, punch_at: "2026-05-05T08:00:00.000Z", external_id: "rhid_14600_1" },
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [40, 41, 42]);
+});
+
+test("dedupPunchesByCore: external_id null/legado é preservado", () => {
+  const rows = [
+    { id: 50, punch_at: "2026-05-04T08:00:00.000Z", external_id: null },
+    { id: 51, punch_at: "2026-05-04T08:00:00.000Z", external_id: "14506" },
+    { id: 52, punch_at: "2026-05-04T08:00:00.000Z", external_id: "rhid_14506_1" },
+  ];
+  const out = dedupPunchesByCore(rows);
+  assert.deepEqual(ids(out), [50, 51], "mantém legado + canônica, descarta só a reexportação");
 });
