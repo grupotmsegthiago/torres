@@ -3,7 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
-import { notifyEmployeesDocBackground } from "../lib/signable-doc-notify";
+import { notifyEmployeesDocBackground, notifyEmployeeDocSignedBackground } from "../lib/signable-doc-notify";
 import {
   getTemplate,
   listTemplates,
@@ -414,6 +414,14 @@ export function registerSignableDocumentRoutes(app: Express) {
         .select()
         .single();
       if (error) return res.status(500).json({ message: error.message });
+      // Confirmação ativa via WhatsApp ao próprio funcionário (best-effort, background).
+      try {
+        const empMap = await loadEmployeeMap([doc.employee_id]);
+        const emp = empMap.get(doc.employee_id);
+        if (emp) notifyEmployeeDocSignedBackground(emp, doc.title || updated?.title);
+      } catch (e: any) {
+        console.warn(`[signable-docs:sign] confirmação WhatsApp falhou doc#${id}:`, e?.message);
+      }
       res.json(toCamelObj(updated));
     } catch (err: any) {
       console.error("[signable-docs:sign]", err);

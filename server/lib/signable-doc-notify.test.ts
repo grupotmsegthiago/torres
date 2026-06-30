@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toIntlPhone, firstName, buildDocNotifyFallback } from "./signable-doc-notify";
+import { toIntlPhone, firstName, buildDocNotifyFallback, buildDocSignedFallback } from "./signable-doc-notify";
 
 test("toIntlPhone adiciona DDI 55 em número nacional (10/11 dígitos)", () => {
   assert.equal(toIntlPhone("11926839456"), "5511926839456");
@@ -54,6 +54,37 @@ test("buildDocNotifyFallback é VARIADO (anti-ban Z-API) — não repete byte-a-
 
 test("buildDocNotifyFallback funciona sem nome do funcionário", () => {
   const msg = buildDocNotifyFallback("Termo de Ciência", "", false);
+  assert.ok(msg.includes("Termo de Ciência"));
+  assert.ok(msg.length > 0);
+});
+
+test("buildDocSignedFallback confirma a assinatura e cita o título", () => {
+  let confirmHits = 0;
+  for (let i = 0; i < 50; i++) {
+    const msg = buildDocSignedFallback("Termo de Ciência", "João");
+    assert.ok(msg.includes("Termo de Ciência"), "deve citar o título do documento");
+    if (/assinad|recebemos|confirmad|tudo certo/i.test(msg)) confirmHits++;
+  }
+  assert.ok(confirmHits > 0, "confirmação deve sinalizar assinatura recebida em alguma variação");
+});
+
+test("buildDocSignedFallback NÃO pede pra assinar de novo (é só confirmação)", () => {
+  for (let i = 0; i < 50; i++) {
+    const msg = buildDocSignedFallback("Aviso de Férias", "Ana");
+    assert.ok(!/pendente|aguardando|falta assinar|precisa.+assinar/i.test(msg), `não deve sinalizar pendência: ${msg}`);
+  }
+});
+
+test("buildDocSignedFallback é VARIADO (anti-ban Z-API) — não repete byte-a-byte", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    seen.add(buildDocSignedFallback("Termo de Ciência", "João"));
+  }
+  assert.ok(seen.size > 10, `esperava muitos textos distintos, obteve ${seen.size}`);
+});
+
+test("buildDocSignedFallback funciona sem nome do funcionário", () => {
+  const msg = buildDocSignedFallback("Termo de Ciência", "");
   assert.ok(msg.includes("Termo de Ciência"));
   assert.ok(msg.length > 0);
 });
