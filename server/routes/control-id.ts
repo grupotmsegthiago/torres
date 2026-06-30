@@ -419,6 +419,40 @@ export function registerControlIdRoutes(app: Express) {
     res.json({ ok: true });
   });
 
+  // ─────── HISTÓRICO MENSAL DA FOLHA (item 5) ───────
+  // Lista o histórico mensal salvo (snapshot por funcionário/mês). Filtros opcionais
+  // por ?month=YYYY-MM e/ou ?employeeId=N.
+  app.get("/api/control-id/folha-historico", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      let q = supabaseAdmin
+        .from("folha_historico_mensal")
+        .select("*")
+        .order("month_year", { ascending: false })
+        .order("employee_name", { ascending: true });
+      if (req.query.month) q = q.eq("month_year", String(req.query.month));
+      if (req.query.employeeId) q = q.eq("employee_id", Number(req.query.employeeId));
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Gera/atualiza manualmente o snapshot de um mês (backfill ou correção). Idempotente.
+  // Body: { month: "YYYY-MM" } — default = mês civil corrente.
+  app.post("/api/control-id/folha-historico/snapshot", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const month = String(req.body?.month || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7));
+      if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ message: "month deve ser YYYY-MM" });
+      const { snapshotFolhaMes } = await import("../lib/folha-historico");
+      const r = await snapshotFolhaMes(month, { source: "manual" });
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─────── FOLHA CONSOLIDADA ───────
   app.get("/api/control-id/folha/:employeeId", requireAuth, async (req, res) => {
     try {

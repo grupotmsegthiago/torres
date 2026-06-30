@@ -2162,5 +2162,53 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] cobranca_judicial error:", e.message);
   }
 
+  // Histórico mensal da folha por funcionário (item 5, ordem do dono jun/2026):
+  // 1 registro por funcionário/mês, gravado automaticamente no fim do mês (cron)
+  // ou manualmente (admin). Guarda o pacote completo (vencimentos, benefícios,
+  // recolhimentos informativos, custo real, custo c/ encargos e horas). `custo_real`
+  // = vencimentos + benefícios (recolhimentos NÃO somam — item 4).
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS folha_historico_mensal (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        employee_name TEXT,
+        month_year TEXT NOT NULL,
+        horas_trabalhadas NUMERIC(10,2) DEFAULT 0,
+        horas_extra NUMERIC(10,2) DEFAULT 0,
+        horas_noturnas NUMERIC(10,2) DEFAULT 0,
+        base_salary NUMERIC(12,2) DEFAULT 0,
+        periculosidade NUMERIC(12,2) DEFAULT 0,
+        custo_extra NUMERIC(12,2) DEFAULT 0,
+        adicional_noturno NUMERIC(12,2) DEFAULT 0,
+        vencimentos_total NUMERIC(12,2) DEFAULT 0,
+        vale_refeicao NUMERIC(12,2) DEFAULT 0,
+        cesta_basica NUMERIC(12,2) DEFAULT 0,
+        diarias NUMERIC(12,2) DEFAULT 0,
+        beneficios_total NUMERIC(12,2) DEFAULT 0,
+        fgts NUMERIC(12,2) DEFAULT 0,
+        inss_patronal NUMERIC(12,2) DEFAULT 0,
+        seguro_vida NUMERIC(12,2) DEFAULT 0,
+        recolhimentos_total NUMERIC(12,2) DEFAULT 0,
+        custo_real NUMERIC(12,2) DEFAULT 0,
+        custo_com_encargos NUMERIC(12,2) DEFAULT 0,
+        valor_hora NUMERIC(12,4) DEFAULT 0,
+        valor_hora_extra NUMERIC(12,4) DEFAULT 0,
+        inss_funcionario NUMERIC(12,2) DEFAULT 0,
+        irrf_funcionario NUMERIC(12,2) DEFAULT 0,
+        liquido_funcionario NUMERIC(12,2) DEFAULT 0,
+        stats_json JSONB,
+        source TEXT DEFAULT 'auto',
+        snapshot_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_folha_hist_emp_month ON folha_historico_mensal(employee_id, month_year)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_folha_hist_month ON folha_historico_mensal(month_year)`);
+    console.log("[db-init] folha_historico_mensal table ensured");
+  } catch (e: any) {
+    console.error("[db-init] folha_historico_mensal error:", e.message);
+  }
+
   await closeDbInitClient();
 }

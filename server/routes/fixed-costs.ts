@@ -510,7 +510,8 @@ export function registerFixedCostsRoutes(app: Express) {
     };
 
     // Alinhado com a tela Ponto Eletrônico (control-id.tsx → buildFolhaStats):
-    // mesma fórmula de Custo Real (Vencimentos + Benefícios + Recolhimentos), HE em 60%
+    // mesma fórmula de Custo Real (Vencimentos + Benefícios; recolhimentos são
+    // informativos e NÃO somam — item 4), HE em 60%
     // (CCT) em vez dos 50% legais. Sem provisões, sem DSR. Modelo Torres (26/06/2026):
     // adicional noturno É incluído (hora cheia 1,80×) e INSS/IRRF/líquido do funcionário
     // vêm de buildFolhaStats só p/ exibição (NÃO entram no custo da empresa).

@@ -1529,7 +1529,11 @@ export async function buildFolhaStats(
   const seguroVida = +(Number(seguroVidaMensal) * fatorRateio).toFixed(2);
   const recolhimentosTotal = +(fgts + inssPatronal + seguroVida).toFixed(2);
 
-  const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal + recolhimentosTotal).toFixed(2);
+  // Item 4 (ordem do dono jun/2026): os recolhimentos patronais (FGTS + INSS
+  // patronal + seguro de vida) são SÓ INFORMATIVOS — NÃO entram no custo geral.
+  // O "Custo Real"/geral = vencimentos + benefícios (caixa). `recolhimentosTotal`
+  // segue retornado e exibido nos painéis de Recolhimentos, mas não soma no total.
+  const custoTotalEstimado = +(vencimentosTotal + beneficiosTotal).toFixed(2);
   const custoBase = baseSalaryReal;
   // Para não-CLT, encargosPct efetivo é 0 (custo com encargos = bruto + benefícios).
   const encargosPctEfetivo = isClt ? encargosPct : 0;
@@ -1587,7 +1591,7 @@ export async function buildFolhaStats(
   // INSS 12% fixo; IRRF 22% fixo sobre o bruto (decisão do dono 26/06/2026 — média do
   // recolhimento 18–27,5%, NÃO progressivo); líquido NÃO desconta FGTS (depósito do
   // empregador, decisão do dono 26/06/2026). Não entra no custo da empresa
-  // (custoTotalEstimado já é o bruto + encargos patronais).
+  // (o custo geral = vencimentos + benefícios; recolhimentos são informativos).
   const baseTributavelFunc = vencimentosTotal;
   const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
   const irrfFuncionario = isClt ? +(baseTributavelFunc * 0.22).toFixed(2) : 0;

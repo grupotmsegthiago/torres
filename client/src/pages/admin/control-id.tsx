@@ -1755,7 +1755,7 @@ function FolhaTab() {
                     <div className="pt-2 border-t border-dashed border-neutral-200 flex items-start justify-between gap-3">
                       <div>
                         <div className="text-neutral-800 font-medium">Custo Real do funcionário</div>
-                        <div className="text-[10px] text-neutral-400 mt-0.5">Vencimentos + benefícios + recolhimentos</div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">Vencimentos + benefícios (recolhimentos não somam)</div>
                       </div>
                       <span className="font-semibold tabular-nums text-neutral-800">{fmtBRL(stats.custoTotalEstimado)}</span>
                     </div>
@@ -1865,7 +1865,7 @@ function FolhaTab() {
             {/* Recolhimentos (FGTS / INSS Patronal / Seguro de Vida) */}
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
               <div className="flex items-center justify-between mb-2 pb-2 border-b border-amber-200">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Recolhimentos</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Recolhimentos <span className="font-medium normal-case text-amber-600">(informativo · não soma no custo)</span></span>
                 <span className="text-sm font-bold text-amber-900 tabular-nums" data-testid="text-recolhimentos-total">{fmtBRL(stats.recolhimentosTotal ?? 0)}</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">

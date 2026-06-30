@@ -1,6 +1,6 @@
 ---
 name: Folha vs Espelho — marcadores sintéticos do import corrompem horas
-description: Por que as horas trabalhadas da Folha de Ponto e do Espelho RHID não batem com o RHID oficial (ex.: FERNANDO jun/2026, dono espera 447:27).
+description: Por que as horas trabalhadas da Folha de Ponto e do Espelho RHID não batem com o RHID oficial (turnos cruzando meia-noite no import).
 ---
 
 # Horas trabalhadas divergentes (Folha vs Espelho vs RHID oficial)
@@ -10,7 +10,7 @@ Batidas importadas do PDF do RHID (`source = folha_pdf_import`) trazem **marcado
 - **Folha de Ponto** (`buildFolhaPonto`/`buildFolhaStats`): pareia por dia sem costurar a meia-noite ⇒ conta `entrada→23:59` + `00:00→saída` como trabalho real ⇒ **SUPER-conta** (ex.: dias mostram 22:59 trabalhadas).
 - **Espelho RHID** (`buildEspelhoRhid`→`buildEspelhoPonto`): costura `23:59↔00:00` (≤3min) mas o teto `HARD_MAX_GAP_MIN = 18h` transforma o turno longo resultante em **órfã descartada** ⇒ **SUB-conta** (ex.: 06-03 vira 01:00).
 
-**Caso medido (FERNANDO DIAS COLONHEZI, id 26, competência 2026-06, ciclo 26/05→25/06):**
+**Caso medido (agente CLT com turnos cruzando a meia-noite, competência 2026-06, ciclo 26/05→25/06):**
 - Folha (card "Horas Trabalhadas") ANTES: **479:31** (= soma do `workedMin` cru)
 - Número correto segundo o dono (fonte RHID externa): **447:27**
 

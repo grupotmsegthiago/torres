@@ -12,6 +12,7 @@ import { processRhidSyncQueue } from "./control-id";
 import { runDailyReconciliation } from "./rhid-reconciliation";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { ymdBRT } from "./lib/hours-calc";
+import { snapshotFolhaMes, snapshotFolhaMesIfMissing, prevMonthRef } from "./lib/folha-historico";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -310,6 +311,43 @@ export function initCronJobs() {
         log(`CRON RHID-Recon ERRO: ${e?.message}`, "cron");
       } finally {
         rhidReconRunning = false;
+      }
+    }, { timezone: "America/Sao_Paulo" });
+
+    // Snapshot AUTOMÁTICO da folha do mês fechado (item 5, ordem do dono jun/2026):
+    // todo dia 1 às 05:00 BRT grava o histórico mensal (1 registro por funcionário)
+    // do mês civil que acabou de terminar. Idempotente (upsert por employee+mês).
+    let folhaSnapshotRunning = false;
+    cron.schedule("0 5 1 * *", async () => {
+      if (folhaSnapshotRunning) return;
+      if (!isSupabaseHealthy()) return;
+      folhaSnapshotRunning = true;
+      try {
+        const mes = prevMonthRef();
+        const r = await snapshotFolhaMes(mes, { source: "auto" });
+        log(`CRON Folha-Snapshot: mês=${r.mes} ativos=${r.ativos} salvos=${r.saved} pulados=${r.skipped}`, "cron");
+      } catch (e: any) {
+        log(`CRON Folha-Snapshot ERRO: ${e?.message}`, "cron");
+      } finally {
+        folhaSnapshotRunning = false;
+      }
+    }, { timezone: "America/Sao_Paulo" });
+
+    // Catch-up do snapshot mensal: dias 2–5 às 06:00 BRT só executa se o mês
+    // fechado ainda NÃO tiver histórico (cobre Supabase fora no dia 1 às 05:00).
+    let folhaCatchupRunning = false;
+    cron.schedule("0 6 2-5 * *", async () => {
+      if (folhaCatchupRunning) return;
+      if (!isSupabaseHealthy()) return;
+      folhaCatchupRunning = true;
+      try {
+        const mes = prevMonthRef();
+        const r = await snapshotFolhaMesIfMissing(mes, { source: "auto-catchup" });
+        if (r) log(`CRON Folha-Snapshot[catch-up]: mês=${r.mes} ativos=${r.ativos} salvos=${r.saved} pulados=${r.skipped}`, "cron");
+      } catch (e: any) {
+        log(`CRON Folha-Snapshot[catch-up] ERRO: ${e?.message}`, "cron");
+      } finally {
+        folhaCatchupRunning = false;
       }
     }, { timezone: "America/Sao_Paulo" });
 
