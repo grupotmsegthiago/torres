@@ -107,3 +107,9 @@ id = "U6Wbue_tX9-Q_blYHZ27u"
 uri = "file://.local/preview/modelo-marca-dagua.jpg"
 type = "image"
 title = "Modelo — ícones 3D com destaque, espaçamento corrigido"
+
+[[outputs]]
+id = "_2UfBF7A5SGwic3OLeU60"
+uri = "file://attached_assets/relatorio_batidas_duplicadas.txt"
+type = "text"
+title = "Relatório — batidas duplicadas no ponto (revisão por funcionário)"
