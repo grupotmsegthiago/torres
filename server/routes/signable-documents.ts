@@ -42,7 +42,7 @@ const geoSchema = z
   .partial()
   .optional();
 
-const signSchema = z
+export const signSchema = z
   .object({
     // formato novo WAF-safe (base64 cru + mime)
     facialFotoBase64: z.string().min(1).optional(),
