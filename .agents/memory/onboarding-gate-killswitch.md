@@ -25,3 +25,14 @@ booleano evita mexer em 3 call-sites e evita esquecer um gate aberto/fechado.
 **Histórico:** havia uma carência por DATA (`ONBOARDING_BLOCK_START_DATE`) que venceu e voltou
 a bloquear sozinha em 01/07 — por isso a preferência agora é o booleano explícito "até segunda
 ordem" em vez de data, que expira sem aviso.
+
+## Atenção: há DUAS travas de documento na criação de OS (independentes)
+Ao criar OS em `service-orders.ts`, o bloqueio por documento vem em 2 lugares distintos,
+NÃO só no onboarding:
+1. **CNH/CNV** (número + validade, e vencimento) — checagem própria ANTES do gate de
+   onboarding; controlada por `export const DOCUMENT_GATE_ENABLED` em `onboarding.ts`.
+2. **Onboarding** (Documentação/Contratos/Treinamento) via `assertOnboardingComplete` —
+   controlado por `ONBOARDING_GATE_ENABLED`.
+Desligar SÓ o onboarding NÃO libera a de CNH/CNV — some pelo `DOCUMENT_GATE_ENABLED`.
+O auto-preenchimento de CNH/CNV no cadastro do agente roda independentemente do flag
+(só o `return 400` de bloqueio é gated). Reativar = pôr o(s) flag(s) em `true`.

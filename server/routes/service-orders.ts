@@ -903,10 +903,13 @@ import type { Express } from "express";
         if (cnvExpiry < todayStr) expiredDocs.push(`CNV de ${label}`);
       }
     }
-    if (missingDocs.length > 0) {
+    // Trava de documentos CNH/CNV liberada "até segunda ordem" (DOCUMENT_GATE_ENABLED).
+    // O auto-preenchimento de CNH/CNV acima continua; só o bloqueio de criação sai.
+    const { DOCUMENT_GATE_ENABLED } = await import("./onboarding");
+    if (DOCUMENT_GATE_ENABLED && missingDocs.length > 0) {
       return res.status(400).json({ message: `Dados obrigatórios faltando: ${missingDocs.join(", ")}` });
     }
-    if (expiredDocs.length > 0) {
+    if (DOCUMENT_GATE_ENABLED && expiredDocs.length > 0) {
       return res.status(400).json({ message: `Documentos vencidos: ${expiredDocs.join(", ")} — não é possível criar a OS com documentos vencidos` });
     }
 

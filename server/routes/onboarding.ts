@@ -32,6 +32,11 @@ const ASO_GRACE_DAYS = 15;
 // etapa continua sendo CALCULADA e EXIBIDA (timeline/alertas), mas não bloqueia.
 // Para REATIVAR o bloqueio: pôr ONBOARDING_GATE_ENABLED = true.
 const ONBOARDING_GATE_ENABLED = false;
+// Trava de DOCUMENTOS obrigatórios (CNH/CNV faltando ou vencida) na CRIAÇÃO de OS —
+// liberada junto "até segunda ordem" (ordem do dono, 01/07/2026). Enquanto false,
+// a criação de OS NÃO é barrada por CNH/CNV faltando/vencida (o auto-preenchimento
+// desses campos no cadastro do agente continua acontecendo). true = volta a bloquear.
+export const DOCUMENT_GATE_ENABLED = false;
 // (Legado) Carência por data — só usada quando o gate está ativo.
 const ONBOARDING_BLOCK_START_DATE = "2026-06-30";
 
