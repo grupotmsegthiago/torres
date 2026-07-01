@@ -26,10 +26,13 @@ const LEGACY_CONTRACT_CUTOFF = "2026-05-11";
 // Durante esse período o funcionário pode ser escalado mesmo sem ASO,
 // mas o sistema sinaliza alerta e exige upload antes do prazo.
 const ASO_GRACE_DAYS = 15;
-// Trava global de onboarding: até esta data (BRT, inclusive) o bloqueio
-// está em carência para TODOS os agentes — nenhuma OS é barrada por
-// pendência de documentação/treinamento. A partir do dia seguinte a
-// validação volta a bloquear normalmente.
+// Trava global de onboarding LIBERADA "até segunda ordem" (ordem do dono, 01/07/2026).
+// Enquanto ONBOARDING_GATE_ENABLED = false, NENHUMA OS/missão é barrada por
+// pendência de onboarding (documentação/contratos/treinamento) — a validação por
+// etapa continua sendo CALCULADA e EXIBIDA (timeline/alertas), mas não bloqueia.
+// Para REATIVAR o bloqueio: pôr ONBOARDING_GATE_ENABLED = true.
+const ONBOARDING_GATE_ENABLED = false;
+// (Legado) Carência por data — só usada quando o gate está ativo.
 const ONBOARDING_BLOCK_START_DATE = "2026-06-30";
 
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
@@ -308,6 +311,13 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
 }
 
 export async function assertOnboardingComplete(employeeId: number): Promise<void> {
+  // Trava LIBERADA "até segunda ordem" (ordem do dono, 01/07/2026): não bloqueia
+  // nada enquanto ONBOARDING_GATE_ENABLED = false. Nem calcula onboarding (rápido).
+  if (!ONBOARDING_GATE_ENABLED) {
+    console.log(`[onboarding-liberado] gate desligado (até segunda ordem) — emp=${employeeId} não bloqueado.`);
+    return;
+  }
+
   const r = await computeOnboarding(employeeId);
   if (r.apto) return;
 

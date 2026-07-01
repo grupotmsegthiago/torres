@@ -60,3 +60,5 @@
 - [Plantão: 00:00/23:59 em batida manual](plantao-boundary-punch.md) — backend bloqueia como placeholder; fluxo dia-completo auto-envia force (isBoundaryPunchTime), batida única exige checkbox; nunca baixar o guard.
 - [Recolhimentos fora do custo geral + histórico da folha](folha-recolhimentos-e-historico.md) — custo geral RH = só venc+benef (FGTS/INSS patronal/seguro vida são informativos); histórico mensal congelado via snapshot auto (cron dia 1 + catch-up dias 2-5).
 - [Folha: colunas estilo cartão Control iD](folha-normais-card-style.md) — NORMAIS=min(trab,1199=04:00-23:59), TRAB/NOTURNO batem c/ cartão, H.Extra fica base pagamento 8h48; só exibição (hhmm), nunca toca custo.
+
+- [Trava de onboarding (kill switch)](onboarding-gate-killswitch.md) — bloqueio de OS/missão por onboarding é 1 função (assertOnboardingComplete); liga/desliga via ONBOARDING_GATE_ENABLED; desligar não tira a exibição.
