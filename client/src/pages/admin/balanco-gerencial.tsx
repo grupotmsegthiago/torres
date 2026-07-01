@@ -985,10 +985,10 @@ export default function BalancoGerencialPage() {
                 .sort((a, b) => b._opTotal - a._opTotal);
 
               // ── COMPOSIÇÃO AGREGADA — mesma fórmula da tela Ponto Eletrônico ("Custo Real")
-              // Vencimentos (salário ratado + periculosidade 30% + HE com adicional 60% CCT)
-              // + Benefícios (VR por dias úteis + cesta básica ratada + diárias)
-              // + Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT).
-              // SEM provisões, SEM DSR, SEM adicional noturno.
+              // Total do card = Vencimentos (salário ratado + periculosidade 30% + HE com adicional
+              // 60% CCT + adicional noturno) + Benefícios (VR por dias úteis + cesta básica ratada +
+              // diárias). Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são
+              // só informativos, NÃO entram no total. SEM provisões, SEM DSR.
               const bk = rhSummary?.breakdown;
               const agg = porAgente.length > 0
                 ? porAgente.reduce(
@@ -996,6 +996,7 @@ export default function BalancoGerencialPage() {
                       base: acc.base + Number(a.salarioProporcional || 0),
                       peric: acc.peric + Number(a.periculosidade || 0),
                       he: acc.he + Number(a.horaExtra || 0),
+                      noturno: acc.noturno + Number(a.adicionalNoturno || 0),
                       vr: acc.vr + Number(a.vrTotal || 0),
                       cesta: acc.cesta + Number(a.cesta || 0),
                       diarias: acc.diarias + Number(a.diarias || 0),
@@ -1003,12 +1004,13 @@ export default function BalancoGerencialPage() {
                       inssPatronal: acc.inssPatronal + Number(a.inssPatronal || 0),
                       seguroVida: acc.seguroVida + Number(a.seguroVida || 0),
                     }),
-                    { base: 0, peric: 0, he: 0, vr: 0, cesta: 0, diarias: 0, fgts: 0, inssPatronal: 0, seguroVida: 0 }
+                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, diarias: 0, fgts: 0, inssPatronal: 0, seguroVida: 0 }
                   )
                 : {
                     base: Number(bk?.salarioProporcional || 0),
                     peric: Number(bk?.periculosidade || 0),
                     he: Number(bk?.horaExtra || 0),
+                    noturno: Number(bk?.adicionalNoturno || 0),
                     vr: Number(bk?.vr || 0),
                     cesta: Number(bk?.cesta || 0),
                     diarias: Number(bk?.diarias || 0),
@@ -1016,7 +1018,8 @@ export default function BalancoGerencialPage() {
                     inssPatronal: Number((bk as any)?.inssPatronal || 0),
                     seguroVida: Number((bk as any)?.seguroVida || 0),
                   };
-              const vencimentos = agg.base + agg.peric + agg.he;
+              // Vencimentos inclui o adicional noturno (ele ENTRA no total do card — custoTotalEstimado).
+              const vencimentos = agg.base + agg.peric + agg.he + agg.noturno;
               const beneficios = agg.vr + agg.cesta + agg.diarias;
               const recolhimentos = agg.fgts + agg.inssPatronal + agg.seguroVida;
               const hasBreakdown = vencimentos + beneficios + recolhimentos > 0;
@@ -1026,19 +1029,24 @@ export default function BalancoGerencialPage() {
                 rhRows.push({ label: "  Salário base (ratado)", value: agg.base * fatorPeriodo });
                 rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
                 if (agg.he > 0) rhRows.push({ label: "  Hora extra (60% CCT)", value: agg.he * fatorPeriodo });
+                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno", value: agg.noturno * fatorPeriodo });
                 rhRows.push({ label: "── Benefícios + Diárias ──", value: beneficios * fatorPeriodo });
                 if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
                 if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });
                 if (agg.diarias > 0) rhRows.push({ label: "  Diárias de missão", value: agg.diarias * fatorPeriodo });
-                rhRows.push({ label: "── Recolhimentos ──", value: recolhimentos * fatorPeriodo });
-                rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
-                rhRows.push({ label: "  INSS Patronal (20%)", value: agg.inssPatronal * fatorPeriodo });
-                if (agg.seguroVida > 0) rhRows.push({ label: "  Seguro de Vida (CCT)", value: agg.seguroVida * fatorPeriodo });
+                // Vencimentos + Benefícios = total do card (fecha 100%). Recolhimentos NÃO entram no
+                // total (Balanço é fluxo de caixa do mês) — mostrados só como informativo.
+                if (recolhimentos > 0) {
+                  rhRows.push({ label: "── Recolhimentos (informativo — fora do total) ──", value: recolhimentos * fatorPeriodo });
+                  rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
+                  rhRows.push({ label: "  INSS Patronal (20%)", value: agg.inssPatronal * fatorPeriodo });
+                  if (agg.seguroVida > 0) rhRows.push({ label: "  Seguro de Vida (CCT)", value: agg.seguroVida * fatorPeriodo });
+                }
               }
 
               if (porAgente.length > 0) {
                 rhRows.push({
-                  label: `── ${porAgente.length} agente(s) ativos ──`,
+                  label: `── Por agente (${porAgente.length}) — mesmo total, detalhado ──`,
                   value: monthlyFolha * fatorPeriodo,
                 });
                 for (const a of porAgente) {
@@ -1061,7 +1069,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Mesma fórmula da tela Ponto Eletrônico ("Custo Real"): Vencimentos (salário base ratado + periculosidade 30% + HE com adicional 60% CCT do Control iD) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias) + Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT). Sem provisões (13º/férias/1/3), sem DSR e sem adicional noturno — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE com adicional 60% CCT + adicional noturno) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }

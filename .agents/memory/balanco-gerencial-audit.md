@@ -89,3 +89,19 @@ recusados não-zerados (faturamento indevido) — sintoma de billing dessincroni
 da OS. Vale re-checar periodicamente: `escort_billings` cujo `service_order_id` aponta pra OS
 recusada mas `fat_total != 0`. Lógica oficial de zeragem: server/routes/service-orders.ts
 branch `isRecusada`.
+
+## RH · Folha Real: o TOTAL não duplica — o que engana é o DETALHAMENTO
+Recorrente: dono acha que "custos de RH duplicam". O total do card (`rhSummary.monthly` =
+Σ `buildFolhaStats(...).custoTotalEstimado`) é bit-exato = base + periculosidade + HE +
+**adicional noturno** + VR + cesta + diárias (cada item 1x; verificável somando componente a
+componente — diff 0). Ele **EXCLUI** recolhimentos patronais (FGTS/INSS patronal/seguro de vida).
+**Regra de reconciliação do detalhamento** (client `balanco-gerencial.tsx`, bloco `rhRows`):
+`Vencimentos (base+peric+HE+noturno) + Benefícios (VR+cesta+diárias) = total do card`. A seção
+"Recolhimentos" é **só informativa, fora do total** (rotular assim); o adicional noturno **precisa
+aparecer** em Vencimentos senão as linhas não fecham com o número do card. O bloco "por agente" é
+o MESMO total detalhado por pessoa, não é aditivo.
+**Sem dupla contagem cruzada:** lançamentos manuais de folha/benefício em `financial_transactions`
+(VR, FGTS, diárias, VT, "Folha de Pagamento") NÃO entram no `custoTotal` do Balanço — a linha
+`despReaisOperacional = despReais − payroll − fixed − other` subtrai payroll/fixed/other. Então o
+RH vem 100% da folha de ponto e o financeiro manual daquelas categorias é descartado do total (é
+por isso que benefício/HE/noturno não "constam em outro"). `RH_CATS`/`FIXED_CATS` só classificam.
