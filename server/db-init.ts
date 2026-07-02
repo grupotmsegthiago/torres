@@ -2210,5 +2210,21 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] folha_historico_mensal error:", e.message);
   }
 
+  // Snapshots do cache SWR (Balanço Gerencial etc.) — write-through do cache em
+  // memória p/ o restart/deploy não zerar tudo e forçar recálculo frio pesado.
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS swr_cache_snapshots (
+        key TEXT PRIMARY KEY,
+        payload JSONB NOT NULL,
+        at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
+    console.log("[db-init] swr_cache_snapshots table ensured");
+  } catch (e: any) {
+    console.error("[db-init] swr_cache_snapshots error:", e.message);
+  }
+
   await closeDbInitClient();
 }

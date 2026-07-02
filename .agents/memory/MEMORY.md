@@ -62,3 +62,4 @@
 - [Folha: colunas estilo cartão Control iD](folha-normais-card-style.md) — NORMAIS=min(trab,1199=04:00-23:59), TRAB/NOTURNO batem c/ cartão, H.Extra fica base pagamento 8h48; só exibição (hhmm), nunca toca custo.
 
 - [Trava de onboarding (kill switch)](onboarding-gate-killswitch.md) — bloqueio de OS/missão por onboarding é 1 função (assertOnboardingComplete); liga/desliga via ONBOARDING_GATE_ENABLED; desligar não tira a exibição.
+- [Sandbox bash: testes longos](agent-sandbox-bash-quirks.md) — background é morto entre chamadas, grep bufferiza (use timeout+arquivo), notebook sem process.env; fatiar teste >120s por flag CLI.

@@ -7,6 +7,7 @@ import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { withSwrCache } from "../lib/swr-cache";
+import { currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 import { computeWorkedHours } from "../lib/hours-calc";
 import { createLimit } from "../lib/create-limit";
@@ -414,7 +415,12 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({ baseKey: "rh-summary", ttlMs: SWR_TTL_3H }, async (req, res) => {
+  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
+    baseKey: "rh-summary",
+    ttlMs: SWR_TTL_3H,
+    // Warm-up: semana (filtro padrão do Balanço) e mês correntes em BRT.
+    warmQueries: () => [currentBrtWeekRange(), currentBrtMonthRange()],
+  }, async (req, res) => {
     const { data: employees, error } = await supabaseAdmin
       .from("employees")
       .select("id, name, status, role, tipo_contratacao");

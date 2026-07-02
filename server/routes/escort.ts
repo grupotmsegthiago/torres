@@ -2522,7 +2522,12 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/financial/dashboard", requireAuth, requireAdminRole, withSwrCache({ baseKey: "financial-dashboard", ttlMs: SWR_TTL_3H }, async (req, res) => {
+  app.get("/api/financial/dashboard", requireAuth, requireAdminRole, withSwrCache({
+    baseKey: "financial-dashboard",
+    ttlMs: SWR_TTL_3H,
+    // Warm-up: o dashboard não tem parâmetros — uma chave só.
+    warmQueries: () => [{}],
+  }, async (req, res) => {
     try {
       const { data: billingsRaw, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
       if (bErr) throw bErr;
@@ -2556,6 +2561,12 @@ import type { Express } from "express";
 
       const { data: vehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model");
       const { data: employees } = await supabaseAdmin.from("employees").select("id, name");
+      const { data: clientsLite } = await supabaseAdmin.from("clients").select("id, name");
+      // Maps p/ resolver nomes em memória — antes o loop de OS de hoje fazia
+      // getClient/getEmployee×2/getVehicle POR OS (N+1 no Supabase).
+      const clientNameById = new Map((clientsLite || []).map((c: any) => [c.id, c]));
+      const empNameById = new Map((employees || []).map((e: any) => [e.id, e]));
+      const vehicleById = new Map((vehicles || []).map((v: any) => [v.id, v]));
 
       const allTimesheets = await storage.getTimesheets();
 
@@ -2660,10 +2671,10 @@ import type { Express } from "express";
 
           const fat_total = billing.fat_total + despesas_pedagio + receitasOs;
           const r = (v: number) => Math.round(v * 100) / 100;
-          const client = so.clientId ? await storage.getClient(so.clientId) : null;
-          const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
-          const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
-          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const client = so.clientId ? (clientNameById.get(so.clientId) || null) : null;
+          const emp = so.assignedEmployeeId ? (empNameById.get(so.assignedEmployeeId) || null) : null;
+          const emp2 = so.assignedEmployee2Id ? (empNameById.get(so.assignedEmployee2Id) || null) : null;
+          const vehicle = so.vehicleId ? (vehicleById.get(so.vehicleId) || null) : null;
           const dataMissaoCalc = (() => {
               const a = so.missionStartedAt ? new Date(so.missionStartedAt).getTime() : Infinity;
               const b = so.scheduledDate ? new Date(so.scheduledDate).getTime() : Infinity;
@@ -2802,10 +2813,43 @@ import type { Express } from "express";
 
       const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
 
-      for (const b of items) {
-        if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
+      // Batch das mission_costs dos billings sem despesas: antes era 1 consulta
+      // POR billing (N+1 serial que segurava o dashboard inteiro); agora é uma
+      // consulta chunked única com os mesmos dados → mesmos números.
+      const needsMC = (b: any) =>
+        Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id;
+      const idsNeedingMC = Array.from(new Set(items.filter(needsMC).map((b: any) => Number(b.service_order_id))));
+      const mcByOS = new Map<number, any[]>();
+      const MC_CHUNK = 150;
+      for (let i = 0; i < idsNeedingMC.length; i += MC_CHUNK) {
+        const slice = idsNeedingMC.slice(i, i + MC_CHUNK);
+        // 1 retry por chunk: uma falha transitória aqui zeraria despesas de até
+        // 150 billings de uma vez (antes, por-billing, afetava só 1).
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            const osMC = await storage.getMissionCostsByOS(b.service_order_id);
+            const { data: mcRows, error: mcErr } = await supabaseAdmin
+              .from("mission_costs")
+              .select("id, service_order_id, amount, category, cost_type, description")
+              .in("service_order_id", slice);
+            if (mcErr) throw new Error(mcErr.message);
+            for (const mc of (mcRows || [])) {
+              const soIdNum = Number(mc.service_order_id);
+              const arr = mcByOS.get(soIdNum) || [];
+              arr.push(mc);
+              mcByOS.set(soIdNum, arr);
+            }
+            break;
+          } catch (e: any) {
+            if (attempt === 1) console.error(`[dashboard] mission_costs chunk falhou (2 tentativas): ${e.message}`);
+            else await new Promise((r) => setTimeout(r, 300));
+          }
+        }
+      }
+
+      for (const b of items) {
+        if (needsMC(b)) {
+          try {
+            const osMC = mcByOS.get(Number(b.service_order_id)) || [];
             const _splitL = splitMissionCostsForBilling(osMC);
             if (_splitL.despesas_pedagio > 0) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + _splitL.despesas_pedagio;
             if (_splitL.despesas_combustivel > 0) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + _splitL.despesas_combustivel;

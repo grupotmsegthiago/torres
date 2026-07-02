@@ -272,6 +272,13 @@ app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now
     console.error("[db-init] ensureCalcMissionRPC (background) falhou:", e?.message || e),
   );
 
+  // Warm-up serializado do cache SWR (Balanço Gerencial): mantém dashboard,
+  // rh-summary e operational-grid (semana/mês correntes) sempre mornos,
+  // recalculando UM endpoint por vez. Snapshot persistido fresco conta como
+  // quente — restart não dispara recálculo desnecessário.
+  const { startSwrWarmup } = await import("./lib/swr-cache");
+  startSwrWarmup();
+
   const shutdown = (signal: string) => {
     log(`${signal} received, shutting down...`);
     httpServer.close(() => {

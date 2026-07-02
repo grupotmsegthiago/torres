@@ -7,6 +7,8 @@
 // hora — comportamento idêntico ao de antes. Como apenas embrulha o handler
 // existente, os NÚMEROS são exatamente os mesmos; muda só QUANDO o cálculo roda.
 
+import { supabaseAdmin } from "../supabase";
+
 type CacheEntry = { at: number; data: any };
 
 const store = new Map<string, CacheEntry>();
@@ -20,7 +22,75 @@ const inflight = new Map<string, Promise<any>>();
 // estourar, descarta a entrada mais antiga (LRU simples por ordem de inserção).
 const MAX_ENTRIES = 200;
 
-function setEntry(key: string, entry: CacheEntry) {
+// ===================== PERSISTÊNCIA (snapshot no Supabase) =====================
+// Todo resultado que entra no cache em memória é espelhado (write-through,
+// fire-and-forget) na tabela `swr_cache_snapshots`. No MISS frio (restart/deploy
+// zerou a memória), tentamos carregar o snapshot persistido — 1 leitura barata —
+// antes de disparar o recálculo pesado. Os NÚMEROS continuam sendo os do último
+// cálculo real; muda só de onde o valor é servido.
+const PERSIST_TABLE = "swr_cache_snapshots";
+// Payloads gigantes não valem o custo de rede/storage (e o grid histórico pode
+// crescer). Acima disso, a entrada fica só em memória.
+const MAX_PERSIST_BYTES = 8_000_000;
+// Chaves já procuradas no snapshot nesta vida do processo (evita bater no banco
+// a cada MISS de chave que nunca foi persistida).
+const persistChecked = new Set<string>();
+// Snapshot persistido velho demais (ex.: servidor ficou dias parado) não vale
+// servir nem como stale — melhor recalcular do zero do que mostrar dado antigo.
+const MAX_PERSIST_AGE_MS = 24 * 60 * 60 * 1000;
+
+function persistEntry(key: string, entry: CacheEntry) {
+  try {
+    const raw = JSON.stringify(entry.data);
+    if (!raw || raw.length > MAX_PERSIST_BYTES) return;
+    void supabaseAdmin
+      .from(PERSIST_TABLE)
+      .upsert(
+        { key, payload: entry.data, at: new Date(entry.at).toISOString() },
+        { onConflict: "key" },
+      )
+      .then(({ error }) => {
+        if (error && !/42P01|relation .* does not exist/i.test(error.message || "")) {
+          console.warn(`[swr-cache] persist ${key} falhou: ${error.message}`);
+        }
+      });
+  } catch {
+    // nunca deixar a persistência derrubar a resposta
+  }
+}
+
+async function loadPersistedEntry(key: string): Promise<CacheEntry | null> {
+  persistChecked.add(key);
+  try {
+    const { data, error } = await supabaseAdmin
+      .from(PERSIST_TABLE)
+      .select("payload, at")
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data || data.payload === undefined || data.payload === null) return null;
+    const at = new Date(data.at || 0).getTime();
+    if (!at || isNaN(at)) return null;
+    if (Date.now() - at > MAX_PERSIST_AGE_MS) return null;
+    return { at, data: data.payload };
+  } catch {
+    return null;
+  }
+}
+
+/** Busca o snapshot persistido quando a memória está fria (1x por chave/processo). */
+async function getEntryWithPersistFallback(key: string): Promise<CacheEntry | undefined> {
+  let entry = store.get(key);
+  if (!entry && !persistChecked.has(key)) {
+    const persisted = await loadPersistedEntry(key);
+    if (persisted) {
+      setEntry(key, persisted, false);
+      entry = persisted;
+    }
+  }
+  return entry;
+}
+
+function setEntry(key: string, entry: CacheEntry, persist = true) {
   // re-inserir move a chave pro fim (mais recente) no Map.
   store.delete(key);
   store.set(key, entry);
@@ -29,6 +99,7 @@ function setEntry(key: string, entry: CacheEntry) {
     if (oldest === undefined) break;
     store.delete(oldest);
   }
+  if (persist) persistEntry(key, entry);
 }
 
 export interface SwrCacheOptions {
@@ -36,6 +107,12 @@ export interface SwrCacheOptions {
   ttlMs: number;
   /** Prefixo da chave (1 por rota). Os parâmetros de query entram automaticamente. */
   baseKey: string;
+  /**
+   * Query-params das chaves a manter aquecidas pelo warm-up serializado
+   * (ver startSwrWarmup). Função (não valor) p/ ranges "correntes" (semana/mês)
+   * serem recalculados a cada passada.
+   */
+  warmQueries?: () => Array<Record<string, string>>;
 }
 
 type Handler = (req: any, res: any, next?: any) => any;
@@ -70,22 +147,90 @@ function makeCaptureRes() {
   return { res, captured };
 }
 
-function triggerBackgroundRefresh(key: string, handler: Handler, req: any) {
+// ===================== WARM-UP SERIALIZADO =====================
+// Mantém as chaves mais usadas (dashboard, rh-summary, grid da semana/mês
+// correntes) sempre mornas, recalculando UM endpoint por vez com pausa entre
+// eles — nunca uma rajada de consultas simultâneas no Supabase.
+type WarmupSpec = {
+  baseKey: string;
+  ttlMs: number;
+  handler: Handler;
+  queries: () => Array<Record<string, string>>;
+};
+const warmups: WarmupSpec[] = [];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let warmupStarted = false;
+
+/**
+ * Inicia o warm-up: primeira passada após `initialDelayMs` (deixa o boot
+ * respirar) e depois checagens periódicas. Só recalcula quando a entrada está
+ * perto de vencer (75% do TTL) — snapshot persistido fresco conta como quente,
+ * então um restart NÃO dispara recálculo desnecessário.
+ */
+export function startSwrWarmup(opts?: { initialDelayMs?: number; intervalMs?: number; gapMs?: number }) {
+  if (warmupStarted) return;
+  warmupStarted = true;
+  const initialDelayMs = opts?.initialDelayMs ?? 90_000;
+  const intervalMs = opts?.intervalMs ?? 15 * 60_000;
+  const gapMs = opts?.gapMs ?? 5_000;
+
+  let passRunning = false;
+  const runPass = async () => {
+    if (passRunning) return;
+    passRunning = true;
+    try {
+      for (const spec of warmups) {
+        for (const q of spec.queries()) {
+          const req = { query: { ...q, cached: "1" } };
+          const key = buildKey(spec.baseKey, req);
+          try {
+            const entry = await getEntryWithPersistFallback(key);
+            const refreshAt = spec.ttlMs * 0.75;
+            if (entry && Date.now() - entry.at < refreshAt) continue;
+            const t0 = Date.now();
+            await refreshKeyNow(key, spec.handler, req);
+            console.log(`[swr-warmup] ${key} recalculado em ${Date.now() - t0}ms`);
+          } catch (e: any) {
+            console.warn(`[swr-warmup] ${key} falhou: ${e?.message || e}`);
+          }
+          // pausa entre chaves: nunca dois recálculos pesados colados
+          await sleep(gapMs);
+        }
+      }
+    } finally {
+      passRunning = false;
+    }
+  };
+
+  setTimeout(() => {
+    runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
+    setInterval(() => {
+      runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
+    }, intervalMs);
+  }, initialDelayMs);
+}
+
+/** Recalcula uma chave via captureRes e atualiza o cache. Versão await-ável. */
+async function refreshKeyNow(key: string, handler: Handler, req: any): Promise<void> {
   if (refreshing.has(key)) return;
   refreshing.add(key);
-  (async () => {
-    try {
-      const { res, captured } = makeCaptureRes();
-      await handler(req, res);
-      if (captured.has && captured.statusCode === 200 && captured.payload !== undefined) {
-        setEntry(key, { at: Date.now(), data: captured.payload });
-      }
-    } catch {
-      // mantém o valor antigo no cache; tenta de novo no próximo acesso
-    } finally {
-      refreshing.delete(key);
+  try {
+    const { res, captured } = makeCaptureRes();
+    await handler(req, res);
+    if (captured.has && captured.statusCode === 200 && captured.payload !== undefined) {
+      setEntry(key, { at: Date.now(), data: captured.payload });
     }
-  })();
+  } catch {
+    // mantém o valor antigo no cache; tenta de novo no próximo acesso
+  } finally {
+    refreshing.delete(key);
+  }
+}
+
+function triggerBackgroundRefresh(key: string, handler: Handler, req: any) {
+  void refreshKeyNow(key, handler, req);
 }
 
 /**
@@ -94,6 +239,9 @@ function triggerBackgroundRefresh(key: string, handler: Handler, req: any) {
  * hora e atualiza o cache (botão "Atualizar agora").
  */
 export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
+  if (opts.warmQueries) {
+    warmups.push({ baseKey: opts.baseKey, ttlMs: opts.ttlMs, handler, queries: opts.warmQueries });
+  }
   return async (req: any, res: any, next: any) => {
     if (req?.query?.cached !== "1") return handler(req, res, next);
 
@@ -102,7 +250,9 @@ export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
 
     if (req.query.force === "1") store.delete(key);
 
-    const entry = store.get(key);
+    // MISS frio (memória zerada por restart/deploy): tenta o snapshot persistido
+    // antes de recalcular — 1 leitura barata em vez de centenas de sub-consultas.
+    const entry = req.query.force === "1" ? store.get(key) : await getEntryWithPersistFallback(key);
     res.set("Cache-Control", "no-store");
 
     if (entry && now - entry.at < opts.ttlMs) {
@@ -165,11 +315,22 @@ export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
 
 /** Invalida entradas do cache (todas, ou as que começam com o prefixo). */
 export function bustSwrCache(prefix?: string) {
-  if (!prefix) { store.clear(); inflight.clear(); return; }
+  if (!prefix) {
+    store.clear();
+    inflight.clear();
+    persistChecked.clear();
+    void supabaseAdmin.from(PERSIST_TABLE).delete().neq("key", "").then(() => {});
+    return;
+  }
   for (const k of Array.from(store.keys())) {
     if (k === prefix || k.startsWith(prefix)) store.delete(k);
   }
   for (const k of Array.from(inflight.keys())) {
     if (k === prefix || k.startsWith(prefix)) inflight.delete(k);
   }
+  for (const k of Array.from(persistChecked)) {
+    if (k === prefix || k.startsWith(prefix)) persistChecked.delete(k);
+  }
+  // remove snapshots persistidos do prefixo (senão o MISS frio ressuscita dado invalidado)
+  void supabaseAdmin.from(PERSIST_TABLE).delete().like("key", `${prefix}%`).then(() => {});
 }

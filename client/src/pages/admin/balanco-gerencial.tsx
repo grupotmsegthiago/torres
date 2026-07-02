@@ -230,10 +230,12 @@ export default function BalancoGerencialPage() {
 
   const { data: allVehicles } = useQuery<any[]>({
     queryKey: ["/api/vehicles"],
+    staleTime: 600_000,
   });
 
   const { data: allEmployees } = useQuery<any[]>({
     queryKey: ["/api/employees"],
+    staleTime: 600_000,
   });
 
   // Custos Fixos da operação (Aluguel, Internet, Softwares etc.)
@@ -292,6 +294,9 @@ export default function BalancoGerencialPage() {
     },
     staleTime: SWR_3H,
     refetchInterval: SWR_3H,
+    // Troca de período: mantém o dado anterior na tela enquanto o novo chega,
+    // em vez de zerar os cards.
+    placeholderData: (prev: any) => prev,
   });
 
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
@@ -331,6 +336,8 @@ export default function BalancoGerencialPage() {
     },
     staleTime: SWR_3H,
     refetchInterval: SWR_3H,
+    // Troca de período: mantém o dado anterior na tela enquanto o novo chega.
+    placeholderData: (prev: any) => prev,
   });
 
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);

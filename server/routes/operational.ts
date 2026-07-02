@@ -8,7 +8,7 @@ import type { Express } from "express";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
   import { withSwrCache } from "../lib/swr-cache";
-  import { brtDateKey } from "../lib/brt-date";
+  import { brtDateKey, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 
@@ -26,7 +26,12 @@ import type { Express } from "express";
   export function registerOperationalRoutes(app: Express) {
     // ====================== OPERATIONAL GRID ======================
 
-  app.get("/api/operational-grid", requireAuth, requireAdminRole, withSwrCache({ baseKey: "operational-grid", ttlMs: SWR_TTL_3H }, async (_req, res) => {
+  app.get("/api/operational-grid", requireAuth, requireAdminRole, withSwrCache({
+    baseKey: "operational-grid",
+    ttlMs: SWR_TTL_3H,
+    // Warm-up: semana (filtro padrão do Balanço) e mês correntes em BRT.
+    warmQueries: () => [currentBrtWeekRange(), currentBrtMonthRange()],
+  }, async (_req, res) => {
     if (_req.query?.cached !== "1") {
       res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       res.set("Pragma", "no-cache");
