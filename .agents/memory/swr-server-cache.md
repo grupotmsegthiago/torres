@@ -25,9 +25,15 @@ Quando uma tela lenta (ex.: Balanço Gerencial) compartilha endpoints pesados co
 ## Invalidação obrigatória em TODO writer de billing
 
 - Mudou status/valores de `escort_billings` ⇒ chamar `bustBalancoCaches()` (`server/lib/balanco-cache.ts`), que busta `operational-grid` + `financial-dashboard` (memória + snapshots persistidos).
-- **Why:** sem isso o Balanço mostra dado velho por até 3h (TTL) — ex.: boletim APROVADA no banco mas popup dizendo "AGUARDA BOLETIM" (TOR-0360, 02/07/2026). Writers estão espalhados (escort.ts, asaas.ts, service-orders.ts, boletim-approval.ts) — writer novo reabre o buraco.
+- **Why:** sem isso o Balanço mostra dado velho por até 3h (TTL). Writers estão espalhados por vários arquivos de rota — writer novo reabre o buraco.
 - **Exceção deliberada:** o CRON de recálculo NÃO busta (roda a cada ciclo; bustaria o cache continuamente e anularia o benefício; ele só recalcula billings não-congelados, que o Balanço já mostra como previsão ao vivo).
 - Helper em módulo neutro (`server/lib/`), nunca exportado de arquivo de rotas (evita import circular rota→rota).
+
+## Linha sintética "de hoje" no dashboard NUNCA vence boletim congelado
+
+- O handler do `financial-dashboard` troca billings de OSs de escolta "de hoje" (em andamento/concluída hoje) por uma linha sintética recalculada ao vivo com status A_VERIFICAR hardcoded — previsão ao vivo pro dia corrente.
+- **Regra:** boletim congelado (APROVADA/FATURADO/FATURADA/PAGO) é a verdade e vence a sintética: manter a linha real em `items` e pular a injeção (`frozenBillOsIds`). Senão OS concluída hoje com boletim já aprovado volta a aparecer como "AGUARDA BOLETIM" no popup de OSs em Aberto — e cache-bust nenhum resolve, porque o dado errado nasce no recompute.
+- **How to apply:** sintomas de "status errado apesar do banco certo" no Balanço ⇒ checar PRIMEIRO se a OS cai no ramo "de hoje" (completed_date hoje em BRT) antes de suspeitar de cache.
 
 ## Testes hermeticamente isolados da persistência
 

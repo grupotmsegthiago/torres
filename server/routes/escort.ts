@@ -2626,9 +2626,20 @@ import type { Express } from "express";
       const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
       const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada" || so.status === "cancelada").map((so: any) => so.id));
-      const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id) && !recusadaOsIds.has(b.service_order_id));
+      // Boletim CONGELADO (aprovado/faturado/pago) é a verdade e vence a linha sintética "de hoje":
+      // senão uma OS concluída hoje com boletim APROVADA volta a aparecer como A_VERIFICAR (caso TOR-0360).
+      const FROZEN_BILL_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+      const frozenBillOsIds = new Set(
+        (billings || [])
+          .filter((b: any) => FROZEN_BILL_STATUSES.has(String(b.status || "").toUpperCase()))
+          .map((b: any) => b.service_order_id),
+      );
+      const items = (billings || []).filter((b: any) =>
+        (!todayOsIds.has(b.service_order_id) || frozenBillOsIds.has(b.service_order_id)) &&
+        !recusadaOsIds.has(b.service_order_id));
 
       for (const so of todayEscoltaOs) {
+        if (frozenBillOsIds.has(so.id)) continue; // boletim congelado já está em items — não sobrescrever
         try {
           const nb = (v: any) => Number(v) || 0;
 
