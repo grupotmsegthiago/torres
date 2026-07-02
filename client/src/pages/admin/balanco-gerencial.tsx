@@ -195,6 +195,14 @@ type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES" | "METAS" | "EST
 export default function BalancoGerencialPage() {
   const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
+  const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
+  // Range em YYYY-MM-DD do filtro — usado pelo grid E pelo rh-summary (o custo
+  // de RH precisa acompanhar o período filtrado, não o mês corrente).
+  const gridRange = useMemo(() => {
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const fmtDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    return { from: fmtDate(range.start), to: fmtDate(range.end) };
+  }, [range]);
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
   const [showEficienciaModal, setShowEficienciaModal] = useState(false);
   const [dataGeradoEm, setDataGeradoEm] = useState<Date | null>(null);
@@ -276,9 +284,9 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    queryKey: ["/api/fixed-costs/rh-summary", "cached"],
+    queryKey: ["/api/fixed-costs/rh-summary", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1`);
+      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1&from=${gridRange.from}&to=${gridRange.to}`);
       if (!res.ok) throw new Error("Falha ao carregar RH");
       return res.json();
     },
@@ -311,17 +319,9 @@ export default function BalancoGerencialPage() {
     }).length;
   }, [allEmployees]);
 
-  const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
-
   // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
-  const gridRange = useMemo(() => {
-    const pad2 = (n: number) => String(n).padStart(2, "0");
-    const fmtDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-    return { from: fmtDate(range.start), to: fmtDate(range.end) };
-  }, [range]);
-
   const { data: gridData = [] } = useQuery<any[]>({
     queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
     queryFn: async () => {
@@ -701,12 +701,12 @@ export default function BalancoGerencialPage() {
     try {
       const respostas = await Promise.all([
         authFetch(`/api/financial/dashboard?cached=1&force=1`),
-        authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1`),
+        authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1&from=${gridRange.from}&to=${gridRange.to}`),
         authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "cached"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "cached", gridRange.from, gridRange.to] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
       setDataGeradoEm(new Date());
       toast({ title: "Atualizado", description: "Dados recalculados agora." });
