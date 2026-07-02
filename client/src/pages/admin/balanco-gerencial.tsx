@@ -205,6 +205,10 @@ export default function BalancoGerencialPage() {
   }, [range]);
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
   const [showEficienciaModal, setShowEficienciaModal] = useState(false);
+  // Popup das OSs "Em Aberto" (previsão): lista, detalhe expandido e conclusão direta
+  const [showOsAbertasModal, setShowOsAbertasModal] = useState(false);
+  const [osExpandidaId, setOsExpandidaId] = useState<number | null>(null);
+  const [osConcluindoId, setOsConcluindoId] = useState<number | null>(null);
   const [dataGeradoEm, setDataGeradoEm] = useState<Date | null>(null);
   const [atualizando, setAtualizando] = useState(false);
   const { toast } = useToast();
@@ -724,6 +728,46 @@ export default function BalancoGerencialPage() {
     }
   };
 
+  // OSs "Em Aberto" do período (previsão ao vivo, sem boletim aprovado) — mais recentes primeiro
+  const osAbertas = useMemo(
+    () => (filtered.missions as any[])
+      .filter((m) => !m.is_frozen)
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
+    [filtered],
+  );
+
+  // Botão "Concluir" só para OS em fluxo normal (agendada/em andamento) — qualquer
+  // outro status (concluída, cancelada, recusada ou intermediário) fecha pelo painel de OS.
+  const osPodeConcluir = (m: any) => {
+    const s = String(m.status || "").toLowerCase();
+    return s === "agendada" || s === "em_andamento";
+  };
+
+  // Conclui a OS pelo MESMO caminho do painel de OS (PATCH status="concluída" —
+  // o backend recalcula o billing pelo fluxo normal). Depois força o grid a
+  // recalcular (?force=1) pra o card refletir na hora.
+  const concluirOs = async (m: any) => {
+    if (osConcluindoId != null) return;
+    const label = m.os_number || `#${m.service_order_id}`;
+    if (!window.confirm(`Concluir a OS ${label}? O faturamento será fechado pelo fluxo normal de conclusão.`)) return;
+    setOsConcluindoId(m.service_order_id);
+    try {
+      const res = await apiRequest("PATCH", `/api/service-orders/${m.service_order_id}`, { status: "concluída" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({} as any));
+        throw new Error(j?.message || "Falha ao concluir a OS");
+      }
+      toast({ title: "OS concluída", description: `OS ${label} concluída com sucesso.` });
+      await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`).catch(() => null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
+      invalidateRelatedQueries("service-order");
+    } catch (e: any) {
+      toast({ title: "Erro ao concluir OS", description: e?.message || "", variant: "destructive" });
+    } finally {
+      setOsConcluindoId(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -846,17 +890,21 @@ export default function BalancoGerencialPage() {
                       <p className="text-sm font-black text-green-700 font-mono leading-tight" data-testid="text-fat-congelado">{fmt(totals.fatCongelado)}</p>
                       <span className="text-[9px] text-green-600/80 font-bold">{totals.countCongelado} {totals.countCongelado === 1 ? "boletim" : "boletins"}</span>
                     </div>
-                    <div
-                      className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5"
-                      title="Previsão recalculada AO VIVO (motor canônico) para OSs ainda sem boletim aprovado — em andamento ou pendentes de fechamento."
+                    <button
+                      type="button"
+                      onClick={() => { setOsExpandidaId(null); setShowOsAbertasModal(true); }}
+                      className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5 text-left cursor-pointer hover:bg-amber-100 hover:border-amber-300 transition-colors"
+                      title="Previsão recalculada AO VIVO (motor canônico) para OSs ainda sem boletim aprovado — em andamento ou pendentes de fechamento. Clique para ver as OSs."
+                      data-testid="button-os-abertas"
                     >
                       <div className="flex items-center gap-1">
                         <Activity size={10} className="text-amber-600" />
                         <span className="text-[9px] font-black text-amber-600 uppercase leading-tight">Em Aberto</span>
+                        <ChevronRight size={10} className="text-amber-600 ml-auto" />
                       </div>
                       <p className="text-sm font-black text-amber-600 font-mono leading-tight" data-testid="text-fat-aberto">{fmt(totals.fatAberto)}</p>
-                      <span className="text-[9px] text-amber-600/80 font-bold">{totals.total - totals.countCongelado} previsão</span>
-                    </div>
+                      <span className="text-[9px] text-amber-600/80 font-bold">{totals.total - totals.countCongelado} previsão — ver OSs</span>
+                    </button>
                   </div>
                 )}
                 {hasAgendado && !isPast && (
@@ -1441,6 +1489,122 @@ export default function BalancoGerencialPage() {
             </Card>
           );
         })()}
+
+        <Dialog open={showOsAbertasModal} onOpenChange={(v) => { setShowOsAbertasModal(v); if (!v) setOsExpandidaId(null); }}>
+          <DialogContent className="max-w-2xl" data-testid="modal-os-abertas">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Activity size={20} className="text-amber-600" />
+                OSs em Aberto — {fmt(totals.fatAberto)}
+              </DialogTitle>
+              <DialogDescription>
+                Período: {range.label}. Previsão ao vivo de {osAbertas.length} {osAbertas.length === 1 ? "OS ainda sem boletim aprovado" : "OSs ainda sem boletim aprovado"}. Clique numa OS para ver os detalhes.
+              </DialogDescription>
+            </DialogHeader>
+            {osAbertas.length === 0 ? (
+              <p className="text-sm text-neutral-500 py-8 text-center">Nenhuma OS em aberto no período selecionado.</p>
+            ) : (
+              <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+                {osAbertas.map((m: any) => {
+                  const sLower = String(m.status || "").toLowerCase();
+                  const isExp = osExpandidaId === m.service_order_id;
+                  const stBadge = sLower === "em_andamento"
+                    ? { label: "EM ANDAMENTO", cls: "bg-blue-100 text-blue-700 border-blue-300" }
+                    : sLower === "agendada"
+                      ? { label: "AGENDADA", cls: "bg-neutral-100 text-neutral-600 border-neutral-300" }
+                      : sLower === "cancelada"
+                        ? { label: "CANCELADA", cls: "bg-red-100 text-red-700 border-red-300" }
+                        : { label: "AGUARDA BOLETIM", cls: "bg-amber-100 text-amber-700 border-amber-300" };
+                  return (
+                    <div key={m.service_order_id} className={`rounded-lg border ${isExp ? "border-amber-300 bg-amber-50/50" : "border-neutral-200 bg-white"}`} data-testid={`row-os-aberta-${m.service_order_id}`}>
+                      <button
+                        type="button"
+                        onClick={() => setOsExpandidaId(isExp ? null : m.service_order_id)}
+                        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-neutral-50 rounded-lg"
+                        data-testid={`button-os-detalhe-${m.service_order_id}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="font-mono font-black text-xs shrink-0">{m.os_number || `#${m.service_order_id}`}</Badge>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-neutral-800 truncate">{m.client_name || "Sem cliente"}</p>
+                            <p className="text-[10px] text-neutral-500 truncate">{m.data ? formatDateBRT(m.data) : ""} · {m.origem || "?"} → {m.destino || "?"}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant="outline" className={`text-[9px] font-black border ${stBadge.cls}`}>{stBadge.label}</Badge>
+                          <span className="text-xs font-black font-mono text-amber-600">{fmt(m.fat_total)}</span>
+                          <ChevronDown size={14} className={`text-neutral-400 transition-transform ${isExp ? "rotate-180" : ""}`} />
+                        </div>
+                      </button>
+                      {isExp && (
+                        <div className="px-3 pb-3 space-y-2" data-testid={`detalhe-os-${m.service_order_id}`}>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-[11px] bg-white rounded-lg border border-neutral-200 p-2.5">
+                            <div><span className="text-neutral-400 font-bold">Viatura:</span> <span className="font-bold text-neutral-700">{m.placa_viatura}</span></div>
+                            <div><span className="text-neutral-400 font-bold">Agente:</span> <span className="font-bold text-neutral-700">{m.vigilante}</span></div>
+                            {m.vigilante2 && <div><span className="text-neutral-400 font-bold">Agente 2:</span> <span className="font-bold text-neutral-700">{m.vigilante2}</span></div>}
+                            <div><span className="text-neutral-400 font-bold">KM total:</span> <span className="font-bold text-neutral-700 font-mono">{Math.round(m.km_total || 0)} km</span></div>
+                            <div><span className="text-neutral-400 font-bold">Horas:</span> <span className="font-bold text-neutral-700 font-mono">{fmtHoras(m.horas_missao || 0)}</span></div>
+                            <div><span className="text-neutral-400 font-bold">Despesas:</span> <span className="font-bold text-neutral-700 font-mono">{fmt(m.despesas || 0)}</span></div>
+                          </div>
+                          <div className="bg-white rounded-lg border border-neutral-200 p-2.5">
+                            <p className="text-[9px] font-black text-neutral-400 uppercase mb-1">Previsão de faturamento</p>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0.5 text-[11px] font-mono">
+                              {[
+                                ["Acionamento", m.fat_acionamento],
+                                ["KM Extra", m.fat_km],
+                                ["Hora Extra", m.fat_hora_extra],
+                                ["Adic. Noturno", m.fat_adicional_noturno],
+                                ["Estadia", m.fat_estadia],
+                                ["Pernoite", m.fat_pernoite],
+                                ["Pedágio", m.fat_pedagio],
+                                ["Receitas OS", m.receitas_os],
+                              ].filter(([, v]) => Number(v) > 0).map(([lbl, v]) => (
+                                <div key={String(lbl)} className="flex justify-between gap-2">
+                                  <span className="text-neutral-500">{lbl}</span>
+                                  <span className="font-bold text-neutral-700">{fmt(Number(v))}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex justify-between mt-1.5 pt-1.5 border-t border-neutral-100 text-xs font-black">
+                              <span className="text-neutral-600 uppercase">Total previsto</span>
+                              <span className="font-mono text-amber-600">{fmt(m.fat_total)}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            {(sLower === "concluida" || sLower === "concluída") ? (
+                              <p className="text-[10px] font-bold text-neutral-500">OS já concluída — aguardando conferência/aprovação do boletim para virar "Finalizado".</p>
+                            ) : sLower === "cancelada" ? (
+                              <p className="text-[10px] font-bold text-neutral-500">OS cancelada — faturamento pela tabela de 100 km.</p>
+                            ) : <span />}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Link href="/admin/service-orders">
+                                <Button variant="outline" size="sm" className="h-7 text-[11px] font-bold" data-testid={`link-abrir-os-${m.service_order_id}`}>
+                                  <FileText size={12} className="mr-1" /> Abrir no painel de OS
+                                </Button>
+                              </Link>
+                              {osPodeConcluir(m) && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[11px] font-black bg-green-600 hover:bg-green-700 text-white"
+                                  disabled={osConcluindoId != null}
+                                  onClick={() => concluirOs(m)}
+                                  data-testid={`button-concluir-os-${m.service_order_id}`}
+                                >
+                                  {osConcluindoId === m.service_order_id ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Lock size={12} className="mr-1" />}
+                                  Concluir OS
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {isDiretoria && <Dialog open={showEficienciaModal} onOpenChange={setShowEficienciaModal}>
           <DialogContent className="max-w-2xl" data-testid="modal-eficiencia">
