@@ -21,3 +21,9 @@ Quando uma tela lenta (ex.: Balanço Gerencial) compartilha endpoints pesados co
 - `bustSwrCache` também apaga snapshots persistidos (`.like key prefix%`) senão o MISS frio ressuscita dado invalidado.
 - Warm-up serializado (`startSwrWarmup`, chamado no boot em server/index.ts): registry via `warmQueries` no `withSwrCache`; 1 chave por vez com gap de 5s, pula entrada <75% do TTL (snapshot persistido fresco conta como quente ⇒ restart não dispara rajada). Ranges "correntes" (semana seg→dom / mês civil BRT) vêm de `currentBrtWeekRange/MonthRange` em server/lib/brt-date.ts — replicam o getDateRange do frontend pra aquecer EXATAMENTE a chave pedida.
 - Teste de paridade: `.local/test_swr_persist_parity.mts` (gera JWT admin via generateLink magiclink + verifyOtp; `--ep=nome` fatia por endpoint pra caber no timeout; `--only-hit` valida HIT pós-restart vindo do snapshot).
+
+## Testes hermeticamente isolados da persistência
+
+- Sob o test runner (`NODE_TEST_CONTEXT` setado, ou `NODE_ENV=test`), TODA a persistência (write/read/delete em `swr_cache_snapshots`) fica desligada via `PERSIST_DISABLED`.
+- **Why:** os testes rodavam contra o Supabase real; o delete do `bustSwrCache` é fire-and-forget, então um snapshot de rodada anterior ressuscitava no MISS como STALE e disparava refresh em background → teste do singleflight flaky (`calls=2`) → `prebuild` falha → deploy aborta.
+- **How to apply:** qualquer novo caminho que toque `swr_cache_snapshots` precisa respeitar `PERSIST_DISABLED`; testes de persistência de verdade vão em script `.local/test_*.mts` (fora do `npm test`).

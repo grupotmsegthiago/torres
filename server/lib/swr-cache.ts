@@ -29,6 +29,11 @@ const MAX_ENTRIES = 200;
 // antes de disparar o recálculo pesado. Os NÚMEROS continuam sendo os do último
 // cálculo real; muda só de onde o valor é servido.
 const PERSIST_TABLE = "swr_cache_snapshots";
+// Sob o test runner (node:test), a persistência fica DESLIGADA: senão um
+// snapshot de uma rodada anterior ressuscita no MISS do teste (o delete do
+// bustSwrCache é fire-and-forget) e o singleflight vira STALE+refresh → flaky.
+const PERSIST_DISABLED =
+  !!process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === "test";
 // Payloads gigantes não valem o custo de rede/storage (e o grid histórico pode
 // crescer). Acima disso, a entrada fica só em memória.
 const MAX_PERSIST_BYTES = 8_000_000;
@@ -40,6 +45,7 @@ const persistChecked = new Set<string>();
 const MAX_PERSIST_AGE_MS = 24 * 60 * 60 * 1000;
 
 function persistEntry(key: string, entry: CacheEntry) {
+  if (PERSIST_DISABLED) return;
   try {
     const raw = JSON.stringify(entry.data);
     if (!raw || raw.length > MAX_PERSIST_BYTES) return;
@@ -61,6 +67,7 @@ function persistEntry(key: string, entry: CacheEntry) {
 
 async function loadPersistedEntry(key: string): Promise<CacheEntry | null> {
   persistChecked.add(key);
+  if (PERSIST_DISABLED) return null;
   try {
     const { data, error } = await supabaseAdmin
       .from(PERSIST_TABLE)
@@ -319,7 +326,9 @@ export function bustSwrCache(prefix?: string) {
     store.clear();
     inflight.clear();
     persistChecked.clear();
-    void supabaseAdmin.from(PERSIST_TABLE).delete().neq("key", "").then(() => {});
+    if (!PERSIST_DISABLED) {
+      void supabaseAdmin.from(PERSIST_TABLE).delete().neq("key", "").then(() => {});
+    }
     return;
   }
   for (const k of Array.from(store.keys())) {
@@ -332,5 +341,7 @@ export function bustSwrCache(prefix?: string) {
     if (k === prefix || k.startsWith(prefix)) persistChecked.delete(k);
   }
   // remove snapshots persistidos do prefixo (senão o MISS frio ressuscita dado invalidado)
-  void supabaseAdmin.from(PERSIST_TABLE).delete().like("key", `${prefix}%`).then(() => {});
+  if (!PERSIST_DISABLED) {
+    void supabaseAdmin.from(PERSIST_TABLE).delete().like("key", `${prefix}%`).then(() => {});
+  }
 }
