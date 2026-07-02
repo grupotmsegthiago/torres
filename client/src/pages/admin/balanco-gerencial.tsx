@@ -2,7 +2,7 @@ import AdminLayout from "@/components/admin/layout";
 import { formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
 import { computeProjection } from "@/lib/balanco-projection";
 import { Card } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
   Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert, AlertTriangle,
-  Info, Wrench, Building2, UserCog, Lock,
+  Info, Wrench, Building2, UserCog, Lock, Pencil,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -193,6 +193,7 @@ interface DashboardData {
 type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES" | "METAS" | "ESTATISTICAS";
 
 export default function BalancoGerencialPage() {
+  const [, navigate] = useLocation();
   const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
@@ -1523,10 +1524,12 @@ export default function BalancoGerencialPage() {
                         : { label: "AGUARDA BOLETIM", cls: "bg-amber-100 text-amber-700 border-amber-300" };
                   return (
                     <div key={m.service_order_id} className={`rounded-lg border ${isExp ? "border-amber-300 bg-amber-50/50" : "border-neutral-200 bg-white"}`} data-testid={`row-os-aberta-${m.service_order_id}`}>
-                      <button
-                        type="button"
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setOsExpandidaId(isExp ? null : m.service_order_id)}
-                        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-neutral-50 rounded-lg"
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOsExpandidaId(isExp ? null : m.service_order_id); } }}
+                        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-neutral-50 rounded-lg cursor-pointer"
                         data-testid={`button-os-detalhe-${m.service_order_id}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -1539,9 +1542,20 @@ export default function BalancoGerencialPage() {
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="outline" className={`text-[9px] font-black border ${stBadge.cls}`}>{stBadge.label}</Badge>
                           <span className="text-xs font-black font-mono text-amber-600">{fmt(m.fat_total)}</span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="Editar OS no painel"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/admin/service-orders?os=${m.service_order_id}`); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); navigate(`/admin/service-orders?os=${m.service_order_id}`); } }}
+                            className="p-1 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-800"
+                            data-testid={`button-editar-os-${m.service_order_id}`}
+                          >
+                            <Pencil size={13} />
+                          </span>
                           <ChevronDown size={14} className={`text-neutral-400 transition-transform ${isExp ? "rotate-180" : ""}`} />
                         </div>
-                      </button>
+                      </div>
                       {isExp && (
                         <div className="px-3 pb-3 space-y-2" data-testid={`detalhe-os-${m.service_order_id}`}>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-[11px] bg-white rounded-lg border border-neutral-200 p-2.5">
@@ -1583,9 +1597,9 @@ export default function BalancoGerencialPage() {
                               <p className="text-[10px] font-bold text-neutral-500">OS cancelada — faturamento pela tabela de 100 km.</p>
                             ) : <span />}
                             <div className="flex items-center gap-2 shrink-0">
-                              <Link href="/admin/service-orders">
+                              <Link href={`/admin/service-orders?os=${m.service_order_id}`}>
                                 <Button variant="outline" size="sm" className="h-7 text-[11px] font-bold" data-testid={`link-abrir-os-${m.service_order_id}`}>
-                                  <FileText size={12} className="mr-1" /> Abrir no painel de OS
+                                  <Pencil size={12} className="mr-1" /> Editar OS
                                 </Button>
                               </Link>
                               {osPodeConcluir(m) && (
