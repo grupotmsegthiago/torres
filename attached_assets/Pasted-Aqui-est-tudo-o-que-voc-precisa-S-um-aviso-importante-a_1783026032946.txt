@@ -1,0 +1,62 @@
+Aqui está tudo o que você precisa. Só um aviso importante antes:
+
+⚠️ Uma instância Z-API só entrega o webhook "Ao receber" pra UMA URL. Se o outro projeto configurar o webhook na mesma instância, o bot deste projeto para de receber mensagens (já aconteceu antes quando a instância foi trocada). Então:
+
+Ideal: contratar/criar uma segunda instância Z-API pro outro projeto (cada bot com seu chip/número).
+Se for usar a mesma instância, só faça envios no outro projeto — não altere o webhook — ou este sistema fica surdo.
+1. Credenciais (copiar pros Secrets do outro projeto)
+No outro projeto, crie estes secrets (copie os valores da aba Secrets deste projeto — não vou expor os valores aqui):
+
+Secret	O que é
+ZAPI_INSTANCE_ID	ID da instância na Z-API
+ZAPI_TOKEN	Token da instância
+ZAPI_CLIENT_TOKEN	Token de segurança da conta (header obrigatório)
+Opcional mas recomendado: ZAPI_EXPECTED_PHONE = número oficial com DDI (ex.: 5511XXXXXXXXX) pra trava de segurança.
+
+2. Como chamar a API Z-API
+URL base: https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}
+Header obrigatório em TODAS as chamadas: Client-Token: {ZAPI_CLIENT_TOKEN}
+Endpoints principais:
+POST /send-text — body: { "phone": "5511999999999", "message": "texto" } (pra grupo, phone é o ID do grupo, ex. 1203...@g.us sem o sufixo, conforme vier no webhook)
+POST /send-image — body: { "phone": "...", "image": "url ou base64", "caption": "até ~1024 caracteres" }
+GET /status — instância conectada?
+GET /device — número realmente pareado (campo phone)
+GET /chats e GET /group-metadata/{id} — conversas e nome de grupo
+3. Webhook de recebimento (se for instância nova)
+No painel Z-API, configure "Ao receber" apontando pra rota do outro projeto (ex.: POST https://SEU-APP.replit.app/api/whatsapp/webhook).
+Responda HTTP 200 imediatamente e processe em background (senão a Z-API dá timeout e reenvia).
+Payload típico: { "type": "on-message-received", "phone": "5511...", "text": { "message": "..." }, "isGroup": false, "messageId": "...", "momment": 1681234567890 } — mídias vêm em image/audio/video/document.
+4. Lições aprendidas aqui (vale replicar)
+Trava de número oficial (fail-closed): antes de todo envio, consultar GET /device e comparar os últimos 11 dígitos do phone com ZAPI_EXPECTED_PHONE; se não bater ou a consulta falhar sem cache, bloquear o envio. Evita disparar mensagem de um chip errado.
+Anti-ban: variar o texto (nunca mandar mensagem idêntica em massa), pausa aleatória de 4–18s entre envios, delayTyping simulando "digitando…", embaralhar ordem de destinatários.
+"Enviado" ≠ "entregue": a Z-API responde OK mesmo com a instância em número errado/desconectado — monitore GET /status + GET /device.
+5. Prompt pronto pro agente do outro projeto
+Quero integrar WhatsApp via Z-API (API não-oficial, REST) neste projeto.
+CREDENCIAIS: já criei os secrets ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN
+(e opcionalmente ZAPI_EXPECTED_PHONE = número oficial com DDI). Nunca exponha esses valores.
+COMO USAR A API:
+- URL base: https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}
+- Header obrigatório em toda chamada: Client-Token: {ZAPI_CLIENT_TOKEN}
+- Enviar texto: POST /send-text com { "phone": "5511999999999", "message": "..." }
+- Enviar imagem: POST /send-image com { "phone", "image" (url/base64), "caption" (máx ~1024 chars) }
+- Checar conexão: GET /status; número pareado: GET /device (campo phone)
+REGRAS OBRIGATÓRIAS:
+1. Trava de segurança fail-closed: antes de qualquer envio, buscar GET /device e comparar
+   os últimos 11 dígitos do phone com ZAPI_EXPECTED_PHONE. Se divergir OU a consulta
+   falhar sem confirmação anterior em cache, BLOQUEAR o envio e logar o motivo.
+2. Anti-ban (Z-API é não-oficial, risco de banimento do número): variar o texto das
+   mensagens (nunca idênticas em massa), pausa aleatória de 4 a 18 segundos entre envios,
+   embaralhar a ordem dos destinatários em disparos em lote.
+3. Webhook de recebimento: criar POST /api/whatsapp/webhook que responde 200 IMEDIATAMENTE
+   e processa o payload em background. Payload típico:
+   { "type": "on-message-received", "phone": "...", "text": { "message": "..." },
+     "isGroup": false, "messageId": "...", "momment": 1681234567890 }
+   Mídias chegam nos campos image/audio/video/document.
+4. Resposta 200 da Z-API no envio NÃO garante entrega — se GET /device falhar ou o número
+   divergir, tratar como "bot fora do ar" e alertar.
+5. Persistir toda mensagem enviada/recebida num histórico próprio (a Z-API não é fonte
+   de histórico confiável).
+Depois de implementar, teste de verdade: mande uma mensagem real pro meu número e mostre
+o log da resposta da API.
+
+Resumindo: copie os 3 secrets, decida se vai usar instância nova (recomendado) ou a mesma (aí não mexa no webhook), e cole o prompt acima no agente do outro projeto. Quer que eu gere também uma versão do prompt já com o número oficial preenchido ou adaptada pra algum uso específico do outro bot (cobrança, atendimento, notificação)?
