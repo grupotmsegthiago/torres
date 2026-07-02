@@ -56,6 +56,14 @@ export function currentBrtWeekRange(): { from: string; to: string } {
   return { from: fmt(start), to: fmt(end) };
 }
 
+/** Dia corrente em BRT (from = to = hoje), padrão do filtro DAY do Balanço. */
+export function currentBrtDayRange(): { from: string; to: string } {
+  const { y, m, d } = brtTodayParts();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const key = `${y}-${p(m)}-${p(d)}`;
+  return { from: key, to: key };
+}
+
 /** Mês civil corrente em BRT (1º → último dia), padrão do filtro MONTH do Balanço. */
 export function currentBrtMonthRange(): { from: string; to: string } {
   const { y, m } = brtTodayParts();

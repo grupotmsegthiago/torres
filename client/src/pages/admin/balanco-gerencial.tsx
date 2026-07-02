@@ -257,7 +257,7 @@ export default function BalancoGerencialPage() {
   });
 
   // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
-  const { data: rhSummary } = useQuery<{
+  const { data: rhSummary, isFetching: rhFetching } = useQuery<{
     monthly: number;
     monthlyOperacional?: number;
     daily: number;
@@ -331,7 +331,7 @@ export default function BalancoGerencialPage() {
   // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
-  const { data: gridData = [] } = useQuery<any[]>({
+  const { data: gridData = [], isFetching: gridFetching } = useQuery<any[]>({
     queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
     queryFn: async () => {
       const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
@@ -805,7 +805,7 @@ export default function BalancoGerencialPage() {
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
               {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
-                <button key={p} onClick={() => setPeriod(p)} data-testid={`period-${p.toLowerCase()}`}
+                <button key={p} onClick={() => { setPeriod(p); setRefDate(new Date()); }} data-testid={`period-${p.toLowerCase()}`}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
                     period === p ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"
                   }`}>
@@ -820,6 +820,12 @@ export default function BalancoGerencialPage() {
               <span className="text-xs sm:text-sm font-black text-neutral-700 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
                 {range.label}
               </span>
+              {(gridFetching || rhFetching) && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 uppercase whitespace-nowrap" data-testid="status-period-loading">
+                  <RefreshCw size={12} className="animate-spin" />
+                  Calculando…
+                </span>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} data-testid="button-next-period">
                 <ChevronRight size={16} />
               </Button>
