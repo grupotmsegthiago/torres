@@ -8,6 +8,7 @@ import type { Express } from "express";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { bustBalancoCaches } from "../lib/balanco-cache";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
@@ -283,6 +284,7 @@ import type { Express } from "express";
           observacoes: `OS ${so.status === "recusada" ? "RECUSADA" : "CANCELADA"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
         }).select().single();
         if (zeroErr) throw zeroErr;
+        bustBalancoCaches();
         return res.json(zeroBilling);
       }
 
@@ -390,6 +392,7 @@ import type { Express } from "express";
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
+      bustBalancoCaches();
 
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -515,6 +518,7 @@ import type { Express } from "express";
             receitas_os: n(resultado.receitas_os),
             despesas_pedagio: n(dpCalc), despesas_combustivel: n(dcCalc), despesas_outras: n(doCalc),
           }).eq("service_order_id", osId);
+          bustBalancoCaches();
         }
       }
 
@@ -733,6 +737,7 @@ import type { Express } from "express";
             despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2,
             ...resultado,
           }).eq("id", existingBilling[0].id);
+          bustBalancoCaches();
         }
       }
 
@@ -1245,6 +1250,7 @@ import type { Express } from "express";
           .update({ status: "A_VERIFICAR", observacoes: null })
           .eq("service_order_id", Number(req.params.id))
           .eq("status", "CANCELADO");
+        bustBalancoCaches();
         console.log(`[so-patch-reactivate] OS ${req.params.id}: billing CANCELADO → A_VERIFICAR (recusada/cancelada → concluída)`);
       } catch (e: any) {
         console.error(`[so-patch-reactivate] erro ao resetar billing:`, e.message);
@@ -1304,6 +1310,7 @@ import type { Express } from "express";
               observacoes: `OS RECUSADA${reason ? " — " + reason : ""}`,
             })
             .eq("service_order_id", Number(req.params.id));
+          bustBalancoCaches();
         } else {
           // cancelada: recalcula o billing pela "tabela de 100 km" do cliente
           // (acionamento + excedente real de km/horas; dentro da franquia ⇒ só o
@@ -1317,6 +1324,7 @@ import type { Express } from "express";
             if (billStatus && FROZEN.includes(billStatus)) {
               // congelado: apenas marca como CANCELADO sem mexer nos valores.
               await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
+              bustBalancoCaches();
             } else {
               const cb = await computeCanceladaBilling({
                 serviceOrderId: soId,
@@ -1351,12 +1359,14 @@ import type { Express } from "express";
                 };
                 // UPSERT atômico via ON CONFLICT (service_order_id) — §8.6.
                 await supabaseAdmin.from("escort_billings").upsert(cancelPayload, { onConflict: "service_order_id" });
+                bustBalancoCaches();
                 // Espelha o total na OS p/ o card/listagem refletir a tabela 100km.
                 (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
                 (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
               } else {
                 // sem tabela de 100km nem contrato vinculado: ao menos marca CANCELADO.
                 await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
+              bustBalancoCaches();
               }
             }
           } catch (cancErr: any) {

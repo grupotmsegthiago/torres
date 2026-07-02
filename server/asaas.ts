@@ -3,6 +3,7 @@ import { requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
+import { bustBalancoCaches } from "./lib/balanco-cache";
 import {
   TORRES_CNPJ,
   CNAE_PRINCIPAL,
@@ -313,6 +314,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
           const { error } = await supabaseAdmin.from("escort_billings")
             .update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", ids);
           if (error) return { linked: 0, reason: error.message };
+          bustBalancoCaches();
           console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${ids.length} OS vinculadas (TODAS, soma R$${totalSum.toFixed(2)} ≈ R$${target.toFixed(2)}, ${periodSource})`);
         }
         return { linked: ids.length, matchedBy: "soma_total" };
@@ -325,6 +327,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
           const { error } = await supabaseAdmin.from("escort_billings")
             .update({ invoice_id: invoice.id, status: "FATURADO" }).eq("id", single.id);
           if (error) return { linked: 0, reason: error.message };
+          bustBalancoCaches();
           console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): 1 OS vinculada (single match R$${valorOf(single).toFixed(2)} ≈ R$${target.toFixed(2)}, ${periodSource})`);
         }
         return { linked: 1, matchedBy: "single_billing" };
@@ -350,6 +353,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
           const { error } = await supabaseAdmin.from("escort_billings")
             .update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", bestSubset);
           if (error) return { linked: 0, reason: error.message };
+          bustBalancoCaches();
           console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${bestSubset.length} OS vinculadas (subset diff R$${(bestDiff/100).toFixed(2)}, ${periodSource})`);
         }
         return { linked: bestSubset.length, matchedBy: "subset" };
@@ -863,6 +867,7 @@ export async function emitInvoiceAuto(
       faturado_em: new Date().toISOString(),
       faturado_por: opts.actorName || "Auto-Aprovação Cliente",
     }).in("id", bIds);
+    bustBalancoCaches();
   }
 
   await logSystemAudit({
@@ -2054,6 +2059,7 @@ export function registerAsaasRoutes(app: Express) {
           faturado_em: new Date().toISOString(),
           faturado_por: (req as any).user?.name || "Admin",
         }).in("id", bIds);
+        bustBalancoCaches();
         console.log(`[asaas] ${bIds.length} billing(s) marcados como FATURADO`);
       }
 
@@ -2397,6 +2403,7 @@ export function registerAsaasRoutes(app: Express) {
             .from("escort_billings")
             .update({ status: "PAGO", pago_em: new Date().toISOString() })
             .eq("invoice_id", updatedInvoice.id);
+          bustBalancoCaches();
         } catch (_e) {}
 
         try {
@@ -2891,6 +2898,8 @@ export function registerAsaasRoutes(app: Express) {
 
         if (updateErr) {
           console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+        } else {
+          bustBalancoCaches();
         }
 
         await logSystemAudit({
@@ -3047,6 +3056,8 @@ export function registerAsaasRoutes(app: Express) {
 
       if (updateErr) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+      } else {
+        bustBalancoCaches();
       }
 
       await logSystemAudit({
@@ -3096,6 +3107,7 @@ export function registerAsaasRoutes(app: Express) {
           .from("escort_billings")
           .update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null })
           .in("id", billingIds);
+        bustBalancoCaches();
       }
 
       if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
@@ -4209,6 +4221,7 @@ export function registerAsaasRoutes(app: Express) {
           .update({ invoice_id: invoiceId, status: "FATURADO" })
           .in("id", safeIds);
         if (error) throw error;
+        bustBalancoCaches();
 
         console.log(`[link-os] ${safeIds.length} billing(s) vinculada(s) à invoice ${invoiceId} (${inv.client_name}) por ${user?.email}: [${safeIds.join(", ")}]`);
         res.json({ linked: safeIds.length, skipped: billingIds.length - safeIds.length, linkedIds: safeIds });
@@ -4320,6 +4333,7 @@ export function registerAsaasRoutes(app: Express) {
             results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: error.message });
             continue;
           }
+          bustBalancoCaches();
 
           totalLinked += ids.length;
           results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: ids.length });
@@ -4675,6 +4689,7 @@ export function registerAsaasRoutes(app: Express) {
           .update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null })
           .in("id", revertIds);
         if (updErr) throw updErr;
+        bustBalancoCaches();
 
         await logSystemAudit({
           userId: user?.id, userName: user?.name, userRole: user?.role,

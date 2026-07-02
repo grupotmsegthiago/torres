@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
 import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
+import { bustBalancoCaches } from "../lib/balanco-cache";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -830,7 +831,11 @@ export function registerBoletimApprovalRoutes(app: Express) {
           .in("id", billingIds);
 
         if (billErr) console.error("[boletim-approval] Erro ao aprovar billings:", billErr.message);
-        else console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+        else {
+          console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+          // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
+          bustBalancoCaches();
+        }
       }
 
       try {

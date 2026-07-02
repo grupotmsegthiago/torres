@@ -3,8 +3,9 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
   import { logSystemAudit } from "../audit";
-  import { withSwrCache } from "../lib/swr-cache";
+  import { withSwrCache, bustSwrCache } from "../lib/swr-cache";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
+  import { bustBalancoCaches } from "../lib/balanco-cache";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
@@ -1652,6 +1653,7 @@ import type { Express } from "express";
         ? await supabaseAdmin.from("escort_billings").upsert(payload, { onConflict: "service_order_id" }).select().single()
         : await supabaseAdmin.from("escort_billings").insert(payload).select().single();
       if (r.error) throw r.error;
+      bustBalancoCaches();
       res.json(r.data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1729,6 +1731,7 @@ import type { Express } from "express";
       }
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1753,6 +1756,7 @@ import type { Express } from "express";
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
       console.log(`[billing-edit] Billing ${req.params.id} editado por ${req.user!.name}: km_ini=${updateBody.km_inicial}, km_fin=${updateBody.km_final}, km_total=${updateBody.km_total}, fat_total=${updateBody.fat_total}`);
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1867,6 +1871,7 @@ import type { Express } from "express";
         ? await supabaseAdmin.from("escort_billings").upsert(finalPayload2, { onConflict: "service_order_id" }).select().single()
         : await supabaseAdmin.from("escort_billings").insert(finalPayload2).select().single();
       if (r2.error) throw r2.error;
+      bustBalancoCaches();
 
       res.json({ ...r2.data, resumo_calculo: resultado });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1972,6 +1977,7 @@ import type { Express } from "express";
         ipAddress: req.ip,
       });
 
+      bustBalancoCaches();
       res.json({ success, errors, skipped, total: billing_ids.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1999,6 +2005,7 @@ import type { Express } from "express";
           const { data: zeroed, error: zeroErr } = await supabaseAdmin
             .from("escort_billings").update(zeroPayload).eq("id", req.params.id).select().single();
           if (zeroErr) throw zeroErr;
+          bustBalancoCaches();
           await supabaseAdmin.from("service_orders")
             .update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
           await logSystemAudit({
@@ -2093,6 +2100,7 @@ import type { Express } from "express";
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
 
       if (data && !recalcular) {
         const fatAcion = Number(data.fat_acionamento || 0);
@@ -2264,6 +2272,7 @@ import type { Express } from "express";
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
 
       if (acao === "APROVADA" && data) {
         const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.fat_adicional_noturno || 0) + Number(data.despesas_pedagio || 0) + Number(data.despesas_outras || 0) + Number(data.fat_estadia || 0) + Number(data.fat_pernoite || 0) + Number(data.receitas_os || 0);
@@ -2325,6 +2334,7 @@ import type { Express } from "express";
         boletim_gerado: false,
       }).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
 
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
@@ -2359,6 +2369,7 @@ import type { Express } from "express";
         boletim_gerado: false,
       }).eq("id", req.params.id).select().single();
       if (error) throw error;
+      bustBalancoCaches();
 
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
@@ -2390,6 +2401,7 @@ import type { Express } from "express";
       const valorAnterior = Number(billing.fat_total || 0);
       const { error } = await supabaseAdmin.from("escort_billings").update({ fat_total: 0 }).eq("id", req.params.id);
       if (error) throw error;
+      bustBalancoCaches();
       await logSystemAudit({
         userId: user.id, userName: user.name, userRole: user.role,
         action: "ZERAR_FAT_TOTAL", targetId: req.params.id, targetType: "escort_billing",
