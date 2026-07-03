@@ -1581,6 +1581,7 @@ export async function ensureDbSchema() {
     )`).catch((e: any) => console.warn("[db-init] cct_presets:", e?.message));
 
     await ensureRealtimePublication();
+    await ensureRlsHardening();
 
     // Seed dos presets canônicos (idempotente — só cria se não existe).
     try {
@@ -1629,6 +1630,67 @@ const REALTIME_TABLES_TO_DROP = [
   "fixed_costs", "absences", "fines",
   "employee_documents", "employee_salaries", "agent_daily_allowances",
 ];
+
+// Segurança: RLS ligado em TODAS as tabelas do schema public (advisor
+// Supabase 07/2026 apontou 17 tabelas nuas com grants full pro anon —
+// a anon key vai no bundle do frontend, então tabela sem RLS = leitura/
+// escrita pública). service_role (backend) ignora RLS; as 3 tabelas que
+// o frontend acompanha via Realtime ganham a policy padrão is_app_user.
+// Idempotente: roda em todo boot e cobre tabelas novas criadas sem RLS.
+const RLS_FRONTEND_POLICY_TABLES = [
+  "whatsapp_chats", "whatsapp_messages", "employee_signable_documents",
+];
+
+async function ensureRlsHardening() {
+  // Cliente pg próprio SEM statement_timeout: o pooler do Supabase
+  // (transaction mode) rejeita esse startup parameter e derruba a conexão.
+  // Sem fallback pro DATABASE_URL local: hardening só faz sentido no Supabase
+  // (que é o banco exposto ao anon key do frontend).
+  let client: pg.Client | null = null;
+  try {
+    const dbUrl = process.env.SUPABASE_DATABASE_URL;
+    if (!dbUrl) return;
+    client = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 10000 });
+    await client.connect();
+    const { rows } = await client.query(
+      `SELECT relname FROM pg_class cl JOIN pg_namespace n ON n.oid = cl.relnamespace
+       WHERE n.nspname = 'public' AND cl.relkind = 'r' AND NOT cl.relrowsecurity`
+    );
+    if (rows.length > 0) {
+      // Identificadores tratados 100% dentro do banco via format('%I')
+      // — nomes de tabela nunca são interpolados em SQL no lado JS.
+      await client.query(`DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN SELECT relname FROM pg_class cl JOIN pg_namespace n ON n.oid = cl.relnamespace
+                   WHERE n.nspname = 'public' AND cl.relkind = 'r' AND NOT cl.relrowsecurity
+          LOOP
+            EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.relname);
+          END LOOP;
+        END $$`);
+      console.log(`[db-init] RLS habilitado em ${rows.length} tabela(s): ${rows.map((r: any) => r.relname).join(", ")}`);
+    }
+    for (const t of RLS_FRONTEND_POLICY_TABLES) {
+      await client.query(`DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='${t}' AND policyname='${t}_all') THEN
+          CREATE POLICY ${t}_all ON public.${t} FOR ALL TO authenticated
+            USING (is_app_user((SELECT auth.uid())))
+            WITH CHECK (is_app_user((SELECT auth.uid())));
+        END IF;
+      END $$`).catch((e: any) => console.warn(`[db-init] policy ${t}:`, e?.message));
+    }
+    if (rows.length > 0) {
+      await client.query(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
+    }
+  } catch (e: any) {
+    // Fail-open deliberado: não derrubar o boot por falha transitória do Supabase
+    // (ex.: ondas de 521), mas gritar alto no log — tabela nova pode ficar sem RLS
+    // até o próximo boot bem-sucedido.
+    console.error("[db-init] ⚠️ ensureRlsHardening FALHOU — tabelas novas podem estar sem RLS:", e?.message);
+  } finally {
+    if (client) await client.end().catch(() => {});
+  }
+}
 
 async function ensureRealtimePublication() {
   try {

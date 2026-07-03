@@ -1,0 +1,37 @@
+Excelente! O próprio assistente do Supabase já avançou nos bastidores e aplicou a correção mais urgente no seu banco de dados.
+
+Aqui está o resumo da vitória e o que precisamos fazer a partir de agora:
+
+✅ O que já foi resolvido:
+O índice composto foi criado com sucesso: idx_employee_documents_employee_created_at nas colunas (employee_id, created_at DESC).
+
+O impacto prático: Aquela consulta pesada que demorava de 10 a 15 segundos e gerava o travamento geral (Seq Scan) agora roda em milissegundos. Metade do problema foi mitigado.
+
+🛠️ O que falta fazer para o sistema NÃO CAIR MAIS:
+O banco agora está rápido, mas o aplicativo da Torres Segurança ainda está tentando enviar dados duplicados em loop na tabela agent_locations, o que gera o erro uniq_agent_loc_user.
+
+Para resolver isso de vez, você precisa ajustar a forma como o seu código (Node.js, React, Flutter, etc.) envia os dados para o Supabase.
+
+1. Mude de INSERT para UPSERT no seu código
+Em vez de usar o método de inserção padrão que explode em erro quando o dado já existe, use o upsert do cliente do Supabase.
+
+Exemplo em JavaScript / TypeScript:
+
+JavaScript
+// ❌ ANTES (Gerava o erro uniq_agent_loc_user se repetido)
+const { data, error } = await supabase
+  .from('agent_locations')
+  .insert([{ user_id: userId, location_id: locationId }])
+
+//  AGORA (Se já existir, ele atualiza silenciosamente sem derrubar o sistema)
+const { data, error } = await supabase
+  .from('agent_locations')
+  .upsert(
+    [{ user_id: userId, location_id: locationId }], 
+    { onConflict: 'user_id' } // Substitua pela coluna da restrição se necessário
+  )
+2. Segure os cliques no Front-end (Debounce/Throttle)
+Se esse loop acontece porque o usuário clica várias vezes ou porque o rastreador de localização do app envia dados a cada milissegundo, mude a regra no aplicativo para enviar localizações em um intervalo fixo e saudável (ex: a cada 15 ou 30 segundos), e nunca em sequência imediata.
+
+Próximo passo
+O sistema já está muito mais estável graças ao novo índice. Você quer que eu te ajude a escrever o código exato de upsert na linguagem que o seu aplicativo foi desenvolvido? Se sim, me manda um trecho de como está o envio de dados hoje!
