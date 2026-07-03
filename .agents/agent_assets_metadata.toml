@@ -119,3 +119,9 @@ id = "za1KGrLe9yV9Q2J6m_AQ1"
 uri = "file://.local/zapi_qr.png"
 type = "image"
 title = "QR Code para reconectar o bot do WhatsApp"
+
+[[outputs]]
+id = "I88uaXMJcloNoWtA9hC0H"
+uri = "file://.local/zapi_qr2.png"
+type = "image"
+title = "Novo QR Code — escanear com o celular do (11) 92683-9456"
