@@ -125,3 +125,9 @@ id = "I88uaXMJcloNoWtA9hC0H"
 uri = "file://.local/zapi_qr2.png"
 type = "image"
 title = "Novo QR Code — escanear com o celular do (11) 92683-9456"
+
+[[outputs]]
+id = "XkaD7iNzRROcJC-aeMPP9"
+uri = "file://.local/zapi_qr3.png"
+type = "image"
+title = "QR Code novo — escanear com o celular do (11) 92683-9456"
