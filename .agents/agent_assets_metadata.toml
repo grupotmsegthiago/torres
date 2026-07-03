@@ -113,3 +113,9 @@ id = "_2UfBF7A5SGwic3OLeU60"
 uri = "file://attached_assets/relatorio_batidas_duplicadas.txt"
 type = "text"
 title = "Relatório — batidas duplicadas no ponto (revisão por funcionário)"
+
+[[outputs]]
+id = "za1KGrLe9yV9Q2J6m_AQ1"
+uri = "file://.local/zapi_qr.png"
+type = "image"
+title = "QR Code para reconectar o bot do WhatsApp"
