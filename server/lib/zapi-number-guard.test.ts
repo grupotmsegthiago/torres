@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isOfficialBotNumber, decideNumberAllow } from "./zapi";
+import { isOfficialBotNumber, decideNumberAllow, decideNumberBlockReason } from "./zapi";
 
 const OFICIAL = "5511926839456"; // +55 11 92683-9456 (número oficial da Central)
 const ERRADO = "5511999997803"; // chip diferente conectado por engano
@@ -53,4 +53,20 @@ test("nunca confirmado (ambos null) → BLOQUEIA (fail-closed)", () => {
 
 test("troca de chip: conectado atual errado prevalece sobre último confirmado oficial → BLOQUEIA", () => {
   assert.equal(decideNumberAllow(ERRADO, OFICIAL), false);
+});
+
+// --- motivo do bloqueio (filas: descartar vs re-tentar) ---
+test("motivo: número errado conhecido → wrong_number (fila pode DESCARTAR)", () => {
+  assert.equal(decideNumberBlockReason(ERRADO, null), "wrong_number");
+  assert.equal(decideNumberBlockReason(null, ERRADO), "wrong_number");
+  assert.equal(decideNumberBlockReason(ERRADO, OFICIAL), "wrong_number");
+});
+
+test("motivo: nunca confirmado + /device falhou → unconfirmed (fila RE-TENTA, nunca descarta)", () => {
+  assert.equal(decideNumberBlockReason(null, null), "unconfirmed");
+});
+
+test("motivo: número oficial → null (envio liberado)", () => {
+  assert.equal(decideNumberBlockReason(OFICIAL, null), null);
+  assert.equal(decideNumberBlockReason(null, OFICIAL), null);
 });

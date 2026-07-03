@@ -1589,6 +1589,12 @@ export async function fulfillGroupRequests(params: {
       if (r.ok) {
         // Já reivindicado (fulfilled_at setado no claim atômico) — só loga.
         console.log(`[agent-central-mention] update da OS ${params.osNumber || params.serviceOrderId} encaminhada ao grupo ${groupId} (pediram: ${nomes.join(", ") || "?"})`);
+      } else if (r.blocked) {
+        // Trava do bot (desconectado/número errado): estado determinístico,
+        // não transitório → NÃO des-reivindica. O pedido fica resolvido e o
+        // card antigo NÃO sai quando o bot voltar (ordem do dono 03/07/2026:
+        // backlog acumulado durante a queda é descartado, não reenviado).
+        console.warn(`[agent-central-mention] envio ao grupo ${groupId} bloqueado pela trava do bot — pedido descartado (não será reenviado após reconexão)`);
       } else {
         // Envio falhou → des-reivindica pra retentar na próxima mission_update.
         const { error: unErr } = await supabaseAdmin

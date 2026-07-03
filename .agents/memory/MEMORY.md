@@ -63,3 +63,4 @@
 
 - [Trava de onboarding (kill switch)](onboarding-gate-killswitch.md) — bloqueio de OS/missão por onboarding é 1 função (assertOnboardingComplete); liga/desliga via ONBOARDING_GATE_ENABLED; desligar não tira a exibição.
 - [Sandbox bash: testes longos](agent-sandbox-bash-quirks.md) — background é morto entre chamadas, grep bufferiza (use timeout+arquivo), notebook sem process.env; fatiar teste >120s por flag CLI.
+- [Descarte de backlog WhatsApp](zapi-backlog-discard.md) — filas só descartam em estado determinístico (desconexão confirmada ou blocked:true/wrong_number); "unconfirmed"/transitório SEMPRE re-tenta.

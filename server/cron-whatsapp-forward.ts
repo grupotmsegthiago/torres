@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { supabaseAdmin } from "./supabase.js";
-import { sendImageWithCaption, isZapiConfigured } from "./lib/zapi.js";
+import { sendImageWithCaption, isZapiConfigured, getConnectionStatus, type ZapiConnectionStatus } from "./lib/zapi.js";
 import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
 import { decodeBase64Image, watermarkToDataUrl } from "./lib/photo-watermark.js";
 import { haversineDist } from "./routes/_helpers.js";
@@ -596,6 +596,13 @@ async function markDone(id: number, errMsg: string | null): Promise<void> {
     .eq("id", id);
 }
 
+// Decisão PURA (testável) do descarte de backlog: só descarta quando a Z-API
+// CONFIRMOU (HTTP 200 no /status) que a instância está desconectada. Erro
+// transitório de rede/5xx (confirmed:false) NUNCA descarta — re-tenta como antes.
+export function shouldDiscardPendingForwards(status: Pick<ZapiConnectionStatus, "confirmed" | "connected">): boolean {
+  return status.confirmed && !status.connected;
+}
+
 async function processPending(): Promise<void> {
   if (running) return;
   running = true;
@@ -619,6 +626,23 @@ async function processPending(): Promise<void> {
       return;
     }
     if (!ups || ups.length === 0) return;
+
+    // DESCARTE DE BACKLOG (ordem do dono 03/07/2026): se o bot está DESCONECTADO
+    // (informação POSITIVA da Z-API — confirmed:true + connected:false, não um
+    // erro transitório de rede), as updates pendentes são DESCARTADAS na hora
+    // (marcadas como processadas com motivo), em vez de ficarem re-tentando.
+    // Assim, quando o bot reconectar, nada do backlog acumulado dispara nos
+    // grupos — só atualizações novas. Erro transitório do /status (confirmed:
+    // false) NÃO descarta: mantém o comportamento de re-tentativa.
+    const status = await getConnectionStatus();
+    if (shouldDiscardPendingForwards(status)) {
+      for (const u of ups as any[]) {
+        if (!(await claim(u.id))) continue;
+        await markDone(u.id, "descartado: bot desconectado no momento do envio (backlog não é reenviado após reconexão)");
+        console.log(`${TAG} ✗ id=${u.id} OS=${u.os_number} descartado (bot desconectado)`);
+      }
+      return;
+    }
 
     console.log(`${TAG} ${ups.length} candidato(s) pra processar`);
 
@@ -763,6 +787,12 @@ async function processPending(): Promise<void> {
           await supabaseAdmin.from("whatsapp_group_throttle")
             .upsert({ group_id: String(groupId), last_sent_at: new Date().toISOString() }, { onConflict: "group_id" });
           console.log(`${TAG} ✓ id=${u.id} OS=${u.os_number} → ${(client as any).name} msgId=${result.messageId}`);
+        } else if (result.blocked) {
+          // Trava do bot (desconectado nunca confirmado / número errado):
+          // estado determinístico, não transitório → DESCARTA em vez de
+          // re-tentar, pra não despejar backlog no grupo quando o bot voltar.
+          await markDone(u.id, `descartado: envio bloqueado pela trava do bot (${String(result.error || "").slice(0, 300)})`);
+          console.log(`${TAG} ✗ id=${u.id} OS=${u.os_number} descartado (trava do bot: número errado/desconectado)`);
         } else {
           await releaseClaim(u.id, String(result.error || "erro desconhecido"));
           console.error(`${TAG} ⟳ id=${u.id} OS=${u.os_number}: ${result.error}`);

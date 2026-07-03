@@ -42,6 +42,15 @@ export interface ZapiConnectionStatus {
   configured: boolean;
   connected: boolean;
   smartphoneConnected: boolean;
+  /**
+   * `true` quando a Z-API RESPONDEU o GET /status (HTTP 200) — ou seja,
+   * `connected:false` é uma informação POSITIVA da API ("instância existe e
+   * está desconectada"), não um erro transitório de rede/5xx. Quem precisa
+   * distinguir "bot desconectado de verdade" de "não deu pra saber" (ex.: o
+   * cron de encaminhamento, que DESCARTA backlog quando o bot está fora) deve
+   * exigir `confirmed === true` antes de tratar como desconectado.
+   */
+  confirmed: boolean;
   error?: string;
 }
 
@@ -54,7 +63,7 @@ export interface ZapiConnectionStatus {
  */
 export async function getConnectionStatus(): Promise<ZapiConnectionStatus> {
   if (!isZapiConfigured()) {
-    return { configured: false, connected: false, smartphoneConnected: false, error: "Z-API não configurada" };
+    return { configured: false, connected: false, smartphoneConnected: false, confirmed: false, error: "Z-API não configurada" };
   }
   try {
     const resp = await fetch(`${BASE}/status`, {
@@ -66,6 +75,7 @@ export async function getConnectionStatus(): Promise<ZapiConnectionStatus> {
         configured: true,
         connected: false,
         smartphoneConnected: false,
+        confirmed: false,
         error: sanitize(String(data?.error || `HTTP ${resp.status}`)),
       };
     }
@@ -73,10 +83,11 @@ export async function getConnectionStatus(): Promise<ZapiConnectionStatus> {
       configured: true,
       connected: data?.connected === true,
       smartphoneConnected: data?.smartphoneConnected === true,
+      confirmed: true,
       error: data?.error ? sanitize(String(data.error)) : undefined,
     };
   } catch (e: any) {
-    return { configured: true, connected: false, smartphoneConnected: false, error: sanitize(e?.message || "erro de rede") };
+    return { configured: true, connected: false, smartphoneConnected: false, confirmed: false, error: sanitize(e?.message || "erro de rede") };
   }
 }
 
@@ -187,10 +198,26 @@ export function isOfficialBotNumber(connectedDigits: string): boolean {
  * sem leitura atual → BLOQUEIA (não arrisca enviar de um número errado).
  */
 export function decideNumberAllow(connected: string | null, lastConfirmed: string | null): boolean {
-  if (!EXPECTED_PHONE_DIGITS) return true; // feature desligada (sem número oficial)
+  return decideNumberBlockReason(connected, lastConfirmed) === null;
+}
+
+/**
+ * Motivo do bloqueio de número (ou null quando o envio é liberado):
+ * - "wrong_number": há um número CONHECIDO e ele é DIFERENTE do oficial —
+ *   estado determinístico (chip errado pareado). Filas podem DESCARTAR.
+ * - "unconfirmed": nunca confirmado nenhum número E a leitura atual do /device
+ *   falhou — pode ser só um erro transitório logo após o boot. Filas devem
+ *   RE-TENTAR (nunca descartar por isso). O envio continua bloqueado
+ *   (fail-closed), só muda o tratamento do item na fila.
+ */
+export function decideNumberBlockReason(
+  connected: string | null,
+  lastConfirmed: string | null,
+): null | "wrong_number" | "unconfirmed" {
+  if (!EXPECTED_PHONE_DIGITS) return null; // feature desligada (sem número oficial)
   const known = connected ?? lastConfirmed;
-  if (!known) return false; // nunca confirmado → fail-closed
-  return isOfficialBotNumber(known);
+  if (!known) return "unconfirmed"; // nunca confirmado → fail-closed, mas re-tentável
+  return isOfficialBotNumber(known) ? null : "wrong_number";
 }
 
 /**
@@ -200,10 +227,10 @@ export function decideNumberAllow(connected: string | null, lastConfirmed: strin
  * último confirmado). Um erro transitório do /device, com um número oficial já
  * confirmado antes, NÃO bloqueia (usa `_lastConfirmedPhone`).
  */
-export async function assertExpectedNumber(): Promise<{ ok: boolean; connected?: string }> {
+export async function assertExpectedNumber(): Promise<{ ok: boolean; connected?: string; reason?: "wrong_number" | "unconfirmed" }> {
   const connected = await getConnectedPhone();
-  const ok = decideNumberAllow(connected, _lastConfirmedPhone);
-  return { ok, connected: connected ?? _lastConfirmedPhone ?? undefined };
+  const reason = decideNumberBlockReason(connected, _lastConfirmedPhone);
+  return { ok: reason === null, connected: connected ?? _lastConfirmedPhone ?? undefined, reason: reason ?? undefined };
 }
 
 /** Reseta o cache de número (uso em testes). */
@@ -224,6 +251,18 @@ export interface ZapiSendImageResult {
   ok: boolean;
   messageId?: string;
   error?: string;
+  /**
+   * `true` SOMENTE quando o envio foi bloqueado por causa DETERMINÍSTICA da
+   * trava de número (reason "wrong_number": instância pareada num número
+   * diferente do oficial da Central), e NUNCA por erro transitório de
+   * rede/HTTP nem pelo caso "unconfirmed" (leitura do /device falhou sem
+   * confirmação prévia — esse volta ok:false SEM blocked, re-tentável).
+   * Consumidores com fila (cron de encaminhamento, fulfill de pedidos) usam
+   * esta flag pra DESCARTAR o item em vez de re-tentar — ordem do dono
+   * (03/07/2026): quando o bot voltar, o backlog acumulado durante a queda
+   * NÃO deve ser enviado.
+   */
+  blocked?: boolean;
   raw?: any;
 }
 
@@ -280,8 +319,14 @@ export async function sendImageWithCaption(params: {
 
   const numCheck = await assertExpectedNumber();
   if (!numCheck.ok) {
+    if (numCheck.reason === "unconfirmed") {
+      // Transitório (leitura do /device falhou e nunca houve confirmação) —
+      // bloqueia o envio (fail-closed) mas SEM a flag `blocked`: filas re-tentam.
+      console.error("[zapi] ENVIO BLOQUEADO (send-image): não foi possível confirmar o número conectado na Z-API (transitório) — re-tentável.");
+      return { ok: false, error: "Não foi possível confirmar o número conectado na Z-API — envio bloqueado por segurança (transitório, re-tentável)." };
+    }
     console.error("[zapi] ENVIO BLOQUEADO (send-image): instância conectada num número diferente do oficial da Central. Reconecte o número correto.");
-    return { ok: false, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
+    return { ok: false, blocked: true, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
   }
 
   const body: Record<string, any> = {
@@ -535,8 +580,14 @@ export async function sendText(params: {
 
   const numCheck = await assertExpectedNumber();
   if (!numCheck.ok) {
+    if (numCheck.reason === "unconfirmed") {
+      // Transitório (leitura do /device falhou e nunca houve confirmação) —
+      // bloqueia o envio (fail-closed) mas SEM a flag `blocked`: filas re-tentam.
+      console.error("[zapi] ENVIO BLOQUEADO (send-text): não foi possível confirmar o número conectado na Z-API (transitório) — re-tentável.");
+      return { ok: false, error: "Não foi possível confirmar o número conectado na Z-API — envio bloqueado por segurança (transitório, re-tentável)." };
+    }
     console.error("[zapi] ENVIO BLOQUEADO (send-text): instância conectada num número diferente do oficial da Central. Reconecte o número correto.");
-    return { ok: false, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
+    return { ok: false, blocked: true, error: "Z-API conectada num número diferente do número oficial da Central — envio bloqueado. Reconecte o número correto." };
   }
 
   // Z-API aceita delayTyping (mostra "digitando...") e delayMessage (atraso antes
