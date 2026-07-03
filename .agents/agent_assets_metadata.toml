@@ -137,3 +137,9 @@ id = "2zBd-lQSa0-0Ocb4UJFGb"
 uri = "file://.local/zapi_qr4.png"
 type = "image"
 title = "QR Code — escanear SOMENTE com o celular do (11) 92683-9456"
+
+[[outputs]]
+id = "wfP1Z5TZx5Ecp131gkkmJ"
+uri = "file://.local/zapi_qr5.png"
+type = "image"
+title = "QR Code — escanear APENAS com o celular do (11) 92683-9456"
