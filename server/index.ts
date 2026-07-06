@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createApp } from "./create-app";
 import { initCronJobs } from "./cron";
 import { initWhatsappForwardCron } from "./cron-whatsapp-forward";
