@@ -5,7 +5,18 @@ import { rm, readFile } from "fs/promises";
 
 const REQUIRED_CLIENT_ENV = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"] as const;
 
+/** Na Vercel muitos projetos só definem SUPABASE_* — espelha para VITE_* no build. */
+function mirrorSupabaseEnvForVite() {
+  if (!process.env.VITE_SUPABASE_URL?.trim() && process.env.SUPABASE_URL?.trim()) {
+    process.env.VITE_SUPABASE_URL = process.env.SUPABASE_URL.trim();
+  }
+  if (!process.env.VITE_SUPABASE_ANON_KEY?.trim() && process.env.SUPABASE_ANON_KEY?.trim()) {
+    process.env.VITE_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY.trim();
+  }
+}
+
 function assertClientEnv() {
+  mirrorSupabaseEnvForVite();
   const missing = REQUIRED_CLIENT_ENV.filter((key) => !process.env[key]?.trim());
   if (missing.length > 0) {
     console.error(
