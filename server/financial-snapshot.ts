@@ -99,7 +99,7 @@ export interface ResumoDiretoria {
   diaSemana: string;
   dataLabel: string;
   generatedAt: string;
-  asaas: { connected: boolean; balance?: number; message?: string };
+  asaas: { connected: boolean; balance?: number; saldoAtual?: number; saldoAReceber?: number; message?: string };
   meta: {
     diariaPorViatura: number;
     viaturasAtivas: number;

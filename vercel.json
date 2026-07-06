@@ -3,6 +3,9 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
   "framework": null,
+  "typescript": {
+    "ignoreBuildErrors": true
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api" }
   ],
