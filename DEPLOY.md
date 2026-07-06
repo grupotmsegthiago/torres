@@ -1,172 +1,75 @@
 # Deploy: GitHub + Vercel
 
-Este projeto foi preparado para sair do Replit e rodar em **GitHub** (código/CI) + **Vercel** (produção).
+Mesmo fluxo do **Sistema Grupo TM SEG** e **Site Grupo TM SEG**.
 
-## ⚠️ Repo GitHub vazio = Vercel não funciona
+## Publicar (dia a dia)
 
-Se em `https://github.com/grupotmsegthiago/torres` aparece **"Quick setup"** (sem arquivos, sem README), a Vercel **não tem o que publicar**. O código está só no PC/Replit — precisa do **primeiro push** (seção abaixo).
+```powershell
+.\publicar.ps1
+```
 
-Depois do push, a Vercel detecta o commit na `main` e faz o deploy sozinha (se o projeto já estiver importado).
+O script faz merge `dev` → `main`, push no GitHub e volta para `dev`. A **Vercel** detecta o push na `main` e roda `npm install` + `npm run build` na nuvem — você **não** precisa rodar `npm` localmente para publicar.
 
-## 1. Publicar no GitHub
+## Primeira vez (Vercel)
+
+1. [vercel.com/new](https://vercel.com/new) → importar **grupotmsegthiago/torres**
+2. **Production Branch:** `main`
+3. Framework: **Other** (usa `vercel.json`)
+4. Copiar variáveis do Replit para **Settings → Environment Variables**
+5. **Settings → Deployment Protection** → desligar em Production (acesso público)
+6. **Settings → Domains** → adicionar `www.torresseguranca.com.br` e `torresseguranca.com.br`
+
+URL padrão após importar: **https://torresseguranca.vercel.app**
 
 Repositório: **https://github.com/grupotmsegthiago/torres**
 
-### Primeiro push (repo vazio no GitHub)
-
-O `origin` neste clone já aponta para o GitHub. No terminal **com Git instalado** (Git Bash, GitHub Desktop → Open in Git Bash, ou Replit Shell):
+### Branches
 
 ```powershell
-cd "C:\Users\SAMSUNG\OneDrive\04. Sistemas\Torres"
-
-git status
-git add -A
-git commit -m "Publica Torres no GitHub para deploy Vercel."
-
-git push -u origin main
+git checkout -b dev    # só na primeira vez, se ainda não existir
+git push -u origin dev
 ```
 
-**Sem Git no Windows?** Opções:
+Depois disso, sempre `.\publicar.ps1`.
 
-1. **GitHub Desktop** — File → Add local repository → pasta `Torres` → Push origin
-2. **Replit** — no Shell do projeto: `git remote add origin https://github.com/grupotmsegthiago/torres.git` (se ainda não tiver) e `git push -u origin main`
+## Variáveis essenciais
 
-Confirme no GitHub que aparecem pastas `api/`, `server/`, `client/`, `vercel.json`, `package.json`.
-
-### Fluxo contínuo (depois do primeiro push)
-
-```powershell
-git checkout dev    # criar uma vez: git checkout -b dev
-# ... commits na dev ...
-.\publicar.ps1      # merge dev → main + push (Vercel deploya a main)
-```
-
-O workflow `.github/workflows/ci.yml` roda testes, typecheck e build em cada push/PR.
-
-## 2. Conectar na Vercel
-
-1. Acesse [vercel.com/new](https://vercel.com/new) e importe **grupotmsegthiago/torres** (só depois do primeiro push).
-2. **Production Branch:** `main`
-3. Framework: **Other** (usa `vercel.json`).
-4. Build: `npm run build` (já no `vercel.json`).
-5. **Node.js 20** (`.nvmrc`).
-6. Copie as variáveis do Replit para **Settings → Environment Variables** (lista abaixo).
-
-Se o deploy falhar nos **logs da Vercel**, causas comuns:
-
-| Erro | Solução |
-|------|---------|
-| Repositório vazio / sem commits | Fazer o primeiro push (acima) |
-| `npm test` falhou no build | Testes rodam no GitHub CI (`build:ci`), não na Vercel; ver Actions |
-| `Cannot find module` | Conferir `installCommand` com `legacy-peer-deps` (já no `vercel.json`) |
-| Site abre mas login/API quebra | Faltam env vars (`SUPABASE_*`, `SESSION_SECRET`, etc.) |
-
-Variáveis essenciais (lista completa em `replit.md`):
-
-| Variável | Uso |
-|----------|-----|
+| Variável | Valor |
+|----------|-------|
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DATABASE_URL` | Banco |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Frontend |
-| `SESSION_SECRET`, `CONTROLID_ENC_KEY` | Auth/sessão |
+| `SESSION_SECRET`, `CONTROLID_ENC_KEY` | Auth |
 | `SMTP_*` | E-mail |
 | `ASAAS_API_KEY`, `ASAAS_API_URL` | Cobrança |
 | `INTER_*` | Banco Inter |
 | `ZAPI_*` | WhatsApp |
 | `OPENAI_API_KEY` | IA/OCR |
-| `PUBLIC_SITE_URL` | `https://torresseguranca.vercel.app` (temporário) → depois `https://www.torresseguranca.com.br` |
-| `CRON_SECRET` | Token dos crons HTTP (gere um valor aleatório longo) |
+| `PUBLIC_SITE_URL` | `https://www.torresseguranca.com.br` |
+| `CRON_SECRET` | Token dos crons HTTP |
+| `TZ` | `America/Sao_Paulo` |
 
-Na Vercel, defina também `TZ=America/Sao_Paulo`.
-
-## 3. URL temporária (`torresseguranca.vercel.app`)
-
-Enquanto o DNS de `www.torresseguranca.com.br` propaga, use:
-
-- Site: `https://torresseguranca.vercel.app`
-- Admin: `https://torresseguranca.vercel.app/admin`
-
-**Importante:** existem dois projetos possíveis na Vercel:
-
-| URL | Projeto |
-|-----|---------|
-| `torresseguranca.vercel.app` | projeto **torresseguranca** (conta pessoal / nome curto) |
-| `torres-grupotmsegs-projects.vercel.app` | projeto **torres** no time **grupotmsegs-projects** |
-
-O GitHub (`grupotmsegthiago/torres`) precisa estar ligado ao projeto que você quer usar. Se `torresseguranca.vercel.app` ainda **baixa arquivo** ou dá 404, esse projeto está com deploy antigo:
-
-1. **Vercel → projeto torresseguranca → Settings → Git** → conectar `grupotmsegthiago/torres` branch `main`
-2. **Settings → Environment Variables** → copiar todas as variáveis do projeto `torres` (Supabase, Z-API, SMTP, etc.)
-3. **Settings → Deployment Protection** → desligar em **Production** (senão pede login da Vercel)
-4. **Deployments → Redeploy** do último commit
-5. Definir `PUBLIC_SITE_URL=https://torresseguranca.vercel.app` até o DNS propagar
-
-Webhooks temporários (Z-API, Asaas):
-
-`https://torresseguranca.vercel.app/api/whatsapp/webhook`
-
-Quando `www.torresseguranca.com.br` estiver **Valid** na Vercel, troque `PUBLIC_SITE_URL` e os webhooks para o domínio definitivo.
-
-## 4. Domínio customizado
-
-Em **Vercel → Domains** (no mesmo projeto ativo), adicione `www.torresseguranca.com.br` e `torresseguranca.com.br`. DNS:
+## DNS (domínio próprio)
 
 - `www` → CNAME `cname.vercel-dns.com`
 - `@` → A `76.76.21.21`
 
-Atualize webhooks externos (Z-API, Asaas, Inter) para apontar para o novo domínio Vercel.
+Quando o domínio estiver **Valid** na Vercel, adicione em `vercel.json` o redirect (igual ao Sistema):
 
-## 5. Crons na Vercel
-
-No Replit, os crons rodavam em processo contínuo (`node-cron`). Na Vercel, **todos os jobs** foram consolidados em **6 buckets** (`server/cron-buckets.ts` + `server/cron-jobs.ts`), chamando `/api/cron?job=...` conforme `vercel.json`.
-
-| Bucket | Frequência | Conteúdo principal |
-|--------|------------|-------------------|
-| `minute` | 1 min | WhatsApp forward, escalonamento Agente Central, **jobs diários em horário BRT** |
-| `three-min` | 3 min | Monitor de conexão WhatsApp |
-| `five-min` | 5 min | Fila RHID, Inter (2 dias), Agente Central proativo |
-| `ten-min` | 10 min | Billing live + meta de faturamento |
-| `fifteen-min` | 15 min | Reconciliação NF Asaas |
-| `thirty-min` | 30 min | Aceites de missão expirados |
-
-Jobs com horário fixo (Control iD, Inter backfill, folha, rodízio, e-mails da diretoria, alertas RH/frota, etc.) rodam no bucket `minute` quando o relógio BRT bate o horário — ver `runBrtScheduledJobs()` em `server/cron-buckets.ts`.
-
-Replit/local usa os **mesmos buckets** via `initCronJobs()` em `server/cron.ts` (sem duplicar lógica).
-
-Plano Hobby da Vercel: crons no mínimo a cada 1 minuto (WhatsApp forward passou de 30 s para 1 min na Vercel; no Replit continua 30 s via `initWhatsappForwardCron`).
-
-## 5. Desligar o Replit
-
-Só desative o deploy no Replit depois de:
-
-- [ ] Domínio apontando para a Vercel
-- [ ] Login e painel admin funcionando
-- [ ] Webhooks (WhatsApp, banco) atualizados
-- [ ] Crons críticos validados nos logs da Vercel
-- [ ] Variáveis sensíveis removidas do `.replit` versionado (se aplicável)
-
-### Como parar o bot no Replit (evita duplicar mensagem com a Vercel)
-
-Se o WhatsApp mostra **duas** notificações de "código de segurança mudou" ou o bot manda **duas respostas**, quase sempre são **Replit + Vercel** com as mesmas chaves `ZAPI_*`.
-
-1. Abra o projeto no [replit.com](https://replit.com)
-2. Clique em **Stop** (parar o Repl) — o processo `node`/`npm` deve encerrar
-3. Em **Deployments** / **Autoscale** / **Always On** → **desligue** (Off)
-4. **Secrets** do Repl → remova ou esvazie `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN` (opcional mas recomendado)
-5. Painel **Z-API** → webhook **"Ao receber"** → **somente**  
-   `https://www.torresseguranca.com.br/api/whatsapp/webhook`  
-   (nada de `*.replit.app` ou `*.replit.dev`)
-6. Confirme: Console do Replit **sem** logs `[whatsapp-forward-cron]` ou `[agent-central-mention]` após Stop
-
-Enquanto o Replit estiver ligado com código **antigo**, ele ainda manda **"Resumo Operacional do Dia" no grupo** — comportamento que já foi removido no código novo (resumo só no PV dos 2 celulares autorizados).
-
-## Desenvolvimento local
-
-```bash
-npm install
-npm run dev    # Replit/Node tradicional na porta 5000
-npm test
-npm run build
-npm start      # produção local
+```json
+{
+  "source": "/:path*",
+  "has": [{ "type": "host", "value": "torresseguranca.vercel.app" }],
+  "destination": "https://www.torresseguranca.com.br/:path*",
+  "permanent": true
+}
 ```
 
-Para simular Vercel localmente: `npx vercel dev` (requer CLI e login).
+Webhooks (Z-API, Asaas): `https://www.torresseguranca.com.br/api/...`
+
+## Crons na Vercel
+
+6 buckets HTTP em `vercel.json` → `/api/cron?job=...` (ver `server/cron-buckets.ts`).
+
+## Desligar o Replit
+
+Só depois de domínio, login, webhooks e crons validados na Vercel.

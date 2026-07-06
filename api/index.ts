@@ -1,21 +1,31 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import type { Express } from "express";
+import serverless from "serverless-http";
 import { getOrCreateApp } from "../server/create-app";
 
-let appPromise: Promise<Express> | null = null;
+let handler: ReturnType<typeof serverless> | null = null;
+let bootError: Error | null = null;
 
-function loadApp(): Promise<Express> {
-  if (!appPromise) appPromise = getOrCreateApp();
-  return appPromise;
+export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
+  try {
+    if (!handler) {
+      if (bootError) {
+        res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+        return;
+      }
+      const app = await getOrCreateApp();
+      handler = serverless(app, { binary: true });
+    }
+    return handler(req, res);
+  } catch (e: unknown) {
+    bootError = e instanceof Error ? e : new Error(String(e));
+    console.error("[Vercel] Falha ao iniciar backend:", bootError);
+    res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+  }
 }
 
-/** Não retornar `app(req, res)` — o Express devolve o próprio app e a Vercel baixa ~4MB. */
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const app = await loadApp();
-  await new Promise<void>((resolve, reject) => {
-    app(req, res, (err: unknown) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+  maxDuration: 300,
+};
