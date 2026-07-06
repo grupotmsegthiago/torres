@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Envia variáveis não vazias do .env para o Railway (serviço já linkado).
+# Envia variáveis do .env para o Railway — apenas padrão Replit (use npm run import-env:replit antes).
 # Pré-requisitos:
 #   npm install -g @railway/cli
 #   railway login
@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 
 if [[ ! -f .env ]]; then
   echo "Arquivo .env não encontrado."
-  echo "Copie os Secrets do Replit para .env na raiz do projeto e rode de novo."
+  echo "Rode primeiro: npm run import-env:replit"
   exit 1
 fi
 

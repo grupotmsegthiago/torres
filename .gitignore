@@ -9,6 +9,7 @@ vite.config.ts.*
 .env
 .env.*
 !.env.example
+.railway.env
 
 # Vercel
 .vercel
