@@ -73,18 +73,49 @@ Variáveis essenciais (lista completa em `replit.md`):
 | `INTER_*` | Banco Inter |
 | `ZAPI_*` | WhatsApp |
 | `OPENAI_API_KEY` | IA/OCR |
-| `PUBLIC_SITE_URL` | `https://www.torresseguranca.com.br` |
+| `PUBLIC_SITE_URL` | `https://torresseguranca.vercel.app` (temporário) → depois `https://www.torresseguranca.com.br` |
 | `CRON_SECRET` | Token dos crons HTTP (gere um valor aleatório longo) |
 
 Na Vercel, defina também `TZ=America/Sao_Paulo`.
 
-## 3. Domínio customizado
+## 3. URL temporária (`torresseguranca.vercel.app`)
 
-Em **Vercel → Domains**, adicione `www.torresseguranca.com.br` e configure o DNS (CNAME para `cname.vercel-dns.com`).
+Enquanto o DNS de `www.torresseguranca.com.br` propaga, use:
+
+- Site: `https://torresseguranca.vercel.app`
+- Admin: `https://torresseguranca.vercel.app/admin`
+
+**Importante:** existem dois projetos possíveis na Vercel:
+
+| URL | Projeto |
+|-----|---------|
+| `torresseguranca.vercel.app` | projeto **torresseguranca** (conta pessoal / nome curto) |
+| `torres-grupotmsegs-projects.vercel.app` | projeto **torres** no time **grupotmsegs-projects** |
+
+O GitHub (`grupotmsegthiago/torres`) precisa estar ligado ao projeto que você quer usar. Se `torresseguranca.vercel.app` ainda **baixa arquivo** ou dá 404, esse projeto está com deploy antigo:
+
+1. **Vercel → projeto torresseguranca → Settings → Git** → conectar `grupotmsegthiago/torres` branch `main`
+2. **Settings → Environment Variables** → copiar todas as variáveis do projeto `torres` (Supabase, Z-API, SMTP, etc.)
+3. **Settings → Deployment Protection** → desligar em **Production** (senão pede login da Vercel)
+4. **Deployments → Redeploy** do último commit
+5. Definir `PUBLIC_SITE_URL=https://torresseguranca.vercel.app` até o DNS propagar
+
+Webhooks temporários (Z-API, Asaas):
+
+`https://torresseguranca.vercel.app/api/whatsapp/webhook`
+
+Quando `www.torresseguranca.com.br` estiver **Valid** na Vercel, troque `PUBLIC_SITE_URL` e os webhooks para o domínio definitivo.
+
+## 4. Domínio customizado
+
+Em **Vercel → Domains** (no mesmo projeto ativo), adicione `www.torresseguranca.com.br` e `torresseguranca.com.br`. DNS:
+
+- `www` → CNAME `cname.vercel-dns.com`
+- `@` → A `76.76.21.21`
 
 Atualize webhooks externos (Z-API, Asaas, Inter) para apontar para o novo domínio Vercel.
 
-## 4. Crons na Vercel
+## 5. Crons na Vercel
 
 No Replit, os crons rodavam em processo contínuo (`node-cron`). Na Vercel, **todos os jobs** foram consolidados em **6 buckets** (`server/cron-buckets.ts` + `server/cron-jobs.ts`), chamando `/api/cron?job=...` conforme `vercel.json`.
 

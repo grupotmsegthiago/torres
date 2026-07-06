@@ -31,8 +31,10 @@ let appReady: Promise<{ app: Express; httpServer: Server }> | null = null;
 
 function siteBaseUrl(req: Request): string {
   if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, "");
+  // Enquanto o DNS do domínio próprio propaga, use a URL pública da Vercel.
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`.replace(/\/$/, "");
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "torresvigilancia.com.br";
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "torresseguranca.vercel.app";
   return `${proto}://${host}`.replace(/\/$/, "");
 }
 
