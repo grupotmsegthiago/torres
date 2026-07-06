@@ -23,7 +23,18 @@ No Railway você só precisa **copiar as mesmas variáveis** que já existiam no
 
 ### 2. Variáveis de ambiente (copiar do Replit)
 
-**Opção A — painel (mais fácil)**
+**Opção A — automático (recomendado)**
+
+Se o projeto ainda tem o `.replit` com `[userenv.shared]`:
+
+```bash
+npm run import-env:replit   # gera .env com as mesmas vars do Replit
+npm run db:test             # confirma conexão com o Supabase
+```
+
+Depois cole o conteúdo do `.env` no Railway (Raw Editor) ou use a Opção C.
+
+**Opção B — painel (manual)**
 
 1. No Replit: **Tools → Secrets** (ou abra `.replit` → `[userenv.shared]`).
 2. No Railway: clique no serviço → **Variables** → **Raw Editor**.
