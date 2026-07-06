@@ -15,6 +15,7 @@ import { registerPushRoutes } from "./routes/push";
 import { APP_VERSION, APP_BUILD_AT } from "./constants";
 import { installRequestLogger } from "./slow-routes";
 import { isVercel } from "./platform";
+import { isServerSupabaseConfigured } from "./supabase";
 
 declare module "http" {
   interface IncomingMessage {
@@ -71,6 +72,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.set("Pragma", "no-cache");
     res.set("Expires", "0");
+    next();
+  });
+
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/version" || req.path === "/healthz") return next();
+    if (!isServerSupabaseConfigured()) {
+      return res.status(503).json({
+        error: "Backend indisponível",
+        detail: "Variáveis SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY não configuradas no deploy.",
+      });
+    }
     next();
   });
 

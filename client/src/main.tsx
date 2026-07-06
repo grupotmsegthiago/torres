@@ -153,4 +153,9 @@ if ("Notification" in window && Notification.permission === "default") {
   setTimeout(() => { Notification.requestPermission().catch(() => {}); }, 5000);
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error("Elemento #root não encontrado");
+}
+
+createRoot(rootEl).render(<App />);

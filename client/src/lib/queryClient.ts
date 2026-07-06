@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { supabase } from "./supabase";
+import { supabase, isSupabaseConfigured } from "./supabase";
 
 const CACHE_VERSION = "20260521-realtime-trim-v3";
 if (typeof window !== "undefined") {
@@ -42,7 +42,7 @@ async function _primeToken() {
   return _primePromise;
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && isSupabaseConfigured) {
   supabase.auth.onAuthStateChange((_event, session) => {
     _cachedAccessToken = session?.access_token ?? null;
     _tokenPrimed = true;
@@ -375,7 +375,7 @@ export function stopAutoRefresh() {
   }
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && isSupabaseConfigured) {
   // Auto-refresh global desativado: Realtime (postgres_changes) já invalida
   // o que precisa. Polling de 2min em TODAS as queries era o maior gerador
   // de carga repetida no Supabase.

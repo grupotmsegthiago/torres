@@ -8,6 +8,8 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
+import { ConfigError } from "@/components/config-error";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 import Home from "@/pages/home";
 import LoginPage from "@/pages/admin/login";
@@ -313,6 +315,12 @@ function Router() {
 }
 
 function App() {
+  if (!isSupabaseConfigured) {
+    return (
+      <ConfigError message="O aplicativo não foi configurado corretamente no servidor. As variáveis de ambiente do Supabase (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY) precisam estar definidas no deploy da Vercel." />
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

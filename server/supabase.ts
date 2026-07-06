@@ -1,12 +1,18 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { setSupabaseHealth } from "./pg-fallback";
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
+export function isServerSupabaseConfigured(): boolean {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+function requireServerEnv() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  }
+  return { supabaseUrl, supabaseServiceKey, supabaseAnonKey: supabaseAnonKey || "" };
 }
 
 const MAX_RETRIES = 2;
@@ -222,9 +228,37 @@ const sharedOpts = {
   db: { schema: "public" as const },
 };
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, sharedOpts);
+let _supabaseAdmin: SupabaseClient | null = null;
+let _supabaseAnon: SupabaseClient | null = null;
 
-export const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, sharedOpts);
+function getSupabaseAdminClient(): SupabaseClient {
+  if (!_supabaseAdmin) {
+    const { supabaseUrl, supabaseServiceKey } = requireServerEnv();
+    _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, sharedOpts);
+  }
+  return _supabaseAdmin;
+}
+
+function getSupabaseAnonClient(): SupabaseClient {
+  if (!_supabaseAnon) {
+    const { supabaseUrl, supabaseAnonKey } = requireServerEnv();
+    _supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, sharedOpts);
+  }
+  return _supabaseAnon;
+}
+
+function createSupabaseProxy(getClient: () => SupabaseClient): SupabaseClient {
+  return new Proxy({} as SupabaseClient, {
+    get(_target, prop) {
+      const client = getClient();
+      const value = Reflect.get(client, prop, client);
+      return typeof value === "function" ? value.bind(client) : value;
+    },
+  });
+}
+
+export const supabaseAdmin = createSupabaseProxy(getSupabaseAdminClient);
+export const supabaseAnon = createSupabaseProxy(getSupabaseAnonClient);
 
 export function getSupabaseStats() {
   const failures = healthWindow.filter((r) => !r).length;

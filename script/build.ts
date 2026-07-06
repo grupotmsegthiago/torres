@@ -2,6 +2,20 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
+const REQUIRED_CLIENT_ENV = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"] as const;
+
+function assertClientEnv() {
+  const missing = REQUIRED_CLIENT_ENV.filter((key) => !process.env[key]?.trim());
+  if (missing.length > 0) {
+    console.error(
+      "\n[build] ERRO: variáveis de ambiente obrigatórias ausentes para o frontend:\n" +
+        missing.map((k) => `  - ${k}`).join("\n") +
+        "\n\nConfigure-as na Vercel (Settings → Environment Variables) antes do deploy.\n",
+    );
+    process.exit(1);
+  }
+}
+
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
 const allowlist = [
@@ -34,6 +48,8 @@ const allowlist = [
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
+
+  assertClientEnv();
 
   console.log("building client...");
   await viteBuild();

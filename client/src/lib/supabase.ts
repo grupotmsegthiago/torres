@@ -1,13 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set");
-}
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+const clientOptions = {
   realtime: {
     // Subido de 2 → 10: com ~38 tabelas nos canais globais (incl. GPS de alta
     // frequência), o orçamento de 2 eventos/s era consumido pelas tabelas
@@ -22,6 +20,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
     },
   },
+} as const;
+
+let _client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient {
+  if (!_client) {
+    if (!isSupabaseConfigured) {
+      throw new Error("VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set");
+    }
+    _client = createClient(supabaseUrl!, supabaseAnonKey!, clientOptions);
+  }
+  return _client;
+}
+
+/** Cliente Supabase — só acessível quando `isSupabaseConfigured` é true. */
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -30,9 +49,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // tabelas ruidosas (GPS/financeiro) que compartilham `supabase`. Assim msg de
 // WhatsApp NUNCA é descartada por starvation. As tabelas whatsapp_* têm RLS
 // off, então a anon key recebe os eventos sem precisar de sessão.
-export const supabaseWa = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  realtime: {
-    params: { eventsPerSecond: 20 },
+let _waClient: SupabaseClient | null = null;
+
+function getWaClient(): SupabaseClient {
+  if (!_waClient) {
+    if (!isSupabaseConfigured) {
+      throw new Error("VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set");
+    }
+    _waClient = createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: {
+        params: { eventsPerSecond: 20 },
+      },
+    });
+  }
+  return _waClient;
+}
+
+export const supabaseWa: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getWaClient();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
