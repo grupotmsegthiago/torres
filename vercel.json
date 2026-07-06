@@ -18,27 +18,27 @@
   },
   "crons": [
     {
-      "path": "/api/cron?job=whatsapp-forward",
+      "path": "/api/cron?job=minute",
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron?job=agent-central-escalation",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron?job=whatsapp-monitor",
+      "path": "/api/cron?job=three-min",
       "schedule": "*/3 * * * *"
     },
     {
-      "path": "/api/cron?job=billing",
-      "schedule": "*/30 * * * *"
+      "path": "/api/cron?job=five-min",
+      "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron?job=nf-reconcile",
+      "path": "/api/cron?job=ten-min",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron?job=fifteen-min",
       "schedule": "*/15 * * * *"
     },
     {
-      "path": "/api/cron?job=aceite-expirado",
+      "path": "/api/cron?job=thirty-min",
       "schedule": "*/30 * * * *"
     }
   ]

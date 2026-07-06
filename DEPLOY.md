@@ -86,22 +86,22 @@ Atualize webhooks externos (Z-API, Asaas, Inter) para apontar para o novo domín
 
 ## 4. Crons na Vercel
 
-No Replit, os crons rodavam em processo contínuo (`node-cron`). Na Vercel, os jobs críticos estão em `vercel.json` → `crons`, chamando `/api/cron?job=...`.
+No Replit, os crons rodavam em processo contínuo (`node-cron`). Na Vercel, **todos os jobs** foram consolidados em **6 buckets** (`server/cron-buckets.ts` + `server/cron-jobs.ts`), chamando `/api/cron?job=...` conforme `vercel.json`.
 
-Jobs já migrados:
+| Bucket | Frequência | Conteúdo principal |
+|--------|------------|-------------------|
+| `minute` | 1 min | WhatsApp forward, escalonamento Agente Central, **jobs diários em horário BRT** |
+| `three-min` | 3 min | Monitor de conexão WhatsApp |
+| `five-min` | 5 min | Fila RHID, Inter (2 dias), Agente Central proativo |
+| `ten-min` | 10 min | Billing live + meta de faturamento |
+| `fifteen-min` | 15 min | Reconciliação NF Asaas |
+| `thirty-min` | 30 min | Aceites de missão expirados |
 
-| Job | Frequência Vercel | Antes (Replit) |
-|-----|-------------------|----------------|
-| `whatsapp-forward` | 1 min | 30 s |
-| `agent-central-escalation` | 1 min | 1 min |
-| `whatsapp-monitor` | 3 min | 3 min |
-| `billing` | 30 min | 30 min |
-| `nf-reconcile` | 15 min | 15 min |
-| `aceite-expirado` | 30 min | 30 min |
+Jobs com horário fixo (Control iD, Inter backfill, folha, rodízio, e-mails da diretoria, alertas RH/frota, etc.) rodam no bucket `minute` quando o relógio BRT bate o horário — ver `runBrtScheduledJobs()` em `server/cron-buckets.ts`.
 
-**Atenção:** dezenas de outros crons (Control iD, Inter backfill, RH, rodízio, e-mails diários, etc.) ainda estão só em `server/cron.ts` e **não rodam na Vercel** até serem adicionados em `server/cron-vercel.ts` + `vercel.json`. Enquanto a migração não estiver 100%, mantenha o Replit em paralelo ou migre os jobs restantes.
+Replit/local usa os **mesmos buckets** via `initCronJobs()` em `server/cron.ts` (sem duplicar lógica).
 
-Plano Hobby da Vercel: crons no mínimo a cada 1 minuto (não suporta 30 s).
+Plano Hobby da Vercel: crons no mínimo a cada 1 minuto (WhatsApp forward passou de 30 s para 1 min na Vercel; no Replit continua 30 s via `initWhatsappForwardCron`).
 
 ## 5. Desligar o Replit
 
@@ -112,6 +112,21 @@ Só desative o deploy no Replit depois de:
 - [ ] Webhooks (WhatsApp, banco) atualizados
 - [ ] Crons críticos validados nos logs da Vercel
 - [ ] Variáveis sensíveis removidas do `.replit` versionado (se aplicável)
+
+### Como parar o bot no Replit (evita duplicar mensagem com a Vercel)
+
+Se o WhatsApp mostra **duas** notificações de "código de segurança mudou" ou o bot manda **duas respostas**, quase sempre são **Replit + Vercel** com as mesmas chaves `ZAPI_*`.
+
+1. Abra o projeto no [replit.com](https://replit.com)
+2. Clique em **Stop** (parar o Repl) — o processo `node`/`npm` deve encerrar
+3. Em **Deployments** / **Autoscale** / **Always On** → **desligue** (Off)
+4. **Secrets** do Repl → remova ou esvazie `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN` (opcional mas recomendado)
+5. Painel **Z-API** → webhook **"Ao receber"** → **somente**  
+   `https://www.torresseguranca.com.br/api/whatsapp/webhook`  
+   (nada de `*.replit.app` ou `*.replit.dev`)
+6. Confirme: Console do Replit **sem** logs `[whatsapp-forward-cron]` ou `[agent-central-mention]` após Stop
+
+Enquanto o Replit estiver ligado com código **antigo**, ele ainda manda **"Resumo Operacional do Dia" no grupo** — comportamento que já foi removido no código novo (resumo só no PV dos 2 celulares autorizados).
 
 ## Desenvolvimento local
 

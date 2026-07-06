@@ -465,17 +465,21 @@ export function registerWhatsappRoutes(app: Express) {
           return;
         }
 
-        // Idempotência: se já temos essa zapi_message_id, ignora
+        // Idempotência: índice único em zapi_message_id. Só processa o bot se o
+        // INSERT for novo — evita Replit + Vercel responderem a mesma mensagem.
         if (parsed.zapiMessageId) {
           const { data: existing } = await supabaseAdmin
             .from("whatsapp_messages")
             .select("id")
             .eq("zapi_message_id", parsed.zapiMessageId)
             .maybeSingle();
-          if (existing) return;
+          if (existing) {
+            console.log(`[whatsapp/webhook] duplicata ${parsed.zapiMessageId} — ignorando`);
+            return;
+          }
         }
 
-        await supabaseAdmin.from("whatsapp_messages").insert({
+        const { error: insErr } = await supabaseAdmin.from("whatsapp_messages").insert({
           chat_id: parsed.chatId,
           zapi_message_id: parsed.zapiMessageId,
           from_me: parsed.fromMe,
@@ -488,6 +492,15 @@ export function registerWhatsappRoutes(app: Express) {
           status: parsed.fromMe ? "sent" : "received",
           ts: parsed.ts,
         });
+        if (insErr) {
+          const dup = insErr.code === "23505" || /duplicate|unique/i.test(String(insErr.message || ""));
+          if (dup) {
+            console.log(`[whatsapp/webhook] insert duplicata ${parsed.zapiMessageId || "?"} — ignorando handler`);
+            return;
+          }
+          console.warn("[whatsapp/webhook] insert falhou:", insErr.message);
+          return;
+        }
 
         // Preview pra sidebar
         const preview = parsed.text || ({

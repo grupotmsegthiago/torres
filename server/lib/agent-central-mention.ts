@@ -710,6 +710,7 @@ const SUMMARY_THROTTLE_MS = 60_000;
  */
 export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise<void> {
   try {
+    // NUNCA responde no grupo — só PV dos autorizados (demais: silêncio).
     if (!isResumoAuthorizedPhone(parsed.senderPhone)) {
       console.log(`[agent-central-mention] resumo ignorado — telefone não autorizado (${parsed.senderPhone || "?"})`);
       return;
@@ -1165,9 +1166,11 @@ export async function buildNaturalReply(text: string, senderName: string | null)
  */
 export async function handleNaturalConversation(parsed: ParsedGroupMsg): Promise<void> {
   try {
-    if (!parsed.isGroup || parsed.fromMe) return;
+    if (parsed.isGroup || parsed.fromMe) return;
     const text = (parsed.text || "").trim();
-    if (text.length < 2) return; // mídia pura / vazio → não responde
+    if (text.length < 2) return;
+    // "resumo" tem fluxo dedicado — não tagarelar resposta natural por cima.
+    if (looksLikeSummaryRequest(text)) return;
 
     // Throttle: não responde em rajada (protege contra storm e contra ban).
     const last = naturalReplyThrottle.get(parsed.chatId) || 0;
@@ -1334,7 +1337,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     // cai no fluxo de atualização daquela OS, não no panorama geral.
     if (looksLikeSummaryRequest(parsed.text) && !RE_OS.test(parsed.text || "")) {
       await handleGroupSummaryRequest(parsed);
-      return;
+      return; // não cai em conversa natural nem resumo antigo no grupo
     }
 
     // Texto da mensagem citada (resposta). Primeiro tenta o conteúdo inline do

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { isVercelCronJob, runVercelCronJob } from "../server/cron-vercel";
+import { CRON_BUCKETS, isVercelCronJob, runVercelCronJob } from "../server/cron-vercel";
 
 function isAuthorized(req: VercelRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -20,14 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!isVercelCronJob(jobParam)) {
     return res.status(400).json({
       message: "Parâmetro job inválido",
-      jobs: [
-        "whatsapp-forward",
-        "whatsapp-monitor",
-        "agent-central-escalation",
-        "billing",
-        "nf-reconcile",
-        "aceite-expirado",
-      ],
+      jobs: CRON_BUCKETS,
     });
   }
 
