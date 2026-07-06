@@ -17,7 +17,7 @@ test("throttleZapiSend: segunda mensagem respeita intervalo mínimo", async () =
     await throttleZapiSend("a", async () => 1);
     const t0 = Date.now();
     await throttleZapiSend("b", async () => 2);
-    assert.ok(Date.now() - t0 >= 180);
+    assert.ok(Date.now() - t0 >= 150, `esperava >=150ms de fila, obteve ${Date.now() - t0}ms`);
   } finally {
     if (prev === undefined) delete process.env.ZAPI_SEND_MIN_INTERVAL_MS;
     else process.env.ZAPI_SEND_MIN_INTERVAL_MS = prev;

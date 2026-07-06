@@ -57,7 +57,7 @@ Se o deploy falhar nos **logs da Vercel**, causas comuns:
 | Erro | Solução |
 |------|---------|
 | Repositório vazio / sem commits | Fazer o primeiro push (acima) |
-| `npm test` falhou no build | `prebuild` roda testes; corrigir teste ou ver log |
+| `npm test` falhou no build | Testes rodam no GitHub CI (`build:ci`), não na Vercel; ver Actions |
 | `Cannot find module` | Conferir `installCommand` com `legacy-peer-deps` (já no `vercel.json`) |
 | Site abre mas login/API quebra | Faltam env vars (`SUPABASE_*`, `SESSION_SECRET`, etc.) |
 
