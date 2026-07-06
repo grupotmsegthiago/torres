@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { looksLikeSummaryRequest, looksLikeFinalKm, looksLikeUpdateRequest, sanitizeFinanceiro, shortLocal, isBotMentioned, phoneSuffix8, isTeamSuffixMatch, planEscalations, setBotLidForTest } from "./agent-central-mention.ts";
+import { isResumoAuthorizedPhone } from "./agent-central-fleet-resumo.ts";
 import { isFinalKmUpdate } from "../cron-whatsapp-forward.ts";
 
 test("isFinalKmUpdate: reconhece a legenda de foto KM Final (card resumido)", () => {
@@ -37,6 +38,12 @@ test("looksLikeFinalKm: não confunde com texto livre nem negações", () => {
   ]) {
     assert.equal(looksLikeFinalKm(t as any), false, `não deveria reconhecer: ${JSON.stringify(t)}`);
   }
+});
+
+test("resumo: telefone 11954563755 e 11963696699 autorizados; demais não", () => {
+  assert.equal(isResumoAuthorizedPhone("11954563755"), true);
+  assert.equal(isResumoAuthorizedPhone("11963696699"), true);
+  assert.equal(isResumoAuthorizedPhone("5511999998888"), false);
 });
 
 test("looksLikeSummaryRequest: reconhece pedidos de resumo", () => {

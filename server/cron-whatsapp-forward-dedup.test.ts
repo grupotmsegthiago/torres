@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isFinalCardUpdate, alreadyForwardedFinal } from "./cron-whatsapp-forward.js";
+import { isFinalCardUpdate, alreadyForwardedFinal, hasCompetingFinalCard } from "./cron-whatsapp-forward.js";
 
 test("isFinalCardUpdate: step finalizada é card de fim", () => {
   assert.equal(isFinalCardUpdate("finalizada", null), true);
@@ -60,4 +60,53 @@ test("cenário OS 0245: 2º KM Final é duplicata do 1º já enviado", () => {
     { mission_step: "chegada_destino", message: "📷 Foto: Local de Destino" }, // #6497
   ];
   assert.equal(alreadyForwardedFinal(priorSentForRow6498), false);
+});
+
+test("hasCompetingFinalCard: irmã KM Final mais antiga pendente bloqueia a mais nova", () => {
+  const older = {
+    id: 100,
+    mission_step: "chegada_destino",
+    message: "📷 Foto: KM Final — KM 100",
+    created_at: "2026-07-06T14:20:00Z",
+    whatsapp_forwarded_at: null,
+    whatsapp_forward_claimed_at: null,
+  };
+  assert.equal(
+    hasCompetingFinalCard(
+      { id: 101, created_at: "2026-07-06T14:21:00Z" },
+      [older],
+      "2026-07-06T14:00:00Z",
+    ),
+    true,
+  );
+});
+
+test("hasCompetingFinalCard: irmã em voo (claim ativo) bloqueia duplicata paralela", () => {
+  const inFlight = {
+    id: 100,
+    mission_step: "finalizada",
+    message: "🔄 Finalizada",
+    created_at: "2026-07-06T14:21:00Z",
+    whatsapp_forwarded_at: null,
+    whatsapp_forward_claimed_at: "2026-07-06T14:21:05Z",
+  };
+  assert.equal(
+    hasCompetingFinalCard(
+      { id: 101, created_at: "2026-07-06T14:21:01Z" },
+      [inFlight],
+      "2026-07-06T14:16:00Z",
+    ),
+    true,
+  );
+});
+
+test("hasCompetingFinalCard: primeira final da OS pode enviar", () => {
+  assert.equal(
+    hasCompetingFinalCard(
+      { id: 100, created_at: "2026-07-06T14:21:00Z" },
+      [],
+      "2026-07-06T14:00:00Z",
+    ),
+    false,
+  );
 });

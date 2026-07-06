@@ -1,0 +1,31 @@
+---
+description: Publicar Torres para producao via GitHub/Vercel — executar publicar.ps1
+alwaysApply: true
+---
+
+# Publicacao do Torres (GitHub + Vercel)
+
+Quando o usuario pedir para **publicar**, **publicar o torres**, **subir para producao**, **atualizar o site**, **deploy**, **colocar no ar** ou frases equivalentes:
+
+## Fluxo obrigatorio (execute voce mesmo, sem pedir confirmacao)
+
+1. Verifique a branch atual e o status do git (`git status`, `git branch`).
+2. Se houver alteracoes nao commitadas na `dev`:
+   - Faca `git add` dos arquivos relevantes (nunca `.env` nem segredos).
+   - Crie um commit descritivo na branch `dev`.
+3. Execute na raiz do projeto:
+   ```powershell
+   .\publicar.ps1
+   ```
+4. Confirme o resultado:
+   - Merge `dev` -> `main` OK
+   - Push `main` e `dev` OK
+   - Voltou para `dev`
+5. Informe o usuario em portugues: publicacao concluida e que a Vercel fara o deploy da `main`.
+
+## Regras
+
+- **Nunca** commitar `.env`, chaves ou credenciais.
+- **Nunca** usar `git push --force` em `main`.
+- Se `publicar.ps1` falhar (auth, conflito, etc.), mostre o erro e oriente o proximo passo.
+- Nao pergunte "quer que eu publique?" — se o pedido foi de publicacao, execute o fluxo.

@@ -4,3 +4,30 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Secrets e ambiente local
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# Replit (legado)
+.replit
+replit.nix
+.upm
+
+# Backups e estado local
+.local/
+
+# IDE
+.idea
+.vscode
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+Thumbs.db

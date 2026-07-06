@@ -526,6 +526,20 @@ export function registerWhatsappRoutes(app: Express) {
               ),
             )
             .catch((e: any) => console.warn("[whatsapp/webhook] agente-central:", e?.message));
+        } else if (!parsed.isGroup && !parsed.fromMe) {
+          import("../lib/agent-central-mention.js")
+            .then(({ handlePrivateSummaryRequest }) =>
+              handlePrivateSummaryRequest({
+                chatId: parsed.chatId,
+                isGroup: false,
+                fromMe: parsed.fromMe,
+                senderName: parsed.senderName,
+                senderPhone: parsed.senderPhone,
+                text: parsed.text,
+                zapiMessageId: parsed.zapiMessageId,
+              }),
+            )
+            .catch((e: any) => console.warn("[whatsapp/webhook] resumo-privado:", e?.message));
         }
       } catch (e: any) {
         console.error("[whatsapp/webhook] erro (async):", e?.message);

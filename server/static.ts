@@ -2,13 +2,22 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import fs from "fs";
 import path from "path";
 
-export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
+function resolvePublicDir(): string {
+  const candidates = [
+    path.resolve(__dirname, "public"),
+    path.resolve(__dirname, "..", "dist", "public"),
+    path.resolve(process.cwd(), "dist", "public"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
   }
+  throw new Error(
+    `Could not find the build directory (tried: ${candidates.join(", ")}). Run npm run build first.`,
+  );
+}
+
+export function serveStatic(app: Express) {
+  const distPath = resolvePublicDir();
 
   // ─── Headers de cache CORRETOS para PWA ───
   // Arquivos com hash em /assets/* (Vite gera nome hash) → cache 1 ano (immutable)

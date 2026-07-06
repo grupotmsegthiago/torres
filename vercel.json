@@ -1,0 +1,45 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "api/cron.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron?job=whatsapp-forward",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron?job=agent-central-escalation",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron?job=whatsapp-monitor",
+      "schedule": "*/3 * * * *"
+    },
+    {
+      "path": "/api/cron?job=billing",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron?job=nf-reconcile",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron?job=aceite-expirado",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

@@ -12,6 +12,7 @@
  */
 
 import { persistOutgoingWhatsappMessage } from "./whatsapp-store";
+import { throttleZapiSend } from "./zapi-throttle";
 
 const INSTANCE_ID = process.env.ZAPI_INSTANCE_ID || "";
 const TOKEN = process.env.ZAPI_TOKEN || "";
@@ -271,11 +272,9 @@ export interface ZapiSendImageResult {
  * Funciona pra contato individual e pra grupo.
  */
 // Liga/desliga o delay de mensagem do bot (delayTyping/delayMessage da Z-API,
-// que mostra "digitando..." e atrasa o disparo). Desligado por ordem do dono
-// (23/06/2026): o bot deve responder SEM delay de mensagem. Os call-sites ainda
-// passam delayTypingSeconds/delayMessageSeconds, mas buildSendDelayFields ignora
-// quando desligado — basta voltar para `true` para reativar a humanização.
-export const ZAPI_SEND_DELAYS_ENABLED = false;
+// que mostra "digitando..." e atrasa o disparo). Reativado (jul/2026) para
+// humanizar envios; desligar = `false` (buildSendDelayFields ignora os segundos).
+export const ZAPI_SEND_DELAYS_ENABLED = true;
 
 /**
  * Monta os campos de atraso (delayTyping/delayMessage) do payload da Z-API a
@@ -336,42 +335,42 @@ export async function sendImageWithCaption(params: {
     ...buildSendDelayFields(params),
   };
 
-  try {
-    const resp = await fetch(`${BASE}/send-image`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Client-Token": CLIENT_TOKEN,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
-    const text = await resp.text();
-    let parsed: any = null;
-    try { parsed = text ? JSON.parse(text) : null; } catch { /* não-JSON */ }
-    if (!resp.ok) {
-      return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
-    }
-    const messageId = parsed?.id || parsed?.messageId;
-    // Espelha na tela interna (whatsapp_messages). Não guardamos base64 na
-    // tabela (memória: lista pesada com base64 derruba Supabase) — só URL http;
-    // base64 fica como mensagem de imagem com a legenda, sem o blob.
-    if (params.persist !== false) {
-      const isHttp = /^https?:\/\//i.test(params.imageBase64OrUrl || "");
-      await persistOutgoingWhatsappMessage({
-        chatId: phone,
-        messageId,
-        type: "image",
-        body: params.caption || null,
-        mediaUrl: isHttp ? params.imageBase64OrUrl : null,
-        mediaMime: isHttp ? "image/jpeg" : null,
-        senderName: params.senderName,
+  const label = `send-image:${phone.slice(-8)}`;
+  return throttleZapiSend(label, async () => {
+    try {
+      const resp = await fetch(`${BASE}/send-image`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": CLIENT_TOKEN,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000),
       });
+      const text = await resp.text();
+      let parsed: any = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch { /* não-JSON */ }
+      if (!resp.ok) {
+        return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
+      }
+      const messageId = parsed?.id || parsed?.messageId;
+      if (params.persist !== false) {
+        const isHttp = /^https?:\/\//i.test(params.imageBase64OrUrl || "");
+        await persistOutgoingWhatsappMessage({
+          chatId: phone,
+          messageId,
+          type: "image",
+          body: params.caption || null,
+          mediaUrl: isHttp ? params.imageBase64OrUrl : null,
+          mediaMime: isHttp ? "image/jpeg" : null,
+          senderName: params.senderName,
+        });
+      }
+      return { ok: true, messageId, raw: parsed };
+    } catch (err: any) {
+      return { ok: false, error: sanitize(err?.message || String(err)) };
     }
-    return { ok: true, messageId, raw: parsed };
-  } catch (err: any) {
-    return { ok: false, error: sanitize(err?.message || String(err)) };
-  }
+  });
 }
 
 export interface ZapiGroup {
@@ -599,35 +598,87 @@ export async function sendText(params: {
     ...buildSendDelayFields(params, params.forceDelay),
   };
 
-  try {
-    const resp = await fetch(`${BASE}/send-text`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Client-Token": CLIENT_TOKEN,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
-    });
-    const text = await resp.text();
-    let parsed: any = null;
-    try { parsed = text ? JSON.parse(text) : null; } catch { /* */ }
-    if (!resp.ok) return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
-    const messageId = parsed?.id || parsed?.messageId;
-    // Espelha na tela interna (whatsapp_messages) — fecha o buraco das cobranças
-    // do bot que não apareciam. O /api/whatsapp/send passa persist:false (ele já
-    // grava com o nome do operador).
-    if (params.persist !== false) {
-      await persistOutgoingWhatsappMessage({
-        chatId: phone,
-        messageId,
-        type: "text",
-        body: params.message,
-        senderName: params.senderName,
+  const label = `send-text:${phone.slice(-8)}`;
+  return throttleZapiSend(label, async () => {
+    try {
+      const resp = await fetch(`${BASE}/send-text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": CLIENT_TOKEN,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
       });
+      const text = await resp.text();
+      let parsed: any = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch { /* */ }
+      if (!resp.ok) return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
+      const messageId = parsed?.id || parsed?.messageId;
+      if (params.persist !== false) {
+        await persistOutgoingWhatsappMessage({
+          chatId: phone,
+          messageId,
+          type: "text",
+          body: params.message,
+          senderName: params.senderName,
+        });
+      }
+      return { ok: true, messageId, raw: parsed };
+    } catch (err: any) {
+      return { ok: false, error: sanitize(err?.message || String(err)) };
     }
-    return { ok: true, messageId, raw: parsed };
-  } catch (err: any) {
-    return { ok: false, error: sanitize(err?.message || String(err)) };
+  });
+}
+
+/**
+ * Reage a uma mensagem (grupo ou 1:1) com um emoji — ex.: ✅ ao receber pedido de atualização.
+ * Docs Z-API: POST /send-reaction
+ */
+export async function sendReaction(params: {
+  groupOrPhone: string;
+  messageId: string;
+  reaction: string;
+}): Promise<ZapiSendImageResult> {
+  if (!isZapiConfigured()) {
+    return { ok: false, error: "Z-API não configurada" };
   }
+  const phone = normalizePhoneOrGroup(params.groupOrPhone);
+  const messageId = String(params.messageId || "").trim();
+  if (!phone) return { ok: false, error: "groupOrPhone vazio" };
+  if (!messageId) return { ok: false, error: "messageId vazio" };
+
+  const numCheck = await assertExpectedNumber();
+  if (!numCheck.ok) {
+    if (numCheck.reason === "unconfirmed") {
+      return { ok: false, error: "Não foi possível confirmar o número conectado na Z-API — reação bloqueada (transitório)." };
+    }
+    return { ok: false, blocked: true, error: "Z-API conectada num número diferente do oficial — reação bloqueada." };
+  }
+
+  const label = `send-reaction:${phone.slice(-8)}`;
+  return throttleZapiSend(label, async () => {
+    try {
+      const resp = await fetch(`${BASE}/send-reaction`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": CLIENT_TOKEN,
+        },
+        body: JSON.stringify({
+          phone,
+          messageId,
+          reaction: params.reaction || "✅",
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await resp.text();
+      let parsed: any = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch { /* */ }
+      if (!resp.ok) return { ok: false, error: sanitize(`HTTP ${resp.status}: ${text.slice(0, 300)}`), raw: parsed };
+      return { ok: true, messageId: parsed?.id || parsed?.messageId, raw: parsed };
+    } catch (err: any) {
+      return { ok: false, error: sanitize(err?.message || String(err)) };
+    }
+  });
 }

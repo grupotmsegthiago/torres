@@ -20,7 +20,8 @@
 
 import OpenAI from "openai";
 import { supabaseAdmin } from "../supabase";
-import { sendText, sendImageWithCaption, isZapiConfigured, getBotLid } from "./zapi";
+import { sendText, sendImageWithCaption, sendReaction, isZapiConfigured, getBotLid } from "./zapi";
+import { buildFleetVtrSummary, isResumoAuthorizedPhone } from "./agent-central-fleet-resumo";
 import { decodeBase64Image, watermarkToDataUrl, TORRES_CONTACT_FOOTER } from "./photo-watermark";
 import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
@@ -704,27 +705,39 @@ const summaryThrottle = new Map<string, number>();
 const SUMMARY_THROTTLE_MS = 60_000;
 
 /**
- * Responde NO GRUPO com um panorama das OS do cliente vinculado àquele grupo:
- * OS ativas (em andamento) + OS finalizadas hoje (BRT). Fail-open.
+ * Resumo interno por VTR: só telefones autorizados; resposta sempre no PV de quem pediu.
+ * Demais números: silêncio total (não envia nada sobre resumo).
  */
 export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise<void> {
   try {
-    const last = summaryThrottle.get(parsed.chatId) || 0;
+    if (!isResumoAuthorizedPhone(parsed.senderPhone)) {
+      console.log(`[agent-central-mention] resumo ignorado — telefone não autorizado (${parsed.senderPhone || "?"})`);
+      return;
+    }
+    const pv = toIntlPhone(parsed.senderPhone);
+    if (!pv) {
+      console.log(`[agent-central-mention] resumo autorizado mas sem telefone PV válido (${parsed.senderName || "?"})`);
+      return;
+    }
+    const last = summaryThrottle.get(pv) || 0;
     if (Date.now() - last < SUMMARY_THROTTLE_MS) {
-      console.log(`[agent-central-mention] resumo do grupo ${parsed.chatId} ignorado (throttle ${SUMMARY_THROTTLE_MS / 1000}s)`);
+      console.log(`[agent-central-mention] resumo PV ${pv} ignorado (throttle ${SUMMARY_THROTTLE_MS / 1000}s)`);
       return;
     }
-    const msg = await buildClientSummaryByGroup(parsed.chatId);
-    if (!msg) {
-      console.log(`[agent-central-mention] resumo pedido no grupo ${parsed.chatId} mas grupo não está vinculado a nenhum cliente — ignorando`);
-      return;
-    }
-    summaryThrottle.set(parsed.chatId, Date.now());
-    await sendText({ groupOrPhone: parsed.chatId, message: msg, delayTypingSeconds: randomTypingSeconds() });
-    console.log(`[agent-central-mention] resumo enviado ao grupo ${parsed.chatId}`);
+    const msg = await buildFleetVtrSummary();
+    summaryThrottle.set(pv, Date.now());
+    await sendText({ groupOrPhone: pv, message: msg, delayTypingSeconds: randomTypingSeconds() });
+    console.log(`[agent-central-mention] resumo VTR enviado no PV de ${parsed.senderName || pv}`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handleGroupSummaryRequest falhou:", e?.message);
   }
+}
+
+/** Pedido de resumo no chat privado (1:1) — mesmas regras de autorização. */
+export async function handlePrivateSummaryRequest(parsed: ParsedGroupMsg): Promise<void> {
+  if (parsed.isGroup) return;
+  if (!looksLikeSummaryRequest(parsed.text)) return;
+  await handleGroupSummaryRequest(parsed);
 }
 
 // Throttle em memória pra não reenviar o resumo de KM da mesma OS em rajada
@@ -1182,7 +1195,6 @@ export async function handleNaturalConversation(parsed: ParsedGroupMsg): Promise
     if (!raw) return;
     const reply = sanitizeFinanceiro(raw); // trava financeira pós-geração
 
-    // Sem delay de mensagem (ordem do dono 23/06/2026): o bot responde na hora.
     await sendText({ groupOrPhone: parsed.chatId, message: reply, delayTypingSeconds: randomTypingSeconds() });
     console.log(`[agent-central-mention] resposta natural enviada ao grupo ${parsed.chatId}`);
   } catch (e: any) {
@@ -1245,37 +1257,39 @@ async function buildUpdateAck(text: string, senderName: string | null): Promise<
 }
 
 /**
- * Responde no grupo confirmando que vai cobrar a equipe, com "digitando..." por
- * ~15s antes (forceDelay — independe do toggle global de delay). Fail-open.
+ * Reage com ✅ na mensagem de pedido de atualização (grupo). Fail-open.
+ * Substitui o texto longo no grupo — a atualização real vai no PV via fulfillGroupRequests.
  */
-export async function handleTaggedUpdateAck(parsed: ParsedGroupMsg): Promise<void> {
+export async function reactOkOnUpdateRequest(parsed: ParsedGroupMsg): Promise<void> {
   try {
     if (!parsed.isGroup || parsed.fromMe) return;
+    if (!parsed.zapiMessageId) return;
 
-    // Throttle DEDICADO (curto): só evita duplicata de webhook, não deixa a
-    // resposta ao ser marcado ser engolida por uma conversa natural recente.
     const last = taggedAckThrottle.get(parsed.chatId) || 0;
     if (Date.now() - last < TAGGED_ACK_THROTTLE_MS) {
-      console.log(`[agent-central-mention] aviso de cobrança no grupo ${parsed.chatId} ignorado (throttle ${TAGGED_ACK_THROTTLE_MS / 1000}s)`);
+      console.log(`[agent-central-mention] reação OK no grupo ${parsed.chatId} ignorada (throttle ${TAGGED_ACK_THROTTLE_MS / 1000}s)`);
       return;
     }
     taggedAckThrottle.set(parsed.chatId, Date.now());
 
-    const raw = await buildUpdateAck((parsed.text || "").trim(), parsed.senderName);
-    const reply = sanitizeFinanceiro(raw); // trava financeira pós-geração
-
-    // ~15s de "digitando..." antes do envio (Z-API delayTyping, máx 15s).
-    // forceDelay liga o "digitando..." mesmo com o toggle global desligado.
-    await sendText({
+    const r = await sendReaction({
       groupOrPhone: parsed.chatId,
-      message: reply,
-      delayTypingSeconds: randInt(13, 15),
-      forceDelay: true,
+      messageId: parsed.zapiMessageId,
+      reaction: "✅",
     });
-    console.log(`[agent-central-mention] aviso de cobrança enviado ao grupo ${parsed.chatId} (digitando ~15s)`);
+    if (r.ok) {
+      console.log(`[agent-central-mention] reação ✅ no pedido de atualização (grupo ${parsed.chatId})`);
+    } else {
+      console.warn(`[agent-central-mention] reação ✅ falhou no grupo ${parsed.chatId}: ${r.error}`);
+    }
   } catch (e: any) {
-    console.warn("[agent-central-mention] handleTaggedUpdateAck falhou:", e?.message);
+    console.warn("[agent-central-mention] reactOkOnUpdateRequest falhou:", e?.message);
   }
+}
+
+/** @deprecated Use reactOkOnUpdateRequest — mantido p/ compatibilidade de import. */
+export async function handleTaggedUpdateAck(parsed: ParsedGroupMsg): Promise<void> {
+  await reactOkOnUpdateRequest(parsed);
 }
 
 /**
@@ -1419,8 +1433,8 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       }
       // Avisa no grupo que vai cobrar a equipe, com "digitando..." ~15s antes
       // (ordem do dono 24/06/2026). A atualização REAL volta via fulfillGroupRequests.
-      await handleTaggedUpdateAck(parsed);
-      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → cobrou a equipe e avisou no grupo (OS ${os.os_number || os.id})`);
+      await reactOkOnUpdateRequest(parsed);
+      console.log(`[agent-central-mention] grupo ${parsed.chatId}: Central marcada → cobrou a equipe + reação ✅ (OS ${os.os_number || os.id})`);
       return;
     }
 
@@ -1437,7 +1451,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
     // com "digitando..." + throttle próprio + trava financeira) E cobra o 1º
     // agente por DM. A atualização REAL volta via fulfillGroupRequests quando o
     // agente reportar. O anti-spam (hasRecentOpen, 10min/OS) limita o ruído/ban.
-    await handleTaggedUpdateAck(parsed);
+    await reactOkOnUpdateRequest(parsed);
     await cobrarAgentes(os);
 
     // Arma o timer de escalonamento: registra o pedido com ack_decide_at = agora
@@ -1457,7 +1471,7 @@ export async function handleGroupUpdateRequest(parsed: ParsedGroupMsg, rawBody: 
       })
       .then(() => {}, (e: any) => console.warn("[agent-central-mention] insert request falhou:", e?.message));
 
-    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: avisou no grupo + 1º agente cobrado por DM; escalonamento p/ 2º armado em ${ESCALATE_AFTER_MIN}min se não houver resposta`);
+    console.log(`[agent-central-mention] OS ${os.os_number || os.id} no grupo ${parsed.chatId}: reação ✅ + 1º agente cobrado por DM; escalonamento p/ 2º armado em ${ESCALATE_AFTER_MIN}min se não houver resposta`);
   } catch (e: any) {
     console.warn("[agent-central-mention] handler falhou:", e?.message);
   }
@@ -1500,35 +1514,28 @@ export async function fulfillGroupRequests(params: {
       .update({ fulfilled_at: claimedAt })
       .eq("service_order_id", params.serviceOrderId)
       .is("fulfilled_at", null)
-      .select("id, group_id, requester_name");
+      .select("id, group_id, requester_name, requester_phone");
     if (claimErr) {
       console.warn("[agent-central-mention] claim fulfill falhou:", claimErr.message);
       return;
     }
     if (!open || open.length === 0) return;
 
-    // Agrupa por group_id (pode haver vários pedidos no mesmo grupo).
-    const byGroup = new Map<string, { ids: number[]; names: Set<string> }>();
+    // Agrupa por solicitante (PV) — cada quem pediu recebe a atualização no privado.
+    const byRequester = new Map<string, { ids: number[]; name: string | null }>();
     for (const r of open as any[]) {
-      const g = String(r.group_id);
-      if (!byGroup.has(g)) byGroup.set(g, { ids: [], names: new Set() });
-      const e = byGroup.get(g)!;
+      const pv = toIntlPhone(r.requester_phone);
+      if (!pv) continue;
+      if (!byRequester.has(pv)) byRequester.set(pv, { ids: [], name: r.requester_name || null });
+      const e = byRequester.get(pv)!;
       e.ids.push(r.id);
-      const fn = firstName(r.requester_name);
-      if (fn) e.names.add(fn);
     }
-
-    // Atualização COM foto E step encaminhável: o cron já manda o card completo
-    // (foto + form + rodapé). Só marcamos o pedido como resolvido (claim acima)
-    // e saímos, sem mandar uma segunda mensagem. fail-open. Se a foto vier num
-    // step que o cron NÃO encaminha, caímos no card de texto abaixo (senão o
-    // pedido ficaria resolvido sem resposta no grupo).
-    if (params.hadPhoto && isForwardableStep(params.missionStep)) {
-      console.log(`[agent-central-mention] OS ${params.osNumber || params.serviceOrderId}: card com foto será enviado pelo cron de encaminhamento; fulfill apenas resolveu ${open.length} pedido(s).`);
+    if (byRequester.size === 0) {
+      console.warn(`[agent-central-mention] OS ${params.osNumber || params.serviceOrderId}: pedido(s) sem telefone do solicitante — nada enviado ao PV`);
       return;
     }
 
-    // Atualização SÓ texto: monta o MESMO formulário do card padrão (sem foto)
+    // Atualização (texto ou foto): monta o card e envia no PV de cada solicitante.
     // + rodapé de contato (logo/Instagram/WhatsApp/site). Reusa buildRichCaption
     // (server/cron-whatsapp-forward.ts) pra não divergir do layout aprovado.
     const { data: so } = await supabaseAdmin.from("service_orders")
@@ -1553,9 +1560,12 @@ export async function fulfillGroupRequests(params: {
       longitude: null,
     };
 
-    for (const [groupId, info] of Array.from(byGroup.entries())) {
-      const nomes = Array.from(info.names);
-      const saud = nomes.length > 0 ? `${nomes.join(", ")}, ` : "";
+    let firstPvSend = true;
+    for (const [pvPhone, info] of Array.from(byRequester.entries())) {
+      if (!firstPvSend) await sleep(humanDelayMs(6000, 26000));
+      firstPvSend = false;
+      const nome = firstName(info.name);
+      const saud = nome ? `${nome}, ` : "";
 
       let card: string;
       try {
@@ -1571,7 +1581,6 @@ export async function fulfillGroupRequests(params: {
           TORRES_CONTACT_FOOTER,
         ].join("\n").replace(/\n{3,}/g, "\n\n").trim();
       } catch (capErr: any) {
-        // Fallback ao texto simples se a montagem do card rico falhar (fail-open).
         console.warn(`[agent-central-mention] card rico falhou OS ${params.osNumber || params.serviceOrderId}, usando texto simples:`, capErr?.message);
         card = [
           `*${varyForwardHeader()}*`,
@@ -1585,23 +1594,17 @@ export async function fulfillGroupRequests(params: {
         ].filter((l) => l !== "").join("\n");
       }
 
-      const r = await sendText({ groupOrPhone: groupId, message: card, delayTypingSeconds: randomTypingSeconds() });
+      const r = await sendText({ groupOrPhone: pvPhone, message: card, delayTypingSeconds: randomTypingSeconds() });
       if (r.ok) {
-        // Já reivindicado (fulfilled_at setado no claim atômico) — só loga.
-        console.log(`[agent-central-mention] update da OS ${params.osNumber || params.serviceOrderId} encaminhada ao grupo ${groupId} (pediram: ${nomes.join(", ") || "?"})`);
+        console.log(`[agent-central-mention] update da OS ${params.osNumber || params.serviceOrderId} enviada no PV de ${nome || pvPhone}`);
       } else if (r.blocked) {
-        // Trava do bot (desconectado/número errado): estado determinístico,
-        // não transitório → NÃO des-reivindica. O pedido fica resolvido e o
-        // card antigo NÃO sai quando o bot voltar (ordem do dono 03/07/2026:
-        // backlog acumulado durante a queda é descartado, não reenviado).
-        console.warn(`[agent-central-mention] envio ao grupo ${groupId} bloqueado pela trava do bot — pedido descartado (não será reenviado após reconexão)`);
+        console.warn(`[agent-central-mention] envio PV ${pvPhone} bloqueado pela trava do bot — pedido descartado`);
       } else {
-        // Envio falhou → des-reivindica pra retentar na próxima mission_update.
         const { error: unErr } = await supabaseAdmin
           .from("agent_central_group_requests")
           .update({ fulfilled_at: null })
           .in("id", info.ids);
-        console.warn(`[agent-central-mention] envio ao grupo ${groupId} falhou (${r.error}); pedido des-reivindicado${unErr ? ` (erro unclaim: ${unErr.message})` : ""}`);
+        console.warn(`[agent-central-mention] envio PV ${pvPhone} falhou (${r.error}); pedido des-reivindicado${unErr ? ` (erro unclaim: ${unErr.message})` : ""}`);
       }
     }
   } catch (e: any) {

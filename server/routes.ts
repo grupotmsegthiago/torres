@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { supabaseAdmin, getSupabaseStats } from "./supabase";
-import { getSlowRoutes } from "./index";
+import { getSlowRoutes } from "./slow-routes";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,

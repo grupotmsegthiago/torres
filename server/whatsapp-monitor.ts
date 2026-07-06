@@ -15,6 +15,7 @@
 
 import nodemailer from "nodemailer";
 import { getConnectionStatus, isZapiConfigured, assertExpectedNumber } from "./lib/zapi";
+import { shouldRunBackgroundJobs } from "./platform";
 
 // ── Configuração de tempos ───────────────────────────────────────────────────
 const CHECK_INTERVAL_MS = 3 * 60 * 1000; // checa a cada 3 min
@@ -270,6 +271,7 @@ export async function runMonitorCheck(now: number = Date.now()): Promise<Monitor
 
 /** Inicia o monitor no boot. Sem Z-API configurada, não roda. */
 export function initWhatsappMonitor(): void {
+  if (!shouldRunBackgroundJobs()) return;
   if (!isZapiConfigured()) {
     console.log("[wa-monitor] Z-API não configurada — monitor de conexão desligado");
     return;

@@ -13,6 +13,7 @@ import { runDailyReconciliation } from "./rhid-reconciliation";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { ymdBRT } from "./lib/hours-calc";
 import { snapshotFolhaMes, snapshotFolhaMesIfMissing, prevMonthRef } from "./lib/folha-historico";
+import { shouldRunBackgroundJobs } from "./platform";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -150,6 +151,8 @@ async function checkMetaAndNotify() {
 }
 
 export function initCronJobs() {
+  if (!shouldRunBackgroundJobs()) return;
+
   // ============================================================
     // CRON: Reconciliação de NFs com Asaas — a cada 15 min
     // ============================================================

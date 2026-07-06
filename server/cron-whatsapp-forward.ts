@@ -1,8 +1,10 @@
 import cron from "node-cron";
+import { shouldRunBackgroundJobs } from "./platform";
 import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured, getConnectionStatus, type ZapiConnectionStatus } from "./lib/zapi.js";
 import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
 import { decodeBase64Image, watermarkToDataUrl } from "./lib/photo-watermark.js";
+import { typingSecondsForMessage } from "./lib/whatsapp-humanize.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
 
@@ -109,6 +111,47 @@ export function alreadyForwardedFinal(
   priorSentUpdates: Array<{ mission_step?: string | null; message?: string | null }>,
 ): boolean {
   return (priorSentUpdates || []).some((p) => isFinalCardUpdate(p.mission_step, p.message));
+}
+
+/** Linha irmã de mission_update (dedup de card final por OS). */
+export type FinalCardSibling = {
+  id?: number;
+  mission_step?: string | null;
+  message?: string | null;
+  created_at?: string;
+  whatsapp_forwarded_at?: string | null;
+  whatsapp_forward_error?: string | null;
+  whatsapp_forward_claimed_at?: string | null;
+};
+
+/**
+ * Outro card de finalização da mesma OS já foi enviado, está em voo (claim ativo)
+ * ou é mais antigo e ainda pendente — esta linha deve ser pulada.
+ * Cobre corrida entre workers serverless (Vercel) que processam 2 finals juntos.
+ */
+export function hasCompetingFinalCard(
+  current: { id: number; created_at: string },
+  siblings: FinalCardSibling[],
+  claimNotStaleBeforeIso: string,
+): boolean {
+  const cTs = new Date(current.created_at).getTime();
+  const cId = current.id;
+  for (const s of siblings || []) {
+    if (!isFinalCardUpdate(s.mission_step, s.message)) continue;
+    if (s.whatsapp_forwarded_at && !s.whatsapp_forward_error) return true;
+    if (s.id === cId) continue;
+    const sTs = s.created_at ? new Date(s.created_at).getTime() : 0;
+    const inFlight = !!(
+      s.whatsapp_forward_claimed_at &&
+      !s.whatsapp_forwarded_at &&
+      s.whatsapp_forward_claimed_at >= claimNotStaleBeforeIso
+    );
+    if (sTs < cTs || (sTs === cTs && (s.id || 0) < cId)) {
+      if (!s.whatsapp_forwarded_at) return true;
+    }
+    if (inFlight && (sTs < cTs || (sTs === cTs && (s.id || 0) < cId))) return true;
+  }
+  return false;
 }
 
 function fmtMissionStatus(s?: string | null): string {
@@ -596,6 +639,47 @@ async function markDone(id: number, errMsg: string | null): Promise<void> {
     .eq("id", id);
 }
 
+/** Trava atômica por OS: só um worker envia o card de finalização. */
+async function tryLockFinalCardOs(serviceOrderId: number): Promise<boolean> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("service_orders")
+    .update({ whatsapp_final_card_sent_at: now })
+    .eq("id", serviceOrderId)
+    .is("whatsapp_final_card_sent_at", null)
+    .select("id");
+  if (error) {
+    console.error(`${TAG} lock final OS id=${serviceOrderId}:`, error.message);
+    return false;
+  }
+  return Array.isArray(data) && data.length === 1;
+}
+
+async function releaseFinalCardOsLock(serviceOrderId: number): Promise<void> {
+  await supabaseAdmin.from("service_orders")
+    .update({ whatsapp_final_card_sent_at: null })
+    .eq("id", serviceOrderId);
+}
+
+/** Após envio OK do card final, descarta as demais linhas de finalização pendentes da OS. */
+async function markDuplicateFinalSiblings(serviceOrderId: number, winnerId: number): Promise<void> {
+  const { data: pending, error } = await supabaseAdmin
+    .from("mission_updates")
+    .select("id, mission_step, message")
+    .eq("service_order_id", serviceOrderId)
+    .is("whatsapp_forwarded_at", null)
+    .neq("id", winnerId);
+  if (error) {
+    console.warn(`${TAG} markDuplicateFinalSiblings OS=${serviceOrderId}:`, error.message);
+    return;
+  }
+  for (const row of (pending || []) as FinalCardSibling[]) {
+    if (!isFinalCardUpdate(row.mission_step, row.message)) continue;
+    await markDone(row.id!, "skip: fim de missão duplicado (card já enviado)");
+    console.log(`${TAG} ⊘ id=${row.id} OS=${serviceOrderId} final duplicado descartado pós-envio`);
+  }
+}
+
 // Decisão PURA (testável) do descarte de backlog: só descarta quando a Z-API
 // CONFIRMOU (HTTP 200 no /status) que a instância está desconectada. Erro
 // transitório de rede/5xx (confirmed:false) NUNCA descarta — re-tenta como antes.
@@ -603,7 +687,7 @@ export function shouldDiscardPendingForwards(status: Pick<ZapiConnectionStatus, 
   return status.confirmed && !status.connected;
 }
 
-async function processPending(): Promise<void> {
+export async function processPendingForwards(): Promise<void> {
   if (running) return;
   running = true;
   try {
@@ -663,26 +747,30 @@ async function processPending(): Promise<void> {
       }
 
       // Trava de finalização: só 1 card de "Fim de Missão" por OS no grupo.
-      // Se a OS já teve uma update de finalização ENVIADA com sucesso
-      // (whatsapp_forwarded_at preenchido E sem erro), esta é duplicata → skip.
+      // Camadas: (1) já enviado com sucesso; (2) irmã mais antiga pendente/em voo;
+      // (3) lock atômico na OS imediatamente antes do envio (anti-corrida Vercel).
       const isFinalizada = isFinalCardUpdate(u.mission_step, u.message);
+      const claimNotStaleBefore = new Date(Date.now() - CLAIM_STALE_MIN * 60 * 1000).toISOString();
       if (isFinalizada) {
-        const { data: priorSent, error: pfErr } = await supabaseAdmin
+        const { data: siblings, error: sibErr } = await supabaseAdmin
           .from("mission_updates")
-          .select("id, mission_step, message")
+          .select("id, mission_step, message, created_at, whatsapp_forwarded_at, whatsapp_forward_error, whatsapp_forward_claimed_at")
           .eq("service_order_id", u.service_order_id)
-          .not("whatsapp_forwarded_at", "is", null)
-          .is("whatsapp_forward_error", null)
           .neq("id", u.id);
-        if (pfErr) {
-          // erro transitório de DB → libera claim pra retentar no próximo ciclo
-          await releaseClaim(u.id, `db dedup-final: ${pfErr.message}`);
-          console.error(`${TAG} ⟳ id=${u.id} erro transitório DEDUP-FINAL:`, pfErr.message);
+        if (sibErr) {
+          await releaseClaim(u.id, `db dedup-final: ${sibErr.message}`);
+          console.error(`${TAG} ⟳ id=${u.id} erro transitório DEDUP-FINAL:`, sibErr.message);
           continue;
         }
-        if (alreadyForwardedFinal(priorSent || [])) {
+        const sentOk = (siblings || []).filter((s: FinalCardSibling) => s.whatsapp_forwarded_at && !s.whatsapp_forward_error);
+        if (alreadyForwardedFinal(sentOk)) {
           await markDone(u.id, "skip: fim de missão já enviado pra essa OS");
           console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} fim de missão duplicado, pulando`);
+          continue;
+        }
+        if (hasCompetingFinalCard({ id: u.id, created_at: u.created_at }, siblings || [], claimNotStaleBefore)) {
+          await markDone(u.id, "skip: fim de missão concorrente (outra linha mais antiga ou em voo)");
+          console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} final concorrente, pulando`);
           continue;
         }
       }
@@ -776,28 +864,44 @@ async function processPending(): Promise<void> {
       } catch (wmErr: any) {
         console.warn(`${TAG} marca d'água falhou id=${u.id} OS=${u.os_number}, enviando foto original:`, wmErr?.message);
       }
+
+      let finalOsLocked = false;
+      if (isFinalizada) {
+        if (!(await tryLockFinalCardOs(u.service_order_id))) {
+          await markDone(u.id, "skip: card final já enviado/concorrente para essa OS");
+          console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} lock final da OS ocupado, pulando`);
+          continue;
+        }
+        finalOsLocked = true;
+      }
+
       try {
         const result = await sendImageWithCaption({
           groupOrPhone: String(groupId),
           imageBase64OrUrl: imageToSend,
           caption,
+          delayMessageSeconds: typingSecondsForMessage(caption),
         });
         if (result.ok) {
           await markDone(u.id, null);
+          if (isFinalizada) await markDuplicateFinalSiblings(u.service_order_id, u.id);
           await supabaseAdmin.from("whatsapp_group_throttle")
             .upsert({ group_id: String(groupId), last_sent_at: new Date().toISOString() }, { onConflict: "group_id" });
           console.log(`${TAG} ✓ id=${u.id} OS=${u.os_number} → ${(client as any).name} msgId=${result.messageId}`);
         } else if (result.blocked) {
+          if (finalOsLocked) await releaseFinalCardOsLock(u.service_order_id);
           // Trava do bot (desconectado nunca confirmado / número errado):
           // estado determinístico, não transitório → DESCARTA em vez de
           // re-tentar, pra não despejar backlog no grupo quando o bot voltar.
           await markDone(u.id, `descartado: envio bloqueado pela trava do bot (${String(result.error || "").slice(0, 300)})`);
           console.log(`${TAG} ✗ id=${u.id} OS=${u.os_number} descartado (trava do bot: número errado/desconectado)`);
         } else {
+          if (finalOsLocked) await releaseFinalCardOsLock(u.service_order_id);
           await releaseClaim(u.id, String(result.error || "erro desconhecido"));
           console.error(`${TAG} ⟳ id=${u.id} OS=${u.os_number}: ${result.error}`);
         }
       } catch (e: any) {
+        if (finalOsLocked) await releaseFinalCardOsLock(u.service_order_id);
         await releaseClaim(u.id, String(e?.message || e));
         console.error(`${TAG} ⟳ id=${u.id} exception:`, e?.message);
       }
@@ -808,9 +912,11 @@ async function processPending(): Promise<void> {
 }
 
 export function initWhatsappForwardCron(): void {
+  if (!shouldRunBackgroundJobs()) return;
+
   cron.schedule("*/30 * * * * *", () => {
-    processPending().catch((e) => console.error(`${TAG} crash:`, e?.message));
+    processPendingForwards().catch((e) => console.error(`${TAG} crash:`, e?.message));
   });
   console.log(`${TAG} CRON ativo: a cada 30s, lookback ${LOOKBACK_MIN}min, max ${MAX_PER_RUN}/ciclo, claim TTL ${CLAIM_STALE_MIN}min, throttle ${THROTTLE_PER_GROUP_MIN}min/grupo`);
-  setTimeout(() => processPending().catch(() => {}), 5000);
+  setTimeout(() => processPendingForwards().catch(() => {}), 5000);
 }
