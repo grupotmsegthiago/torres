@@ -8,9 +8,12 @@
     "build": "tsx script/build.ts",
     "build:ci": "npm test && tsx script/build.ts",
     "sync-env": "tsx scripts/sync-env.ts",
+    "push-env:railway": "bash scripts/push-env-railway.sh",
+    "push-env:vercel": "bash scripts/push-env-vercel.sh",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:test": "tsx scripts/test-db-connection.ts",
     "test": "tsx --test $(find server shared tests .local -type f \\( -name '*.test.ts' -o -name '*.test.mts' \\) 2>/dev/null)"
   },
   "dependencies": {
