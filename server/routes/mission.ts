@@ -9,7 +9,6 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { calcularEscolta, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
-  import { buildFinalizedSummary } from "../cron-whatsapp-forward";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -1475,6 +1474,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         latitude: null,
         longitude: null,
       };
+      const { buildFinalizedSummary } = await import("../cron-whatsapp-forward");
       const text = await buildFinalizedSummary(u, so, client);
       res.json({ text });
     } catch (err: any) {

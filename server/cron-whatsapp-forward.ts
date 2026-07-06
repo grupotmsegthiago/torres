@@ -3,7 +3,6 @@ import { shouldRunBackgroundJobs } from "./platform";
 import { supabaseAdmin } from "./supabase.js";
 import { sendImageWithCaption, isZapiConfigured, getConnectionStatus, type ZapiConnectionStatus } from "./lib/zapi.js";
 import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
-import { decodeBase64Image, watermarkToDataUrl } from "./lib/photo-watermark.js";
 import { typingSecondsForMessage } from "./lib/whatsapp-humanize.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
@@ -855,6 +854,8 @@ export async function processPendingForwards(): Promise<void> {
       // Marca d'água Torres (logo + contatos) embutida na foto antes do envio.
       // Fail-open: qualquer falha cai na foto original (nunca segura o card).
       try {
+        // Evita carregar `sharp` no cold start da API (módulo nativo).
+        const { decodeBase64Image, watermarkToDataUrl } = await import("./lib/photo-watermark.js");
         const srcBuf = isData ? decodeBase64Image(photoUrl) : await fetchImageBuffer(imageToSend);
         if (srcBuf && srcBuf.length > 0) {
           const wm = await watermarkToDataUrl(srcBuf);
