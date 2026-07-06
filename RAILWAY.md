@@ -49,7 +49,7 @@ Depois cole o conteúdo do `.env` no Railway (Raw Editor) ou use a Opção C.
    - `SESSION_SECRET`
    - `PUBLIC_SITE_URL`
 
-**Opção B — script (terminal)**
+**Opção C — script Railway CLI (terminal)**
 
 ```bash
 # 1. Copie os secrets do Replit para um arquivo .env na raiz do projeto
