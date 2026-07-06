@@ -34,7 +34,19 @@ function sanitize(s: string): string {
   return out;
 }
 
+/**
+ * Interruptor central do WhatsApp (Z-API). Quando `ZAPI_PAUSED=true`, TODA a
+ * funcionalidade Z-API fica desligada: envios (texto/imagem), crons de
+ * encaminhamento e do agente central, monitor de conexão e o tratamento de
+ * mensagens recebidas — todos passam por `isZapiConfigured()` e param aqui.
+ * Pra reativar, remova/zere a env var `ZAPI_PAUSED` e reinicie.
+ */
+export function isZapiPaused(): boolean {
+  return process.env.ZAPI_PAUSED === "true";
+}
+
 export function isZapiConfigured(): boolean {
+  if (isZapiPaused()) return false;
   return Boolean(INSTANCE_ID && TOKEN && CLIENT_TOKEN);
 }
 
