@@ -162,7 +162,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
   if (useVite) {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
-  } else {
+  } else if (!isVercel()) {
+    // Na Vercel o CDN serve dist/public (vercel.json outputDirectory + rewrites).
     serveStatic(app);
   }
 
