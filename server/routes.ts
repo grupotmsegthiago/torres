@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
-import { supabaseAdmin, getSupabaseStats } from "./supabase";
+import { supabaseAdmin, getSupabaseStats, isServerSupabaseConfigured } from "./supabase";
 import { getSlowRoutes } from "./slow-routes";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
@@ -268,9 +268,13 @@ async function ensureFinancialOriginColumns() {
   }
 
   if (!ok) {
-    const { error } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id").limit(1);
-    if (error) {
-      console.error("[Financial] CRITICAL: origin columns missing. Auto-transactions will NOT work.");
+    try {
+      const { error } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id").limit(1);
+      if (error) {
+        console.error("[Financial] CRITICAL: origin columns missing. Auto-transactions will NOT work.");
+      }
+    } catch (probeErr: any) {
+      console.warn("[Financial] origin column probe skipped:", probeErr?.message);
     }
   }
 
@@ -346,12 +350,24 @@ async function ensureFinancialOriginColumns() {
     console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
   }
 }
-ensureFinancialOriginColumns();
-ensureInterTables();
-ensureComprovantesBucket();
-import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
-import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
-ensureCategoryHierarchy();
+if (isServerSupabaseConfigured()) {
+  ensureFinancialOriginColumns().catch((e: any) =>
+    console.warn("[Financial] ensureFinancialOriginColumns skipped:", e?.message),
+  );
+  ensureInterTables().catch((e: any) =>
+    console.warn("[Inter] ensureInterTables skipped:", e?.message),
+  );
+  ensureComprovantesBucket().catch((e: any) =>
+    console.warn("[storage] ensureComprovantesBucket skipped:", e?.message),
+  );
+  import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
+  import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
+  ensureCategoryHierarchy().catch((e: any) =>
+    console.warn("[categories] ensureCategoryHierarchy skipped:", e?.message),
+  );
+} else {
+  console.warn("[routes] Supabase não configurado — migrações de boot adiadas");
+}
 
 async function ensureCategoryHierarchy() {
   try {
