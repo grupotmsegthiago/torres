@@ -12,8 +12,9 @@
     { "source": "/robots.txt", "destination": "/api" },
     { "source": "/sitemap.xml", "destination": "/api" },
     { "source": "/healthz", "destination": "/api" },
-    { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/:path*", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/", "destination": "/index.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
     "api/index.ts": {
