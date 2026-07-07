@@ -5,9 +5,31 @@ const DEFAULT_SUPABASE_URL = "https://erjhxwbutjyylxdthuuz.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyamh4d2J1dGp5eWx4ZHRodXV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNjA2NDMsImV4cCI6MjA4ODczNjY0M30.j3nUyRQnRKF03iy9qiXAd6jH_REP79Mof20YD1jLafA";
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || DEFAULT_SUPABASE_URL;
-const supabaseAnonKey =
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() || DEFAULT_SUPABASE_ANON_KEY;
+function isValidSupabaseUrl(value: string | undefined): value is string {
+  if (!value?.trim()) return false;
+  const v = value.trim();
+  if (v.includes("<") || v.toLowerCase().includes("your supabase")) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isValidAnonKey(value: string | undefined): value is string {
+  if (!value?.trim()) return false;
+  const v = value.trim();
+  if (v.includes("<") || v.toLowerCase().includes("your")) return false;
+  return v.startsWith("eyJ") && v.length > 20;
+}
+
+const supabaseUrl = isValidSupabaseUrl(import.meta.env.VITE_SUPABASE_URL)
+  ? import.meta.env.VITE_SUPABASE_URL.trim()
+  : DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = isValidAnonKey(import.meta.env.VITE_SUPABASE_ANON_KEY)
+  ? import.meta.env.VITE_SUPABASE_ANON_KEY.trim()
+  : DEFAULT_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
