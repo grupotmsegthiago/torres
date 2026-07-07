@@ -44,11 +44,11 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 300,
-      "includeFiles": "api/index.js"
+      "includeFiles": "index.js"
     },
     "api/cron.ts": {
       "maxDuration": 300,
-      "includeFiles": "api/cron.js"
+      "includeFiles": "cron.js"
     }
   },
   "crons": [
