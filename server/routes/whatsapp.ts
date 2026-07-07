@@ -527,6 +527,21 @@ export function registerWhatsappRoutes(app: Express) {
             )
             .catch((e: any) => console.warn("[whatsapp/webhook] agente-central:", e?.message));
         }
+
+        // Resumo de frota no PV/DM: se a mensagem chegou no PRIVADO (não grupo) e
+        // não é nossa, trata o pedido de "resumo" — só p/ números autorizados do
+        // dono (a checagem mora no handler). Fire-and-forget, nunca derruba o webhook.
+        if (!parsed.isGroup && !parsed.fromMe) {
+          import("../lib/fleet-summary.js")
+            .then(({ handlePvResumoRequest }) =>
+              handlePvResumoRequest({
+                chatId: parsed.chatId,
+                senderPhone: parsed.senderPhone,
+                text: parsed.text,
+              }),
+            )
+            .catch((e: any) => console.warn("[whatsapp/webhook] pv-resumo:", e?.message));
+        }
       } catch (e: any) {
         console.error("[whatsapp/webhook] erro (async):", e?.message);
       }
