@@ -18,12 +18,13 @@ import { supabaseAdmin } from "../supabase";
 import { sendText, isZapiConfigured } from "./zapi";
 import { shortLocal } from "./agent-central-mention";
 import {
-  calcularFaturamentoLive,
+  calcularEscolta,
   calcHorasElapsedLocal,
   extractKmFromText,
   haversineDistanceKm,
   splitMissionCostsForBilling,
 } from "../billing-calc";
+import { brtDateKey, currentBrtDayRange } from "./brt-date";
 
 // ── Autorização (só o dono/gestão no PV) ────────────────────────────────────
 // Ordem do dono: só estes números veem o resumo com faturamento. Qualquer outro
@@ -60,27 +61,34 @@ export function isResumoIntent(text: string | null | undefined): boolean {
 // ── Helpers de formatação ───────────────────────────────────────────────────
 const SEP = "━".repeat(20);
 
+/** Data de HOJE em BRT (YYYY-MM-DD), via helper canônico (§1.1). */
 function brtToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  return currentBrtDayRange().from;
 }
 
 function brtDateLabel(): string {
-  return new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const [y, m, d] = brtToday().split("-");
+  return `${d}/${m}/${y}`;
 }
 
+/** Dia-calendário BRT da OS (blindado contra timestamp naïve sob TZ=UTC, §1.1). */
 function osDateKey(o: any): string | null {
   const src = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt;
-  if (!src) return null;
-  try {
-    return new Date(parseBRT(src)).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  } catch {
-    return null;
-  }
+  return brtDateKey(src);
 }
 
+/** Instante a partir de um timestamp BRT (mantém offset -03:00; só p/ comparação de tempo, não de dia). */
 function parseBRT(v: any): Date {
   const s = String(v);
   return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+}
+
+/** Hora BRT (HH:MM) de um timestamp — entrada dos horários de calcularEscolta. */
+function brtTime(v: any): string | undefined {
+  if (!v) return undefined;
+  const d = parseBRT(v);
+  if (isNaN(d.getTime())) return undefined;
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 }
 
 function money(v: number): string {
@@ -162,6 +170,8 @@ interface BillingCtx {
   activeContractByClient: Map<number, any>;
 }
 
+// Mesmo default do Grid Operacional (server/routes/operational.ts) — mantém o
+// número igual ao que o dono vê na tela quando a OS não tem contrato vinculado.
 const DEFAULT_CONTRATO: any = {
   valor_km_carregado: 2.8,
   valor_km_vazio: 1.4,
@@ -169,6 +179,10 @@ const DEFAULT_CONTRATO: any = {
   valor_hora_estadia: 50,
   valor_diaria: 200,
   vrp_base: 150,
+  adicional_noturno_vrp_pct: 20,
+  adicional_noturno_km_pct: 15,
+  adicional_periculosidade_pct: 30,
+  periculosidade_horas_limite: 8,
 };
 
 function latestPhotoByStep(photos: any[], step: string): any | undefined {
@@ -180,9 +194,14 @@ function latestPhotoByStep(photos: any[], step: string): any | undefined {
   return best;
 }
 
-/** Faturamento ao vivo de uma OS, igual ao card do Grid Operacional. */
+/**
+ * Faturamento CANÔNICO de uma OS (motor `calcularEscolta`), espelhando o campo
+ * `canonico.faturamento` do Grid Operacional (server/routes/operational.ts).
+ * SÓ leitura — não escreve billing nem toca regra de faturamento (§8). O
+ * `fat_total` do calcularEscolta já embute pedágio + receitas da OS.
+ */
 function osFaturamento(o: any, ctx: BillingCtx): number {
-  // Congelado (missão concluída) → usa o valor imutável.
+  // Congelado (missão concluída) → usa o valor imutável (§8, Frozen Financials).
   if (o.custosCongeladosEm && o.fatCalculado != null) {
     return Number(o.fatCalculado) || 0;
   }
@@ -205,16 +224,40 @@ function osFaturamento(o: any, ctx: BillingCtx): number {
   const skipHours = missionNotStartedYet || (o.status === "agendada" && isFutureScheduled(o));
   const horasMissao = skipHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate, o.scheduledDate);
 
-  const kmRota = computeKmRota(o) || undefined;
+  const { despesas_pedagio, despesas_combustivel, receitas_os } = splitMissionCostsForBilling(
+    ctx.costsByOS.get(o.id) || [],
+  );
 
-  const billing = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal: kmFinalNorm, contrato, kmRota });
-  let fatBase = billing.fat_total;
-  if (fatBase === 0 && o.status === "agendada" && o.valorEstimado) {
-    fatBase = Number(o.valorEstimado) || 0;
+  try {
+    const esc = calcularEscolta({
+      km_inicial: kmInicial,
+      km_final: kmFinalNorm,
+      km_vazio: 0,
+      horas_missao: horasMissao,
+      horas_estadia: 0,
+      teve_pernoite: false,
+      horario_inicio: brtTime(o.missionStartedAt),
+      horario_fim: brtTime(o.completedDate),
+      horario_agendado: brtTime(o.scheduledDate),
+      inicio_ts: o.missionStartedAt || null,
+      fim_ts: o.completedDate || null,
+      scheduled_date: o.scheduledDate || null,
+      despesas_pedagio,
+      despesas_combustivel,
+      despesas_outras: 0,
+      receitas_os,
+      contrato,
+    } as any);
+    let canonFat = esc.fat_total;
+    if (canonFat === 0 && o.status === "agendada" && o.valorEstimado) {
+      canonFat = Number(o.valorEstimado) || 0;
+    }
+    return Math.round(canonFat * 100) / 100;
+  } catch {
+    // calcularEscolta lança se km_final < km_inicial — impossível com kmFinalNorm,
+    // mas mantemos o fallback seguro (nunca derruba o resumo).
+    return 0;
   }
-
-  const { despesas_pedagio, receitas_os } = splitMissionCostsForBilling(ctx.costsByOS.get(o.id) || []);
-  return Math.round((fatBase + despesas_pedagio + receitas_os) * 100) / 100;
 }
 
 async function fetchByOsIdsChunked(table: string, ids: number[], columns: string): Promise<any[]> {

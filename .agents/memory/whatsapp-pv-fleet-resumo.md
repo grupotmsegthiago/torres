@@ -20,12 +20,11 @@ dígitos finais** (DDD+número, tolera o DDI 55 da Z-API), override por env
 suffix curto (< 11) — vazaria frota+Fat pra número de outro DDD.
 
 ## Motor de faturamento (qual número)
-Usa o MESMO caminho do CARD do Grid Operacional: `calcularFaturamentoLive` (motor
-simplificado) + `despesas_pedagio` + `receitas_os` de `splitMissionCostsForBilling`, e o
-`fatCalculado` congelado quando `custosCongeladosEm` está setado. **NÃO** usa o
-`canonico`/`calcularEscolta` (esse é o do Balanço Gerencial). **Why:** o resumo é
-operacional (contexto do Grid), então casa com o número que o dono vê na tela do Grid, não
-com o do Balanço. É SÓ LEITURA — nenhum write de billing (respeita §8 INTOCÁVEIS).
+Usa o CANÔNICO `calcularEscolta`, espelhando o campo `canonico.faturamento` do Grid
+Operacional (o `fat_total` já embute pedágio + receitas). Congelado (`custosCongeladosEm`
+setado) usa o `fatCalculado` imutável. **Why:** a spec da task (task-157.md) exigiu
+explicitamente o canônico, não o `calcularFaturamentoLive` simplificado. É SÓ LEITURA —
+nenhum write de billing (respeita §8 INTOCÁVEIS).
 
 ## Classificação
 - EM VIAGEM = OS com `status === "em_andamento"` e `missionStatus` NÃO em conjunto de
