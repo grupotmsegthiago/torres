@@ -91,8 +91,8 @@ async function buildAll() {
   // Vercel serverless (ESM) não resolve imports ../server/*.ts em runtime — bundle local.
   console.log("building Vercel API handlers...");
   for (const [entry, outfile] of [
-    ["api/_index.ts", "api/index.js"],
-    ["api/_cron.ts", "api/cron.js"],
+    ["api/_index.ts", "api/index.handler.js"],
+    ["api/_cron.ts", "api/cron.handler.js"],
   ] as const) {
     await esbuild({
       entryPoints: [entry],

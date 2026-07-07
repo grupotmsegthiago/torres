@@ -1,7 +1,7 @@
 node_modules
 dist
-api/index.js
-api/cron.js
+api/index.handler.js
+api/cron.handler.js
 .DS_Store
 server/public
 vite.config.ts.*
