@@ -18,7 +18,6 @@ export default async function vercelHandler(req: VercelRequest, res: VercelRespo
     if (!app) {
       app = await getOrCreateApp();
     }
-    // VercelResponse não implementa res.on() — não usar serverless-http nem runExpress.
     app(req as Parameters<Express>[0], res as Parameters<Express>[1]);
   } catch (e: unknown) {
     if (!app) {

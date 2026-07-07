@@ -42,13 +42,11 @@
     }
   ],
   "functions": {
-    "api/index.ts": {
-      "maxDuration": 300,
-      "includeFiles": "server/**"
+    "api/index.js": {
+      "maxDuration": 300
     },
-    "api/cron.ts": {
-      "maxDuration": 300,
-      "includeFiles": "api/cron.handler.js"
+    "api/cron.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
