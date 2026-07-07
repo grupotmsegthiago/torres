@@ -88,19 +88,22 @@ async function buildAll() {
     logLevel: "info",
   });
 
-  // Cron: bundle ESM (imports ../server/*.ts não resolvem em runtime na Vercel).
-  console.log("building Vercel cron handler...");
-  await esbuild({
-    entryPoints: ["api/_cron.ts"],
-    platform: "node",
-    bundle: true,
-    format: "esm",
-    outfile: "api/cron.js",
-    packages: "external",
-    logLevel: "info",
-  });
-  await rm("api/cron.handler.js", { force: true });
-  await rm("api/index.js", { force: true });
+  // Vercel: bundle ESM — Node não executa server/*.ts em runtime no serverless
+  console.log("building Vercel API handlers...");
+  for (const [entry, outfile] of [
+    ["api/_index.ts", "api/index.js"],
+    ["api/_cron.ts", "api/cron.js"],
+  ] as const) {
+    await esbuild({
+      entryPoints: [entry],
+      platform: "node",
+      bundle: true,
+      format: "esm",
+      outfile,
+      packages: "external",
+      logLevel: "info",
+    });
+  }
 }
 
 buildAll().catch((err) => {

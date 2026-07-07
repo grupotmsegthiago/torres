@@ -44,7 +44,8 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 300,
-      "includeFiles": "{server,shared}/**"
+      "memory": 3008,
+      "includeFiles": "index.js"
     },
     "api/cron.ts": {
       "maxDuration": 300,

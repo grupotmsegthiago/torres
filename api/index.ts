@@ -1,35 +1,38 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import type { Express } from "express";
-import { getOrCreateApp } from "../server/create-app.js";
 
-let app: Express | null = null;
-let bootError: Error | null = null;
+type Handler = (req: VercelRequest, res: VercelResponse) => Promise<void>;
 
-export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
+let handler: Handler | null = null;
+let loadError: Error | null = null;
+
+/**
+ * Entrada leve versionada no git.
+ * O backend pesado está em api/index.js (bundle esbuild gerado no build).
+ * Healthcheck responde sem carregar o bundle.
+ */
+export default async function vercelEntry(req: VercelRequest, res: VercelResponse) {
   const pathOnly = (req.url || "").split("?")[0];
   if (pathOnly === "/healthz" || pathOnly === "/api/healthz") {
     return res.status(200).json({ ok: true, ts: Date.now() });
   }
 
   try {
-    if (bootError) {
-      return res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+    if (loadError) {
+      return res.status(503).json({ error: "Backend indisponivel", detail: loadError.message });
     }
-    if (!app) {
-      app = await getOrCreateApp();
+    if (!handler) {
+      const bundleUrl = new URL("./index.js", import.meta.url).href;
+      const mod = await import(bundleUrl);
+      handler = mod.default as Handler;
     }
-    app(req as Parameters<Express>[0], res as Parameters<Express>[1]);
+    return handler(req, res);
   } catch (e: unknown) {
-    if (!app) {
-      bootError = e instanceof Error ? e : new Error(String(e));
-      console.error("[Vercel] Falha ao iniciar backend:", bootError);
-    } else {
-      console.error("[Vercel] Erro no request:", e);
-    }
-    if (!res.headersSent) {
-      const detail = e instanceof Error ? e.message : String(e);
-      return res.status(503).json({ error: "Backend indisponivel", detail });
-    }
+    loadError = e instanceof Error ? e : new Error(String(e));
+    console.error("[Vercel] Falha ao carregar api/index.js:", loadError);
+    return res.status(503).json({
+      error: "Backend indisponivel",
+      detail: loadError.message,
+    });
   }
 }
 
