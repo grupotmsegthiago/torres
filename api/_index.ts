@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import serverless from "serverless-http";
-import { getOrCreateApp } from "../server/create-app";
+import { getOrCreateApp } from "../server/create-app.js";
 
 let handler: ReturnType<typeof serverless> | null = null;
 let bootError: Error | null = null;

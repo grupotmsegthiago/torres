@@ -1,5 +1,6 @@
 node_modules
 dist
+api/index.js
 api/cron.js
 .DS_Store
 server/public
