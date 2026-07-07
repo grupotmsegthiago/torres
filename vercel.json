@@ -44,7 +44,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 300,
-      "includeFiles": "api/index.handler.js"
+      "includeFiles": "server/**"
     },
     "api/cron.ts": {
       "maxDuration": 300,
