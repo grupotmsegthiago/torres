@@ -47,17 +47,20 @@ async function checkVersionAndMaybeReset() {
   try {
     const res = await fetch("/api/version", { cache: "no-store" });
     if (!res.ok) return;
-    const { version } = await res.json();
+    const { version, buildId } = await res.json();
     if (!version) return;
+    // buildId muda automaticamente a cada deploy (hash do build), então o
+    // update é detectado mesmo sem ninguém bumpar APP_VERSION na mão.
+    const current = buildId ? `${version}#${buildId}` : String(version);
     const stored = localStorage.getItem(VERSION_KEY);
-    if (stored && stored !== version) {
-      console.log(`[version] mismatch ${stored} → ${version}, fazendo hard reset`);
+    if (stored && stored !== current) {
+      console.log(`[version] mismatch ${stored} → ${current}, fazendo hard reset`);
       sessionStorage.setItem(RESET_FLAG, "1");
-      localStorage.setItem(VERSION_KEY, version);
+      localStorage.setItem(VERSION_KEY, current);
       await hardResetAndReload();
       return;
     }
-    if (!stored) localStorage.setItem(VERSION_KEY, version);
+    if (!stored) localStorage.setItem(VERSION_KEY, current);
   } catch {}
 }
 

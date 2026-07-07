@@ -89,7 +89,7 @@ Antes de qualquer mudança no banco (DDL, índice, constraint, trigger, RPC, RLS
 - **BRT Timezone:** All date/time operations must explicitly handle BRT (America/Sao_Paulo). Never use `.toISOString()` for database writes.
 - **Financial Immutability:** Once a cost is assigned to a mission, its value is fixed; do not recalculate based on current server date.
 - **Real-time Sync:** All significant state changes affecting the UI (e.g., mission status, financial transactions) must trigger `supabase.channel` updates to ensure all open tabs/devices are synchronized.
-- **PWA Cache Busting:** Always bump `APP_VERSION` in `server/constants.ts` for significant deployments to force a hard reset and ensure client-side updates.
+- **PWA Cache Busting:** Automático desde 07/2026 — `APP_BUILD_ID` (hash do `dist/public/index.html`) muda a cada build e o cliente compara `version#buildId` via `/api/version`, disparando hard reset sozinho após cada publish. Bump manual de `APP_VERSION` só é necessário para forçar reset sem novo build.
 - **BCC Email Formatting:** Always use an array for BCC recipients in `nodemailer` to avoid silent failures with Office365/Outlook.
 - **Critical Business Rules:** Consult the routing index at the top of `SYSTEM_BRAIN.md` and read only the section(s) relevant to your task — no need to read the whole file. Reading the matching section is **mandatory** before touching financeiro/faturamento (§8), banco/Supabase (§9), or timezone/datas (§1.1).
 

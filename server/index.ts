@@ -14,7 +14,7 @@ import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
 import { registerCobrancaJudicialRoutes } from "./routes/cobranca-judicial";
 import { registerPushRoutes } from "./routes/push";
-import { APP_VERSION, APP_BUILD_AT } from "./constants";
+import { APP_VERSION, APP_BUILD_AT, APP_BUILD_ID } from "./constants";
 
 const app = express();
 app.set("etag", false);
@@ -78,7 +78,7 @@ app.use((req, res, next) => {
 // Lê constants em runtime — qualquer require/import do APP_VERSION reflete aqui.
 app.get("/api/version", (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT });
+  res.json({ version: APP_VERSION, buildId: APP_BUILD_ID, builtAt: APP_BUILD_AT });
 });
 
 // ─── SEO: robots.txt + sitemap.xml ───
