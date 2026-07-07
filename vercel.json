@@ -43,10 +43,12 @@
   ],
   "functions": {
     "api/index.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "api/index.handler.js"
     },
     "api/cron.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "api/cron.handler.js"
     }
   },
   "crons": [
