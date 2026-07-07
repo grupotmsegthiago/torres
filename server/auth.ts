@@ -136,6 +136,8 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
       req.user = localUser;
       req.supabaseUid = supaUser.id;
       authCacheSet(token, localUser, supaUser.id);
+    } else {
+      req.supabaseUid = supaUser.id;
     }
   } catch (err) {
     console.error("[auth] Token verification error:", err);
@@ -152,6 +154,12 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
 
 export const requireAuth: RequestHandler = (req, res, next) => {
   if (!req.user) {
+    if (req.supabaseUid) {
+      return res.status(403).json({
+        message: "Usuário autenticado, mas não cadastrado no sistema. Contate o administrador.",
+        code: "USER_NOT_REGISTERED",
+      });
+    }
     return res.status(401).json({ message: "Não autorizado" });
   }
   next();

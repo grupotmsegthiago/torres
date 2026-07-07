@@ -6,6 +6,7 @@ import { normalizePhone, normalizeZip, validateContactFields } from "../lib/norm
 import cron from "node-cron";
 import fs from "fs";
 import path from "path";
+import { shouldRunBackgroundJobs } from "../platform";
 
 const AUTOMATION_FILE = path.resolve(".local/leads-automation.json");
 let automationEnabled = true;
@@ -1035,26 +1036,35 @@ export function registerLeadRoutes(app: Express) {
     console.log("[leads] Tabela leads + email_queue verificadas");
   });
 
-  cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
-    if (!automationEnabled) return;
-    autoEnqueueLeads()
-      .then(() => processEmailQueue())
-      .catch(err => console.error("[email-queue-cron]", err.message));
-  });
+  if (shouldRunBackgroundJobs()) {
+    cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
+      if (!automationEnabled) return;
+      autoEnqueueLeads()
+        .then(() => processEmailQueue())
+        .catch(err => console.error("[email-queue-cron]", err.message));
+    });
 
-  cron.schedule("*/10 * * * *", () => {
-    if (!automationEnabled) return;
-    autoProspectGoogle().catch(err => console.error("[auto-prospect-cron]", err.message));
-  });
+    cron.schedule("*/10 * * * *", () => {
+      if (!automationEnabled) return;
+      autoProspectGoogle().catch(err => console.error("[auto-prospect-cron]", err.message));
+    });
 
-  cron.schedule("0 21 * * *", () => {
-    sendDailyEmailReport().catch(err => console.error("[daily-report-cron]", err.message));
-  }, { timezone: "America/Sao_Paulo" });
+    cron.schedule("0 21 * * *", () => {
+      sendDailyEmailReport().catch(err => console.error("[daily-report-cron]", err.message));
+    }, { timezone: "America/Sao_Paulo" });
 
-  setTimeout(() => {
-    if (!automationEnabled) return;
-    autoProspectGoogle().catch(err => console.error("[auto-prospect-init]", err.message));
-  }, 15000);
+    setTimeout(() => {
+      if (!automationEnabled) return;
+      autoProspectGoogle().catch(err => console.error("[auto-prospect-init]", err.message));
+    }, 15000);
+
+    console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
+    console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);
+    console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 10min (3 queries/ciclo, ~60 leads/hora)");
+    console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
+  } else {
+    console.log("[leads] CRONs desativados (ambiente serverless/Vercel)");
+  }
 
   app.get("/api/leads/automation", requireAdminRole, (_req: Request, res: Response) => {
     res.json({ enabled: automationEnabled });
@@ -1066,11 +1076,6 @@ export function registerLeadRoutes(app: Express) {
     console.log(`[leads-automation] ${enabled ? "ATIVADA" : "DESATIVADA"} via API`);
     res.json({ enabled: automationEnabled });
   });
-
-  console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
-  console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);
-  console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 10min (3 queries/ciclo, ~60 leads/hora)");
-  console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
 
   const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
 

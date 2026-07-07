@@ -1,22 +1,11 @@
 import { createContext, useContext, useCallback, useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabase";
 import { useLocation } from "wouter";
+import { fetchAuthMe, signInAndLoadProfile, type AuthProfile } from "@/lib/auth-api";
 
-type AuthUser = {
-  id: number;
-  email: string;
-  name: string;
-  role: string;
-  supabaseUid: string | null;
-  username: string | null;
-  avatarUrl: string | null;
-  employeeId: number | null;
-  mustChangePassword: boolean;
-  termsAcceptedAt: string | null;
-  matricula: string | null;
-};
+type AuthUser = AuthProfile;
 
 type AuthContextType = {
   user: AuthUser | null;
@@ -68,15 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
         const result = await Promise.race([sessionPromise, timeoutPromise]);
-        if (!result || !('data' in result) || !result.data.session) return null;
-        const session = result.data.session;
-        const res = await fetch("/api/auth/me", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (res.status === 401) return null;
-        if (!res.ok) return null;
-        return res.json();
-      } catch {
+        if (!result || !("data" in result) || !result.data.session?.access_token) return null;
+        return await fetchAuthMe(result.data.session.access_token);
+      } catch (err) {
+        console.warn("[auth] /api/auth/me falhou ao restaurar sessão:", err);
         return null;
       }
     },
@@ -88,19 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isLoading = !sessionReady || queryLoading;
 
   const loginMutation = useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw new Error(error.message);
-
-      const res = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${data.session.access_token}` },
-      });
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.message || "Erro ao obter perfil do usuário");
-      }
-      return res.json() as Promise<AuthUser>;
-    },
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      signInAndLoadProfile(supabase, email, password),
     onSuccess: (data) => {
       queryClient.setQueryData(["/api/auth/me"], data);
     },
