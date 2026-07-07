@@ -8,16 +8,13 @@
 # ---------- Stage 1: build ----------
 FROM node:20-slim AS builder
 
-# Variáveis do frontend (Vite as injeta no bundle em tempo de build).
-# No Railway, defina-as como Service Variables — o build as recebe automaticamente.
+# Variáveis do frontend (Vite injeta no bundle em tempo de build).
+# No Railway: declare cada ARG aqui + Service Variables no painel (sem .env no container).
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_GOOGLE_MAPS_API_KEY
 ARG SUPABASE_URL
 ARG SUPABASE_ANON_KEY
-ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
-ENV SUPABASE_URL=${SUPABASE_URL}
-ENV SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
 
 WORKDIR /app
 
@@ -27,15 +24,24 @@ RUN npm install --no-audit --no-fund --legacy-peer-deps
 
 # Copia o código e gera dist/ (client em dist/public + server em dist/index.cjs).
 COPY . .
-RUN npm run build
+# Espelha SUPABASE_* → VITE_* se só as do servidor estiverem definidas.
+RUN VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$SUPABASE_URL}" \
+    VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-$SUPABASE_ANON_KEY}" \
+    VITE_GOOGLE_MAPS_API_KEY="$VITE_GOOGLE_MAPS_API_KEY" \
+    SUPABASE_URL="$SUPABASE_URL" \
+    SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+    npm run build
 
 # ---------- Stage 2: runtime ----------
 FROM node:20-slim AS runner
 
+# sharp precisa de libvips no Debian slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libvips \
+  && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production
 ENV TZ=America/Sao_Paulo
-# PORT é injetado pelo Railway; 5000 é só fallback local.
-ENV PORT=5000
 
 WORKDIR /app
 

@@ -21,7 +21,7 @@ No Railway:
 3. Cole **somente** o que o comando acima imprimiu (ou o arquivo `.railway.env`)
 4. **Save** → **Redeploy**
 
-São **34 linhas** no total (33 do Replit + `PORT=5000`).
+São **33 linhas** (só secrets do Replit). **Não** inclua `PORT` — o Railway define sozinho.
 
 ---
 
@@ -90,10 +90,9 @@ ASAAS_API_URL
 RHID_API_URL
 RHID_EMAIL
 ASAAS_MUNICIPAL_SERVICE_ID
-PORT
 ```
 
-**Não adicione** no Railway coisas que não estavam no Replit (`SESSION_SECRET`, `PUBLIC_SITE_URL`, `DATABASE_URL`, `TZ`, etc.) — a menos que você saiba que precisa.
+**Não adicione** no Railway: `PORT` (o Railway injeta), `SESSION_SECRET`, `PUBLIC_SITE_URL`, `DATABASE_URL`, `TZ`, etc.
 
 ---
 
@@ -124,6 +123,8 @@ O script `push-env:railway` envia **apenas** chaves presentes no `.env` gerado p
 
 | Sintoma | Solução |
 |---|---|
+| **Build falha** `variáveis obrigatórias ausentes VITE_*` | Salve as variáveis no Railway **antes** do redeploy; confirme `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (ou `SUPABASE_URL` + `SUPABASE_ANON_KEY`) |
+| **Health check failed** | Remova `PORT=5000` das variáveis se tiver colado; o Railway define `PORT` sozinho |
+| **Deploy OK mas 502** | Veja **Deploy Logs** → runtime; confirme `SUPABASE_SERVICE_ROLE_KEY` |
 | Muitas variáveis no Raw | Apague tudo; cole só `npm run export-env:railway` |
-| Build falha VITE_* | Confirme `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` na lista Replit |
 | App sem dados | Confirme `SUPABASE_DATABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` |

@@ -11,7 +11,8 @@ const OUT_PATH = path.join(ROOT, ".railway.env");
 
 function main() {
   const vars = loadReplitEnv();
-  const lines = formatReplitEnvLines(vars);
+  // Railway injeta PORT automaticamente — não incluir PORT=5000 do Replit.
+  const lines = formatReplitEnvLines(vars, false);
 
   writeFileSync(OUT_PATH, lines.join("\n") + "\n", "utf8");
 
