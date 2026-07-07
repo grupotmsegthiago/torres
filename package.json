@@ -11,6 +11,7 @@
     "import-env:replit": "tsx scripts/import-replit-env.ts",
     "export-env:railway": "tsx scripts/export-railway-env.ts",
     "push-env:railway": "bash scripts/push-env-railway.sh",
+    "railway:setup": "bash scripts/railway-setup.sh",
     "push-env:vercel": "bash scripts/push-env-vercel.sh",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
