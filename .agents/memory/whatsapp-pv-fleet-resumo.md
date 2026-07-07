@@ -22,8 +22,8 @@ suffix curto (< 11) — vazaria frota+Fat pra número de outro DDD.
 ## Motor de faturamento (qual número)
 Usa o CANÔNICO `calcularEscolta`, espelhando o campo `canonico.faturamento` do Grid
 Operacional (o `fat_total` já embute pedágio + receitas). Congelado (`custosCongeladosEm`
-setado) usa o `fatCalculado` imutável. **Why:** a spec da task (task-157.md) exigiu
-explicitamente o canônico, não o `calcularFaturamentoLive` simplificado. É SÓ LEITURA —
+setado) usa o `fatCalculado` imutável. **Why:** exigência do dono: o número do resumo
+deve ser o canônico, não o motor "live" simplificado. É SÓ LEITURA —
 nenhum write de billing (respeita §8 INTOCÁVEIS).
 
 ## Classificação

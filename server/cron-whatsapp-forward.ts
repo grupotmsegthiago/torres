@@ -140,14 +140,6 @@ function fmtKm(km?: number | null): string {
   if (km == null || !isFinite(Number(km)) || Number(km) <= 0) return "—";
   return `${Number(km).toLocaleString("pt-BR")} km`;
 }
-function fmtEta(km: number): string {
-  if (!isFinite(km) || km <= 0) return "Chegando";
-  const totalMin = Math.round((km / 60) * 60); // 60 km/h média
-  if (totalMin < 60) return `~${totalMin}min`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return m === 0 ? `~${h}h` : `~${h}h${String(m).padStart(2, "0")}`;
-}
 // Data/hora BRT no formato "DD/MM/AAAA HH:MM" (sem vírgula) — usado no card de
 // Fim de Missão conforme layout pedido pelo dono.
 function fmtBrtDtSpace(iso?: string | null): string {
@@ -296,16 +288,12 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   const ag1Name = shortName((ag1Res as any)?.data?.name);
   const ag2Name = shortName((ag2Res as any)?.data?.name);
 
-  // Progresso + distância restante (precisa origin/destination lat/lng + posição atual)
+  // Progresso da missão (precisa origin/destination lat/lng + posição atual)
   let progressoPct: number | null = null;
-  let distRestKm: number | null = null;
   const oLat = so?.origin_lat != null ? Number(so.origin_lat) : NaN;
   const oLng = so?.origin_lng != null ? Number(so.origin_lng) : NaN;
   const dLat = so?.destination_lat != null ? Number(so.destination_lat) : NaN;
   const dLng = so?.destination_lng != null ? Number(so.destination_lng) : NaN;
-  if (hasGeo && isFinite(dLat) && isFinite(dLng)) {
-    distRestKm = haversineDist(upLat, upLng, dLat, dLng) / 1000;
-  }
   if (hasGeo && isFinite(oLat) && isFinite(oLng) && isFinite(dLat) && isFinite(dLng)) {
     const total = haversineDist(oLat, oLng, dLat, dLng);
     const done = haversineDist(oLat, oLng, upLat, upLng);
@@ -318,15 +306,22 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   const dataStr = fmtBrtDate(u.created_at);
   const horaStr = fmtBrtTime(u.created_at);
   const statusLabel = fmtMissionStatus(so?.mission_status).toUpperCase();
-  const opLabel = fmtMissionStatus(so?.mission_status);
   const clienteNome = String(client?.name || "").toUpperCase();
   const msgUpper = String(u.message || "").toUpperCase();
 
+  // Barra de progresso: 5 quadrados, cada um vale 20%.
+  const progressBar = (pct: number): string => {
+    const filled = Math.max(0, Math.min(5, Math.round(pct / 20)));
+    return "🟩".repeat(filled) + "⬜".repeat(5 - filled);
+  };
+
+  // Layout do card no formato do dono (07/07/2026) — manter espaçamento.
   const L: string[] = [];
-  L.push(`🛡️ *TORRES VIGILÂNCIA PATRIMONIAL*`);
-  L.push(`🚨 *OS ${u.os_number || ""}* | *STATUS:* ${statusLabel || "—"}`);
+  L.push(`*MONITORAMENTO GRUPO TORRES*`);
+  L.push(`*OS:* ${u.os_number || "—"} | *STATUS:* ${statusLabel || "—"}`);
   L.push("");
-  if (dataStr || horaStr) L.push(`📅 *DATA:* ${dataStr}   🕐 *HORA:* ${horaStr}`);
+  if (dataStr || horaStr) L.push(`🗓️ *DATA:* ${dataStr} *HORA:* ${horaStr}`);
+  L.push(`🛡️ *OPERAÇÃO:* CARACTERIZADA`);
   if (clienteNome) L.push(`🏢 *CLIENTE:* ${clienteNome}`);
   L.push("");
   if (so?.origin) L.push(`📍 *ORIGEM:* ${so.origin}`);
@@ -336,21 +331,16 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   if (so?.escorted_driver_name) L.push(`👤 *MOTORISTA:* ${so.escorted_driver_name}`);
   if (so?.escorted_driver_phone) L.push(`📞 *CONTATO:* ${so.escorted_driver_phone}`);
   L.push("");
-  if (viaturaPlate) L.push(`🚓 *VIATURA:* ${viaturaPlate}`);
+  if (viaturaPlate) L.push(`🚔 *VIATURA:* ${viaturaPlate}`);
   if (ag1Name) L.push(`👮 *AGENTE 01:* ${ag1Name}`);
   if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
   L.push("");
-  if (progressoPct != null) L.push(`📊 *PROGRESSO DA MISSÃO:* ${progressoPct}%`);
-  if (distRestKm != null) L.push(`🚗 *DISTÂNCIA ATÉ DESTINO:* ${Math.round(distRestKm)} km`);
-  if (distRestKm != null) L.push(`⏱️ *PREVISÃO DE CHEGADA:* ${fmtEta(distRestKm)}`);
+  if (progressoPct != null) L.push(`📈*PROGRESSO DA MISSÃO:* ${progressBar(progressoPct)} ${progressoPct}% (cada quadrado vale 20%)`);
   L.push("");
-  if (msgUpper) L.push(`📝 *ATUALIZAÇÃO:* ${msgUpper}`);
+  if (addr) L.push(`🏙️ *LOCALIZAÇÃO:* ${addr}`);
+  if (hasGeo) L.push(`🗾 *LINK DO GOOGLE:* ${mapsLink(upLat, upLng)}`);
   L.push("");
-  if (addr) L.push(`📍 *LOCALIZAÇÃO:* ${addr}`);
-  if (hasGeo) {
-    L.push(`📍 *LINK GOOGLE:*`);
-    L.push(mapsLink(upLat, upLng));
-  }
+  if (msgUpper) L.push(`📣 *OCORRÊNCIA:* ${msgUpper}`);
 
   // Compacta múltiplas linhas em branco consecutivas
   return L.join("\n").replace(/\n{3,}/g, "\n\n").trim();
