@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { CRON_BUCKETS, isVercelCronJob, runVercelCronJob } from "../server/cron-vercel";
+import { CRON_BUCKETS, isVercelCronJob, runVercelCronJob } from "../server/cron-vercel.js";
 
 function isAuthorized(req: VercelRequest): boolean {
   const secret = process.env.CRON_SECRET;

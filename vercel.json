@@ -46,9 +46,8 @@
       "maxDuration": 300,
       "includeFiles": "server/**"
     },
-    "api/cron.ts": {
-      "maxDuration": 300,
-      "includeFiles": "server/**"
+    "api/cron.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
