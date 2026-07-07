@@ -42,14 +42,12 @@
     }
   ],
   "functions": {
-    "api/index.ts": {
+    "api/index.js": {
       "maxDuration": 300,
-      "memory": 3008,
-      "includeFiles": "index.js"
+      "memory": 3008
     },
-    "api/cron.ts": {
-      "maxDuration": 300,
-      "includeFiles": "cron.js"
+    "api/cron.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
