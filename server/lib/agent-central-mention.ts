@@ -727,8 +727,12 @@ export async function handleGroupSummaryRequest(parsed: ParsedGroupMsg): Promise
     }
     const msg = await buildFleetVtrSummary();
     summaryThrottle.set(pv, Date.now());
-    await sendText({ groupOrPhone: pv, message: msg, delayTypingSeconds: randomTypingSeconds() });
-    console.log(`[agent-central-mention] resumo VTR enviado no PV de ${parsed.senderName || pv}`);
+    const r = await sendText({ groupOrPhone: pv, message: msg, delayTypingSeconds: randomTypingSeconds() });
+    if (r.ok) {
+      console.log(`[agent-central-mention] resumo VTR enviado no PV de ${parsed.senderName || pv}`);
+    } else {
+      console.warn(`[agent-central-mention] resumo VTR falhou no PV de ${parsed.senderName || pv}: ${r.error || "erro"}${r.blocked ? " (bloqueado pela trava de número)" : ""}`);
+    }
   } catch (e: any) {
     console.warn("[agent-central-mention] handleGroupSummaryRequest falhou:", e?.message);
   }

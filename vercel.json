@@ -21,20 +21,16 @@
       "destination": "/api/cron"
     },
     {
+      "source": "/healthz",
+      "destination": "/api/healthz"
+    },
+    {
       "source": "/robots.txt",
-      "destination": "/api"
+      "destination": "/api/robots.txt"
     },
     {
       "source": "/sitemap.xml",
-      "destination": "/api"
-    },
-    {
-      "source": "/healthz",
-      "destination": "/api"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api/sitemap.xml"
     },
     {
       "source": "/(.*)",
@@ -43,6 +39,10 @@
   ],
   "functions": {
     "api/index.js": {
+      "maxDuration": 300,
+      "memory": 3008
+    },
+    "api/[...slug].js": {
       "maxDuration": 300,
       "memory": 3008
     },

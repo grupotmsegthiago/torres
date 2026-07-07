@@ -1,13 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { Express } from "express";
 import { getOrCreateApp } from "../server/create-app.js";
+import { isHealthzPath, patchReqUrl } from "./_vercel-path.js";
 
 let app: Express | null = null;
 let bootError: Error | null = null;
 
 export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
-  const pathOnly = (req.url || "").split("?")[0];
-  if (pathOnly === "/healthz" || pathOnly === "/api/healthz") {
+  const expressPath = patchReqUrl(req);
+  if (isHealthzPath(expressPath)) {
     return res.status(200).json({ ok: true, ts: Date.now() });
   }
 

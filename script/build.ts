@@ -92,6 +92,7 @@ async function buildAll() {
   console.log("building Vercel API handlers...");
   for (const [entry, outfile] of [
     ["api/_index.ts", "api/index.js"],
+    ["api/_catchall.ts", "api/[...slug].js"],
     ["api/_cron.ts", "api/cron.js"],
   ] as const) {
     await esbuild({
