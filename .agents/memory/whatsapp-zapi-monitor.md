@@ -28,3 +28,6 @@ errado — o painel verde dava falsa sensação de que estava tudo bem.
 (`NODE_ENV==='production'` ou flag `WHATSAPP_MONITOR_ENABLED=true`). O sandbox de
 dev compartilha os MESMOS secrets (Z-API/SMTP), então sem o gate dev e prod
 mandariam e-mails de alerta em dobro pro dono.
+
+## Bot mudo mas recebendo
+Se o bot registra mensagens mas não responde nada (nenhum from_me novo), checar PRIMEIRO `ZAPI_PAUSED` (env shared) antes de debugar conexão/allowlist — a pausa silencia todos os envios mas o webhook de entrada continua salvando. Produção só pega mudança de env na próxima publicação.
