@@ -2185,27 +2185,43 @@ import type { Express } from "express";
       };
       if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
 
+      // §8 — rastreabilidade: se a aprovação recalcular com uma tabela diferente da
+      // congelada no billing (dono trocou a tabela da OS depois do billing criado),
+      // registrar o de/para no audit pra explicar a mudança de valor.
+      let contractResyncNote = "";
       if (acao === "APROVADA") {
         // §8.1 — OS recusada nunca pode ser aprovada/faturada (faturamento = R$ 0,00
         // incondicional). Aprovar recalculava pelo contrato e ressuscitava a cobrança,
         // além de marcar a OS como concluída (bug TOR-0255). Bloqueia antes de qualquer
         // recálculo. Para cobrar, é preciso reabrir a OS (status concluída) primeiro.
+        let osEscortContractId: string | null = null;
         if (billing.service_order_id) {
           const { data: soRow } = await supabaseAdmin
-            .from("service_orders").select("status")
+            .from("service_orders").select("status, escort_contract_id")
             .eq("id", billing.service_order_id).maybeSingle();
           if (soRow?.status === "recusada") {
             return res.status(400).json({ message: "OS recusada não pode ser aprovada — o faturamento é sempre R$ 0,00. Reabra a OS (status concluída) antes de aprovar o boletim." });
           }
+          osEscortContractId = soRow?.escort_contract_id || null;
         }
 
         const now = new Date();
         updateData.boletim_numero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
         updateData.boletim_gerado = true;
 
-        if (billing.contract_id) {
-          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
+        // §8 — Aprovar recalcula pela tabela ATUAL da OS (escort_contract_id), com fallback
+        // pro contract_id congelado no billing. Se a tabela da OS foi trocada depois do billing
+        // ser criado, a aprovação passava a usar a tabela ANTIGA congelada e revertia os valores
+        // (bug TOR-0408: OS reassinada de 200km→100km, aprovar voltava pra 200km). O contract_id
+        // do billing é ressincronizado pra tabela usada, mantendo o registro consistente.
+        const resolvedContractId = osEscortContractId || billing.contract_id;
+        if (resolvedContractId) {
+          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", resolvedContractId).single();
           if (contrato) {
+            updateData.contract_id = resolvedContractId;
+            if (billing.contract_id && billing.contract_id !== resolvedContractId) {
+              contractResyncNote = ` Tabela ressincronizada na aprovação: ${billing.contract_id} → ${resolvedContractId} (tabela atual da OS).`;
+            }
             try {
               // Busca timestamps reais da OS pra HE multi-dia
               let ap_ts_ini: string | null = null, ap_ts_fim: string | null = null, ap_sch: string | null = null;
@@ -2297,7 +2313,7 @@ import type { Express } from "express";
         await logSystemAudit({
           userId: user.id, userName: user.name, userRole: user.role,
           action: "APROVAR_MISSAO", targetId: req.params.id, targetType: "escort_billing",
-          details: `OS #${data.service_order_id} aprovada. Boletim ${data.boletim_numero}. Valor: R$${totalFat.toFixed(2)}. Cliente: ${data.client_name}`,
+          details: `OS #${data.service_order_id} aprovada. Boletim ${data.boletim_numero}. Valor: R$${totalFat.toFixed(2)}. Cliente: ${data.client_name}.${contractResyncNote}`,
           ipAddress: req.ip,
         });
       }
