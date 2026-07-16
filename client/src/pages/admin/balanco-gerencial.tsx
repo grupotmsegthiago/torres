@@ -1048,7 +1048,7 @@ export default function BalancoGerencialPage() {
 
               // ── COMPOSIÇÃO AGREGADA — mesma fórmula da tela Ponto Eletrônico ("Custo Real")
               // Total do card = Vencimentos (salário ratado + periculosidade 30% + HE com adicional
-              // 60% CCT + adicional noturno) + Benefícios (VR por dias úteis + cesta básica ratada +
+              // a R$ 15,00/h + adicional noturno a R$ 15,00/h) + Benefícios (VR por dias úteis + cesta básica ratada +
               // diárias). Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são
               // só informativos, NÃO entram no total. SEM provisões, SEM DSR.
               const bk = rhSummary?.breakdown;
@@ -1090,8 +1090,8 @@ export default function BalancoGerencialPage() {
                 rhRows.push({ label: "── Vencimentos ──", value: vencimentos * fatorPeriodo });
                 rhRows.push({ label: "  Salário base (ratado)", value: agg.base * fatorPeriodo });
                 rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
-                if (agg.he > 0) rhRows.push({ label: "  Hora extra (60% CCT)", value: agg.he * fatorPeriodo });
-                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno", value: agg.noturno * fatorPeriodo });
+                if (agg.he > 0) rhRows.push({ label: "  Hora extra (R$ 15,00/h)", value: agg.he * fatorPeriodo });
+                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno (R$ 15,00/h)", value: agg.noturno * fatorPeriodo });
                 rhRows.push({ label: "── Benefícios + Diárias ──", value: beneficios * fatorPeriodo });
                 if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
                 if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });
@@ -1131,7 +1131,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE com adicional 60% CCT + adicional noturno) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE a R$ 15,00/h + adicional noturno a R$ 15,00/h) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }
