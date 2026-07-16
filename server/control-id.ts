@@ -1319,7 +1319,7 @@ export async function buildFolhaStats(
     employee?: { role?: string | null; tipo_contratacao?: string | null };
   } = {},
 ): Promise<any> {
-  const multiplicadorHE = opts.multiplicadorHE ?? 1.6; // CCT vigilância = 60% (HE 24,26 = 15,16×1,6). CLT mínimo é 50%, mas o sistema usa a CCT.
+  // opts.multiplicadorHE é legado — ignorado desde 16/07/2026 (HE/noturno a R$ 15,00/h fixo, ordem do dono).
 
   // Pega salário vigente mais recente (cuja effective_date <= último dia do mês).
   // Buscado ANTES do ponto pra injetar horas_mensais em buildFolhaPonto e evitar
@@ -1477,18 +1477,16 @@ export async function buildFolhaStats(
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
-  // Hora-base inclui periculosidade (Súmula 132 TST) — bate com a planilha do dono
-  // (HE 24,26 = 15,16×1,6 e Noturno 27,29 = 15,16×1,8, onde 15,16 = base×1,3/220).
+  // Valor-hora informativo (base c/ periculosidade ÷ horas contratuais).
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? (baseSalary * fatorPericVH) / hoursLimit : 0;
-  // Arredonda o valor-hora ao centavo ANTES de aplicar o multiplicador, batendo
-  // com a CCT do dono: 15,16 × 1,6 = 24,26 (em vez de 15,1586×1,6 = 24,25).
-  const valorHoraExtra = (Math.round(valorHora * 100) / 100) * multiplicadorHE;
-  // Adicional noturno (modelo Torres, revertido pelo dono): hora cheia 1,80×
-  // (hora + 60% HE + 20% noturno) sobre as horas entre 22h–05h. Antes era só o
-  // prêmio de 20% — ver memória payroll-night-additional.
-  const multiplicadorAdicNot = (CCT as any).multiplicadorAdicNot ?? 1.8;
-  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnas).toFixed(2);
+  // HE e adicional noturno a VALOR FIXO R$ 15,00/h (ordem do dono 16/07/2026:
+  // "substituir tudo por 15,00 hora extra e noturna"). Substitui os modelos
+  // antigos valorHora×1,6 (CCT) e valorHora×1,8 (hora cheia).
+  const { VALOR_HORA_EXTRA_FIXO, VALOR_HORA_NOTURNA_FIXO } = await import("./lib/payroll");
+  const valorHoraExtra = VALOR_HORA_EXTRA_FIXO;
+  const valorHoraNoturna = VALOR_HORA_NOTURNA_FIXO;
+  const adicionalNoturno = +(valorHoraNoturna * horasNoturnas).toFixed(2);
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
@@ -1614,10 +1612,10 @@ export async function buildFolhaStats(
     valorHoraExtra: +valorHoraExtra.toFixed(2),
     custoExtra,
     custoBase: +custoBase.toFixed(2),
-    // Adicional noturno (22h–05h) — hora cheia 1,80× (modelo Torres)
+    // Adicional noturno (22h–05h) — valor fixo R$ 15,00/h (ordem do dono 16/07/2026)
     horasNoturnas: +horasNoturnas.toFixed(2),
     adicionalNoturno,
-    multiplicadorAdicNot,
+    valorHoraNoturna,
     // Novos componentes detalhados (ratados quando mês corrente)
     periculosidade,
     periculosidadePct,

@@ -1,26 +1,25 @@
 ---
-name: Adicional noturno = hora cheia 1,80× (modelo Torres)
-description: Convenção unificada de cálculo do adicional noturno em toda a folha (holerite, custo, RH/Ponto)
+name: HE e adicional noturno = R$ 15,00/h fixo
+description: Convenção unificada de cálculo de hora extra e adicional noturno em toda a folha (holerite, custo, RH/Ponto)
 ---
 
-# Adicional noturno = hora cheia 1,80× (modelo Torres)
+# HE e adicional noturno = R$ 15,00/h FIXO (ordem do dono 16/07/2026)
 
-**Regra atual (decisão do dono 26/06/2026):** em TODO o sistema o adicional
-noturno é `valorHora × 1,80 × horasNoturnas` — hora cheia + 60% de HE + 20% de
-adicional noturno. NÃO é mais só o prêmio de 20%.
+**Regra atual:** em TODO o sistema, hora extra e adicional noturno valem
+**R$ 15,00 por hora, valor fixo** — `15 × horas`, independente do salário base.
+Constantes `VALOR_HORA_EXTRA_FIXO` / `VALOR_HORA_NOTURNA_FIXO` em
+`server/lib/payroll.ts`; `buildFolhaStats` (Control iD) usa as mesmas.
 
-**Why:** a planilha manual do dono (caso de referência validado 100%) paga a hora
-noturna como hora extra noturna a 1,80× — o vigilante que vira a noite recebe a
-hora cheia novamente acrescida dos adicionais, não só o prêmio. O dono decidiu
-que o sistema TEM que bater com a planilha dele. Antes o sistema oscilou entre
-`× 1,20` (double-pay) e `× 0,20` (só prêmio); ambos foram abandonados em favor de
-`× 1,80`.
+**Why:** ordem direta do dono em 16/07/2026 ("nas horas substituir tudo por
+15,00 hora extra e noturna"), substituindo os modelos anteriores.
+
+**Histórico:** noturno já foi ×0,20 (só prêmio), ×1,20 e ×1,80 (hora cheia,
+26/06/2026, batia a planilha); HE já foi valorHora×1,6 (CCT). Todos abandonados
+em 16/07/2026 pelo valor fixo.
 
 **Como aplicar:**
-- Motor de folha e callers (holerite, custo, RH/Ponto) usam 1,80×. Mexer nisso
-  muda em cascata a base tributável (INSS/IRRF/FGTS) e o custo no Balanço RH — esperado.
-- Aplica-se SÓ ao pagamento do funcionário / custo; o faturamento do cliente
-  (escolta/escort_billings) é outro fluxo e não foi tocado.
-- DSR fica desligado no modelo Torres.
-- Há regressão de teste no caso de referência. NÃO voltar para 0,20 nem 1,20 sem
-  ordem explícita do dono.
+- Muda em cascata a base tributável (INSS/IRRF/FGTS) e o custo no Balanço RH — esperado.
+- Aplica-se SÓ ao pagamento/custo do funcionário; o faturamento do cliente
+  (`valor_hora_extra` de contrato / escort_billings) é OUTRO fluxo — não tocar.
+- Params `multiplicadorHE`/`multiplicadorAdicNot` viraram legado ignorado.
+- Não voltar aos multiplicadores sem ordem explícita do dono.

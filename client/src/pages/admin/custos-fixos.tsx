@@ -639,8 +639,8 @@ export default function CustosFixosPage() {
                       {/* VENCIMENTOS */}
                       <th className="py-2 px-1 text-right" title="Salário Proporcional (cheio ÷ 30 × dias trab.)">Sal.Prop</th>
                       <th className="py-2 px-1 text-right text-orange-700" title="Periculosidade 30%">Peric</th>
-                      <th className="py-2 px-1 text-right text-indigo-700" title="Horas Extras (sal/h × 1,6 × horas Ponto iD)">H.Extra</th>
-                      <th className="py-2 px-1 text-right text-violet-700" title="Adicional Noturno (sal/h × 1,2)">Adic.Not</th>
+                      <th className="py-2 px-1 text-right text-indigo-700" title="Horas Extras (R$ 15,00/h fixo × horas Ponto iD)">H.Extra</th>
+                      <th className="py-2 px-1 text-right text-violet-700" title="Adicional Noturno (R$ 15,00/h fixo × horas 22h–05h)">Adic.Not</th>
                       <th className="py-2 px-1 text-right text-blue-700" title="DSR sobre HE+AdicNot">DSR</th>
                       <th className="py-2 px-1 text-right text-cyan-700" title="Vale Refeição R$/dia × dias úteis">VR</th>
                       <th className="py-2 px-1 text-right text-emerald-700" title="Cesta Básica (CCT) — equivale a Ajuda de Custo / VT">Cesta</th>
@@ -763,7 +763,7 @@ export default function CustosFixosPage() {
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
-                <strong>Engine de Folha 2025:</strong> Sal.Prop = (cheio ÷ 30) × dias trab. · Peric = 30% · HE = sal/h × 1,6 · AdicNot = sal/h × 1,2 · DSR = (HE+AdicNot) × descanso/úteis ·
+                <strong>Engine de Folha 2025:</strong> Sal.Prop = (cheio ÷ 30) × dias trab. · Peric = 30% · HE = R$ 15,00/h fixo · AdicNot = R$ 15,00/h fixo · DSR = (HE+AdicNot) × descanso/úteis ·
                 INSS progressivo 7,5%-14% (teto R$ 8.157,41) · IRRF progressivo (R$ 189,59/dependente) · FGTS 8% · Provisões = sal cheio ÷ 12.
                 HE/AdicNot são médias dos últimos 3 meses (jornada). Cadastre salário e periculosidade em <strong>Funcionários → Salário</strong>.
               </p>

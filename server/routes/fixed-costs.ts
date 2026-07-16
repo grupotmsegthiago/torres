@@ -534,7 +534,6 @@ export function registerFixedCostsRoutes(app: Express) {
       ativos.map((emp) => limit(async () => {
         try {
           return await buildFolhaStats(emp.id, mesRef, {
-            multiplicadorHE: 1.6,
             employee: { role: (emp as any).role, tipo_contratacao: (emp as any).tipo_contratacao },
           });
         } catch (err: any) {

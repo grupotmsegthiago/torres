@@ -77,9 +77,8 @@ test("modelo Torres (default): peric somada, DSR desligado", () => {
   assert.equal(f.dsr, 0, "DSR desligado por default");
 });
 
-test("modelo Torres: hora noturna = valorHora(c/ peric) × 1.8 × horas", () => {
-  // base 2000 + peric 30% → salário 2600; valorHora = 2600/220 = 11.8182;
-  // 10h noturnas → 11.8182 × 1.8 × 10 = 212.73.
+test("modelo Torres: hora noturna = R$ 15,00/h fixo (ordem do dono 16/07/2026)", () => {
+  // 10h noturnas → 15 × 10 = 150,00 — independe do salário base.
   const f = calcularFolha({
     salarioBaseCheio: 2000,
     diasTrabalhados: 30,
@@ -87,8 +86,19 @@ test("modelo Torres: hora noturna = valorHora(c/ peric) × 1.8 × horas", () => 
     periculosidadePct: 0.3,
     horasNoturnas: 10,
   });
-  const vh = (2000 * 1.3) / 220;
-  assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * 10) < 0.01, "noturno 1.8× sobre hora c/ peric");
+  assert.equal(f.adicionalNoturnoValor, 150, "noturno = 15,00 × horas (valor fixo)");
+});
+
+test("modelo Torres: hora extra = R$ 15,00/h fixo (ordem do dono 16/07/2026)", () => {
+  // 10h extras → 15 × 10 = 150,00 — independe do salário base.
+  const f = calcularFolha({
+    salarioBaseCheio: 5000,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0.3,
+    horasExtras: 10,
+  });
+  assert.equal(f.horasExtrasValor, 150, "HE = 15,00 × horas (valor fixo)");
 });
 
 test("modelo Torres: INSS 12% + IRRF 22% fixos + FGTS NÃO desconta do líquido", () => {
@@ -126,17 +136,18 @@ test("modelo Torres: regressão planilha do dono (caso André)", () => {
     refeicaoDiaria: 43,
   });
   const salarioComPeric = base * (1 + peric); // 3334.90
-  const vh = salarioComPeric / horasMensais; // 15.1586 → bate com 24,26/27,29 da planilha
   // "Salário" da planilha = base + peric
   assert.equal(+(f.salarioProporcional + f.periculosidade).toFixed(2), +salarioComPeric.toFixed(2), "salário c/ peric = 3334.90");
   assert.equal(f.dsr, 0);
-  assert.ok(Math.abs(f.horasExtrasValor - vh * 1.6 * horasExtras) < 0.01, "HE = valorHora(c/peric) × 1.6 × horas");
-  assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * horasNoturnas) < 0.01, "Noturno = valorHora(c/peric) × 1.8 × horas");
+  // Desde 16/07/2026: HE e noturno a R$ 15,00/h fixo (antes valorHora×1,6/1,8).
+  assert.ok(Math.abs(f.horasExtrasValor - 15 * horasExtras) < 0.01, "HE = 15,00 × horas (valor fixo)");
+  assert.ok(Math.abs(f.adicionalNoturnoValor - 15 * horasNoturnas) < 0.01, "Noturno = 15,00 × horas (valor fixo)");
   assert.equal(f.baseTributavel, +(salarioComPeric + f.horasExtrasValor + f.adicionalNoturnoValor).toFixed(2), "Total = salário(c/peric) + HE + Noturno");
   assert.equal(f.inss, +(f.baseTributavel * 0.12).toFixed(2), "INSS 12% do total");
   assert.equal(f.irrf, +(f.baseTributavel * 0.22).toFixed(2), "IRRF 22% fixo do total (modelo Torres)");
   assert.equal(f.fgts, +(f.baseTributavel * 0.08).toFixed(2), "FGTS 8% do total");
   assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf).toFixed(2), "líquido = Total − INSS − IRRF (FGTS NÃO desconta)");
-  // Sanidade: total perto dos R$ 8.846 da planilha (difere uns reais pelo artefato HH:MM dela)
-  assert.ok(Math.abs(f.baseTributavel - 8846.26) < 25, `Total (${f.baseTributavel}) ~ 8846,26`);
+  // Sanidade: 3.334,90 + 132,2833h×15 (1.984,25) + 84,7667h×15 (1.271,50) = 6.590,65.
+  // (Antes da ordem de 16/07/2026 o total batia ~8.846 pela planilha 1,6/1,8×.)
+  assert.ok(Math.abs(f.baseTributavel - 6590.65) < 1, `Total (${f.baseTributavel}) ~ 6590,65`);
 });

@@ -34,7 +34,7 @@ export interface SnapshotResult {
 /**
  * Grava (upsert) o histórico mensal da folha de TODOS os funcionários ativos para
  * o mês de referência `mesRef` ("YYYY-MM"). Espelha exatamente o cálculo do Balanço
- * Gerencial / Folha de Ponto (buildFolhaStats com multiplicadorHE 1.6 — CCT).
+ * Gerencial / Folha de Ponto (buildFolhaStats — HE/noturno a R$ 15,00/h fixo).
  *
  * `custo_real` = vencimentos + benefícios (recolhimentos NÃO somam — item 4).
  * Os recolhimentos (FGTS, INSS patronal, seguro de vida) são gravados como campos
@@ -68,7 +68,6 @@ export async function snapshotFolhaMes(
       const emp: any = ativos[i];
       try {
         statsByIdx[i] = await buildFolhaStats(emp.id, mesRef, {
-          multiplicadorHE: 1.6,
           employee: { role: emp.role, tipo_contratacao: emp.tipo_contratacao },
         });
       } catch (e: any) {

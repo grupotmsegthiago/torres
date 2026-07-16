@@ -2820,7 +2820,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                         Horas Extras
                         <span className="text-[9px] bg-indigo-200/60 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
                       </div>
-                      <div className="text-[10px] text-indigo-500 mt-0.5">{hhmmH(Number(summary.horasExtras.horas))} × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
+                      <div className="text-[10px] text-indigo-500 mt-0.5">{hhmmH(Number(summary.horasExtras.horas))} × R$ 15,00/h ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
                     </div>
                     <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(summary.vencimentos.horasExtrasValor || 0)}</span>
                   </div>
