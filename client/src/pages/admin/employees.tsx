@@ -2832,7 +2832,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                         Adicional Noturno
                         <span className="text-[9px] bg-violet-200/60 text-violet-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
                       </div>
-                      <div className="text-[10px] text-violet-500 mt-0.5">{hhmmH(Number(summary.horasExtras.noturnas))} × valor hora × 1,20</div>
+                      <div className="text-[10px] text-violet-500 mt-0.5">{hhmmH(Number(summary.horasExtras.noturnas))} × R$ 15,50/h</div>
                     </div>
                     <span className="text-sm font-bold text-violet-700 tabular-nums">+ {fmtR(summary.vencimentos.adicionalNoturnoValor || 0)}</span>
                   </div>

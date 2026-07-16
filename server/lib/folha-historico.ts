@@ -34,7 +34,7 @@ export interface SnapshotResult {
 /**
  * Grava (upsert) o histórico mensal da folha de TODOS os funcionários ativos para
  * o mês de referência `mesRef` ("YYYY-MM"). Espelha exatamente o cálculo do Balanço
- * Gerencial / Folha de Ponto (buildFolhaStats — HE/noturno a R$ 15,00/h fixo).
+ * Gerencial / Folha de Ponto (buildFolhaStats — HE R$ 15,00/h e noturno R$ 15,50/h fixos).
  *
  * `custo_real` = vencimentos + benefícios (recolhimentos NÃO somam — item 4).
  * Os recolhimentos (FGTS, INSS patronal, seguro de vida) são gravados como campos

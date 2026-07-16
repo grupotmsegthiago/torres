@@ -1319,7 +1319,7 @@ export async function buildFolhaStats(
     employee?: { role?: string | null; tipo_contratacao?: string | null };
   } = {},
 ): Promise<any> {
-  // opts.multiplicadorHE é legado — ignorado desde 16/07/2026 (HE/noturno a R$ 15,00/h fixo, ordem do dono).
+  // opts.multiplicadorHE é legado — ignorado desde 16/07/2026 (HE R$ 15,00/h e noturno R$ 15,50/h fixos, ordem do dono).
 
   // Pega salário vigente mais recente (cuja effective_date <= último dia do mês).
   // Buscado ANTES do ponto pra injetar horas_mensais em buildFolhaPonto e evitar
@@ -1480,9 +1480,8 @@ export async function buildFolhaStats(
   // Valor-hora informativo (base c/ periculosidade ÷ horas contratuais).
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? (baseSalary * fatorPericVH) / hoursLimit : 0;
-  // HE e adicional noturno a VALOR FIXO R$ 15,00/h (ordem do dono 16/07/2026:
-  // "substituir tudo por 15,00 hora extra e noturna"). Substitui os modelos
-  // antigos valorHora×1,6 (CCT) e valorHora×1,8 (hora cheia).
+  // HE a VALOR FIXO R$ 15,00/h e noturno R$ 15,50/h (ordem do dono 16/07/2026).
+  // Substitui os modelos antigos valorHora×1,6 (CCT) e valorHora×1,8 (hora cheia).
   const { VALOR_HORA_EXTRA_FIXO, VALOR_HORA_NOTURNA_FIXO } = await import("./lib/payroll");
   const valorHoraExtra = VALOR_HORA_EXTRA_FIXO;
   const valorHoraNoturna = VALOR_HORA_NOTURNA_FIXO;
@@ -1612,7 +1611,7 @@ export async function buildFolhaStats(
     valorHoraExtra: +valorHoraExtra.toFixed(2),
     custoExtra,
     custoBase: +custoBase.toFixed(2),
-    // Adicional noturno (22h–05h) — valor fixo R$ 15,00/h (ordem do dono 16/07/2026)
+    // Adicional noturno (22h–05h) — valor fixo R$ 15,50/h (ordem do dono 16/07/2026)
     horasNoturnas: +horasNoturnas.toFixed(2),
     adicionalNoturno,
     valorHoraNoturna,

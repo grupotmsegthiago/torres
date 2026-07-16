@@ -15,7 +15,7 @@
  *      da planilha. A hora-base (valorHora) TAMBÉM inclui peric (Súmula 132 TST):
  *      valorHora = base × (1 + peric%) ÷ horasMensais.
  *   3) Horas Extras: R$ 15,00/h FIXO × horas_extras (ordem do dono 16/07/2026).
- *   4) Hora Noturna: R$ 15,00/h FIXO × horas_noturnas (mesma ordem).
+ *   4) Hora Noturna: R$ 15,50/h FIXO × horas_noturnas (ordem do dono 16/07/2026).
  *   5) DSR: NÃO aplicado → aplicarDsr=false.
  *   6) Total tributável = Salário(c/ peric) + HE + Noturno (sem DSR).
  *   7) INSS = 12% fixo sobre o total tributável (inssModo="flat", inssFlatPct=12).
@@ -29,7 +29,7 @@
  *   11) Provisões: 13º, Férias, 1/3, FGTS s/ provisões, INSS s/ provisões (custo empresa).
  *
  * Histórico: adicional noturno já foi 20% (só prêmio), depois hora cheia 1,80×.
- * Desde 16/07/2026 (ordem do dono) HE e noturno são VALOR FIXO R$ 15,00/h.
+ * Desde 16/07/2026 (ordem do dono) HE é FIXO R$ 15,00/h e noturno FIXO R$ 15,50/h.
  */
 
 // ===== TABELAS OFICIAIS 2025 =====
@@ -63,7 +63,7 @@ export const PERICULOSIDADE_PADRAO = 0.30;
  * por 15,00 hora extra e noturna". Substitui o modelo valorHora×1,6. */
 export const VALOR_HORA_EXTRA_FIXO = 15;
 /** Valor FIXO da hora noturna (R$/h) — mesma ordem. Substitui valorHora×1,8. */
-export const VALOR_HORA_NOTURNA_FIXO = 15;
+export const VALOR_HORA_NOTURNA_FIXO = 15.5;
 export const INSS_PROVISAO_FERIAS_13 = 0.075; // alíquota efetiva validada vs contábil
 
 // ===== HELPERS =====
@@ -252,8 +252,8 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   // Periculosidade somada (base do cadastro é SEM peric). Compõe o "Salário" da planilha.
   const periculosidade = aplicarPericulosidade ? r2(salarioProporcional * periculosidadePct) : 0;
 
-  // HE e adicional noturno a VALOR FIXO por hora (R$ 15,00 — ordem do dono
-  // 16/07/2026), substituindo o modelo antigo valorHora × 1,6/1,8.
+  // HE (R$ 15,00/h) e adicional noturno (R$ 15,50/h) a VALOR FIXO por hora
+  // (ordem do dono 16/07/2026), substituindo o modelo antigo valorHora × 1,6/1,8.
   const horasExtrasValor = r2(valorHoraExtraFixo * horasExtras);
   const adicionalNoturnoValor = r2(valorHoraNoturnaFixo * horasNoturnas);
 
