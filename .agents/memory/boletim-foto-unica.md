@@ -18,3 +18,5 @@ description: Por que o total do Boletim de Medição é congelado por OS no envi
 - Approvals antigos sem `billing_snapshot` (NULL) degradam para o cálculo ao vivo — aceitável; não dá pra reconstruir o per-OS do que já foi enviado. Para reconciliar um boletim antigo bagunçado, cancelar e reenviar (gera snapshot novo).
 - Fatura na aprovação usa `approval.total_value` congelado; só recalcula ao vivo se estiver vazio (approval antigo).
 - Excel é gerado só 1x (no envio), não há re-download que regenere ao vivo.
+- **Rodapé/diálogo "Aprovar e Faturar" também usa `getBillingTotal`** — o `checkedTotal` do tfoot somava os 9 componentes às cegas E excluía cancelada ⇒ mostrava R$ 0,00 p/ OS cancelada (fat_total pela tabela 100km, componentes zerados). Todo novo consumidor de total na tela = getBillingTotal, nunca soma direta.
+- **Fluxo "Aprovar e Faturar" só manda /revisar p/ billing A_VERIFICAR** — /revisar rejeita outros status com 400; cancelada (CANCELADO) já é faturável direto pelo gerar-fatura.

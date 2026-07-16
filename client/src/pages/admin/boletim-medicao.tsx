@@ -1392,11 +1392,9 @@ export default function BoletimMedicaoPage() {
                             {(() => {
                               const checkedInGroup = group.orders.filter(o => checkedOsIds.has(o.id));
                               const checkedCount = checkedInGroup.length;
-                              const checkedTotal = checkedInGroup.reduce((acc, o) => {
-                                if (o.status === "recusada" || o.status === "cancelada") return acc;
-                                const b = o.billing;
-                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0);
-                              }, 0);
+                              // Mesma fonte de verdade da tela (getBillingTotal): snapshot congelado →
+                              // fat_total → soma de componentes; recusada=0, cancelada=acionamento+extras (§8.1).
+                              const checkedTotal = checkedInGroup.reduce((acc, o) => acc + getBillingTotal(o), 0);
                               return checkedCount > 0 ? (
                                 <tr className="bg-blue-50/80 border-b">
                                   <td colSpan={11} className="px-4 py-3">
@@ -1452,7 +1450,11 @@ export default function BoletimMedicaoPage() {
                                           })()}
                                           <button
                                             onClick={() => {
-                                              const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
+                                              // Só billings A_VERIFICAR passam pelo /revisar (cancelada/aprovada já estão
+                                              // prontas p/ faturar e o endpoint rejeita outros status com 400).
+                                              const billingIds = checkedInGroup
+                                                .filter(o => (o.billing?.status || "").toUpperCase() === "A_VERIFICAR")
+                                                .map(o => o.billing?.id).filter(Boolean);
                                               const dates = checkedInGroup.map(o => o.billing?.data_missao || o.scheduledDate || o.completedDate || o.createdAt).filter(Boolean).map(d => d.split("T")[0]).sort();
                                               setAprovarFaturarDialog({
                                                 clientId: group.clientId,
@@ -1530,7 +1532,7 @@ export default function BoletimMedicaoPage() {
                     });
                     invalidateAllRelated();
                     setCheckedOsIds(new Set());
-                    toast({ title: "Sucesso", description: `${aprovarFaturarDialog.billingIds.length} fatura(s) gerada(s) no Asaas com sucesso` });
+                    toast({ title: "Sucesso", description: `Fatura gerada no Asaas para ${aprovarFaturarDialog.osIds.length} OS com sucesso` });
                     setAprovarFaturarDialog(null);
                   } catch (err: any) {
                     const isQuinzenaBlock = err?.message?.includes("QUINZENA_INCOMPLETA") || err?.message?.includes("BLOQUEADO") || err?.message?.includes("quinzena");
