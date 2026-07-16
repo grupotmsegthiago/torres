@@ -6,8 +6,10 @@ description: "resumo" no PV do bot devolve panorama da frota (owner-only, com fi
 # Resumo de frota no PV do bot (WhatsApp)
 
 Quando um número AUTORIZADO manda "resumo" (ou "frota") no PRIVADO do bot, a Central
-responde com um panorama de TODOS os veículos cadastrados (🟢 DISPONÍVEIS / 🟡 EM VIAGEM
-+ bloco 📊). Implementado em `server/lib/fleet-summary.ts`, disparado pelo branch PV do
+responde no padrão FIXO do dono (16/07/2026): cabeçalho `🛡️ [TMSEGo] RELATÓRIO DIÁRIO` +
+data, `[🟢] DISPONÍVEIS: NN UNIDADES` (linhas `- PLACA: R$ fat_dia (nº da próxima OS)`),
+`[🟡] EM VIAGEM` (`- PLACA (Origem ➜ Destino)`) e `[💰] TOTAL FATURADO` (soma da frota).
+Contagem 2 dígitos, UNIDADE/UNIDADES singular/plural — NÃO trocar o layout sem ordem. Implementado em `server/lib/fleet-summary.ts`, disparado pelo branch PV do
 webhook em `server/routes/whatsapp.ts` (`if (!parsed.isGroup && !parsed.fromMe)`,
 fire-and-forget).
 

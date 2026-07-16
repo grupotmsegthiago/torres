@@ -20,8 +20,6 @@ import { shortLocal } from "./agent-central-mention";
 import {
   calcularEscolta,
   calcHorasElapsedLocal,
-  extractKmFromText,
-  haversineDistanceKm,
   splitMissionCostsForBilling,
 } from "../billing-calc";
 import { brtDateKey, currentBrtDayRange } from "./brt-date";
@@ -95,33 +93,6 @@ function money(v: number): string {
   return "R$ " + (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function kmLabel(v: number): string {
-  return Math.round(Number(v) || 0).toLocaleString("pt-BR") + " km";
-}
-
-function firstName(name: string | null | undefined): string {
-  const t = String(name || "").trim();
-  if (!t) return "";
-  return t.split(/\s+/)[0].toUpperCase();
-}
-
-/** Nomes (2 primeiros) dos agentes de um conjunto de OSs, sem repetir. */
-function agentsOf(orders: any[], empMap: Map<number, any>): string {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const o of orders) {
-    for (const id of [o.assignedEmployeeId, o.assignedEmployee2Id]) {
-      if (!id) continue;
-      const fn = firstName(empMap.get(id)?.name);
-      if (fn && !seen.has(fn)) {
-        seen.add(fn);
-        names.push(fn);
-      }
-    }
-  }
-  return names.slice(0, 2).join(" / ");
-}
-
 // ── Faturamento por OS (espelha o Grid Operacional, SÓ leitura) ─────────────
 const FINISHED_MISSION = new Set([
   "encerrada",
@@ -145,22 +116,6 @@ function isActiveMission(o: any): boolean {
 function isFutureScheduled(o: any): boolean {
   if (o.status !== "agendada" || !o.scheduledDate) return false;
   return parseBRT(o.scheduledDate).getTime() > Date.now();
-}
-
-function computeKmRota(o: any): number {
-  const kmTexto = extractKmFromText(o.destination) || extractKmFromText(o.route);
-  if (kmTexto) return kmTexto;
-  if (o.originLat && o.originLng && o.destinationLat && o.destinationLng) {
-    let km = haversineDistanceKm(
-      Number(o.originLat),
-      Number(o.originLng),
-      Number(o.destinationLat),
-      Number(o.destinationLng),
-    ) * 1.4;
-    if (o.pedagioIdaVolta) km *= 2;
-    return Math.round(km);
-  }
-  return 0;
 }
 
 interface BillingCtx {
@@ -273,13 +228,11 @@ async function fetchByOsIdsChunked(table: string, ids: number[], columns: string
 
 // ── Builder principal ───────────────────────────────────────────────────────
 export async function buildFleetOperationalSummary(): Promise<string> {
-  const [vehicles, orders, employees] = await Promise.all([
+  const [vehicles, orders] = await Promise.all([
     storage.getVehicles(),
     storage.getServiceOrders(),
-    storage.getEmployees(),
   ]);
 
-  const empMap = new Map<number, any>(employees.map((e: any) => [e.id, e]));
   const today = brtToday();
 
   // OSs relevantes p/ faturamento: em viagem + as do dia (exclui recusada/cancelada).
@@ -330,7 +283,7 @@ export async function buildFleetOperationalSummary(): Promise<string> {
 
   const disponiveis: string[] = [];
   const emViagem: string[] = [];
-  let proximaViagemPendentes = 0;
+  let totalFaturado = 0;
 
   const sortedVehicles = [...vehicles].sort((a: any, b: any) =>
     String(a.plate || "").localeCompare(String(b.plate || ""), "pt-BR"),
@@ -344,9 +297,8 @@ export async function buildFleetOperationalSummary(): Promise<string> {
       (o: any) => osDateKey(o) === today && !EXCLUDED_OS_STATUS.has(String(o.status)),
     );
 
-    const todayCount = todayOrders.length;
     const todayFat = todayOrders.reduce((s: number, o: any) => s + osFaturamento(o, ctx), 0);
-    const osLine = todayCount > 0 ? `OS: ${todayCount} | Fat.: ${money(todayFat)}` : "OS: 0";
+    totalFaturado += todayFat;
 
     if (activeOrders.length > 0) {
       // EM VIAGEM: usa a missão ativa mais recente como principal.
@@ -355,56 +307,35 @@ export async function buildFleetOperationalSummary(): Promise<string> {
       )[0];
       const origem = shortLocal(primary.origin) || "—";
       const destino = shortLocal(primary.destination) || "—";
-      const km = computeKmRota(primary);
-      const agentes = agentsOf([primary], empMap) || "—";
-      emViagem.push(
-        [
-          `🚚 ${plate}`,
-          `📍 ${origem} ➜ ${destino}`,
-          `📏 ${kmLabel(km)}`,
-          `👥 ${agentes}`,
-          `📦 ${osLine}`,
-        ].join("\n"),
-      );
+      const fatSuffix = todayFat > 0 ? `: ${money(todayFat)}` : "";
+      emViagem.push(`- ${plate}${fatSuffix} (${origem} ➜ ${destino})`);
     } else {
-      // DISPONÍVEL: OS do dia + próxima viagem agendada.
-      const agentes = agentsOf(todayOrders, empMap) || "—";
+      // DISPONÍVEL: faturamento do dia + nº da próxima viagem agendada (se houver).
       const proxima = vOrders
         .filter(isFutureScheduled)
         .sort((a, b) => parseBRT(a.scheduledDate).getTime() - parseBRT(b.scheduledDate).getTime())[0];
-      const proximaLabel = proxima?.osNumber || "Não";
-      if (proxima) proximaViagemPendentes++;
-      disponiveis.push(
-        [
-          `🚚 ${plate}`,
-          `• ${osLine}`,
-          `• Agentes: ${agentes}`,
-          `• Próxima viagem: ${proximaLabel}`,
-        ].join("\n"),
-      );
+      const proximaSuffix = proxima?.osNumber ? ` (${proxima.osNumber})` : "";
+      disponiveis.push(`- ${plate}: ${money(todayFat)}${proximaSuffix}`);
     }
   }
 
+  // Padrão definido pelo dono (16/07/2026) — manter este layout.
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const unidades = (n: number) => (n === 1 ? "01 UNIDADE" : `${pad2(n)} UNIDADES`);
+
   const parts: string[] = [];
-  parts.push(`🛡️ RESUMO OPERACIONAL — ${brtDateLabel()}`);
-  parts.push("");
-  parts.push(`🟢 DISPONÍVEIS (${disponiveis.length})`);
-  parts.push("");
-  parts.push(disponiveis.length ? disponiveis.join("\n\n") : "—");
-  parts.push("");
   parts.push(SEP);
+  parts.push("🛡️ [TMSEGo] RELATÓRIO DIÁRIO");
+  parts.push(`📅 ${brtDateLabel()}`);
   parts.push("");
-  parts.push(`🟡 EM VIAGEM (${emViagem.length})`);
+  parts.push(`[🟢] DISPONÍVEIS: ${unidades(disponiveis.length)}`);
+  parts.push(disponiveis.length ? disponiveis.join("\n") : "- Nenhuma");
   parts.push("");
-  parts.push(emViagem.length ? emViagem.join("\n\n") : "—");
+  parts.push(`[🟡] EM VIAGEM: ${unidades(emViagem.length)}`);
+  parts.push(emViagem.length ? emViagem.join("\n") : "- Nenhuma");
   parts.push("");
+  parts.push(`[💰] TOTAL FATURADO: ${money(totalFaturado)}`);
   parts.push(SEP);
-  parts.push("");
-  parts.push("📊 RESUMO");
-  parts.push(`• Total de VTR: ${vehicles.length}`);
-  parts.push(`• 🟢 Disponíveis: ${disponiveis.length}`);
-  parts.push(`• 🟡 Em viagem: ${emViagem.length}`);
-  parts.push(`• Próxima viagem pendente: ${proximaViagemPendentes}`);
 
   return parts.join("\n");
 }
