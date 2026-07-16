@@ -29,6 +29,7 @@ const TrackerPage = lazy(() => import("@/pages/admin/tracker"));
 const MissionPage = lazy(() => import("@/pages/admin/mission"));
 const OperationalGridPage = lazy(() => import("@/pages/admin/operational-grid"));
 const CamerasLivePage = lazy(() => import("@/pages/admin/cameras-live"));
+const CameraSharePage = lazy(() => import("@/pages/camera-share"));
 const WhatsappPage = lazy(() => import("@/pages/admin/whatsapp"));
 const AgendaVtrPage = lazy(() => import("@/pages/admin/agenda-vtr"));
 const RelatorioNFPage = lazy(() => import("@/pages/admin/relatorio-nf"));
@@ -234,6 +235,7 @@ function Router() {
     <Suspense fallback={<LazyFallback />}>
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/camera/:token" component={CameraSharePage} />
         <Route path="/admin" component={LoginPage} />
         <Route path="/admin/dashboard">{() => <ProtectedRoute component={DashboardPage} />}</Route>
         <Route path="/admin/clients">{() => <ProtectedRoute component={ClientsPage} />}</Route>

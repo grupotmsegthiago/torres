@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { HlsVideo } from "@/components/admin/hls-video";
 import { Button } from "@/components/ui/button";
-import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2, Tv, PanelLeft } from "lucide-react";
+import { Video, AlertTriangle, ArrowLeft, Bell, Maximize2, Minimize2, Tv, PanelLeft, Link2, Copy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -327,12 +327,15 @@ export default function CamerasLivePage() {
                   </div>
                 )}
               </div>
-              {typeof focoVehicle.last_speed === "number" && (
-                <div className="text-right">
-                  <span className="text-2xl font-mono font-bold text-emerald-400">{focoVehicle.last_speed}</span>
-                  <span className="text-xs text-slate-500 font-mono ml-1">km/h</span>
-                </div>
-              )}
+              <div className="flex items-center gap-4">
+                <ShareLinkButton vehicleId={focoVehicle.id} plate={focoVehicle.plate} />
+                {typeof focoVehicle.last_speed === "number" && (
+                  <div className="text-right">
+                    <span className="text-2xl font-mono font-bold text-emerald-400">{focoVehicle.last_speed}</span>
+                    <span className="text-xs text-slate-500 font-mono ml-1">km/h</span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {CHANNELS.map((ch) => (
@@ -459,6 +462,85 @@ function MosaicTile({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Gera link externo (sem login) pro cliente acompanhar as câmeras 1 e 2 da
+ * viatura. Escolhe a validade, gera e copia a URL pública /camera/<token>.
+ */
+function ShareLinkButton({ vehicleId, plate }: { vehicleId: number; plate: string }) {
+  const { toast } = useToast();
+  const [hours, setHours] = useState(24);
+  const [busy, setBusy] = useState(false);
+  const [lastLink, setLastLink] = useState<string | null>(null);
+
+  async function gerar() {
+    setBusy(true);
+    try {
+      const r = await authFetch("/api/ssx/share-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleId, hours }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+      const url = `${window.location.origin}${d.path}`;
+      setLastLink(url);
+      let copiado = false;
+      try {
+        await navigator.clipboard.writeText(url);
+        copiado = true;
+      } catch {}
+      toast({
+        title: copiado ? "Link copiado!" : "Link gerado",
+        description: `${plate} — válido por ${d.hours}h (até ${new Date(d.expiresAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}).${copiado ? "" : " Copie manualmente abaixo."}`,
+      });
+    } catch (e: any) {
+      toast({ title: "Erro ao gerar link", description: String(e?.message || e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <select
+          value={hours}
+          onChange={(e) => setHours(Number(e.target.value))}
+          className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-md px-2 py-1.5 font-mono"
+          data-testid="select-share-hours"
+          title="Validade do link"
+        >
+          <option value={6}>6h</option>
+          <option value={12}>12h</option>
+          <option value={24}>24h</option>
+          <option value={48}>48h</option>
+          <option value={72}>72h</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={gerar} disabled={busy} data-testid="button-share-link">
+          <Link2 className="h-3.5 w-3.5 mr-1" />
+          {busy ? "Gerando…" : "Gerar link externo"}
+        </Button>
+      </div>
+      {lastLink && (
+        <button
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(lastLink);
+              toast({ title: "Link copiado!" });
+            } catch {}
+          }}
+          className="flex items-center gap-1 text-[10px] text-indigo-300 hover:text-indigo-200 font-mono max-w-[320px] truncate"
+          title={lastLink}
+          data-testid="button-copy-share-link"
+        >
+          <Copy className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{lastLink}</span>
+        </button>
+      )}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import type { Express, Request, Response } from "express";
+import crypto from "crypto";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { getStreamUrl, pingSsx } from "../ssx-client";
+import { logSystemAudit } from "../audit";
 
 /**
  * Rotas da integração SSX Tracking.
@@ -113,6 +115,126 @@ export function registerSsxRoutes(app: Express) {
     } catch (err: any) {
       const msg = String(err?.message || err);
       // câmera offline / sem sinal não é 500 — devolve 503 pro front mostrar "sem sinal"
+      const isOffline = /URLStream|offline|sem sinal|204/.test(msg);
+      res.status(isOffline ? 503 : 500).json({ error: msg });
+    }
+  });
+
+  // -------- link externo de câmeras (cliente, sem login) --------
+  // Token assinado (HMAC-SHA256 com SESSION_SECRET) com validade embutida:
+  // payload = "<vehicleId>.<expiraEmMs>" em base64url + "." + assinatura.
+  // Sem tabela no banco: expira sozinho; revogação = esperar expirar.
+  const SHARE_SECRET = process.env.SESSION_SECRET || "";
+
+  function signShare(payloadB64: string): string {
+    return crypto.createHmac("sha256", SHARE_SECRET).update(payloadB64).digest("base64url");
+  }
+
+  function parseShareToken(token: string): { vehicleId: number; expMs: number } | null {
+    if (!SHARE_SECRET) return null;
+    const parts = String(token || "").split(".");
+    if (parts.length !== 2) return null;
+    const [payloadB64, sig] = parts;
+    const expected = signShare(payloadB64);
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+    } catch {
+      return null;
+    }
+    const raw = Buffer.from(payloadB64, "base64url").toString("utf8");
+    const m = raw.match(/^(\d+)\.(\d+)$/);
+    if (!m) return null;
+    const vehicleId = Number(m[1]);
+    const expMs = Number(m[2]);
+    if (!Number.isInteger(vehicleId) || vehicleId <= 0 || !Number.isFinite(expMs)) return null;
+    if (Date.now() > expMs) return null; // expirado
+    return { vehicleId, expMs };
+  }
+
+  // Gera o link (admin). body: { vehicleId, hours? } — validade 1..168h, padrão 24h.
+  app.post("/api/ssx/share-link", requireAuth, requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      if (!SHARE_SECRET) return res.status(503).json({ error: "SESSION_SECRET não configurado no servidor" });
+      const vehicleId = Number(req.body?.vehicleId);
+      const hours = Math.min(168, Math.max(1, Number(req.body?.hours) || 24));
+      if (!Number.isInteger(vehicleId) || vehicleId <= 0) {
+        return res.status(400).json({ error: "vehicleId obrigatório" });
+      }
+      const { data: veh, error } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate, ssx_integration_code")
+        .eq("id", vehicleId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!veh) return res.status(404).json({ error: "Veículo não encontrado" });
+      if (!veh.ssx_integration_code) {
+        return res.status(409).json({ error: "Veículo sem código de integração SSX cadastrado", plate: veh.plate });
+      }
+      const expMs = Date.now() + hours * 3600_000;
+      const payloadB64 = Buffer.from(`${vehicleId}.${expMs}`, "utf8").toString("base64url");
+      const token = `${payloadB64}.${signShare(payloadB64)}`;
+      const u = (req as any).user;
+      logSystemAudit({
+        userId: u?.id, userName: u?.name || u?.email, userRole: u?.role,
+        action: "camera_share_link_gerado",
+        targetId: String(vehicleId), targetType: "vehicle",
+        details: `Link externo de câmeras gerado p/ ${veh.plate} — válido ${hours}h (até ${new Date(expMs).toISOString()})`,
+        ipAddress: req.ip,
+      });
+      res.json({
+        token,
+        path: `/camera/${token}`,
+        plate: veh.plate,
+        expiresAt: new Date(expMs).toISOString(),
+        hours,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message || err) });
+    }
+  });
+
+  // Info do link (público — o cliente abre sem login).
+  app.get("/api/public/camera-share/:token", async (req: Request, res: Response) => {
+    try {
+      const parsed = parseShareToken(String(req.params.token || ""));
+      if (!parsed) return res.status(401).json({ error: "Link inválido ou expirado" });
+      const { data: veh, error } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate, brand, model, frota, ssx_integration_code")
+        .eq("id", parsed.vehicleId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!veh || !veh.ssx_integration_code) return res.status(404).json({ error: "Viatura indisponível" });
+      res.json({
+        plate: veh.plate,
+        brand: veh.brand,
+        model: veh.model,
+        frota: veh.frota,
+        expiresAt: new Date(parsed.expMs).toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message || err) });
+    }
+  });
+
+  // Stream de um canal via link público (mesma resposta do /api/ssx/stream).
+  app.get("/api/public/camera-share/:token/stream", async (req: Request, res: Response) => {
+    try {
+      const parsed = parseShareToken(String(req.params.token || ""));
+      if (!parsed) return res.status(401).json({ error: "Link inválido ou expirado" });
+      const channel = Number(req.query.channel || 1);
+      if (channel !== 1 && channel !== 2) return res.status(400).json({ error: "channel deve ser 1 ou 2" });
+      const { data: veh, error } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate, ssx_integration_code")
+        .eq("id", parsed.vehicleId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!veh?.ssx_integration_code) return res.status(404).json({ error: "Viatura indisponível" });
+      const r = await getStreamUrl(String(veh.ssx_integration_code), channel);
+      res.json({ url: r.url, channel: r.channel, plate: veh.plate });
+    } catch (err: any) {
+      const msg = String(err?.message || err);
       const isOffline = /URLStream|offline|sem sinal|204/.test(msg);
       res.status(isOffline ? 503 : 500).json({ error: msg });
     }
