@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard, FileSignature, Bell } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard, FileSignature, Bell, Printer } from "lucide-react";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
@@ -4942,6 +4942,28 @@ function EmployeeSignableDocsTab({ employeeId }: { employeeId: number }) {
     catch (e: any) { toast({ title: "Erro ao carregar evidência", description: e.message, variant: "destructive" }); }
   };
 
+  // Visualizador do documento completo (com folha de autenticação/assinaturas) + botão Imprimir.
+  // Busca o HTML autenticado via authFetch (window.open direto não manda o token → 401).
+  const [docView, setDocView] = useState<{ title: string; html: string } | null>(null);
+  const [docViewLoading, setDocViewLoading] = useState<number | null>(null);
+  const docFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const openDocView = async (d: any) => {
+    setDocViewLoading(d.id);
+    try {
+      const r = await authFetch(`/api/signable-documents/${d.id}/pdf?autoprint=0`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setDocView({ title: d.title, html: await r.text() });
+    } catch (e: any) {
+      toast({ title: "Erro ao abrir documento", description: e.message, variant: "destructive" });
+    } finally {
+      setDocViewLoading(null);
+    }
+  };
+  const printDocView = () => {
+    try { docFrameRef.current?.contentWindow?.print(); }
+    catch { toast({ title: "Não foi possível imprimir", variant: "destructive" }); }
+  };
+
   const fmt = (d?: string | null) => d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 
   return (
@@ -4993,8 +5015,8 @@ function EmployeeSignableDocsTab({ employeeId }: { employeeId: number }) {
                     <td className="px-3 py-2 text-neutral-500">{fmt(d.createdAt)}</td>
                     <td className="px-3 py-2 text-neutral-500">{fmt(d.assinadoEm)}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => window.open(`/api/signable-documents/${d.id}/pdf`, "_blank")} data-testid={`button-pdf-${d.id}`}>
-                        <FileText className="w-3.5 h-3.5" />
+                      <Button size="sm" variant="outline" className="h-7 mr-1" disabled={docViewLoading === d.id} onClick={() => openDocView(d)} title="Visualizar documento completo" data-testid={`button-pdf-${d.id}`}>
+                        {docViewLoading === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                       </Button>
                       {assinado ? (
                         <Button size="sm" variant="outline" className="h-7" onClick={() => openEvidence(d.id)} data-testid={`button-evidence-${d.id}`}>
@@ -5012,6 +5034,28 @@ function EmployeeSignableDocsTab({ employeeId }: { employeeId: number }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {docView && (
+        <Dialog open={!!docView} onOpenChange={(o) => !o && setDocView(null)}>
+          <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-4">
+            <DialogHeader className="flex-shrink-0">
+              <div className="flex items-center justify-between gap-3 pr-8">
+                <DialogTitle className="text-sm truncate">{docView.title}</DialogTitle>
+                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white flex-shrink-0" onClick={printDocView} data-testid="button-print-signable">
+                  <Printer className="w-3.5 h-3.5 mr-1" /> Imprimir
+                </Button>
+              </div>
+            </DialogHeader>
+            <iframe
+              ref={docFrameRef}
+              srcDoc={docView.html}
+              title={docView.title}
+              className="flex-1 w-full border border-neutral-200 rounded-lg bg-white"
+              data-testid="iframe-signable-doc"
+            />
+          </DialogContent>
+        </Dialog>
       )}
 
       {evidence && (

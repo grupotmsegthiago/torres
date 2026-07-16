@@ -127,7 +127,7 @@ async function loadEmployeeMap(ids?: number[]): Promise<Map<number, any>> {
   return map;
 }
 
-function buildAuthenticatedHtml(doc: any, emp: any): string {
+function buildAuthenticatedHtml(doc: any, emp: any, opts?: { autoprint?: boolean }): string {
   const logoUrl = `${process.env.PUBLIC_SITE_URL || ""}/logo-torres-dark.jpeg`;
   const body = doc.content_html || "";
   const assinado = doc.assinatura_status === "assinado";
@@ -204,7 +204,7 @@ function buildAuthenticatedHtml(doc: any, emp: any): string {
       ${body}
       ${authSheet}
     </div>
-    <script>window.onload=function(){setTimeout(function(){window.print()},400)};<\/script>
+    ${opts?.autoprint === false ? "" : `<script>window.onload=function(){setTimeout(function(){window.print()},400)};<\/script>`}
   </body></html>`;
 }
 
@@ -477,7 +477,9 @@ export function registerSignableDocumentRoutes(app: Express) {
       const empMap = await loadEmployeeMap([doc.employee_id]);
       const emp = empMap.get(doc.employee_id);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(buildAuthenticatedHtml(doc, emp));
+      // ?autoprint=0 → visualização em iframe (o botão Imprimir da UI chama o print)
+      const autoprint = String(req.query.autoprint ?? "1") !== "0";
+      res.send(buildAuthenticatedHtml(doc, emp, { autoprint }));
     } catch (err: any) {
       console.error("[signable-docs:pdf]", err);
       res.status(500).send(err.message);
