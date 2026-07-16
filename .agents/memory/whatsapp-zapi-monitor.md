@@ -13,6 +13,14 @@ pareamento esconde a segunda:
    diferente do oficial; `assertExpectedNumber().ok === false`. Nesse caso os
    ENVIOS são bloqueados pelo guard de número, então o painel mostraria
    "conectado" justamente no caso que o monitor existe pra pegar.
+3. **Credencial REVOGADA** — Z-API responde `403 "Client-Token not allowed"` em
+   tudo (`/status`, `/device`). Acontece quando o dono regenera o token de
+   segurança da conta ou troca de instância no painel Z-API. Sintoma nos logs:
+   forward-cron em loop "não foi possível confirmar o número conectado
+   (transitório)". Fix: atualizar secrets `ZAPI_CLIENT_TOKEN` (menu Segurança) e,
+   se trocou instância, `ZAPI_INSTANCE_ID`/`ZAPI_TOKEN` — e lembrar que ao trocar
+   de instância o webhook "Ao receber" vem zerado (recadastrar). Dev pega os
+   secrets novos no restart; produção só na próxima publicação (caso jul/2026).
 
 **Regra:** qualquer health/UI de "bot operante" deve considerar `isDown` (que
 cobre os 2 modos), nunca só `connected`. No painel: `operationalDown = isDown===true || connected===false`; wrong-number = `operationalDown && connected===true`.
