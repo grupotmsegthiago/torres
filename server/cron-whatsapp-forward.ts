@@ -335,7 +335,7 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   if (ag1Name) L.push(`👮 *AGENTE 01:* ${ag1Name}`);
   if (ag2Name) L.push(`👮 *AGENTE 02:* ${ag2Name}`);
   L.push("");
-  if (progressoPct != null) L.push(`📈*PROGRESSO DA MISSÃO:* ${progressBar(progressoPct)} ${progressoPct}% (cada quadrado vale 20%)`);
+  if (progressoPct != null) L.push(`📈*PROGRESSO DA MISSÃO:* ${progressBar(progressoPct)} ${progressoPct}%`);
   L.push("");
   if (addr) L.push(`🏙️ *LOCALIZAÇÃO:* ${addr}`);
   if (hasGeo) L.push(`🗾 *LINK DO GOOGLE:* ${mapsLink(upLat, upLng)}`);
