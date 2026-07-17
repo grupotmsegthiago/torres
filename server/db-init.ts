@@ -1383,6 +1383,12 @@ export async function ensureDbSchema() {
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});
+    // Dados do veículo escoltado (carga do cliente) — marca/modelo/ano/cor (jul/2026).
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_vehicle_brand TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_vehicle_model TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_vehicle_year TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_vehicle_color TEXT`).catch(() => {});
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_fat ON service_orders (status, fat_calculado)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_created_at ON service_orders (created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_created ON service_orders (status, created_at DESC)`).catch(() => {});

@@ -34,7 +34,7 @@ import type { Express } from "express";
     const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit as string) || 1000));
     const offset = (page - 1) * limit;
 
-    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_vehicle_brand,escorted_vehicle_model,escorted_vehicle_year,escorted_vehicle_color,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
 
     let data: any[];
     try {
@@ -2508,6 +2508,10 @@ import type { Express } from "express";
         if (os.escortedVehiclePlate) {
           fieldRow2("Ve\u00edculo", os.escortedVehiclePlate, "GR/Doc", (os as any).smNumber || (os as any).sm_number || "\u2014");
         }
+        const evBrandModel = [os.escortedVehicleBrand, os.escortedVehicleModel].filter(Boolean).join(" ");
+        if (evBrandModel || os.escortedVehicleYear || os.escortedVehicleColor) {
+          fieldRow2("Marca/Modelo", evBrandModel || "\u2014", "Ano / Cor", [os.escortedVehicleYear, os.escortedVehicleColor].filter(Boolean).join(" / ") || "\u2014");
+        }
         y += 2;
       }
 
@@ -3352,7 +3356,16 @@ import type { Express } from "express";
         drawFieldCell(LM, doc.y, escColW, fH, "Motorista", sanitize(os.escortedDriverName));
         drawFieldCell(LM + escColW, doc.y, escColW, fH, "Telefone", sanitize(os.escortedDriverPhone));
         drawFieldCell(LM + escColW * 2, doc.y, escColW, fH, "Placa", sanitize(os.escortedVehiclePlate));
-        doc.y += fH + 6;
+        doc.y += fH;
+        const escBrandModel = [os.escortedVehicleBrand, os.escortedVehicleModel].filter(Boolean).join(" ");
+        if (escBrandModel || os.escortedVehicleYear || os.escortedVehicleColor) {
+          ensureSpace(fH + 6);
+          drawFieldCell(LM, doc.y, escColW, fH, "Marca/Modelo", sanitize(escBrandModel));
+          drawFieldCell(LM + escColW, doc.y, escColW, fH, "Ano", sanitize(os.escortedVehicleYear));
+          drawFieldCell(LM + escColW * 2, doc.y, escColW, fH, "Cor", sanitize(os.escortedVehicleColor));
+          doc.y += fH;
+        }
+        doc.y += 6;
       }
 
       const kmSaidaPhoto = photos.find(p => p.step === "km_saida");

@@ -828,6 +828,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedDriverName: (order as any)?.escortedDriverName || "",
     escortedDriverPhone: (order as any)?.escortedDriverPhone || "",
     escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
+    escortedVehicleBrand: (order as any)?.escortedVehicleBrand || "",
+    escortedVehicleModel: (order as any)?.escortedVehicleModel || "",
+    escortedVehicleYear: (order as any)?.escortedVehicleYear || "",
+    escortedVehicleColor: (order as any)?.escortedVehicleColor || "",
     notes: order?.notes || "",
     valorEstimado: (order as any)?.valorEstimado ? Number((order as any).valorEstimado).toFixed(2).replace(".", ",") : "",
     pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
@@ -948,6 +952,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedDriverName: data.escortedDriverName ?? "",
     escortedDriverPhone: data.escortedDriverPhone ?? "",
     escortedVehiclePlate: data.escortedVehiclePlate ?? "",
+    escortedVehicleBrand: data.escortedVehicleBrand ?? "",
+    escortedVehicleModel: data.escortedVehicleModel ?? "",
+    escortedVehicleYear: data.escortedVehicleYear ?? "",
+    escortedVehicleColor: data.escortedVehicleColor ?? "",
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
@@ -1566,6 +1574,25 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <div>
                 <FieldLabel>Placa do Veículo Escoltado</FieldLabel>
                 <Input value={form.escortedVehiclePlate} onChange={(e) => setForm(prev => ({ ...prev, escortedVehiclePlate: e.target.value.toUpperCase() }))} placeholder="ABC1D23" className="text-sm" data-testid="input-os-driver-plate" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <FieldLabel>Marca do Veículo</FieldLabel>
+                <Input value={form.escortedVehicleBrand} onChange={(e) => setForm(prev => ({ ...prev, escortedVehicleBrand: e.target.value }))} placeholder="Scania" className="text-sm" data-testid="input-os-vehicle-brand" />
+              </div>
+              <div>
+                <FieldLabel>Modelo</FieldLabel>
+                <Input value={form.escortedVehicleModel} onChange={(e) => setForm(prev => ({ ...prev, escortedVehicleModel: e.target.value }))} placeholder="R450" className="text-sm" data-testid="input-os-vehicle-model" />
+              </div>
+              <div>
+                <FieldLabel>Ano</FieldLabel>
+                <Input value={form.escortedVehicleYear} onChange={(e) => setForm(prev => ({ ...prev, escortedVehicleYear: e.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder="2024" className="text-sm" data-testid="input-os-vehicle-year" />
+              </div>
+              <div>
+                <FieldLabel>Cor</FieldLabel>
+                <Input value={form.escortedVehicleColor} onChange={(e) => setForm(prev => ({ ...prev, escortedVehicleColor: e.target.value }))} placeholder="Branco" className="text-sm" data-testid="input-os-vehicle-color" />
               </div>
             </div>
 
