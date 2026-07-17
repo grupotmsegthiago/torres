@@ -1217,6 +1217,14 @@ export async function ensureDbSchema() {
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS margem_percentual NUMERIC(10,2) DEFAULT 0
     `).catch(() => {});
 
+    // Em prod a coluna nasceu NUMERIC(6,2) (máx ±9999,99): margem muito negativa
+    // (despesa >> faturamento) estourava com "numeric field overflow" ao aprovar
+    // o boletim (bug TOR-0436, jul/2026). Alarga p/ NUMERIC(10,2) — só widening,
+    // nenhum dado é alterado.
+    await execSql(`ALTER TABLE escort_billings ALTER COLUMN margem_percentual TYPE NUMERIC(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ALTER COLUMN margem_calculada TYPE NUMERIC(10,2)`).catch(() => {});
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
+
     await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS os_number TEXT
     `).catch(() => {});
