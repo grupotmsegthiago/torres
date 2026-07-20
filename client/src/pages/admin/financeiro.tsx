@@ -109,6 +109,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   service_order: "RECEITA OS",
   manual: "MANUAL",
   ticketlog_pedagio_fatura: "FATURA TICKETLOG",
+  invoice: "FATURA",
 };
 
 const ORIGIN_ROUTES: Record<string, string> = {
@@ -117,7 +118,72 @@ const ORIGIN_ROUTES: Record<string, string> = {
   maintenance: "/admin/maintenance",
   mission_cost: "/admin/operational-grid",
   service_order: "/admin/operational-grid",
+  invoice: "/admin/faturas",
 };
+
+// Faturas emitidas (tabela invoices / Asaas ou Inter) exibidas na aba Contas a
+// Receber como linhas somente-leitura. Status pago vem do gateway (baixa
+// automática/manual na tela de Faturas) — aqui NÃO se dá baixa.
+const INVOICE_PAID_STATUSES = ["RECEIVED", "RECEIVED_IN_CASH", "CONFIRMED", "PAGO"];
+const INVOICE_HIDDEN_STATUSES = ["CANCELLED", "CANCELED", "REFUNDED", "CANCELADO", "CANCELADA"];
+
+interface InvoiceLite {
+  id: number;
+  client_name: string;
+  description: string;
+  value: string | number;
+  due_date: string;
+  status: string;
+  payment_date: string | null;
+  billing_type: string | null;
+  gateway: string | null;
+  created_at: string | null;
+}
+
+function invoiceToTransaction(inv: InvoiceLite): FinancialTransaction {
+  const st = String(inv.status || "").toUpperCase();
+  return {
+    id: `inv-${inv.id}`,
+    seq: null,
+    description: inv.description || `FATURA #${inv.id}`,
+    amount: Number(inv.value) || 0,
+    type: "INCOME",
+    status: INVOICE_PAID_STATUSES.includes(st) ? "PAID" : "PENDING",
+    due_date: inv.due_date,
+    payment_date: inv.payment_date,
+    category_id: null,
+    category_name: "FATURAMENTO",
+    account_id: null,
+    account_name: null,
+    entity_type: "cliente",
+    entity_name: inv.client_name || null,
+    notes: null,
+    status_conciliacao: null,
+    installment_group: null,
+    installment_number: null,
+    installment_total: null,
+    origin_type: "invoice",
+    origin_id: String(inv.id),
+    created_at: inv.created_at || inv.due_date,
+    created_by: inv.gateway ? inv.gateway.toUpperCase() : "ASAAS",
+    fornecedor_id: null,
+    funcionario_id: null,
+    comprovante_url: null,
+    comprovante_anexado_em: null,
+    payment_method: inv.billing_type,
+    boleto_url: null,
+    boleto_anexado_em: null,
+    has_nf: null,
+    nf_motivo_ausencia: null,
+    nf_url: null,
+    nf_anexado_em: null,
+    solicitado_por: null,
+    aprovado_por: null,
+    aprovado_em: null,
+    recusado_motivo: null,
+    recusado_em: null,
+  };
+}
 
 // Extrai o código da fatura TicketLog a partir do origin_id.
 // Modo único: origin_id == codigoFatura. Modo rateado: codigoFatura:placa.
@@ -1866,6 +1932,18 @@ export default function FinanceiroPage() {
     refetchInterval: 300000,
   });
 
+  // Faturas emitidas (Asaas/Inter) → linhas somente-leitura em Contas a Receber
+  const { data: invoicesData = [] } = useQuery<InvoiceLite[]>({
+    queryKey: ["/api/invoices"],
+    refetchInterval: 300000,
+  });
+  const invoiceTx = useMemo(
+    () => invoicesData
+      .filter(inv => !INVOICE_HIDDEN_STATUSES.includes(String(inv.status || "").toUpperCase()) && inv.due_date)
+      .map(invoiceToTransaction),
+    [invoicesData],
+  );
+
   const { data: categories = [] } = useQuery<FinancialCategory[]>({
     queryKey: ["/api/financial/categories"],
   });
@@ -2016,6 +2094,10 @@ export default function FinanceiroPage() {
   };
 
   const handleTogglePago = (t: FinancialTransaction) => {
+    if (t.origin_type === "invoice") {
+      toast({ title: "Fatura emitida", description: "A baixa é feita pelo gateway (Asaas/Inter) ou na tela de Faturas — não aqui." });
+      return;
+    }
     const goingToPaid = t.status !== "PAID";
     const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura");
     if (goingToPaid && isManualExpense && !t.comprovante_url) {
@@ -2082,6 +2164,12 @@ export default function FinanceiroPage() {
     [transactions, viewPeriod, customStartDate, customEndDate],
   );
 
+  // Faturas com o mesmo recorte de período das transações (por vencimento)
+  const periodFilteredInvoiceTx = useMemo(
+    () => filterTransactionsByPeriod(invoiceTx, viewPeriod, customStartDate, customEndDate),
+    [invoiceTx, viewPeriod, customStartDate, customEndDate],
+  );
+
   // Derivam do conjunto já filtrado por período: o filtro de data vale também na
   // aba de aprovação. Aguardando e recusados respeitam o período selecionado.
   const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [periodFilteredTransactions]);
@@ -2109,6 +2197,11 @@ export default function FinanceiroPage() {
       // Ocultar AGUARDANDO_APROVACAO e RECUSADA das abas operacionais (ficam em sua própria aba)
       list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
     }
+    // Contas a Receber: incluir as faturas emitidas (Asaas/Inter) como linhas
+    // somente-leitura — faturou p/ cliente ⇒ aparece aqui com o vencimento.
+    if (activeStep === "RECEBER") {
+      list = [...list, ...periodFilteredInvoiceTx].sort((a, b) => (b.due_date || "").localeCompare(a.due_date || ""));
+    }
     const todayStr = brtTodayStr();
     if (statusFilter === "PENDING") list = list.filter(t => t.status === "PENDING");
     else if (statusFilter === "PAID") list = list.filter(t => t.status === "PAID");
@@ -2123,7 +2216,7 @@ export default function FinanceiroPage() {
       list = list.filter(t => t.description.toLowerCase().includes(term) || (t.entity_name || "").toLowerCase().includes(term) || (t.category_name || "").toLowerCase().includes(term) || (t.origin_id || "").toLowerCase().includes(term));
     }
     return list;
-  }, [periodFilteredTransactions, activeStep, statusFilter, origemFilter, searchTerm]);
+  }, [periodFilteredTransactions, periodFilteredInvoiceTx, activeStep, statusFilter, origemFilter, searchTerm]);
 
   // Lançamentos manuais (sem origem automática de missão), excluindo categorias
   // de missão e fora do fluxo de aprovação/recusa. Aplicado a todos os totais e
@@ -2151,7 +2244,8 @@ export default function FinanceiroPage() {
   }, [manualOperationalTx]);
 
   const summaryReceber = useMemo(() => {
-    const incomes = manualOperationalTx.filter(t => t.type === "INCOME");
+    // Receber = lançamentos manuais INCOME + faturas emitidas (Asaas/Inter)
+    const incomes = [...manualOperationalTx.filter(t => t.type === "INCOME"), ...periodFilteredInvoiceTx];
     return {
       total: incomes.reduce((a, t) => a + Number(t.amount), 0),
       paid: incomes.filter(t => t.status === "PAID").reduce((a, t) => a + Number(t.amount), 0),
@@ -2159,7 +2253,7 @@ export default function FinanceiroPage() {
       count: incomes.length,
       paidCount: incomes.filter(t => t.status === "PAID").length,
     };
-  }, [manualOperationalTx]);
+  }, [manualOperationalTx, periodFilteredInvoiceTx]);
 
   const overduePagar = useMemo(() => {
     const today = brtTodayStr();
@@ -2168,8 +2262,9 @@ export default function FinanceiroPage() {
 
   const overdueReceber = useMemo(() => {
     const today = brtTodayStr();
-    return manualOperationalTx.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
-  }, [manualOperationalTx]);
+    return [...manualOperationalTx.filter(t => t.type === "INCOME"), ...periodFilteredInvoiceTx]
+      .filter(t => t.status === "PENDING" && t.due_date.split("T")[0] < today);
+  }, [manualOperationalTx, periodFilteredInvoiceTx]);
 
   const handleDelete = (id: string) => {
     if (!isDiretoria) return;
