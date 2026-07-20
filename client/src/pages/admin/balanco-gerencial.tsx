@@ -405,7 +405,10 @@ export default function BalancoGerencialPage() {
         const useBoletim = (isCancelada || billFrozen) && !!bill && Number(bill.fat_total_boletim) > 0;
         const fat = useBoletim ? (Number(bill.fat_total_boletim) || 0) : liveFat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
-        const pag = bill ? Number(bill.pag_total || 0) : 0;
+        // VRP (agentes) SEM reembolsos (ordem do dono, 20/07/2026): pag_reembolsos é
+        // combustível/pedágio da missão, que JÁ entra nas linhas oficiais Combustível/
+        // Pedágio (financial_transactions espelhadas) — somar aqui dobraria o custo.
+        const pag = bill ? Math.max(0, Number(bill.pag_total || 0) - Number(bill.pag_reembolsos || 0)) : 0;
         const desp = bill ? Number(bill.despesas || 0) : 0;
         const startIso = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt || null;
         return {
@@ -1010,7 +1013,7 @@ export default function BalancoGerencialPage() {
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP total dos agentes + combustível + pedágios + manutenção (origem oficial), sempre em valores gerais. Detalhe por agente fica no RH. Lançamentos manuais com fornecedor não contam aqui.`,
+                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP total dos agentes (sem reembolsos — combustível/pedágio da missão já contam nas linhas oficiais abaixo) + combustível + pedágios + manutenção (origem oficial), sempre em valores gerais. Detalhe por agente fica no RH. Lançamentos manuais com fornecedor não contam aqui.`,
                 rows: opRows,
               });
             }

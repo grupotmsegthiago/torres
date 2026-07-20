@@ -3047,6 +3047,11 @@ import type { Express } from "express";
         receitas_os: Number(b.receitas_os || 0),
         pag_total: pag,
         pag_vrp: Number(b.pag_vrp || 0),
+        // Reembolsos (combustível/pedágio da missão) — o Balanço Gerencial precisa
+        // deste campo pra EXCLUIR do "VRP (agentes)": essas despesas já entram nas
+        // linhas oficiais Combustível/Pedágio (financial_transactions espelhadas),
+        // senão dobram no card Custos Operacionais (ordem do dono, 20/07/2026).
+        pag_reembolsos: Number(b.pag_reembolsos || 0),
         despesas: desp,
         despesas_pedagio: Number(b.despesas_pedagio || 0),
         despesas_combustivel: Number(b.despesas_combustivel || 0),

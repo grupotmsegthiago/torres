@@ -105,3 +105,10 @@ o MESMO total detalhado por pessoa, não é aditivo.
 `despReaisOperacional = despReais − payroll − fixed − other` subtrai payroll/fixed/other. Então o
 RH vem 100% da folha de ponto e o financeiro manual daquelas categorias é descartado do total (é
 por isso que benefício/HE/noturno não "constam em outro"). `RH_CATS`/`FIXED_CATS` só classificam.
+
+## "VRP (agentes)" EXCLUI reembolsos (ordem do dono, 20/07/2026)
+`pag_reembolsos` do billing = combustível/pedágio da missão — que JÁ contam nas linhas
+oficiais Combustível/Pedágio (financial_transactions espelhadas). O Balanço calcula
+`pag = pag_total − pag_reembolsos` (client, com pag_reembolsos exposto no byMission do
+dashboard) senão o card Custos Operacionais dobra essas despesas. Com VRP base zerada
+nos contratos atuais, a linha "VRP (agentes)" some (só reembolso). Não reverter.
