@@ -1234,13 +1234,24 @@ export default function RelatorioFaturamentoPage() {
                     const tip = blocked ? `${blockedByApproved ? "Aprovado" : "Enviado"} em ${activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleString("pt-BR") : "\u2014"}${activeApproval.sent_by ? " por " + activeApproval.sent_by : ""}. Clique para forçar reenvio.` : "";
                     return (
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (rowsData.length === 0) return;
                           if (blocked) {
                             const when = activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleString("pt-BR") : "data anterior";
                             const who = activeApproval.sent_by ? ` por ${activeApproval.sent_by}` : "";
-                            const ok = window.confirm(blockedByApproved ? `Estas OS já foram APROVADAS pelo cliente em ${when}${who}.\n\nReenviar mesmo assim?` : `Boletim já enviado em ${when}${who} e aguardando resposta do cliente.\n\nReenviar (forçando) mesmo assim?`);
+                            const nOs = activeApproval.os_count || (activeApproval.billing_ids || []).length;
+                            const valor = Number(activeApproval.total_value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+                            const ok = window.confirm(`${blockedByApproved ? `Estas OS já foram APROVADAS pelo cliente em ${when}${who}.` : `Boletim já enviado em ${when}${who} e aguardando resposta do cliente.`}\n\nReenviar o MESMO boletim (${nOs} OS — ${valor}) para ${activeApproval.client_email || "o cliente"}?\n\nO cliente recebe de novo exatamente o que foi enviado — mesmo valor, mesmo link de aprovação.`);
                             if (!ok) return;
+                            try {
+                              const resp = await apiRequest("POST", `/api/boletim/reenviar/${activeApproval.id}`, {});
+                              const json = await resp.json();
+                              toast({ title: "Boletim reenviado", description: `${json.osCount} OS — ${Number(json.totalValue || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} reenviado para ${json.to}.` });
+                              refetchApprovalStatus();
+                            } catch (e: any) {
+                              toast({ title: "Erro ao reenviar boletim", description: e?.message || String(e), variant: "destructive" });
+                            }
+                            return;
                           }
                           openSendDialog();
                         }}

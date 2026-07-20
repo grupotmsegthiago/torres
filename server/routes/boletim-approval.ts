@@ -1,5 +1,6 @@
 import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
+import { requireAdminRole as realRequireAdminRole } from "../auth";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
 import { round2, osCanonicalTotal, billingTotalForBoletim, billingElegivelParaBoletim } from "../lib/boletim-totals";
@@ -706,6 +707,107 @@ export function registerBoletimApprovalRoutes(app: Express) {
       res.json({ ...data, approvalUrl });
     } catch (err: any) {
       console.error("[boletim-approval] Erro:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ============================================================
+  // REENVIO do MESMO boletim (foto única): reaproveita o approval
+  // existente — mesmo token/link, mesmo snapshot congelado, mesmo
+  // total — sem recriar nada a partir dos dados atuais. É o que o
+  // dono espera do botão "Reenviar Boletim": o cliente recebe de
+  // novo exatamente o que foi enviado (ex.: 45 OS — R$ 103.317,30),
+  // mesmo que as OS já tenham virado fatura depois do envio.
+  // ============================================================
+  app.post("/api/boletim/reenviar/:id", realRequireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const { data: approval, error } = await supabaseAdmin
+        .from("boletim_approvals")
+        .select("*")
+        .eq("id", req.params.id)
+        .single();
+      if (error || !approval) return res.status(404).json({ message: "Boletim (envio) não encontrado." });
+      if (approval.status === "CANCELADO") return res.status(400).json({ message: "Este envio foi cancelado — gere um novo boletim." });
+      if (approval.expires_at && new Date(approval.expires_at) < new Date()) {
+        return res.status(410).json({ message: "O link deste boletim expirou — gere um novo envio." });
+      }
+
+      const billingIds = (approval.billing_ids || []).map((x: any) => String(x));
+      if (!billingIds.length) return res.status(400).json({ message: "Envio sem OS vinculadas." });
+
+      const { data: billingsRaw } = await supabaseAdmin
+        .from("escort_billings").select("*").in("id", billingIds);
+      const soIds = (billingsRaw || []).map((b: any) => b.service_order_id).filter(Boolean);
+      let ordersData: any[] = [];
+      if (soIds.length > 0) {
+        const { data: sos } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status")
+          .in("id", soIds);
+        ordersData = sos || [];
+      }
+      let contractsData: any[] = [];
+      const contractIds = [...new Set((billingsRaw || []).map((b: any) => b.contract_id).filter(Boolean))];
+      if (contractIds.length > 0) {
+        const { data: cts } = await supabaseAdmin.from("escort_contracts").select("*").in("id", contractIds);
+        contractsData = cts || [];
+      }
+
+      // Congela os componentes financeiros pelos valores do snapshot do envio
+      // (mesma regra da página de aprovação) — Excel == e-mail == snapshot.
+      const snapById = new Map<string, any>(
+        Array.isArray(approval.billing_snapshot)
+          ? approval.billing_snapshot.map((s: any) => [String(s.billing_id), s])
+          : [],
+      );
+      const billingsFrozen = (billingsRaw || []).map((b: any) => {
+        const snap = snapById.get(String(b.id));
+        return snap
+          ? {
+              ...b,
+              fat_acionamento: snap.fat_acionamento,
+              fat_hora_extra: snap.fat_hora_extra,
+              fat_km: snap.fat_km,
+              fat_adicional_noturno: snap.fat_adicional_noturno,
+              fat_estadia: snap.fat_estadia,
+              fat_pernoite: snap.fat_pernoite,
+              despesas_pedagio: snap.despesas_pedagio,
+              despesas_outras: snap.despesas_outras,
+              receitas_os: snap.receitas_os,
+              fat_total: snap.total,
+            }
+          : b;
+      });
+
+      const excelBuffer = await generateBoletimExcel(
+        approval.client_name, approval.period_start, approval.period_end,
+        billingsFrozen, ordersData, contractsData,
+      );
+
+      const isOmega = String(approval.client_name || "").toUpperCase().includes("OMEGA SOLUTIONS");
+      const processoNumbers = isOmega
+        ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
+        : [];
+
+      const baseUrl = getBaseUrl(req);
+      const approvalUrl = `${baseUrl}/aprovacao/${approval.token}`;
+      const period = `${new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR")} a ${new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR")}`;
+      const periodShort = `${String(approval.period_start).replace(/-/g, "")}_${String(approval.period_end).replace(/-/g, "")}`;
+      const safeClient = String(approval.client_name || "cliente").replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20);
+      const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
+      const toEmail = String(req.body?.clientEmail || approval.client_email || "").trim();
+      if (!toEmail) return res.status(400).json({ message: "Envio sem e-mail de destino." });
+
+      await sendApprovalEmailWithExcel(
+        toEmail, approval.client_name, approvalUrl, period,
+        Number(approval.os_count) || billingIds.length,
+        Number(approval.total_value) || 0,
+        excelBuffer, fileName, processoNumbers,
+      );
+      console.log(`[boletim-approval] REENVIO do boletim #${approval.id} (${approval.os_count} OS, R$ ${approval.total_value}) para ${toEmail}`);
+      res.json({ ok: true, resent: true, osCount: approval.os_count, totalValue: approval.total_value, approvalUrl, to: toEmail });
+    } catch (err: any) {
+      console.error("[boletim-approval] Erro no reenvio:", err.message);
       res.status(500).json({ message: err.message });
     }
   });
