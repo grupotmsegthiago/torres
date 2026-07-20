@@ -8,13 +8,14 @@ import {
   Fuel, Search, Download, RefreshCw, Eye, X, Camera, CheckCircle2,
   AlertTriangle, Loader2, ArrowUpDown, CalendarDays, MapPin,
   FileText, Gauge, DollarSign, Droplets, ChevronDown, ChevronUp,
-  ShieldCheck, XCircle, ExternalLink, Pencil, Save
+  ShieldCheck, XCircle, ExternalLink, Pencil, Save, Plus
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { computeTicketlogStats } from "@/lib/fuel-ticketlog";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { FuelingForm } from "@/pages/admin/fueling";
 
 const fuelLabel: Record<string, string> = {
   gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
@@ -109,6 +110,7 @@ export default function RelatorioAbastecimentoPage() {
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [onlyAlerts, setOnlyAlerts] = useState(false);
+  const [showNewForm, setShowNewForm] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -252,6 +254,9 @@ export default function RelatorioAbastecimentoPage() {
             <h1 className="text-xl font-bold text-neutral-900" data-testid="text-page-title">Relatório de Abastecimentos</h1>
           </div>
           <div className="flex gap-2">
+            <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setShowNewForm(true)} data-testid="button-novo-abastecimento">
+              <Plus className="w-4 h-4 mr-1" /> Incluir Abastecimento
+            </Button>
             <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/fueling"] })} data-testid="button-refresh">
               <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
             </Button>
@@ -260,6 +265,14 @@ export default function RelatorioAbastecimentoPage() {
             </Button>
           </div>
         </div>
+
+        {showNewForm && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto p-4" data-testid="modal-novo-abastecimento">
+            <div className="w-full max-w-3xl my-8">
+              <FuelingForm vehicles={vehicles} employees={employees} onClose={() => setShowNewForm(false)} />
+            </div>
+          </div>
+        )}
 
         {suspectIds.size > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50/70 p-3 flex items-start gap-3" data-testid="banner-suspect-fuelings">

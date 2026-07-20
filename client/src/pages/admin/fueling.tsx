@@ -186,7 +186,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: { icon: any; label: 
   );
 }
 
-function FuelingForm({ fueling, vehicles, employees, onClose }: {
+export function FuelingForm({ fueling, vehicles, employees, onClose }: {
   fueling?: VehicleFueling; vehicles: Vehicle[]; employees: Employee[]; onClose: () => void;
 }) {
   const { toast } = useToast();
