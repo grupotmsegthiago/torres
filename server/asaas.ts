@@ -4,6 +4,7 @@ import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { bustBalancoCaches } from "./lib/balanco-cache";
+import { getRelatorioStatus, BILLING_STATUS_MAP } from "@shared/constants/mission-status";
 import {
   TORRES_CNPJ,
   CNAE_PRINCIPAL,
@@ -2693,9 +2694,26 @@ export function registerAsaasRoutes(app: Express) {
           .gte("data_missao", fromDate)
           .lte("data_missao", toDate)
           .not("status", "in", '("RECUSADA","CANCELADA","CANCELADO","FATURADA","FATURADO","PAGO","REJEITADA")');
-        const blocking = (allInPeriod || []).filter((b: any) =>
-          !["APROVADA"].includes(b.status)
-        );
+        // Mesma regra da tela de Faturamento (getRelatorioStatus): OS concluída
+        // + missão encerrada vale como APROVADA mesmo com billing A_VERIFICAR;
+        // OS recusada/cancelada não bloqueia a quinzena.
+        const guardSoIds = Array.from(new Set((allInPeriod || []).map((b: any) => b.service_order_id).filter(Boolean)));
+        const guardSoById = new Map<number, any>();
+        for (let i = 0; i < guardSoIds.length; i += 500) {
+          const { data: sos } = await supabaseAdmin
+            .from("service_orders")
+            .select("id, status, mission_status")
+            .in("id", guardSoIds.slice(i, i + 500));
+          for (const so of sos || []) guardSoById.set(Number(so.id), so);
+        }
+        const blocking = (allInPeriod || []).filter((b: any) => {
+          if (["APROVADA"].includes(b.status)) return false;
+          const so = guardSoById.get(Number(b.service_order_id));
+          const soStatus = String(so?.status || "").toLowerCase();
+          if (soStatus === "recusada" || soStatus === "cancelada") return false;
+          const efetivo = getRelatorioStatus(soStatus, b.status, so?.mission_status);
+          return efetivo !== BILLING_STATUS_MAP.APROVADA;
+        });
         if (blocking.length > 0) {
           gerarFaturaLocks.delete(clientId);
           const osList = blocking.map((b: any) => ({
