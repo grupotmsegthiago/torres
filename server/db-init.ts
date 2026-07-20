@@ -1,6 +1,61 @@
 import { supabaseAdmin } from "./supabase";
 import { toCamelArray } from "./storage";
 import pg from "pg";
+import crypto from "crypto";
+
+// ============================================================================
+// GATE DE VERSÃO DO SCHEMA (jul/2026)
+// Problema: cada boot em produção re-executava TODO o DDL do ensureDbSchema
+// (dezenas de exec_sql sequenciais, ~5min com o banco sob carga), deixando o
+// sistema inteiro lento a cada publish/restart/scale — e em autoscale cada
+// instância nova repetia tudo.
+// Solução: fingerprint (sha1 do CÓDIGO das funções de schema) gravado em
+// system_settings. Se o fingerprint gravado == atual, o DDL é PULADO (boot
+// instantâneo). Qualquer mudança no código do db-init muda o fingerprint e
+// re-executa tudo automaticamente — não há bump manual pra esquecer.
+// Chave separada por ambiente (dev usa tsx, prod usa bundle esbuild — o
+// toString() difere), pra um ambiente não invalidar o outro.
+// Escape hatch: FORCE_DB_INIT=true força a rodada completa.
+// ============================================================================
+function schemaVersionKey(): string {
+  return `db_schema_fingerprint_${process.env.NODE_ENV === "production" ? "production" : "development"}`;
+}
+
+function computeSchemaFingerprint(): string {
+  try {
+    const src = [ensureDbSchema, ensureRlsHardening, ensureRealtimePublication]
+      .map((f) => f.toString())
+      .join("\n");
+    return crypto.createHash("sha1").update(src).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
+async function readStoredFingerprint(): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("system_settings")
+      .select("value")
+      .eq("key", schemaVersionKey())
+      .maybeSingle();
+    if (error) return null;
+    return (data as any)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function storeFingerprint(fp: string): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("system_settings")
+      .upsert({ key: schemaVersionKey(), value: fp, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) console.warn("[db-init] falha ao gravar fingerprint do schema:", error.message);
+  } catch (e: any) {
+    console.warn("[db-init] falha ao gravar fingerprint do schema:", e?.message);
+  }
+}
 
 async function execSqlViaRpc(query: string) {
   const { error } = await supabaseAdmin.rpc("exec_sql", { query });
@@ -86,6 +141,26 @@ export async function ensureDbSchema() {
     console.log("[db-init] Schema check skipped (Supabase unreachable):", e.message);
     return;
   }
+
+  // Gate de versão: se o fingerprint gravado bate com o do código atual, o
+  // schema já foi garantido por um boot anterior desta mesma versão → pula
+  // todo o DDL (boot instantâneo). FORCE_DB_INIT=true força a rodada completa.
+  const fingerprint = computeSchemaFingerprint();
+  const force = process.env.FORCE_DB_INIT === "true";
+  if (!force && fingerprint) {
+    const stored = await readStoredFingerprint();
+    if (stored === fingerprint) {
+      console.log(`[db-init] Schema já na versão atual (${fingerprint.slice(0, 12)}) — DDL pulado. FORCE_DB_INIT=true pra forçar.`);
+      // Auto-curas de DADOS (não-DDL) continuam rodando mesmo com DDL pulado:
+      import("./lib/cct-config")
+        .then(({ ensureDefaultPresets }) => ensureDefaultPresets())
+        .catch((e: any) => console.error("[db-init] ensureDefaultPresets:", e?.message));
+      backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
+      return;
+    }
+    console.log(`[db-init] Fingerprint mudou (${String(stored).slice(0, 12)} → ${fingerprint.slice(0, 12)}) — rodando DDL completo...`);
+  }
+
   try {
     await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_uid TEXT UNIQUE
@@ -1606,6 +1681,10 @@ export async function ensureDbSchema() {
     }
 
     console.log("[db-init] Schema verified OK");
+
+    // Só grava o fingerprint após uma rodada COMPLETA sem erro fatal — se o
+    // try acima explodir, nada é gravado e o próximo boot re-tenta o DDL.
+    if (fingerprint) await storeFingerprint(fingerprint);
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
   } catch (err: any) {

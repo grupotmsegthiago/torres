@@ -64,5 +64,6 @@
 - [Trava de onboarding (kill switch)](onboarding-gate-killswitch.md) — bloqueio de OS/missão por onboarding é 1 função (assertOnboardingComplete); liga/desliga via ONBOARDING_GATE_ENABLED; desligar não tira a exibição.
 - [Sandbox bash: testes longos](agent-sandbox-bash-quirks.md) — background é morto entre chamadas, grep bufferiza (use timeout+arquivo), notebook sem process.env; fatiar teste >120s por flag CLI.
 - [Descarte de backlog WhatsApp](zapi-backlog-discard.md) — filas só descartam em estado determinístico (desconexão confirmada ou blocked:true/wrong_number); "unconfirmed"/transitório SEMPRE re-tenta.
+- [Gate de fingerprint do db-init](db-init-fingerprint-gate.md) — boot pula DDL se fingerprint bate; mudança de schema por fora exige FORCE_DB_INIT=true; auto-curas de dados vão no skip path.
 - [Resumo de frota no PV do bot](whatsapp-pv-fleet-resumo.md) — "resumo" no PRIVADO = panorama da frota owner-only (allowlist 11 díg, financeiro OK, silêncio p/ estranho); formato fixo do dono em fleet-summary.ts, só leitura.
 - [Overflow numérico ao aprovar boletim](billing-numeric-overflow.md) — "numeric field overflow" = coluna NUMERIC estreita em prod (ADD COLUMN IF NOT EXISTS não corrige tipo) + despesa fantasma congelada; alargar via ALTER TYPE.
