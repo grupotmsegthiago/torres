@@ -87,7 +87,7 @@ function getPeriodLabel(periodStart: string, periodEnd: string): string {
   return `GERAL — ${month}/${year} — ${sd} A ${ed}`;
 }
 
-async function generateBoletimExcel(
+export async function generateBoletimExcel(
   clientName: string,
   periodStart: string,
   periodEnd: string,
@@ -101,7 +101,7 @@ async function generateBoletimExcel(
   wb.created = new Date();
 
   const isOmegaClient = clientName.toUpperCase().includes("OMEGA SOLUTIONS");
-  const colCount = isOmegaClient ? 28 : 27;
+  const colCount = isOmegaClient ? 29 : 28;
   const ws = wb.addWorksheet("Boletim", {
     views: [{ showGridLines: false }],
     pageSetup: {
@@ -112,8 +112,8 @@ async function generateBoletimExcel(
     headerFooter: { oddFooter: "&L&8Torres Vigilância Patrimonial&C&8Página &P de &N&R&8&D" },
   });
 
-  const baseColWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
-  const colWidths = isOmegaClient ? [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14] : baseColWidths;
+  const baseColWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14, 12];
+  const colWidths = isOmegaClient ? [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14, 12] : baseColWidths;
   ws.columns = colWidths.map(w => ({ width: w }));
 
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
@@ -192,7 +192,7 @@ async function generateBoletimExcel(
         { label: "HORÁRIOS", span: 3 },
         { label: "KM EXCEDENTE", span: 3 },
         { label: "HORA EXCEDENTE", span: 3 },
-        { label: "VALORES", span: 2 },
+        { label: "VALORES", span: 3 },
       ]
     : [
         { label: "TABELA ACORDADA", span: 7 },
@@ -201,7 +201,7 @@ async function generateBoletimExcel(
         { label: "HORÁRIOS", span: 3 },
         { label: "KM EXCEDENTE", span: 3 },
         { label: "HORA EXCEDENTE", span: 3 },
-        { label: "VALORES", span: 2 },
+        { label: "VALORES", span: 3 },
       ];
   const ghValues: string[] = [];
   for (const g of groupHeaders) { ghValues.push(g.label); for (let j = 1; j < g.span; j++) ghValues.push(""); }
@@ -221,9 +221,9 @@ async function generateBoletimExcel(
   ghRow.height = 22;
   clearBeyond(ghRow.number);
 
-  const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+  const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL", "STATUS"];
   const headers = isOmegaClient
-    ? ["Nº", "ROTA", "PROCESSO", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"]
+    ? ["Nº", "ROTA", "PROCESSO", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL", "STATUS"]
     : baseHeaders;
   const headerRow = ws.addRow(headers);
   headerRow.height = 24;
@@ -274,7 +274,13 @@ async function generateBoletimExcel(
     const fatTotal = billingTotalForBoletim(b, so.status);
     grandTotal += fatTotal;
 
-    const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;
+    // Coluna A: SEMPRE o número atual da OS (TOR-XXXX); o os_number gravado no
+    // billing pode estar desatualizado (formato antigo "OS-nnn").
+    const osNum = so.os_number || b.os_number || `OS-${b.service_order_id}`;
+    const statusLabel = String(so.status || "")
+      .replace(/^concluida$/i, "concluída")
+      .replace(/^(completed|encerrada)$/i, "concluída")
+      .toUpperCase() || "—";
     const origem = b.origem || so.origin || "";
     const destino = b.destino || so.destination || "";
     const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
@@ -294,7 +300,7 @@ async function generateBoletimExcel(
       fmtHHMM(horasMissao),
       kmExcedente > 0 ? kmExcedente : 0, kmExcedente > 0 ? Number(valorKmExtra.toFixed(2)) : 0, Number(fatKmExtra.toFixed(2)),
       hrExcedente > 0 ? fmtHHMM(hrExcedente) : "0:00", hrExcedente > 0 ? Number(valorHoraExtra.toFixed(2)) : 0, Number(fatHoraExtra.toFixed(2)),
-      Number(fatPedagio.toFixed(2)), Number(fatTotal.toFixed(2)),
+      Number(fatPedagio.toFixed(2)), Number(fatTotal.toFixed(2)), statusLabel,
     ];
     // OS recusada: zera as colunas de dinheiro (acionamento/KM extra/hora extra/
     // pedágio) — o total já é R$0. Linha continua listada com os dados da viagem,
@@ -327,7 +333,7 @@ async function generateBoletimExcel(
 
   const totalsArr: (string | number)[] = Array(colCount).fill("");
   totalsArr[0] = "TOTAL";
-  totalsArr[colCount - 1] = Number(grandTotal.toFixed(2));
+  totalsArr[colCount - 2] = Number(grandTotal.toFixed(2)); // coluna TOTAL (STATUS é a última)
   const totalRow = ws.addRow(totalsArr);
   totalRow.height = 26.1;
   for (let i = 1; i <= colCount; i++) {
@@ -336,7 +342,7 @@ async function generateBoletimExcel(
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = allBorders;
-    if (i === colCount) cell.numFmt = BRL_FMT;
+    if (i === colCount - 1) cell.numFmt = BRL_FMT;
   }
   clearBeyond(totalRow.number);
 
@@ -589,11 +595,11 @@ export function registerBoletimApprovalRoutes(app: Express) {
       }
 
       // ============================================================
-      // Single source of truth com a tela de Faturamento (INTOCÁVEL §8.4):
-      // OS RECUSADA NUNCA entra no boletim enviado ao cliente — nem a R$ 0 —
-      // e billings já FATURADAS/PAGAS (cobradas em fatura anterior) também
-      // ficam fora. A seleção do front pode conter inelegíveis (ou o status
-      // pode mudar entre a seleção e o envio); o backend filtra sempre.
+      // Single source of truth com a tela de Faturamento:
+      // OS RECUSADA entra no boletim ZERADA (ordem do dono, 20/07/2026 —
+      // o valor continua R$ 0, §8.1 intacto). Billings já FATURADAS/PAGAS
+      // (cobradas em fatura anterior) ficam fora. A seleção do front pode
+      // conter inelegíveis; o backend filtra sempre.
       // Canceladas permanecem (tabela 100 km, §8.1b).
       // ============================================================
       const soStatusById = new Map(ordersData.map((o: any) => [o.id, o.status]));
@@ -647,7 +653,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         return {
           billing_id: String(b.id),
           service_order_id: b.service_order_id,
-          os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
+          os_number: (so as any).os_number || b.os_number || `OS-${b.service_order_id}`,
           fat_acionamento: comp(b.fat_acionamento),
           fat_hora_extra: comp(b.fat_hora_extra),
           fat_km: comp(b.fat_km),

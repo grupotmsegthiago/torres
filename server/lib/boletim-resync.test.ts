@@ -12,7 +12,7 @@ const entry = (billingId: string, soId: number, total: number): any => ({
   total,
 });
 
-test("OS recusada sai do boletim PENDENTE (ids, snapshot, total e os_count)", () => {
+test("OS recusada PERMANECE no boletim PENDENTE, zerada (dono 20/07/2026)", () => {
   const approval = {
     billing_ids: ["10", "11", "12"],
     billing_snapshot: [entry("10", 1, 480), entry("11", 2, 960), entry("12", 3, 555.65)],
@@ -20,10 +20,11 @@ test("OS recusada sai do boletim PENDENTE (ids, snapshot, total e os_count)", ()
   const soStatus = new Map([[1, "recusada"], [2, "concluida"], [3, "concluida"]]);
   const out = rebuildApproval(approval as any, soStatus, new Map());
   assert.ok(out);
-  assert.deepEqual(out!.billing_ids, ["11", "12"]);
-  assert.equal(out!.os_count, 2);
+  assert.deepEqual(out!.billing_ids, ["10", "11", "12"]);
+  assert.equal(out!.os_count, 3);
   assert.equal(out!.total_value, 1515.65);
-  assert.equal(out!.billing_snapshot.length, 2);
+  assert.equal(out!.billing_snapshot[0].total, 0);
+  assert.equal(out!.billing_snapshot[0].fat_acionamento, 0);
 });
 
 test("OS cancelada é recongelada com valores atuais do billing (tabela 100km)", () => {
@@ -58,7 +59,7 @@ test("cancelada com total inalterado ⇒ null", () => {
 
 test("elegibilidade de envio: recusada e faturada/paga ficam fora; demais entram", async () => {
   const { billingElegivelParaBoletim } = await import("./boletim-totals");
-  assert.equal(billingElegivelParaBoletim({ status: "A_VERIFICAR" }, "recusada").ok, false);
+  assert.equal(billingElegivelParaBoletim({ status: "A_VERIFICAR" }, "recusada").ok, true); // recusada entra ZERADA (dono 20/07/2026)
   assert.equal(billingElegivelParaBoletim({ status: "FATURADO" }, "concluida").ok, false);
   assert.equal(billingElegivelParaBoletim({ status: "FATURADA" }, "concluida").ok, false);
   assert.equal(billingElegivelParaBoletim({ status: "PAGO" }, "concluida").ok, false);
