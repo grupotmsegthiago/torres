@@ -40,6 +40,17 @@ const fmt = (val: number) =>
 
 const fmtPct = (val: number) => `${val.toFixed(1)}%`;
 
+// Formata data-pura "YYYY-MM-DD" como dd/mm/aaaa SEM conversão de fuso — formatDateBRT
+// interpreta a string como meia-noite UTC e recua 1 dia no BRT (bug do "dia anterior").
+const fmtDia = (s: string) => {
+  const m10 = String(s || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(m10)) {
+    const [y, mo, d] = m10.split("-");
+    return `${d}/${mo}/${y}`;
+  }
+  return formatDateBRT(s);
+};
+
 const fmtHoras = (val: number) => {
   if (!val || !isFinite(val)) return "0h00";
   const totalMin = Math.round(val * 60);
@@ -425,6 +436,8 @@ export default function BalancoGerencialPage() {
           service_order_id: sid,
           os_number: o.osNumber || bill?.os_number || null,
           data: toDateStr(startIso) || String(startIso || ""),
+          // Data do AGENDAMENTO puro (sem fallback) — o modal "OSs em Aberto" mostra ela na linha.
+          data_agendamento: toDateStr(o.scheduledDate) || "",
           origem: o.origin || bill?.origem || "",
           destino: o.destination || bill?.destino || "",
           placa_viatura: o.vehicle?.plate || bill?.placa_viatura || "SEM PLACA",
@@ -1561,7 +1574,9 @@ export default function BalancoGerencialPage() {
                           <Badge variant="outline" className="font-mono font-black text-xs shrink-0">{m.os_number || `#${m.service_order_id}`}</Badge>
                           <div className="min-w-0">
                             <p className="text-xs font-bold text-neutral-800 truncate">{m.client_name || "Sem cliente"}</p>
-                            <p className="text-[10px] text-neutral-500 truncate">{m.data ? formatDateBRT(m.data) : ""} · {m.origem || "?"} → {m.destino || "?"}</p>
+                            <p className="text-[10px] text-neutral-500 truncate" data-testid={`text-data-agendamento-${m.service_order_id}`}>
+                              {(m.data_agendamento || m.data) ? `Agendamento: ${fmtDia(m.data_agendamento || m.data)}` : "Sem data de agendamento"}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -1584,10 +1599,12 @@ export default function BalancoGerencialPage() {
                       {isExp && (
                         <div className="px-3 pb-3 space-y-2" data-testid={`detalhe-os-${m.service_order_id}`}>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-[11px] bg-white rounded-lg border border-neutral-200 p-2.5">
+                            <div className="col-span-2 md:col-span-3"><span className="text-neutral-400 font-bold">Origem:</span> <span className="font-bold text-neutral-700">{m.origem || "—"}</span></div>
+                            <div className="col-span-2 md:col-span-3"><span className="text-neutral-400 font-bold">Destino:</span> <span className="font-bold text-neutral-700">{m.destino || "—"}</span></div>
+                            <div><span className="text-neutral-400 font-bold">Distância:</span> <span className="font-bold text-neutral-700 font-mono">{m.km_total > 0 ? `${Math.round(m.km_total)} km` : "—"}</span></div>
                             <div><span className="text-neutral-400 font-bold">Viatura:</span> <span className="font-bold text-neutral-700">{m.placa_viatura}</span></div>
-                            <div><span className="text-neutral-400 font-bold">Agente:</span> <span className="font-bold text-neutral-700">{m.vigilante}</span></div>
-                            {m.vigilante2 && <div><span className="text-neutral-400 font-bold">Agente 2:</span> <span className="font-bold text-neutral-700">{m.vigilante2}</span></div>}
-                            <div><span className="text-neutral-400 font-bold">KM total:</span> <span className="font-bold text-neutral-700 font-mono">{Math.round(m.km_total || 0)} km</span></div>
+                            <div><span className="text-neutral-400 font-bold">Agente 1:</span> <span className="font-bold text-neutral-700">{m.vigilante || "—"}</span></div>
+                            <div><span className="text-neutral-400 font-bold">Agente 2:</span> <span className="font-bold text-neutral-700">{m.vigilante2 || "—"}</span></div>
                             <div><span className="text-neutral-400 font-bold">Horas:</span> <span className="font-bold text-neutral-700 font-mono">{fmtHoras(m.horas_missao || 0)}</span></div>
                             <div><span className="text-neutral-400 font-bold">Despesas:</span> <span className="font-bold text-neutral-700 font-mono">{fmt(m.despesas || 0)}</span></div>
                           </div>
@@ -2673,7 +2690,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                       {isExpanded ? <ChevronDown size={14} className="text-neutral-400 shrink-0" /> : <ChevronRight size={14} className="text-neutral-400 shrink-0" />}
                       <span className="text-xs font-black text-neutral-900 shrink-0">{m.os_number || m.boletim || "-"}</span>
                       <span className="text-[10px] text-neutral-400 shrink-0">
-                        {m.data ? new Date((/[Zz]$/.test(m.data) || /[+-]\d{2}:\d{2}$/.test(m.data)) ? m.data : m.data + "Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "-"}
+                        {m.data ? fmtDia(m.data).slice(0, 5) : "-"}
                       </span>
                       {isCancelada ? (
                         <Badge className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0 border-0 hover:bg-red-600 shrink-0">CANCELADA</Badge>
@@ -2704,7 +2721,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Data</p>
-                          <p className="font-bold text-neutral-700">{m.data ? formatDateBRT(m.data) : "-"}</p>
+                          <p className="font-bold text-neutral-700">{m.data ? fmtDia(m.data) : "-"}</p>
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Cliente</p>
