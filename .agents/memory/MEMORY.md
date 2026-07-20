@@ -28,6 +28,7 @@
 - [VACUUM via conexão pg dedicada](vacuum-via-dedicated-pg.md) — VACUUM não roda via exec_sql/PostgREST (transação); usar pg.Client dedicado statement_timeout=0 em background, claim atômico anti-corrida, allowlist de tabela.
 - [Fotos de mission_updates no Storage](mission-photos-storage.md) — photo_url virou caminho de bucket privado; writers caem em base64 no catch (nunca perdem foto); readers tratam 3 formatos; migração idempotente conc≤5; deploy+sweep+VACUUM são do dono.
 - [Boletim A_VERIFICAR congelado nasce zerado](boletim-frozen-a-verificar.md) — CRON cria billing cedo e A_VERIFICAR∈FROZEN_STATUSES⇒nunca recalcula; boletim zerado/subfaturado=corrigir via botão Calcular/Aprovar (não é bug de cálculo); prévia engana (override "0").
+- [Boletim resync pós-envio](boletim-snapshot-resync.md) — OS recusada/cancelada após envio re-sincroniza boletins PENDENTES; envio valida elegibilidade no backend.
 - [Boletim foto única](boletim-foto-unica.md) — total da OS é congelado no envio (billing_snapshot); tela/e-mail/Excel/aprovação leem o mesmo nº via osCanonicalTotal; duplicata=manter envio mais recente.
 - [Monitor de conexão Z-API](whatsapp-zapi-monitor.md) — "bot parado" tem 2 modos (desconectado E número errado); UI/health usa isDown, não só connected; monitor só em prod (evita alerta duplicado).
 - [Re-emissão de NFS-e trava no servidor](nfse-reemissao-trava-servidor.md) — endpoint de reprocessar NF exige papel diretoria + estado em erro no backend (não só UI), senão duplicidade fiscal.

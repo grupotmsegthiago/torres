@@ -12,6 +12,7 @@ import type { Express } from "express";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
+  import { resyncPendingBoletinsForServiceOrder } from "../lib/boletim-resync";
 
   // Trava de edição de anexos (boleto/NF/comprovante): QUALQUER pessoa do
   // administrativo (role "admin" ou "diretoria") pode anexar/trocar anexos de
@@ -2323,6 +2324,8 @@ import type { Express } from "express";
         await removeAutoTransaction("service_order", String(billing.service_order_id));
         if (billing.service_order_id) {
           await supabaseAdmin.from("service_orders").update({ status: "recusada", mission_status: "encerrada" }).eq("id", billing.service_order_id);
+          // Boletins PENDENTES contendo esta OS: recusada sai do boletim.
+          await resyncPendingBoletinsForServiceOrder(Number(billing.service_order_id));
         }
         await logSystemAudit({
           userId: user.id, userName: user.name, userRole: user.role,

@@ -2,7 +2,7 @@ import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
-import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
+import { round2, osCanonicalTotal, billingTotalForBoletim, billingElegivelParaBoletim } from "../lib/boletim-totals";
 import { bustBalancoCaches } from "../lib/balanco-cache";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
@@ -573,20 +573,43 @@ export function registerBoletimApprovalRoutes(app: Express) {
         }
   
 
-      const { data: billingsData } = await supabaseAdmin
+      const { data: billingsDataRaw } = await supabaseAdmin
         .from("escort_billings")
         .select("*")
         .in("id", billingIds);
 
-      const soIds = (billingsData || []).map((b: any) => b.service_order_id).filter(Boolean);
+      const soIdsAll = (billingsDataRaw || []).map((b: any) => b.service_order_id).filter(Boolean);
       let ordersData: any[] = [];
-      if (soIds.length > 0) {
+      if (soIdsAll.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
           .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status")
-          .in("id", soIds);
+          .in("id", soIdsAll);
         ordersData = sos || [];
       }
+
+      // ============================================================
+      // Single source of truth com a tela de Faturamento (INTOCÁVEL §8.4):
+      // OS RECUSADA NUNCA entra no boletim enviado ao cliente — nem a R$ 0 —
+      // e billings já FATURADAS/PAGAS (cobradas em fatura anterior) também
+      // ficam fora. A seleção do front pode conter inelegíveis (ou o status
+      // pode mudar entre a seleção e o envio); o backend filtra sempre.
+      // Canceladas permanecem (tabela 100 km, §8.1b).
+      // ============================================================
+      const soStatusById = new Map(ordersData.map((o: any) => [o.id, o.status]));
+      const excluded: string[] = [];
+      const billingsData = (billingsDataRaw || []).filter((b: any) => {
+        const elig = billingElegivelParaBoletim(b, soStatusById.get(b.service_order_id));
+        if (!elig.ok) excluded.push(`${b.os_number || b.service_order_id} (${elig.motivo})`);
+        return elig.ok;
+      });
+      if (excluded.length > 0) {
+        console.log(`[boletim-envio] ${excluded.length} OS removida(s) do boletim (regra do Faturamento): ${excluded.join(", ")}`);
+      }
+      if (!billingsData.length) {
+        return res.status(400).json({ message: "Nenhuma OS selecionada é elegível para boletim (recusadas ou já faturadas/pagas ficam fora)." });
+      }
+      const finalBillingIds = billingsData.map((b: any) => String(b.id));
       const isOmega = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
       const processoNumbers = isOmega
         ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
@@ -651,10 +674,10 @@ export function registerBoletimApprovalRoutes(app: Express) {
         client_email: clientEmail,
         period_start: periodStart,
         period_end: periodEnd,
-        billing_ids: billingIds,
+        billing_ids: finalBillingIds,
         total_value: canonicalTotal,
         billing_snapshot: billingSnapshot,
-        os_count: osCount || billingIds.length,
+        os_count: finalBillingIds.length,
         status: "PENDENTE",
         sent_by: user?.name || user?.username || null,
         sent_by_user_id: user?.id || null,
@@ -667,7 +690,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
+        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, finalBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);

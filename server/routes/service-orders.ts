@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { bustBalancoCaches } from "../lib/balanco-cache";
+  import { resyncPendingBoletinsForServiceOrder } from "../lib/boletim-resync";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
@@ -1437,6 +1438,11 @@ import type { Express } from "express";
           performed_by: req.user?.email || adminName,
         });
       } catch (_e) {}
+
+      // Boletins de medição PENDENTES que contêm esta OS precisam refletir a
+      // mudança: recusada sai do boletim; cancelada é recongelada com a tabela
+      // 100 km. Sem isso, boletim enviado diverge da tela de Faturamento.
+      await resyncPendingBoletinsForServiceOrder(Number(req.params.id));
     }
 
     if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
