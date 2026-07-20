@@ -24,7 +24,7 @@ import { sendText, sendImageWithCaption, isZapiConfigured, getBotLid } from "./z
 import { decodeBase64Image, watermarkToDataUrl, TORRES_CONTACT_FOOTER } from "./photo-watermark";
 import { buildReminderMessage, sleep, humanDelayMs, randomTypingSeconds, varyForwardHeader, randInt } from "./whatsapp-humanize";
 import { normalizePhone } from "./normalize-contact";
-import { buildKmResumoByOsId, getKmFinalPhotoByOsId, buildRichCaption, isForwardableStep } from "../cron-whatsapp-forward";
+import { buildKmResumoByOsId, getKmFinalPhotoByOsId, buildRichCaption, isForwardableStep, isSuppressedPhotoCaption } from "../cron-whatsapp-forward";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -1523,7 +1523,10 @@ export async function fulfillGroupRequests(params: {
     // e saímos, sem mandar uma segunda mensagem. fail-open. Se a foto vier num
     // step que o cron NÃO encaminha, caímos no card de texto abaixo (senão o
     // pedido ficaria resolvido sem resposta no grupo).
-    if (params.hadPhoto && isForwardableStep(params.missionStep)) {
+    // Fotos suprimidas do grupo (KM Saída / Agente Equipado) NÃO são
+    // encaminhadas pelo cron — nesse caso caímos no card de texto abaixo,
+    // senão o pedido ficaria resolvido sem resposta no grupo (drop silencioso).
+    if (params.hadPhoto && isForwardableStep(params.missionStep) && !isSuppressedPhotoCaption(params.message)) {
       console.log(`[agent-central-mention] OS ${params.osNumber || params.serviceOrderId}: card com foto será enviado pelo cron de encaminhamento; fulfill apenas resolveu ${open.length} pedido(s).`);
       return;
     }

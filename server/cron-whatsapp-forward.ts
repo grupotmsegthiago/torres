@@ -63,6 +63,28 @@ export function isForwardableStep(step?: string | null): boolean {
   return Object.prototype.hasOwnProperty.call(FORWARDABLE_STEPS, String(step || ""));
 }
 
+// Fotos do check-in que NÃO vão pro grupo do cliente (ordem do dono 20/07/2026):
+// no check-in do veículo escoltado, só a foto de "KM Chegada" sai no grupo;
+// "KM Saída" e "Agente Equipado" ficam visíveis só internamente.
+// Casa só a legenda gerada pelo app ("📷 Foto: <label>..."), nunca texto livre.
+export function isSuppressedPhotoCaption(message?: string | null): boolean {
+  return /^📷\s*foto:\s*(km\s*sa[íi]da|agente[_\s-]*equipado)\b/i.test(String(message || "").trim());
+}
+
+// Renomeia a ocorrência da foto de "KM Chegada" no card do cliente
+// (ordem do dono 20/07/2026): "📷 Foto: KM Chegada — KM 38.969" vira
+// "CHEGADA NO CLIENTE - KM INICIAL - 38.969". Qualquer outra mensagem
+// passa intacta. Só muda a EXIBIÇÃO no grupo; a mission_update no banco
+// e o billing (km_chegada) não são tocados.
+export function transformClientCaptionMessage(message?: string | null): string {
+  const m = String(message || "");
+  const match = m.match(/^📷\s*foto:\s*km\s*chegada\b(?:\s*—\s*km\s*([\d.,]+))?/i);
+  if (!match) return m;
+  return match[1]
+    ? `CHEGADA NO CLIENTE - KM INICIAL - ${match[1]}`
+    : `CHEGADA NO CLIENTE - KM INICIAL`;
+}
+
 const MISSION_STATUS_LABEL: Record<string, string> = {
   agendada: "Agendada",
   aceita: "Aceita",
@@ -307,7 +329,7 @@ export async function buildRichCaption(u: any, so: any, client: any, stepLabel?:
   const horaStr = fmtBrtTime(u.created_at);
   const statusLabel = fmtMissionStatus(so?.mission_status).toUpperCase();
   const clienteNome = String(client?.name || "").toUpperCase();
-  const msgUpper = String(u.message || "").toUpperCase();
+  const msgUpper = transformClientCaptionMessage(u.message).toUpperCase();
 
   // Barra de progresso: 5 quadrados, cada um vale 20%.
   const progressBar = (pct: number): string => {
@@ -649,6 +671,14 @@ async function processPending(): Promise<void> {
       const isPath = isStoragePath(photoUrl);
       if ((!isData && !isPath) || (!isFinalizadaStep && !msg)) {
         await markDone(u.id, "skip: foto/msg inválida");
+        continue;
+      }
+
+      // Fotos internas do check-in (KM Saída / Agente Equipado) não vão pro
+      // grupo do cliente — ordem do dono 20/07/2026. Continuam na tela interna.
+      if (isSuppressedPhotoCaption(msg)) {
+        await markDone(u.id, "skip: foto interna (KM Saída/Agente Equipado) não vai pro grupo do cliente");
+        console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} foto interna suprimida (${msg.slice(0, 40)})`);
         continue;
       }
 
