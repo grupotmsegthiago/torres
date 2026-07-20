@@ -10,3 +10,5 @@ description: Snapshot congelado do boletim de medição não pode ficar surdo a 
 **How to apply:**
 - Núcleo puro `rebuildApproval` + `resyncPendingBoletinsForServiceOrder` em `server/lib/boletim-resync.ts`; chamado nos DOIS caminhos que marcam recusada/cancelada (PATCH de service-orders e ação REJEITADA em escort). Novo caminho que mude status de OS deve chamar o resync também.
 - Envio (`enviar-aprovacao`) valida elegibilidade no BACKEND via `billingElegivelParaBoletim` (boletim-totals): recusada fora (nem a R$0), FATURADO/FATURADA/PAGO fora; canceladas entram. Nunca confiar na seleção do front.
+- E-mail/Excel já enviados são imutáveis: corrigir dados + resync deixa o LINK de aprovação certo, mas o cliente só vê valor certo com um REENVIO (novo e-mail). Fix de código só vale em prod após o publish — reenvio antes do deploy recria boletim errado.
+- Billing de OS cancelada ANTES da regra §8.1b pode estar sem HE do excedente (a tela de Faturamento recalcula por componentes e mostra maior que o snapshot); corrigir o billing e re-sincronizar, não "ajustar" o snapshot na mão.
