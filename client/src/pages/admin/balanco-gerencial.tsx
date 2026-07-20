@@ -988,15 +988,10 @@ export default function BalancoGerencialPage() {
             const cats: Cat[] = [];
             if (operacional > 0) {
               const opRows: Array<{ label: string; value: number }> = [];
-              // 1) VRP detalhado por agente (top contribuintes do período)
+              // 1) VRP agregado — SÓ o total (ordem do dono, 20/07/2026): detalhe por
+              // vigilante não aparece aqui; pagamento individual é assunto do card de RH.
               if (totals.pag > 0) {
-                opRows.push({ label: "── VRP (agentes) ──", value: totals.pag });
-                const agentesVRP = (filtered.agents || [])
-                  .filter((a: any) => Number(a.pag_total || 0) > 0)
-                  .sort((a: any, b: any) => Number(b.pag_total || 0) - Number(a.pag_total || 0));
-                for (const a of agentesVRP) {
-                  opRows.push({ label: `  ${a.name}`, value: Number(a.pag_total || 0) });
-                }
+                opRows.push({ label: "VRP (agentes)", value: totals.pag });
               }
               // 2) Despesas variáveis automáticas (origem oficial)
               const linhasDesp: Array<[string, number]> = [
@@ -1015,7 +1010,7 @@ export default function BalancoGerencialPage() {
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP de cada agente + combustível + pedágios + manutenção (origem oficial). Lançamentos manuais com fornecedor não contam aqui.`,
+                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP total dos agentes + combustível + pedágios + manutenção (origem oficial), sempre em valores gerais. Detalhe por agente fica no RH. Lançamentos manuais com fornecedor não contam aqui.`,
                 rows: opRows,
               });
             }
