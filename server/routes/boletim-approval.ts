@@ -596,10 +596,10 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       // ============================================================
       // Single source of truth com a tela de Faturamento:
-      // OS RECUSADA entra no boletim ZERADA (ordem do dono, 20/07/2026 —
-      // o valor continua R$ 0, §8.1 intacto). Billings já FATURADAS/PAGAS
-      // (cobradas em fatura anterior) ficam fora. A seleção do front pode
-      // conter inelegíveis; o backend filtra sempre.
+      // Boletim leva APROVADAS e CANCELADAS; OS RECUSADA FICA FORA (ordem do
+      // dono, 20/07/2026 revisada — §8.1 intacto: se escapar, vale R$ 0).
+      // Billings já FATURADAS/PAGAS (cobradas em fatura anterior) ficam fora.
+      // A seleção do front pode conter inelegíveis; o backend filtra sempre.
       // Canceladas permanecem (tabela 100 km, §8.1b).
       // ============================================================
       const soStatusById = new Map(ordersData.map((o: any) => [o.id, o.status]));

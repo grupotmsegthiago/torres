@@ -3,8 +3,8 @@
 // no envio; sem este resync, uma OS recusada após o envio continuava no boletim
 // a valor cheio (bug do boletim 59 OS / R$127k vs faturamento 45 OS / R$103k).
 //
-// Regra (ordem do dono, 20/07/2026):
-//   - OS recusada  ⇒ PERMANECE no boletim, ZERADA (R$0 em tudo, §8.1 intacto)
+// Regra (ordem do dono, 20/07/2026, revisada no mesmo dia):
+//   - OS recusada  ⇒ SAI do boletim (não vai no e-mail/Excel; §8.1 intacto)
 //   - OS cancelada ⇒ PERMANECE, mas o snapshot é recongelado com os valores
 //     atuais do billing (tabela 100 km, §8.1b)
 // Boletins APROVADOS/CONFIRMADOS nunca são alterados (o cliente já aprovou).
@@ -60,12 +60,8 @@ export function rebuildApproval(
   for (const entry of snapshot) {
     const osStatus = soStatusById.get(Number(entry.service_order_id));
     if (osStatus === "recusada") {
-      // Ordem do dono (20/07/2026): recusada PERMANECE no boletim, zerada.
-      const billing = billingById.get(String(entry.billing_id));
-      const rebuilt = rebuildSnapshotEntry(billing || entry, osStatus, entry);
-      // Compara total E componentes (total já podia ser 0 com componentes sujos)
-      if (JSON.stringify(rebuilt) !== JSON.stringify(entry)) changed = true;
-      newSnapshot.push(rebuilt);
+      // Ordem do dono (20/07/2026, revisada): recusada SAI do boletim.
+      changed = true;
       continue;
     }
     if (osStatus === "cancelada") {

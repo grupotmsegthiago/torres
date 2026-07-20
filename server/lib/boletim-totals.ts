@@ -30,11 +30,15 @@ export const billingTotalForBoletim = (b: any, osStatus?: string) => {
 };
 
 // Elegibilidade de uma OS para ENTRAR num boletim de medição.
-// Ordem do dono (20/07/2026): RECUSADAS ENTRAM no boletim, mas ZERADAS
-// (R$ 0,00 em todos os componentes — §8.1 continua valendo no valor).
+// Ordem do dono (20/07/2026, revisada no mesmo dia): boletim leva APROVADAS e
+// CANCELADAS; RECUSADAS FICAM FORA (não vão no e-mail nem no Excel — e se
+// algum caminho ainda somar uma recusada, o valor é R$0, §8.1 INTOCÁVEL).
 // FATURADAS/PAGAS já foram cobradas em fatura anterior, então ficam fora.
 // Aplicada no BACKEND do envio — nunca confiar só na seleção do front.
 export const billingElegivelParaBoletim = (b: any, osStatus?: string): { ok: boolean; motivo?: string } => {
+  if (osStatus === "recusada") {
+    return { ok: false, motivo: "OS recusada" };
+  }
   const st = String(b?.status || "").toUpperCase();
   if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
     return { ok: false, motivo: `billing já ${st}` };
