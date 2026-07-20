@@ -1417,13 +1417,25 @@ export default function RelatorioFaturamentoPage() {
         const totalFaturamento = aprovadasTotal + pendentesTotal + canceladasTotal;
         const totalCount = aprovadasRows.length + pendentesRows.length + canceladasRows.length;
         const tooltip = "Total p/ Faturamento = Aprovadas + A Verificar + Canceladas. Recusadas e Faturadas não entram.";
+        // Total do Período = tudo menos Recusadas (inclui as já Faturadas).
+        // Soma direto das linhas (cada OS conta 1x — evita dupla contagem de
+        // cancelada com boletim já faturado). SÓ exibição — não altera o
+        // Total p/ Faturamento nem o Gerar Fatura.
+        const periodoRows = rowsData.filter(r => effectiveLabel(r) !== "Recusada" && String(r.osStatus || "").toLowerCase() !== "recusada");
+        const periodoTotal = sumTotal(periodoRows);
+        const periodoCount = periodoRows.length;
         return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" data-testid="stat-aprovadas" title="Soma no Total p/ Faturamento">
               <p className="text-[9px] font-black uppercase tracking-wider text-emerald-700">Aprovadas</p>
               <p className="text-lg font-black text-emerald-900 font-mono">{aprovadasRows.length}</p>
               <p className="text-[10px] font-bold text-emerald-800 font-mono">{fmt(aprovadasTotal)}</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5" data-testid="stat-faturadas" title="Já viraram fatura — não entram no Total p/ Faturamento">
+              <p className="text-[9px] font-black uppercase tracking-wider text-amber-700">Faturadas</p>
+              <p className="text-lg font-black text-amber-900 font-mono">{faturadasRows.length}</p>
+              <p className="text-[10px] font-bold text-amber-800 font-mono">{fmt(faturadasTotal)}</p>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes" title="Entra no Total p/ Faturamento (pendente de revisão)">
               <p className="text-[9px] font-black uppercase tracking-wider text-yellow-700">A Verificar</p>
@@ -1445,6 +1457,12 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-lg font-black text-white font-mono">{totalCount} OS</p>
               <p className="text-[10px] font-bold text-white font-mono">{fmt(totalFaturamento)}</p>
               <p className="text-[8px] font-medium text-gray-400 mt-0.5">Aprov. + A Verif. + Cancel.</p>
+            </div>
+            <div className="bg-indigo-600 border border-indigo-600 rounded-lg px-3 py-2.5" data-testid="stat-total-periodo" title="Total do Período = tudo menos Recusadas (inclui as já Faturadas). Só informativo — não é o valor do Gerar Fatura.">
+              <p className="text-[9px] font-black uppercase tracking-wider text-indigo-200">Total do Período</p>
+              <p className="text-lg font-black text-white font-mono">{periodoCount} OS</p>
+              <p className="text-[10px] font-bold text-white font-mono">{fmt(periodoTotal)}</p>
+              <p className="text-[8px] font-medium text-indigo-200 mt-0.5">Faturadas + Aprov. + A Verif. + Cancel. (sem Recusadas)</p>
             </div>
           </div>
           <div className="flex items-center gap-3 mb-3" title={tooltip}>
