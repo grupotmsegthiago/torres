@@ -1,0 +1,93 @@
+Guia Definitivo de Engenharia e Arquitetura do Sistema (Replit & Supabase Edition)
+1. Diretriz Primária e Governança
+Prioridade Absoluta: Estabilidade do sistema em produção > Velocidade de entrega.
+
+Modo Zero-Cagada: Proibido sobrescrever código funcional, remover recursos, simplificar regras de negócio sem aval ou alterar contratos entre Front-End e Back-End.
+
+Padrões Obrigatórios: SOLID, Clean Code, DRY, KISS, tipagem estricta (proibido any ou @ts-ignore) e tratamento de erros rigoroso (try/catch).
+
+Padrões de Exibição:
+
+Idioma: Português (Brasil).
+
+Valores Monetários: R$.
+
+Horários: HH:MM (Horário de Brasília - Brasil).
+
+2. Fase 1: Análise Obrigatória (Antes de qualquer linha de código)
+Entendimento: Explicar causa, local, arquivos impactados e serviços dependentes. Em caso de dúvida, parar e perguntar.
+
+Análise de Impacto: Mapear rigorosamente imports, exports, hooks, components, services, APIs, banco de dados (RPCs, Views, Triggers), rotas e Context Providers.
+
+Decisão: Proibido assumir comportamento. Se houver múltiplos caminhos, expor as opções e aguardar confirmação.
+
+3. Fase 2: Padrões de Desenvolvimento por Camada
+Organização de Pastas: Respeito absoluto à estrutura existente (/components, /hooks, /services, /utils, /types, /lib, /pages) sem misturar responsabilidades.
+
+Banco de Dados (PostgreSQL / Supabase):
+
+O banco é a fonte única da verdade.
+
+Lógica de duplicação, sincronização, performance e filtros deve residir no Back-End (SQL, Views, RPCs). Proibido gambiarras no Front-End.
+
+Todo acesso ao Supabase deve ocorrer exclusivamente via Services (proibido consultas espalhadas em componentes).
+
+Integrações e APIs Externas:
+
+Proibido alterar sem autorização explícita: Asaas, eNotas, PlugNotas, Mercado Pago, Stripe, Webhooks, URLs, Keys, Secrets, Tokens, Callbacks e Payloads.
+
+React e Performance:
+
+Evitar estados duplicados, loops desnecessários, map dentro de map, re-renderizações excessivas e dependências incorretas em useEffect.
+
+Garantir unicidade em listas (reduce, Map, filter, Set).
+
+4. Especificidades do Ambiente Replit & Supabase
+Gestão de Secrets e Variáveis de Ambiente:
+
+Nunca exiba, logue ou comite chaves de API, secrets ou tokens de acesso.
+
+Utilize sempre o painel de Secrets do Replit e acesse as variáveis com segurança via process.env ou import.meta.env.
+
+Build e Bundling (Vite):
+
+Valide se todos os imports utilizam caminhos e aliases corretos (ex: @/).
+
+Garanta que o processo de build do Vite finalize sem erros de tipagem TypeScript ou quebras de dependência antes de concluir qualquer tarefa.
+
+Ciclo de Vida e Recursos do Container:
+
+Evite loops de requisições ou efeitos colaterais sem array de dependências adequado no useEffect. Isso previne o consumo excessivo de CPU do container no Replit e evita gargalos de conexões simultâneas com o Supabase.
+
+5. Fase 3: Modo Investigação (Tratamento de Bugs)
+Encontrar a causa raiz.
+
+Explicar a causa e onde ela ocorre.
+
+Propor a melhor solução arquitetural.
+
+Somente após validação, proceder com a implementação.
+
+6. Padrão de Entrega (Checklist Final)
+Toda entrega técnica deve estruturar-se rigorosamente nos seguintes tópicos:
+
+Diagnóstico: Explicação técnica do cenário.
+
+Arquivos Envolvidos: Listagem completa.
+
+Estratégia Escolhida: Justificativa técnica.
+
+Código Implementado: Limpo, seguro e performático.
+
+Impactos: Análise de riscos, efeitos colaterais e comportamento no Replit.
+
+Como Validar: Passo a passo exato para testes.
+
+O que NÃO foi alterado: Confirmação de partes críticas intactas.
+
+
+
+
+**** TAREFA A SER EXECUTADA *****
+
+porque aparece "aprovado" se não teve aprovação? ela só pode aparecer APROVADO se clicar no botão "APROVAR" e eu quero ter o registro login , data e hora de quem aprovou...

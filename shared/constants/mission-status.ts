@@ -96,14 +96,38 @@ export function getRelatorioStatus(
 ): StatusDescriptor {
   if (osStatus === "recusada") return OS_STATUS_MAP.recusada;
   if (osStatus === "cancelada") return OS_STATUS_MAP.cancelada;
-  // Operacional manda no Faturamento: OS concluída + missão encerrada vale como APROVADA
-  // mesmo que o financeiro ainda não tenha revisado o billing.
+  // Ordem do dono (20/07/2026): o selo APROVADA só aparece quando alguém clicou em
+  // "Aprovar" (billing.status === "APROVADA", com revisado_por/revisado_em gravados).
+  // OS concluída + missão encerrada com billing A_VERIFICAR fica como "A Verificar" —
+  // a antiga regra "operacional manda no faturamento" mostrava APROVADA sem aprovação
+  // real. A ELEGIBILIDADE pra fatura (A Verificar entra no total) NÃO mudou (§8.4).
+  void osMissionStatus;
+  return getBillingStatusInfo(billingStatus);
+}
+
+/**
+ * Semântica do GUARD de quinzena (gerar-fatura, asaas.ts) — NÃO é exibição.
+ * Mantém a regra antiga "operacional manda no faturamento": OS concluída +
+ * missão encerrada conta como efetivamente aprovada mesmo com billing
+ * A_VERIFICAR, então não bloqueia o fechamento da quinzena (INTOCÁVEL #4:
+ * A Verificar entra no faturamento). O SELO da tela (getRelatorioStatus)
+ * ficou estrito por ordem do dono (20/07/2026); esta função preserva a
+ * elegibilidade do fluxo de fatura.
+ */
+export function contaComoAprovadaParaFatura(
+  osStatus: string | null | undefined,
+  billingStatus: string | null | undefined,
+  osMissionStatus?: string | null | undefined
+): boolean {
+  if (osStatus === "recusada" || osStatus === "cancelada") return false;
+  if (billingStatus === "APROVADA") return true;
   const isOsConcluida = (osStatus === "concluída" || osStatus === "concluida" || osStatus === "completed");
   const isMissionEncerrada = (osMissionStatus === "encerrada");
-  if (isOsConcluida && isMissionEncerrada && billingStatus !== "FATURADO" && billingStatus !== "FATURADA" && billingStatus !== "PAGO" && billingStatus !== "CANCELADO" && billingStatus !== "CANCELADA" && billingStatus !== "REJEITADA") {
-    return BILLING_STATUS_MAP.APROVADA;
-  }
-  return getBillingStatusInfo(billingStatus);
+  return (
+    isOsConcluida && isMissionEncerrada &&
+    billingStatus !== "FATURADO" && billingStatus !== "FATURADA" && billingStatus !== "PAGO" &&
+    billingStatus !== "CANCELADO" && billingStatus !== "CANCELADA" && billingStatus !== "REJEITADA"
+  );
 }
 
 /**

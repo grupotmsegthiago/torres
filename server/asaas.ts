@@ -4,7 +4,7 @@ import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { bustBalancoCaches } from "./lib/balanco-cache";
-import { getRelatorioStatus, BILLING_STATUS_MAP } from "@shared/constants/mission-status";
+import { contaComoAprovadaParaFatura } from "@shared/constants/mission-status";
 import {
   TORRES_CNPJ,
   CNAE_PRINCIPAL,
@@ -2694,9 +2694,10 @@ export function registerAsaasRoutes(app: Express) {
           .gte("data_missao", fromDate)
           .lte("data_missao", toDate)
           .not("status", "in", '("RECUSADA","CANCELADA","CANCELADO","FATURADA","FATURADO","PAGO","REJEITADA")');
-        // Mesma regra da tela de Faturamento (getRelatorioStatus): OS concluída
+        // Semântica do guard (contaComoAprovadaParaFatura): OS concluída
         // + missão encerrada vale como APROVADA mesmo com billing A_VERIFICAR;
-        // OS recusada/cancelada não bloqueia a quinzena.
+        // OS recusada/cancelada não bloqueia a quinzena. O SELO da tela ficou
+        // estrito (só aprovação real), mas a elegibilidade aqui NÃO mudou.
         const guardSoIds = Array.from(new Set((allInPeriod || []).map((b: any) => b.service_order_id).filter(Boolean)));
         const guardSoById = new Map<number, any>();
         for (let i = 0; i < guardSoIds.length; i += 500) {
@@ -2711,8 +2712,7 @@ export function registerAsaasRoutes(app: Express) {
           const so = guardSoById.get(Number(b.service_order_id));
           const soStatus = String(so?.status || "").toLowerCase();
           if (soStatus === "recusada" || soStatus === "cancelada") return false;
-          const efetivo = getRelatorioStatus(soStatus, b.status, so?.mission_status);
-          return efetivo !== BILLING_STATUS_MAP.APROVADA;
+          return !contaComoAprovadaParaFatura(soStatus, b.status, so?.mission_status);
         });
         if (blocking.length > 0) {
           gerarFaturaLocks.delete(clientId);

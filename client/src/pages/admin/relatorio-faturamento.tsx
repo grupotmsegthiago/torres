@@ -155,8 +155,8 @@ export default function RelatorioFaturamentoPage() {
 
   // Para faturamento: ENTRAM Aprovadas + A Verificar + Canceladas pelo cliente.
   // SAEM Recusadas (operacional não atendeu) e Faturadas/Pagas (já viraram fatura).
-  // A regra "OS concluída + missão encerrada" também conta como aprovada,
-  // espelhando getRelatorioStatus (shared/constants/mission-status.ts).
+  // OBS (20/07/2026): o SELO "Aprovada" agora só aparece com aprovação real (clique
+  // em Aprovar); a elegibilidade pra fatura continua incluindo A Verificar (§8.4).
   const isFaturavelBilling = (b: any) => {
     const st = String(b.status || "").toUpperCase();
     if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") return false;
@@ -760,6 +760,7 @@ export default function RelatorioFaturamentoPage() {
         motivoRejeicao: b.motivo_rejeicao || "",
         observacoesBilling: b.observacoes || "",
         revisadoPor: b.revisado_por || "",
+        revisadoEm: b.revisado_em || "",
         clientName: b.client_name,
         horasMissaoNum: horasMissao,
         originRaw: origem,
@@ -1551,6 +1552,16 @@ export default function RelatorioFaturamentoPage() {
                       {r.status === "A_VERIFICAR" && (
                         <span className="text-[10px] font-bold text-yellow-700 truncate" data-testid={`text-averificar-${i}`}>
                           · Aguardando revisão (não aprovada ainda)
+                        </span>
+                      )}
+                      {r.status === "APROVADA" && (r as any).revisadoPor && (
+                        <span
+                          className="text-[10px] font-bold text-emerald-700 truncate"
+                          title={`Aprovada por ${(r as any).revisadoPor}${(r as any).revisadoEm ? ` em ${new Date((r as any).revisadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}`}
+                          data-testid={`text-aprovadapor-${i}`}
+                        >
+                          · Aprovada por {(r as any).revisadoPor}
+                          {(r as any).revisadoEm ? ` em ${new Date((r as any).revisadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
                         </span>
                       )}
                     </div>

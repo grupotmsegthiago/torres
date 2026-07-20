@@ -2179,9 +2179,11 @@ import type { Express } from "express";
       if (acao === "APROVADA" && billing.status === "APROVADA") return res.json(billing);
       if (billing.status !== "A_VERIFICAR") return res.status(400).json({ message: "Somente OS com status 'A Verificar' podem ser revisadas" });
 
+      // Auditoria (ordem do dono, 20/07/2026): registrar QUEM aprovou/rejeitou com o
+      // LOGIN (e-mail) além do nome, e data/hora. Exibido na tela do relatório.
       const updateData: any = {
         status: acao === "APROVADA" ? "APROVADA" : "REJEITADA",
-        revisado_por: user.name,
+        revisado_por: (user as any).email ? `${user.name} (${(user as any).email})` : user.name,
         revisado_em: new Date().toISOString(),
       };
       if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
