@@ -449,6 +449,12 @@ export default function BalancoGerencialPage() {
           // (APROVADA/FATURADO/PAGO) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
           // — entra em "Em Aberto". Mesma flag que decide useBoletim acima.
           is_frozen: useBoletim,
+          // Status do boletim (escort_billings.status) — usado pra excluir do modal "OSs em Aberto"
+          // qualquer OS cujo boletim já foi aprovado/faturado/pago, mesmo que o valor congelado
+          // seja 0 (caso em que is_frozen fica false e a OS "vazava" pro modal). O dashboard
+          // (byMission) omite alguns billings de canceladas, então o grid manda o.billingStatus
+          // direto do escort_billings como fonte de verdade.
+          bill_status: String(o.billingStatus || bill?.status || "").toUpperCase(),
           client_name: o.clientName || bill?.client_name || "",
         };
       });
@@ -729,12 +735,23 @@ export default function BalancoGerencialPage() {
     }
   };
 
-  // OSs "Em Aberto" do período (previsão ao vivo, sem boletim aprovado) — mais recentes primeiro
+  // OSs "Em Aberto" do período — SÓ as pendentes de verificação (ordem do dono, 20/07/2026):
+  // fora tudo que já tem boletim APROVADA/FATURADO/FATURADA/PAGO e também CANCELADO (billing
+  // congelado de OS cancelada — só vira CANCELADO se já estava aprovado/faturado, §8.1b).
+  // Mais recentes primeiro.
   const osAbertas = useMemo(
     () => (filtered.missions as any[])
-      .filter((m) => !m.is_frozen)
+      .filter((m) => !m.is_frozen
+        && !FROZEN_BILLING_STATUSES.has(m.bill_status)
+        && m.bill_status !== "CANCELADO")
       .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
     [filtered],
+  );
+  // Total do modal = soma exata das OSs listadas (pode diferir de totals.fatAberto,
+  // que continua sendo fat total − congelado no card, sem mexer nos números do Balanço).
+  const osAbertasTotal = useMemo(
+    () => osAbertas.reduce((a, m) => a + (Number(m.fat_total) || 0), 0),
+    [osAbertas],
   );
 
   // Botão "Concluir" só para OS em fluxo normal (agendada/em andamento) — qualquer
@@ -1502,10 +1519,10 @@ export default function BalancoGerencialPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Activity size={20} className="text-amber-600" />
-                OSs em Aberto — {fmt(totals.fatAberto)}
+                OSs em Aberto — {fmt(osAbertasTotal)}
               </DialogTitle>
               <DialogDescription>
-                Período: {range.label}. Previsão ao vivo de {osAbertas.length} {osAbertas.length === 1 ? "OS ainda sem boletim aprovado" : "OSs ainda sem boletim aprovado"}. Clique numa OS para ver os detalhes.
+                Período: {range.label}. Previsão ao vivo de {osAbertas.length} {osAbertas.length === 1 ? "OS pendente de verificação (sem boletim aprovado/faturado)" : "OSs pendentes de verificação (sem boletim aprovado/faturado)"}. Clique numa OS para ver os detalhes.
               </DialogDescription>
             </DialogHeader>
             {osAbertas.length === 0 ? (

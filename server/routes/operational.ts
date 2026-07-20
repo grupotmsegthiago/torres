@@ -319,6 +319,17 @@ import type { Express } from "express";
       fetchByServiceOrderIdsChunked("mission_costs", osIds, "service_order_id, amount, category, cost_type, vehicle_id"),
     ]);
 
+    // Status do boletim (escort_billings) por OS — SÓ leitura, para o cliente saber
+    // se a OS já tem boletim APROVADA/FATURADO/PAGO/CANCELADO (o Balanço usa isso pra
+    // tirar do modal "OSs em Aberto" o que já foi aprovado/faturado). Query leve (2 colunas).
+    const billingStatusByOs = new Map<number, string>();
+    {
+      const { data: billRows } = await fetchByServiceOrderIdsChunked("escort_billings", osIds, "service_order_id, status");
+      for (const b of billRows || []) {
+        if (b.service_order_id) billingStatusByOs.set(Number(b.service_order_id), String(b.status || "").toUpperCase());
+      }
+    }
+
     if (!cachedContracts && contractsRes.data) {
       memSet("escort_contracts", contractsRes.data);
     }
@@ -764,6 +775,7 @@ import type { Express } from "express";
           observations: o.observations || null,
           cancellationReason: (o as any).cancellationReason || (o as any).cancellation_reason || null,
           status: o.status,
+          billingStatus: billingStatusByOs.get(o.id) || null,
           priority: o.priority || "agendada",
           missionStatus: o.missionStatus,
           lastAgentUpdate: lastUpdate.length > 0 ? {
