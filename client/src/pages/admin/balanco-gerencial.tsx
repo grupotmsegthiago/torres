@@ -26,6 +26,15 @@ import { useAuth } from "@/hooks/use-auth";
 // ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
 const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
 
+// Critério ÚNICO de "OS em aberto" (card do Balanço E modal — dono 20/07/2026: os dois
+// números têm que bater): sem valor congelado E sem boletim aprovado/faturado/pago/
+// cancelado no escort_billings (bill_status vem do grid, fonte de verdade — o byMission
+// omite billings de algumas canceladas e o is_frozen sozinho deixava a OS "vazar").
+const isOsAberta = (m: any) =>
+  !m.is_frozen &&
+  !FROZEN_BILLING_STATUSES.has(m.bill_status) &&
+  m.bill_status !== "CANCELADO";
+
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -612,9 +621,12 @@ export default function BalancoGerencialPage() {
     // Quebra do faturamento por origem: FINALIZADO/CONGELADO (valor travado em boletim aprovado/
     // faturado/pago — blindado contra erro de digitação do agente) vs EM ABERTO/PREVISÃO (motor
     // canônico ao vivo). A soma das duas = `fat` (total do período).
-    const fatCongelado = filtered.missions.reduce((a, m) => a + (m.is_frozen ? m.fat_total : 0), 0);
-    const fatAberto = fat - fatCongelado;
-    const countCongelado = filtered.missions.filter((m: any) => m.is_frozen).length;
+    // "Finalizado" = tudo que NÃO está em aberto (valor congelado OU boletim já
+    // aprovado/faturado/pago/cancelado). Mesmo critério do modal (isOsAberta), pra
+    // contagem e valor do card baterem com a lista ao clicar. Finalizado + Em Aberto = fat.
+    const fatAberto = filtered.missions.reduce((a, m) => a + (isOsAberta(m) ? m.fat_total : 0), 0);
+    const fatCongelado = fat - fatAberto;
+    const countCongelado = filtered.missions.filter((m: any) => !isOsAberta(m)).length;
     return {
       fat, pag, desp: despReais, lucro, margem, km, horas, total: filtered.missions.length,
       fatCongelado, fatAberto, countCongelado,
@@ -744,14 +756,12 @@ export default function BalancoGerencialPage() {
   // Mais recentes primeiro.
   const osAbertas = useMemo(
     () => (filtered.missions as any[])
-      .filter((m) => !m.is_frozen
-        && !FROZEN_BILLING_STATUSES.has(m.bill_status)
-        && m.bill_status !== "CANCELADO")
+      .filter(isOsAberta)
       .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
     [filtered],
   );
-  // Total do modal = soma exata das OSs listadas (pode diferir de totals.fatAberto,
-  // que continua sendo fat total − congelado no card, sem mexer nos números do Balanço).
+  // Total do modal = soma exata das OSs listadas — igual a totals.fatAberto,
+  // porque card e modal usam o MESMO critério (isOsAberta).
   const osAbertasTotal = useMemo(
     () => osAbertas.reduce((a, m) => a + (Number(m.fat_total) || 0), 0),
     [osAbertas],
