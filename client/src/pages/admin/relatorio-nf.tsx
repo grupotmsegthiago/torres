@@ -459,6 +459,7 @@ export default function RelatorioNFPage() {
   }, [rows, search]);
 
   const totalPaid = useMemo(() => filteredPaid.reduce((s, r) => s + Number(r.value || 0), 0), [filteredPaid]);
+  const totalPaidLiquido = useMemo(() => filteredPaid.reduce((s, r) => s + Number(r.netValue ?? r.value ?? 0), 0), [filteredPaid]);
 
   const exportXlsx = () => {
     const headers = [
@@ -1071,8 +1072,11 @@ export default function RelatorioNFPage() {
                 {filteredPaid.length} registro{filteredPaid.length === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="text-sm font-bold text-emerald-800 tabular-nums" data-testid="text-total-pago">
-              Total Recebido: {fmtBRL(totalPaid)}
+            <div className="text-right text-xs font-bold text-emerald-800 tabular-nums" data-testid="text-total-pago">
+              <div>Total NF: {fmtBRL(totalPaid)} · Recebido: {fmtBRL(totalPaidLiquido)}</div>
+              {totalPaid - totalPaidLiquido > 0.009 && (
+                <div className="text-[10px] font-semibold text-amber-700">Impostos/taxas retidos: {fmtBRL(totalPaid - totalPaidLiquido)}</div>
+              )}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -1081,7 +1085,8 @@ export default function RelatorioNFPage() {
                 <tr className="text-xs text-emerald-900">
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
-                  <th className="text-right px-3 py-2 font-semibold">Valor</th>
+                  <th className="text-right px-3 py-2 font-semibold">Valor NF</th>
+                  <th className="text-right px-3 py-2 font-semibold">Recebido</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-left px-3 py-2 font-semibold">Pago em</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
@@ -1090,9 +1095,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {isLoading ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filteredPaid.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
                 ) : filteredPaid.map(r => (
                   <tr key={`paid-${r.id}`} className="hover:bg-emerald-50/40" data-testid={`row-paid-${r.id}`}>
                     <td className="px-3 py-2">
@@ -1137,8 +1142,14 @@ export default function RelatorioNFPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-emerald-700 tabular-nums" data-testid={`text-paid-value-${r.id}`}>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-700 tabular-nums" data-testid={`text-paid-value-${r.id}`}>
                       {fmtBRL(r.value)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-emerald-700 tabular-nums" data-testid={`text-paid-netvalue-${r.id}`}>
+                      {fmtBRL(Number(r.netValue ?? r.value ?? 0))}
+                      {r.netValue != null && r.value - Number(r.netValue) > 0.009 && (
+                        <div className="text-[10px] font-medium text-amber-700">−{fmtBRL(r.value - Number(r.netValue))}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
                       {r.dueDate ? fmtDate(r.dueDate) : <span className="text-slate-300">—</span>}
