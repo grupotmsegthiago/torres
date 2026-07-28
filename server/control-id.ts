@@ -1480,7 +1480,8 @@ export async function buildFolhaStats(
   const civilEndBrt = new Date(`${civilTo}T23:59:59-03:00`);
   const isCivilFuturo = nowBrt.getTime() < civilStartBrt.getTime();
   const isCivilCorrente = !isCivilFuturo && nowBrt.getTime() <= civilEndBrt.getTime();
-  const totalDiasCivil = Math.round((civilEndBrt.getTime() - civilStartBrt.getTime()) / msPerDay) + 1;
+  // (fim é 23:59:59 → a divisão já dá o nº de dias; NÃO somar +1 senão julho vira 32)
+  const totalDiasCivil = Math.round((civilEndBrt.getTime() - civilStartBrt.getTime()) / msPerDay);
   let diasCivilElapsed: number;
   let cutoffCivilIso: string;
   if (isCivilFuturo) {
