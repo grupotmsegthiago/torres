@@ -109,14 +109,28 @@ if ("serviceWorker" in navigator) {
     let refreshing = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
+      // Se já estamos em hard-reset de versão, não dispara segundo reload
+      if (sessionStorage.getItem(RESET_FLAG)) return;
+      if (sessionStorage.getItem("__sw_reloading")) return;
       refreshing = true;
+      sessionStorage.setItem("__sw_reloading", "1");
       window.location.reload();
     });
   });
 
-  // Re-checa versão sempre que a aba volta a ficar visível
+  // Limpa flag de reload do SW após boot bem-sucedido
+  try {
+    sessionStorage.removeItem("__sw_reloading");
+  } catch {}
+
+  // Re-checa versão quando a aba volta — no máximo 1x por minuto
+  let lastVisibilityCheck = 0;
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") checkVersionAndMaybeReset();
+    if (document.visibilityState !== "visible") return;
+    const now = Date.now();
+    if (now - lastVisibilityCheck < 60_000) return;
+    lastVisibilityCheck = now;
+    checkVersionAndMaybeReset();
   });
 } else {
   bootCleanup().then(() => checkVersionAndMaybeReset());

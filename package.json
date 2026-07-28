@@ -12,7 +12,8 @@
     "db:push": "drizzle-kit push",
     "test": "node scripts/run-tests.mjs",
     "env:keys": "node scripts/list-env-keys.mjs",
-    "env:push-vercel": "node scripts/push-env-vercel-safe.mjs"
+    "env:push-vercel": "node scripts/push-env-vercel-safe.mjs",
+    "env:add-missing-vercel": "node scripts/add-missing-vercel-env.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

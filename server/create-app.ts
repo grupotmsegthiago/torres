@@ -13,7 +13,7 @@ import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
 import { registerCobrancaJudicialRoutes } from "./routes/cobranca-judicial";
 import { registerPushRoutes } from "./routes/push";
-import { APP_VERSION, APP_BUILD_AT } from "./constants";
+import { APP_VERSION, APP_BUILD_AT, APP_BUILD_ID } from "./constants";
 import { installRequestLogger } from "./slow-routes";
 import { isVercel } from "./platform";
 import { isServerSupabaseConfigured } from "./supabase";
@@ -97,7 +97,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
 
   app.get("/api/version", (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT });
+    res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT, buildId: APP_BUILD_ID });
+  });
+
+  app.get(["/api/healthz", "/healthz"], (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      ts: Date.now(),
+      supabaseConfigured: isServerSupabaseConfigured(),
+    });
   });
 
   app.get("/robots.txt", (req, res) => {

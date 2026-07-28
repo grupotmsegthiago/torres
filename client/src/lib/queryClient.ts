@@ -2,13 +2,20 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
 const CACHE_VERSION = "20260521-realtime-trim-v3";
+const CACHE_RELOAD_ONCE = "torres_cache_reload_once";
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("torres_cache_version");
   if (stored && stored !== CACHE_VERSION) {
-    localStorage.clear();
-    sessionStorage.clear();
-    localStorage.setItem("torres_cache_version", CACHE_VERSION);
-    window.location.reload();
+    // Evita loop de reload se a limpeza de cache falhar ou repetir no mesmo boot
+    if (sessionStorage.getItem(CACHE_RELOAD_ONCE) === CACHE_VERSION) {
+      localStorage.setItem("torres_cache_version", CACHE_VERSION);
+    } else {
+      sessionStorage.setItem(CACHE_RELOAD_ONCE, CACHE_VERSION);
+      localStorage.clear();
+      sessionStorage.setItem(CACHE_RELOAD_ONCE, CACHE_VERSION);
+      localStorage.setItem("torres_cache_version", CACHE_VERSION);
+      window.location.reload();
+    }
   } else if (!stored) {
     localStorage.setItem("torres_cache_version", CACHE_VERSION);
   }
@@ -242,9 +249,9 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.serviceOrders);
   }
   if (scope === "employee") {
+    // Apenas lista de funcionários — evita fan-out que refazia dashboard/grid
+    // a cada UPDATE em employees (folha/financeiro já têm escopos próprios).
     inv(keys.employees);
-    inv(keys.financialDashboard);
-    inv(keys.operationalGrid);
   }
   if (scope === "billing") {
     inv(keys.escortBillings);
