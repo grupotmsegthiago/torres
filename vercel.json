@@ -1,6 +1,6 @@
 {
   "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
-  "buildCommand": "npm run build",
+  "buildCommand": "npx tsx script/build.ts",
   "outputDirectory": "dist/public",
   "redirects": [
     {
