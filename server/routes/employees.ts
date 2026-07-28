@@ -280,26 +280,40 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
             periculosidadePct, dependentesIr, ajudaCustoMensal,
             valeAlimentacaoMensal, assiduidadeMensal } = req.body;
     if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
-    const payload: any = {
-      employeeId: emp.id,
-      baseSalary: String(baseSalary),
-      effectiveDate,
-      reason: reason || null,
-      notes: notes || null,
+    // Aceita formato brasileiro ("1.837,40" / "1837,40") ou americano ("1837.40").
+    // Antes, o valor com vírgula ia cru pra coluna NUMERIC e o insert falhava.
+    const normBR = (v: any): string => {
+      const s = String(v).trim();
+      const cleaned = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
+      const n = Number(cleaned);
+      if (!Number.isFinite(n)) throw new Error(`Valor numérico inválido: "${s}"`);
+      return String(n);
     };
-    if (valeRefeicaoDiario !== undefined && valeRefeicaoDiario !== "") payload.valeRefeicaoDiario = String(valeRefeicaoDiario);
-    if (cestaBasica !== undefined && cestaBasica !== "") payload.cestaBasica = String(cestaBasica);
-    if (valeTransporteMensal !== undefined && valeTransporteMensal !== "") payload.valeTransporteMensal = String(valeTransporteMensal);
-    if (beneficiosOutros !== undefined && beneficiosOutros !== "") payload.beneficiosOutros = String(beneficiosOutros);
-    if (encargosPct !== undefined && encargosPct !== "") payload.encargosPct = String(encargosPct);
-    if (horasMensais !== undefined && horasMensais !== "") payload.horasMensais = String(horasMensais);
-    // Folha 2025
-    if (periculosidadePct !== undefined && periculosidadePct !== "") payload.periculosidadePct = String(periculosidadePct);
-    if (dependentesIr !== undefined && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr);
-    if (ajudaCustoMensal !== undefined && ajudaCustoMensal !== "") payload.ajudaCustoMensal = String(ajudaCustoMensal);
-    // Modelo Torres: benefícios à parte (VA + Assiduidade)
-    if (valeAlimentacaoMensal !== undefined && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = String(valeAlimentacaoMensal);
-    if (assiduidadeMensal !== undefined && assiduidadeMensal !== "") payload.assiduidadeMensal = String(assiduidadeMensal);
+    let payload: any;
+    try {
+      payload = {
+        employeeId: emp.id,
+        baseSalary: normBR(baseSalary),
+        effectiveDate,
+        reason: reason || null,
+        notes: notes || null,
+      };
+      if (valeRefeicaoDiario !== undefined && valeRefeicaoDiario !== "") payload.valeRefeicaoDiario = normBR(valeRefeicaoDiario);
+      if (cestaBasica !== undefined && cestaBasica !== "") payload.cestaBasica = normBR(cestaBasica);
+      if (valeTransporteMensal !== undefined && valeTransporteMensal !== "") payload.valeTransporteMensal = normBR(valeTransporteMensal);
+      if (beneficiosOutros !== undefined && beneficiosOutros !== "") payload.beneficiosOutros = normBR(beneficiosOutros);
+      if (encargosPct !== undefined && encargosPct !== "") payload.encargosPct = normBR(encargosPct);
+      if (horasMensais !== undefined && horasMensais !== "") payload.horasMensais = normBR(horasMensais);
+      // Folha 2025
+      if (periculosidadePct !== undefined && periculosidadePct !== "") payload.periculosidadePct = normBR(periculosidadePct);
+      if (dependentesIr !== undefined && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr) || 0;
+      if (ajudaCustoMensal !== undefined && ajudaCustoMensal !== "") payload.ajudaCustoMensal = normBR(ajudaCustoMensal);
+      // Modelo Torres: benefícios à parte (VA + Assiduidade)
+      if (valeAlimentacaoMensal !== undefined && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = normBR(valeAlimentacaoMensal);
+      if (assiduidadeMensal !== undefined && assiduidadeMensal !== "") payload.assiduidadeMensal = normBR(assiduidadeMensal);
+    } catch (e: any) {
+      return res.status(400).json({ message: e.message });
+    }
     const salary = await storage.createEmployeeSalary(payload);
     res.status(201).json(salary);
   });

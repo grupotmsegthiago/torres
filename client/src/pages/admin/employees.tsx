@@ -3704,12 +3704,14 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const [showSalForm, setShowSalForm] = useState(false);
   const [salForm, setSalForm] = useState({ baseSalary: "", effectiveDate: "", reason: "" });
   const addSalary = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/salaries`, salForm); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); setShowSalForm(false); setSalForm({ baseSalary: "", effectiveDate: "", reason: "" }); toast({ title: "Salário cadastrado" }); },
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/salaries`, { ...salForm, baseSalary: parseBRL(salForm.baseSalary) }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] }); setShowSalForm(false); setSalForm({ baseSalary: "", effectiveDate: "", reason: "" }); toast({ title: "Salário cadastrado" }); },
+    onError: (err: any) => toast({ title: "Erro ao salvar registro", description: err.message, variant: "destructive" }),
   });
   const deleteSalary = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-salaries/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); toast({ title: "Registro removido" }); },
+    onError: (err: any) => toast({ title: "Erro ao remover", description: err.message, variant: "destructive" }),
   });
 
   const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "-";
