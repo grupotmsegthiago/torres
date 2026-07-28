@@ -2381,5 +2381,34 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] swr_cache_snapshots error:", e.message);
   }
 
+  // ---- Gestor de Medição Sênior: histórico append-only de auditorias de OS ----
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS medicao_audits (
+        id BIGSERIAL PRIMARY KEY,
+        service_order_id BIGINT NOT NULL,
+        analyzed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        analyzed_by TEXT,
+        analysis_status TEXT NOT NULL,
+        verdict TEXT,
+        recommendation TEXT,
+        risk_level TEXT,
+        os_status TEXT,
+        billing_status TEXT,
+        contract_id TEXT,
+        expected_total NUMERIC(14,2),
+        charged_total NUMERIC(14,2),
+        difference NUMERIC(14,2),
+        issues JSONB,
+        memoria JSONB
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_medicao_audits_os ON medicao_audits (service_order_id, analyzed_at DESC)`);
+    await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
+    console.log("[db-init] medicao_audits table ensured");
+  } catch (e: any) {
+    console.error("[db-init] medicao_audits error:", e.message);
+  }
+
   await closeDbInitClient();
 }

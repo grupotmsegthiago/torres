@@ -13,7 +13,7 @@ import {
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
   CircleDot, Timer, Download, Send, Mail, Camera, Search,
-  CheckSquare, ArrowUpRight, Receipt,
+  CheckSquare, ArrowUpRight, Receipt, ShieldCheck,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
@@ -566,10 +566,18 @@ export default function BoletimMedicaoPage() {
             <h1 className="text-xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
             <p className="text-[11px] text-neutral-400 font-semibold mt-0.5">Verificação e aprovação de faturamento das ordens de serviço</p>
           </div>
-          <Button size="sm" onClick={exportBoletimExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-boletim-excel">
-            <Download className="w-4 h-4" />
-            Exportar Excel
-          </Button>
+          <div className="flex gap-2">
+            <Link href="/admin/gestor-medicao">
+              <Button size="sm" variant="outline" className="gap-2" data-testid="button-gestor-medicao">
+                <ShieldCheck className="w-4 h-4" />
+                Gestor de Medição
+              </Button>
+            </Link>
+            <Button size="sm" onClick={exportBoletimExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-boletim-excel">
+              <Download className="w-4 h-4" />
+              Exportar Excel
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

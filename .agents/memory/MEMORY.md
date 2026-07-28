@@ -72,4 +72,5 @@
 - [Overflow numérico ao aprovar boletim](billing-numeric-overflow.md) — "numeric field overflow" = coluna NUMERIC estreita em prod (ADD COLUMN IF NOT EXISTS não corrige tipo) + despesa fantasma congelada; alargar via ALTER TYPE.
 - [Selo APROVADA vs guard de fatura](badge-aprovada-vs-guard-fatura.md) — selo do relatório só com aprovação real; guard de quinzena usa contaComoAprovadaParaFatura (regra antiga); nunca reunificar.
 - [Testes de integração no build do publish](deploy-build-tests-network.md) — prebuild roda npm test no builder do deploy c/ rede lenta ao Supabase; teste de integração faz probe+skip, nunca falha por timeout.
+- [Gestor de Medição Sênior](gestor-medicao-auditor.md) — auditor de OS: valor "correto" SÓ via calcularEscolta c/ entradas do /revisar; exceção preserva cobrado (billingTotalForBoletim); duração>48h=dado podre, não divergência.
 - [Modal OSs em Aberto](os-abertas-modal-billing-status.md) — byMission do dashboard omite billings de canceladas; status confiável vem do grid (billingStatus); modal exclui APROVADA/FATURADO/PAGO/CANCELADO.

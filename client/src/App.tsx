@@ -42,6 +42,7 @@ const AuditPage = lazy(() => import("@/pages/admin/audit"));
 const FinanceiroPage = lazy(() => import("@/pages/admin/financeiro"));
 const FornecedoresPage = lazy(() => import("@/pages/admin/fornecedores"));
 const BoletimMedicaoPage = lazy(() => import("@/pages/admin/boletim-medicao"));
+const GestorMedicaoPage = lazy(() => import("@/pages/admin/gestor-medicao"));
 const RelatorioFaturamentoPage = lazy(() => import("@/pages/admin/relatorio-faturamento"));
 const RelatorioAbastecimentoPage = lazy(() => import("@/pages/admin/relatorio-abastecimento"));
 const BalancoGerencialPage = lazy(() => import("@/pages/admin/balanco-gerencial"));
@@ -243,6 +244,7 @@ function Router() {
         <Route path="/admin/vehicles">{() => <ProtectedRoute component={VehiclesPage} />}</Route>
         <Route path="/admin/service-orders">{() => <ProtectedRoute component={ServiceOrdersPage} />}</Route>
         <Route path="/admin/boletim-medicao">{() => <ProtectedRoute component={BoletimMedicaoPage} />}</Route>
+        <Route path="/admin/gestor-medicao">{() => <ProtectedRoute component={GestorMedicaoPage} />}</Route>
         <Route path="/admin/relatorio-faturamento">{() => <ProtectedRoute component={RelatorioFaturamentoPage} />}</Route>
         <Route path="/admin/relatorio-abastecimento">{() => <ProtectedRoute component={RelatorioAbastecimentoPage} />}</Route>
         <Route path="/admin/fueling">{() => <ProtectedRoute component={FuelingPage} />}</Route>

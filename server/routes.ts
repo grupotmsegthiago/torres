@@ -729,6 +729,7 @@ async function ensureSystemSettingsTable() {
   import { registerMobileRoutes } from "./routes/mobile";
   import { registerChatRoutes } from "./routes/chat";
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
+  import { registerGestorMedicaoRoutes } from "./routes/gestor-medicao";
   import { registerLeadRoutes } from "./routes/leads";
   import { registerConciliacaoRoutes } from "./routes/conciliacao";
   import { registerFixedCostsRoutes } from "./routes/fixed-costs";
@@ -1404,6 +1405,7 @@ async function ensureSystemSettingsTable() {
     registerConferenciaTmsegRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
+    registerGestorMedicaoRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
