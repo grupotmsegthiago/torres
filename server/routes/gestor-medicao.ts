@@ -42,9 +42,15 @@ export function registerGestorMedicaoRoutes(app: Express) {
   app.post("/api/gestor-medicao/analisar-lote", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
+      // Decisão do dono (28/07/2026): o Gestor só avalia OSs de 16/07/2026 em
+      // diante. O que ficou pra trás não entra na análise (piso é forçado
+      // mesmo que o filtro peça data anterior).
+      const PISO_ANALISE = "2026-07-16";
+      const fromReq = typeof req.body?.from === "string" && req.body.from ? req.body.from : undefined;
+      const from = !fromReq || fromReq < PISO_ANALISE ? PISO_ANALISE : fromReq;
       const results = await auditarLote({
         clientId: num(req.body?.clientId),
-        from: req.body?.from || undefined,
+        from,
         to: req.body?.to || undefined,
         osStatus: req.body?.osStatus || undefined,
       });
@@ -105,6 +111,8 @@ export function registerGestorMedicaoRoutes(app: Express) {
           os_status: s?.status || r.os_status,
         };
       });
+      // Piso de análise: só exibe OSs de 16/07/2026 em diante (decisão do dono).
+      rows = rows.filter((r) => !r.data_missao || String(r.data_missao).slice(0, 10) >= "2026-07-16");
       rows.sort((a, b) => String(b.data_missao || "").localeCompare(String(a.data_missao || "")));
       res.json({ resumo: resumo(rows), resultados: rows });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
