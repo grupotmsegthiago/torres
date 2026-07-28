@@ -199,6 +199,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/cobranca-judicial", label: "Cobrança Judicial", icon: Gavel },
           { path: "/admin/auditoria-faturamento", label: "Auditoria de Ciclo", icon: ShieldCheck },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
+          { path: "/admin/gestor-dados", label: "Gestor de Dados", icon: Database },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
           { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: Receipt },

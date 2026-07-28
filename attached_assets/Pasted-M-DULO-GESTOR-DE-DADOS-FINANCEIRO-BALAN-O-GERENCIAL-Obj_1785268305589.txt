@@ -1,0 +1,310 @@
+MÓDULO: GESTOR DE DADOS FINANCEIRO (BALANÇO GERENCIAL)
+Objetivo
+
+O Gestor de Dados Financeiro será o responsável por validar, auditar, reconciliar e certificar todos os números apresentados no Balanço Gerencial.
+
+Este módulo será a camada de inteligência que garante que todos os indicadores financeiros exibidos no sistema sejam verdadeiros, consistentes e sincronizados com a base oficial de dados.
+
+Nenhum KPI deverá ser exibido sem antes passar pela validação do Gestor de Dados Financeiro.
+
+Localização
+
+Implementar esta tela dentro do menu:
+
+Diretoria → Balanço Gerencial → Gestor de Dados Financeiro
+
+Esta será a principal tela de auditoria financeira da empresa.
+
+Conceito
+
+Esta tela será o Centro de Controle Financeiro da Diretoria.
+
+Ela deverá monitorar continuamente:
+
+Faturamento
+Custos
+Lucro
+Margens
+RH
+Operações
+Financeiro
+Fiscal
+Comercial
+
+Sempre validando se todos os valores apresentados são realmente corretos.
+
+IA Auditora
+
+Criar uma IA especializada em auditoria financeira.
+
+Ela deverá analisar continuamente:
+
+valores duplicados
+lançamentos repetidos
+faturamentos em duplicidade
+custos duplicados
+RH duplicado
+benefícios duplicados
+impostos incorretos
+cálculos incorretos
+divergências entre módulos
+inconsistências contábeis
+diferenças entre faturamento e financeiro
+diferenças entre financeiro e DRE
+diferenças entre RH e Operações
+
+A IA deverá explicar:
+
+qual o problema;
+onde está o problema;
+qual tabela está envolvida;
+qual registro causou a inconsistência;
+qual o impacto financeiro;
+como corrigir.
+Painel de Integridade
+
+Criar um painel de validação contendo:
+
+Duplicidades encontradas
+Inconsistências
+Valores fora do padrão
+Conciliações pendentes
+Divergências financeiras
+Divergências fiscais
+Divergências de RH
+Divergências operacionais
+
+Cada indicador deverá possuir:
+
+quantidade;
+valor financeiro impactado;
+nível de severidade;
+botão "Ver detalhes".
+Certificação dos Indicadores
+
+Antes de exibir qualquer KPI, validar automaticamente:
+
+✔ Receita
+
+✔ Custos
+
+✔ Lucro
+
+✔ Margem
+
+✔ RH
+
+✔ Operações
+
+✔ KM
+
+✔ Eficiência
+
+✔ DRE
+
+✔ Fluxo de Caixa
+
+✔ Contas a Receber
+
+✔ Contas a Pagar
+
+✔ OS
+
+✔ Notas Fiscais
+
+✔ Faturas
+
+✔ Boletins
+
+✔ Contratos
+
+Caso exista qualquer inconsistência, o KPI deverá exibir um alerta visual e permitir abrir os detalhes da divergência.
+
+Knowledge Graph
+
+Toda validação deverá utilizar o Knowledge Graph.
+
+A IA deverá percorrer todos os relacionamentos antes de validar qualquer número.
+
+Exemplo:
+
+Receita
+
+↓
+
+Contrato
+
+↓
+
+OS
+
+↓
+
+Boletim
+
+↓
+
+Fatura
+
+↓
+
+Nota Fiscal
+
+↓
+
+Conta a Receber
+
+↓
+
+Recebimento
+
+↓
+
+Conciliação Bancária
+
+↓
+
+Fluxo de Caixa
+
+↓
+
+DRE
+
+↓
+
+Lucro
+
+Somente depois poderá afirmar que aquele indicador está correto.
+
+Custos dos Funcionários
+
+Na própria tela deverá existir a seção:
+
+Custos Completos dos Funcionários
+
+Exibir:
+
+Nome
+Cargo
+Salário Base
+Custo Total
+Custo Médio Diário
+Missões
+Custo por Missão
+Custo por Hora
+Percentual da Folha
+Status
+Hover Inteligente
+
+Ao posicionar o mouse sobre qualquer colaborador, abrir um painel escuro semelhante ao modelo apresentado.
+
+Esse painel deverá detalhar absolutamente todos os custos daquele funcionário.
+
+Separar por blocos:
+
+Remuneração
+Salário
+Hora Extra
+Adicional Noturno
+Periculosidade
+Insalubridade
+Gratificações
+Comissões
+Premiações
+Encargos
+FGTS
+INSS Patronal
+RAT
+Seguro de Vida
+Outros encargos
+Benefícios
+Vale Refeição
+Vale Alimentação
+Vale Transporte
+Plano de Saúde
+Plano Odontológico
+Cesta Básica
+Diárias
+Auxílio Combustível
+Provisões
+Férias
+1/3 Constitucional
+13º
+Rescisão
+Encargos sobre provisões
+Custos Indiretos
+Uniformes
+EPIs
+Equipamentos
+Treinamentos
+Custos Administrativos
+Outros custos
+Indicadores Operacionais
+Horas Trabalhadas
+Dias Trabalhados
+Missões Executadas
+KM Rodados
+Receita Gerada
+Valor Médio por Missão
+Custo por Hora
+Custo por Missão
+Lucro Operacional relacionado
+Resumo Financeiro
+
+Destacar:
+
+Custo Total do Funcionário
+Custo Médio Diário
+Custo por Hora
+Custo por Missão
+% sobre a Folha
+% sobre os Custos Totais da Empresa
+Validação Automática
+
+Sempre verificar:
+
+Funcionário duplicado
+Folha duplicada
+Benefício duplicado
+Encargo duplicado
+Missão duplicada
+Horas duplicadas
+Custos lançados duas vezes
+Funcionário desligado gerando custo
+Funcionário sem centro de custo
+Funcionário sem vínculo operacional
+Integração Total
+
+Todos os cálculos deverão utilizar exclusivamente dados provenientes dos módulos oficiais:
+
+RH
+Folha
+Ponto
+Benefícios
+Financeiro
+Fiscal
+Comercial
+Operações
+Frota
+Ordens de Serviço
+Boletins
+Contratos
+
+É proibido criar tabelas paralelas para armazenar indicadores financeiros.
+
+Todos os números deverão ser calculados a partir das informações oficiais do sistema.
+
+Critérios de Aceite
+
+O Gestor de Dados Financeiro somente será considerado concluído quando:
+
+Auditar automaticamente todos os indicadores financeiros antes da exibição.
+Detectar duplicidades, inconsistências e divergências.
+Explicar a origem de cada erro encontrado.
+Exibir a tela exatamente no padrão visual aprovado pela Diretoria.
+Apresentar o detalhamento completo dos custos dos funcionários no painel de hover.
+Utilizar o Knowledge Graph para validar todos os relacionamentos.
+Manter sincronização em tempo real com todos os módulos do sistema.
+Garantir que nenhum indicador seja exibido com dados inconsistentes ou desatualizados.
+
+Essa abordagem transforma o Gestor de Dados Financeiro no "guardião da verdade" do seu ERP. Em vez de ser apenas um dashboard, ele passa a certificar a qualidade dos dados antes que eles alimentem o Balanço Gerencial, o Cockpit da Diretoria, o Gestor Comercial e os futuros gestores Operacional, Contábil e Financeiro. Isso cria uma base muito mais confiável para a tomada de decisão.

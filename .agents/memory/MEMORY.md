@@ -76,4 +76,5 @@
 - [Fonte única de exibição do billing](billing-display-fonte-unica.md) — telas consomem `_oficial`/`total_oficial` do servidor (oficialBillingView); nunca somar fat_* no front; snapshot congelado ainda precede.
 - [Recebimento por OS (rateio de fatura)](invoice-recebimento-rateio.md) — todo caminho de pagamento chama applyPaymentToInvoice c/ eventKey; exclusão/estorno chama revert; acúmulo é atômico via RPC, nunca read-modify-write.
 - [Situação financeira por OS](os-situacao-financeira.md) — status de recebimento é projeção derivada no servidor (endpoint batch), nunca flag manual; gateway tem grafias duplas de status.
+- [Gestor de Dados Financeiro](gestor-dados-financeiro.md) — auditor só-leitura: cache em memória (nunca withSwrCache), IA reusa auditoria cacheada, duplicidade de pedágio = MEDIA "possível" (chave inclui descrição); e2e via usuário admin temporário.
 - [Modal OSs em Aberto](os-abertas-modal-billing-status.md) — byMission do dashboard omite billings de canceladas; status confiável vem do grid (billingStatus); modal exclui APROVADA/FATURADO/PAGO/CANCELADO.
