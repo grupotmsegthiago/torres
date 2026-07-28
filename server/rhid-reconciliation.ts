@@ -132,13 +132,28 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
   // Mappings ativos
   const { data: maps } = await supabaseAdmin
     .from("control_id_users_map")
-    .select("employee_id, device_id, control_id_user_id, control_id_user_name, ativo")
+    .select("id, employee_id, device_id, control_id_user_id, control_id_user_name, ativo, created_at")
     .in("employee_id", empIds.length ? empIds : [-1])
     .eq("ativo", true);
-  const mapByEmp = new Map<number, any>();
+  // Um funcionário pode ter 2+ mappings ativos (pessoa duplicada no RHID — ex.:
+  // recadastro criou um novo idPerson). A conciliação precisa da UNIÃO das
+  // batidas de todos os uids, senão as marcações do uid "antigo" aparecem como
+  // faltando_no_rhid falso (visto com Fernando Colonhezi: uids 29 e 30).
+  const mapsByEmp = new Map<number, any[]>();
   for (const m of (maps || []) as any[]) {
-    if (deviceId == null || Number(m.device_id) === deviceId) mapByEmp.set(Number(m.employee_id), m);
+    if (deviceId == null || Number(m.device_id) === deviceId) {
+      const arr = mapsByEmp.get(Number(m.employee_id)) || [];
+      arr.push(m);
+      mapsByEmp.set(Number(m.employee_id), arr);
+    }
   }
+  // Mapping "primário" (determinístico: o mais recente) — usado para EXPORT e exibição.
+  const primaryMap = (arr: any[] | undefined): any | null => {
+    if (!arr || !arr.length) return null;
+    return [...arr].sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || "")) || (Number(b.id) - Number(a.id))
+    )[0];
+  };
 
   // Nossas batidas no período
   const { data: ourPunches } = await supabaseAdmin
@@ -176,14 +191,17 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
   };
 
   for (const emp of employees) {
-    const map = mapByEmp.get(Number(emp.id)) || null;
+    const empMaps = mapsByEmp.get(Number(emp.id)) || [];
+    const map = primaryMap(empMaps);
     const rhidUserId = map ? String(map.control_id_user_id) : null;
+    const allRhidUserIds = Array.from(new Set(empMaps.map((m) => String(m.control_id_user_id))));
 
     // Identidade
     const cpfD = onlyDigits(emp.cpf);
     const pisD = onlyDigits(emp.pis);
     const warnings: string[] = [];
     if (!map) warnings.push("Sem vínculo (mapping) com o RHID");
+    if (empMaps.length > 1) warnings.push(`Pessoa duplicada no RHID: ${empMaps.length} vínculos ativos (uids ${allRhidUserIds.join(", ")}) — batidas somadas de todos; unificar cadastro no portal Control iD`);
     if (cpfD.length !== 11) warnings.push("CPF ausente ou inválido (precisa 11 dígitos)");
     if (pisD.length !== 11) warnings.push("PIS ausente ou inválido (precisa 11 dígitos)");
     if (cpfD.length === 11 && pisD.length === 11 && cpfD === pisD) warnings.push("CPF e PIS são iguais (provável digitação trocada)");
@@ -202,8 +220,11 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
       oursByMinute.set(k, cur);
     }
 
-    // Contagem por minuto (RHID)
-    const rhidMarks = rhidUserId ? (rhidByUser.get(rhidUserId) || []) : [];
+    // Contagem por minuto (RHID) — união de TODOS os uids ativos do funcionário
+    const rhidMarks: { minute: string; source?: string }[] = [];
+    for (const uid of allRhidUserIds) {
+      for (const r of rhidByUser.get(uid) || []) rhidMarks.push(r);
+    }
     const rhidByMinute = new Map<string, { count: number; source?: string }>();
     for (const r of rhidMarks) {
       const cur = rhidByMinute.get(r.minute) || { count: 0, source: r.source };

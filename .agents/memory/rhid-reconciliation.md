@@ -65,5 +65,9 @@ Nosso sistema é SEMPRE a verdade. Facial (relógio fixo) → importa pra nós; 
 **Why:** plano (gerado por IA) pediu modificar `executeRhidPush` pra dar POST de TODAS as `control_id_punches` no RHID. Errado: as batidas faciais NASCEM no RHID e são importadas pra nós — empurrar de volta duplica tudo num relógio legal. Só batidas MANUAIS (digitadas no nosso sistema, sem origem facial) é que faltam no RHID, e `exportMissingToRhid` já faz isso (campo "faltam no RHID" / "Corretivas exportadas" no painel). Quando o painel mostra "faltam no RHID: 0", não há o que exportar.
 **Como aplicar:** nunca implementar push em massa de todas as batidas. Manter o fluxo seletivo (só `faltando_no_rhid` que sejam manuais) com visibilidade (`exportPunchDisposition`).
 
+## Pessoa DUPLICADA no RHID ⇒ conciliação precisa da UNIÃO dos uids
+**Why:** Fernando Colonhezi tinha 2 mappings ativos (uids 29 e 30 — recadastro criou 2ª pessoa no RHID). O recon antigo guardava 1 mapping por func (last-wins) e comparava só contra 1 uid ⇒ 69 batidas falsamente `faltando_no_rhid` + carimbo `rhid_sync_error` falso, e o portal Control iD (que olha 1 pessoa só) mostrava "Folga". As batidas SEMPRE estiveram no RHID, só que repartidas entre as 2 pessoas.
+**Como aplicar:** `buildReconciliation` agrupa mappings por func e casa minutos contra a UNIÃO dos uids; export/exibição usam mapping "primário" (created_at desc, tie-break id desc); warning de identidade sinaliza a duplicidade. Unificar a pessoa duplicada é ação do dono no portal RHID (AFD append-only ⇒ não dá pra mover batidas de pessoa). Carimbos falsos limpos via script que só zera `rhid_sync_error` de minuto agora `validado`.
+
 ## Endpoints de conciliação expõem CPF/PIS → exigem admin
 **Regra:** `GET /api/control-id/reconciliation/last` e `/live` precisam de `requireAdminRole` (além de `requireAuth`). O cron diário roda 05:00 com `{ timezone: "America/Sao_Paulo" }`.

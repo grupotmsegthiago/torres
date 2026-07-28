@@ -1,0 +1,350 @@
+PROMPT
+
+Você é um engenheiro de software especialista em:
+
+Node.js
+TypeScript
+PostgreSQL
+Prisma
+APIs REST
+Control iD RHID
+Integrações
+Auditoria de Dados
+Debug
+
+Sua missão é encontrar por que APENAS o funcionário abaixo não está sincronizando corretamente.
+
+Funcionário:
+
+Fernando Dias Colonhezi
+
+Período:
+
+26/06/2026 até 25/07/2026
+
+Objetivos:
+
+Encontrar exatamente onde a sincronização falha.
+Comparar todas as batidas existentes no banco interno com todas as batidas existentes no ControlID.
+Comparar:
+matrícula
+CPF
+employeeId
+userId
+id interno
+id ControlID
+nome
+horário
+timezone
+status
+Verificar se existe algum filtro como:
+
+if(employee.id != ...)
+
+if(active)
+
+if(status)
+
+if(lastSync)
+
+if(deleted)
+
+if(company)
+
+if(costCenter)
+
+if(schedule)
+
+que esteja impedindo apenas este funcionário.
+
+Procurar qualquer Exception capturada silenciosamente.
+
+Exemplo:
+
+try{
+
+...
+
+}catch(e){}
+
+ou
+
+catch{
+
+return true
+
+}
+
+ou
+
+console.log()
+
+sem lançar erro.
+
+Procurar qualquer erro de serialização de datas.
+
+Exemplo:
+
+new Date()
+
+toISOString()
+
+moment()
+
+dayjs()
+
+UTC
+
+timezone
+
+America/Sao_Paulo
+
+Validar se as batidas chegam ordenadas.
+
+Exemplo esperado
+
+02:53
+
+11:05
+
+12:03
+
+23:59
+
+e verificar se alguma chega como
+
+23:59
+
+02:53
+
+11:05
+
+12:03
+
+Conferir se existem batidas repetidas.
+
+Exemplo
+
+23:59
+
+23:59
+
+23:59
+
+e verificar se o sistema ignora a segunda.
+
+Conferir se alguma regra elimina batidas menores que X minutos.
+Conferir se existe alguma validação de:
+
+diferença menor que 1 minuto
+
+diferença menor que 2 minutos
+
+batida duplicada
+
+entrada consecutiva
+
+saída consecutiva
+
+Conferir o payload enviado ao ControlID.
+
+Salvar exatamente o JSON enviado.
+
+Exemplo:
+
+{
+employeeId,
+date,
+time,
+type,
+device,
+origin
+}
+
+Comparar esse payload com o retorno da API.
+Verificar o HTTP Status.
+
+200
+
+201
+
+400
+
+401
+
+403
+
+404
+
+409
+
+422
+
+500
+
+Caso exista erro da API, salvar o body completo.
+Procurar qualquer retry automático.
+Verificar fila de sincronização.
+Verificar logs.
+Verificar se apenas Fernando falhou.
+
+Gerar um relatório contendo:
+
+✔ quantidade de batidas existentes no banco interno
+
+✔ quantidade existente no ControlID
+
+✔ quantidade enviada
+
+✔ quantidade rejeitada
+
+✔ quantidade duplicada
+
+✔ quantidade ignorada
+
+✔ quantidade sincronizada
+
+Depois gerar uma tabela:
+
+Data
+
+Hora
+
+Existe no sistema
+
+Existe no ControlID
+
+Foi enviada
+
+Foi rejeitada
+
+Motivo
+
+Depois identificar exatamente qual regra rejeitou cada batida.
+
+Caso encontre divergências
+
+Corrigir automaticamente.
+
+Criar um script chamado
+
+repairFernandoColonhezi.ts
+
+que execute:
+
+Buscar todas as batidas do período.
+Buscar todas as batidas existentes no ControlID.
+Comparar.
+Descobrir quais faltam.
+Enviar apenas as faltantes.
+Não duplicar registros existentes.
+Respeitar a ordem cronológica.
+Reprocessar automaticamente.
+Validar resposta da API.
+Caso a API aceite, marcar como sincronizada.
+Caso rejeite, salvar motivo.
+Gerar relatório final.
+
+Também criar um script genérico chamado
+
+repairEmployeeSync.ts
+
+que funcione para qualquer funcionário.
+
+Uso:
+
+npm run repair -- --employee="Fernando Dias Colonhezi"
+
+ou
+
+npm run repair -- --cpf=15243880841
+
+ou
+
+npm run repair -- --matricula=TVP-0026
+
+Depois criar outro script chamado
+
+auditSync.ts
+
+que percorra TODOS os funcionários.
+
+Para cada funcionário verificar:
+
+Quantidade de batidas
+
+Quantidade sincronizada
+
+Quantidade rejeitada
+
+Diferença
+
+Funcionários com inconsistência
+
+No final gerar:
+
+audit-sync-report.csv
+
+e
+
+audit-sync-report.xlsx
+
+Adicionar logs detalhados em toda sincronização.
+
+Exemplo:
+
+[09:20:10]
+
+Funcionário:
+
+Fernando Dias Colonhezi
+
+Batida:
+
+26/06/2026 02:53
+
+Enviando...
+
+Payload:
+
+...
+
+Resposta:
+
+201 Created
+
+ID ControlID:
+
+....
+
+No final entregar um relatório contendo:
+
+✔ causa raiz do problema
+
+✔ arquivo onde estava o erro
+
+✔ linha do código
+
+✔ correção aplicada
+
+✔ impacto nos demais funcionários
+
+✔ testes executados
+
+✔ resultado após correção
+
+Não apenas explique.
+
+Implemente todas as correções necessárias automaticamente.
+
+O que eu acrescentaria
+
+Pelas telas, eu também criaria uma ferramenta permanente de auditoria para que esse tipo de problema nunca mais passe despercebido. Ela poderia:
+
+Comparar diariamente todas as batidas entre seu sistema e o Control iD.
+Alertar quando houver qualquer divergência (por exemplo, "20 batidas no sistema interno e 18 no Control iD").
+Permitir um botão "Reenviar batidas faltantes" para um funcionário específico ou para todos.
+Gerar um relatório de sincronização por período e por colaborador.
+Registrar o payload enviado, a resposta da API e o motivo de qualquer rejeição, facilitando futuras investigações.
+
+Esse tipo de monitoramento costuma eliminar boa parte dos problemas de integração porque identifica rapidamente quando uma sincronização falha e permite a correção sem intervenção manual.
