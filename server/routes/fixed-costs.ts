@@ -3,7 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
-import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
+import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { withSwrCache } from "../lib/swr-cache";
@@ -428,13 +428,18 @@ export function registerFixedCostsRoutes(app: Express) {
 
     const ativos = (employees || []).filter(isAtivo);
 
-    // Período: por padrão mês corrente (CIVIL — 1 a último dia).
-    // Decisão (26/05/2026, REVERTIDA): Balanço Gerencial usa mês civil
-    // inclusive na seção RH — pra alinhar com DRE, meta e custos fixos.
+    // Período solicitado pelo filtro (mês civil, semana, dia...). Serve só pra
+    // ESCOLHER a competência de RH; os insumos da folha usam SEMPRE o ciclo de
+    // ponto 26 → 25 (decisão do dono, 28/07/2026): "JULHO" = 26/06 → 25/07.
     const now = new Date();
     const def = monthRange(now.getFullYear(), now.getMonth() + 1);
-    const from = (req.query.from as string) || def.from;
-    const to = (req.query.to as string) || def.to;
+    const reqFrom = (req.query.from as string) || def.from;
+    const reqTo = (req.query.to as string) || def.to;
+    // Competência: dia do `from` >= 26 já pertence ao ciclo do mês seguinte.
+    const [fy, fm, fd] = String(reqFrom).slice(0, 10).split("-").map(Number);
+    let compYear = fy, compMonth = fm;
+    if (fd >= 26) { compMonth += 1; if (compMonth > 12) { compMonth = 1; compYear += 1; } }
+    const { from, to } = payrollPeriodRange(compYear, compMonth); // 26 do mês anterior → 25
     const holidaySet = await loadHolidaySet(from, to);
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
@@ -492,7 +497,7 @@ export function registerFixedCostsRoutes(app: Express) {
     // Control iD não diferencia turno noturno, então a fonte oficial é jornada_calculos.
     const noturnasMes = new Map<number, number>();
     try {
-      const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+      const mesRef = `${compYear}-${String(compMonth).padStart(2, "0")}`; // competência 26→25
       const { data: jornMes } = await supabaseAdmin
         .from("jornada_calculos")
         .select("employee_id, horas_noturnas")
@@ -521,7 +526,8 @@ export function registerFixedCostsRoutes(app: Express) {
     // (CCT) em vez dos 50% legais. Sem provisões, sem DSR. Modelo Torres (26/06/2026):
     // adicional noturno É incluído (hora cheia 1,80×) e INSS/IRRF/líquido do funcionário
     // vêm de buildFolhaStats só p/ exibição (NÃO entram no custo da empresa).
-    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+    // Competência 26→25: NÃO derivar de `from` (que agora é dia 26 do mês ANTERIOR).
+    const mesRef = `${compYear}-${String(compMonth).padStart(2, "0")}`;
     const { buildFolhaStats } = await import("../control-id");
 
     // Calcula a folha de cada agente em PARALELO (limite de concorrência) em vez
