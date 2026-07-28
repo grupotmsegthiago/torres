@@ -27,6 +27,7 @@ import * as cobranca from "../services/inter/cobranca";
 import * as banking from "../services/inter/banking";
 import { logSystemAudit } from "../audit";
 import { logFinancialAudit } from "./_helpers";
+import { applyPaymentToInvoice } from "../lib/invoice-payment";
 import {
   parseInterWebhookEvent,
   isInterPaymentConfirmation,
@@ -603,6 +604,17 @@ export function registerInterRoutes(app: Express) {
                 .update({ status: novoStatus, payment_date: String(dataHoraSituacao).slice(0, 10) })
                 .eq("id", inv.id);
             }
+
+            // Etapa 2: rateio do recebimento por OS (parcial não quita tudo)
+            await applyPaymentToInvoice({
+              invoiceId: inv.id,
+              valorRecebido: valorRecebido,
+              origem: "webhook_inter",
+              // valor entra na chave: pagamentos parciais distintos da mesma
+              // cobrança não são dedupados entre si, só o reenvio idêntico.
+              eventKey: `inter:${codigoSolicitacao}:${evento}:${(Number(valorRecebido) || 0).toFixed(2)}`,
+              detalhes: { evento, codigo_solicitacao: codigoSolicitacao },
+            }).catch((e) => console.error("[Inter Webhook] rateio:", e.message));
 
             await supabaseAdmin.from("financial_transactions").insert({
               type: "INCOME",

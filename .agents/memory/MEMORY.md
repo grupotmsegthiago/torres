@@ -73,4 +73,7 @@
 - [Selo APROVADA vs guard de fatura](badge-aprovada-vs-guard-fatura.md) — selo do relatório só com aprovação real; guard de quinzena usa contaComoAprovadaParaFatura (regra antiga); nunca reunificar.
 - [Testes de integração no build do publish](deploy-build-tests-network.md) — prebuild roda npm test no builder do deploy c/ rede lenta ao Supabase; teste de integração faz probe+skip, nunca falha por timeout.
 - [Gestor de Medição Sênior](gestor-medicao-auditor.md) — auditor de OS: valor "correto" SÓ via calcularEscolta c/ entradas do /revisar; exceção preserva cobrado (billingTotalForBoletim); duração>48h=dado podre, não divergência.
+- [Fonte única de exibição do billing](billing-display-fonte-unica.md) — telas consomem `_oficial`/`total_oficial` do servidor (oficialBillingView); nunca somar fat_* no front; snapshot congelado ainda precede.
+- [Recebimento por OS (rateio de fatura)](invoice-recebimento-rateio.md) — todo caminho de pagamento chama applyPaymentToInvoice c/ eventKey; exclusão/estorno chama revert; acúmulo é atômico via RPC, nunca read-modify-write.
+- [Situação financeira por OS](os-situacao-financeira.md) — status de recebimento é projeção derivada no servidor (endpoint batch), nunca flag manual; gateway tem grafias duplas de status.
 - [Modal OSs em Aberto](os-abertas-modal-billing-status.md) — byMission do dashboard omite billings de canceladas; status confiável vem do grid (billingStatus); modal exclui APROVADA/FATURADO/PAGO/CANCELADO.

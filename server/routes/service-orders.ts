@@ -13,6 +13,8 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
+  import { oficialBillingView, resolverContratoParaBilling } from "../lib/billing-display";
+  import { reauditarSeJaAuditada } from "../lib/gestor-medicao";
 
   // Valor Estimado a partir da Tabela de Preços (contrato de escolta).
   // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base.
@@ -239,6 +241,17 @@ import type { Express } from "express";
             valor_km_extra: clientContract.valor_km_extra || clientContract.valor_km_carregado,
             hora_extra_fracionada: clientContract.hora_extra_fracionada !== false,
           } : null,
+          // Fonte única (Etapa 1 sincronismo): visão financeira oficial calculada
+          // no servidor. A tela do boletim só exibe (snapshot congelado de boletim
+          // enviado, quando existir, ainda tem precedência — é dado persistido).
+          ...(() => {
+            const oficial = oficialBillingView(
+              billing,
+              os.status,
+              resolverContratoParaBilling(billing, { escort_contract_id: (os as any).escortContractId, client_id: os.clientId, status: os.status }, contractArr),
+            );
+            return { total_oficial: oficial.total, _oficial_billing: oficial };
+          })(),
         };
       });
 
@@ -394,6 +407,9 @@ import type { Express } from "express";
       }).select().single();
       if (error) throw error;
       bustBalancoCaches();
+      // Alerta do Gestor de Medição não pode ficar aberto/desatualizado depois
+      // de um recálculo — reavalia em background se a OS já foi auditada.
+      void reauditarSeJaAuditada(serviceOrderId, user.name);
 
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1680,7 +1696,10 @@ import type { Express } from "express";
           const pedagioOS = Number((data as any).pedagioEstimado) || 0;
           if (pedagioOS > 0) despPedagioAR = pedagioOS;
 
-          const mcListAR = await storage.getMissionCostsByOS(osId);
+          // BUG corrigido (Etapa 1): "osId" não existia neste escopo — o bloco inteiro
+          // de auto-recálculo estourava em silêncio ("osId is not defined") e a edição
+          // da OS não puxava os custos de missão pro billing.
+          const mcListAR = await storage.getMissionCostsByOS(data.id);
           const _splitAR = splitMissionCostsForBilling(mcListAR);
           const dpAR = _splitAR.despesas_pedagio;
           const dcAR = _splitAR.despesas_combustivel;

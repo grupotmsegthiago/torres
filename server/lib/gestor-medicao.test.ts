@@ -133,3 +133,41 @@ test("tabela inativa vira alerta MEDIO (ATENCAO) mesmo com valor batendo", async
   assert.ok(r.issues.some((i) => i.type === "TABELA_INATIVA"));
   assert.equal(r.analysisStatus, "ATENCAO");
 });
+
+test("total correto mas componente trocado = DIVERGENCIA_COMPOSICAO (não diz que total errou)", async () => {
+  const billing = billingFromMotor(soBase);
+  // move R$50 do KM pra hora extra — total idêntico, composição diferente
+  billing.fat_km = Number(billing.fat_km) - 50;
+  billing.fat_hora_extra = Number(billing.fat_hora_extra) + 50;
+  const r = await auditarOsCore(soBase, billing, contratos, semFallback);
+  assert.equal(r.analysisStatus, "DIVERGENCIA_COMPOSICAO");
+  assert.equal(r.differenceCents, 0);
+  assert.equal(r.aprovavelEmLote, false);
+  assert.ok(r.verdict.includes("COMPOSIÇÃO"));
+  assert.ok(r.issues.some(i => i.type === "COMPOSICAO_DIVERGENTE"));
+});
+
+test("billing APROVADO com divergência do recálculo atual = ATENCAO (alteração pós-aprovação), não erro de cálculo", async () => {
+  const billing = billingFromMotor(soBase, { status: "APROVADA" });
+  billing.fat_total = Number(billing.fat_total) + 200; // congelado difere do recálculo atual
+  const r = await auditarOsCore(soBase, billing, contratos, semFallback);
+  assert.equal(r.analysisStatus, "ATENCAO");
+  assert.equal(r.jaAprovada, true);
+  assert.ok(r.issues.some(i => i.type === "ALTERACAO_POS_APROVACAO"));
+});
+
+test("billing FATURADO com divergência = mesmo tratamento de congelado", async () => {
+  const billing = billingFromMotor(soBase, { status: "FATURADO" });
+  billing.fat_total = Number(billing.fat_total) + 99;
+  const r = await auditarOsCore(soBase, billing, contratos, semFallback);
+  assert.equal(r.analysisStatus, "ATENCAO");
+  assert.ok(r.issues.some(i => i.type === "ALTERACAO_POS_APROVACAO"));
+});
+
+test("billing A_VERIFICAR (não aprovado) com divergência segue DIVERGENCIA_*", async () => {
+  const billing = billingFromMotor(soBase);
+  billing.fat_total = Number(billing.fat_total) + 99;
+  const r = await auditarOsCore(soBase, billing, contratos, semFallback);
+  assert.ok(r.analysisStatus.startsWith("DIVERGENCIA"));
+  assert.notEqual(r.analysisStatus, "DIVERGENCIA_COMPOSICAO");
+});

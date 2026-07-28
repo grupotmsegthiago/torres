@@ -13,6 +13,8 @@ import type { Express } from "express";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
   import { resyncPendingBoletinsForServiceOrder } from "../lib/boletim-resync";
+  import { oficialBillingView, resolverContratoParaBilling } from "../lib/billing-display";
+  import { reauditarSeJaAuditada } from "../lib/gestor-medicao";
 
   // Trava de edição de anexos (boleto/NF/comprovante): QUALQUER pessoa do
   // administrativo (role "admin" ou "diretoria") pode anexar/trocar anexos de
@@ -1679,20 +1681,25 @@ import type { Express } from "express";
       if (osIds.length > 0) {
         const { data: osList } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, status, mission_status, cancellation_reason")
+          .select("id, os_number, status, mission_status, cancellation_reason, escort_contract_id, client_id")
           .in("id", osIds);
         for (const o of (osList || [])) {
           osMap[String(o.id)] = o;
         }
       }
+      // Fonte única (Etapa 1 sincronismo): o servidor calcula a visão financeira
+      // oficial (_oficial) de cada billing — as telas só exibem, sem fórmula própria.
+      const { data: contratos } = await supabaseAdmin.from("escort_contracts").select("*");
       const enriched = list.map((b: any) => {
         const os = osMap[String(b.service_order_id)] || {};
+        const contrato = resolverContratoParaBilling(b, os, contratos || []);
         return {
           ...b,
           os_number: b.os_number || os.os_number || null,
           _so_status: os.status || null,
           _so_mission_status: os.mission_status || null,
           _so_cancellation_reason: os.cancellation_reason || null,
+          _oficial: oficialBillingView(b, os.status || null, contrato),
         };
       });
       res.json(enriched);
@@ -2336,6 +2343,10 @@ import type { Express } from "express";
           ipAddress: req.ip,
         });
       }
+
+      // Reavalia o Gestor de Medição em background (alerta antigo não pode
+      // ficar aberto depois que aprovação/rejeição muda o billing).
+      void reauditarSeJaAuditada(Number(billing.service_order_id), user.name);
 
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }

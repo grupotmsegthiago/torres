@@ -61,6 +61,7 @@ function statusBadge(s: string) {
   if (s === "CALCULADO_OK") return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-800 px-2 py-0.5 text-xs font-semibold"><CheckCircle2 className="h-3 w-3" /> Calculado OK</span>;
   if (s === "EXCECAO_JUSTIFICADA") return <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-800 px-2 py-0.5 text-xs font-semibold"><Scale className="h-3 w-3" /> Exceção justificada</span>;
   if (s.startsWith("DIVERGENCIA")) {
+    if (s === "DIVERGENCIA_COMPOSICAO") return <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-800 px-2 py-0.5 text-xs font-semibold"><AlertTriangle className="h-3 w-3" /> Divergência de composição</span>;
     const label = s === "DIVERGENCIA_KM" ? "Divergência KM" : s === "DIVERGENCIA_HORAS" ? "Divergência horas" : "Divergência valor";
     return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-xs font-semibold"><XCircle className="h-3 w-3" /> {label}</span>;
   }
@@ -86,6 +87,9 @@ export default function GestorMedicaoPage() {
   const [excecaoOs, setExcecaoOs] = useState<AuditRow | null>(null);
   const [motivoExcecao, setMotivoExcecao] = useState("");
   const [salvandoExcecao, setSalvandoExcecao] = useState(false);
+  const [ajusteOs, setAjusteOs] = useState<AuditRow | null>(null);
+  const [ajuste, setAjuste] = useState<Record<string, string>>({});
+  const [salvandoAjuste, setSalvandoAjuste] = useState(false);
 
   const { data, isLoading, error: loadError } = useQuery<{ resumo: Resumo; resultados: AuditRow[] }>({
     queryKey: ["/api/gestor-medicao/resultados"],
@@ -173,6 +177,57 @@ export default function GestorMedicaoPage() {
     } catch (e: any) {
       toast({ title: "Erro na aprovação", description: e.message, variant: "destructive" });
     } finally { setAprovando(false); }
+  };
+
+  const abrirAjuste = (r: AuditRow) => {
+    const m = r.memoria || {};
+    const miss = m.missao || {};
+    const cob = m.cobrado || {};
+    setAjuste({
+      km_inicial: String(miss.km_inicial ?? ""),
+      km_final: String(miss.km_final ?? ""),
+      horario_inicio: (miss.inicio || "").slice(0, 5),
+      horario_fim: (miss.fim || "").slice(0, 5),
+      despesas_pedagio: String(cob.pedagio ?? ""),
+      despesas_outras: String(cob.despesas ?? ""),
+      receitas_os: String(cob.receitas_os ?? ""),
+    });
+    setAjusteOs(r);
+  };
+
+  const salvarAjuste = async () => {
+    if (!ajusteOs) return;
+    setSalvandoAjuste(true);
+    try {
+      const body: Record<string, string> = {};
+      for (const [k, v] of Object.entries(ajuste)) if (v !== "") body[k] = v;
+      const r = await authFetch(`/api/gestor-medicao/ajustar/${ajusteOs.service_order_id}`, {
+        method: "POST", body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.message || "Erro no ajuste");
+      const status = j?.audit?.analysisStatus;
+      if (status === "CALCULADO_OK" && j?.audit?.aprovavelEmLote) {
+        // Ficou OK → aprova de verdade (re-verifica na hora, mesma trava do lote)
+        const ra = await authFetch("/api/gestor-medicao/aprovar-lote", {
+          method: "POST", body: JSON.stringify({ osIds: [ajusteOs.service_order_id] }),
+        });
+        const ja = await ra.json();
+        if (ra.ok && ja.aprovadas?.length) {
+          toast({ title: "Ajustado e APROVADO ✔", description: `OS ${ajusteOs.os_number || ajusteOs.service_order_id} — boletim ${ja.aprovadas[0].boletim}, ${brl(ja.aprovadas[0].valor)}.` });
+        } else {
+          toast({ title: "Ajustado (OK), mas aprovação foi pulada", description: ja?.puladas?.[0]?.motivo || ja?.message || "Reveja e aprove manualmente.", variant: "destructive" });
+        }
+      } else if (status === "CALCULADO_OK") {
+        toast({ title: "Dados corrigidos — Calculado OK", description: ajusteOs.billing_status === "A_VERIFICAR" ? "Billing não está mais 'A verificar'; aprovação automática não se aplica." : "Alerta limpo. O valor congelado não foi alterado." });
+      } else {
+        toast({ title: "Ajustado, mas ainda não está OK", description: `Nova análise: ${status || "?"} — veja os apontamentos na linha.`, variant: "destructive" });
+      }
+      setAjusteOs(null);
+      refetch();
+    } catch (e: any) {
+      toast({ title: "Erro no ajuste", description: e.message, variant: "destructive" });
+    } finally { setSalvandoAjuste(false); }
   };
 
   const salvarExcecao = async () => {
@@ -352,6 +407,11 @@ export default function GestorMedicaoPage() {
                             <Button size="sm" variant="outline" disabled={explicandoOs === r.service_order_id} onClick={(e) => { e.stopPropagation(); explicar(r.service_order_id); }}>
                               {explicandoOs === r.service_order_id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />} Explicar (IA)
                             </Button>
+                            {r.analysis_status !== "CALCULADO_OK" && r.os_status !== "recusada" && (
+                              <Button size="sm" variant="outline" className="border-emerald-300 text-emerald-700" data-testid={`button-ajustar-${r.service_order_id}`} onClick={(e) => { e.stopPropagation(); abrirAjuste(r); }}>
+                                <RefreshCw className="h-3.5 w-3.5 mr-1" /> {r.billing_status === "A_VERIFICAR" ? "Ajustar dados" : "Corrigir dados (sem mexer no valor)"}
+                              </Button>
+                            )}
                             {r.billing_status === "A_VERIFICAR" && r.analysis_status !== "CALCULADO_OK" && r.os_status !== "recusada" && (
                               <Button size="sm" variant="outline" className="border-purple-300 text-purple-700" onClick={(e) => { e.stopPropagation(); setExcecaoOs(r); }}>
                                 <Scale className="h-3.5 w-3.5 mr-1" /> Aprovar por exceção (diretoria)
@@ -382,6 +442,48 @@ export default function GestorMedicaoPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmAprovar(false)}>Cancelar</Button>
             <Button className="bg-green-600 hover:bg-green-700" onClick={aprovarLote} data-testid="button-confirmar-aprovar">Aprovar {aprovaveis.length} OS</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ajustar dados da medição */}
+      <Dialog open={!!ajusteOs} onOpenChange={(o) => { if (!o) setAjusteOs(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ajustar medição — OS {ajusteOs?.os_number || `#${ajusteOs?.service_order_id}`}</DialogTitle>
+            <DialogDescription>
+              {ajusteOs?.billing_status === "A_VERIFICAR" ? (
+                <>Corrija os dados da missão. O valor será <b>recalculado pelo motor oficial</b> e a OS reanalisada na hora. Se ficar <b>Calculado OK</b>, ela é <b>aprovada automaticamente</b> (gera boletim e lança no financeiro).</>
+              ) : (
+                <>Billing <b>{ajusteOs?.billing_status}</b> — o valor está <b>congelado e não muda</b>. Aqui você só corrige os dados operacionais (KM e horários) para limpar o alerta e manter o histórico correto.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            {(([
+              ["km_inicial", "KM inicial", "number"],
+              ["km_final", "KM final", "number"],
+              ["horario_inicio", "Início da missão", "time"],
+              ["horario_fim", "Fim da missão", "time"],
+              ...(ajusteOs?.billing_status === "A_VERIFICAR" ? [
+                ["despesas_pedagio", "Pedágio (R$)", "number"],
+                ["despesas_outras", "Despesas (R$)", "number"],
+                ["receitas_os", "Receitas da OS (R$)", "number"],
+              ] : []),
+            ]) as Array<[string, string, string]>).map(([k, label, tipo]) => (
+              <div key={k}>
+                <label className="text-xs font-medium text-slate-600">{label}</label>
+                <Input type={tipo} step={tipo === "number" ? "0.01" : undefined} value={ajuste[k] ?? ""}
+                  onChange={(e) => setAjuste((p) => ({ ...p, [k]: e.target.value }))}
+                  data-testid={`input-ajuste-${k}`} />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAjusteOs(null)}>Cancelar</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={salvandoAjuste} onClick={salvarAjuste} data-testid="button-salvar-ajuste">
+              {salvandoAjuste ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />} {ajusteOs?.billing_status === "A_VERIFICAR" ? "Recalcular e aprovar se OK" : "Corrigir dados e reanalisar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

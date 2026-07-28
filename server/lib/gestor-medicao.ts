@@ -52,6 +52,7 @@ const FROZEN = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
 const VERDE = "CALCULADO OK — PODE APROVAR";
 const VERMELHO = "DIVERGÊNCIA ENCONTRADA — REVISAR CÁLCULO";
 const AMARELO = "ATENÇÃO — ANÁLISE MANUAL NECESSÁRIA";
+const LARANJA = "DIVERGÊNCIA DE COMPOSIÇÃO — TOTAL CORRETO, COMPONENTES DIFEREM";
 
 // Componentes canônicos comparados 1-a-1 (mesmos 9 do osCanonicalTotal;
 // pedágio/despesas/receitas são pass-through: iguais nos dois lados por construção).
@@ -104,9 +105,10 @@ export async function auditarOsCore(
     const hasAlta = issues.some((i) => i.severity === "ALTA");
     const hasMedia = issues.some((i) => i.severity === "MEDIA");
     const riskLevel: Severidade | null = hasCritica ? "CRITICA" : hasAlta ? "ALTA" : hasMedia ? "MEDIA" : issues.length ? "BAIXA" : null;
-    const isDivergencia = analysisStatus.startsWith("DIVERGENCIA");
+    const isComposicao = analysisStatus === "DIVERGENCIA_COMPOSICAO";
+    const isDivergencia = analysisStatus.startsWith("DIVERGENCIA") && !isComposicao;
     const isOk = analysisStatus === "CALCULADO_OK";
-    const verdict = isOk ? VERDE : isDivergencia ? VERMELHO : AMARELO;
+    const verdict = isOk ? VERDE : isComposicao ? LARANJA : isDivergencia ? VERMELHO : AMARELO;
     const recommendation = isOk ? "APROVAR" : isDivergencia ? "REVISAR" : "ANALISE_MANUAL";
     return {
       ...base,
@@ -116,7 +118,10 @@ export async function auditarOsCore(
       riskLevel,
       expectedTotalCents,
       differenceCents,
-      aprovavelEmLote: isOk && !jaAprovada && billingStatus === "A_VERIFICAR" && osStatus !== "recusada",
+      // Cancelada fora do lote/auto-aprovação: aprovação de cancelada segue o
+      // fluxo do boletim (regra 100km); o lote genérico recalcularia errado e
+      // marcaria a OS como "concluida".
+      aprovavelEmLote: isOk && !jaAprovada && billingStatus === "A_VERIFICAR" && osStatus !== "recusada" && osStatus !== "cancelada",
       issues,
       memoria,
     };
@@ -152,13 +157,29 @@ export async function auditarOsCore(
       return finish("REGRA_NAO_ENCONTRADA", null, { regra: "Cancelada cobra tabela 100km — nenhuma tabela utilizável encontrada." });
     }
     base.contractId = r.contrato?.id || null;
-    const expected = cents(r.fatFields.fat_total);
+    // O "correto" da cancelada = tabela 100km + PASS-THROUGHS reais do billing
+    // (pedágio/despesas/receitas não são cálculo — são despesas repassadas).
+    // computeCanceladaBilling zera esses campos por construção; sem somá-los
+    // aqui, toda cancelada com pedágio virava falso positivo.
+    // Mesma composição do total oficial exibido no boletim (oficialBillingView).
+    const passThroughCents = cents(billing.despesas_pedagio) + cents(billing.despesas_outras) + cents(billing.receitas_os);
+    const expected = cents(r.fatFields.fat_total) + passThroughCents;
     const memoria = montarMemoria(r.contrato, r.resultado, billing, {
-      regra: `OS CANCELADA — tabela de ${r.usouTabela100 ? "100km (funcionamento mínimo)" : "contrato da OS (fallback)"}`,
+      regra: `OS CANCELADA — tabela de ${r.usouTabela100 ? "100km (funcionamento mínimo)" : "contrato da OS (fallback)"} + repasses (pedágio/despesas/receitas) do billing`,
     });
+    if (memoria?.calculo_correto) {
+      memoria.calculo_correto.pedagio = round2(Number(billing.despesas_pedagio || 0));
+      memoria.calculo_correto.despesas = round2(Number(billing.despesas_outras || 0));
+      memoria.calculo_correto.receitas_os = round2(Number(billing.receitas_os || 0));
+      memoria.calculo_correto.total = round2(expected / 100);
+    }
     const diff = chargedTotalCents - expected;
     if (Math.abs(diff) > TOLERANCIA_CENTS) {
-      issues.push({ type: diff > 0 ? "VALOR_ACIMA" : "VALOR_ABAIXO", severity: "ALTA", message: `Cancelada: cobrado ${fmtBRL(chargedTotalCents)} vs tabela 100km ${fmtBRL(expected)} (${diff > 0 ? "+" : ""}${fmtBRL(diff)}).` });
+      issues.push({ type: diff > 0 ? "VALOR_ACIMA" : "VALOR_ABAIXO", severity: "ALTA", message: `Cancelada: cobrado ${fmtBRL(chargedTotalCents)} vs tabela 100km + repasses ${fmtBRL(expected)} (${diff > 0 ? "+" : ""}${fmtBRL(diff)}).` });
+      if (jaAprovada) {
+        issues.push({ type: "ALTERACAO_POS_APROVACAO", severity: "ALTA", message: "Billing congelado (aprovado/faturado): o valor cobrado é o congelado. Divergência indica alteração posterior à aprovação — análise manual, não erro de cálculo." });
+        return finish("ATENCAO", expected, memoria);
+      }
       return finish("DIVERGENCIA_VALOR", expected, memoria);
     }
     return finish("CALCULADO_OK", expected, memoria);
@@ -269,8 +290,22 @@ export async function auditarOsCore(
       severity: Math.abs(diff) >= 10000 ? "CRITICA" : "ALTA",
       message: `Valor cobrado está ${fmtBRL(Math.abs(diff))} ${diff > 0 ? "ACIMA" : "ABAIXO"} do cálculo pela tabela atual (correto ${fmtBRL(expected)}, cobrado ${fmtBRL(chargedTotalCents)}).`,
     });
+    // Billing congelado (aprovado/faturado): o cobrado É o valor congelado da
+    // aprovação — divergência com a tabela ATUAL indica alteração posterior à
+    // aprovação, não erro de cálculo. Etapa 2 criará o alerta específico.
+    if (jaAprovada) {
+      issues.push({ type: "ALTERACAO_POS_APROVACAO", severity: "ALTA", message: "Billing congelado (aprovado/faturado): valor cobrado é o congelado na aprovação. Divergência com o recálculo atual indica alteração posterior à aprovação — análise manual, não erro de cálculo." });
+      return finish("ATENCAO", expected, memoria);
+    }
     const status = kmDiv && !horaDiv ? "DIVERGENCIA_KM" : horaDiv && !kmDiv ? "DIVERGENCIA_HORAS" : "DIVERGENCIA_VALOR";
     return finish(status, expected, memoria);
+  }
+
+  // Total bate mas algum COMPONENTE difere → divergência de COMPOSIÇÃO
+  // (não dizer que o total está errado; a memória mostra componente a componente).
+  if (kmDiv || horaDiv || issues.some((i) => i.type.startsWith("COMPONENTE_"))) {
+    issues.push({ type: "COMPOSICAO_DIVERGENTE", severity: "MEDIA", message: `Total cobrado está CORRETO (${fmtBRL(chargedTotalCents)}), mas a composição difere do cálculo oficial — ver componentes acima.` });
+    return finish("DIVERGENCIA_COMPOSICAO", expected, memoria);
   }
 
   // Valor bate — mas dados incompletos/alertas seguram a aprovação automática
@@ -431,6 +466,25 @@ export async function auditarOsById(osId: number): Promise<AuditResult | null> {
     if (ac?.length) ativoPorCliente.set(Number(so.client_id), ac[0]);
   }
   return auditarOsCore(so, b?.[0] || null, contratos, ativoPorCliente);
+}
+
+/**
+ * Reavalia AUTOMATICAMENTE uma OS que já tem auditoria persistida — usada
+ * quando o billing muda (recalcular/aprovar) pra que alertas antigos não fiquem
+ * abertos depois que a divergência deixa de existir (caso TOR-0482).
+ * Fire-and-forget: nunca derruba o fluxo principal; só grava nova análise.
+ */
+export async function reauditarSeJaAuditada(serviceOrderId: number, user: string): Promise<void> {
+  if (!Number.isFinite(serviceOrderId) || serviceOrderId <= 0) return;
+  try {
+    const { data } = await supabaseAdmin.from("medicao_audits")
+      .select("id").eq("service_order_id", serviceOrderId).limit(1);
+    if (!data?.length) return; // nunca auditada — não cria alerta novo sozinho
+    const r = await auditarOsById(serviceOrderId);
+    if (r) await salvarAudits([r], `${user} (auto)`);
+  } catch (e: any) {
+    console.error(`[gestor-medicao] Reavaliação automática falhou p/ OS ${serviceOrderId}:`, e?.message);
+  }
 }
 
 // Persistência (histórico append-only, análise reproduzível)

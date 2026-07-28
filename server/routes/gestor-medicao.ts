@@ -74,6 +74,125 @@ export function registerGestorMedicaoRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ---- AJUSTAR dados da medição (KM/horários/repasses) e reauditar ----
+  // Só billing A_VERIFICAR (congelado NUNCA se ajusta por aqui). Recalcula os
+  // fat_* pelo motor oficial com os dados corrigidos e grava nova auditoria.
+  // A aprovação em si continua sendo o /aprovar-lote (re-audita e trava corrida).
+  app.post("/api/gestor-medicao/ajustar/:osId", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const osId = Number(req.params.osId);
+      const { data: so } = await supabaseAdmin.from("service_orders")
+        .select("id, os_number, status, escort_contract_id, client_id, mission_started_at, completed_date, scheduled_date")
+        .eq("id", osId).maybeSingle();
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+      if (so.status === "recusada") return res.status(400).json({ message: "OS recusada fatura R$ 0,00 (§8.1) — não há o que ajustar." });
+      const { data: bRows } = await supabaseAdmin.from("escort_billings").select("*").eq("service_order_id", osId).limit(1);
+      const billing = bRows?.[0];
+      if (!billing) return res.status(404).json({ message: "OS sem billing — use o botão Calcular no Boletim de Medição." });
+      // Congelado (APROVADA/FATURADO/PAGO/CANCELADO): permite corrigir SÓ os
+      // dados operacionais (KM/horários) — nunca repasses nem qualquer valor.
+      const dataOnly = billing.status !== "A_VERIFICAR";
+
+      // Campos ajustáveis (entradas da medição, nunca os fat_* diretamente)
+      const patch: any = {};
+      const nums = dataOnly
+        ? (["km_inicial", "km_final"] as const)
+        : (["km_inicial", "km_final", "despesas_pedagio", "despesas_outras", "receitas_os"] as const);
+      if (dataOnly) for (const k of ["despesas_pedagio", "despesas_outras", "receitas_os"]) {
+        if (req.body?.[k] !== undefined && req.body[k] !== null && req.body[k] !== "" && Number(req.body[k]) !== Number(billing[k] || 0)) {
+          return res.status(400).json({ message: `Billing ${billing.status} — congelado: só KM e horários podem ser corrigidos, valores não.` });
+        }
+      }
+      for (const k of nums) if (req.body?.[k] !== undefined && req.body[k] !== null && req.body[k] !== "") {
+        const v = Number(req.body[k]);
+        if (!Number.isFinite(v) || v < 0) return res.status(400).json({ message: `Valor inválido em ${k}` });
+        patch[k] = v;
+      }
+      const horaRe = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+      for (const k of ["horario_inicio", "horario_fim"]) if (typeof req.body?.[k] === "string" && req.body[k]) {
+        if (!horaRe.test(req.body[k])) return res.status(400).json({ message: `Horário inválido em ${k} (use HH:MM)` });
+        patch[k] = req.body[k];
+      }
+      if (!Object.keys(patch).length) return res.status(400).json({ message: "Nenhum campo para ajustar." });
+      if ((patch.km_final ?? Number(billing.km_final)) < (patch.km_inicial ?? Number(billing.km_inicial))) {
+        return res.status(400).json({ message: "KM final não pode ser menor que o inicial." });
+      }
+
+      const antes: any = {}; for (const k of Object.keys(patch)) antes[k] = billing[k];
+      const merged = { ...billing, ...patch };
+
+      // Recalcula fat_* pelo motor oficial (mesma resolução de tabela da aprovação)
+      const contractId = so.escort_contract_id || billing.contract_id || null;
+      let contrato: any = null;
+      if (contractId) {
+        const { data: c } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", contractId).maybeSingle();
+        contrato = c || null;
+      }
+      if (!contrato && so.client_id) {
+        const { data: ac } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.client_id).eq("status", "Ativo").limit(1);
+        contrato = ac?.[0] || null;
+      }
+      if (so.status !== "cancelada" && !dataOnly) {
+        if (!contrato) return res.status(400).json({ message: "Nenhuma tabela comercial localizada para recalcular." });
+        const resultado = calcularEscolta({
+          km_inicial: Number(merged.km_inicial || 0),
+          km_final: Math.max(Number(merged.km_inicial || 0), Number(merged.km_final || 0)),
+          km_vazio: Number(merged.km_vazio || 0),
+          horas_missao: Number(merged.horas_missao || 0),
+          horas_estadia: Number(merged.horas_estadia || 0),
+          teve_pernoite: !!merged.teve_pernoite,
+          horario_inicio: merged.horario_inicio || undefined,
+          horario_fim: merged.horario_fim || undefined,
+          horario_agendado: merged.horario_agendado || undefined,
+          inicio_ts: so.mission_started_at || null,
+          fim_ts: so.completed_date || null,
+          scheduled_date: so.scheduled_date || null,
+          despesas_pedagio: Number(merged.despesas_pedagio || 0),
+          despesas_combustivel: Number(merged.despesas_combustivel || 0),
+          despesas_outras: Number(merged.despesas_outras || 0),
+          receitas_os: Number(merged.receitas_os || 0),
+          contrato,
+        });
+        Object.assign(patch, {
+          fat_total: resultado.fat_total,
+          fat_acionamento: resultado.fat_acionamento,
+          fat_hora_extra: resultado.fat_hora_extra,
+          fat_km: resultado.fat_km || 0,
+          fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
+          fat_estadia: resultado.fat_estadia || 0,
+          fat_pernoite: resultado.fat_pernoite || 0,
+          km_carregado: resultado.km_total ?? merged.km_carregado,
+          contract_id: contrato.id,
+        });
+      }
+      // Cancelada: só corrige entradas (KM/horários/repasses); o valor segue a
+      // tabela 100km — o total é reavaliado pela auditoria abaixo.
+
+      // Trava anti-corrida: só grava se o status continua o mesmo lido e com o
+      // MESMO fat_total (edição/ajuste concorrente invalida este ajuste).
+      let updQ = supabaseAdmin.from("escort_billings")
+        .update(patch).eq("id", billing.id).eq("status", billing.status);
+      updQ = billing.fat_total === null || billing.fat_total === undefined
+        ? updQ.is("fat_total", null)
+        : updQ.eq("fat_total", billing.fat_total);
+      const { data: upd, error } = await updQ.select().single();
+      if (error || !upd) return res.status(409).json({ message: error?.message || "Billing mudou durante o ajuste — recarregue." });
+
+      // Reaudita e persiste a nova análise
+      const audit = await auditarOsById(osId);
+      if (audit) await salvarAudits([audit], user.name);
+      bustBalancoCaches();
+      await logSystemAudit({
+        userId: user.id, userName: user.name, userRole: user.role,
+        action: "AJUSTAR_MEDICAO", targetId: String(billing.id), targetType: "escort_billing",
+        details: `OS #${so.os_number || osId}: ajuste de medição ${JSON.stringify(antes)} → ${JSON.stringify(Object.fromEntries(Object.keys(antes).map(k => [k, patch[k]])))}. Nova análise: ${audit?.analysisStatus}.`,
+        ipAddress: req.ip,
+      });
+      res.json({ audit, billing: upd });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ---- Últimos resultados persistidos (a tela abre com isso) ----
   app.get("/api/gestor-medicao/resultados", requireAuth, requireAdminRole, async (req, res) => {
     try {

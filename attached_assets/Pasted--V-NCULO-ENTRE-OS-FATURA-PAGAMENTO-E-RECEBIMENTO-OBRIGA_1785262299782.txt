@@ -1,0 +1,582 @@
+# VÍNCULO ENTRE OS, FATURA, PAGAMENTO E RECEBIMENTO — OBRIGATÓRIO
+
+## Objetivo
+
+Implementar um vínculo rastreável entre cada **Ordem de Serviço**, sua respectiva **fatura**, **nota fiscal**, **conta a receber** e o efetivo **pagamento do cliente**.
+
+Ao acessar qualquer tela que apresente uma OS, o sistema deverá mostrar claramente se aquela missão:
+
+* ainda não foi faturada;
+* está incluída em uma fatura;
+* possui nota fiscal emitida;
+* está aguardando pagamento;
+* foi parcialmente paga;
+* foi totalmente paga;
+* está vencida;
+* foi cancelada;
+* foi estornada.
+
+Não poderá existir marcação manual e isolada de “OS paga” sem evidência financeira vinculada.
+
+---
+
+# REGRA PRINCIPAL
+
+O status financeiro da OS deverá ser calculado com base nos registros financeiros reais do sistema.
+
+A OS somente poderá aparecer como:
+
+**OS PAGA — FATURA X**
+
+quando houver confirmação objetiva de que o recebimento correspondente foi realizado e conciliado.
+
+O sistema deverá utilizar como evidência:
+
+1. vínculo da OS com a fatura;
+2. valor da OS dentro da fatura;
+3. conta a receber vinculada;
+4. pagamento recebido;
+5. valor efetivamente recebido;
+6. conciliação do pagamento;
+7. ausência de estorno ou cancelamento posterior.
+
+---
+
+# EXIBIÇÃO NAS TELAS
+
+Em todas as telas que apresentem uma Ordem de Serviço, exibir um badge financeiro visível.
+
+## Exemplos
+
+### OS totalmente recebida
+
+**OS PAGA — FATURA FAT-2026-00451**
+
+Informações complementares:
+
+* Valor faturado: R$ 1.250,00
+* Valor recebido: R$ 1.250,00
+* Data do recebimento: 25/07/2026
+* Fatura: FAT-2026-00451
+* Nota fiscal: NF 001245
+* Conta a receber: CR-008721
+* Status da conciliação: Conciliado
+
+---
+
+### OS faturada, mas ainda não recebida
+
+**AGUARDANDO PAGAMENTO — FATURA FAT-2026-00451**
+
+Informações complementares:
+
+* Valor faturado: R$ 1.250,00
+* Valor recebido: R$ 0,00
+* Vencimento: 30/07/2026
+* Dias para o vencimento: 2
+* Status: Em aberto
+
+---
+
+### OS vencida
+
+**PAGAMENTO VENCIDO — FATURA FAT-2026-00451**
+
+Informações complementares:
+
+* Valor pendente: R$ 1.250,00
+* Vencimento: 20/07/2026
+* Dias em atraso: 8
+* Status de cobrança: Em cobrança
+
+---
+
+### Pagamento parcial
+
+**PAGAMENTO PARCIAL — FATURA FAT-2026-00451**
+
+Informações complementares:
+
+* Valor faturado: R$ 1.250,00
+* Valor recebido: R$ 750,00
+* Saldo pendente: R$ 500,00
+* Percentual recebido: 60%
+* Próximo vencimento: 05/08/2026
+
+---
+
+### OS ainda não faturada
+
+**OS NÃO FATURADA**
+
+Informações complementares:
+
+* Valor oficial da OS: R$ 1.250,00
+* Motivo de não faturamento
+* Competência prevista
+* Responsável
+* Pendências que impedem o faturamento
+
+---
+
+### Fatura cancelada ou estornada
+
+**FATURA CANCELADA — FATURA FAT-2026-00451**
+
+ou
+
+**PAGAMENTO ESTORNADO — FATURA FAT-2026-00451**
+
+A OS deverá voltar automaticamente para o status financeiro correto, sem permanecer indevidamente como paga.
+
+---
+
+# STATUS FINANCEIROS DA OS
+
+Padronizar os status:
+
+* NÃO FATURADA
+* EM FECHAMENTO
+* FATURADA
+* NOTA FISCAL EMITIDA
+* AGUARDANDO PAGAMENTO
+* PAGAMENTO PARCIAL
+* PAGA
+* VENCIDA
+* EM COBRANÇA
+* RENEGOCIADA
+* CANCELADA
+* ESTORNADA
+* DIVERGÊNCIA FINANCEIRA
+
+O sistema não deverá permitir textos livres para substituir esses status.
+
+---
+
+# RELACIONAMENTO DE DADOS
+
+O vínculo deverá seguir esta estrutura:
+
+Cliente
+↓
+Contrato
+↓
+Ordem de Serviço
+↓
+Item da Fatura
+↓
+Fatura
+↓
+Nota Fiscal
+↓
+Conta a Receber
+↓
+Parcela
+↓
+Recebimento
+↓
+Conciliação Bancária
+
+Cada OS deverá possuir ligação direta com o item da fatura correspondente.
+
+Não será suficiente vincular apenas a fatura ao cliente, pois uma mesma fatura poderá conter várias Ordens de Serviço.
+
+---
+
+# FATURAS COM MÚLTIPLAS OS
+
+Quando uma fatura possuir várias OS, o sistema deverá armazenar individualmente:
+
+* ID da OS;
+* ID da fatura;
+* ID do item da fatura;
+* valor da OS incluído na fatura;
+* descontos;
+* acréscimos;
+* impostos;
+* retenções;
+* valor líquido;
+* percentual de participação da OS na fatura.
+
+Exemplo:
+
+Fatura FAT-2026-00451 — Total R$ 10.000,00
+
+* OS GTM-1001: R$ 2.000,00
+* OS GTM-1002: R$ 3.000,00
+* OS GTM-1003: R$ 5.000,00
+
+O sistema deverá identificar separadamente quais valores foram recebidos e como o recebimento será rateado entre as OS.
+
+---
+
+# REGRA DE RATEIO EM PAGAMENTO PARCIAL
+
+Caso uma fatura com várias OS seja paga parcialmente, não marcar todas as OS automaticamente como pagas.
+
+O sistema deverá utilizar uma regra de rateio definida e auditável.
+
+Prioridade recomendada:
+
+1. utilizar uma alocação manual existente no recebimento;
+2. utilizar identificação individual por item, quando disponível;
+3. utilizar rateio proporcional pelo valor líquido de cada OS;
+4. registrar que o pagamento foi rateado automaticamente.
+
+Exemplo:
+
+Fatura: R$ 10.000,00
+Recebimento: R$ 5.000,00
+
+O sistema não poderá marcar todas as OS como pagas.
+
+Deverá indicar:
+
+**FATURA PARCIALMENTE PAGA — 50% RECEBIDO**
+
+E mostrar, em cada OS, o valor recebido e o saldo correspondente.
+
+---
+
+# REGRA DE VALIDAÇÃO
+
+Uma OS somente será considerada totalmente paga quando:
+
+`valor_recebido_alocado_na_os >= valor_liquido_da_os_faturada`
+
+Considerar tolerância configurável para diferenças de centavos.
+
+Exemplo:
+
+* Valor líquido da OS: R$ 1.250,00
+* Valor recebido alocado: R$ 1.250,00
+* Resultado: PAGA
+
+Exemplo:
+
+* Valor líquido da OS: R$ 1.250,00
+* Valor recebido alocado: R$ 1.200,00
+* Resultado: PAGAMENTO PARCIAL
+* Saldo: R$ 50,00
+
+A existência de uma fatura não significa que a OS foi paga.
+
+A emissão da nota fiscal não significa que a OS foi paga.
+
+A baixa manual de uma conta sem conciliação deverá ser identificada como baixa não conciliada, conforme as regras atuais do sistema.
+
+---
+
+# VISUALIZAÇÃO NA TELA DA OS
+
+Adicionar uma seção:
+
+## Situação Financeira da Missão
+
+Exibir:
+
+* Status financeiro;
+* número da fatura;
+* número da nota fiscal;
+* competência;
+* data de emissão;
+* data de vencimento;
+* valor oficial da OS;
+* valor faturado;
+* valor líquido;
+* valor recebido;
+* saldo pendente;
+* data do pagamento;
+* forma de pagamento;
+* conta bancária;
+* identificador da transação;
+* status da conciliação;
+* dias em atraso;
+* responsável pelo fechamento;
+* responsável pela baixa;
+* histórico de alterações.
+
+Disponibilizar ações, respeitando permissões:
+
+* Abrir fatura;
+* Abrir nota fiscal;
+* Abrir conta a receber;
+* Visualizar comprovante;
+* Visualizar conciliação;
+* Visualizar histórico;
+* Reportar divergência.
+
+---
+
+# VISUALIZAÇÃO NOS BOLETINS E RELATÓRIOS
+
+Nos boletins de medição, listagens de OS, dashboards e relatórios, permitir uma coluna:
+
+**Situação do Recebimento**
+
+Exemplos:
+
+* Paga — FAT-2026-00451
+* Parcial — FAT-2026-00451
+* Em aberto — FAT-2026-00451
+* Vencida — FAT-2026-00451
+* Não faturada
+* Estornada
+
+Essa informação deverá ser clicável e abrir os detalhes financeiros.
+
+---
+
+# KNOWLEDGE GRAPH
+
+O Knowledge Graph deverá mapear obrigatoriamente:
+
+OS
+→ item da fatura
+→ fatura
+→ nota fiscal
+→ conta a receber
+→ parcela
+→ recebimento
+→ conciliação
+→ cliente
+→ contrato
+→ comercial responsável
+
+Assim, ao consultar uma OS, a IA deverá conseguir responder:
+
+* Esta OS já foi faturada?
+* Em qual fatura ela está?
+* A nota fiscal foi emitida?
+* O cliente já pagou?
+* Qual foi a data do pagamento?
+* O recebimento foi parcial ou integral?
+* Existe saldo pendente?
+* Houve estorno?
+* A fatura contém outras OS?
+* Existe divergência entre o valor oficial da OS e o valor faturado?
+
+---
+
+# SINCRONIZAÇÃO AUTOMÁTICA
+
+Sempre que ocorrer um dos eventos abaixo, atualizar automaticamente o status da OS:
+
+* inclusão em uma fatura;
+* remoção de uma fatura;
+* emissão da nota fiscal;
+* cancelamento da nota fiscal;
+* criação da conta a receber;
+* alteração do vencimento;
+* recebimento parcial;
+* recebimento integral;
+* conciliação;
+* desconciliação;
+* estorno;
+* cancelamento da fatura;
+* renegociação;
+* exclusão autorizada de recebimento.
+
+Fluxo esperado:
+
+Recebimento confirmado
+↓
+Alocação na fatura
+↓
+Alocação nas OS
+↓
+Atualização do status financeiro
+↓
+Atualização do Knowledge Graph
+↓
+Atualização dos dashboards
+↓
+Atualização da ficha do cliente
+↓
+Atualização dos resultados do comercial
+↓
+Atualização dos alertas da Diretoria
+
+Não depender de atualização manual da página.
+
+---
+
+# DIVERGÊNCIAS
+
+Criar um status:
+
+**DIVERGÊNCIA FINANCEIRA**
+
+Utilizar quando ocorrer, por exemplo:
+
+* OS marcada como paga sem recebimento;
+* recebimento sem fatura;
+* fatura sem itens;
+* OS vinculada a mais de uma fatura ativa;
+* valor da OS diferente do valor faturado;
+* valor recebido superior ao valor devido;
+* fatura cancelada com OS ainda marcada como paga;
+* recebimento estornado sem reversão do status;
+* nota fiscal vinculada ao cliente errado;
+* comercial incorreto no vínculo;
+* ausência de conciliação;
+* registros órfãos.
+
+A divergência deverá gerar:
+
+* alerta interno;
+* registro de auditoria;
+* indicação da causa provável;
+* entidades afetadas;
+* sugestão de correção;
+* nível de severidade;
+* responsável pela análise.
+
+---
+
+# PERMISSÕES
+
+## Comercial
+
+Poderá visualizar, somente nos clientes de sua carteira:
+
+* se a OS foi faturada;
+* número da fatura;
+* situação do recebimento;
+* valor faturado;
+* saldo pendente;
+* vencimento;
+* status resumido.
+
+Não poderá:
+
+* dar baixa;
+* alterar recebimentos;
+* conciliar;
+* cancelar faturas;
+* editar impostos;
+* alterar valores financeiros oficiais;
+* visualizar contas bancárias sem autorização específica.
+
+## Financeiro
+
+Poderá:
+
+* gerenciar faturamento;
+* registrar e conciliar recebimentos;
+* vincular documentos;
+* tratar divergências;
+* realizar renegociações conforme permissão.
+
+## Diretoria
+
+Terá acesso completo:
+
+* todas as OS;
+* todas as faturas;
+* todos os recebimentos;
+* divergências;
+* estornos;
+* histórico;
+* relatórios consolidados.
+
+---
+
+# AUDITORIA OBRIGATÓRIA
+
+Registrar:
+
+* usuário;
+* data e hora;
+* ação realizada;
+* origem da alteração;
+* status anterior;
+* status posterior;
+* valor anterior;
+* valor posterior;
+* fatura;
+* OS;
+* recebimento;
+* justificativa;
+* IP ou identificação da sessão, quando aplicável.
+
+Não permitir exclusão definitiva de histórico financeiro.
+
+---
+
+# FONTE ÚNICA DA VERDADE
+
+Não criar um campo manual isolado, como:
+
+`os_paga = true`
+
+O status deverá ser preferencialmente calculado a partir dos vínculos e dos movimentos financeiros oficiais.
+
+Caso seja necessário persistir um status para performance, ele deverá funcionar como projeção derivada e ser atualizado por eventos transacionais, nunca como fonte primária da verdade.
+
+As fontes primárias deverão ser:
+
+* item da fatura;
+* conta a receber;
+* recebimento;
+* alocação do recebimento;
+* conciliação;
+* estorno.
+
+---
+
+# CONCORRÊNCIA E CONSISTÊNCIA
+
+As atualizações financeiras deverão ocorrer em transação.
+
+Exemplo:
+
+Ao registrar um recebimento:
+
+1. registrar o recebimento;
+2. vincular à conta a receber;
+3. alocar à fatura;
+4. ratear entre as OS;
+5. atualizar os status;
+6. registrar auditoria;
+7. atualizar o Knowledge Graph.
+
+Caso qualquer etapa falhe, a operação deverá ser revertida integralmente, evitando que uma OS apareça como paga sem o recebimento corretamente registrado.
+
+---
+
+# CRITÉRIOS DE ACEITE
+
+A funcionalidade somente será considerada concluída quando:
+
+* toda OS mostrar seu status financeiro;
+* toda OS faturada apontar sua fatura;
+* toda OS paga apresentar o recebimento que comprova a baixa;
+* pagamentos parciais não marcarem a OS como totalmente paga;
+* cancelamentos e estornos atualizarem o status automaticamente;
+* faturas com múltiplas OS tiverem rateio rastreável;
+* não existir marcação manual desconectada do financeiro;
+* o Knowledge Graph refletir os vínculos;
+* os perfis de acesso forem respeitados;
+* toda alteração possuir auditoria;
+* divergências forem detectadas automaticamente;
+* os dados estiverem sincronizados em todas as telas;
+* os testes cobrirem faturamento, pagamento parcial, pagamento integral, estorno, cancelamento, renegociação e divergência.
+
+---
+
+# RESULTADO ESPERADO
+
+Ao abrir qualquer missão, o usuário autorizado deverá identificar imediatamente:
+
+**OS PAGA — FATURA FAT-2026-00451**
+
+ou:
+
+**AGUARDANDO PAGAMENTO — FATURA FAT-2026-00451**
+
+ou:
+
+**OS NÃO FATURADA**
+
+Dessa forma, o Grupo TM SEG terá certeza de que a informação exibida está respaldada pelo fluxo financeiro real, evitando cobranças duplicadas, baixas indevidas, divergências entre módulos e decisões baseadas em informações desatualizadas.

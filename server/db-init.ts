@@ -1439,6 +1439,80 @@ export async function ensureDbSchema() {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Etapa 2 Vínculo OS↔Fatura: valor efetivamente recebido (parcial acumula)
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS valor_recebido DECIMAL(14,2)`);
+
+    // Itens da fatura: valor/participação de cada OS dentro da fatura + rateio
+    // do recebimento (Etapa 2 do Vínculo OS↔Fatura).
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS invoice_billing_items (
+        id BIGSERIAL PRIMARY KEY,
+        invoice_id BIGINT NOT NULL,
+        billing_id TEXT NOT NULL,
+        service_order_id BIGINT,
+        valor_item NUMERIC(14,2) NOT NULL DEFAULT 0,
+        participacao_pct NUMERIC(7,2),
+        valor_alocado NUMERIC(14,2) NOT NULL DEFAULT 0,
+        alocacao_origem TEXT,
+        alocado_em TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (invoice_id, billing_id)
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ibi_invoice ON invoice_billing_items (invoice_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ibi_billing ON invoice_billing_items (billing_id)`);
+
+    // Trilha de auditoria financeira por OS (recebimentos, rateios, reversões)
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS os_financeiro_audits (
+        id BIGSERIAL PRIMARY KEY,
+        billing_id TEXT,
+        service_order_id BIGINT,
+        invoice_id BIGINT,
+        evento TEXT NOT NULL,
+        status_antes TEXT,
+        status_depois TEXT,
+        valor_alocado NUMERIC(14,2),
+        origem TEXT,
+        detalhes JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_osfa_invoice ON os_financeiro_audits (invoice_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_osfa_billing ON os_financeiro_audits (billing_id)`);
+
+    // Dedup de eventos de recebimento (webhook reenviado NÃO soma 2x) +
+    // acúmulo ATÔMICO de invoices.valor_recebido (sem read-modify-write).
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS os_financeiro_events (
+        event_key TEXT PRIMARY KEY,
+        invoice_id BIGINT NOT NULL,
+        valor NUMERIC(14,2) NOT NULL,
+        origem TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await execSql(`
+      CREATE OR REPLACE FUNCTION public.os_fin_registrar_recebimento(
+        p_event_key TEXT, p_invoice_id BIGINT, p_valor NUMERIC, p_origem TEXT
+      ) RETURNS NUMERIC
+      LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+      DECLARE v_acumulado NUMERIC;
+      BEGIN
+        -- dedupe: se o evento já foi processado, não soma de novo
+        INSERT INTO os_financeiro_events (event_key, invoice_id, valor, origem)
+        VALUES (p_event_key, p_invoice_id, p_valor, p_origem)
+        ON CONFLICT (event_key) DO NOTHING;
+        IF NOT FOUND THEN RETURN NULL; END IF;
+        UPDATE invoices
+        SET valor_recebido = ROUND(COALESCE(valor_recebido, 0) + p_valor, 2)
+        WHERE id = p_invoice_id
+        RETURNING valor_recebido INTO v_acumulado;
+        RETURN v_acumulado;
+      END $$
+    `);
+    await execSql(`REVOKE ALL ON FUNCTION public.os_fin_registrar_recebimento(TEXT, BIGINT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated`);
+    await execSql(`GRANT EXECUTE ON FUNCTION public.os_fin_registrar_recebimento(TEXT, BIGINT, NUMERIC, TEXT) TO service_role`);
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS mission_acceptances (

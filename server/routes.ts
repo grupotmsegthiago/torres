@@ -730,6 +730,7 @@ async function ensureSystemSettingsTable() {
   import { registerChatRoutes } from "./routes/chat";
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
   import { registerGestorMedicaoRoutes } from "./routes/gestor-medicao";
+  import { registerOsFinanceiroRoutes } from "./routes/os-financeiro";
   import { registerLeadRoutes } from "./routes/leads";
   import { registerConciliacaoRoutes } from "./routes/conciliacao";
   import { registerFixedCostsRoutes } from "./routes/fixed-costs";
@@ -1406,6 +1407,7 @@ async function ensureSystemSettingsTable() {
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
     registerGestorMedicaoRoutes(app);
+    registerOsFinanceiroRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);

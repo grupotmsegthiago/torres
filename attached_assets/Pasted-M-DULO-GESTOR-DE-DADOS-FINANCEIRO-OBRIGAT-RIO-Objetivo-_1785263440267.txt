@@ -1,0 +1,190 @@
+MÓDULO: GESTOR DE DADOS FINANCEIRO (OBRIGATÓRIO)
+Objetivo
+
+Desenvolver um Gestor de Dados Financeiro Inteligente, responsável por validar automaticamente toda a consistência financeira do sistema.
+
+Este módulo não deverá apenas exibir indicadores, mas atuar como um auditor permanente, garantindo que todos os números apresentados nos dashboards sejam corretos, conciliados e livres de duplicidades.
+
+Validação Inteligente dos Dados
+
+Antes de qualquer indicador ser exibido, o sistema deverá validar automaticamente:
+
+Se existem valores duplicados.
+Se uma Ordem de Serviço foi contabilizada mais de uma vez.
+Se uma fatura foi somada duas vezes.
+Se há notas fiscais repetidas.
+Se existem lançamentos financeiros duplicados.
+Se algum custo foi lançado em duplicidade.
+Se o faturamento exibido corresponde exatamente às OS faturadas.
+Se os custos apresentados correspondem aos registros reais do sistema.
+Se o lucro líquido está sendo calculado corretamente.
+Se os impostos estão sendo aplicados corretamente.
+Se a margem líquida corresponde ao lucro efetivo.
+Se existem divergências entre Financeiro, Operações, RH e Comercial.
+
+Caso encontre qualquer inconsistência, o sistema deverá impedir que o indicador seja considerado "válido" até que a divergência seja analisada.
+
+Painel de Validação
+
+Criar um painel semelhante ao conceito apresentado, contendo:
+
+Duplicidades encontradas
+Inconsistências financeiras
+Valores fora do padrão
+Conciliações pendentes
+Percentual de integridade dos dados
+Status geral da validação
+Recomendações geradas pela IA
+
+Cada card deverá ser clicável e abrir a origem do problema.
+
+IA Auditora
+
+Criar uma IA responsável por auditar continuamente os dados.
+
+Ela deverá responder perguntas como:
+
+Por que o lucro caiu?
+Existe algum custo duplicado?
+Existe faturamento lançado duas vezes?
+Existe OS sem faturamento?
+Existe fatura sem OS?
+Existe custo sem centro de custo?
+Existe funcionário sendo considerado duas vezes?
+Existe pagamento duplicado?
+Existe recebimento sem vínculo?
+
+A IA deverá explicar a causa da divergência e sugerir a correção.
+
+Custos dos Funcionários
+
+Criar uma seção denominada:
+
+Custos Completos dos Funcionários
+
+Exibir uma tabela contendo:
+
+Nome
+Cargo
+Salário Base
+Custo Total
+Custo Médio Diário
+Percentual sobre a folha
+Status
+Hover Inteligente
+
+Ao posicionar o mouse sobre qualquer funcionário, abrir automaticamente um painel escuro contendo o detalhamento completo daquele colaborador, exatamente no padrão visual apresentado na referência.
+
+O painel deverá exibir:
+
+1. Remuneração
+Salário Base
+Horas Extras
+Adicional Noturno
+Periculosidade
+Insalubridade
+Gratificações
+Bonificações
+Comissões
+Premiações
+Total da Remuneração
+2. Encargos
+FGTS
+INSS Patronal
+Seguro de Vida
+RAT/FAP (quando aplicável)
+Demais encargos
+3. Benefícios
+Vale Refeição
+Vale Alimentação
+Vale Transporte
+Cesta Básica
+Plano de Saúde
+Plano Odontológico
+Auxílio Combustível
+Diárias
+Outros benefícios
+4. Provisões
+Férias
+1/3 Constitucional
+13º Salário
+Rescisão Estimada
+Encargos sobre provisões
+5. Outros Custos
+Uniformes
+EPIs
+Treinamentos
+Equipamentos
+Custos administrativos vinculados
+Outros custos indiretos
+6. Indicadores Operacionais
+
+Além dos custos do RH, apresentar:
+
+Horas trabalhadas no período
+Dias trabalhados
+Missões executadas
+Valor médio por missão
+Custo por missão
+Custo por hora
+Custo por dia
+Receita gerada pelas missões (quando aplicável)
+Lucro operacional relacionado ao colaborador (quando aplicável)
+Percentual de participação na folha
+7. Resumo Financeiro
+
+Destacar no rodapé:
+
+Custo Total do Funcionário
+Custo Médio Diário
+Custo por Hora
+Custo por Missão
+Percentual sobre a folha
+Percentual sobre os custos totais da empresa
+Integração Obrigatória
+
+Todos esses valores deverão ser calculados automaticamente utilizando os módulos existentes:
+
+RH
+Folha de Pagamento
+Ponto
+Benefícios
+Operações
+Financeiro
+Fiscal
+Ordens de Serviço
+
+Não poderá existir digitação manual desses valores.
+
+Knowledge Graph
+
+O Knowledge Graph deverá relacionar automaticamente:
+
+Funcionário
+→ Folha
+→ Benefícios
+→ Encargos
+→ Missões
+→ Ordens de Serviço
+→ Centro de Custo
+→ Receita Gerada
+→ Custos
+→ Lucro
+→ Indicadores
+
+Assim, qualquer alteração em um módulo refletirá automaticamente em todos os painéis, garantindo que os indicadores permaneçam sincronizados e consistentes.
+
+Critérios de Aceite
+
+A funcionalidade será considerada concluída quando:
+
+Todos os indicadores forem auditados automaticamente antes da exibição.
+Nenhum valor duplicado puder passar despercebido.
+Todas as divergências forem identificadas e rastreáveis.
+A tabela de funcionários exibir o custo consolidado de cada colaborador.
+O hover apresentar o detalhamento completo dos custos do RH e dos indicadores operacionais.
+Todos os valores forem obtidos diretamente da base oficial do sistema.
+O Knowledge Graph refletir corretamente todos os relacionamentos financeiros e operacionais.
+O painel funcionar em tempo real, com sincronização automática entre RH, Financeiro, Operações e Comercial.
+
+Importante: Antes de implementar qualquer cálculo novo, analise toda a lógica financeira existente no sistema. Reutilize funções, consultas e regras de negócio já implementadas. Não crie cálculos paralelos ou duplicados. Toda informação exibida pelo Gestor de Dados Financeiro deve ser derivada da base oficial do sistema, preservando a integridade e a rastreabilidade dos dados.

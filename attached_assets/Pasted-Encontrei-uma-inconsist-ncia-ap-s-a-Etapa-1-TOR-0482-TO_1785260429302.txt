@@ -1,0 +1,73 @@
+Encontrei uma inconsistência após a Etapa 1:
+
+TOR-0482
+TOR-0454
+
+No Gestão de Medição, essas duas OS aparecem como divergentes. Porém, ao abrir o boletim, o valor apresentado está correto e corresponde ao motor oficial.
+
+Antes de iniciar a Etapa 2, investigue essa falha dentro da Etapa 1.
+
+Para cada OS, apresente uma tabela:
+
+Informação	TOR-0482	TOR-0454
+Status da OS		
+Status do billing		
+Valor calculado pelo motor		
+total_oficial		
+_oficial.total		
+fat_total persistido		
+Snapshot aprovado		
+Valor exibido no boletim		
+Valor usado pelo Gestor de Medição		
+Diferença apontada		
+Regra que gerou o alerta		
+
+Rastreie exatamente:
+
+Qual endpoint alimenta o Gestão de Medição.
+Qual campo ele usa para determinar o valor correto.
+Qual campo ele usa como valor encontrado.
+Se o detector ainda soma acionamento, hora extra, KM, pedágio e despesas por conta própria.
+Se utiliza fat_total, campos antigos, snapshot, cache ou valor bruto do billing.
+Se respeita a precedência definida em server/lib/billing-display.ts.
+Se a OS está aprovada ou faturada e, nesse caso, se a comparação correta deveria ser com o snapshot congelado.
+Se o alerta foi gerado antes da correção e permaneceu aberto/desatualizado.
+Se existe cache ou alerta persistido que não foi reavaliado depois da implantação.
+
+A regra esperada é:
+
+Antes da aprovação: o Gestor deve comparar todas as telas com o cálculo oficial atual do servidor.
+Depois da aprovação: deve comparar com o valor congelado do boletim aprovado.
+Alteração posterior à aprovação: não deve ser classificada simplesmente como erro de cálculo; deve futuramente gerar o alerta específico “OS alterada após aprovação”.
+
+Não resolva apenas escondendo ou encerrando manualmente os dois alertas. Corrija a fonte usada pela regra de detecção.
+
+O Gestão de Medição não pode possuir fórmula financeira própria. Ele deve consumir a mesma memória oficial utilizada pelo boletim e pelo relatório.
+
+Também verifique se o objeto oficial contém somente o total ou a memória completa. O Gestor precisa comparar os componentes oficiais:
+
+acionamento;
+horas excedentes e respectivo valor;
+KM excedentes e respectivo valor;
+pedágio;
+despesas;
+descontos e acréscimos;
+total;
+origem do valor;
+indicação de congelamento.
+
+Se o total estiver correto, mas algum componente estiver diferente, o sistema deve informar claramente “divergência de composição”, sem dizer que o total está errado.
+
+Depois da correção, execute:
+
+reavaliação controlada de TOR-0482 e TOR-0454;
+teste com billing ainda não aprovado;
+teste com billing aprovado;
+teste com billing faturado;
+teste com alteração posterior à aprovação;
+atualização automática do alerta quando a divergência deixar de existir;
+confirmação de que nenhum registro financeiro foi recalculado ou alterado.
+
+Entregue a causa raiz, arquivo e função responsáveis, valores comparados antes/depois e resultado dos testes. Não avance para a Etapa 2 até corrigir e validar este ponto.
+
+Minha principal suspeita é um falso positivo no Gestor de Medição: o boletim já usa a nova fonte oficial, mas a rotina que detecta divergências ainda não. Também pode ser um alerta antigo que ficou persistido e não foi reprocessado. O desenvolvedor precisa demonstrar qual dos dois casos ocorreu em cada OS.

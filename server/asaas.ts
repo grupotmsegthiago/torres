@@ -4,6 +4,7 @@ import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { bustBalancoCaches } from "./lib/balanco-cache";
+import { ensureInvoiceItems, applyPaymentToInvoice, revertInvoicePayment } from "./lib/invoice-payment";
 import { contaComoAprovadaParaFatura } from "@shared/constants/mission-status";
 import {
   TORRES_CNPJ,
@@ -869,6 +870,7 @@ export async function emitInvoiceAuto(
       faturado_por: opts.actorName || "Auto-Aprovação Cliente",
     }).in("id", bIds);
     bustBalancoCaches();
+    await ensureInvoiceItems(invoiceId).catch((e) => console.error("[asaas] [auto] itens da fatura:", e.message));
   }
 
   await logSystemAudit({
@@ -2400,10 +2402,22 @@ export function registerAsaasRoutes(app: Express) {
 
       if (updatedInvoice && (newStatus === "CONFIRMED" || newStatus === "RECEIVED")) {
         try {
-          await supabaseAdmin
-            .from("escort_billings")
-            .update({ status: "PAGO", pago_em: new Date().toISOString() })
-            .eq("invoice_id", updatedInvoice.id);
+          // Etapa 2: rateio por OS — só quita o que o valor recebido cobre.
+          // Fatura sem billings vinculados (result null) mantém comportamento antigo.
+          const valorEvento = Number(payment.value || updatedInvoice.value || 0);
+          const result = await applyPaymentToInvoice({
+            invoiceId: updatedInvoice.id,
+            valorRecebido: valorEvento,
+            origem: "webhook_asaas",
+            eventKey: `asaas:${payment.id}:${event}`,
+            detalhes: { event, asaas_payment_id: payment.id },
+          });
+          if (!result) {
+            await supabaseAdmin
+              .from("escort_billings")
+              .update({ status: "PAGO", pago_em: new Date().toISOString() })
+              .eq("invoice_id", updatedInvoice.id);
+          }
           bustBalancoCaches();
         } catch (_e) {}
 
@@ -2418,6 +2432,22 @@ export function registerAsaasRoutes(app: Express) {
             origin_id: String(updatedInvoice.id),
           });
         } catch (_e) {}
+      }
+
+      // Etapa 2: estorno/cancelamento reverte automaticamente as OSs (nunca
+      // deixar OS "PAGA" com fatura estornada/cancelada) + trilha de auditoria.
+      if (updatedInvoice && (newStatus === "REFUNDED" || newStatus === "CANCELLED")) {
+        try {
+          await revertInvoicePayment({
+            invoiceId: updatedInvoice.id,
+            motivo: newStatus === "REFUNDED" ? "ESTORNO" : "CANCELAMENTO",
+            origem: "webhook_asaas",
+            detalhes: { event, asaas_payment_id: payment.id },
+          });
+          bustBalancoCaches();
+        } catch (e: any) {
+          console.error(`[asaas] Reversão automática falhou p/ invoice ${updatedInvoice.id}:`, e.message);
+        }
       }
 
       await logSystemAudit({
@@ -2918,6 +2948,7 @@ export function registerAsaasRoutes(app: Express) {
           console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
         } else {
           bustBalancoCaches();
+          await ensureInvoiceItems(primaryInvoice.id).catch((e) => console.error("[billing] itens da fatura split:", e.message));
         }
 
         await logSystemAudit({
@@ -3076,6 +3107,7 @@ export function registerAsaasRoutes(app: Express) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
       } else {
         bustBalancoCaches();
+        await ensureInvoiceItems(invoice.id).catch((e) => console.error("[billing] itens da fatura:", e.message));
       }
 
       await logSystemAudit({
@@ -3120,6 +3152,13 @@ export function registerAsaasRoutes(app: Express) {
         .eq("invoice_id", invoiceId);
 
       if (linkedBillings && linkedBillings.length > 0) {
+        // Etapa 2: audita a reversão antes de desvincular (trilha por OS)
+        await revertInvoicePayment({
+          invoiceId,
+          motivo: "CANCELAMENTO",
+          origem: "exclusao_manual",
+          detalhes: { por: user?.name || user?.email || "?" },
+        }).catch((e) => console.error("[billing] reversão na exclusão:", e.message));
         const billingIds = linkedBillings.map((b: any) => b.id);
         await supabaseAdmin
           .from("escort_billings")
@@ -3127,6 +3166,7 @@ export function registerAsaasRoutes(app: Express) {
           .in("id", billingIds);
         bustBalancoCaches();
       }
+      await supabaseAdmin.from("invoice_billing_items").delete().eq("invoice_id", invoiceId);
 
       if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
         try {
@@ -3604,6 +3644,16 @@ export function registerAsaasRoutes(app: Express) {
           catch (e: any) { console.log("[asaas] delete payment err:", e.message); }
         }
 
+        // Etapa 2: reversão estruturada (zera alocações, PAGO→FATURADO, audita)
+        // antes de desvincular — mesmo caminho do DELETE /api/invoices/:id.
+        await revertInvoicePayment({
+          invoiceId: sourceId,
+          motivo: "CANCELAMENTO",
+          origem: "exclusao_relatorio_nf",
+          detalhes: { por: user?.email || "?", motivo_informado: reason || null },
+        }).catch((e) => console.error("[relatorio-nf] reversão na exclusão:", e.message));
+        await supabaseAdmin.from("invoice_billing_items").delete().eq("invoice_id", sourceId);
+
         // Desvincula billings/escort_billings que apontam pra essa fatura
         try { await supabaseAdmin.from("billings").update({ invoice_id: null } as any).eq("invoice_id", sourceId); } catch {}
         try { await supabaseAdmin.from("escort_billings").update({ invoice_id: null } as any).eq("invoice_id", sourceId); } catch {}
@@ -3774,6 +3824,16 @@ export function registerAsaasRoutes(app: Express) {
         if (relinkedPaymentId) dbUpdate.asaas_payment_id = relinkedPaymentId;
         const { error } = await supabaseAdmin.from("invoices").update(dbUpdate).eq("id", invoiceId);
         if (error) throw error;
+
+        // Etapa 2: rateia a baixa manual por OS. Sem conciliação bancária
+        // (asaasOk=false e sem relink) fica marcada como "baixa não conciliada".
+        await applyPaymentToInvoice({
+          invoiceId,
+          valorRecebido: finalValue,
+          origem: "baixa_manual",
+          conciliado: asaasOk || !!relinkedPaymentId,
+          detalhes: { metodo: method, por: user.email, data_pagamento: paymentDate },
+        }).catch((e) => console.error("[receive-in-cash] rateio:", e.message));
 
         console.log(`[receive-in-cash] Invoice #${invoiceId} (${method}) baixada por ${user.email} — R$${finalValue} em ${paymentDate}. AsaasSync=${asaasOk}`);
         res.json({ success: true, asaasSynced: asaasOk, asaasMessage: asaasMsg || null });

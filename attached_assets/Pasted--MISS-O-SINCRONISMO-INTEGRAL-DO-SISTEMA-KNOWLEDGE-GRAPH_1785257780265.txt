@@ -1,0 +1,718 @@
+# MISSÃO: SINCRONISMO INTEGRAL DO SISTEMA, KNOWLEDGE GRAPH E GESTOR DE DESENVOLVIMENTO
+
+Atue como:
+
+* Arquiteto de Software Sênior;
+* Engenheiro de Dados;
+* Especialista em Supabase/PostgreSQL;
+* Auditor de Sistemas;
+* Especialista em integrações;
+* Gestor de Desenvolvimento e Qualidade.
+
+## OBJETIVO PRINCIPAL
+
+Faça uma avaliação integral do sistema para eliminar divergências e falta de sincronismo entre:
+
+* Ordem de Serviço — OS;
+* acompanhamento da missão;
+* boletim de medição;
+* relatório operacional;
+* relatório financeiro;
+* faturamento;
+* contas a pagar;
+* contas a receber;
+* fornecedor;
+* cliente;
+* funcionário/agente;
+* pedágios e despesas;
+* dashboards;
+* demais telas que utilizam os mesmos dados.
+
+Atualmente, uma informação editada na OS não é necessariamente atualizada no boletim de medição, no faturamento ou nos relatórios. Em algumas telas, os dados não aparecem ou continuam com valores antigos.
+
+A correção deve atingir a causa raiz. Não faça remendos isolados em cada tela.
+
+---
+
+# FASE 1 — INVESTIGAÇÃO OBRIGATÓRIA
+
+Antes de alterar qualquer arquivo, banco, componente ou cálculo, faça um mapeamento completo.
+
+## 1. Inventário dos módulos
+
+Liste todas as telas e módulos que:
+
+* criam dados;
+* editam dados;
+* calculam valores;
+* copiam dados;
+* armazenam snapshots;
+* consultam a OS;
+* recebem informações derivadas da OS;
+* geram relatórios;
+* formam o faturamento;
+* formam o pagamento do fornecedor.
+
+Entregue uma tabela contendo:
+
+| Módulo/tela | Arquivo | Tabela/view/RPC | Lê dados de | Grava dados em | Possui cálculo próprio? |
+| ----------- | ------- | --------------- | ----------- | -------------- | ----------------------- |
+
+## 2. Rastreamento da OS
+
+Escolha uma OS real como amostra e rastreie todo o ciclo:
+
+1. criação;
+2. edição;
+3. execução;
+4. encerramento;
+5. medição;
+6. aprovação;
+7. faturamento;
+8. contas a receber;
+9. cálculo do fornecedor;
+10. contas a pagar;
+11. relatórios e dashboards.
+
+Para cada etapa, informe:
+
+* tabela utilizada;
+* ID de relacionamento;
+* endpoint;
+* hook;
+* service;
+* query;
+* view;
+* RPC;
+* trigger;
+* função de cálculo;
+* cache utilizado;
+* campos copiados;
+* campos recalculados;
+* campos que deixam de atualizar.
+
+## 3. Localização das divergências
+
+Investigue especialmente:
+
+* tabelas diferentes armazenando a mesma informação;
+* cópias da OS sem relacionamento com `os_id`;
+* ausência de foreign keys;
+* atualização apenas no estado do React;
+* cache sem invalidação;
+* React Query com `queryKey` incorreta;
+* relatórios lendo snapshots antigos;
+* cálculos duplicados no front-end e back-end;
+* nomes de campos incompatíveis;
+* datas e horas armazenadas em formatos diferentes;
+* valores monetários em texto ou `float`;
+* quilômetros armazenados como texto;
+* registros sem `tenant_id`, empresa ou unidade;
+* joins que excluem registros;
+* filtros de status inconsistentes;
+* ausência de transação;
+* eventos assíncronos que falham silenciosamente;
+* dados órfãos;
+* duplicidades;
+* divergências de arredondamento.
+
+Não corrija nada antes de apresentar as evidências da investigação.
+
+---
+
+# FASE 2 — KNOWLEDGE GRAPH DO SISTEMA
+
+Implemente um Knowledge Graph operacional que represente as relações reais do negócio.
+
+Não quero somente um desenho visual. Quero uma estrutura funcional, consultável e auditável.
+
+## Entidades mínimas
+
+* OS;
+* cliente;
+* contrato;
+* tabela comercial;
+* fornecedor;
+* tabela do fornecedor;
+* missão;
+* rota;
+* veículo;
+* motorista;
+* agente;
+* equipe;
+* ocorrência;
+* documento;
+* despesa;
+* pedágio;
+* boletim de medição;
+* aprovação;
+* faturamento;
+* nota fiscal;
+* conta a receber;
+* conta a pagar;
+* pagamento;
+* alteração;
+* usuário;
+* divergência;
+* alerta.
+
+## Relações mínimas
+
+Exemplos:
+
+* OS pertence a cliente;
+* OS utiliza contrato;
+* OS utiliza tabela comercial;
+* OS possui missão;
+* missão possui rota;
+* missão possui agentes;
+* missão utiliza fornecedor;
+* missão gera ocorrências;
+* missão gera pedágios e despesas;
+* OS gera boletim de medição;
+* boletim gera aprovação;
+* aprovação libera faturamento;
+* OS gera cobrança do cliente;
+* OS gera pagamento do fornecedor;
+* alteração pertence a usuário;
+* divergência pertence a uma entidade;
+* divergência pode bloquear aprovação ou faturamento.
+
+Toda relação deve usar IDs reais e foreign keys. Não use nome de cliente, placa ou número da OS como única ligação entre módulos.
+
+## Visualização
+
+Crie uma tela “Mapa do Sistema” ou “Knowledge Graph” acessível somente à Diretoria e ao Gestor de Desenvolvimento.
+
+Ao pesquisar uma OS, a tela deve mostrar:
+
+* cliente;
+* contrato e tabela aplicada;
+* fornecedor;
+* missão;
+* rota;
+* equipe;
+* medição;
+* cálculo comercial;
+* cálculo do fornecedor;
+* pedágios;
+* despesas;
+* faturamento;
+* pagamento;
+* ocorrências;
+* histórico de alterações;
+* divergências encontradas.
+
+Ao clicar em um nó, abrir o registro correspondente.
+
+Utilize cores:
+
+* verde: sincronizado;
+* amarelo: pendente;
+* vermelho: divergente ou com erro;
+* cinza: dado ausente;
+* azul: registro financeiro aprovado.
+
+---
+
+# FASE 3 — FONTE ÚNICA DA VERDADE
+
+Defina a OS como registro central operacional, mas separe corretamente:
+
+## Dados atuais da operação
+
+Devem vir das entidades oficiais relacionadas à OS.
+
+## Dados históricos financeiros
+
+Depois de uma medição ou faturamento aprovado, valores financeiros não podem mudar silenciosamente.
+
+Utilize versionamento ou snapshot aprovado contendo:
+
+* valores vigentes na data;
+* tabela utilizada;
+* franquia de horas;
+* franquia de quilômetros;
+* valor do acionamento;
+* valor da hora excedente;
+* valor do KM excedente;
+* pedágios;
+* despesas;
+* impostos;
+* descontos;
+* acréscimos;
+* total aprovado;
+* usuário aprovador;
+* data e hora da aprovação.
+
+Se a OS for alterada depois da aprovação:
+
+1. não sobrescrever silenciosamente o faturamento aprovado;
+2. marcar “OS alterada após aprovação”;
+3. demonstrar os campos alterados;
+4. recalcular uma simulação;
+5. exigir justificativa;
+6. solicitar nova aprovação;
+7. preservar a versão anterior.
+
+---
+
+# FASE 4 — EDIÇÃO COM HISTÓRICO E OBSERVAÇÃO
+
+Inclua um botão padronizado:
+
+**Editar registro**
+
+O botão deve existir nas telas autorizadas e respeitar permissões.
+
+Ao salvar uma alteração, exigir:
+
+* motivo da alteração;
+* observação;
+* categoria da alteração;
+* usuário responsável;
+* data e hora;
+* valor anterior;
+* valor novo;
+* origem da alteração;
+* entidade afetada;
+* ID da OS, quando aplicável.
+
+Categorias sugeridas:
+
+* correção de cadastro;
+* correção operacional;
+* ajuste de horário;
+* ajuste de quilometragem;
+* ajuste financeiro;
+* inclusão de pedágio;
+* inclusão de despesa;
+* alteração solicitada pelo cliente;
+* alteração solicitada pelo fornecedor;
+* correção sistêmica;
+* outro.
+
+## Histórico
+
+Crie um botão:
+
+**Ver histórico**
+
+O histórico deve demonstrar:
+
+* campo alterado;
+* valor anterior;
+* valor novo;
+* autor;
+* data e hora;
+* justificativa;
+* telas e cálculos impactados;
+* status antes e depois;
+* versão do registro.
+
+O histórico deve ser imutável para usuários comuns. Não permita edição ou exclusão dos logs de auditoria.
+
+Campos financeiros e registros aprovados devem exigir permissão superior.
+
+---
+
+# FASE 5 — PEDÁGIOS E ROTAS BRASIL
+
+No cadastro e edição da OS, crie uma seção “Pedágios da rota”.
+
+## Fluxo obrigatório
+
+Após informar origem, destino e pontos intermediários:
+
+1. validar se os endereços estão completos;
+2. montar a rota;
+3. disponibilizar o botão **Consultar pedágio no Rotas Brasil**;
+4. abrir `rotasbrasil.com.br` para o operador consultar a rota;
+5. permitir registrar o resultado no sistema;
+6. armazenar a evidência e a data da consulta.
+
+Antes de automatizar coleta ou scraping, investigue se o Rotas Brasil possui:
+
+* API oficial;
+* autorização de integração;
+* parâmetros públicos de consulta;
+* restrições de uso;
+* proteção contra automação.
+
+Não implemente scraping frágil ou contrário aos termos do serviço.
+
+Se não existir API oficial, implemente um fluxo assistido:
+
+* botão para abrir o site;
+* origem e destino preparados para cópia;
+* campo “Valor consultado”;
+* quantidade de praças;
+* categoria/eixos do veículo;
+* data e hora da consulta;
+* operador responsável;
+* campo de observação;
+* upload de comprovante ou captura;
+* botão para confirmar.
+
+## Botão “Pedágio zero”
+
+Inclua o botão:
+
+**Pedágio zero**
+
+Ao acioná-lo, exigir um motivo:
+
+* rota sem pedágio;
+* isenção;
+* pedágio por conta do cliente;
+* pedágio por conta do fornecedor;
+* valor incluído na tabela;
+* não aplicável;
+* outro.
+
+Registrar obrigatoriamente:
+
+* usuário;
+* data e hora;
+* justificativa;
+* rota considerada;
+* observação;
+* eventual comprovante.
+
+Não trate campo vazio como pedágio zero.
+
+## Status do pedágio
+
+* não consultado;
+* aguardando confirmação;
+* confirmado;
+* pedágio zero justificado;
+* divergente;
+* alterado após aprovação.
+
+O sistema não deve permitir concluir a medição sem:
+
+* pedágio confirmado; ou
+* pedágio zero devidamente justificado.
+
+A Diretoria poderá liberar excepcionalmente, mas deverá justificar.
+
+---
+
+# FASE 6 — MOTOR ÚNICO DE CÁLCULO
+
+Localize todos os lugares onde valores de OS, medição, cliente e fornecedor são calculados.
+
+Crie um único serviço de domínio no back-end para executar os cálculos.
+
+Ele deve receber:
+
+* OS;
+* tabela contratual;
+* horários;
+* quilometragem;
+* franquias;
+* regras do cliente;
+* regras do fornecedor;
+* pedágios;
+* despesas;
+* impostos;
+* acréscimos;
+* descontos;
+* arredondamentos;
+* versão da regra.
+
+Ele deve devolver uma memória de cálculo completa:
+
+* duração total;
+* KM total;
+* horas dentro da franquia;
+* horas excedentes;
+* KM dentro da franquia;
+* KM excedentes;
+* acionamento;
+* valor da hora excedente;
+* valor do KM excedente;
+* pedágios;
+* despesas;
+* subtotal;
+* impostos;
+* total do cliente;
+* total do fornecedor;
+* margem;
+* alertas;
+* regra aplicada;
+* versão do cálculo.
+
+Nenhuma tela poderá possuir fórmula financeira independente.
+
+As telas devem apenas consumir o resultado oficial do motor de cálculo.
+
+Use tipo monetário apropriado, como `numeric/decimal`, nunca `float`.
+
+---
+
+# FASE 7 — GESTOR DE DESENVOLVIMENTO
+
+Crie dentro do sistema um módulo chamado:
+
+**Gestor de Desenvolvimento e Integridade**
+
+Esse módulo deve avaliar continuamente a integridade do sistema.
+
+Ele não deve editar registros ou “corrigir automaticamente” valores financeiros sem aprovação.
+
+## Avaliações automáticas
+
+O Gestor deve identificar:
+
+* OS sem cliente;
+* OS sem contrato;
+* OS sem tabela;
+* OS sem fornecedor;
+* OS sem rota;
+* medição sem OS;
+* faturamento sem medição aprovada;
+* pagamento sem fornecedor;
+* divergência entre OS e boletim;
+* divergência entre boletim e faturamento;
+* divergência entre cálculo exibido e cálculo oficial;
+* alteração após aprovação;
+* registros duplicados;
+* dados órfãos;
+* foreign keys ausentes;
+* pedágio não consultado;
+* pedágio zero sem justificativa;
+* KM final menor que KM inicial;
+* horário final anterior ao inicial;
+* campos financeiros nulos;
+* uso de tabela vencida;
+* cache desatualizado;
+* falhas de integração;
+* erros de jobs e funções;
+* diferença entre total detalhado e total consolidado.
+
+## Painel do Gestor
+
+Exibir:
+
+* saúde geral do sistema;
+* total de divergências;
+* erros críticos;
+* alertas;
+* módulos afetados;
+* impacto financeiro estimado;
+* data da última verificação;
+* tendência dos erros;
+* divergências novas;
+* divergências resolvidas;
+* reincidências.
+
+Cada divergência deve possuir:
+
+* protocolo;
+* severidade;
+* entidade;
+* registro;
+* descrição;
+* regra esperada;
+* valor encontrado;
+* impacto;
+* evidência técnica;
+* provável causa;
+* arquivos envolvidos;
+* responsável;
+* status;
+* prazo;
+* histórico.
+
+## Severidades
+
+* crítica: risco financeiro, segurança, perda de dados ou faturamento;
+* alta: bloqueia operação ou provoca divergência relevante;
+* média: inconsistência sem impacto imediato;
+* baixa: melhoria ou padronização.
+
+## Status
+
+* detectado;
+* em análise;
+* causa identificada;
+* correção proposta;
+* aguardando aprovação;
+* em correção;
+* em teste;
+* resolvido;
+* monitorando;
+* reaberto.
+
+O Gestor de Desenvolvimento pode sugerir correções, mas alterações em produção exigem aprovação e trilha de auditoria.
+
+---
+
+# FASE 8 — REGRAS DE SINCRONISMO
+
+Sempre que uma OS ainda não aprovada for editada:
+
+1. persistir a alteração no banco;
+2. registrar auditoria;
+3. invalidar cache;
+4. atualizar consultas relacionadas;
+5. recalcular a medição;
+6. atualizar os módulos dependentes;
+7. gerar evento de domínio;
+8. registrar sucesso ou falha da propagação.
+
+Eventos sugeridos:
+
+* `os.created`;
+* `os.updated`;
+* `mission.updated`;
+* `route.updated`;
+* `toll.updated`;
+* `measurement.recalculated`;
+* `measurement.approved`;
+* `billing.generated`;
+* `billing.invalidated`;
+* `supplier_cost.recalculated`;
+* `divergence.detected`.
+
+Implemente idempotência. O mesmo evento executado novamente não pode duplicar boletim, faturamento, pedágio ou lançamento financeiro.
+
+Se uma atualização falhar, registrar:
+
+* evento;
+* registro;
+* módulo;
+* erro;
+* tentativas;
+* data;
+* status;
+* possibilidade de reprocessamento.
+
+---
+
+# FASE 9 — PERMISSÕES
+
+Aplicar permissões por perfil:
+
+## Operador
+
+* cria e atualiza dados operacionais;
+* consulta pedágio;
+* informa pedágio zero com justificativa;
+* não altera valores financeiros aprovados.
+
+## Medição
+
+* revisa memória de cálculo;
+* solicita correção;
+* aprova ou reprova medição.
+
+## Financeiro
+
+* consulta medição aprovada;
+* gera faturamento;
+* não altera dados operacionais sem processo formal.
+
+## Diretoria
+
+* visão integral;
+* aprova exceções;
+* autoriza reabertura;
+* consulta histórico completo.
+
+## Gestor de Desenvolvimento
+
+* consulta arquitetura, erros e divergências;
+* executa diagnóstico;
+* propõe correção;
+* não altera valores financeiros de forma silenciosa.
+
+---
+
+# FASE 10 — TESTES OBRIGATÓRIOS
+
+Crie testes automatizados para:
+
+1. criar uma OS e verificar todos os relacionamentos;
+2. editar cliente, rota, horário e KM;
+3. conferir atualização da medição;
+4. conferir atualização dos relatórios antes da aprovação;
+5. garantir imutabilidade depois da aprovação;
+6. alterar OS aprovada e exigir reaprovação;
+7. registrar pedágio;
+8. registrar pedágio zero;
+9. impedir pedágio zero sem justificativa;
+10. evitar faturamento sem medição aprovada;
+11. impedir duplicidade por reprocessamento;
+12. comparar detalhamento e total;
+13. verificar histórico de alterações;
+14. testar permissões;
+15. validar rollback de transação;
+16. validar mudança simultânea por dois usuários;
+17. verificar funcionamento após atualização da página;
+18. verificar cache e refetch;
+19. testar datas atravessando meia-noite;
+20. testar valores com centavos.
+
+Crie pelo menos um teste ponta a ponta:
+
+**Criar OS → executar missão → consultar pedágio → encerrar → medir → aprovar → faturar → gerar conta do fornecedor → consultar histórico.**
+
+---
+
+# FASE 11 — MIGRAÇÃO E SEGURANÇA
+
+Não apague dados existentes.
+
+Antes de qualquer migração:
+
+* fazer inventário;
+* identificar duplicidades;
+* gerar backup;
+* preparar script reversível;
+* criar relatório de impacto;
+* testar em ambiente separado;
+* executar reconciliação antes e depois.
+
+Para dados antigos:
+
+* vincular registros aos IDs corretos;
+* preservar valores originalmente faturados;
+* marcar origem da migração;
+* registrar inconsistências não solucionáveis;
+* não recalcular períodos fechados sem autorização.
+
+---
+
+# ENTREGA DA PRIMEIRA ETAPA
+
+Antes de implementar, entregue:
+
+1. diagnóstico da causa raiz;
+2. mapa de telas, tabelas, APIs e cálculos;
+3. fluxo atual da OS;
+4. pontos exatos onde o sincronismo quebra;
+5. arquivos e linhas responsáveis;
+6. registros duplicados ou órfãos encontrados;
+7. proposta de arquitetura;
+8. modelo do Knowledge Graph;
+9. proposta do histórico de alterações;
+10. análise técnica da integração com Rotas Brasil;
+11. desenho do Gestor de Desenvolvimento;
+12. plano de migração;
+13. riscos;
+14. estimativa de impacto;
+15. ordem recomendada de implementação.
+
+Para cada problema, apresente:
+
+| Problema | Evidência | Causa raiz | Arquivo/tabela | Impacto | Correção recomendada | Risco |
+| -------- | --------- | ---------- | -------------- | ------- | -------------------- | ----- |
+
+Não faça alterações ainda nessa primeira etapa.
+
+Aguarde minha aprovação do diagnóstico antes de modificar banco, migrations, tabelas, componentes, APIs, cálculos ou registros.
+
+Não aceite como solução apenas atualizar a tela, adicionar `refetch`, duplicar informações ou copiar novamente os dados da OS. A solução deve garantir integridade desde o banco de dados até a interface.

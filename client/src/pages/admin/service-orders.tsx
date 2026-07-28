@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
+import { useSituacaoFinanceira, SituacaoRecebimentoBadge } from "@/components/situacao-recebimento";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, CheckCircle2, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail } from "lucide-react";
@@ -802,6 +803,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     queryFn: getQueryFn({ on401: "throw" }),
     enabled: !!order?.id,
   });
+  const { data: situacaoFinOs } = useSituacaoFinanceira(order?.id ? [Number(order.id)] : []);
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
@@ -1232,6 +1234,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       </div>
 
       {!order && <StepIndicator />}
+
+      {order && situacaoFinOs?.porOs?.[String(order.id)] && (
+        <div className="mx-5 mt-4 flex items-center justify-between gap-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg" data-testid="section-situacao-financeira">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-neutral-500" />
+            <span className="text-sm font-semibold text-neutral-700">Situação Financeira da Missão</span>
+          </div>
+          <SituacaoRecebimentoBadge situacao={situacaoFinOs.porOs[String(order.id)]} meta={situacaoFinOs.meta} />
+        </div>
+      )}
 
       {order && (() => {
         const isConcluida = order.status === "concluida" || order.status === "concluída";
@@ -1895,6 +1907,7 @@ export default function ServiceOrdersPage() {
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allBillings = [] } = useQuery<any[]>({ queryKey: ["/api/escort/billings"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: situacaoFin } = useSituacaoFinanceira(orders.map((o: any) => Number(o.id)));
 
   const getBillingAlerts = (o: any): string[] => {
     const isConcluida = o.status === "concluida" || o.status === "concluída";
@@ -2276,6 +2289,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
                   <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Recebimento</th>
                   <th className="text-center px-2 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Agendado</th>
                   <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" style={{ minWidth: 140 }}>Origem</th>
                   <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" style={{ minWidth: 140 }}>Destino</th>
@@ -2375,6 +2389,9 @@ export default function ServiceOrdersPage() {
                           </Badge>
                         );
                       })()}
+                    </td>
+                    <td className="p-2 text-center">
+                      <SituacaoRecebimentoBadge situacao={situacaoFin?.porOs?.[String(o.id)]} meta={situacaoFin?.meta} compact />
                     </td>
                     <td className="p-2 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
                       {o.scheduledDate ? (() => {

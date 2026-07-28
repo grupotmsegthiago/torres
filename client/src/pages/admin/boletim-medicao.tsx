@@ -18,6 +18,7 @@ import {
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
+import { useSituacaoFinanceira, SituacaoRecebimentoBadge } from "@/components/situacao-recebimento";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -129,6 +130,9 @@ export default function BoletimMedicaoPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/billing-alerts"] });
+      // Etapa 1 sincronismo: resolver alerta pode destravar a OS na lista —
+      // recarrega também o boletim (os-concluidas) e billings relacionados.
+      invalidateRelatedQueries("billing");
       toast({ title: "Alerta resolvido" });
     },
   });
@@ -141,6 +145,8 @@ export default function BoletimMedicaoPage() {
       return Array.isArray(d) ? d : [];
     },
   });
+
+  const { data: situacaoFin } = useSituacaoFinanceira(osConcluidas.map((o: any) => Number(o.id)));
 
   const { data: escortBillings = [] } = useQuery<any[]>({
     queryKey: ["/api/escort/billings"],
@@ -467,29 +473,18 @@ export default function BoletimMedicaoPage() {
     const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
-  const sumBillingComponents = (b: any, acionFallback = 0) => {
-    const acion = Number(b.fat_acionamento || 0) || acionFallback;
-    return acion + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.receitas_os || 0);
-  };
+  // FONTE ÚNICA (Etapa 1 sincronismo): o total oficial vem do servidor
+  // (total_oficial em os-concluidas, calculado por oficialBillingView).
+  // A única precedência local é o snapshot CONGELADO de boletim já enviado —
+  // que é dado persistido (tela = e-mail = anexo Excel), não fórmula.
   const getBillingTotal = (o: any) => {
-    // Recusada = operacional não atendeu → R$ 0,00 sempre (§8.1).
-    if (o.status === "recusada") return 0;
+    if (o.status === "recusada") return 0; // §8.1 — cinto e suspensório no front
     const b = o.billing;
-    // Boletim já enviado/aprovado: usa o valor congelado no envio (fonte única),
-    // não recalcula ao vivo — garante que tela = e-mail = anexo Excel.
     if (b && frozenBillingTotal.has(String(b.id))) return frozenBillingTotal.get(String(b.id))!;
-    // Cancelada = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (§8.1/§8.4).
-    if (o.status === "cancelada") {
-      const acionFallback = Number(o.contractValues?.valor_acionamento || 0);
-      if (!b) return acionFallback;
-      const fatTotal = Number(b.fat_total || 0);
-      if (fatTotal > 0) return fatTotal;
-      return sumBillingComponents(b, acionFallback);
-    }
-    if (!b) return 0;
-    const fatTotal = Number(b.fat_total || 0);
-    if (fatTotal > 0) return fatTotal;
-    return sumBillingComponents(b);
+    if (typeof o.total_oficial === "number") return o.total_oficial;
+    // Cancelada sem billing: acionamento do contrato (mesma regra do servidor).
+    if (o.status === "cancelada" && !b) return Number(o.contractValues?.valor_acionamento || 0);
+    return b ? Number(b.fat_total || 0) : 0;
   };
   const totalFaturamento = periodFilteredOs.reduce((acc, o) => acc + getBillingTotal(o), 0);
   const totalFaturado = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
@@ -530,7 +525,8 @@ export default function BoletimMedicaoPage() {
         Number(b?.fat_km || 0),
         Number(b?.despesas_pedagio || 0),
         Number(b?.fat_adicional_noturno || 0),
-        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0),
+        // FONTE ÚNICA: total oficial do servidor (mesma regra da tela/e-mail/snapshot)
+        Number(getBillingTotal(os).toFixed(2)),
         b?.status === "A_VERIFICAR" ? "A Verificar" : b?.status === "APROVADA" ? "Aprovada" : b?.status === "FATURADO" ? "Faturado" : b?.status || "—",
       ];
     });
@@ -1142,6 +1138,7 @@ export default function BoletimMedicaoPage() {
                               <th className="text-right px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Horas</th>
                               <th className="text-right px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Valor</th>
                               <th className="text-center px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Status</th>
+                              <th className="text-center px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Recebimento</th>
                               <th className="text-center px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Ação</th>
                             </tr>
                           </thead>
@@ -1254,6 +1251,9 @@ export default function BoletimMedicaoPage() {
                                     )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
+                                    <SituacaoRecebimentoBadge situacao={situacaoFin?.porOs?.[String(os.id)]} meta={situacaoFin?.meta} />
+                                  </td>
+                                  <td className="px-4 py-3.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
                                       {(!b || isLiveOs(os) || b?.status === "REJEITADA") && (
                                         <button
@@ -1299,7 +1299,7 @@ export default function BoletimMedicaoPage() {
                                 </tr>
                                 {b && (
                                   <tr className={`border-b ${isEditing ? "bg-blue-50/60" : "bg-neutral-50/60"}`}>
-                                    <td colSpan={11} className="px-4 py-2">
+                                    <td colSpan={12} className="px-4 py-2">
                                       {isEditing ? (
                                         <div className="space-y-3" data-testid={`edit-billing-${os.id}`}>
                                           <div className="grid grid-cols-7 gap-2">
@@ -1405,7 +1405,7 @@ export default function BoletimMedicaoPage() {
                               const checkedTotal = checkedInGroup.reduce((acc, o) => acc + getBillingTotal(o), 0);
                               return checkedCount > 0 ? (
                                 <tr className="bg-blue-50/80 border-b">
-                                  <td colSpan={11} className="px-4 py-3">
+                                  <td colSpan={12} className="px-4 py-3">
                                     <div className="flex items-center justify-between flex-wrap gap-2">
                                       <span className="text-xs font-bold text-blue-800" data-testid={`text-selected-${group.clientId}`}>
                                         {checkedCount} OS selecionada{checkedCount > 1 ? "s" : ""} — Total: {fmt(checkedTotal)}
@@ -1732,16 +1732,15 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
     hCalc = diff / 60;
   }
 
+  // FONTE ÚNICA (Etapa 1 sincronismo): sem fórmula própria de hora extra aqui.
+  // O fallback oficial (quando fat_hora_extra não foi persistido) vem do servidor
+  // via os._oficial_billing (oficialBillingView) — a tela só exibe.
   const franquiaHorasContract = Number(os.contractValues?.franquia_horas || 0);
   const valorHoraExtraContract = Number(os.contractValues?.valor_hora_extra || 0);
-  const horaExtraFracionada = os.contractValues?.hora_extra_fracionada !== false;
   const horasExtrasCalcRaw = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
-  const horasExtrasCalc = horaExtraFracionada ? horasExtrasCalcRaw : Math.ceil(horasExtrasCalcRaw);
-  const minutosExtrasCalc = Math.round(horasExtrasCalc * 60);
+  const minutosExtrasCalc = Math.round(horasExtrasCalcRaw * 60);
   const valorMinutoContract = Math.round(valorHoraExtraContract / 60 * 100) / 100;
-  const horaExtraValorCalc = horaExtraFracionada
-    ? Math.round((minutosExtrasCalc / 60) * valorHoraExtraContract * 100) / 100
-    : Math.ceil(horasExtrasCalcRaw) * valorHoraExtraContract;
+  const horaExtraValorCalc = Number((os as any)._oficial_billing?.hora_extra || 0);
 
   const liveNum = (v: any, fallback: number) => (v !== undefined && v !== "" && v !== null ? (Number(v) || 0) : fallback);
   const acionamento = liveNum(acionamentoValue, Number(b?.fat_acionamento || 0));
@@ -1950,7 +1949,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
                           return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
                         } catch { return "—"; }
                       };
-                      const horasExtras = horasExtrasCalc;
+                      const horasExtras = horasExtrasCalcRaw;
                       const fmtH = (h: number) => h > 0 ? `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, "0")}min` : "0h00";
                       const inicioReal = chegadaReal || agendado;
                       const inicioDifere = inicioReal && inicioCobranca && inicioReal !== inicioCobranca;
@@ -1987,7 +1986,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
               <>
                 <div className="border-t border-neutral-100 pt-3 space-y-1">
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
-                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
+                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalcRaw > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
                   {pedagio > 0 && <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />}
                   {receitasOsVal > 0 && <FieldRow label="Pedágio (Reembolso Cliente)" value={fmt(receitasOsVal)} bold />}

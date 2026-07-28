@@ -20,6 +20,7 @@ import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
 import { OsDetailModal, NumInput } from "./boletim-medicao";
+import { useSituacaoFinanceira, SituacaoRecebimentoBadge } from "@/components/situacao-recebimento";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -684,27 +685,27 @@ export default function RelatorioFaturamentoPage() {
       const kmExcedente = n(b.km_excedente) || Math.max(0, kmTotal - franquiaKm);
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
-      // RECUSADA = operacional não atendeu → R$ 0 em tudo
-      // CANCELADA = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (hora extra, KM extra, pedágio)
-      const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b._so_status === "recusada";
-      const isCancelada = !isRecusada && (b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "cancelada");
-      const zeroOut = isRecusada;
-      const horaExtraFracionada = ct?.hora_extra_fracionada !== false;
-      const fatHoraExtraFallback = horaExtraFracionada
-        ? Math.round(hrExcedente * 60) * (Math.floor(valorHoraExtra / 60 * 100) / 100)
-        : Math.ceil(hrExcedente) * valorHoraExtra;
-      const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || fatHoraExtraFallback);
-      const fatKmExtra = zeroOut ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
-      const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
-      const fatAdNoturno = zeroOut ? 0 : n(b.fat_adicional_noturno);
-      const valorAcionamentoFinal = zeroOut ? 0 : valorAcionamento;
-      const fatEstadia = zeroOut ? 0 : n(b.fat_estadia);
-      const fatPernoite = zeroOut ? 0 : n(b.fat_pernoite);
-      const fatOutras = zeroOut ? 0 : n(b.despesas_outras);
-      const fatReembolso = zeroOut ? 0 : n(b.receitas_os);
-      const fatTotal = zeroOut ? 0 : (isCancelada
-        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)
-        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)));
+      // FONTE ÚNICA (Etapa 1 sincronismo): a visão financeira oficial vem do
+      // servidor (b._oficial, calculada por oficialBillingView em
+      // server/lib/billing-display.ts). Sem fórmula própria nesta tela.
+      // §8.1: recusada = R$0; cancelada = acionamento + extras — regras aplicadas
+      // no servidor. Fallback local mínimo só p/ resposta antiga em cache.
+      const of = b._oficial || null;
+      const isRecusadaFb = b.status === "RECUSADA" || b.status === "REJEITADA" || b._so_status === "recusada";
+      const fbZero = (v: any) => (isRecusadaFb ? 0 : n(v)); // §8.1 também no fallback
+      const fatHoraExtra = of ? n(of.hora_extra) : fbZero(b.fat_hora_extra);
+      const fatKmExtra = of ? n(of.km) : fbZero(b.fat_km);
+      const fatPedagio = of ? n(of.pedagio) : fbZero(b.despesas_pedagio);
+      const fatAdNoturno = of ? n(of.adicional_noturno) : fbZero(b.fat_adicional_noturno);
+      const valorAcionamentoFinal = of ? n(of.acionamento) : fbZero(b.fat_acionamento || valorAcionamento);
+      const fatEstadia = of ? n(of.estadia) : fbZero(b.fat_estadia);
+      const fatPernoite = of ? n(of.pernoite) : fbZero(b.fat_pernoite);
+      const fatOutras = of ? n(of.outras) : fbZero(b.despesas_outras);
+      const fatReembolso = of ? n(of.receitas_os) : fbZero(b.receitas_os);
+      // Fallback (resposta antiga em cache, sem _oficial): fat_total persistido > 0,
+      // senão soma dos componentes — mantém paridade com registros legados fat_total=0.
+      const somaFb = valorAcionamentoFinal + fatHoraExtra + fatKmExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso;
+      const fatTotal = of ? n(of.total) : (isRecusadaFb ? 0 : (n(b.fat_total) > 0 ? n(b.fat_total) : somaFb));
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";
@@ -754,6 +755,7 @@ export default function RelatorioFaturamentoPage() {
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
         invoiceId: b.invoice_id || null,
+        osId: b.service_order_id || null,
         osStatus: b._so_status || "",
         osMissionStatus: b._so_mission_status || "",
         osCancellationReason: b._so_cancellation_reason || "",
@@ -770,6 +772,8 @@ export default function RelatorioFaturamentoPage() {
       };
     });
   }, [billings, contracts]);
+
+  const { data: situacaoFin } = useSituacaoFinanceira(rowsData.map((r: any) => Number(r.osId)).filter(Boolean));
 
   const dashboardStats = useMemo(() => {
     if (!rowsData.length) return null;
@@ -1529,6 +1533,9 @@ export default function RelatorioFaturamentoPage() {
                           </span>
                         )
                       )}
+                      {(r as any).osId ? (
+                        <SituacaoRecebimentoBadge situacao={situacaoFin?.porOs?.[String((r as any).osId)]} meta={situacaoFin?.meta} compact />
+                      ) : null}
                       {(() => {
                         const badges = getRelatorioBadges(r.osStatus, r.status, (r as any).osMissionStatus);
                         return badges.map((info, idx) => (
