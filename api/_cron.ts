@@ -27,8 +27,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const result = await runVercelCronJob(jobParam);
     return res.status(200).json(result);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Cron failed";
     console.error(`[cron] job=${jobParam} erro:`, err);
-    return res.status(500).json({ message: err?.message || "Cron failed" });
+    return res.status(500).json({ message });
   }
 }
+
+export const config = {
+  maxDuration: 300,
+};

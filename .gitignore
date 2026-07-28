@@ -18,3 +18,7 @@ vite.config.ts.*
 .turbo
 *.pem
 Thumbs.db
+
+# Gerados pelo build (Vercel serverless)
+# Mantidos no repo só se necessário para debug; rebuild regenera
+# api/index.js e api/cron.js

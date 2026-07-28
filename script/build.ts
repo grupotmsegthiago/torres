@@ -1,9 +1,33 @@
+import "dotenv/config";
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
+const REQUIRED_CLIENT_ENV = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"] as const;
+
+/** Na Vercel muitos projetos só definem SUPABASE_* — espelha para VITE_* no build. */
+function mirrorSupabaseEnvForVite() {
+  if (!process.env.VITE_SUPABASE_URL?.trim() && process.env.SUPABASE_URL?.trim()) {
+    process.env.VITE_SUPABASE_URL = process.env.SUPABASE_URL.trim();
+  }
+  if (!process.env.VITE_SUPABASE_ANON_KEY?.trim() && process.env.SUPABASE_ANON_KEY?.trim()) {
+    process.env.VITE_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY.trim();
+  }
+}
+
+function assertClientEnv() {
+  mirrorSupabaseEnvForVite();
+  const missing = REQUIRED_CLIENT_ENV.filter((key) => !process.env[key]?.trim());
+  if (missing.length > 0) {
+    console.error(
+      "\n[build] ERRO: variáveis de ambiente obrigatórias ausentes para o frontend:\n" +
+        missing.map((k) => `  - ${k}`).join("\n") +
+        "\n\nConfigure-as na Vercel (Settings → Environment Variables) antes do deploy.\n",
+    );
+    process.exit(1);
+  }
+}
+
 const allowlist = [
   "@google/generative-ai",
   "axios",
@@ -35,6 +59,8 @@ const allowlist = [
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
+  assertClientEnv();
+
   console.log("building client...");
   await viteBuild();
 
@@ -59,6 +85,23 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // Vercel: Node não executa server/*.ts no serverless — gera handlers ESM empacotados
+  console.log("building Vercel API handlers...");
+  for (const [entry, outfile] of [
+    ["api/_index.ts", "api/index.js"],
+    ["api/_cron.ts", "api/cron.js"],
+  ] as const) {
+    await esbuild({
+      entryPoints: [entry],
+      platform: "node",
+      bundle: true,
+      format: "esm",
+      outfile,
+      packages: "external",
+      logLevel: "info",
+    });
+  }
 }
 
 buildAll().catch((err) => {
