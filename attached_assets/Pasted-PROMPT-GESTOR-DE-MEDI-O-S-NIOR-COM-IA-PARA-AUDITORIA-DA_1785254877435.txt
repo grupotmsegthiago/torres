@@ -1,0 +1,1035 @@
+PROMPT — GESTOR DE MEDIÇÃO SÊNIOR COM IA PARA AUDITORIA DAS OS
+
+Atue como um Desenvolvedor Full Stack Sênior, Arquiteto de Sistemas e Especialista em Auditoria de Medições Operacionais e Financeiras.
+
+Implemente no módulo de Boletim de Medição um recurso chamado:
+
+GESTOR DE MEDIÇÃO SÊNIOR
+
+Esse recurso será responsável por analisar individualmente todas as Ordens de Serviço — OS — e verificar se o valor calculado e cobrado está correto conforme:
+
+tabela comercial vinculada à OS;
+franquia de quilômetros;
+franquia de horas;
+valor do acionamento;
+valor do quilômetro excedente;
+valor da hora excedente;
+despesas adicionais;
+pedágios;
+quantidade de agentes;
+adicionais específicos;
+regras específicas do cliente;
+regras específicas do fornecedor;
+tipo da operação;
+período real da missão;
+quilometragem real executada;
+valor final calculado;
+valor efetivamente cobrado.
+
+O sistema deverá emitir uma conclusão clara para cada OS:
+
+CALCULADO OK — PODE APROVAR
+
+ou:
+
+DIVERGÊNCIA ENCONTRADA — REVISAR CÁLCULO
+1. PRINCÍPIO DA IMPLEMENTAÇÃO
+
+O Gestor de Medição Sênior deverá ser composto por duas camadas.
+
+1.1 Motor de cálculo determinístico
+
+Essa camada fará o cálculo matemático exato, sem depender de interpretação da IA.
+
+Ela será responsável por:
+
+calcular duração da missão;
+calcular quilometragem executada;
+identificar excedente de horas;
+identificar excedente de quilômetros;
+calcular valores excedentes;
+somar acionamento;
+somar despesas;
+aplicar regras específicas;
+calcular o valor correto esperado;
+comparar com o valor cobrado.
+1.2 Analista Sênior com IA
+
+A IA não deverá inventar valores ou fórmulas.
+
+Ela utilizará o resultado do motor matemático para:
+
+interpretar a OS;
+verificar inconsistências;
+identificar dados incompletos;
+explicar como o valor foi formado;
+apresentar a memória de cálculo;
+classificar o risco da divergência;
+recomendar aprovação ou revisão.
+
+A fonte oficial do valor deverá continuar sendo o motor de cálculo do sistema.
+
+2. ANÁLISE OBRIGATÓRIA DO SISTEMA ATUAL
+
+Antes de alterar qualquer código, localize e documente:
+
+tabelas das OS;
+tabelas comerciais;
+tabelas dos clientes;
+tabelas dos fornecedores;
+regras de franquia;
+regras de hora excedente;
+regras de quilômetro excedente;
+cálculo atual da missão;
+cálculo atual do boletim de medição;
+valor previsto;
+valor cobrado;
+valor aprovado;
+despesas;
+pedágios;
+adicionais;
+horários;
+quilometragem;
+quantidade de agentes;
+status da OS;
+regras de arredondamento;
+regras especiais por cliente.
+
+Apresente:
+
+1. Arquivos envolvidos
+2. Tabelas envolvidas
+3. Funções atuais de cálculo
+4. Fluxo atual da medição
+5. Regras identificadas
+6. Possíveis duplicidades
+7. Possíveis erros
+8. Plano de implementação
+9. Riscos
+
+Não crie uma segunda lógica de cálculo sem antes verificar a lógica já existente.
+
+O objetivo é centralizar a regra e manter uma única fonte da verdade.
+
+3. DADOS OBRIGATÓRIOS PARA AUDITAR UMA OS
+
+Para cada OS, o sistema deverá buscar:
+
+Número da OS
+Cliente
+Fornecedor
+Tipo da operação
+Tabela comercial vinculada
+Valor do acionamento
+Franquia de quilômetros
+Franquia de horas
+Valor do quilômetro excedente
+Valor da hora excedente
+Data e hora de início
+Data e hora de término
+Quilometragem inicial
+Quilometragem final
+Quilometragem real executada
+Quantidade de agentes
+Pedágios
+Despesas adicionais
+Adicionais operacionais
+Descontos
+Valor calculado pelo sistema
+Valor informado manualmente
+Valor faturado
+Valor aprovado
+Status da OS
+
+A análise não poderá ser concluída como aprovada quando faltarem dados essenciais.
+
+4. CÁLCULO DO TEMPO DA MISSÃO
+
+O sistema deverá calcular a duração real usando data e hora completas.
+
+Fórmula:
+
+Duração da missão =
+data e hora final - data e hora inicial
+
+Exemplo:
+
+Início: 03:00
+Fim: 04:58
+
+Duração total: 01:58
+
+Não calcular apenas comparando os campos de hora quando a missão atravessar a meia-noite.
+
+Exemplo:
+
+Início: 23:00 do dia 10
+Fim: 02:00 do dia 11
+
+Duração correta: 03:00
+
+A duração deverá ser armazenada ou processada em segundos ou minutos inteiros.
+
+Não utilizar números decimais para representar horas sem conversão correta.
+
+Exemplo incorreto:
+
+1,58 hora
+
+Exemplo correto:
+
+01:58
+118 minutos
+1,9667 horas para cálculo proporcional
+5. CÁLCULO DA QUILOMETRAGEM
+
+Fórmula padrão:
+
+KM executado =
+KM final - KM inicial
+
+Exemplo:
+
+KM inicial: 100
+KM final: 200
+
+KM executado: 100 km
+
+O sistema também deverá verificar se existe um campo oficial chamado:
+
+KM real executado
+
+Se houver divergência entre o hodômetro e o KM real informado, apresentar alerta.
+
+Exemplo:
+
+Hodômetro calculado: 100 km
+KM real informado: 118 km
+Diferença: 18 km
+
+Nesse cenário, não aprovar automaticamente até identificar qual informação é a fonte oficial.
+
+6. REGRA DA FRANQUIA
+
+A franquia representa o valor já incluído no acionamento.
+
+Exemplo de tabela:
+
+Acionamento: R$ 480,00
+Franquia de KM: 100 km
+Franquia de tempo: 3 horas
+KM excedente: conforme tabela
+Hora excedente: conforme tabela
+
+Enquanto a missão estiver dentro das duas franquias:
+
+KM executado ≤ franquia de KM
+e
+tempo executado ≤ franquia de tempo
+
+O valor correto será:
+
+Valor correto = acionamento + despesas adicionais autorizadas
+
+Não haverá cobrança de hora excedente nem quilômetro excedente.
+
+7. EXEMPLO OBRIGATÓRIO
+
+Considere:
+
+Acionamento: R$ 480,00
+Franquia: 100 km
+Franquia de tempo: 3 horas
+
+Início da missão: 03:00
+Fim da missão: 04:58
+Tempo total: 01:58
+
+KM inicial: 100
+KM final: 200
+KM total: 100 km
+
+Resultado:
+
+Tempo total: 01:58
+Franquia de tempo: 03:00
+Hora excedente: 00:00
+
+KM executado: 100 km
+Franquia de KM: 100 km
+KM excedente: 0 km
+
+Valor do acionamento: R$ 480,00
+Hora excedente: R$ 0,00
+KM excedente: R$ 0,00
+Despesas: R$ 0,00
+
+Valor correto: R$ 480,00
+
+Conclusão:
+
+CALCULADO OK — PODE APROVAR
+8. CÁLCULO DO KM EXCEDENTE
+
+Fórmula:
+
+KM excedente =
+máximo entre 0 e KM executado - franquia de KM
+
+Em fórmula:
+
+const excessKm = Math.max(
+  0,
+  executedKm - includedKm
+);
+
+Valor:
+
+Valor do KM excedente =
+KM excedente × valor por KM excedente
+
+Exemplo:
+
+KM executado: 118 km
+Franquia: 100 km
+KM excedente: 18 km
+Valor por KM excedente: R$ 4,00
+
+Cálculo:
+
+18 × R$ 4,00 = R$ 72,00
+9. CÁLCULO DA HORA EXCEDENTE
+
+Fórmula:
+
+Tempo excedente =
+máximo entre zero e duração total - franquia de tempo
+
+O sistema deverá calcular com base em minutos ou segundos.
+
+Exemplo:
+
+Duração: 04:30
+Franquia: 03:00
+Tempo excedente: 01:30
+Valor da hora excedente: R$ 120,00
+
+Se a regra for proporcional:
+
+90 minutos ÷ 60 = 1,5 hora
+1,5 × R$ 120,00 = R$ 180,00
+
+Resultado:
+
+Valor da hora excedente: R$ 180,00
+10. REGRAS DE ARREDONDAMENTO
+
+Antes de implementar, identificar no sistema se existe alguma regra específica por cliente.
+
+O sistema deverá suportar, no mínimo:
+
+PROPORCIONAL
+ARREDONDAR_HORA_COMPLETA
+ARREDONDAR_APOS_TOLERANCIA
+BLOCOS_DE_30_MINUTOS
+BLOCOS_DE_15_MINUTOS
+REGRA_ESPECIFICA_CLIENTE
+Exemplo proporcional
+Excedente: 00:20
+Hora excedente: R$ 120,00
+
+20 ÷ 60 × R$ 120,00 = R$ 40,00
+Exemplo de arredondamento para hora cheia
+Excedente: 01:20
+Horas cobradas: 02:00
+Exemplo com tolerância de 15 minutos
+
+A regra deve ser configurável, por exemplo:
+
+Até 15 minutos: proporcional ou sem cobrança
+Acima de 15 minutos: arredonda para a próxima hora
+
+Não aplicar uma regra de arredondamento global sem identificar a regra correta da tabela ou do cliente.
+
+A memória de cálculo deverá mostrar qual regra foi aplicada.
+
+11. FÓRMULA FINAL DA MISSÃO
+
+A fórmula-base deverá ser:
+
+Valor correto da missão =
+valor do acionamento
++ valor do KM excedente
++ valor da hora excedente
++ pedágios autorizados
++ despesas autorizadas
++ adicionais autorizados
+- descontos aplicáveis
+
+Exemplo:
+
+Acionamento: R$ 480,00
+KM excedente: R$ 72,00
+Hora excedente: R$ 180,00
+Pedágio: R$ 35,00
+Despesas: R$ 20,00
+
+Valor correto:
+R$ 480,00
++ R$ 72,00
++ R$ 180,00
++ R$ 35,00
++ R$ 20,00
+= R$ 787,00
+12. COMPARAÇÃO ENTRE VALOR CORRETO E VALOR COBRADO
+
+Após calcular o valor correto, comparar com o valor registrado na OS.
+
+Fórmula:
+
+Diferença =
+valor cobrado - valor correto
+Valor exatamente correto
+Diferença: R$ 0,00
+Status: CALCULADO OK
+Cobrança maior
+Valor correto: R$ 787,00
+Valor cobrado: R$ 837,00
+Diferença: +R$ 50,00
+
+Status:
+COBRANÇA ACIMA DO CORRETO
+Cobrança menor
+Valor correto: R$ 787,00
+Valor cobrado: R$ 737,00
+Diferença: -R$ 50,00
+
+Status:
+COBRANÇA ABAIXO DO CORRETO
+
+Configurar uma tolerância financeira somente para diferenças de arredondamento.
+
+Exemplo:
+
+Tolerância máxima: R$ 0,01
+
+Não aceitar diferenças maiores sem justificativa.
+
+13. STATUS DO GESTOR DE MEDIÇÃO
+
+Criar os seguintes status:
+
+PENDENTE_ANALISE
+EM_ANALISE
+CALCULADO_OK
+DIVERGENCIA_VALOR
+DIVERGENCIA_HORAS
+DIVERGENCIA_KM
+DIVERGENCIA_TABELA
+DADOS_INCOMPLETOS
+REGRA_NAO_ENCONTRADA
+AGUARDANDO_REVISAO
+CORRIGIDO
+APROVADO
+REPROVADO
+Status verde
+CALCULADO OK — PODE APROVAR
+
+Condições:
+
+dados completos;
+tabela localizada;
+cálculo concluído;
+valor calculado igual ao valor cobrado;
+nenhuma regra violada;
+nenhuma duplicidade;
+diferença dentro da tolerância permitida.
+Status vermelho
+DIVERGÊNCIA ENCONTRADA — REVISAR CÁLCULO
+
+Condições:
+
+valor diferente;
+horas incorretas;
+KM incorreto;
+tabela incorreta;
+adicional indevido;
+despesa sem comprovante;
+dados conflitantes;
+cálculo manual diferente;
+falta de informações.
+Status amarelo
+ATENÇÃO — ANÁLISE MANUAL NECESSÁRIA
+
+Condições:
+
+dados incompletos;
+regra ambígua;
+tabela não vinculada;
+possível erro de hodômetro;
+missão atravessando períodos sem dados suficientes;
+valor ajustado manualmente;
+exceção autorizada sem justificativa registrada.
+14. TELA DO BOLETIM DE MEDIÇÃO
+
+Criar uma área no Boletim de Medição chamada:
+
+GESTOR DE MEDIÇÃO SÊNIOR
+
+A tela deverá possuir cards de resumo:
+
+Total de OS analisadas
+OS calculadas corretamente
+OS com divergência
+OS com dados incompletos
+OS aguardando revisão
+Valor cobrado a maior
+Valor cobrado a menor
+Valor total das divergências
+15. LISTAGEM DAS OS
+
+Criar tabela com:
+
+OS
+Cliente
+Fornecedor
+Data
+Tipo da missão
+Valor cobrado
+Valor correto
+Diferença
+Status da análise
+Nível de risco
+Ação
+
+Exemplo:
+
+OS	Valor cobrado	Valor correto	Diferença	Status
+GTM-1001	R$ 480,00	R$ 480,00	R$ 0,00	Calculado OK
+GTM-1002	R$ 837,00	R$ 787,00	+R$ 50,00	Revisar
+GTM-1003	R$ 737,00	R$ 787,00	-R$ 50,00	Revisar
+
+Permitir filtros por:
+
+competência;
+cliente;
+fornecedor;
+status;
+tipo de operação;
+intervalo de datas;
+valor da divergência;
+usuário responsável;
+OS aprovada ou pendente.
+16. TELA DE SUCESSO
+
+Quando estiver correto, exibir:
+
+✓ CALCULADO OK — PODE APROVAR
+
+Detalhamento:
+
+A tabela vinculada foi localizada.
+O período da missão foi calculado corretamente.
+A quilometragem está dentro da franquia.
+O tempo está dentro da franquia.
+Não existem excedentes.
+O valor cobrado corresponde ao valor correto.
+
+Mostrar:
+
+Valor cobrado: R$ 480,00
+Valor calculado: R$ 480,00
+Diferença: R$ 0,00
+
+Botão:
+
+APROVAR MEDIÇÃO
+17. TELA DE ERRO
+
+Quando existir divergência, abrir uma tela ou drawer chamado:
+
+ERRO DE MEDIÇÃO — VERIFICAR CÁLCULOS
+
+Exibir claramente:
+
+Valor cobrado pelo sistema
+Valor correto calculado
+Diferença
+Possível origem do erro
+Regra esperada
+Regra aplicada
+
+Exemplo:
+
+DIVERGÊNCIA DE KM
+
+KM executado: 118 km
+Franquia: 100 km
+KM excedente correto: 18 km
+
+Valor por KM: R$ 4,00
+Valor correto do excedente: R$ 72,00
+Valor cobrado pelo sistema: R$ 0,00
+
+Diferença encontrada: R$ 72,00
+
+Mensagem da IA:
+
+A missão ultrapassou a franquia em 18 km. O sistema não
+incluiu o valor de R$ 72,00 correspondente ao KM excedente.
+A medição não deve ser aprovada até que o cálculo seja corrigido.
+
+Ações disponíveis:
+
+RECALCULAR
+CORRIGIR VALOR
+ENVIAR PARA REVISÃO
+JUSTIFICAR EXCEÇÃO
+REPROVAR MEDIÇÃO
+18. MEMÓRIA DE CÁLCULO
+
+Toda OS deverá possuir uma memória completa.
+
+Exemplo:
+
+OS: GTM-1002
+
+TABELA UTILIZADA
+Acionamento: R$ 480,00
+Franquia de KM: 100 km
+Franquia de tempo: 03:00
+KM excedente: R$ 4,00/km
+Hora excedente: R$ 120,00/h
+Regra de hora: proporcional
+
+DADOS DA MISSÃO
+Início: 10/07/2026 às 03:00
+Fim: 10/07/2026 às 07:30
+Tempo total: 04:30
+
+KM inicial: 100
+KM final: 218
+KM executado: 118 km
+
+CÁLCULO DO EXCEDENTE
+Tempo excedente: 01:30
+Valor de hora excedente: R$ 180,00
+
+KM excedente: 18 km
+Valor de KM excedente: R$ 72,00
+
+OUTROS VALORES
+Pedágio: R$ 35,00
+Despesas: R$ 20,00
+
+CÁLCULO FINAL
+Acionamento: R$ 480,00
+Hora excedente: R$ 180,00
+KM excedente: R$ 72,00
+Pedágio: R$ 35,00
+Despesas: R$ 20,00
+
+Valor correto: R$ 787,00
+Valor cobrado: R$ 837,00
+Diferença: R$ 50,00
+
+RESULTADO
+DIVERGÊNCIA ENCONTRADA — REVISAR CÁLCULO
+19. REGRAS ESPECÍFICAS
+
+O motor deve procurar regras especiais vinculadas a:
+
+Cliente
+Fornecedor
+Contrato
+Tabela
+Tipo de operação
+Estado
+Cidade
+Quantidade de agentes
+Período
+Data de vigência
+
+Exemplos de regras específicas:
+
+multiplicação por dois para operação com duas equipes;
+adicional para operação armada;
+adicional noturno;
+valor diferente por estado;
+franquia especial;
+hora arredondada;
+pedágio separado;
+despesa mediante comprovante;
+adicional por agente;
+desconto autorizado;
+valor mínimo de missão;
+cobrança por trecho;
+retorno incluído ou não incluído;
+quilometragem por hodômetro ou rota prevista.
+
+Nunca aplicar uma regra especial sem mostrar sua origem.
+
+20. VALIDAÇÕES DE INTEGRIDADE
+
+O Gestor de Medição deverá validar:
+
+Datas e horários
+início anterior ao fim;
+missão atravessando a meia-noite;
+duração negativa;
+duração zerada;
+horários ausentes;
+data final ausente.
+Quilometragem
+KM final maior ou igual ao inicial;
+KM negativo;
+KM zerado;
+divergência com rota prevista;
+divergência com KM real;
+possível erro de digitação;
+possível troca de hodômetro;
+leitura incompatível com a missão.
+Tabela
+tabela vinculada;
+tabela vigente na data da missão;
+tabela correta para o cliente;
+tabela correta para o fornecedor;
+valores preenchidos;
+franquias válidas.
+Financeiro
+valor cobrado;
+valor calculado;
+despesas duplicadas;
+pedágio duplicado;
+adicional duplicado;
+desconto indevido;
+valor manual sem justificativa;
+arredondamento incorreto.
+21. CLASSIFICAÇÃO DA DIVERGÊNCIA
+
+A IA deverá classificar os problemas.
+
+Crítica
+tabela errada;
+valor muito acima ou abaixo;
+dados adulterados;
+duplicidade de cobrança;
+cálculo impossível;
+ausência dos dados principais.
+Alta
+hora excedente não cobrada;
+KM excedente não cobrado;
+hora ou KM cobrado indevidamente;
+regra de arredondamento errada.
+Média
+despesa sem comprovante;
+pequena divergência de hodômetro;
+adicional sem justificativa.
+Baixa
+diferença de centavos;
+texto incompleto;
+informação complementar ausente.
+22. APROVAÇÃO
+
+A IA poderá recomendar aprovação, mas não deverá aprovar silenciosamente uma OS com divergência.
+
+Fluxo:
+
+Motor calcula
+→ IA analisa
+→ Sistema apresenta resultado
+→ Usuário autorizado aprova ou envia para revisão
+
+Aprovação automática somente poderá ocorrer quando:
+
+Status = CALCULADO_OK
+Diferença dentro da tolerância
+Dados completos
+Tabela válida
+Sem alertas
+Sem ajustes manuais pendentes
+
+Mesmo na aprovação automática, registrar a auditoria.
+
+23. JUSTIFICATIVA DE EXCEÇÃO
+
+Caso um responsável deseje aprovar uma OS com divergência, exigir:
+
+Motivo da exceção
+Usuário responsável
+Data e hora
+Valor original
+Valor calculado
+Valor aprovado
+Anexo ou comprovante, quando aplicável
+
+Exemplo:
+
+Aprovado excepcionalmente por acordo comercial autorizado
+pela diretoria.
+
+Não permitir aprovação manual sem registro de auditoria.
+
+24. HISTÓRICO E RASTREABILIDADE
+
+Registrar:
+
+OS
+Data da análise
+Versão da tabela
+Regra utilizada
+Valor anterior
+Valor recalculado
+Diferença
+Resultado da IA
+Usuário responsável
+Data da aprovação
+Justificativa
+Alterações realizadas
+
+A análise deve ser reproduzível.
+
+Se a tabela comercial mudar depois, a OS antiga deve continuar vinculada à versão da tabela válida na data da missão.
+
+25. ESTRUTURA SUGERIDA DO RESULTADO
+
+O back-end poderá retornar uma estrutura semelhante:
+
+{
+  "workOrderId": "GTM-1002",
+  "analysisStatus": "DIVERGENCIA_VALOR",
+  "recommendation": "REVISAR",
+  "period": {
+    "startedAt": "2026-07-10T03:00:00-03:00",
+    "finishedAt": "2026-07-10T07:30:00-03:00",
+    "totalMinutes": 270,
+    "formattedDuration": "04:30"
+  },
+  "distance": {
+    "initialKm": 100,
+    "finalKm": 218,
+    "executedKm": 118,
+    "includedKm": 100,
+    "excessKm": 18
+  },
+  "pricing": {
+    "activation": 480,
+    "includedMinutes": 180,
+    "excessHourRate": 120,
+    "excessKmRate": 4,
+    "roundingRule": "PROPORCIONAL"
+  },
+  "calculation": {
+    "activationAmount": 480,
+    "excessTimeAmount": 180,
+    "excessKmAmount": 72,
+    "tollsAmount": 35,
+    "expensesAmount": 20,
+    "discountAmount": 0,
+    "expectedTotal": 787,
+    "chargedTotal": 837,
+    "difference": 50
+  },
+  "issues": [
+    {
+      "type": "VALOR_ACIMA",
+      "severity": "ALTA",
+      "message": "O valor cobrado está R$ 50,00 acima do cálculo esperado."
+    }
+  ]
+}
+
+Todos os valores monetários deverão ser processados em centavos ou utilizando tipo decimal adequado.
+
+Nunca usar ponto flutuante comum para cálculos financeiros sensíveis.
+
+26. PREVENÇÃO DE ERROS FINANCEIROS
+
+Usar:
+
+NUMERIC/DECIMAL no banco
+ou
+valores inteiros em centavos
+
+Evitar:
+
+0.1 + 0.2
+
+Centralizar arredondamento monetário.
+
+Exemplo:
+
+R$ 787,005
+
+Aplicar a regra financeira oficial apenas no final de cada componente ou conforme a regra definida.
+
+Não arredondar horas prematuramente antes de identificar a regra comercial.
+
+27. PROCESSAMENTO EM LOTE
+
+Criar opção:
+
+ANALISAR TODAS AS OS
+
+O sistema deverá:
+
+Buscar as OS do boletim;
+Carregar a tabela correta de cada OS;
+Calcular duração;
+Calcular KM;
+Calcular excedentes;
+Calcular despesas;
+Calcular valor correto;
+Comparar com valor cobrado;
+Classificar o resultado;
+Gerar relatório;
+Separar aprováveis e divergentes.
+
+Ao final, mostrar:
+
+120 OS analisadas
+105 calculadas corretamente
+10 com divergência
+5 com dados incompletos
+
+Valor total correto: R$ X
+Valor total cobrado: R$ Y
+Diferença total: R$ Z
+28. APROVAÇÃO EM LOTE
+
+Permitir:
+
+APROVAR TODAS AS OS CALCULADAS OK
+
+Não incluir automaticamente:
+
+OS com divergência;
+OS com dados incompletos;
+OS com ajuste manual;
+OS sem tabela;
+OS com alerta;
+OS aguardando justificativa.
+
+Antes da aprovação em lote, mostrar confirmação:
+
+Serão aprovadas 105 OS, totalizando R$ X.
+As 15 OS com alertas permanecerão pendentes.
+29. IA EXPLICATIVA
+
+A IA deverá responder de maneira objetiva.
+
+Exemplo aprovado
+A OS está correta.
+
+A missão percorreu 100 km, exatamente o limite da franquia.
+O tempo total foi de 1h58, abaixo da franquia de 3 horas.
+Não existem quilômetros ou horas excedentes.
+
+O valor correto é R$ 480,00, igual ao valor cobrado.
+
+Recomendação: pode aprovar.
+Exemplo reprovado
+A OS apresenta divergência.
+
+A missão percorreu 118 km e a franquia cobre apenas 100 km.
+Existem 18 km excedentes.
+
+Com o valor de R$ 4,00 por KM, deveriam ser adicionados
+R$ 72,00 ao valor da missão.
+
+O sistema não adicionou esse valor.
+
+Recomendação: não aprovar até a correção.
+30. SEGURANÇA E PERMISSÕES
+
+Somente perfis autorizados poderão:
+
+aprovar medição;
+reprovar medição;
+corrigir valores;
+justificar exceções;
+alterar tabelas;
+executar aprovação em lote;
+reabrir medição aprovada.
+
+Perfis sugeridos:
+
+DIRETORIA
+GESTOR_DE_MEDICAO
+FINANCEIRO_AUTORIZADO
+ADMINISTRADOR
+
+Usuários comerciais poderão consultar apenas os dados liberados pela regra de acesso.
+
+As permissões deverão ser aplicadas no front-end, back-end e banco.
+
+31. TESTES OBRIGATÓRIOS
+
+Criar testes para:
+
+Missão exatamente dentro da franquia
+Missão abaixo da franquia
+Missão acima apenas no KM
+Missão acima apenas no tempo
+Missão acima no KM e no tempo
+Missão atravessando a meia-noite
+Missão com duração de vários dias
+Hora proporcional
+Hora arredondada
+Tolerância de minutos
+Pedágio
+Despesa
+Desconto
+Adicional
+Duas equipes
+Valor manual
+Tabela sem vigência
+Tabela ausente
+KM final menor que inicial
+Horário final menor sem mudança de data
+Diferença de centavos
+Duplicidade de despesas
+Aprovação em lote
+32. CRITÉRIOS DE ACEITE
+
+A implementação somente estará concluída quando:
+
+Todas as OS puderem ser recalculadas individualmente.
+A tabela correta for identificada automaticamente.
+A duração for calculada em HH:MM corretamente.
+O KM executado for calculado corretamente.
+A franquia de tempo for respeitada.
+A franquia de KM for respeitada.
+Horas excedentes forem cobradas conforme a regra.
+KM excedente for cobrado conforme a regra.
+Pedágios e despesas forem somados somente uma vez.
+O valor correto for comparado com o cobrado.
+Cada OS receber um status claro.
+OS corretas exibirem “Calculado OK — pode aprovar”.
+OS incorretas exibirem uma tela detalhada de erro.
+Toda análise possuir memória de cálculo.
+Exceções exigirem justificativa.
+Aprovações possuírem histórico.
+O processamento em lote não aprovar OS divergentes.
+Os cálculos financeiros utilizarem precisão decimal.
+Existirem testes automatizados.
+Nenhuma regra atual for modificada sem análise de impacto.
+33. FORMATO DA PRIMEIRA RESPOSTA DO REPLIT
+
+Antes de programar, responda com:
+
+1. Entendimento do Gestor de Medição Sênior
+2. Arquivos que serão analisados
+3. Tabelas do banco envolvidas
+4. Função atual que calcula a OS
+5. Regras comerciais encontradas
+6. Regras de arredondamento encontradas
+7. Divergências possíveis
+8. Arquitetura proposta
+9. Plano de implementação
+10. Riscos
+11. Perguntas realmente necessárias
+
+Não inicie criando componentes isolados.
+
+Primeiro localize a lógica atual que chega ao valor final da missão. Depois, centralize essa lógica em um motor único e faça o Gestor de Medição Sênior utilizar exatamente essa mesma fonte de cálculo.
