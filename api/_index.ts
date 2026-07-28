@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { Express } from "express";
-import { getOrCreateApp } from "../server/create-app";
 
 let app: Express | null = null;
 let bootError: Error | null = null;
 
 export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
   const pathOnly = (req.url || "").split("?")[0];
+  // Healthcheck sem carregar o grafo Express/Supabase (cold start / diagnóstico)
   if (pathOnly === "/healthz" || pathOnly === "/api/healthz") {
     return res.status(200).json({ ok: true, ts: Date.now() });
   }
@@ -16,6 +16,7 @@ export default async function vercelHandler(req: VercelRequest, res: VercelRespo
       return res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
     }
     if (!app) {
+      const { getOrCreateApp } = await import("../server/create-app");
       app = await getOrCreateApp();
     }
     app(req as Parameters<Express>[0], res as Parameters<Express>[1]);

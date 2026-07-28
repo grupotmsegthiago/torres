@@ -86,7 +86,29 @@ async function buildAll() {
     logLevel: "info",
   });
 
-  // Vercel: Node não executa server/*.ts no serverless — gera handlers ESM empacotados
+  // Vercel: Node não executa server/*.ts no serverless — gera handlers ESM empacotados.
+  // Stub de Vite/Rollup: create-app importa ./vite só em dev; no serverless isso
+  // puxava @rollup/rollup-linux-* e derrubava a function no boot.
+  const stubVitePlugin = {
+    name: "stub-vite-dev-server",
+    setup(build: { onResolve: Function; onLoad: Function }) {
+      build.onResolve({ filter: /[/\\]vite$/ }, () => ({
+        path: "vite-dev-stub",
+        namespace: "vite-stub",
+      }));
+      build.onResolve({ filter: /^vite$/ }, () => ({
+        path: "vite-pkg-stub",
+        namespace: "vite-stub",
+      }));
+      build.onLoad({ filter: /.*/, namespace: "vite-stub" }, () => ({
+        contents:
+          "export async function setupVite(){throw new Error('Vite HMR indisponivel no serverless');}\n" +
+          "export default {};\n",
+        loader: "js",
+      }));
+    },
+  };
+
   console.log("building Vercel API handlers...");
   for (const [entry, outfile] of [
     ["api/_index.ts", "api/index.js"],
@@ -99,6 +121,15 @@ async function buildAll() {
       format: "esm",
       outfile,
       packages: "external",
+      external: [
+        "vite",
+        "rollup",
+        "@vitejs/*",
+        "@rollup/*",
+        "esbuild",
+        "tsx",
+      ],
+      plugins: [stubVitePlugin as never],
       logLevel: "info",
     });
   }

@@ -708,8 +708,8 @@ async function resilientFetch(url, init) {
     if (fetchDuration > 500) {
       const method = init?.method || "GET";
       const urlStr = typeof url === "string" ? url : url.toString();
-      const path10 = urlStr.replace(/https?:\/\/[^/]+/, "").split("?")[0];
-      console.warn(`[SLOW-SUPA] ${method} ${path10} took ${fetchDuration}ms`);
+      const path8 = urlStr.replace(/https?:\/\/[^/]+/, "").split("?")[0];
+      console.warn(`[SLOW-SUPA] ${method} ${path8} took ${fetchDuration}ms`);
     }
     return response;
   } finally {
@@ -1736,6 +1736,46 @@ var init_auth = __esm({
       if (req.user.role === "diretoria") return next();
       return res.status(403).json({ message: "Acesso restrito \xE0 Diretoria" });
     };
+  }
+});
+
+// server/static.ts
+import express from "express";
+import fs from "fs";
+import path from "path";
+function serveStatic(app3) {
+  const distPath = path.resolve(__dirname, "public");
+  if (!fs.existsSync(distPath)) {
+    throw new Error(
+      `Could not find the build directory: ${distPath}, make sure to build the client first`
+    );
+  }
+  app3.use(express.static(distPath, {
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      const fname = path.basename(filePath);
+      if (fname === "sw.js" || fname === "manifest.json" || fname === "index.html") {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else {
+        res.setHeader("Cache-Control", "public, max-age=86400");
+      }
+    }
+  }));
+  app3.use("/{*path}", (_req, res, _next) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(path.resolve(distPath, "index.html"));
+  });
+}
+var init_static = __esm({
+  "server/static.ts"() {
+    "use strict";
   }
 });
 
@@ -5034,9 +5074,9 @@ async function reconcileAllInvoicesAsaas(opts) {
   }
   return nfReconcileState;
 }
-async function asaasRequest(method, path10, body) {
+async function asaasRequest(method, path8, body) {
   const apiKey = getApiKey();
-  const url = `${ASAAS_API_URL}${path10}`;
+  const url = `${ASAAS_API_URL}${path8}`;
   const headers = {
     "Content-Type": "application/json",
     "access_token": apiKey,
@@ -5485,9 +5525,9 @@ function registerAsaasRoutes(app3) {
       const q = req.query.q || "";
       const offset = parseInt(req.query.offset) || 0;
       const limit = parseInt(req.query.limit) || 20;
-      let path10 = `/customers?offset=${offset}&limit=${limit}`;
-      if (q) path10 += `&name=${encodeURIComponent(q)}`;
-      const data = await asaasRequest("GET", path10);
+      let path8 = `/customers?offset=${offset}&limit=${limit}`;
+      if (q) path8 += `&name=${encodeURIComponent(q)}`;
+      const data = await asaasRequest("GET", path8);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -6634,9 +6674,9 @@ function registerAsaasRoutes(app3) {
       const offset = parseInt(req.query.offset) || 0;
       const limit = parseInt(req.query.limit) || 20;
       const status = req.query.status;
-      let path10 = `/payments?offset=${offset}&limit=${limit}`;
-      if (status) path10 += `&status=${status}`;
-      const data = await asaasRequest("GET", path10);
+      let path8 = `/payments?offset=${offset}&limit=${limit}`;
+      if (status) path8 += `&status=${status}`;
+      const data = await asaasRequest("GET", path8);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -9871,8 +9911,8 @@ async function tryFetch(url, init = {}) {
     clearTimeout(t);
   }
 }
-function joinUrl(base, path10) {
-  return `${String(base).replace(/\/+$/, "")}${path10.startsWith("/") ? path10 : `/${path10}`}`;
+function joinUrl(base, path8) {
+  return `${String(base).replace(/\/+$/, "")}${path8.startsWith("/") ? path8 : `/${path8}`}`;
 }
 async function loginDevice(device) {
   const password = decryptSecret(device.password_enc);
@@ -9940,8 +9980,8 @@ async function getOrLoginToken(device) {
   }
   return loginDevice(device);
 }
-async function postJson(device, token, path10, body) {
-  const url = joinUrl(device.base_url, path10);
+async function postJson(device, token, path8, body) {
+  const url = joinUrl(device.base_url, path8);
   let r = await tryFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Session": token, "Authorization": `Bearer ${token}` },
@@ -9957,7 +9997,7 @@ async function postJson(device, token, path10, body) {
   }
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`POST ${path10} \u2192 HTTP ${r.status} ${txt.slice(0, 200)}`);
+    throw new Error(`POST ${path8} \u2192 HTTP ${r.status} ${txt.slice(0, 200)}`);
   }
   return r.json();
 }
@@ -12261,9 +12301,9 @@ var init_client = __esm({
       }
       /** Request HTTPS com mTLS. Resolve com JSON parsed, texto ou Buffer. */
       rawRequest(opts) {
-        const { method, path: path10, body, contentType, headers = {}, rawBuffer } = opts;
+        const { method, path: path8, body, contentType, headers = {}, rawBuffer } = opts;
         const { cert, key } = loadCertKey();
-        const url = new URL(this.getBaseUrl() + path10);
+        const url = new URL(this.getBaseUrl() + path8);
         const finalHeaders = { ...headers };
         if (body != null) {
           finalHeaders["Content-Type"] = contentType || "application/json";
@@ -12299,7 +12339,7 @@ var init_client = __esm({
                   }
                 } else {
                   const txt = buf.toString("utf8");
-                  const err = new Error(`Inter API ${status} ${method} ${path10}: ${txt.slice(0, 500)}`);
+                  const err = new Error(`Inter API ${status} ${method} ${path8}: ${txt.slice(0, 500)}`);
                   err.status = status;
                   err.body = txt;
                   reject(err);
@@ -12338,19 +12378,19 @@ var init_client = __esm({
       }
       /** Chamada autenticada às APIs Inter. */
       async call(opts) {
-        const { method, path: path10, scopes, body, query, useContaCorrente, rawBuffer } = opts;
+        const { method, path: path8, scopes, body, query, useContaCorrente, rawBuffer } = opts;
         if (!this.isConfigured()) {
           throw new Error(
             "Banco Inter n\xE3o configurado. Defina INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CONTA_CORRENTE, INTER_CERT_CRT, INTER_CERT_KEY."
           );
         }
         const token = await this.getToken(scopes);
-        let fullPath = path10;
+        let fullPath = path8;
         if (query) {
           const qs = new URLSearchParams(
             Object.entries(query).filter(([_, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])
           ).toString();
-          if (qs) fullPath += (path10.includes("?") ? "&" : "?") + qs;
+          if (qs) fullPath += (path8.includes("?") ? "&" : "?") + qs;
         }
         const headers = { Authorization: `Bearer ${token}` };
         if (useContaCorrente && this.getContaCorrente()) {
@@ -14346,10 +14386,10 @@ async function uploadMissionPhoto(serviceOrderId, base64OrDataUri) {
   if (error) throw error;
   return storagePath;
 }
-async function signMissionPhoto(path10) {
-  const { data, error } = await supabaseAdmin.storage.from(MISSION_PHOTO_BUCKET).createSignedUrl(path10, SIGNED_URL_TTL_SEC);
+async function signMissionPhoto(path8) {
+  const { data, error } = await supabaseAdmin.storage.from(MISSION_PHOTO_BUCKET).createSignedUrl(path8, SIGNED_URL_TTL_SEC);
   if (error) {
-    console.warn(`[storage] signMissionPhoto erro (${path10}):`, error.message);
+    console.warn(`[storage] signMissionPhoto erro (${path8}):`, error.message);
     return null;
   }
   return data?.signedUrl || null;
@@ -19779,1432 +19819,8 @@ var init_cron = __esm({
   }
 });
 
-// server/constants.ts
-import fs4 from "fs";
-import path4 from "path";
-import crypto5 from "crypto";
-function computeBuildId() {
-  if (process.env.NODE_ENV !== "production") return "dev";
-  try {
-    const candidates = [
-      typeof __dirname !== "undefined" ? path4.resolve(__dirname, "public", "index.html") : "",
-      path4.resolve(process.cwd(), "dist", "public", "index.html")
-    ].filter(Boolean);
-    for (const p of candidates) {
-      if (fs4.existsSync(p)) {
-        return crypto5.createHash("sha1").update(fs4.readFileSync(p)).digest("hex").slice(0, 12);
-      }
-    }
-  } catch {
-  }
-  console.warn("[version] AVISO: NODE_ENV=production mas dist/public/index.html n\xE3o encontrado \u2014 buildId caiu em 'dev' e o auto-update por deploy fica inativo");
-  return "dev";
-}
-var APP_VERSION, APP_BUILD_AT, APP_BUILD_ID, _diskLimitEnv, DB_DISK_LIMIT_MB;
-var init_constants = __esm({
-  "server/constants.ts"() {
-    "use strict";
-    APP_VERSION = "3.8.0";
-    APP_BUILD_AT = (/* @__PURE__ */ new Date()).toISOString();
-    APP_BUILD_ID = computeBuildId();
-    _diskLimitEnv = Number(process.env.DB_DISK_LIMIT_MB);
-    DB_DISK_LIMIT_MB = Number.isFinite(_diskLimitEnv) && _diskLimitEnv > 0 ? _diskLimitEnv : 8192;
-  }
-});
-
-// server/db-telemetry.ts
-var db_telemetry_exports = {};
-__export(db_telemetry_exports, {
-  generateAiReport: () => generateAiReport,
-  getAiReports: () => getAiReports,
-  getHistory24h: () => getHistory24h,
-  getRealtimeTelemetry: () => getRealtimeTelemetry,
-  getSecurityEvents24h: () => getSecurityEvents24h,
-  getTableSizes: () => getTableSizes,
-  getTopQueries: () => getTopQueries,
-  persistSample: () => persistSample,
-  startTelemetrySampler: () => startTelemetrySampler
-});
-import OpenAI3 from "openai";
-import v8 from "node:v8";
-function getCpuPct() {
-  const now = Date.now();
-  const usage = process.cpuUsage(lastCpuUsage);
-  const elapsedMs = now - lastCpuSample;
-  lastCpuUsage = process.cpuUsage();
-  lastCpuSample = now;
-  if (elapsedMs <= 0) return 0;
-  const cpuMs = (usage.user + usage.system) / 1e3;
-  return Math.min(100, Math.round(cpuMs / elapsedMs * 100));
-}
-function getMemoryStats() {
-  const m = process.memoryUsage();
-  const rssMb = Math.round(m.rss / 1024 / 1024);
-  const heapUsedMb = Math.round(m.heapUsed / 1024 / 1024);
-  const heapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024);
-  const heapPct = heapLimitMb > 0 ? Math.round(heapUsedMb / heapLimitMb * 100) : 0;
-  return { rssMb, heapUsedMb, heapLimitMb, heapPct };
-}
-async function dbPing(supabase) {
-  const started = Date.now();
-  try {
-    const { error } = await supabase.from("clients").select("id", { count: "exact", head: true }).limit(1);
-    if (error) throw error;
-    return { latencyMs: Date.now() - started, ok: true };
-  } catch {
-    return { latencyMs: Date.now() - started, ok: false };
-  }
-}
-async function getRealtimeTelemetry(supabase) {
-  const cpu_pct = getCpuPct();
-  const mem = getMemoryStats();
-  const ping = await dbPing(supabase);
-  const supabaseHealthy2 = getSupabaseStats().healthy;
-  let snap = null;
-  try {
-    const { data, error } = await supabase.rpc("db_telemetry_snapshot");
-    if (!error && data) snap = data;
-  } catch {
-    snap = null;
-  }
-  const status = ping.ok && supabaseHealthy2 ? "online" : supabaseHealthy2 ? "fallback" : "offline";
-  return {
-    ts: (/* @__PURE__ */ new Date()).toISOString(),
-    node: {
-      cpu_pct,
-      mem_mb: mem.rssMb,
-      heap_used_mb: mem.heapUsedMb,
-      heap_limit_mb: mem.heapLimitMb,
-      mem_pct: mem.heapPct,
-      uptime_s: Math.round(process.uptime())
-    },
-    db: {
-      latency_ms: ping.latencyMs,
-      active_connections: snap?.active_connections ?? 0,
-      idle_connections: snap?.idle_connections ?? 0,
-      total_connections: snap?.total_connections ?? 0,
-      max_connections: snap?.max_connections ?? 0,
-      db_size_mb: snap?.db_size_mb ?? 0,
-      db_size_limit_mb: DB_DISK_LIMIT_MB,
-      cache_hit_ratio: snap?.cache_hit_ratio != null ? Number(snap.cache_hit_ratio) : null,
-      idle_in_transaction: Number(snap?.idle_in_transaction ?? 0),
-      tuples_read: Number(snap?.tuples_read ?? 0),
-      tuples_written: Number(snap?.tuples_written ?? 0),
-      long_queries: snap?.long_queries ?? []
-    },
-    status
-  };
-}
-async function getHistory24h(supabase) {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
-  const { data, error } = await supabase.from("db_health_samples").select("sampled_at,latency_ms,active_connections,total_connections,long_query_count,node_cpu_pct,node_mem_mb,fallback_active,db_size_mb,cache_hit_ratio,idle_in_transaction,tuples_read,tuples_written").gte("sampled_at", since).order("sampled_at", { ascending: true }).limit(1500);
-  if (error) return [];
-  return data ?? [];
-}
-async function getSecurityEvents24h(supabase) {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
-  const { data: tokenFails } = await supabase.from("token_failure_logs").select("id,employee_name,error_message,ip_address,user_agent,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(200);
-  const failsByIp = /* @__PURE__ */ new Map();
-  for (const row of tokenFails ?? []) {
-    const ip = row.ip_address || "(desconhecido)";
-    const cur = failsByIp.get(ip) ?? { ip, count: 0, last_at: row.created_at, last_user: row.employee_name, last_error: row.error_message };
-    cur.count += 1;
-    failsByIp.set(ip, cur);
-  }
-  const bruteForceSuspects = Array.from(failsByIp.values()).filter((r) => r.count >= 5).sort((a, b) => b.count - a.count);
-  return {
-    token_failures_total: tokenFails?.length ?? 0,
-    token_failures_recent: (tokenFails ?? []).slice(0, 20),
-    brute_force_suspects: bruteForceSuspects
-  };
-}
-async function getTableSizes(supabase) {
-  const { data, error } = await supabase.rpc("db_table_sizes");
-  if (error) {
-    console.error("[db-telemetry] db_table_sizes erro:", error.message);
-    return [];
-  }
-  const rows = data ?? [];
-  return rows.map((r) => ({
-    table_name: String(r.table_name),
-    data_size: String(r.data_size),
-    index_size: String(r.index_size),
-    total_size: String(r.total_size),
-    total_size_bytes: Number(r.total_size_bytes) || 0
-  }));
-}
-async function getTopQueries(supabase) {
-  const { data, error } = await supabase.rpc("db_top_queries");
-  if (error) {
-    console.error("[db-telemetry] db_top_queries erro:", error.message);
-    return [];
-  }
-  const rows = data ?? [];
-  return rows.map((r) => ({
-    query: String(r.query ?? ""),
-    calls: Number(r.calls) || 0,
-    total_ms: Number(r.total_ms) || 0,
-    mean_ms: Number(r.mean_ms) || 0,
-    rows: Number(r.rows) || 0,
-    cache_hit_pct: r.cache_hit_pct != null ? Number(r.cache_hit_pct) : null
-  }));
-}
-async function getAiReports(supabase) {
-  const { data, error } = await supabase.from("db_ai_reports").select("id,created_at,status,headline,analysis").order("created_at", { ascending: false }).limit(6);
-  if (error) {
-    console.error("[db-ai-report] leitura erro:", error.message);
-    return [];
-  }
-  return data ?? [];
-}
-async function generateAiReport(supabase) {
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || void 0;
-  if (!apiKey) {
-    console.warn("[db-ai-report] chave OpenAI ausente \u2014 pulando gera\xE7\xE3o");
-    return null;
-  }
-  try {
-    const [rt, tableSizes, security, topQueries] = await Promise.all([
-      getRealtimeTelemetry(supabase),
-      getTableSizes(supabase),
-      getSecurityEvents24h(supabase),
-      getTopQueries(supabase)
-    ]);
-    const metrics = {
-      status_conexao: rt.status,
-      latencia_ms: rt.db.latency_ms,
-      cpu_servidor_pct: rt.node.cpu_pct,
-      memoria_servidor_pct: rt.node.mem_pct,
-      conexoes: `${rt.db.total_connections}/${rt.db.max_connections}`,
-      cache_hit_ratio_pct: rt.db.cache_hit_ratio,
-      idle_in_transaction: rt.db.idle_in_transaction,
-      queries_lentas: rt.db.long_queries.length,
-      tamanho_banco_mb: rt.db.db_size_mb,
-      falhas_auth_24h: security.token_failures_total,
-      ips_suspeitos: security.brute_force_suspects.length,
-      maiores_tabelas: tableSizes.slice(0, 5).map((t) => `${t.table_name}: ${t.total_size}`),
-      consultas_mais_pesadas: topQueries.map((q) => ({
-        query: q.query,
-        calls: q.calls,
-        total_ms: q.total_ms,
-        mean_ms: q.mean_ms,
-        rows: q.rows,
-        cache_hit_pct: q.cache_hit_pct
-      }))
-    };
-    const openai = new OpenAI3({ apiKey, baseURL });
-    const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      reasoning_effort: "minimal",
-      max_completion_tokens: 700,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: AI_REPORT_SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(metrics) }
-      ]
-    });
-    const raw = response.choices?.[0]?.message?.content?.trim();
-    if (!raw) return null;
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      console.warn("[db-ai-report] resposta da IA n\xE3o \xE9 JSON v\xE1lido");
-      return null;
-    }
-    const status = ["good", "warn", "bad"].includes(parsed?.status) ? parsed.status : "warn";
-    const headline = String(parsed?.headline || "Situa\xE7\xE3o do banco").slice(0, 200);
-    const analysis = String(parsed?.analysis || "").slice(0, 2e3);
-    const { data: inserted, error: insErr } = await supabase.from("db_ai_reports").insert({ status, headline, analysis, metrics }).select("id,created_at,status,headline,analysis").single();
-    if (insErr) {
-      console.error("[db-ai-report] insert erro:", insErr.message);
-      return null;
-    }
-    const { data: ids } = await supabase.from("db_ai_reports").select("id").order("created_at", { ascending: false });
-    const all = ids ?? [];
-    if (all.length > 6) {
-      const toDelete = all.slice(6).map((r) => r.id);
-      await supabase.from("db_ai_reports").delete().in("id", toDelete);
-    }
-    return inserted;
-  } catch (err) {
-    console.warn("[db-ai-report] gera\xE7\xE3o falhou:", err?.message);
-    return null;
-  }
-}
-async function persistSample(supabase) {
-  try {
-    const rt = await getRealtimeTelemetry(supabase);
-    await supabase.from("db_health_samples").insert({
-      latency_ms: rt.db.latency_ms,
-      active_connections: rt.db.active_connections,
-      idle_connections: rt.db.idle_connections,
-      total_connections: rt.db.total_connections,
-      max_connections: rt.db.max_connections,
-      long_query_count: rt.db.long_queries.length,
-      node_cpu_pct: rt.node.cpu_pct,
-      node_mem_mb: rt.node.mem_mb,
-      fallback_active: rt.status !== "online",
-      db_size_mb: rt.db.db_size_mb,
-      cache_hit_ratio: rt.db.cache_hit_ratio,
-      idle_in_transaction: rt.db.idle_in_transaction,
-      tuples_read: rt.db.tuples_read,
-      tuples_written: rt.db.tuples_written
-    });
-  } catch {
-  }
-}
-function startTelemetrySampler(supabase) {
-  if (samplerStarted) return;
-  samplerStarted = true;
-  const scheduleSample = (delayMs) => {
-    const t = setTimeout(async () => {
-      if (!getSupabaseStats().healthy) {
-        scheduleSample(SAMPLE_INTERVAL_MS * 2);
-        return;
-      }
-      try {
-        await persistSample(supabase);
-      } catch {
-      }
-      scheduleSample(SAMPLE_INTERVAL_MS);
-    }, delayMs);
-    t.unref?.();
-  };
-  scheduleSample(3e4);
-  const scheduleAiReport = (delayMs) => {
-    const t = setTimeout(async () => {
-      if (!getSupabaseStats().healthy) {
-        scheduleAiReport(AI_REPORT_INTERVAL_MS * 2);
-        return;
-      }
-      try {
-        await generateAiReport(supabase);
-      } catch {
-      }
-      scheduleAiReport(AI_REPORT_INTERVAL_MS);
-    }, delayMs);
-    t.unref?.();
-  };
-  scheduleAiReport(6e4);
-  const scheduleCleanup = () => {
-    const t = setTimeout(async () => {
-      try {
-        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString();
-        await supabase.from("db_health_samples").delete().lt("sampled_at", cutoff);
-      } catch {
-      }
-      scheduleCleanup();
-    }, CLEANUP_INTERVAL_MS);
-    t.unref?.();
-  };
-  scheduleCleanup();
-}
-var lastCpuUsage, lastCpuSample, AI_REPORT_SYSTEM_PROMPT, samplerStarted, SAMPLE_INTERVAL_MS, CLEANUP_INTERVAL_MS, AI_REPORT_INTERVAL_MS;
-var init_db_telemetry = __esm({
-  "server/db-telemetry.ts"() {
-    "use strict";
-    init_supabase();
-    init_constants();
-    lastCpuUsage = process.cpuUsage();
-    lastCpuSample = Date.now();
-    AI_REPORT_SYSTEM_PROMPT = `Voc\xEA \xE9 um analista s\xEAnior de banco de dados monitorando um ERP em produ\xE7\xE3o (PostgreSQL/Supabase) de uma empresa de seguran\xE7a patrimonial. A cada 10 minutos voc\xEA recebe as m\xE9tricas atuais do banco em JSON e produz um relat\xF3rio curto, em portugu\xEAs brasileiro, para um GESTOR LEIGO (n\xE3o t\xE9cnico) que precisa saber EXATAMENTE o que corrigir.
-
-No JSON de entrada, o campo "consultas_mais_pesadas" lista as consultas que mais consomem o banco (campos: query = trecho do comando SQL; calls = quantas vezes rodou; total_ms = tempo total somado; mean_ms = tempo M\xC9DIO por execu\xE7\xE3o; rows = linhas devolvidas; cache_hit_pct = % de leitura vinda da mem\xF3ria, baixo = lendo muito do disco). Use ESSA lista para apontar o problema concreto \u2014 NUNCA diga apenas "h\xE1 uma consulta lenta" de forma gen\xE9rica.
-
-Responda SOMENTE em JSON v\xE1lido com as chaves:
-- "status": uma de "good" (tudo saud\xE1vel), "warn" (aten\xE7\xE3o: algo fora do ideal, mas n\xE3o cr\xEDtico) ou "bad" (problema s\xE9rio que precisa de a\xE7\xE3o agora).
-- "headline": uma frase curta (m\xE1x 80 caracteres) resumindo a situa\xE7\xE3o em linguagem simples.
-- "analysis": texto curto em linguagem simples. Quando houver consulta pesada, \xE9 OBRIGAT\xD3RIO escrever 3 trechos SEPARADOS POR QUEBRA DE LINHA (\\n), nesta ordem e come\xE7ando cada um com o r\xF3tulo indicado:
-   "Consulta: " QUAL consulta/tela est\xE1 pesando \u2014 identifique pela tabela principal do SQL (ex.: "a listagem de abastecimentos (tabela vehicle_fueling)") e cite o tempo m\xE9dio (mean_ms) e quantas vezes rodou (calls).
-   "Causa prov\xE1vel: " a explica\xE7\xE3o que melhor casa com os N\xDAMEROS \u2014 siga esta l\xF3gica:
-      \u2022 Se mean_ms \xE9 alto (>1000ms) mas calls \xE9 baixo/moderado (dezenas ou poucas centenas), a causa N\xC3O \xE9 frequ\xEAncia. \xC9 a consulta em si: provavelmente est\xE1 trazendo colunas pesadas (fotos/imagens em base64) com "SELECT *", ou falta um \xEDndice na coluna do filtro/ordena\xE7\xE3o, ou falta pagina\xE7\xE3o (traz a tabela inteira). Se o SQL mostra "SELECT ... .*" sem filtro e a tabela costuma guardar fotos/arquivos, aposte em payload pesado de fotos.
-      \u2022 S\xF3 aponte "consulta repetida vezes demais" quando calls for realmente alt\xEDssimo (milhares) E mean_ms baixo.
-      \u2022 cache_hit_pct < 95 indica leitura demais do disco; idle_in_transaction > 0 indica transa\xE7\xE3o presa.
-   "Como corrigir: " a\xE7\xE3o acion\xE1vel coerente com a causa (ex.: "n\xE3o trazer as fotos na listagem \u2014 carregar a imagem s\xF3 quando abrir o item", "paginar os resultados", "criar um \xEDndice na coluna usada no filtro", "selecionar s\xF3 as colunas necess\xE1rias em vez de tudo").
-  Se estiver tudo bem, escreva 2-3 frases tranquilizadoras, sem os r\xF3tulos.
-
-Crit\xE9rios de refer\xEAncia:
-- Lat\xEAncia: <300ms boa, 300-1500ms aten\xE7\xE3o, >1500ms ruim.
-- mean_ms de uma consulta: <100ms ok, 100-1000ms aten\xE7\xE3o, >1000ms ruim (prov\xE1vel falta de \xEDndice ou payload pesado).
-- cache_hit_pct de uma consulta ou cache_hit_ratio geral: >=99% \xF3timo, 95-99% ok, <95% ruim (lendo demais do disco).
-- Conex\xF5es: acima de 90% do m\xE1ximo \xE9 ruim.
-- idle_in_transaction > 0: aten\xE7\xE3o (transa\xE7\xE3o presa segurando recursos).
-- Falhas de autentica\xE7\xE3o altas ou IPs suspeitos: risco de seguran\xE7a (aten\xE7\xE3o/ruim).
-- Tabelas muito grandes podem indicar necessidade de limpeza no futuro (informativo, raramente cr\xEDtico).
-Seja direto e tranquilizador quando estiver tudo bem; seja claro e espec\xEDfico sobre a a\xE7\xE3o quando houver problema. N\xE3o invente nomes de tabelas que n\xE3o estejam no JSON.`;
-    samplerStarted = false;
-    SAMPLE_INTERVAL_MS = 2 * 6e4;
-    CLEANUP_INTERVAL_MS = 6 * 60 * 6e4;
-    AI_REPORT_INTERVAL_MS = 10 * 6e4;
-  }
-});
-
-// vite.config.ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path5 from "path";
-var vite_config_default;
-var init_vite_config = __esm({
-  "vite.config.ts"() {
-    "use strict";
-    vite_config_default = defineConfig({
-      plugins: [react()],
-      resolve: {
-        alias: {
-          "@": path5.resolve(import.meta.dirname, "client", "src"),
-          "@shared": path5.resolve(import.meta.dirname, "shared"),
-          "@assets": path5.resolve(import.meta.dirname, "attached_assets")
-        }
-      },
-      root: path5.resolve(import.meta.dirname, "client"),
-      build: {
-        outDir: path5.resolve(import.meta.dirname, "dist/public"),
-        emptyOutDir: true
-      },
-      server: {
-        fs: {
-          strict: true,
-          deny: ["**/.*"]
-        }
-      }
-    });
-  }
-});
-
-// server/vite.ts
-var vite_exports = {};
-__export(vite_exports, {
-  setupVite: () => setupVite
-});
-import { createServer as createViteServer, createLogger } from "vite";
-import fs5 from "fs";
-import path6 from "path";
-import { nanoid } from "nanoid";
-async function setupVite(server, app3) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server, path: "/vite-hmr" },
-    allowedHosts: true
-  };
-  const vite = await createViteServer({
-    ...vite_config_default,
-    configFile: false,
-    customLogger: {
-      ...viteLogger,
-      error: (msg, options) => {
-        viteLogger.error(msg, options);
-        process.exit(1);
-      }
-    },
-    server: serverOptions,
-    appType: "custom"
-  });
-  app3.use(vite.middlewares);
-  app3.use("/{*path}", async (req, res, next) => {
-    const url = req.originalUrl;
-    try {
-      const clientTemplate = path6.resolve(
-        import.meta.dirname,
-        "..",
-        "client",
-        "index.html"
-      );
-      let template = await fs5.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`
-      );
-      const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({
-        "Content-Type": "text/html",
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      }).end(page);
-    } catch (e) {
-      vite.ssrFixStacktrace(e);
-      next(e);
-    }
-  });
-}
-var viteLogger;
-var init_vite = __esm({
-  "server/vite.ts"() {
-    "use strict";
-    init_vite_config();
-    viteLogger = createLogger();
-  }
-});
-
-// server/lib/fleet-summary.ts
-var fleet_summary_exports = {};
-__export(fleet_summary_exports, {
-  buildFleetOperationalSummary: () => buildFleetOperationalSummary,
-  handlePvResumoRequest: () => handlePvResumoRequest,
-  isAuthorizedResumoPhone: () => isAuthorizedResumoPhone,
-  isResumoIntent: () => isResumoIntent
-});
-function allowedSuffixes() {
-  const env = process.env.WHATSAPP_RESUMO_ALLOWED_PHONES;
-  const raw = env ? env.split(",") : DEFAULT_ALLOWED_PHONES;
-  return raw.map((s) => String(s).replace(/\D/g, "")).filter((d) => d.length >= 11).map((d) => d.slice(-11));
-}
-function isAuthorizedResumoPhone(phone) {
-  const d = String(phone || "").replace(/\D/g, "");
-  if (d.length < 11) return false;
-  return allowedSuffixes().includes(d.slice(-11));
-}
-function isResumoIntent(text2) {
-  if (!text2) return false;
-  return /\b(resumo|frota)\b/i.test(text2.trim());
-}
-function brtToday3() {
-  return currentBrtDayRange().from;
-}
-function brtDateLabel() {
-  const [y, m, d] = brtToday3().split("-");
-  return `${d}/${m}/${y}`;
-}
-function osDateKey(o) {
-  const src = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt;
-  return brtDateKey(src);
-}
-function parseBRT(v) {
-  const s = String(v);
-  return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
-}
-function brtTime(v) {
-  if (!v) return void 0;
-  const d = parseBRT(v);
-  if (isNaN(d.getTime())) return void 0;
-  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-}
-function money(v) {
-  return "R$ " + (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function isActiveMission(o) {
-  if (o.status !== "em_andamento") return false;
-  const ms = String(o.missionStatus || "").toLowerCase();
-  return !FINISHED_MISSION.has(ms);
-}
-function isFutureScheduled(o) {
-  if (o.status !== "agendada" || !o.scheduledDate) return false;
-  return parseBRT(o.scheduledDate).getTime() > Date.now();
-}
-function latestPhotoByStep(photos, step) {
-  let best;
-  for (const p of photos) {
-    if (p.step !== step) continue;
-    if (!best || new Date(p.createdAt || 0).getTime() >= new Date(best.createdAt || 0).getTime()) best = p;
-  }
-  return best;
-}
-function osFaturamento(o, ctx) {
-  if (o.custosCongeladosEm && o.fatCalculado != null) {
-    return Number(o.fatCalculado) || 0;
-  }
-  const contrato = o.escortContractId ? ctx.contractById.get(o.escortContractId) || DEFAULT_CONTRATO : o.clientId ? ctx.activeContractByClient.get(o.clientId) || DEFAULT_CONTRATO : DEFAULT_CONTRATO;
-  const photos = ctx.photosByOS.get(o.id) || [];
-  const kmSaida = photos.find((p) => p.step === "km_saida");
-  const kmChegada = photos.find((p) => p.step === "km_chegada");
-  const kmFinal = latestPhotoByStep(photos, "km_final");
-  const kmInicial = Number(kmChegada?.kmValue) || Number(kmSaida?.kmValue) || 0;
-  const kmAtual = Number(kmFinal?.kmValue) || kmInicial;
-  const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
-  const missionNotStartedYet = !o.missionStatus || o.missionStatus === "aguardando";
-  const skipHours = missionNotStartedYet || o.status === "agendada" && isFutureScheduled(o);
-  const horasMissao = skipHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate, o.scheduledDate);
-  const { despesas_pedagio, despesas_combustivel, receitas_os } = splitMissionCostsForBilling(
-    ctx.costsByOS.get(o.id) || []
-  );
-  try {
-    const esc3 = calcularEscolta({
-      km_inicial: kmInicial,
-      km_final: kmFinalNorm,
-      km_vazio: 0,
-      horas_missao: horasMissao,
-      horas_estadia: 0,
-      teve_pernoite: false,
-      horario_inicio: brtTime(o.missionStartedAt),
-      horario_fim: brtTime(o.completedDate),
-      horario_agendado: brtTime(o.scheduledDate),
-      inicio_ts: o.missionStartedAt || null,
-      fim_ts: o.completedDate || null,
-      scheduled_date: o.scheduledDate || null,
-      despesas_pedagio,
-      despesas_combustivel,
-      despesas_outras: 0,
-      receitas_os,
-      contrato
-    });
-    let canonFat = esc3.fat_total;
-    if (canonFat === 0 && o.status === "agendada" && o.valorEstimado) {
-      canonFat = Number(o.valorEstimado) || 0;
-    }
-    return Math.round(canonFat * 100) / 100;
-  } catch {
-    return 0;
-  }
-}
-async function fetchByOsIdsChunked(table, ids, columns) {
-  const out = [];
-  const CHUNK2 = 150;
-  for (let i = 0; i < ids.length; i += CHUNK2) {
-    const slice = ids.slice(i, i + CHUNK2);
-    const { data } = await supabaseAdmin.from(table).select(columns).in("service_order_id", slice);
-    if (data) out.push(...data);
-  }
-  return out;
-}
-async function buildFleetOperationalSummary() {
-  const [vehicles4, orders] = await Promise.all([
-    storage.getVehicles(),
-    storage.getServiceOrders()
-  ]);
-  const today = brtToday3();
-  const relevant = orders.filter(
-    (o) => !EXCLUDED_OS_STATUS.has(String(o.status)) && (isActiveMission(o) || osDateKey(o) === today)
-  );
-  const relevantIds = relevant.map((o) => o.id);
-  const ctx = {
-    photosByOS: /* @__PURE__ */ new Map(),
-    costsByOS: /* @__PURE__ */ new Map(),
-    contractById: /* @__PURE__ */ new Map(),
-    activeContractByClient: /* @__PURE__ */ new Map()
-  };
-  if (relevantIds.length > 0) {
-    const [photos, costs, contractsRes] = await Promise.all([
-      fetchByOsIdsChunked("mission_photos", relevantIds, "service_order_id, step, km_value, created_at"),
-      fetchByOsIdsChunked("mission_costs", relevantIds, "service_order_id, amount, category, cost_type"),
-      supabaseAdmin.from("escort_contracts").select("*")
-    ]);
-    for (const p of photos) {
-      const arr = ctx.photosByOS.get(p.service_order_id) || [];
-      arr.push({ step: p.step, kmValue: p.km_value, createdAt: p.created_at });
-      ctx.photosByOS.set(p.service_order_id, arr);
-    }
-    for (const c of costs) {
-      const arr = ctx.costsByOS.get(c.service_order_id) || [];
-      arr.push(c);
-      ctx.costsByOS.set(c.service_order_id, arr);
-    }
-    for (const c of contractsRes.data || []) {
-      if (c.id) ctx.contractById.set(c.id, c);
-      if (c.status === "Ativo" && c.client_id && !ctx.activeContractByClient.has(c.client_id)) {
-        ctx.activeContractByClient.set(c.client_id, c);
-      }
-    }
-  }
-  const ordersByVehicle = /* @__PURE__ */ new Map();
-  for (const o of orders) {
-    if (!o.vehicleId) continue;
-    const arr = ordersByVehicle.get(o.vehicleId) || [];
-    arr.push(o);
-    ordersByVehicle.set(o.vehicleId, arr);
-  }
-  const disponiveis = [];
-  const emViagem = [];
-  let totalFaturado = 0;
-  const sortedVehicles = [...vehicles4].sort(
-    (a, b) => String(a.plate || "").localeCompare(String(b.plate || ""), "pt-BR")
-  );
-  for (const v of sortedVehicles) {
-    const plate = String(v.plate || "\u2014").toUpperCase();
-    const vOrders = ordersByVehicle.get(v.id) || [];
-    const activeOrders = vOrders.filter(isActiveMission);
-    const todayOrders = vOrders.filter(
-      (o) => osDateKey(o) === today && !EXCLUDED_OS_STATUS.has(String(o.status))
-    );
-    const todayFat = todayOrders.reduce((s, o) => s + osFaturamento(o, ctx), 0);
-    totalFaturado += todayFat;
-    if (activeOrders.length > 0) {
-      const primary = [...activeOrders].sort(
-        (a, b) => parseBRT(b.missionStartedAt || b.scheduledDate || 0).getTime() - parseBRT(a.missionStartedAt || a.scheduledDate || 0).getTime()
-      )[0];
-      const origem = shortLocal(primary.origin) || "\u2014";
-      const destino = shortLocal(primary.destination) || "\u2014";
-      const fatSuffix = todayFat > 0 ? `: ${money(todayFat)}` : "";
-      emViagem.push(`- ${plate}${fatSuffix} (${origem} \u279C ${destino})`);
-    } else {
-      const proxima = vOrders.filter(isFutureScheduled).sort((a, b) => parseBRT(a.scheduledDate).getTime() - parseBRT(b.scheduledDate).getTime())[0];
-      const proximaSuffix = proxima?.osNumber ? ` (${proxima.osNumber})` : "";
-      disponiveis.push(`- ${plate}: ${money(todayFat)}${proximaSuffix}`);
-    }
-  }
-  const pad22 = (n4) => String(n4).padStart(2, "0");
-  const unidades = (n4) => n4 === 1 ? "01 UNIDADE" : `${pad22(n4)} UNIDADES`;
-  const parts = [];
-  parts.push(SEP);
-  parts.push("\u{1F6E1}\uFE0F [TMSEGo] RELAT\xD3RIO DI\xC1RIO");
-  parts.push(`\u{1F4C5} ${brtDateLabel()}`);
-  parts.push("");
-  parts.push(`[\u{1F7E2}] DISPON\xCDVEIS: ${unidades(disponiveis.length)}`);
-  parts.push(disponiveis.length ? disponiveis.join("\n") : "- Nenhuma");
-  parts.push("");
-  parts.push(`[\u{1F7E1}] EM VIAGEM: ${unidades(emViagem.length)}`);
-  parts.push(emViagem.length ? emViagem.join("\n") : "- Nenhuma");
-  parts.push("");
-  parts.push(`[\u{1F4B0}] TOTAL FATURADO: ${money(totalFaturado)}`);
-  parts.push(SEP);
-  return parts.join("\n");
-}
-async function handlePvResumoRequest(msg) {
-  try {
-    if (!isResumoIntent(msg.text)) return;
-    if (!isAuthorizedResumoPhone(msg.senderPhone || msg.chatId)) return;
-    if (!isZapiConfigured()) return;
-    const text2 = await buildFleetOperationalSummary();
-    await sendText({ groupOrPhone: msg.chatId, message: text2, senderName: "Central Torres" });
-  } catch (e) {
-    console.warn("[fleet-summary] handlePvResumoRequest:", e?.message);
-  }
-}
-var DEFAULT_ALLOWED_PHONES, SEP, FINISHED_MISSION, EXCLUDED_OS_STATUS, DEFAULT_CONTRATO;
-var init_fleet_summary = __esm({
-  "server/lib/fleet-summary.ts"() {
-    "use strict";
-    init_storage();
-    init_supabase();
-    init_zapi();
-    init_agent_central_mention();
-    init_billing_calc();
-    init_brt_date();
-    DEFAULT_ALLOWED_PHONES = ["11963696699", "11954563755", "11972368645"];
-    SEP = "\u2501".repeat(20);
-    FINISHED_MISSION = /* @__PURE__ */ new Set([
-      "encerrada",
-      "finalizada",
-      "retorno_base",
-      "chegada_base",
-      "cancelada",
-      "recusada"
-    ]);
-    EXCLUDED_OS_STATUS = /* @__PURE__ */ new Set(["recusada", "cancelada"]);
-    DEFAULT_CONTRATO = {
-      valor_km_carregado: 2.8,
-      valor_km_vazio: 1.4,
-      franquia_minima_km: 50,
-      valor_hora_estadia: 50,
-      valor_diaria: 200,
-      vrp_base: 150,
-      adicional_noturno_vrp_pct: 20,
-      adicional_noturno_km_pct: 15,
-      adicional_periculosidade_pct: 30,
-      periculosidade_horas_limite: 8
-    };
-  }
-});
-
-// server/routes/onboarding.ts
-var onboarding_exports = {};
-__export(onboarding_exports, {
-  DOCUMENT_GATE_ENABLED: () => DOCUMENT_GATE_ENABLED,
-  assertOnboardingComplete: () => assertOnboardingComplete,
-  computeOnboarding: () => computeOnboarding,
-  registerOnboardingRoutes: () => registerOnboardingRoutes
-});
-import { z as z4 } from "zod";
-function rolesForEmployee(role) {
-  const r = (role || "").toLowerCase();
-  const out = ["*"];
-  if (/vigilan/.test(r)) out.push("vigilante");
-  if (/escolt/.test(r)) out.push("escolta");
-  if (/motoris|condutor/.test(r)) out.push("motorista");
-  return out;
-}
-function todayBRT() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(/* @__PURE__ */ new Date());
-}
-function ymBRT(d) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(d).slice(0, 7);
-}
-function lastNMonths(n4) {
-  const out = [];
-  const now = /* @__PURE__ */ new Date();
-  for (let i = 1; i <= n4; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    out.push(ymBRT(d));
-  }
-  return out;
-}
-async function computeOnboarding(employeeId) {
-  const emp = await storage.getEmployee(employeeId);
-  if (!emp) throw new Error(`Funcion\xE1rio ${employeeId} n\xE3o encontrado`);
-  const today = todayBRT();
-  const roles = rolesForEmployee(emp.role);
-  const reqDocs = filterReciclagemByCnv(
-    getMandatoryDocTypesForProfile(profileFromRole(emp.role)),
-    emp.cnvIssueDate
-  );
-  const reqTrainings = Array.from(
-    new Map(
-      roles.flatMap((r) => REQUIRED_TRAININGS[r] || []).map((t) => [t.type, t])
-    ).values()
-  );
-  const docs = await storage.getEmployeeDocuments(employeeId);
-  const itensDoc = [];
-  const hireDateStr = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
-  let asoGraceUntil = null;
-  if (hireDateStr) {
-    const dt = /* @__PURE__ */ new Date(hireDateStr + "T00:00:00");
-    dt.setDate(dt.getDate() + ASO_GRACE_DAYS);
-    asoGraceUntil = dt.toISOString().slice(0, 10);
-  }
-  const empPhotoUrl = emp.photoUrl || emp.photo_url;
-  for (const tipo of reqDocs) {
-    let has = docs.find((d) => (d.type || "").toLowerCase() === tipo.toLowerCase());
-    if (!has && tipo === "Fotos 3x4" && empPhotoUrl) {
-      has = { type: tipo, expiryDate: null, _fromAvatar: true };
-    }
-    const isASO = tipo === "ASO";
-    if (!has) {
-      if (isASO && asoGraceUntil && asoGraceUntil >= today) {
-        itensDoc.push({ label: tipo, status: "ok", detail: `Em car\xEAncia \u2014 entregar at\xE9 ${asoGraceUntil} (alerta enviado ao ADM)` });
-      } else if (isASO && asoGraceUntil) {
-        itensDoc.push({ label: tipo, status: "pendente", detail: `Prazo de car\xEAncia expirou em ${asoGraceUntil} \u2014 bloqueado para OS` });
-      } else {
-        itensDoc.push({ label: tipo, status: "pendente", detail: "Documento n\xE3o cadastrado" });
-      }
-    } else if (has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
-      itensDoc.push({ label: tipo, status: "vencido", detail: `Venceu em ${String(has.expiryDate).slice(0, 10)}` });
-    } else if (has._fromAvatar) {
-      itensDoc.push({ label: tipo, status: "ok", detail: "Foto cadastral do sistema" });
-    } else {
-      itensDoc.push({ label: tipo, status: "ok", detail: has.expiryDate ? `V\xE1lido at\xE9 ${String(has.expiryDate).slice(0, 10)}` : void 0 });
-    }
-  }
-  const { data: depRows } = await supabaseAdmin.from("employee_dependents").select("id").eq("employee_id", employeeId);
-  const declaradoSem = emp.dependentesDeclarados === true || emp.dependentes_declarados === true;
-  if ((depRows || []).length > 0) {
-    itensDoc.push({ label: "Dependentes", status: "ok", detail: `${depRows.length} cadastrado(s)` });
-  } else if (declaradoSem) {
-    itensDoc.push({ label: "Dependentes", status: "ok", detail: "Sem dependentes (declarado)" });
-  } else {
-    itensDoc.push({ label: "Dependentes", status: "pendente", detail: "Informe os dependentes ou declare 'sem dependentes' na aba Dependentes" });
-  }
-  const docPend = itensDoc.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
-  const docStatus = itensDoc.some((i) => i.status === "vencido") ? "vencido" : itensDoc.some((i) => i.status === "pendente") ? "pendente" : "ok";
-  const itensCon = [];
-  if (/vigilan|escolt/.test((emp.role || "").toLowerCase())) {
-    const { data: probRows } = await supabaseAdmin.from("employee_probation_contracts").select("id, assinatura_status, bypass_diretoria, end_date, start_date, created_at").eq("employee_id", employeeId).order("created_at", { ascending: false }).limit(5);
-    const prob = (probRows || [])[0];
-    const probLegacy = prob && String(prob.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
-    if (!prob) {
-      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "pendente", detail: "N\xE3o emitido" });
-    } else if (probLegacy) {
-      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "ok", detail: "OK por autoriza\xE7\xE3o (contrato pr\xE9-existente)" });
-    } else if (prob.assinatura_status === "assinado" || prob.bypass_diretoria) {
-      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "ok", detail: prob.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
-    } else {
-      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "pendente", detail: "Aguardando assinatura" });
-    }
-    const probEnd = prob?.end_date ? String(prob.end_date).slice(0, 10) : null;
-    const expExpirou = probEnd && probEnd < today;
-    if (expExpirou) {
-      const { data: permRows } = await supabaseAdmin.from("employee_permanent_contracts").select("id, assinatura_status, bypass_diretoria, created_at").eq("employee_id", employeeId).order("created_at", { ascending: false }).limit(1);
-      const perm = (permRows || [])[0];
-      const permLegacy = perm && String(perm.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
-      if (!perm) {
-        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "pendente", detail: "N\xE3o emitido" });
-      } else if (permLegacy) {
-        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: "OK por autoriza\xE7\xE3o (contrato pr\xE9-existente)" });
-      } else if (perm.assinatura_status === "assinado" || perm.bypass_diretoria) {
-        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: perm.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
-      } else {
-        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "pendente", detail: "Aguardando assinatura" });
-      }
-    }
-  } else {
-    itensCon.push({ label: "Contratos", status: "ok", detail: "N\xE3o aplic\xE1vel a esta fun\xE7\xE3o" });
-  }
-  const conPend = itensCon.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
-  const conStatus = itensCon.some((i) => i.status === "vencido") ? "vencido" : itensCon.some((i) => i.status === "pendente") ? "pendente" : "ok";
-  const itensTr = [];
-  if (reqTrainings.length === 0) {
-    itensTr.push({ label: "Treinamentos", status: "ok", detail: "N\xE3o aplic\xE1vel a esta fun\xE7\xE3o" });
-  } else {
-    const { data: trRows } = await supabaseAdmin.from("employee_trainings").select("id, type, completed_at, expiry_date").eq("employee_id", employeeId).order("completed_at", { ascending: false });
-    const all = trRows || [];
-    for (const req of reqTrainings) {
-      const matches = all.filter((t) => (t.type || "").toLowerCase().includes(req.type.toLowerCase()) || req.type.toLowerCase().includes((t.type || "").toLowerCase()));
-      if (matches.length === 0) {
-        itensTr.push({ label: req.type, status: "pendente", detail: "N\xE3o realizado" });
-        continue;
-      }
-      const last = matches[0];
-      const completed = String(last.completed_at).slice(0, 10);
-      let expiry = last.expiry_date ? String(last.expiry_date).slice(0, 10) : null;
-      if (!expiry && req.validityMonths) {
-        const dt = /* @__PURE__ */ new Date(completed + "T00:00:00");
-        dt.setMonth(dt.getMonth() + req.validityMonths);
-        expiry = dt.toISOString().slice(0, 10);
-      }
-      if (expiry && expiry < today) {
-        itensTr.push({ label: req.type, status: "vencido", detail: `Vencido em ${expiry} \u2014 necess\xE1ria reciclagem` });
-      } else {
-        itensTr.push({ label: req.type, status: "ok", detail: expiry ? `V\xE1lido at\xE9 ${expiry}` : `Realizado em ${completed}` });
-      }
-    }
-  }
-  const trPend = itensTr.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
-  const trStatus = itensTr.some((i) => i.status === "vencido") ? "vencido" : itensTr.some((i) => i.status === "pendente") ? "pendente" : "ok";
-  const itensHl = [];
-  const meses = lastNMonths(3);
-  const { data: payRows } = await supabaseAdmin.from("employee_payslips").select("id, month, year, assinado_em, assinatura_status").eq("employee_id", employeeId);
-  const pay = payRows || [];
-  const hireDate = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
-  for (const ym of meses) {
-    if (hireDate && ym < hireDate.slice(0, 7)) continue;
-    const [y, m] = ym.split("-").map(Number);
-    const found = pay.find((p) => Number(p.year) === y && Number(p.month) === m);
-    if (!found) {
-      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "N\xE3o emitido" });
-    } else if (!found.assinado_em && found.assinatura_status !== "assinado") {
-      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "Aguardando assinatura" });
-    } else {
-      itensHl.push({ label: `Holerite ${ym}`, status: "ok", detail: "Assinado" });
-    }
-  }
-  let hlNeutro = false;
-  if (itensHl.length === 0) {
-    itensHl.push({ label: "Holerites", status: "neutro", detail: "Sem holerites a emitir ainda" });
-    hlNeutro = true;
-  }
-  const hlPend = itensHl.filter((i) => i.status === "pendente" || i.status === "vencido").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
-  const hlStatus = itensHl.some((i) => i.status === "vencido") ? "vencido" : itensHl.some((i) => i.status === "pendente") ? "pendente" : hlNeutro ? "neutro" : "ok";
-  const stages = [
-    { key: "documentacao", label: "Documenta\xE7\xE3o", status: docStatus, blocking: true, pendencias: docPend, itens: itensDoc },
-    { key: "contratos", label: "Contratos", status: conStatus, blocking: true, pendencias: conPend, itens: itensCon },
-    { key: "treinamento", label: "Treinamento", status: trStatus, blocking: true, pendencias: trPend, itens: itensTr },
-    { key: "holerites", label: "Holerites", status: hlStatus, blocking: false, pendencias: hlPend, itens: itensHl }
-  ];
-  const apto = stages.filter((s) => s.blocking).every((s) => s.status === "ok");
-  return {
-    employeeId,
-    employeeName: emp.name,
-    role: emp.role || null,
-    status: apto ? "ok" : "pendente",
-    apto,
-    stages,
-    pendencias: stages.flatMap((s) => s.pendencias.map((p) => `[${s.label}] ${p}`)),
-    computedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-async function assertOnboardingComplete(employeeId) {
-  if (!ONBOARDING_GATE_ENABLED) {
-    console.log(`[onboarding-liberado] gate desligado (at\xE9 segunda ordem) \u2014 emp=${employeeId} n\xE3o bloqueado.`);
-    return;
-  }
-  const r = await computeOnboarding(employeeId);
-  if (r.apto) return;
-  const today = todayBRT();
-  if (today <= ONBOARDING_BLOCK_START_DATE) {
-    console.log(`[onboarding-grace] ${r.employeeName} (id=${employeeId}) \u2014 trava global ativa at\xE9 ${ONBOARDING_BLOCK_START_DATE} (hoje=${today}). Bloqueio liberado.`);
-    return;
-  }
-  const top = r.pendencias.slice(0, 6).join(" \u2022 ");
-  const err = new Error(`Onboarding incompleto de ${r.employeeName}: ${top}`);
-  err.code = "ONBOARDING_INCOMPLETE";
-  err.detail = r;
-  throw err;
-}
-function registerOnboardingRoutes(app3) {
-  app3.get("/api/employees/:id/onboarding", requireAuth, requireAdminRole, async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const r = await computeOnboarding(id);
-      res.json(r);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  app3.get("/api/onboarding-summary", requireAuth, requireAdminRole, async (_req, res) => {
-    try {
-      const all = await storage.getEmployees();
-      const out = await Promise.all(
-        all.filter((e) => e.status !== "inativo").map(async (e) => {
-          try {
-            const r = await computeOnboarding(e.id);
-            return {
-              employeeId: e.id,
-              apto: r.apto,
-              stages: r.stages.map((s) => ({ key: s.key, status: s.status, blocking: s.blocking, count: s.pendencias.length }))
-            };
-          } catch {
-            return { employeeId: e.id, apto: false, stages: [] };
-          }
-        })
-      );
-      res.json(out);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  app3.post("/api/employees/:id/dependentes/declarar-sem", requireAuth, requireAdminRole, async (req, res) => {
-    const id = Number(req.params.id);
-    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: true }).eq("id", id);
-    if (error) return res.status(500).json({ message: error.message });
-    res.json({ ok: true });
-  });
-  app3.post("/api/employees/:id/dependentes/limpar-declaracao", requireAuth, requireAdminRole, async (req, res) => {
-    const id = Number(req.params.id);
-    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: false }).eq("id", id);
-    if (error) return res.status(500).json({ message: error.message });
-    res.json({ ok: true });
-  });
-  app3.get("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
-    const id = Number(req.params.id);
-    const { data } = await supabaseAdmin.from("employee_trainings").select("*").eq("employee_id", id).order("completed_at", { ascending: false });
-    res.json((data || []).map((t) => ({
-      id: t.id,
-      employeeId: t.employee_id,
-      type: t.type,
-      completedAt: t.completed_at,
-      expiryDate: t.expiry_date,
-      certificateUrl: t.certificate_url,
-      instructor: t.instructor,
-      cargaHoraria: t.carga_horaria,
-      notes: t.notes,
-      createdAt: t.created_at
-    })));
-  });
-  app3.post("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
-    const id = Number(req.params.id);
-    const parsed = trainingSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "Dados inv\xE1lidos", errors: parsed.error.errors });
-    const { data, error } = await supabaseAdmin.from("employee_trainings").insert({
-      employee_id: id,
-      type: parsed.data.type,
-      completed_at: parsed.data.completedAt,
-      expiry_date: parsed.data.expiryDate || null,
-      certificate_url: parsed.data.certificateUrl || null,
-      instructor: parsed.data.instructor || null,
-      carga_horaria: parsed.data.cargaHoraria || null,
-      notes: parsed.data.notes || null
-    }).select().single();
-    if (error) return res.status(500).json({ message: error.message });
-    res.json(data);
-  });
-  app3.delete("/api/trainings/:id", requireAuth, requireAdminRole, async (req, res) => {
-    const id = Number(req.params.id);
-    const { error } = await supabaseAdmin.from("employee_trainings").delete().eq("id", id);
-    if (error) return res.status(500).json({ message: error.message });
-    res.json({ ok: true });
-  });
-}
-var LEGACY_CONTRACT_CUTOFF, ASO_GRACE_DAYS, ONBOARDING_GATE_ENABLED, DOCUMENT_GATE_ENABLED, ONBOARDING_BLOCK_START_DATE, REQUIRED_TRAININGS, trainingSchema;
-var init_onboarding = __esm({
-  "server/routes/onboarding.ts"() {
-    "use strict";
-    init_supabase();
-    init_auth();
-    init_storage();
-    init_documents_catalog();
-    LEGACY_CONTRACT_CUTOFF = "2026-05-11";
-    ASO_GRACE_DAYS = 15;
-    ONBOARDING_GATE_ENABLED = false;
-    DOCUMENT_GATE_ENABLED = false;
-    ONBOARDING_BLOCK_START_DATE = "2026-06-30";
-    REQUIRED_TRAININGS = {
-      vigilante: [
-        { type: "Forma\xE7\xE3o de Vigilante", validityMonths: 24 },
-        { type: "Reciclagem", validityMonths: 24 }
-      ],
-      escolta: [
-        { type: "Forma\xE7\xE3o de Vigilante", validityMonths: 24 },
-        { type: "Especializa\xE7\xE3o Escolta Armada", validityMonths: 24 },
-        { type: "Reciclagem", validityMonths: 24 }
-      ],
-      motorista: [],
-      "*": []
-    };
-    trainingSchema = z4.object({
-      type: z4.string().min(1),
-      completedAt: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      expiryDate: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-      certificateUrl: z4.string().optional().nullable(),
-      instructor: z4.string().optional().nullable(),
-      cargaHoraria: z4.number().int().optional().nullable(),
-      notes: z4.string().optional().nullable()
-    });
-  }
-});
-
-// server/lib/correct-text-ai.ts
-var correct_text_ai_exports = {};
-__export(correct_text_ai_exports, {
-  correctAgentMessage: () => correctAgentMessage
-});
-import OpenAI5 from "openai";
-async function correctAgentMessage(raw) {
-  const text2 = (raw || "").trim();
-  if (!text2) return "";
-  if (text2.length < 4) return text2;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return text2;
-  try {
-    const openai = new OpenAI5({ apiKey });
-    const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      reasoning_effort: "minimal",
-      max_completion_tokens: 400,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: text2 }
-      ]
-    });
-    const corrected = response.choices?.[0]?.message?.content?.trim();
-    if (!corrected) return text2;
-    if (corrected.length > Math.max(text2.length * 2 + 50, 200)) return text2;
-    return corrected;
-  } catch (err) {
-    console.warn("[correct-text-ai] OpenAI falhou, devolvendo texto cru:", err?.message);
-    return text2;
-  }
-}
-var SYSTEM_PROMPT;
-var init_correct_text_ai = __esm({
-  "server/lib/correct-text-ai.ts"() {
-    "use strict";
-    SYSTEM_PROMPT = `Voc\xEA corrige mensagens curtas escritas por agentes de seguran\xE7a em campo, no celular.
-
-REGRAS:
-1. Corrija ortografia, acentos, pontua\xE7\xE3o e capitaliza\xE7\xE3o.
-2. Reescreva o m\xEDnimo necess\xE1rio pra a mensagem ficar clara e com nexo em portugu\xEAs brasileiro.
-3. NUNCA invente informa\xE7\xE3o que n\xE3o est\xE1 no texto original (n\xE3o criar hor\xE1rios, locais, placas, nomes).
-4. NUNCA traduza \u2014 mantenha em portugu\xEAs.
-5. Mantenha jarg\xE3o de seguran\xE7a/escolta intacto (ex.: "OS", "VTR", "rota", "ponto de apoio", "PA", "QAP", "QSL", "QRA", "vulto", "abordagem", "ocorr\xEAncia", "carreta", "cavalo", "engate", "deslocamento", "checkpoint").
-6. Mantenha n\xFAmeros, placas, nomes pr\xF3prios e hor\xE1rios exatamente como est\xE3o.
-7. Se a mensagem j\xE1 estiver correta, devolva ela igual.
-8. Resposta: S\xD3 o texto corrigido, sem aspas, sem coment\xE1rio, sem prefixo.`;
-  }
-});
-
-// shared/payroll-period.ts
-var payroll_period_exports = {};
-__export(payroll_period_exports, {
-  formatPayrollPeriodWithMonthName: () => formatPayrollPeriodWithMonthName,
-  getPayrollPeriod: () => getPayrollPeriod,
-  getPayrollPeriodForDate: () => getPayrollPeriodForDate
-});
-function pad2(n4) {
-  return String(n4).padStart(2, "0");
-}
-function ymdUtc(d) {
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-}
-function getPayrollPeriod(year, month) {
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    throw new Error(`getPayrollPeriod: par\xE2metros inv\xE1lidos (year=${year}, month=${month})`);
-  }
-  const start = new Date(Date.UTC(year, month - 2, 26));
-  const end = new Date(Date.UTC(year, month - 1, 26));
-  const lastInclusive = new Date(Date.UTC(year, month - 1, 25));
-  const startDate = ymdUtc(start);
-  const endDate = ymdUtc(lastInclusive);
-  const sMon = MESES_PT_SHORT[start.getUTCMonth()];
-  const eMon = MESES_PT_SHORT[lastInclusive.getUTCMonth()];
-  const labelShort = `26/${sMon} \u2192 25/${eMon}`;
-  const label = `${labelShort}/${year}`;
-  return { month, year, start, end, startDate, endDate, label, labelShort };
-}
-function getPayrollPeriodForDate(date2) {
-  const brt = new Date(date2.getTime() - 3 * 36e5);
-  const day = brt.getUTCDate();
-  const y = brt.getUTCFullYear();
-  const m = brt.getUTCMonth() + 1;
-  if (day <= 25) return getPayrollPeriod(y, m);
-  const nextM = m === 12 ? 1 : m + 1;
-  const nextY = m === 12 ? y + 1 : y;
-  return getPayrollPeriod(nextY, nextM);
-}
-function formatPayrollPeriodWithMonthName(p) {
-  return `${MESES_PT_LONG[p.month - 1]}/${p.year} (${p.labelShort})`;
-}
-var MESES_PT_SHORT, MESES_PT_LONG;
-var init_payroll_period = __esm({
-  "shared/payroll-period.ts"() {
-    "use strict";
-    MESES_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-    MESES_PT_LONG = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-  }
-});
-
-// server/lib/signable-doc-storage.ts
-var signable_doc_storage_exports = {};
-__export(signable_doc_storage_exports, {
-  SIGNABLE_DOC_BUCKET: () => SIGNABLE_DOC_BUCKET,
-  downloadSignableImageDataUri: () => downloadSignableImageDataUri,
-  ensureSignableDocsBucket: () => ensureSignableDocsBucket,
-  isStoragePath: () => isStoragePath2,
-  resolveSignableImage: () => resolveSignableImage,
-  signSignableImage: () => signSignableImage,
-  uploadSignableImage: () => uploadSignableImage
-});
-async function ensureSignableDocsBucket() {
-  try {
-    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-    const exists = (buckets || []).some((b) => b.name === SIGNABLE_DOC_BUCKET);
-    if (!exists) {
-      const { error } = await supabaseAdmin.storage.createBucket(SIGNABLE_DOC_BUCKET, {
-        public: false,
-        fileSizeLimit: 10 * 1024 * 1024
-      });
-      if (error && !/already exists/i.test(error.message || "")) {
-        console.warn(`[storage] createBucket ${SIGNABLE_DOC_BUCKET}:`, error.message);
-      } else {
-        console.log(`[storage] Bucket '${SIGNABLE_DOC_BUCKET}' criado (private)`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[storage] ensureSignableDocsBucket skipped:`, e?.message);
-  }
-}
-function isStoragePath2(v) {
-  return typeof v === "string" && v.length > 0 && !v.startsWith("data:") && !v.startsWith("http://") && !v.startsWith("https://");
-}
-async function uploadSignableImage(docId, kind, base64OrDataUri, mimeHint) {
-  const mimeMatch = /^data:([^;]+);base64,/.exec(base64OrDataUri);
-  const mime = mimeMatch?.[1] || (mimeHint && /^image\//i.test(mimeHint) ? mimeHint : "image/jpeg");
-  const cleanBase64 = String(base64OrDataUri).replace(/^data:[^;]+;base64,/, "").trim();
-  const buffer = Buffer.from(cleanBase64, "base64");
-  if (buffer.length === 0) throw new Error("Imagem vazia/ inv\xE1lida");
-  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
-  const rand = Math.random().toString(36).slice(2, 8);
-  const storagePath = `${docId}/${Date.now()}_${kind}_${rand}.${ext}`;
-  const { error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).upload(storagePath, buffer, { contentType: mime, upsert: true });
-  if (error) throw error;
-  return storagePath;
-}
-async function signSignableImage(path10) {
-  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).createSignedUrl(path10, SIGNED_URL_TTL_SEC2);
-  if (error) {
-    console.warn(`[storage] signSignableImage erro (${path10}):`, error.message);
-    return null;
-  }
-  return data?.signedUrl || null;
-}
-async function resolveSignableImage(v) {
-  if (!v || typeof v !== "string") return null;
-  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
-  return await signSignableImage(v);
-}
-async function downloadSignableImageDataUri(v) {
-  if (!v || typeof v !== "string") return null;
-  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
-  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).download(v);
-  if (error || !data) {
-    console.warn(`[storage] downloadSignableImage erro (${v}):`, error?.message);
-    return null;
-  }
-  const buf = Buffer.from(await data.arrayBuffer());
-  const ext = v.split(".").pop()?.toLowerCase();
-  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-  return `data:${mime};base64,${buf.toString("base64")}`;
-}
-var SIGNABLE_DOC_BUCKET, SIGNED_URL_TTL_SEC2;
-var init_signable_doc_storage = __esm({
-  "server/lib/signable-doc-storage.ts"() {
-    "use strict";
-    init_supabase();
-    SIGNABLE_DOC_BUCKET = "signable-docs";
-    SIGNED_URL_TTL_SEC2 = 300;
-  }
-});
-
-// server/lib/db-maintenance.ts
-var db_maintenance_exports = {};
-__export(db_maintenance_exports, {
-  VacuumBusyError: () => VacuumBusyError,
-  getVacuumState: () => getVacuumState,
-  startVacuum: () => startVacuum
-});
-import pg4 from "pg";
-function getVacuumState() {
-  return state;
-}
-async function tableSizeBytes(client, table) {
-  const r = await client.query("SELECT pg_total_relation_size($1) AS b", [table]);
-  return Number(r.rows[0]?.b || 0);
-}
-async function startVacuum(table) {
-  if (state.status === "running") throw new VacuumBusyError();
-  if (!ALLOWED_TABLES.has(table)) {
-    throw new Error(`Tabela n\xE3o permitida para compacta\xE7\xE3o: ${table}`);
-  }
-  const dbUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("Sem SUPABASE_DATABASE_URL configurada");
-  const startedAt = Date.now();
-  state = {
-    status: "running",
-    table,
-    startedAt,
-    finishedAt: null,
-    beforeBytes: null,
-    afterBytes: null,
-    durationMs: null,
-    error: null
-  };
-  let client;
-  let before;
-  try {
-    client = new pg4.Client({
-      connectionString: dbUrl,
-      connectionTimeoutMillis: 15e3,
-      statement_timeout: 0,
-      // VACUUM FULL pode levar minutos — sem teto.
-      query_timeout: 0
-    });
-    await client.connect();
-    before = await tableSizeBytes(client, table);
-    state = { ...state, beforeBytes: before };
-  } catch (e) {
-    try {
-      await client?.end();
-    } catch {
-    }
-    state = {
-      ...state,
-      status: "error",
-      finishedAt: Date.now(),
-      durationMs: Date.now() - startedAt,
-      error: e?.message || String(e)
-    };
-    throw e;
-  }
-  (async () => {
-    try {
-      await client.query(`VACUUM (FULL, ANALYZE) "${table}"`);
-      const after = await tableSizeBytes(client, table);
-      state = {
-        ...state,
-        status: "done",
-        finishedAt: Date.now(),
-        afterBytes: after,
-        durationMs: Date.now() - startedAt
-      };
-      console.log(
-        `[db-vacuum] ${table} OK: ${(before / 1048576).toFixed(0)}MB -> ${(after / 1048576).toFixed(0)}MB em ${(state.durationMs / 1e3).toFixed(0)}s`
-      );
-    } catch (e) {
-      state = {
-        ...state,
-        status: "error",
-        finishedAt: Date.now(),
-        durationMs: Date.now() - startedAt,
-        error: e?.message || String(e)
-      };
-      console.error(`[db-vacuum] ${table} FALHOU:`, e?.message);
-    } finally {
-      await client.end().catch(() => {
-      });
-    }
-  })();
-  return state;
-}
-var state, ALLOWED_TABLES, VacuumBusyError;
-var init_db_maintenance = __esm({
-  "server/lib/db-maintenance.ts"() {
-    "use strict";
-    state = {
-      status: "idle",
-      table: null,
-      startedAt: null,
-      finishedAt: null,
-      beforeBytes: null,
-      afterBytes: null,
-      durationMs: null,
-      error: null
-    };
-    ALLOWED_TABLES = /* @__PURE__ */ new Set([
-      "mission_updates",
-      "mission_photos",
-      "employee_documents",
-      "mission_costs",
-      "vehicle_fueling",
-      "audit_logs",
-      "control_id_punches",
-      "login_selfies"
-    ]);
-    VacuumBusyError = class extends Error {
-      code = "VACUUM_BUSY";
-      constructor() {
-        super("J\xE1 existe uma compacta\xE7\xE3o em andamento.");
-      }
-    };
-  }
-});
-
-// server/create-app.ts
-import "dotenv/config";
-import express3 from "express";
-import compression2 from "compression";
-import { createServer as createServer2 } from "http";
-
-// server/routes.ts
-init_storage();
-init_auth();
-init_supabase();
-
-// server/index.ts
-import "dotenv/config";
-import express2 from "express";
-import compression from "compression";
-
-// server/static.ts
-import express from "express";
-import fs from "fs";
-import path from "path";
-function serveStatic(app3) {
-  const distPath = path.resolve(__dirname, "public");
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
-    );
-  }
-  app3.use(express.static(distPath, {
-    etag: true,
-    lastModified: true,
-    setHeaders: (res, filePath) => {
-      const fname = path.basename(filePath);
-      if (fname === "sw.js" || fname === "manifest.json" || fname === "index.html") {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      } else {
-        res.setHeader("Cache-Control", "public, max-age=86400");
-      }
-    }
-  }));
-  app3.use("/{*path}", (_req, res, _next) => {
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
-}
-
-// server/index.ts
-init_auth();
-init_cron();
-init_cron_whatsapp_forward();
-import { createServer } from "http";
-
 // server/whatsapp-monitor.ts
-init_zapi();
 import nodemailer6 from "nodemailer";
-var CHECK_INTERVAL_MS = 3 * 60 * 1e3;
-var FIRST_CHECK_DELAY_MS = 30 * 1e3;
-var CONFIRM_AFTER = 2;
-var REMIND_EVERY_MS = 2 * 60 * 60 * 1e3;
-var DEFAULT_CFG = {
-  confirmAfter: CONFIRM_AFTER,
-  remindEveryMs: REMIND_EVERY_MS
-};
 function initialMonitorState() {
   return {
     consecutiveDown: 0,
@@ -21242,8 +19858,6 @@ function decideMonitorAction(state2, connected, now, cfg = DEFAULT_CFG) {
   }
   return { state: s, action: "none" };
 }
-var runtimeState = initialMonitorState();
-var timer = null;
 function getMonitorState() {
   return { isDown: runtimeState.isDown, downSince: runtimeState.downSince };
 }
@@ -21380,15 +19994,25 @@ function initWhatsappMonitor() {
     runMonitorCheck().catch((e) => console.error("[wa-monitor] erro na checagem:", e?.message || e));
   }, CHECK_INTERVAL_MS);
 }
-
-// server/index.ts
-init_db_init();
-init_asaas();
+var CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS, CONFIRM_AFTER, REMIND_EVERY_MS, DEFAULT_CFG, runtimeState, timer;
+var init_whatsapp_monitor = __esm({
+  "server/whatsapp-monitor.ts"() {
+    "use strict";
+    init_zapi();
+    CHECK_INTERVAL_MS = 3 * 60 * 1e3;
+    FIRST_CHECK_DELAY_MS = 30 * 1e3;
+    CONFIRM_AFTER = 2;
+    REMIND_EVERY_MS = 2 * 60 * 60 * 1e3;
+    DEFAULT_CFG = {
+      confirmAfter: CONFIRM_AFTER,
+      remindEveryMs: REMIND_EVERY_MS
+    };
+    runtimeState = initialMonitorState();
+    timer = null;
+  }
+});
 
 // server/routes/driver-control.ts
-init_auth();
-init_supabase();
-init_audit();
 function isSessionParticipant(user, session) {
   if (!user) return false;
   if (user.role === "admin" || user.role === "diretoria") return true;
@@ -21399,7 +20023,6 @@ function isSessionParticipant(user, session) {
 function isAdminOrDiretoria(user) {
   return user?.role === "admin" || user?.role === "diretoria";
 }
-var DS_LIST_COLS = "id, vehicle_id, vehicle_plate, vehicle_prefix, vehicle_year, driver_id, partner_id, driver_name, partner_name, km_start, km_end, status, started_at, ended_at, started_by_user_id, notes, signed_at, created_at";
 function registerDriverControlRoutes(app3) {
   app3.get("/api/driver-sessions", requireAuth, async (req, res) => {
     try {
@@ -21797,16 +20420,19 @@ function registerDriverControlRoutes(app3) {
   });
   console.log("[driver-control] Rotas de controle de condutor registradas");
 }
+var DS_LIST_COLS;
+var init_driver_control = __esm({
+  "server/routes/driver-control.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_audit();
+    DS_LIST_COLS = "id, vehicle_id, vehicle_plate, vehicle_prefix, vehicle_year, driver_id, partner_id, driver_name, partner_name, km_start, km_end, status, started_at, ended_at, started_by_user_id, notes, signed_at, created_at";
+  }
+});
 
 // server/routes/cobranca-judicial.ts
-init_auth();
-init_supabase();
-init_audit();
-init_helpers();
-init_mission_photos();
 import crypto4 from "crypto";
-var SHARE_TTL_DAYS = 30;
-var brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function toMs(raw) {
   if (!raw) return 0;
   let s = String(raw).trim();
@@ -22348,10 +20974,21 @@ async function sendJudicialEmail(dossie, processo) {
     html
   });
 }
+var SHARE_TTL_DAYS, brl;
+var init_cobranca_judicial = __esm({
+  "server/routes/cobranca-judicial.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_audit();
+    init_helpers();
+    init_mission_photos();
+    SHARE_TTL_DAYS = 30;
+    brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+});
 
 // server/routes/push.ts
-init_supabase();
-init_auth();
 function registerPushRoutes(app3) {
   app3.post("/api/push/subscribe", requireAuth, async (req, res) => {
     try {
@@ -22401,1359 +21038,1757 @@ function registerPushRoutes(app3) {
     }
   });
 }
+var init_push = __esm({
+  "server/routes/push.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+  }
+});
+
+// server/constants.ts
+import fs4 from "fs";
+import path4 from "path";
+import crypto5 from "crypto";
+function computeBuildId() {
+  if (process.env.NODE_ENV !== "production") return "dev";
+  try {
+    const candidates = [
+      typeof __dirname !== "undefined" ? path4.resolve(__dirname, "public", "index.html") : "",
+      path4.resolve(process.cwd(), "dist", "public", "index.html")
+    ].filter(Boolean);
+    for (const p of candidates) {
+      if (fs4.existsSync(p)) {
+        return crypto5.createHash("sha1").update(fs4.readFileSync(p)).digest("hex").slice(0, 12);
+      }
+    }
+  } catch {
+  }
+  console.warn("[version] AVISO: NODE_ENV=production mas dist/public/index.html n\xE3o encontrado \u2014 buildId caiu em 'dev' e o auto-update por deploy fica inativo");
+  return "dev";
+}
+var APP_VERSION, APP_BUILD_AT, APP_BUILD_ID, _diskLimitEnv, DB_DISK_LIMIT_MB;
+var init_constants = __esm({
+  "server/constants.ts"() {
+    "use strict";
+    APP_VERSION = "3.8.0";
+    APP_BUILD_AT = (/* @__PURE__ */ new Date()).toISOString();
+    APP_BUILD_ID = computeBuildId();
+    _diskLimitEnv = Number(process.env.DB_DISK_LIMIT_MB);
+    DB_DISK_LIMIT_MB = Number.isFinite(_diskLimitEnv) && _diskLimitEnv > 0 ? _diskLimitEnv : 8192;
+  }
+});
+
+// server/db-telemetry.ts
+var db_telemetry_exports = {};
+__export(db_telemetry_exports, {
+  generateAiReport: () => generateAiReport,
+  getAiReports: () => getAiReports,
+  getHistory24h: () => getHistory24h,
+  getRealtimeTelemetry: () => getRealtimeTelemetry,
+  getSecurityEvents24h: () => getSecurityEvents24h,
+  getTableSizes: () => getTableSizes,
+  getTopQueries: () => getTopQueries,
+  persistSample: () => persistSample,
+  startTelemetrySampler: () => startTelemetrySampler
+});
+import OpenAI3 from "openai";
+import v8 from "node:v8";
+function getCpuPct() {
+  const now = Date.now();
+  const usage = process.cpuUsage(lastCpuUsage);
+  const elapsedMs = now - lastCpuSample;
+  lastCpuUsage = process.cpuUsage();
+  lastCpuSample = now;
+  if (elapsedMs <= 0) return 0;
+  const cpuMs = (usage.user + usage.system) / 1e3;
+  return Math.min(100, Math.round(cpuMs / elapsedMs * 100));
+}
+function getMemoryStats() {
+  const m = process.memoryUsage();
+  const rssMb = Math.round(m.rss / 1024 / 1024);
+  const heapUsedMb = Math.round(m.heapUsed / 1024 / 1024);
+  const heapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024);
+  const heapPct = heapLimitMb > 0 ? Math.round(heapUsedMb / heapLimitMb * 100) : 0;
+  return { rssMb, heapUsedMb, heapLimitMb, heapPct };
+}
+async function dbPing(supabase) {
+  const started = Date.now();
+  try {
+    const { error } = await supabase.from("clients").select("id", { count: "exact", head: true }).limit(1);
+    if (error) throw error;
+    return { latencyMs: Date.now() - started, ok: true };
+  } catch {
+    return { latencyMs: Date.now() - started, ok: false };
+  }
+}
+async function getRealtimeTelemetry(supabase) {
+  const cpu_pct = getCpuPct();
+  const mem = getMemoryStats();
+  const ping = await dbPing(supabase);
+  const supabaseHealthy2 = getSupabaseStats().healthy;
+  let snap = null;
+  try {
+    const { data, error } = await supabase.rpc("db_telemetry_snapshot");
+    if (!error && data) snap = data;
+  } catch {
+    snap = null;
+  }
+  const status = ping.ok && supabaseHealthy2 ? "online" : supabaseHealthy2 ? "fallback" : "offline";
+  return {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    node: {
+      cpu_pct,
+      mem_mb: mem.rssMb,
+      heap_used_mb: mem.heapUsedMb,
+      heap_limit_mb: mem.heapLimitMb,
+      mem_pct: mem.heapPct,
+      uptime_s: Math.round(process.uptime())
+    },
+    db: {
+      latency_ms: ping.latencyMs,
+      active_connections: snap?.active_connections ?? 0,
+      idle_connections: snap?.idle_connections ?? 0,
+      total_connections: snap?.total_connections ?? 0,
+      max_connections: snap?.max_connections ?? 0,
+      db_size_mb: snap?.db_size_mb ?? 0,
+      db_size_limit_mb: DB_DISK_LIMIT_MB,
+      cache_hit_ratio: snap?.cache_hit_ratio != null ? Number(snap.cache_hit_ratio) : null,
+      idle_in_transaction: Number(snap?.idle_in_transaction ?? 0),
+      tuples_read: Number(snap?.tuples_read ?? 0),
+      tuples_written: Number(snap?.tuples_written ?? 0),
+      long_queries: snap?.long_queries ?? []
+    },
+    status
+  };
+}
+async function getHistory24h(supabase) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
+  const { data, error } = await supabase.from("db_health_samples").select("sampled_at,latency_ms,active_connections,total_connections,long_query_count,node_cpu_pct,node_mem_mb,fallback_active,db_size_mb,cache_hit_ratio,idle_in_transaction,tuples_read,tuples_written").gte("sampled_at", since).order("sampled_at", { ascending: true }).limit(1500);
+  if (error) return [];
+  return data ?? [];
+}
+async function getSecurityEvents24h(supabase) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1e3).toISOString();
+  const { data: tokenFails } = await supabase.from("token_failure_logs").select("id,employee_name,error_message,ip_address,user_agent,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(200);
+  const failsByIp = /* @__PURE__ */ new Map();
+  for (const row of tokenFails ?? []) {
+    const ip = row.ip_address || "(desconhecido)";
+    const cur = failsByIp.get(ip) ?? { ip, count: 0, last_at: row.created_at, last_user: row.employee_name, last_error: row.error_message };
+    cur.count += 1;
+    failsByIp.set(ip, cur);
+  }
+  const bruteForceSuspects = Array.from(failsByIp.values()).filter((r) => r.count >= 5).sort((a, b) => b.count - a.count);
+  return {
+    token_failures_total: tokenFails?.length ?? 0,
+    token_failures_recent: (tokenFails ?? []).slice(0, 20),
+    brute_force_suspects: bruteForceSuspects
+  };
+}
+async function getTableSizes(supabase) {
+  const { data, error } = await supabase.rpc("db_table_sizes");
+  if (error) {
+    console.error("[db-telemetry] db_table_sizes erro:", error.message);
+    return [];
+  }
+  const rows = data ?? [];
+  return rows.map((r) => ({
+    table_name: String(r.table_name),
+    data_size: String(r.data_size),
+    index_size: String(r.index_size),
+    total_size: String(r.total_size),
+    total_size_bytes: Number(r.total_size_bytes) || 0
+  }));
+}
+async function getTopQueries(supabase) {
+  const { data, error } = await supabase.rpc("db_top_queries");
+  if (error) {
+    console.error("[db-telemetry] db_top_queries erro:", error.message);
+    return [];
+  }
+  const rows = data ?? [];
+  return rows.map((r) => ({
+    query: String(r.query ?? ""),
+    calls: Number(r.calls) || 0,
+    total_ms: Number(r.total_ms) || 0,
+    mean_ms: Number(r.mean_ms) || 0,
+    rows: Number(r.rows) || 0,
+    cache_hit_pct: r.cache_hit_pct != null ? Number(r.cache_hit_pct) : null
+  }));
+}
+async function getAiReports(supabase) {
+  const { data, error } = await supabase.from("db_ai_reports").select("id,created_at,status,headline,analysis").order("created_at", { ascending: false }).limit(6);
+  if (error) {
+    console.error("[db-ai-report] leitura erro:", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+async function generateAiReport(supabase) {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || void 0;
+  if (!apiKey) {
+    console.warn("[db-ai-report] chave OpenAI ausente \u2014 pulando gera\xE7\xE3o");
+    return null;
+  }
+  try {
+    const [rt, tableSizes, security, topQueries] = await Promise.all([
+      getRealtimeTelemetry(supabase),
+      getTableSizes(supabase),
+      getSecurityEvents24h(supabase),
+      getTopQueries(supabase)
+    ]);
+    const metrics = {
+      status_conexao: rt.status,
+      latencia_ms: rt.db.latency_ms,
+      cpu_servidor_pct: rt.node.cpu_pct,
+      memoria_servidor_pct: rt.node.mem_pct,
+      conexoes: `${rt.db.total_connections}/${rt.db.max_connections}`,
+      cache_hit_ratio_pct: rt.db.cache_hit_ratio,
+      idle_in_transaction: rt.db.idle_in_transaction,
+      queries_lentas: rt.db.long_queries.length,
+      tamanho_banco_mb: rt.db.db_size_mb,
+      falhas_auth_24h: security.token_failures_total,
+      ips_suspeitos: security.brute_force_suspects.length,
+      maiores_tabelas: tableSizes.slice(0, 5).map((t) => `${t.table_name}: ${t.total_size}`),
+      consultas_mais_pesadas: topQueries.map((q) => ({
+        query: q.query,
+        calls: q.calls,
+        total_ms: q.total_ms,
+        mean_ms: q.mean_ms,
+        rows: q.rows,
+        cache_hit_pct: q.cache_hit_pct
+      }))
+    };
+    const openai = new OpenAI3({ apiKey, baseURL });
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 700,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: AI_REPORT_SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(metrics) }
+      ]
+    });
+    const raw = response.choices?.[0]?.message?.content?.trim();
+    if (!raw) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.warn("[db-ai-report] resposta da IA n\xE3o \xE9 JSON v\xE1lido");
+      return null;
+    }
+    const status = ["good", "warn", "bad"].includes(parsed?.status) ? parsed.status : "warn";
+    const headline = String(parsed?.headline || "Situa\xE7\xE3o do banco").slice(0, 200);
+    const analysis = String(parsed?.analysis || "").slice(0, 2e3);
+    const { data: inserted, error: insErr } = await supabase.from("db_ai_reports").insert({ status, headline, analysis, metrics }).select("id,created_at,status,headline,analysis").single();
+    if (insErr) {
+      console.error("[db-ai-report] insert erro:", insErr.message);
+      return null;
+    }
+    const { data: ids } = await supabase.from("db_ai_reports").select("id").order("created_at", { ascending: false });
+    const all = ids ?? [];
+    if (all.length > 6) {
+      const toDelete = all.slice(6).map((r) => r.id);
+      await supabase.from("db_ai_reports").delete().in("id", toDelete);
+    }
+    return inserted;
+  } catch (err) {
+    console.warn("[db-ai-report] gera\xE7\xE3o falhou:", err?.message);
+    return null;
+  }
+}
+async function persistSample(supabase) {
+  try {
+    const rt = await getRealtimeTelemetry(supabase);
+    await supabase.from("db_health_samples").insert({
+      latency_ms: rt.db.latency_ms,
+      active_connections: rt.db.active_connections,
+      idle_connections: rt.db.idle_connections,
+      total_connections: rt.db.total_connections,
+      max_connections: rt.db.max_connections,
+      long_query_count: rt.db.long_queries.length,
+      node_cpu_pct: rt.node.cpu_pct,
+      node_mem_mb: rt.node.mem_mb,
+      fallback_active: rt.status !== "online",
+      db_size_mb: rt.db.db_size_mb,
+      cache_hit_ratio: rt.db.cache_hit_ratio,
+      idle_in_transaction: rt.db.idle_in_transaction,
+      tuples_read: rt.db.tuples_read,
+      tuples_written: rt.db.tuples_written
+    });
+  } catch {
+  }
+}
+function startTelemetrySampler(supabase) {
+  if (samplerStarted) return;
+  samplerStarted = true;
+  const scheduleSample = (delayMs) => {
+    const t = setTimeout(async () => {
+      if (!getSupabaseStats().healthy) {
+        scheduleSample(SAMPLE_INTERVAL_MS * 2);
+        return;
+      }
+      try {
+        await persistSample(supabase);
+      } catch {
+      }
+      scheduleSample(SAMPLE_INTERVAL_MS);
+    }, delayMs);
+    t.unref?.();
+  };
+  scheduleSample(3e4);
+  const scheduleAiReport = (delayMs) => {
+    const t = setTimeout(async () => {
+      if (!getSupabaseStats().healthy) {
+        scheduleAiReport(AI_REPORT_INTERVAL_MS * 2);
+        return;
+      }
+      try {
+        await generateAiReport(supabase);
+      } catch {
+      }
+      scheduleAiReport(AI_REPORT_INTERVAL_MS);
+    }, delayMs);
+    t.unref?.();
+  };
+  scheduleAiReport(6e4);
+  const scheduleCleanup = () => {
+    const t = setTimeout(async () => {
+      try {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString();
+        await supabase.from("db_health_samples").delete().lt("sampled_at", cutoff);
+      } catch {
+      }
+      scheduleCleanup();
+    }, CLEANUP_INTERVAL_MS);
+    t.unref?.();
+  };
+  scheduleCleanup();
+}
+var lastCpuUsage, lastCpuSample, AI_REPORT_SYSTEM_PROMPT, samplerStarted, SAMPLE_INTERVAL_MS, CLEANUP_INTERVAL_MS, AI_REPORT_INTERVAL_MS;
+var init_db_telemetry = __esm({
+  "server/db-telemetry.ts"() {
+    "use strict";
+    init_supabase();
+    init_constants();
+    lastCpuUsage = process.cpuUsage();
+    lastCpuSample = Date.now();
+    AI_REPORT_SYSTEM_PROMPT = `Voc\xEA \xE9 um analista s\xEAnior de banco de dados monitorando um ERP em produ\xE7\xE3o (PostgreSQL/Supabase) de uma empresa de seguran\xE7a patrimonial. A cada 10 minutos voc\xEA recebe as m\xE9tricas atuais do banco em JSON e produz um relat\xF3rio curto, em portugu\xEAs brasileiro, para um GESTOR LEIGO (n\xE3o t\xE9cnico) que precisa saber EXATAMENTE o que corrigir.
+
+No JSON de entrada, o campo "consultas_mais_pesadas" lista as consultas que mais consomem o banco (campos: query = trecho do comando SQL; calls = quantas vezes rodou; total_ms = tempo total somado; mean_ms = tempo M\xC9DIO por execu\xE7\xE3o; rows = linhas devolvidas; cache_hit_pct = % de leitura vinda da mem\xF3ria, baixo = lendo muito do disco). Use ESSA lista para apontar o problema concreto \u2014 NUNCA diga apenas "h\xE1 uma consulta lenta" de forma gen\xE9rica.
+
+Responda SOMENTE em JSON v\xE1lido com as chaves:
+- "status": uma de "good" (tudo saud\xE1vel), "warn" (aten\xE7\xE3o: algo fora do ideal, mas n\xE3o cr\xEDtico) ou "bad" (problema s\xE9rio que precisa de a\xE7\xE3o agora).
+- "headline": uma frase curta (m\xE1x 80 caracteres) resumindo a situa\xE7\xE3o em linguagem simples.
+- "analysis": texto curto em linguagem simples. Quando houver consulta pesada, \xE9 OBRIGAT\xD3RIO escrever 3 trechos SEPARADOS POR QUEBRA DE LINHA (\\n), nesta ordem e come\xE7ando cada um com o r\xF3tulo indicado:
+   "Consulta: " QUAL consulta/tela est\xE1 pesando \u2014 identifique pela tabela principal do SQL (ex.: "a listagem de abastecimentos (tabela vehicle_fueling)") e cite o tempo m\xE9dio (mean_ms) e quantas vezes rodou (calls).
+   "Causa prov\xE1vel: " a explica\xE7\xE3o que melhor casa com os N\xDAMEROS \u2014 siga esta l\xF3gica:
+      \u2022 Se mean_ms \xE9 alto (>1000ms) mas calls \xE9 baixo/moderado (dezenas ou poucas centenas), a causa N\xC3O \xE9 frequ\xEAncia. \xC9 a consulta em si: provavelmente est\xE1 trazendo colunas pesadas (fotos/imagens em base64) com "SELECT *", ou falta um \xEDndice na coluna do filtro/ordena\xE7\xE3o, ou falta pagina\xE7\xE3o (traz a tabela inteira). Se o SQL mostra "SELECT ... .*" sem filtro e a tabela costuma guardar fotos/arquivos, aposte em payload pesado de fotos.
+      \u2022 S\xF3 aponte "consulta repetida vezes demais" quando calls for realmente alt\xEDssimo (milhares) E mean_ms baixo.
+      \u2022 cache_hit_pct < 95 indica leitura demais do disco; idle_in_transaction > 0 indica transa\xE7\xE3o presa.
+   "Como corrigir: " a\xE7\xE3o acion\xE1vel coerente com a causa (ex.: "n\xE3o trazer as fotos na listagem \u2014 carregar a imagem s\xF3 quando abrir o item", "paginar os resultados", "criar um \xEDndice na coluna usada no filtro", "selecionar s\xF3 as colunas necess\xE1rias em vez de tudo").
+  Se estiver tudo bem, escreva 2-3 frases tranquilizadoras, sem os r\xF3tulos.
+
+Crit\xE9rios de refer\xEAncia:
+- Lat\xEAncia: <300ms boa, 300-1500ms aten\xE7\xE3o, >1500ms ruim.
+- mean_ms de uma consulta: <100ms ok, 100-1000ms aten\xE7\xE3o, >1000ms ruim (prov\xE1vel falta de \xEDndice ou payload pesado).
+- cache_hit_pct de uma consulta ou cache_hit_ratio geral: >=99% \xF3timo, 95-99% ok, <95% ruim (lendo demais do disco).
+- Conex\xF5es: acima de 90% do m\xE1ximo \xE9 ruim.
+- idle_in_transaction > 0: aten\xE7\xE3o (transa\xE7\xE3o presa segurando recursos).
+- Falhas de autentica\xE7\xE3o altas ou IPs suspeitos: risco de seguran\xE7a (aten\xE7\xE3o/ruim).
+- Tabelas muito grandes podem indicar necessidade de limpeza no futuro (informativo, raramente cr\xEDtico).
+Seja direto e tranquilizador quando estiver tudo bem; seja claro e espec\xEDfico sobre a a\xE7\xE3o quando houver problema. N\xE3o invente nomes de tabelas que n\xE3o estejam no JSON.`;
+    samplerStarted = false;
+    SAMPLE_INTERVAL_MS = 2 * 6e4;
+    CLEANUP_INTERVAL_MS = 6 * 60 * 6e4;
+    AI_REPORT_INTERVAL_MS = 10 * 6e4;
+  }
+});
+
+// vite-stub:vite-dev-stub
+var vite_dev_stub_exports = {};
+__export(vite_dev_stub_exports, {
+  default: () => vite_dev_stub_default,
+  setupVite: () => setupVite
+});
+async function setupVite() {
+  throw new Error("Vite HMR indisponivel no serverless");
+}
+var vite_dev_stub_default;
+var init_vite_dev_stub = __esm({
+  "vite-stub:vite-dev-stub"() {
+    vite_dev_stub_default = {};
+  }
+});
 
 // server/index.ts
-init_constants();
-init_logger();
-process.env.TZ = "America/Sao_Paulo";
-var app = express2();
-app.set("etag", false);
-var httpServer = createServer(app);
-app.use(compression({ level: 6, threshold: 1024 }));
-var PHOTO_UPLOAD_PATHS = [
-  "/api/fueling",
-  // POST/PATCH com receiptPhoto/pumpPhoto/odometerPhoto/platePhoto base64
-  "/api/mobile/fueling",
-  // mobile: idem
-  "/api/mission/photo",
-  // upload de foto de missão
-  "/api/mission/photo-inspections-batch",
-  "/api/mission/update",
-  // status update com foto (rede de segurança — cliente já comprime)
-  "/api/employee-documents",
-  // RH: arquivar documento com foto/PDF (cliente comprime imagens; PDFs passam direto)
-  /^\/api\/employees\/\d+\/dependents$/
-  // RH: dependente com certidão anexada
-];
-var rawBodyVerify = (req, _res, buf) => {
-  req.rawBody = buf;
-};
-app.use(PHOTO_UPLOAD_PATHS, express2.json({ limit: "10mb", verify: rawBodyVerify }));
-app.use(
-  express2.json({
-    limit: "2mb",
-    verify: rawBodyVerify
-  })
-);
-app.use(express2.urlencoded({ extended: false }));
-app.use(express2.text({ type: "text/plain" }));
-app.use("/api", (_req, res, next) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  next();
-});
-app.use((req, res, next) => {
-  const p = req.path;
-  if (p.startsWith("/admin") || p.startsWith("/mobile") || p.startsWith("/api")) {
-    res.set("X-Robots-Tag", "noindex, nofollow");
-  }
-  next();
-});
-app.get("/api/version", (_req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  res.json({ version: APP_VERSION, buildId: APP_BUILD_ID, builtAt: APP_BUILD_AT });
-});
+import "dotenv/config";
+import express2 from "express";
+import compression from "compression";
+import { createServer } from "http";
 function siteBaseUrl(req) {
   if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, "");
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.headers.host || "torresvigilancia.com.br";
   return `${proto}://${host}`.replace(/\/$/, "");
 }
-app.get("/robots.txt", (req, res) => {
-  const base = siteBaseUrl(req);
-  const body = [
-    "User-agent: *",
-    "Allow: /",
-    "Disallow: /admin",
-    "Disallow: /admin/",
-    "Disallow: /mobile",
-    "Disallow: /mobile/",
-    "Disallow: /api",
-    "Disallow: /api/",
-    "",
-    `Sitemap: ${base}/sitemap.xml`,
-    ""
-  ].join("\n");
-  res.type("text/plain; charset=utf-8").send(body);
-});
-app.get("/sitemap.xml", (req, res) => {
-  const base = siteBaseUrl(req);
-  const today = (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  const urls = [
-    { loc: `${base}/`, priority: "1.0", changefreq: "weekly" },
-    { loc: `${base}/#servicos`, priority: "0.8", changefreq: "monthly" },
-    { loc: `${base}/#diferenciais`, priority: "0.6", changefreq: "monthly" },
-    { loc: `${base}/#sobre`, priority: "0.6", changefreq: "monthly" },
-    { loc: `${base}/#cotacao`, priority: "0.9", changefreq: "weekly" },
-    { loc: `${base}/#contato`, priority: "0.7", changefreq: "monthly" }
-  ];
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
+function getSlowRoutes() {
+  return slowRoutes.slice();
+}
+var app, httpServer, PHOTO_UPLOAD_PATHS, rawBodyVerify, SLOW_THRESHOLD_MS, MAX_SLOW_ENTRIES, slowRoutes;
+var init_server = __esm({
+  "server/index.ts"() {
+    "use strict";
+    init_routes();
+    init_static();
+    init_auth();
+    init_cron();
+    init_cron_whatsapp_forward();
+    init_whatsapp_monitor();
+    init_db_init();
+    init_asaas();
+    init_driver_control();
+    init_cobranca_judicial();
+    init_push();
+    init_constants();
+    init_logger();
+    process.env.TZ = "America/Sao_Paulo";
+    app = express2();
+    app.set("etag", false);
+    httpServer = createServer(app);
+    app.use(compression({ level: 6, threshold: 1024 }));
+    PHOTO_UPLOAD_PATHS = [
+      "/api/fueling",
+      // POST/PATCH com receiptPhoto/pumpPhoto/odometerPhoto/platePhoto base64
+      "/api/mobile/fueling",
+      // mobile: idem
+      "/api/mission/photo",
+      // upload de foto de missão
+      "/api/mission/photo-inspections-batch",
+      "/api/mission/update",
+      // status update com foto (rede de segurança — cliente já comprime)
+      "/api/employee-documents",
+      // RH: arquivar documento com foto/PDF (cliente comprime imagens; PDFs passam direto)
+      /^\/api\/employees\/\d+\/dependents$/
+      // RH: dependente com certidão anexada
+    ];
+    rawBodyVerify = (req, _res, buf) => {
+      req.rawBody = buf;
+    };
+    app.use(PHOTO_UPLOAD_PATHS, express2.json({ limit: "10mb", verify: rawBodyVerify }));
+    app.use(
+      express2.json({
+        limit: "2mb",
+        verify: rawBodyVerify
+      })
+    );
+    app.use(express2.urlencoded({ extended: false }));
+    app.use(express2.text({ type: "text/plain" }));
+    app.use("/api", (_req, res, next) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
+      next();
+    });
+    app.use((req, res, next) => {
+      const p = req.path;
+      if (p.startsWith("/admin") || p.startsWith("/mobile") || p.startsWith("/api")) {
+        res.set("X-Robots-Tag", "noindex, nofollow");
+      }
+      next();
+    });
+    app.get("/api/version", (_req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      res.json({ version: APP_VERSION, buildId: APP_BUILD_ID, builtAt: APP_BUILD_AT });
+    });
+    app.get("/robots.txt", (req, res) => {
+      const base = siteBaseUrl(req);
+      const body = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin",
+        "Disallow: /admin/",
+        "Disallow: /mobile",
+        "Disallow: /mobile/",
+        "Disallow: /api",
+        "Disallow: /api/",
+        "",
+        `Sitemap: ${base}/sitemap.xml`,
+        ""
+      ].join("\n");
+      res.type("text/plain; charset=utf-8").send(body);
+    });
+    app.get("/sitemap.xml", (req, res) => {
+      const base = siteBaseUrl(req);
+      const today = (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const urls = [
+        { loc: `${base}/`, priority: "1.0", changefreq: "weekly" },
+        { loc: `${base}/#servicos`, priority: "0.8", changefreq: "monthly" },
+        { loc: `${base}/#diferenciais`, priority: "0.6", changefreq: "monthly" },
+        { loc: `${base}/#sobre`, priority: "0.6", changefreq: "monthly" },
+        { loc: `${base}/#cotacao`, priority: "0.9", changefreq: "weekly" },
+        { loc: `${base}/#contato`, priority: "0.7", changefreq: "monthly" }
+      ];
+      const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ` + urls.map(
-    (u) => `  <url>
+        (u) => `  <url>
     <loc>${u.loc}</loc>
     <lastmod>${today}</lastmod>
     <changefreq>${u.changefreq}</changefreq>
     <priority>${u.priority}</priority>
   </url>`
-  ).join("\n") + `
+      ).join("\n") + `
 </urlset>
 `;
-  res.type("application/xml; charset=utf-8").send(body);
-});
-setupAuth(app);
-registerPushRoutes(app);
-var SLOW_THRESHOLD_MS = 500;
-var MAX_SLOW_ENTRIES = 50;
-var slowRoutes = [];
-function getSlowRoutes() {
-  return slowRoutes.slice();
-}
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path10 = req.path;
-  let responseSummary = void 0;
-  const originalResJson = res.json;
-  res.json = function(bodyJson, ...args) {
-    if (path10.startsWith("/api")) {
-      try {
-        if (Array.isArray(bodyJson)) {
-          responseSummary = `[Array(${bodyJson.length})]`;
-        } else if (bodyJson && typeof bodyJson === "object") {
-          const keys = Object.keys(bodyJson).slice(0, 8).join(",");
-          responseSummary = `{${keys}${Object.keys(bodyJson).length > 8 ? ",\u2026" : ""}}`;
-        } else {
-          responseSummary = String(bodyJson).slice(0, 100);
-        }
-      } catch {
-        responseSummary = "[unserializable]";
-      }
-    }
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path10.startsWith("/api")) {
-      const logLine = responseSummary ? `${req.method} ${path10} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path10} ${res.statusCode} in ${duration}ms`;
-      log(logLine);
-      if (duration > SLOW_THRESHOLD_MS) {
-        console.warn(`[SLOW] ${req.method} ${path10} ${res.statusCode} took ${duration}ms`);
-        slowRoutes.push({
-          method: req.method,
-          path: path10,
-          status: res.statusCode,
-          duration,
-          ts: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        if (slowRoutes.length > MAX_SLOW_ENTRIES) slowRoutes.shift();
-      }
-    }
-    responseSummary = void 0;
-  });
-  next();
-});
-app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now() }));
-(async () => {
-  await registerRoutes(httpServer, app);
-  try {
-    const { startTelemetrySampler: startTelemetrySampler2 } = await Promise.resolve().then(() => (init_db_telemetry(), db_telemetry_exports));
-    const { supabaseAdmin: supabaseAdmin2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
-    startTelemetrySampler2(supabaseAdmin2);
-  } catch (err) {
-    console.warn("[db-telemetry] sampler n\xE3o iniciou:", err?.message);
-  }
-  registerAsaasRoutes(app);
-  registerDriverControlRoutes(app);
-  registerCobrancaJudicialRoutes(app);
-  app.use((err, _req, res, next) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    console.error("Internal Server Error:", err);
-    if (res.headersSent) {
-      return next(err);
-    }
-    return res.status(status).json({ message });
-  });
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite: setupVite2 } = await Promise.resolve().then(() => (init_vite(), vite_exports));
-    await setupVite2(httpServer, app);
-  }
-  const port = parseInt(process.env.PORT || "5000", 10);
-  initCronJobs();
-  initWhatsappForwardCron();
-  initWhatsappMonitor();
-  const listenOpts = {
-    port,
-    host: "0.0.0.0"
-  };
-  if (process.platform !== "win32") {
-    listenOpts.reusePort = true;
-  }
-  httpServer.listen(listenOpts, () => {
-    log(`serving on port ${port}`);
-  });
-  ensureDbSchema().catch(
-    (e) => console.error("[db-init] ensureDbSchema (background) falhou:", e?.message || e)
-  );
-  ensureCalcMissionRPC().catch(
-    (e) => console.error("[db-init] ensureCalcMissionRPC (background) falhou:", e?.message || e)
-  );
-  const { startSwrWarmup: startSwrWarmup2 } = await Promise.resolve().then(() => (init_swr_cache(), swr_cache_exports));
-  startSwrWarmup2();
-  const shutdown = (signal) => {
-    log(`${signal} received, shutting down...`);
-    httpServer.close(() => {
-      process.exit(0);
+      res.type("application/xml; charset=utf-8").send(body);
     });
-    setTimeout(() => process.exit(1), 3e3);
-  };
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
-})();
+    setupAuth(app);
+    registerPushRoutes(app);
+    SLOW_THRESHOLD_MS = 500;
+    MAX_SLOW_ENTRIES = 50;
+    slowRoutes = [];
+    app.use((req, res, next) => {
+      const start = Date.now();
+      const path8 = req.path;
+      let responseSummary = void 0;
+      const originalResJson = res.json;
+      res.json = function(bodyJson, ...args) {
+        if (path8.startsWith("/api")) {
+          try {
+            if (Array.isArray(bodyJson)) {
+              responseSummary = `[Array(${bodyJson.length})]`;
+            } else if (bodyJson && typeof bodyJson === "object") {
+              const keys = Object.keys(bodyJson).slice(0, 8).join(",");
+              responseSummary = `{${keys}${Object.keys(bodyJson).length > 8 ? ",\u2026" : ""}}`;
+            } else {
+              responseSummary = String(bodyJson).slice(0, 100);
+            }
+          } catch {
+            responseSummary = "[unserializable]";
+          }
+        }
+        return originalResJson.apply(res, [bodyJson, ...args]);
+      };
+      res.on("finish", () => {
+        const duration = Date.now() - start;
+        if (path8.startsWith("/api")) {
+          const logLine = responseSummary ? `${req.method} ${path8} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path8} ${res.statusCode} in ${duration}ms`;
+          log(logLine);
+          if (duration > SLOW_THRESHOLD_MS) {
+            console.warn(`[SLOW] ${req.method} ${path8} ${res.statusCode} took ${duration}ms`);
+            slowRoutes.push({
+              method: req.method,
+              path: path8,
+              status: res.statusCode,
+              duration,
+              ts: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            if (slowRoutes.length > MAX_SLOW_ENTRIES) slowRoutes.shift();
+          }
+        }
+        responseSummary = void 0;
+      });
+      next();
+    });
+    app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now() }));
+    (async () => {
+      await registerRoutes(httpServer, app);
+      try {
+        const { startTelemetrySampler: startTelemetrySampler2 } = await Promise.resolve().then(() => (init_db_telemetry(), db_telemetry_exports));
+        const { supabaseAdmin: supabaseAdmin2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
+        startTelemetrySampler2(supabaseAdmin2);
+      } catch (err) {
+        console.warn("[db-telemetry] sampler n\xE3o iniciou:", err?.message);
+      }
+      registerAsaasRoutes(app);
+      registerDriverControlRoutes(app);
+      registerCobrancaJudicialRoutes(app);
+      app.use((err, _req, res, next) => {
+        const status = err.status || err.statusCode || 500;
+        const message = err.message || "Internal Server Error";
+        console.error("Internal Server Error:", err);
+        if (res.headersSent) {
+          return next(err);
+        }
+        return res.status(status).json({ message });
+      });
+      if (process.env.NODE_ENV === "production") {
+        serveStatic(app);
+      } else {
+        const { setupVite: setupVite2 } = await Promise.resolve().then(() => (init_vite_dev_stub(), vite_dev_stub_exports));
+        await setupVite2(httpServer, app);
+      }
+      const port = parseInt(process.env.PORT || "5000", 10);
+      initCronJobs();
+      initWhatsappForwardCron();
+      initWhatsappMonitor();
+      const listenOpts = {
+        port,
+        host: "0.0.0.0"
+      };
+      if (process.platform !== "win32") {
+        listenOpts.reusePort = true;
+      }
+      httpServer.listen(listenOpts, () => {
+        log(`serving on port ${port}`);
+      });
+      ensureDbSchema().catch(
+        (e) => console.error("[db-init] ensureDbSchema (background) falhou:", e?.message || e)
+      );
+      ensureCalcMissionRPC().catch(
+        (e) => console.error("[db-init] ensureCalcMissionRPC (background) falhou:", e?.message || e)
+      );
+      const { startSwrWarmup: startSwrWarmup2 } = await Promise.resolve().then(() => (init_swr_cache(), swr_cache_exports));
+      startSwrWarmup2();
+      const shutdown = (signal) => {
+        log(`${signal} received, shutting down...`);
+        httpServer.close(() => {
+          process.exit(0);
+        });
+        setTimeout(() => process.exit(1), 3e3);
+      };
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+      process.on("SIGINT", () => shutdown("SIGINT"));
+    })();
+  }
+});
 
 // shared/schema.ts
 import { sql } from "drizzle-orm";
 import { pgTable, text, integer, decimal, date, timestamp, serial, real, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z as z3 } from "zod";
-var users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  supabaseUid: text("supabase_uid").unique(),
-  email: text("email").unique(),
-  username: text("username"),
-  name: text("name").notNull(),
-  role: text("role").notNull().default("funcionario"),
-  employeeId: integer("employee_id"),
-  mustChangePassword: integer("must_change_password").default(0),
-  plainPassword: text("plain_password"),
-  termsAcceptedAt: timestamp("terms_accepted_at"),
-  termsIpAddress: text("terms_ip_address"),
-  termsUserAgent: text("terms_user_agent"),
-  avatarUrl: text("avatar_url"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-var perfisAcesso = pgTable("perfis_acesso", {
-  id: serial("id").primaryKey(),
-  role: text("role").notNull().unique(),
-  label: text("label").notNull(),
-  permissions: text("permissions").notNull()
-});
-var insertPerfilAcessoSchema = createInsertSchema(perfisAcesso).omit({ id: true });
-var clients = pgTable("clients", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  razaoSocial: text("razao_social"),
-  nomeFantasia: text("nome_fantasia"),
-  cnpj: text("cnpj"),
-  cpf: text("cpf"),
-  email: text("email"),
-  emailOperacional: text("email_operacional"),
-  emailFinanceiro: text("email_financeiro"),
-  emailContratual: text("email_contratual"),
-  emailMedicao: text("email_medicao"),
-  phone: text("phone"),
-  contactPerson: text("contact_person"),
-  address: text("address"),
-  addressNumber: text("address_number"),
-  addressComplement: text("address_complement"),
-  bairro: text("bairro"),
-  city: text("city"),
-  state: text("state"),
-  zip: text("zip"),
-  inscricaoMunicipal: text("inscricao_municipal"),
-  inscricaoEstadual: text("inscricao_estadual"),
-  notes: text("notes"),
-  billingCycle: text("billing_cycle"),
-  prazoAprovacaoDias: integer("prazo_aprovacao_dias"),
-  paymentTermsDays: integer("payment_terms_days"),
-  billingCutoffDay: integer("billing_cutoff_day"),
-  emiteNf: boolean("emite_nf").default(false),
-  retemInss: boolean("retem_inss").default(true),
-  inssAliquota: decimal("inss_aliquota", { precision: 5, scale: 2 }).default("11.00"),
-  whatsappGroupId: text("whatsapp_group_id"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
-var clientVehicles = pgTable("client_vehicles", {
-  id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull().references(() => clients.id),
-  plate: text("plate").notNull(),
-  model: text("model"),
-  brand: text("brand"),
-  color: text("color"),
-  driverName: text("driver_name"),
-  driverPhone: text("driver_phone"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertClientVehicleSchema = createInsertSchema(clientVehicles).omit({ id: true, createdAt: true });
-var employees = pgTable("employees", {
-  id: serial("id").primaryKey(),
-  matricula: text("matricula").notNull().unique(),
-  name: text("name").notNull(),
-  cpf: text("cpf").notNull(),
-  rg: text("rg").notNull(),
-  cnhNumber: text("cnh_number"),
-  cnhCategoria: text("cnh_categoria"),
-  orgaoEmissor: text("orgao_emissor"),
-  ufEmissor: text("uf_emissor"),
-  pis: text("pis"),
-  role: text("role").notNull(),
-  category: text("category").default("mensalista"),
-  // Regime de contratação: "clt" (com encargos/descontos legais) ou "fixo"
-  // (valor fixo bruto = líquido, sem INSS/IRRF/FGTS/provisões — PJ, autônomo,
-  // freelancer pago como prestador, estagiário, etc).
-  tipoContratacao: text("tipo_contratacao").default("clt"),
-  phone: text("phone"),
-  email: text("email"),
-  address: text("address"),
-  addressNumber: text("address_number"),
-  addressComplement: text("address_complement"),
-  bairro: text("bairro"),
-  city: text("city"),
-  state: text("state"),
-  zip: text("zip"),
-  addressLat: real("address_lat"),
-  addressLng: real("address_lng"),
-  birthDate: date("birth_date"),
-  motherName: text("mother_name"),
-  fatherName: text("father_name"),
-  nationality: text("nationality"),
-  maritalStatus: text("marital_status"),
-  education: text("education"),
-  hireDate: date("hire_date"),
-  vacationExpiry: date("vacation_expiry"),
-  sindicato: text("sindicato"),
-  paymentMethod: text("payment_method").default("pix"),
-  bankName: text("bank_name"),
-  bankAgency: text("bank_agency"),
-  bankAccount: text("bank_account"),
-  pixKey: text("pix_key"),
-  photoUrl: text("photo_url"),
-  status: text("status").notNull().default("ativo"),
-  cnhExpiry: date("cnh_expiry"),
-  cnvNumber: text("cnv_number"),
-  cnvExpiry: date("cnv_expiry"),
-  cnvIssueDate: date("cnv_issue_date"),
-  ctpsNumber: text("ctps_number"),
-  ctpsSerie: text("ctps_serie"),
-  vestNumber: text("vest_number"),
-  vestBrand: text("vest_brand"),
-  vestProtection: text("vest_protection"),
-  vestExpiry: date("vest_expiry"),
-  ammoCount: integer("ammo_count").default(0),
-  blockType: text("block_type"),
-  blockReason: text("block_reason"),
-  dependentesDeclarados: boolean("dependentes_declarados").default(false),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true });
-var employeeSalaries = pgTable("employee_salaries", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  baseSalary: decimal("base_salary", { precision: 10, scale: 2 }).notNull(),
-  effectiveDate: date("effective_date").notNull(),
-  reason: text("reason"),
-  notes: text("notes"),
-  // Benefícios mensais e parâmetros para cálculo de custo/hora
-  valeRefeicaoMensal: decimal("vale_refeicao_mensal", { precision: 10, scale: 2 }).default("0"),
-  valeTransporteMensal: decimal("vale_transporte_mensal", { precision: 10, scale: 2 }).default("0"),
-  beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
-  encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
-  horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
-  // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
-  valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
-  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
-  // Folha 2025: Periculosidade (30% padrão para vigilantes), Dependentes IR, Ajuda de Custo fixa
-  periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
-  dependentesIr: integer("dependentes_ir").default(0),
-  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
-  // Modelo Torres (planilha do dono): Vale Alimentação mensal + Assiduidade mensal (benefícios à parte)
-  valeAlimentacaoMensal: decimal("vale_alimentacao_mensal", { precision: 10, scale: 2 }).default("0"),
-  assiduidadeMensal: decimal("assiduidade_mensal", { precision: 10, scale: 2 }).default("0"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeSalarySchema = createInsertSchema(employeeSalaries).omit({ id: true, createdAt: true });
-var fixedCosts = pgTable("fixed_costs", {
-  id: serial("id").primaryKey(),
-  description: text("description").notNull(),
-  category: text("category").notNull(),
-  // "Aluguel", "Utilidades", "Softwares", "Veiculos", "Outros"
-  monthlyValue: decimal("monthly_value", { precision: 10, scale: 2 }).notNull(),
-  dueDay: integer("due_day"),
-  // dia do mês de vencimento (1-31)
-  active: boolean("active").notNull().default(true),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertFixedCostSchema = createInsertSchema(fixedCosts).omit({ id: true, createdAt: true });
-var holidays = pgTable("holidays", {
-  id: serial("id").primaryKey(),
-  date: date("date").notNull().unique(),
-  name: text("name").notNull(),
-  national: boolean("national").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertHolidaySchema = createInsertSchema(holidays).omit({ id: true, createdAt: true });
-var agentDailyAllowances = pgTable("agent_daily_allowances", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  date: date("date").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  description: text("description"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertAgentDailyAllowanceSchema = createInsertSchema(agentDailyAllowances).omit({ id: true, createdAt: true });
-var vehicles = pgTable("vehicles", {
-  id: serial("id").primaryKey(),
-  plate: text("plate").notNull(),
-  model: text("model").notNull(),
-  brand: text("brand").notNull(),
-  year: integer("year"),
-  color: text("color"),
-  chassi: text("chassi"),
-  renavam: text("renavam"),
-  documentFile: text("document_file"),
-  status: text("status").notNull().default("dispon\xEDvel"),
-  trackerId: text("tracker_id"),
-  trackerApiUrl: text("tracker_api_url"),
-  trackerType: text("tracker_type"),
-  truckscontrolIdentifier: text("truckscontrol_identifier"),
-  ssxIntegrationCode: text("ssx_integration_code"),
-  km: integer("km").default(0),
-  initialKm: integer("initial_km").default(0),
-  lastKmUpdate: timestamp("last_km_update"),
-  frota: text("frota"),
-  photoFront: text("photo_front"),
-  photoLeft: text("photo_left"),
-  photoRear: text("photo_rear"),
-  photoRight: text("photo_right"),
-  iconType: text("icon_type").default("polo"),
-  lastLatitude: real("last_latitude"),
-  lastLongitude: real("last_longitude"),
-  lastIgnition: integer("last_ignition"),
-  lastSpeed: integer("last_speed"),
-  lastGpsSignal: integer("last_gps_signal"),
-  lastAddress: text("last_address"),
-  lastPositionTime: text("last_position_time"),
-  stoppedSince: text("stopped_since"),
-  ignitionOnSince: text("ignition_on_since"),
-  noSignalSince: text("no_signal_since"),
-  lastOilChangeKm: integer("last_oil_change_km"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertVehicleSchema = createInsertSchema(vehicles).omit({ id: true, createdAt: true });
-var serviceOrders = pgTable("service_orders", {
-  id: serial("id").primaryKey(),
-  osNumber: text("os_number").notNull().unique(),
-  clientId: integer("client_id").notNull(),
-  type: text("type").notNull(),
-  description: text("description"),
-  status: text("status").notNull().default("aberta"),
-  priority: text("priority").notNull().default("agendada"),
-  scheduledDate: timestamp("scheduled_date"),
-  completedDate: timestamp("completed_date"),
-  assignedEmployeeId: integer("assigned_employee_id"),
-  assignedEmployee2Id: integer("assigned_employee_2_id"),
-  vehicleId: integer("vehicle_id"),
-  missionStatus: text("mission_status").default("aguardando"),
-  kitId: integer("kit_id"),
-  escortedDriverName: text("escorted_driver_name"),
-  escortedDriverPhone: text("escorted_driver_phone"),
-  escortedVehiclePlate: text("escorted_vehicle_plate"),
-  escortedVehicleBrand: text("escorted_vehicle_brand"),
-  escortedVehicleModel: text("escorted_vehicle_model"),
-  escortedVehicleYear: text("escorted_vehicle_year"),
-  escortedVehicleColor: text("escorted_vehicle_color"),
-  extraDrivers: jsonb("extra_drivers").$type().default([]),
-  missionStartedAt: timestamp("mission_started_at"),
-  route: text("route"),
-  origin: text("origin"),
-  originLat: real("origin_lat"),
-  originLng: real("origin_lng"),
-  destination: text("destination"),
-  destinationLat: real("destination_lat"),
-  destinationLng: real("destination_lng"),
-  requesterName: text("requester_name"),
-  notes: text("notes"),
-  baseReturnKm: text("base_return_km"),
-  baseCleanStatus: text("base_clean_status"),
-  baseCleanNotes: text("base_clean_notes"),
-  baseChecklistConfirmed: boolean("base_checklist_confirmed"),
-  earlyStartApproved: boolean("early_start_approved").default(false),
-  escortContractId: text("escort_contract_id"),
-  valorEstimado: real("valor_estimado"),
-  pedagioEstimado: real("pedagio_estimado"),
-  pedagioIdaVolta: boolean("pedagio_ida_volta").default(false),
-  fuelAllocated: boolean("fuel_allocated"),
-  cancellationReason: text("cancellation_reason"),
-  processoOmega: text("processo_omega"),
-  gtmNumber: text("gtm_number"),
-  stepLogs: jsonb("step_logs").default([]),
-  waypoints: jsonb("waypoints").default([]),
-  createdByUserId: integer("created_by_user_id"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var coerceDate = z3.preprocess(
-  (val) => {
-    if (val === null || val === void 0 || val === "") return null;
-    if (val instanceof Date) return val.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
-    return String(val);
-  },
-  z3.union([z3.string(), z3.null()])
-).optional();
-var coerceReal = z3.preprocess(
-  (val) => {
-    if (val === null || val === void 0 || val === "") return null;
-    const n4 = Number(String(val).replace(",", "."));
-    return isNaN(n4) ? null : n4;
-  },
-  z3.union([z3.number(), z3.null()])
-).optional();
-var insertServiceOrderSchema = createInsertSchema(serviceOrders).omit({ id: true, createdAt: true }).extend({
-  scheduledDate: coerceDate,
-  completedDate: coerceDate,
-  missionStartedAt: coerceDate,
-  valorEstimado: coerceReal,
-  pedagioEstimado: coerceReal
-});
-var trips = pgTable("trips", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id"),
-  vehicleId: integer("vehicle_id").notNull(),
-  driverId: integer("driver_id").notNull(),
-  origin: text("origin").notNull(),
-  destination: text("destination").notNull(),
-  startDate: timestamp("start_date"),
-  endDate: timestamp("end_date"),
-  kmStart: integer("km_start"),
-  kmEnd: integer("km_end"),
-  status: text("status").notNull().default("planejada"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertTripSchema = createInsertSchema(trips).omit({ id: true, createdAt: true });
-var vehicleMaintenance = pgTable("vehicle_maintenance", {
-  id: serial("id").primaryKey(),
-  vehicleId: integer("vehicle_id").notNull(),
-  type: text("type").notNull(),
-  description: text("description"),
-  date: date("date").notNull(),
-  cost: decimal("cost", { precision: 10, scale: 2 }),
-  km: integer("km"),
-  nextMaintenanceKm: integer("next_maintenance_km"),
-  nextMaintenanceDate: date("next_maintenance_date"),
-  provider: text("provider"),
-  status: text("status").notNull().default("realizada"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertVehicleMaintenanceSchema = createInsertSchema(vehicleMaintenance).omit({ id: true, createdAt: true });
-var vehicleFueling = pgTable("vehicle_fueling", {
-  id: serial("id").primaryKey(),
-  vehicleId: integer("vehicle_id").notNull(),
-  driverId: integer("driver_id"),
-  date: date("date").notNull(),
-  liters: decimal("liters", { precision: 10, scale: 2 }).notNull(),
-  costPerLiter: decimal("cost_per_liter", { precision: 10, scale: 2 }),
-  totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
-  km: integer("km").notNull(),
-  fuelType: text("fuel_type").notNull().default("diesel"),
-  fullTank: boolean("full_tank").default(true),
-  station: text("station"),
-  receiptPhoto: text("receipt_photo"),
-  pumpPhoto: text("pump_photo"),
-  odometerPhoto: text("odometer_photo"),
-  notes: text("notes"),
-  platePhoto: text("plate_photo"),
-  latitude: real("latitude"),
-  longitude: real("longitude"),
-  address: text("address"),
-  gasolinePrice: decimal("gasoline_price", { precision: 10, scale: 3 }),
-  ethanolPrice: decimal("ethanol_price", { precision: 10, scale: 3 }),
-  fuelRecommendation: text("fuel_recommendation"),
-  recommendationFollowed: boolean("recommendation_followed"),
-  createdByUserId: integer("created_by_user_id"),
-  ticketlogAutorizacao: text("ticketlog_autorizacao"),
-  ticketlogStatus: text("ticketlog_status"),
-  ticketlogNfeData: jsonb("ticketlog_nfe_data"),
-  ticketlogCodigoEstab: text("ticketlog_codigo_estab"),
-  ticketlogValorTl: decimal("ticketlog_valor_tl", { precision: 10, scale: 2 }),
-  ticketlogLitrosTl: decimal("ticketlog_litros_tl", { precision: 10, scale: 2 }),
-  ticketlogDiffValor: decimal("ticketlog_diff_valor", { precision: 10, scale: 2 }),
-  ticketlogValidatedAt: timestamp("ticketlog_validated_at"),
-  ticketlogMessage: text("ticketlog_message"),
-  ticketlogEstabNome: text("ticketlog_estab_nome"),
-  ticketlogAttempts: integer("ticketlog_attempts").default(0),
-  aiValidationStatus: text("ai_validation_status"),
-  aiValidationResult: jsonb("ai_validation_result"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertVehicleFuelingSchema = createInsertSchema(vehicleFueling).omit({ id: true, createdAt: true });
-var ticketlogPostos = pgTable("ticketlog_postos", {
-  id: serial("id").primaryKey(),
-  nomePosto: text("nome_posto").notNull(),
-  codigoEstabelecimento: text("codigo_estabelecimento").notNull(),
-  endereco: text("endereco"),
-  cidade: text("cidade"),
-  ativo: boolean("ativo").default(true),
-  notas: text("notas"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertTicketlogPostoSchema = createInsertSchema(ticketlogPostos).omit({ id: true, createdAt: true });
-var controlIdDevices = pgTable("control_id_devices", {
-  id: serial("id").primaryKey(),
-  nome: text("nome").notNull(),
-  tipo: text("tipo").default("idface_cloud"),
-  // idface_cloud | idface_lan | rep_c | idclass
-  baseUrl: text("base_url").notNull(),
-  // ex: https://api.controlid.com.br
-  login: text("login").notNull(),
-  passwordEnc: text("password_enc").notNull(),
-  // AES-256-GCM (base64)
-  sessionToken: text("session_token"),
-  // cache do token atual
-  sessionExpires: timestamp("session_expires"),
-  ativo: boolean("ativo").default(true),
-  notas: text("notas"),
-  lastSyncAt: timestamp("last_sync_at"),
-  lastSyncStatus: text("last_sync_status"),
-  // ok | erro | pendente
-  lastSyncMessage: text("last_sync_message"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertControlIdDeviceSchema = createInsertSchema(controlIdDevices).omit({ id: true, createdAt: true, sessionToken: true, sessionExpires: true, lastSyncAt: true, lastSyncStatus: true, lastSyncMessage: true });
-var controlIdUsersMap = pgTable("control_id_users_map", {
-  id: serial("id").primaryKey(),
-  deviceId: integer("device_id").notNull(),
-  employeeId: integer("employee_id").notNull(),
-  controlIdUserId: text("control_id_user_id").notNull(),
-  // ID do usuário no aparelho
-  controlIdUserName: text("control_id_user_name"),
-  matricula: text("matricula"),
-  // matrícula CLT (PIS, etc)
-  ativo: boolean("ativo").default(true),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertControlIdUserMapSchema = createInsertSchema(controlIdUsersMap).omit({ id: true, createdAt: true });
-var controlIdPunches = pgTable("control_id_punches", {
-  id: serial("id").primaryKey(),
-  deviceId: integer("device_id").notNull(),
-  controlIdUserId: text("control_id_user_id").notNull(),
-  employeeId: integer("employee_id"),
-  // null se não mapeado
-  punchAt: timestamp("punch_at").notNull(),
-  // horário da batida (UTC)
-  direction: text("direction"),
-  // in | out | unknown
-  source: text("source"),
-  // facial | rfid | digital | senha
-  rawEvent: jsonb("raw_event"),
-  // payload bruto da API
-  externalId: text("external_id"),
-  // ID do evento na Control iD (pra dedup). NULL para batidas manuais que ainda não sincronizaram com RHID.
-  processed: boolean("processed").default(false),
-  // já consolidado em folha?
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertControlIdPunchSchema = createInsertSchema(controlIdPunches).omit({ id: true, createdAt: true });
-var timesheets = pgTable("timesheets", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  date: date("date").notNull(),
-  checkIn: text("check_in"),
-  checkOutLunch: text("check_out_lunch"),
-  checkInLunch: text("check_in_lunch"),
-  checkOut: text("check_out"),
-  checkOutDate: date("check_out_date"),
-  hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
-  overtime: decimal("overtime", { precision: 5, scale: 2 }),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true, createdAt: true });
-var missionPhotos = pgTable("mission_photos", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
-  employeeId: integer("employee_id").notNull(),
-  step: text("step").notNull(),
-  photoData: text("photo_data").notNull(),
-  kmValue: integer("km_value"),
-  latitude: real("latitude"),
-  longitude: real("longitude"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertMissionPhotoSchema = createInsertSchema(missionPhotos).omit({ id: true, createdAt: true });
-var employeeDocuments = pgTable("employee_documents", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  type: text("type").notNull(),
-  fileData: text("file_data"),
-  fileName: text("file_name"),
-  expiryDate: date("expiry_date"),
-  issueDate: date("issue_date"),
-  documentNumber: text("document_number"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeDocumentSchema = createInsertSchema(employeeDocuments).omit({ id: true, createdAt: true });
-var employeeProbationContracts = pgTable("employee_probation_contracts", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  durationDays: integer("duration_days").notNull().default(45),
-  funcao: text("funcao").notNull(),
-  remuneracao: decimal("remuneracao", { precision: 10, scale: 2 }).notNull(),
-  localTrabalho: text("local_trabalho").notNull().default("O MESMO DA EMPRESA"),
-  jornada: text("jornada").notNull().default("A jornada de trabalho ser\xE1 flex\xEDvel"),
-  cidadeContrato: text("cidade_contrato").notNull().default("SAO PAULO"),
-  // Assinatura digital (mesmo padrão do holerite)
-  assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
-  assinadoEm: timestamp("assinado_em"),
-  assinaturaFacialFoto: text("assinatura_facial_foto"),
-  assinaturaDesenho: text("assinatura_desenho"),
-  assinaturaTermo: text("assinatura_termo"),
-  assinaturaIp: text("assinatura_ip"),
-  assinaturaUserAgent: text("assinatura_user_agent"),
-  // Liberação excepcional pela Diretoria sem assinatura
-  bypassDiretoria: boolean("bypass_diretoria").default(false),
-  bypassBy: integer("bypass_by"),
-  bypassByName: text("bypass_by_name"),
-  bypassAt: timestamp("bypass_at"),
-  bypassReason: text("bypass_reason"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeProbationContractSchema = createInsertSchema(employeeProbationContracts).omit({ id: true, createdAt: true });
-var employeeSignableDocuments = pgTable("employee_signable_documents", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  documentType: text("document_type").notNull().default("beneficio_flash"),
-  // beneficio_flash | lgpd | regulamento | contrato_servico | outros
-  title: text("title").notNull(),
-  contentHtml: text("content_html"),
-  // Ciclo de vida: pendente -> visualizado -> assinado
-  status: text("status").notNull().default("pendente"),
-  visualizadoEm: timestamp("visualizado_em"),
-  // Assinatura digital (mesmo padrão de probation/holerite)
-  assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
-  assinadoEm: timestamp("assinado_em"),
-  assinaturaFacialFoto: text("assinatura_facial_foto"),
-  assinaturaDesenho: text("assinatura_desenho"),
-  assinaturaTermo: text("assinatura_termo"),
-  assinaturaIp: text("assinatura_ip"),
-  assinaturaUserAgent: text("assinatura_user_agent"),
-  signatureMetadata: jsonb("signature_metadata"),
-  // { lat, lng, accuracy, capturedAt }
-  // Lembrete in-app (sem canal externo nesta entrega)
-  reminderCount: integer("reminder_count").default(0),
-  lastReminderAt: timestamp("last_reminder_at"),
-  createdBy: integer("created_by"),
-  createdByName: text("created_by_name"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeSignableDocumentSchema = createInsertSchema(employeeSignableDocuments).omit({ id: true, createdAt: true });
-var employeeDependents = pgTable("employee_dependents", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  name: text("name").notNull(),
-  birthDate: date("birth_date").notNull(),
-  parentesco: text("parentesco").notNull().default("filho"),
-  // filho, conjuge, enteado, etc
-  cpf: text("cpf"),
-  certidaoData: text("certidao_data"),
-  // base64 da certidão de nascimento
-  certidaoFileName: text("certidao_file_name"),
-  deduzIr: boolean("deduz_ir").notNull().default(true),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeDependentSchema = createInsertSchema(employeeDependents).omit({ id: true, createdAt: true });
-var weapons = pgTable("weapons", {
-  id: serial("id").primaryKey(),
-  type: text("type").notNull(),
-  brand: text("brand").notNull(),
-  model: text("model").notNull(),
-  caliber: text("caliber").notNull(),
-  serialNumber: text("serial_number").notNull().unique(),
-  registrationNumber: text("registration_number"),
-  registrationExpiry: date("registration_expiry"),
-  registrationFileData: text("registration_file_data"),
-  photoData: text("photo_data"),
-  status: text("status").notNull().default("dispon\xEDvel"),
-  assignedEmployeeId: integer("assigned_employee_id"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertWeaponSchema = createInsertSchema(weapons).omit({ id: true, createdAt: true });
-var weaponAssignments = pgTable("weapon_assignments", {
-  id: serial("id").primaryKey(),
-  weaponId: integer("weapon_id").notNull(),
-  employeeId: integer("employee_id").notNull(),
-  action: text("action").notNull(),
-  serviceOrderId: integer("service_order_id"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertWeaponAssignmentSchema = createInsertSchema(weaponAssignments).omit({ id: true, createdAt: true });
-var vehicleAssignments = pgTable("vehicle_assignments", {
-  id: serial("id").primaryKey(),
-  vehicleId: integer("vehicle_id").notNull(),
-  employeeId: integer("employee_id").notNull(),
-  action: text("action").notNull(),
-  serviceOrderId: integer("service_order_id"),
-  kmAtAction: integer("km_at_action"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignments).omit({ id: true, createdAt: true });
-var weaponKits = pgTable("weapon_kits", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  status: text("status").notNull().default("dispon\xEDvel"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertWeaponKitSchema = createInsertSchema(weaponKits).omit({ id: true, createdAt: true });
-var weaponKitItems = pgTable("weapon_kit_items", {
-  id: serial("id").primaryKey(),
-  kitId: integer("kit_id").notNull(),
-  weaponId: integer("weapon_id").notNull(),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertWeaponKitItemSchema = createInsertSchema(weaponKitItems).omit({ id: true, createdAt: true });
-var gerenciadoras = pgTable("gerenciadoras", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  cnpj: text("cnpj"),
-  apiUrl: text("api_url"),
-  apiKey: text("api_key"),
-  apiType: text("api_type").default("webhook"),
-  contactName: text("contact_name"),
-  contactPhone: text("contact_phone"),
-  contactEmail: text("contact_email"),
-  active: integer("active").default(1),
-  notes: text("notes"),
-  tcPermissaoComando: integer("tc_permissao_comando").default(1),
-  tcIE: integer("tc_ie").default(0),
-  tcTIE: integer("tc_tie").default(0),
-  tcValidade: text("tc_validade"),
-  tcPossoCancelar: integer("tc_posso_cancelar").default(1),
-  tcComandoExclusivo: integer("tc_comando_exclusivo").default(0),
-  tcCompartilharDados: integer("tc_compartilhar_dados").default(0),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertGerenciadoraSchema = createInsertSchema(gerenciadoras).omit({ id: true, createdAt: true });
-var telemetryEvents = pgTable("telemetry_events", {
-  id: serial("id").primaryKey(),
-  vehicleId: integer("vehicle_id"),
-  plate: text("plate").notNull(),
-  eventType: text("event_type").notNull(),
-  value: real("value"),
-  duration: integer("duration"),
-  latitude: real("latitude"),
-  longitude: real("longitude"),
-  address: text("address"),
-  driverName: text("driver_name"),
-  details: text("details"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertTelemetryEventSchema = createInsertSchema(telemetryEvents).omit({ id: true, createdAt: true });
-var apiLogs = pgTable("api_logs", {
-  id: serial("id").primaryKey(),
-  endpoint: text("endpoint").notNull(),
-  method: text("method").notNull().default("GET"),
-  requestData: text("request_data"),
-  responseStatus: integer("response_status"),
-  responseData: text("response_data"),
-  userId: integer("user_id"),
-  source: text("source").default("manual"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertApiLogSchema = createInsertSchema(apiLogs).omit({ id: true, createdAt: true });
-var agentLocations = pgTable("agent_locations", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  employeeId: integer("employee_id"),
-  latitude: real("latitude").notNull(),
-  longitude: real("longitude").notNull(),
-  accuracy: real("accuracy"),
-  speed: real("speed"),
-  heading: real("heading"),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-var insertAgentLocationSchema = createInsertSchema(agentLocations).omit({ id: true, updatedAt: true });
-var agentLocationHistory = pgTable("agent_location_history", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  employeeId: integer("employee_id"),
-  latitude: real("latitude").notNull(),
-  longitude: real("longitude").notNull(),
-  accuracy: real("accuracy"),
-  speed: real("speed"),
-  heading: real("heading"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertAgentLocationHistorySchema = createInsertSchema(agentLocationHistory).omit({ id: true, createdAt: true });
-var employeeAbsences = pgTable("employee_absences", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  type: text("type").notNull(),
-  startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date"),
-  reason: text("reason"),
-  documentUrl: text("document_url"),
-  status: text("status").notNull().default("pendente"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeAbsenceSchema = createInsertSchema(employeeAbsences).omit({ id: true, createdAt: true }).extend({
-  startDate: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()])),
-  endDate: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()])).optional()
-});
-var employeeFines = pgTable("employee_fines", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  vehicleId: integer("vehicle_id"),
-  date: timestamp("date").notNull(),
-  infraction: text("infraction").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }),
-  points: integer("points"),
-  status: text("status").notNull().default("pendente"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeFineSchema = createInsertSchema(employeeFines).omit({ id: true, createdAt: true }).extend({
-  date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
-});
-var employeeDisciplinary = pgTable("employee_disciplinary", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  type: text("type").notNull(),
-  date: timestamp("date").notNull(),
-  reason: text("reason").notNull(),
-  description: text("description"),
-  status: text("status").notNull().default("ativa"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeDisciplinarySchema = createInsertSchema(employeeDisciplinary).omit({ id: true, createdAt: true }).extend({
-  date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
-});
-var employeeTimesheets = pgTable("employee_timesheets", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  date: timestamp("date").notNull(),
-  clockIn: text("clock_in"),
-  clockOut: text("clock_out"),
-  lunchOut: text("lunch_out"),
-  lunchIn: text("lunch_in"),
-  overtime: real("overtime"),
-  clockInPhoto: text("clock_in_photo"),
-  clockOutPhoto: text("clock_out_photo"),
-  lunchOutPhoto: text("lunch_out_photo"),
-  lunchInPhoto: text("lunch_in_photo"),
-  clockInLat: text("clock_in_lat"),
-  clockInLng: text("clock_in_lng"),
-  clockOutLat: text("clock_out_lat"),
-  clockOutLng: text("clock_out_lng"),
-  lunchOutLat: text("lunch_out_lat"),
-  lunchOutLng: text("lunch_out_lng"),
-  lunchInLat: text("lunch_in_lat"),
-  lunchInLng: text("lunch_in_lng"),
-  clockInAddress: text("clock_in_address"),
-  clockOutAddress: text("clock_out_address"),
-  lunchOutAddress: text("lunch_out_address"),
-  lunchInAddress: text("lunch_in_address"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeTimesheetSchema = createInsertSchema(employeeTimesheets).omit({ id: true, createdAt: true }).extend({
-  date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
-});
-var employeePayslips = pgTable("employee_payslips", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  month: integer("month").notNull(),
-  year: integer("year").notNull(),
-  salarioBase: decimal("salario_base", { precision: 10, scale: 2 }),
-  horasExtras: decimal("horas_extras", { precision: 10, scale: 2 }),
-  adicionalNoturno: decimal("adicional_noturno", { precision: 10, scale: 2 }),
-  periculosidade: decimal("periculosidade", { precision: 10, scale: 2 }),
-  dsr: decimal("dsr", { precision: 10, scale: 2 }),
-  valeRefeicao: decimal("vale_refeicao", { precision: 10, scale: 2 }),
-  ajudaCusto: decimal("ajuda_custo", { precision: 10, scale: 2 }),
-  beneficios: decimal("beneficios", { precision: 10, scale: 2 }),
-  descontos: decimal("descontos", { precision: 10, scale: 2 }),
-  grossSalary: decimal("gross_salary", { precision: 10, scale: 2 }),
-  netSalary: decimal("net_salary", { precision: 10, scale: 2 }),
-  deductions: decimal("deductions", { precision: 10, scale: 2 }),
-  benefits: decimal("benefits", { precision: 10, scale: 2 }),
-  status: text("status").default("pendente"),
-  dataPagamento: text("data_pagamento"),
-  documentUrl: text("document_url"),
-  financialTransactionId: integer("financial_transaction_id"),
-  notes: text("notes"),
-  assinaturaStatus: text("assinatura_status").default("pendente"),
-  assinadoEm: timestamp("assinado_em"),
-  assinaturaFacialFoto: text("assinatura_facial_foto"),
-  assinaturaDesenho: text("assinatura_desenho"),
-  assinaturaTermo: text("assinatura_termo"),
-  assinaturaIp: text("assinatura_ip"),
-  assinaturaUserAgent: text("assinatura_user_agent"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeePayslipSchema = createInsertSchema(employeePayslips).omit({ id: true, createdAt: true });
-var employeeSalaryDiscounts = pgTable("employee_salary_discounts", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  month: integer("month").notNull(),
-  year: integer("year").notNull(),
-  type: text("type").notNull(),
-  description: text("description").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  createdBy: text("created_by"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeSalaryDiscountSchema = createInsertSchema(employeeSalaryDiscounts).omit({ id: true, createdAt: true });
-var loginSelfies = pgTable("login_selfies", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  employeeId: integer("employee_id"),
-  userName: text("user_name"),
-  photoData: text("photo_data").notNull(),
-  latitude: text("latitude"),
-  longitude: text("longitude"),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertLoginSelfieSchema = createInsertSchema(loginSelfies).omit({ id: true, createdAt: true });
-var auditLogs = pgTable("audit_logs", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id"),
-  userName: text("user_name"),
-  userRole: text("user_role"),
-  action: text("action").notNull(),
-  page: text("page"),
-  details: text("details"),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  latitude: real("latitude"),
-  longitude: real("longitude"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
-var systemAuditLogs = pgTable("system_audit_logs", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id"),
-  userName: text("user_name"),
-  userRole: text("user_role"),
-  action: text("action").notNull(),
-  targetId: text("target_id"),
-  targetType: text("target_type"),
-  details: text("details"),
-  ipAddress: text("ip_address"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
-});
-var insertSystemAuditLogSchema = createInsertSchema(systemAuditLogs).omit({ id: true, createdAt: true });
-var billingAlerts = pgTable("billing_alerts", {
-  id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
-  clientName: text("client_name"),
-  alertType: text("alert_type").notNull(),
-  message: text("message").notNull(),
-  billingIds: text("billing_ids"),
-  osNumbers: text("os_numbers"),
-  periodStart: text("period_start"),
-  periodEnd: text("period_end"),
-  resolved: boolean("resolved").default(false),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-  resolvedBy: text("resolved_by"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
-});
-var systemNotifications = pgTable("system_notifications", {
-  id: serial("id").primaryKey(),
-  type: text("type").notNull(),
-  severity: text("severity").notNull().default("critical"),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  targetRole: text("target_role").notNull().default("all"),
-  requireAck: boolean("require_ack").notNull().default(true),
-  relatedType: text("related_type"),
-  relatedId: integer("related_id"),
-  ackedByUserIds: integer("acked_by_user_ids").array().notNull().default(sql`'{}'::int[]`),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
-});
-var insertSystemNotificationSchema = createInsertSchema(systemNotifications).omit({ id: true, createdAt: true, ackedByUserIds: true });
-var companyDocuments = pgTable("company_documents", {
-  id: serial("id").primaryKey(),
-  docType: text("doc_type").notNull(),
-  label: text("label").notNull(),
-  fileName: text("file_name").notNull(),
-  fileData: text("file_data").notNull(),
-  mimeType: text("mime_type").notNull(),
-  uploadedAt: timestamp("uploaded_at").defaultNow()
-});
-var insertCompanyDocumentSchema = createInsertSchema(companyDocuments).omit({ id: true, uploadedAt: true });
-var homologationLogs = pgTable("homologation_logs", {
-  id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
-  clientName: text("client_name"),
-  recipientEmail: text("recipient_email").notNull(),
-  recipientName: text("recipient_name"),
-  documentsSent: text("documents_sent").array(),
-  sentBy: text("sent_by"),
-  status: text("status").notNull().default("enviado"),
-  sentAt: timestamp("sent_at").defaultNow()
-});
-var insertHomologationLogSchema = createInsertSchema(homologationLogs).omit({ id: true, sentAt: true });
-var missionUpdates = pgTable("mission_updates", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
-  osNumber: text("os_number"),
-  employeeId: integer("employee_id"),
-  employeeName: text("employee_name"),
-  message: text("message").notNull(),
-  missionStep: text("mission_step"),
-  latitude: text("latitude"),
-  longitude: text("longitude"),
-  photoUrl: text("photo_url"),
-  readByAdmin: integer("read_by_admin").default(0),
-  copiadoPor: text("copiado_por"),
-  copiadoEm: timestamp("copiado_em"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertMissionUpdateSchema = createInsertSchema(missionUpdates).omit({ id: true, createdAt: true });
-var employeeOccurrences = pgTable("employee_occurrences", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  vehicleId: integer("vehicle_id"),
-  type: text("type").notNull(),
-  description: text("description").notNull(),
-  photos: text("photos").array(),
-  latitude: text("latitude"),
-  longitude: text("longitude"),
-  status: text("status").notNull().default("aberta"),
-  adminNotes: text("admin_notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertEmployeeOccurrenceSchema = createInsertSchema(employeeOccurrences).omit({ id: true, createdAt: true });
-var referencePoints = pgTable("reference_points", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  latitude: real("latitude").notNull(),
-  longitude: real("longitude").notNull(),
-  radiusMeters: integer("radius_meters").notNull().default(500),
-  color: text("color").notNull().default("#6366f1"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertReferencePointSchema = createInsertSchema(referencePoints).omit({ id: true, createdAt: true });
-var missionPositions = pgTable("mission_positions", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
-  vehicleId: integer("vehicle_id"),
-  latitude: real("latitude").notNull(),
-  longitude: real("longitude").notNull(),
-  speed: real("speed"),
-  ignition: integer("ignition"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertMissionPositionSchema = createInsertSchema(missionPositions).omit({ id: true, createdAt: true });
-var clientForwards = pgTable("client_forwards", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
-  missionUpdateId: integer("mission_update_id"),
-  clientId: integer("client_id").notNull(),
-  recipientEmail: text("recipient_email").notNull(),
-  subject: text("subject"),
-  message: text("message"),
-  photoIncluded: boolean("photo_included").default(false),
-  sentBy: text("sent_by"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertClientForwardSchema = createInsertSchema(clientForwards).omit({ id: true, createdAt: true });
-var missionCosts = pgTable("mission_costs", {
-  id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id"),
-  vehicleId: integer("vehicle_id"),
-  employeeId: integer("employee_id"),
-  category: text("category").notNull(),
-  description: text("description"),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  costType: text("cost_type").default("expense"),
-  photoUrl: text("photo_url"),
-  latitude: real("latitude"),
-  longitude: real("longitude"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var insertMissionCostSchema = createInsertSchema(missionCosts).omit({ id: true, createdAt: true });
-var systemSettings = pgTable("system_settings", {
-  id: serial("id").primaryKey(),
-  key: text("key").notNull().unique(),
-  value: text("value").notNull(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-var insertSystemSettingSchema = createInsertSchema(systemSettings).omit({ id: true, updatedAt: true });
-var invoices = pgTable("invoices", {
-  id: serial("id").primaryKey(),
-  clientId: integer("client_id"),
-  clientName: text("client_name").notNull(),
-  clientCpfCnpj: text("client_cpf_cnpj"),
-  asaasCustomerId: text("asaas_customer_id"),
-  asaasPaymentId: text("asaas_payment_id"),
-  serviceOrderId: integer("service_order_id"),
-  description: text("description").notNull(),
-  value: decimal("value", { precision: 12, scale: 2 }).notNull(),
-  netValue: decimal("net_value", { precision: 12, scale: 2 }),
-  dueDate: text("due_date").notNull(),
-  billingType: text("billing_type").notNull().default("BOLETO"),
-  status: text("status").notNull().default("PENDING"),
-  invoiceUrl: text("invoice_url"),
-  bankSlipUrl: text("bank_slip_url"),
-  pixQrCode: text("pix_qr_code"),
-  pixCopiaECola: text("pix_copia_e_cola"),
-  paymentDate: text("payment_date"),
-  externalReference: text("external_reference"),
-  notes: text("notes"),
-  providerCnpj: text("provider_cnpj"),
-  createdBy: integer("created_by"),
-  // Última mensagem de erro retornada pelo Asaas ao tentar emitir a NFS-e
-  nfseErrorMessage: text("nfse_error_message"),
-  // Gateway de cobrança: 'asaas' (legado) | 'inter' (novo)
-  gateway: text("gateway").notNull().default("asaas"),
-  // ID único da cobrança no Banco Inter (codigoSolicitacao)
-  interCodigoSolicitacao: text("inter_codigo_solicitacao"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-var insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
-var jornadaCalculos = pgTable("jornada_calculos", {
-  id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
-  serviceOrderId: integer("service_order_id"),
-  inicioMissao: timestamp("inicio_missao").notNull(),
-  fimMissao: timestamp("fim_missao").notNull(),
-  horasAtivo: decimal("horas_ativo", { precision: 8, scale: 2 }).notNull(),
-  horasSobreaviso: decimal("horas_sobreaviso", { precision: 8, scale: 2 }).notNull(),
-  horasNoturnas: decimal("horas_noturnas", { precision: 8, scale: 2 }).notNull(),
-  horasExtras: decimal("horas_extras", { precision: 8, scale: 2 }).notNull(),
-  valorHoraNormal: decimal("valor_hora_normal", { precision: 10, scale: 2 }).notNull(),
-  valorSobreaviso: decimal("valor_sobreaviso", { precision: 10, scale: 2 }).notNull(),
-  valorNoturno: decimal("valor_noturno", { precision: 10, scale: 2 }).notNull(),
-  valorExtra: decimal("valor_extra", { precision: 10, scale: 2 }).notNull(),
-  totalBruto: decimal("total_bruto", { precision: 12, scale: 2 }).notNull(),
-  mesReferencia: text("mes_referencia").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  createdBy: text("created_by")
-});
-var insertJornadaCalculoSchema = createInsertSchema(jornadaCalculos).omit({ id: true, createdAt: true });
-var missionAcceptances = pgTable("mission_acceptances", {
-  id: text("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
-  employeeId: integer("employee_id").notNull(),
-  userId: integer("user_id"),
-  status: text("status").notNull().default("pendente"),
-  notifiedAt: timestamp("notified_at").defaultNow(),
-  respondedAt: timestamp("responded_at"),
-  ipAddress: text("ip_address"),
-  deviceInfo: text("device_info"),
-  locationLat: decimal("location_lat", { precision: 10, scale: 7 }),
-  locationLng: decimal("location_lng", { precision: 10, scale: 7 }),
-  acceptanceToken: text("acceptance_token"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var interExtratoLancamentos = pgTable("inter_extrato_lancamentos", {
-  id: serial("id").primaryKey(),
-  dataEntrada: text("data_entrada").notNull(),
-  // YYYY-MM-DD
-  tipoTransacao: text("tipo_transacao"),
-  // PIX, BOLETO_RECEBIDO, etc
-  tipoOperacao: text("tipo_operacao").notNull(),
-  // 'C' (crédito) | 'D' (débito)
-  valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
-  titulo: text("titulo"),
-  descricao: text("descricao"),
-  codigoTransacao: text("codigo_transacao").unique(),
-  detalhes: jsonb("detalhes"),
-  invoiceId: integer("invoice_id"),
-  reconciledAt: timestamp("reconciled_at"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-var interPagamentos = pgTable("inter_pagamentos", {
-  id: serial("id").primaryKey(),
-  tipo: text("tipo").notNull(),
-  // 'boleto' | 'pix'
-  codigoTransacaoInter: text("codigo_transacao_inter").unique(),
-  valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
-  dataPagamento: text("data_pagamento").notNull(),
-  descricao: text("descricao"),
-  // Boleto
-  codBarras: text("cod_barras"),
-  beneficiarioNome: text("beneficiario_nome"),
-  beneficiarioCpfCnpj: text("beneficiario_cpf_cnpj"),
-  // PIX
-  pixChave: text("pix_chave"),
-  pixDestinoNome: text("pix_destino_nome"),
-  pixDestinoCpfCnpj: text("pix_destino_cpf_cnpj"),
-  // Status: PENDENTE | APROVADO | REJEITADO | CANCELADO
-  status: text("status").notNull().default("PENDENTE"),
-  errorMsg: text("error_msg"),
-  financialTransactionId: text("financial_transaction_id"),
-  createdBy: integer("created_by"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-var insertInterPagamentoSchema = createInsertSchema(interPagamentos).omit({ id: true, createdAt: true, updatedAt: true });
-var interWebhookEvents = pgTable("inter_webhook_events", {
-  id: serial("id").primaryKey(),
-  evento: text("evento").notNull(),
-  codigoSolicitacao: text("codigo_solicitacao"),
-  payload: jsonb("payload").notNull(),
-  processed: boolean("processed").default(false),
-  errorMsg: text("error_msg"),
-  createdAt: timestamp("created_at").defaultNow()
+var users, insertUserSchema, perfisAcesso, insertPerfilAcessoSchema, clients, insertClientSchema, clientVehicles, insertClientVehicleSchema, employees, insertEmployeeSchema, employeeSalaries, insertEmployeeSalarySchema, fixedCosts, insertFixedCostSchema, holidays, insertHolidaySchema, agentDailyAllowances, insertAgentDailyAllowanceSchema, vehicles, insertVehicleSchema, serviceOrders, coerceDate, coerceReal, insertServiceOrderSchema, trips, insertTripSchema, vehicleMaintenance, insertVehicleMaintenanceSchema, vehicleFueling, insertVehicleFuelingSchema, ticketlogPostos, insertTicketlogPostoSchema, controlIdDevices, insertControlIdDeviceSchema, controlIdUsersMap, insertControlIdUserMapSchema, controlIdPunches, insertControlIdPunchSchema, timesheets, insertTimesheetSchema, missionPhotos, insertMissionPhotoSchema, employeeDocuments, insertEmployeeDocumentSchema, employeeProbationContracts, insertEmployeeProbationContractSchema, employeeSignableDocuments, insertEmployeeSignableDocumentSchema, employeeDependents, insertEmployeeDependentSchema, weapons, insertWeaponSchema, weaponAssignments, insertWeaponAssignmentSchema, vehicleAssignments, insertVehicleAssignmentSchema, weaponKits, insertWeaponKitSchema, weaponKitItems, insertWeaponKitItemSchema, gerenciadoras, insertGerenciadoraSchema, telemetryEvents, insertTelemetryEventSchema, apiLogs, insertApiLogSchema, agentLocations, insertAgentLocationSchema, agentLocationHistory, insertAgentLocationHistorySchema, employeeAbsences, insertEmployeeAbsenceSchema, employeeFines, insertEmployeeFineSchema, employeeDisciplinary, insertEmployeeDisciplinarySchema, employeeTimesheets, insertEmployeeTimesheetSchema, employeePayslips, insertEmployeePayslipSchema, employeeSalaryDiscounts, insertEmployeeSalaryDiscountSchema, loginSelfies, insertLoginSelfieSchema, auditLogs, insertAuditLogSchema, systemAuditLogs, insertSystemAuditLogSchema, billingAlerts, systemNotifications, insertSystemNotificationSchema, companyDocuments, insertCompanyDocumentSchema, homologationLogs, insertHomologationLogSchema, missionUpdates, insertMissionUpdateSchema, employeeOccurrences, insertEmployeeOccurrenceSchema, referencePoints, insertReferencePointSchema, missionPositions, insertMissionPositionSchema, clientForwards, insertClientForwardSchema, missionCosts, insertMissionCostSchema, systemSettings, insertSystemSettingSchema, invoices, insertInvoiceSchema, jornadaCalculos, insertJornadaCalculoSchema, missionAcceptances, interExtratoLancamentos, interPagamentos, insertInterPagamentoSchema, interWebhookEvents;
+var init_schema = __esm({
+  "shared/schema.ts"() {
+    "use strict";
+    users = pgTable("users", {
+      id: serial("id").primaryKey(),
+      supabaseUid: text("supabase_uid").unique(),
+      email: text("email").unique(),
+      username: text("username"),
+      name: text("name").notNull(),
+      role: text("role").notNull().default("funcionario"),
+      employeeId: integer("employee_id"),
+      mustChangePassword: integer("must_change_password").default(0),
+      plainPassword: text("plain_password"),
+      termsAcceptedAt: timestamp("terms_accepted_at"),
+      termsIpAddress: text("terms_ip_address"),
+      termsUserAgent: text("terms_user_agent"),
+      avatarUrl: text("avatar_url"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+    perfisAcesso = pgTable("perfis_acesso", {
+      id: serial("id").primaryKey(),
+      role: text("role").notNull().unique(),
+      label: text("label").notNull(),
+      permissions: text("permissions").notNull()
+    });
+    insertPerfilAcessoSchema = createInsertSchema(perfisAcesso).omit({ id: true });
+    clients = pgTable("clients", {
+      id: serial("id").primaryKey(),
+      name: text("name").notNull(),
+      razaoSocial: text("razao_social"),
+      nomeFantasia: text("nome_fantasia"),
+      cnpj: text("cnpj"),
+      cpf: text("cpf"),
+      email: text("email"),
+      emailOperacional: text("email_operacional"),
+      emailFinanceiro: text("email_financeiro"),
+      emailContratual: text("email_contratual"),
+      emailMedicao: text("email_medicao"),
+      phone: text("phone"),
+      contactPerson: text("contact_person"),
+      address: text("address"),
+      addressNumber: text("address_number"),
+      addressComplement: text("address_complement"),
+      bairro: text("bairro"),
+      city: text("city"),
+      state: text("state"),
+      zip: text("zip"),
+      inscricaoMunicipal: text("inscricao_municipal"),
+      inscricaoEstadual: text("inscricao_estadual"),
+      notes: text("notes"),
+      billingCycle: text("billing_cycle"),
+      prazoAprovacaoDias: integer("prazo_aprovacao_dias"),
+      paymentTermsDays: integer("payment_terms_days"),
+      billingCutoffDay: integer("billing_cutoff_day"),
+      emiteNf: boolean("emite_nf").default(false),
+      retemInss: boolean("retem_inss").default(true),
+      inssAliquota: decimal("inss_aliquota", { precision: 5, scale: 2 }).default("11.00"),
+      whatsappGroupId: text("whatsapp_group_id"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
+    clientVehicles = pgTable("client_vehicles", {
+      id: serial("id").primaryKey(),
+      clientId: integer("client_id").notNull().references(() => clients.id),
+      plate: text("plate").notNull(),
+      model: text("model"),
+      brand: text("brand"),
+      color: text("color"),
+      driverName: text("driver_name"),
+      driverPhone: text("driver_phone"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertClientVehicleSchema = createInsertSchema(clientVehicles).omit({ id: true, createdAt: true });
+    employees = pgTable("employees", {
+      id: serial("id").primaryKey(),
+      matricula: text("matricula").notNull().unique(),
+      name: text("name").notNull(),
+      cpf: text("cpf").notNull(),
+      rg: text("rg").notNull(),
+      cnhNumber: text("cnh_number"),
+      cnhCategoria: text("cnh_categoria"),
+      orgaoEmissor: text("orgao_emissor"),
+      ufEmissor: text("uf_emissor"),
+      pis: text("pis"),
+      role: text("role").notNull(),
+      category: text("category").default("mensalista"),
+      // Regime de contratação: "clt" (com encargos/descontos legais) ou "fixo"
+      // (valor fixo bruto = líquido, sem INSS/IRRF/FGTS/provisões — PJ, autônomo,
+      // freelancer pago como prestador, estagiário, etc).
+      tipoContratacao: text("tipo_contratacao").default("clt"),
+      phone: text("phone"),
+      email: text("email"),
+      address: text("address"),
+      addressNumber: text("address_number"),
+      addressComplement: text("address_complement"),
+      bairro: text("bairro"),
+      city: text("city"),
+      state: text("state"),
+      zip: text("zip"),
+      addressLat: real("address_lat"),
+      addressLng: real("address_lng"),
+      birthDate: date("birth_date"),
+      motherName: text("mother_name"),
+      fatherName: text("father_name"),
+      nationality: text("nationality"),
+      maritalStatus: text("marital_status"),
+      education: text("education"),
+      hireDate: date("hire_date"),
+      vacationExpiry: date("vacation_expiry"),
+      sindicato: text("sindicato"),
+      paymentMethod: text("payment_method").default("pix"),
+      bankName: text("bank_name"),
+      bankAgency: text("bank_agency"),
+      bankAccount: text("bank_account"),
+      pixKey: text("pix_key"),
+      photoUrl: text("photo_url"),
+      status: text("status").notNull().default("ativo"),
+      cnhExpiry: date("cnh_expiry"),
+      cnvNumber: text("cnv_number"),
+      cnvExpiry: date("cnv_expiry"),
+      cnvIssueDate: date("cnv_issue_date"),
+      ctpsNumber: text("ctps_number"),
+      ctpsSerie: text("ctps_serie"),
+      vestNumber: text("vest_number"),
+      vestBrand: text("vest_brand"),
+      vestProtection: text("vest_protection"),
+      vestExpiry: date("vest_expiry"),
+      ammoCount: integer("ammo_count").default(0),
+      blockType: text("block_type"),
+      blockReason: text("block_reason"),
+      dependentesDeclarados: boolean("dependentes_declarados").default(false),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true });
+    employeeSalaries = pgTable("employee_salaries", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      baseSalary: decimal("base_salary", { precision: 10, scale: 2 }).notNull(),
+      effectiveDate: date("effective_date").notNull(),
+      reason: text("reason"),
+      notes: text("notes"),
+      // Benefícios mensais e parâmetros para cálculo de custo/hora
+      valeRefeicaoMensal: decimal("vale_refeicao_mensal", { precision: 10, scale: 2 }).default("0"),
+      valeTransporteMensal: decimal("vale_transporte_mensal", { precision: 10, scale: 2 }).default("0"),
+      beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
+      encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
+      horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
+      // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
+      valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
+      cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
+      // Folha 2025: Periculosidade (30% padrão para vigilantes), Dependentes IR, Ajuda de Custo fixa
+      periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
+      dependentesIr: integer("dependentes_ir").default(0),
+      ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
+      // Modelo Torres (planilha do dono): Vale Alimentação mensal + Assiduidade mensal (benefícios à parte)
+      valeAlimentacaoMensal: decimal("vale_alimentacao_mensal", { precision: 10, scale: 2 }).default("0"),
+      assiduidadeMensal: decimal("assiduidade_mensal", { precision: 10, scale: 2 }).default("0"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeSalarySchema = createInsertSchema(employeeSalaries).omit({ id: true, createdAt: true });
+    fixedCosts = pgTable("fixed_costs", {
+      id: serial("id").primaryKey(),
+      description: text("description").notNull(),
+      category: text("category").notNull(),
+      // "Aluguel", "Utilidades", "Softwares", "Veiculos", "Outros"
+      monthlyValue: decimal("monthly_value", { precision: 10, scale: 2 }).notNull(),
+      dueDay: integer("due_day"),
+      // dia do mês de vencimento (1-31)
+      active: boolean("active").notNull().default(true),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertFixedCostSchema = createInsertSchema(fixedCosts).omit({ id: true, createdAt: true });
+    holidays = pgTable("holidays", {
+      id: serial("id").primaryKey(),
+      date: date("date").notNull().unique(),
+      name: text("name").notNull(),
+      national: boolean("national").notNull().default(true),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertHolidaySchema = createInsertSchema(holidays).omit({ id: true, createdAt: true });
+    agentDailyAllowances = pgTable("agent_daily_allowances", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      date: date("date").notNull(),
+      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+      description: text("description"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertAgentDailyAllowanceSchema = createInsertSchema(agentDailyAllowances).omit({ id: true, createdAt: true });
+    vehicles = pgTable("vehicles", {
+      id: serial("id").primaryKey(),
+      plate: text("plate").notNull(),
+      model: text("model").notNull(),
+      brand: text("brand").notNull(),
+      year: integer("year"),
+      color: text("color"),
+      chassi: text("chassi"),
+      renavam: text("renavam"),
+      documentFile: text("document_file"),
+      status: text("status").notNull().default("dispon\xEDvel"),
+      trackerId: text("tracker_id"),
+      trackerApiUrl: text("tracker_api_url"),
+      trackerType: text("tracker_type"),
+      truckscontrolIdentifier: text("truckscontrol_identifier"),
+      ssxIntegrationCode: text("ssx_integration_code"),
+      km: integer("km").default(0),
+      initialKm: integer("initial_km").default(0),
+      lastKmUpdate: timestamp("last_km_update"),
+      frota: text("frota"),
+      photoFront: text("photo_front"),
+      photoLeft: text("photo_left"),
+      photoRear: text("photo_rear"),
+      photoRight: text("photo_right"),
+      iconType: text("icon_type").default("polo"),
+      lastLatitude: real("last_latitude"),
+      lastLongitude: real("last_longitude"),
+      lastIgnition: integer("last_ignition"),
+      lastSpeed: integer("last_speed"),
+      lastGpsSignal: integer("last_gps_signal"),
+      lastAddress: text("last_address"),
+      lastPositionTime: text("last_position_time"),
+      stoppedSince: text("stopped_since"),
+      ignitionOnSince: text("ignition_on_since"),
+      noSignalSince: text("no_signal_since"),
+      lastOilChangeKm: integer("last_oil_change_km"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertVehicleSchema = createInsertSchema(vehicles).omit({ id: true, createdAt: true });
+    serviceOrders = pgTable("service_orders", {
+      id: serial("id").primaryKey(),
+      osNumber: text("os_number").notNull().unique(),
+      clientId: integer("client_id").notNull(),
+      type: text("type").notNull(),
+      description: text("description"),
+      status: text("status").notNull().default("aberta"),
+      priority: text("priority").notNull().default("agendada"),
+      scheduledDate: timestamp("scheduled_date"),
+      completedDate: timestamp("completed_date"),
+      assignedEmployeeId: integer("assigned_employee_id"),
+      assignedEmployee2Id: integer("assigned_employee_2_id"),
+      vehicleId: integer("vehicle_id"),
+      missionStatus: text("mission_status").default("aguardando"),
+      kitId: integer("kit_id"),
+      escortedDriverName: text("escorted_driver_name"),
+      escortedDriverPhone: text("escorted_driver_phone"),
+      escortedVehiclePlate: text("escorted_vehicle_plate"),
+      escortedVehicleBrand: text("escorted_vehicle_brand"),
+      escortedVehicleModel: text("escorted_vehicle_model"),
+      escortedVehicleYear: text("escorted_vehicle_year"),
+      escortedVehicleColor: text("escorted_vehicle_color"),
+      extraDrivers: jsonb("extra_drivers").$type().default([]),
+      missionStartedAt: timestamp("mission_started_at"),
+      route: text("route"),
+      origin: text("origin"),
+      originLat: real("origin_lat"),
+      originLng: real("origin_lng"),
+      destination: text("destination"),
+      destinationLat: real("destination_lat"),
+      destinationLng: real("destination_lng"),
+      requesterName: text("requester_name"),
+      notes: text("notes"),
+      baseReturnKm: text("base_return_km"),
+      baseCleanStatus: text("base_clean_status"),
+      baseCleanNotes: text("base_clean_notes"),
+      baseChecklistConfirmed: boolean("base_checklist_confirmed"),
+      earlyStartApproved: boolean("early_start_approved").default(false),
+      escortContractId: text("escort_contract_id"),
+      valorEstimado: real("valor_estimado"),
+      pedagioEstimado: real("pedagio_estimado"),
+      pedagioIdaVolta: boolean("pedagio_ida_volta").default(false),
+      fuelAllocated: boolean("fuel_allocated"),
+      cancellationReason: text("cancellation_reason"),
+      processoOmega: text("processo_omega"),
+      gtmNumber: text("gtm_number"),
+      stepLogs: jsonb("step_logs").default([]),
+      waypoints: jsonb("waypoints").default([]),
+      createdByUserId: integer("created_by_user_id"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    coerceDate = z3.preprocess(
+      (val) => {
+        if (val === null || val === void 0 || val === "") return null;
+        if (val instanceof Date) return val.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        return String(val);
+      },
+      z3.union([z3.string(), z3.null()])
+    ).optional();
+    coerceReal = z3.preprocess(
+      (val) => {
+        if (val === null || val === void 0 || val === "") return null;
+        const n4 = Number(String(val).replace(",", "."));
+        return isNaN(n4) ? null : n4;
+      },
+      z3.union([z3.number(), z3.null()])
+    ).optional();
+    insertServiceOrderSchema = createInsertSchema(serviceOrders).omit({ id: true, createdAt: true }).extend({
+      scheduledDate: coerceDate,
+      completedDate: coerceDate,
+      missionStartedAt: coerceDate,
+      valorEstimado: coerceReal,
+      pedagioEstimado: coerceReal
+    });
+    trips = pgTable("trips", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id"),
+      vehicleId: integer("vehicle_id").notNull(),
+      driverId: integer("driver_id").notNull(),
+      origin: text("origin").notNull(),
+      destination: text("destination").notNull(),
+      startDate: timestamp("start_date"),
+      endDate: timestamp("end_date"),
+      kmStart: integer("km_start"),
+      kmEnd: integer("km_end"),
+      status: text("status").notNull().default("planejada"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertTripSchema = createInsertSchema(trips).omit({ id: true, createdAt: true });
+    vehicleMaintenance = pgTable("vehicle_maintenance", {
+      id: serial("id").primaryKey(),
+      vehicleId: integer("vehicle_id").notNull(),
+      type: text("type").notNull(),
+      description: text("description"),
+      date: date("date").notNull(),
+      cost: decimal("cost", { precision: 10, scale: 2 }),
+      km: integer("km"),
+      nextMaintenanceKm: integer("next_maintenance_km"),
+      nextMaintenanceDate: date("next_maintenance_date"),
+      provider: text("provider"),
+      status: text("status").notNull().default("realizada"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertVehicleMaintenanceSchema = createInsertSchema(vehicleMaintenance).omit({ id: true, createdAt: true });
+    vehicleFueling = pgTable("vehicle_fueling", {
+      id: serial("id").primaryKey(),
+      vehicleId: integer("vehicle_id").notNull(),
+      driverId: integer("driver_id"),
+      date: date("date").notNull(),
+      liters: decimal("liters", { precision: 10, scale: 2 }).notNull(),
+      costPerLiter: decimal("cost_per_liter", { precision: 10, scale: 2 }),
+      totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
+      km: integer("km").notNull(),
+      fuelType: text("fuel_type").notNull().default("diesel"),
+      fullTank: boolean("full_tank").default(true),
+      station: text("station"),
+      receiptPhoto: text("receipt_photo"),
+      pumpPhoto: text("pump_photo"),
+      odometerPhoto: text("odometer_photo"),
+      notes: text("notes"),
+      platePhoto: text("plate_photo"),
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      address: text("address"),
+      gasolinePrice: decimal("gasoline_price", { precision: 10, scale: 3 }),
+      ethanolPrice: decimal("ethanol_price", { precision: 10, scale: 3 }),
+      fuelRecommendation: text("fuel_recommendation"),
+      recommendationFollowed: boolean("recommendation_followed"),
+      createdByUserId: integer("created_by_user_id"),
+      ticketlogAutorizacao: text("ticketlog_autorizacao"),
+      ticketlogStatus: text("ticketlog_status"),
+      ticketlogNfeData: jsonb("ticketlog_nfe_data"),
+      ticketlogCodigoEstab: text("ticketlog_codigo_estab"),
+      ticketlogValorTl: decimal("ticketlog_valor_tl", { precision: 10, scale: 2 }),
+      ticketlogLitrosTl: decimal("ticketlog_litros_tl", { precision: 10, scale: 2 }),
+      ticketlogDiffValor: decimal("ticketlog_diff_valor", { precision: 10, scale: 2 }),
+      ticketlogValidatedAt: timestamp("ticketlog_validated_at"),
+      ticketlogMessage: text("ticketlog_message"),
+      ticketlogEstabNome: text("ticketlog_estab_nome"),
+      ticketlogAttempts: integer("ticketlog_attempts").default(0),
+      aiValidationStatus: text("ai_validation_status"),
+      aiValidationResult: jsonb("ai_validation_result"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertVehicleFuelingSchema = createInsertSchema(vehicleFueling).omit({ id: true, createdAt: true });
+    ticketlogPostos = pgTable("ticketlog_postos", {
+      id: serial("id").primaryKey(),
+      nomePosto: text("nome_posto").notNull(),
+      codigoEstabelecimento: text("codigo_estabelecimento").notNull(),
+      endereco: text("endereco"),
+      cidade: text("cidade"),
+      ativo: boolean("ativo").default(true),
+      notas: text("notas"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertTicketlogPostoSchema = createInsertSchema(ticketlogPostos).omit({ id: true, createdAt: true });
+    controlIdDevices = pgTable("control_id_devices", {
+      id: serial("id").primaryKey(),
+      nome: text("nome").notNull(),
+      tipo: text("tipo").default("idface_cloud"),
+      // idface_cloud | idface_lan | rep_c | idclass
+      baseUrl: text("base_url").notNull(),
+      // ex: https://api.controlid.com.br
+      login: text("login").notNull(),
+      passwordEnc: text("password_enc").notNull(),
+      // AES-256-GCM (base64)
+      sessionToken: text("session_token"),
+      // cache do token atual
+      sessionExpires: timestamp("session_expires"),
+      ativo: boolean("ativo").default(true),
+      notas: text("notas"),
+      lastSyncAt: timestamp("last_sync_at"),
+      lastSyncStatus: text("last_sync_status"),
+      // ok | erro | pendente
+      lastSyncMessage: text("last_sync_message"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertControlIdDeviceSchema = createInsertSchema(controlIdDevices).omit({ id: true, createdAt: true, sessionToken: true, sessionExpires: true, lastSyncAt: true, lastSyncStatus: true, lastSyncMessage: true });
+    controlIdUsersMap = pgTable("control_id_users_map", {
+      id: serial("id").primaryKey(),
+      deviceId: integer("device_id").notNull(),
+      employeeId: integer("employee_id").notNull(),
+      controlIdUserId: text("control_id_user_id").notNull(),
+      // ID do usuário no aparelho
+      controlIdUserName: text("control_id_user_name"),
+      matricula: text("matricula"),
+      // matrícula CLT (PIS, etc)
+      ativo: boolean("ativo").default(true),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertControlIdUserMapSchema = createInsertSchema(controlIdUsersMap).omit({ id: true, createdAt: true });
+    controlIdPunches = pgTable("control_id_punches", {
+      id: serial("id").primaryKey(),
+      deviceId: integer("device_id").notNull(),
+      controlIdUserId: text("control_id_user_id").notNull(),
+      employeeId: integer("employee_id"),
+      // null se não mapeado
+      punchAt: timestamp("punch_at").notNull(),
+      // horário da batida (UTC)
+      direction: text("direction"),
+      // in | out | unknown
+      source: text("source"),
+      // facial | rfid | digital | senha
+      rawEvent: jsonb("raw_event"),
+      // payload bruto da API
+      externalId: text("external_id"),
+      // ID do evento na Control iD (pra dedup). NULL para batidas manuais que ainda não sincronizaram com RHID.
+      processed: boolean("processed").default(false),
+      // já consolidado em folha?
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertControlIdPunchSchema = createInsertSchema(controlIdPunches).omit({ id: true, createdAt: true });
+    timesheets = pgTable("timesheets", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      date: date("date").notNull(),
+      checkIn: text("check_in"),
+      checkOutLunch: text("check_out_lunch"),
+      checkInLunch: text("check_in_lunch"),
+      checkOut: text("check_out"),
+      checkOutDate: date("check_out_date"),
+      hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
+      overtime: decimal("overtime", { precision: 5, scale: 2 }),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true, createdAt: true });
+    missionPhotos = pgTable("mission_photos", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id").notNull(),
+      employeeId: integer("employee_id").notNull(),
+      step: text("step").notNull(),
+      photoData: text("photo_data").notNull(),
+      kmValue: integer("km_value"),
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertMissionPhotoSchema = createInsertSchema(missionPhotos).omit({ id: true, createdAt: true });
+    employeeDocuments = pgTable("employee_documents", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      type: text("type").notNull(),
+      fileData: text("file_data"),
+      fileName: text("file_name"),
+      expiryDate: date("expiry_date"),
+      issueDate: date("issue_date"),
+      documentNumber: text("document_number"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeDocumentSchema = createInsertSchema(employeeDocuments).omit({ id: true, createdAt: true });
+    employeeProbationContracts = pgTable("employee_probation_contracts", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      startDate: date("start_date").notNull(),
+      endDate: date("end_date").notNull(),
+      durationDays: integer("duration_days").notNull().default(45),
+      funcao: text("funcao").notNull(),
+      remuneracao: decimal("remuneracao", { precision: 10, scale: 2 }).notNull(),
+      localTrabalho: text("local_trabalho").notNull().default("O MESMO DA EMPRESA"),
+      jornada: text("jornada").notNull().default("A jornada de trabalho ser\xE1 flex\xEDvel"),
+      cidadeContrato: text("cidade_contrato").notNull().default("SAO PAULO"),
+      // Assinatura digital (mesmo padrão do holerite)
+      assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
+      assinadoEm: timestamp("assinado_em"),
+      assinaturaFacialFoto: text("assinatura_facial_foto"),
+      assinaturaDesenho: text("assinatura_desenho"),
+      assinaturaTermo: text("assinatura_termo"),
+      assinaturaIp: text("assinatura_ip"),
+      assinaturaUserAgent: text("assinatura_user_agent"),
+      // Liberação excepcional pela Diretoria sem assinatura
+      bypassDiretoria: boolean("bypass_diretoria").default(false),
+      bypassBy: integer("bypass_by"),
+      bypassByName: text("bypass_by_name"),
+      bypassAt: timestamp("bypass_at"),
+      bypassReason: text("bypass_reason"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeProbationContractSchema = createInsertSchema(employeeProbationContracts).omit({ id: true, createdAt: true });
+    employeeSignableDocuments = pgTable("employee_signable_documents", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      documentType: text("document_type").notNull().default("beneficio_flash"),
+      // beneficio_flash | lgpd | regulamento | contrato_servico | outros
+      title: text("title").notNull(),
+      contentHtml: text("content_html"),
+      // Ciclo de vida: pendente -> visualizado -> assinado
+      status: text("status").notNull().default("pendente"),
+      visualizadoEm: timestamp("visualizado_em"),
+      // Assinatura digital (mesmo padrão de probation/holerite)
+      assinaturaStatus: text("assinatura_status").notNull().default("pendente"),
+      assinadoEm: timestamp("assinado_em"),
+      assinaturaFacialFoto: text("assinatura_facial_foto"),
+      assinaturaDesenho: text("assinatura_desenho"),
+      assinaturaTermo: text("assinatura_termo"),
+      assinaturaIp: text("assinatura_ip"),
+      assinaturaUserAgent: text("assinatura_user_agent"),
+      signatureMetadata: jsonb("signature_metadata"),
+      // { lat, lng, accuracy, capturedAt }
+      // Lembrete in-app (sem canal externo nesta entrega)
+      reminderCount: integer("reminder_count").default(0),
+      lastReminderAt: timestamp("last_reminder_at"),
+      createdBy: integer("created_by"),
+      createdByName: text("created_by_name"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeSignableDocumentSchema = createInsertSchema(employeeSignableDocuments).omit({ id: true, createdAt: true });
+    employeeDependents = pgTable("employee_dependents", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      name: text("name").notNull(),
+      birthDate: date("birth_date").notNull(),
+      parentesco: text("parentesco").notNull().default("filho"),
+      // filho, conjuge, enteado, etc
+      cpf: text("cpf"),
+      certidaoData: text("certidao_data"),
+      // base64 da certidão de nascimento
+      certidaoFileName: text("certidao_file_name"),
+      deduzIr: boolean("deduz_ir").notNull().default(true),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeDependentSchema = createInsertSchema(employeeDependents).omit({ id: true, createdAt: true });
+    weapons = pgTable("weapons", {
+      id: serial("id").primaryKey(),
+      type: text("type").notNull(),
+      brand: text("brand").notNull(),
+      model: text("model").notNull(),
+      caliber: text("caliber").notNull(),
+      serialNumber: text("serial_number").notNull().unique(),
+      registrationNumber: text("registration_number"),
+      registrationExpiry: date("registration_expiry"),
+      registrationFileData: text("registration_file_data"),
+      photoData: text("photo_data"),
+      status: text("status").notNull().default("dispon\xEDvel"),
+      assignedEmployeeId: integer("assigned_employee_id"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertWeaponSchema = createInsertSchema(weapons).omit({ id: true, createdAt: true });
+    weaponAssignments = pgTable("weapon_assignments", {
+      id: serial("id").primaryKey(),
+      weaponId: integer("weapon_id").notNull(),
+      employeeId: integer("employee_id").notNull(),
+      action: text("action").notNull(),
+      serviceOrderId: integer("service_order_id"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertWeaponAssignmentSchema = createInsertSchema(weaponAssignments).omit({ id: true, createdAt: true });
+    vehicleAssignments = pgTable("vehicle_assignments", {
+      id: serial("id").primaryKey(),
+      vehicleId: integer("vehicle_id").notNull(),
+      employeeId: integer("employee_id").notNull(),
+      action: text("action").notNull(),
+      serviceOrderId: integer("service_order_id"),
+      kmAtAction: integer("km_at_action"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignments).omit({ id: true, createdAt: true });
+    weaponKits = pgTable("weapon_kits", {
+      id: serial("id").primaryKey(),
+      name: text("name").notNull(),
+      description: text("description"),
+      status: text("status").notNull().default("dispon\xEDvel"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertWeaponKitSchema = createInsertSchema(weaponKits).omit({ id: true, createdAt: true });
+    weaponKitItems = pgTable("weapon_kit_items", {
+      id: serial("id").primaryKey(),
+      kitId: integer("kit_id").notNull(),
+      weaponId: integer("weapon_id").notNull(),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertWeaponKitItemSchema = createInsertSchema(weaponKitItems).omit({ id: true, createdAt: true });
+    gerenciadoras = pgTable("gerenciadoras", {
+      id: serial("id").primaryKey(),
+      name: text("name").notNull(),
+      cnpj: text("cnpj"),
+      apiUrl: text("api_url"),
+      apiKey: text("api_key"),
+      apiType: text("api_type").default("webhook"),
+      contactName: text("contact_name"),
+      contactPhone: text("contact_phone"),
+      contactEmail: text("contact_email"),
+      active: integer("active").default(1),
+      notes: text("notes"),
+      tcPermissaoComando: integer("tc_permissao_comando").default(1),
+      tcIE: integer("tc_ie").default(0),
+      tcTIE: integer("tc_tie").default(0),
+      tcValidade: text("tc_validade"),
+      tcPossoCancelar: integer("tc_posso_cancelar").default(1),
+      tcComandoExclusivo: integer("tc_comando_exclusivo").default(0),
+      tcCompartilharDados: integer("tc_compartilhar_dados").default(0),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertGerenciadoraSchema = createInsertSchema(gerenciadoras).omit({ id: true, createdAt: true });
+    telemetryEvents = pgTable("telemetry_events", {
+      id: serial("id").primaryKey(),
+      vehicleId: integer("vehicle_id"),
+      plate: text("plate").notNull(),
+      eventType: text("event_type").notNull(),
+      value: real("value"),
+      duration: integer("duration"),
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      address: text("address"),
+      driverName: text("driver_name"),
+      details: text("details"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertTelemetryEventSchema = createInsertSchema(telemetryEvents).omit({ id: true, createdAt: true });
+    apiLogs = pgTable("api_logs", {
+      id: serial("id").primaryKey(),
+      endpoint: text("endpoint").notNull(),
+      method: text("method").notNull().default("GET"),
+      requestData: text("request_data"),
+      responseStatus: integer("response_status"),
+      responseData: text("response_data"),
+      userId: integer("user_id"),
+      source: text("source").default("manual"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertApiLogSchema = createInsertSchema(apiLogs).omit({ id: true, createdAt: true });
+    agentLocations = pgTable("agent_locations", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id").notNull(),
+      employeeId: integer("employee_id"),
+      latitude: real("latitude").notNull(),
+      longitude: real("longitude").notNull(),
+      accuracy: real("accuracy"),
+      speed: real("speed"),
+      heading: real("heading"),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    insertAgentLocationSchema = createInsertSchema(agentLocations).omit({ id: true, updatedAt: true });
+    agentLocationHistory = pgTable("agent_location_history", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id").notNull(),
+      employeeId: integer("employee_id"),
+      latitude: real("latitude").notNull(),
+      longitude: real("longitude").notNull(),
+      accuracy: real("accuracy"),
+      speed: real("speed"),
+      heading: real("heading"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertAgentLocationHistorySchema = createInsertSchema(agentLocationHistory).omit({ id: true, createdAt: true });
+    employeeAbsences = pgTable("employee_absences", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      type: text("type").notNull(),
+      startDate: timestamp("start_date").notNull(),
+      endDate: timestamp("end_date"),
+      reason: text("reason"),
+      documentUrl: text("document_url"),
+      status: text("status").notNull().default("pendente"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeAbsenceSchema = createInsertSchema(employeeAbsences).omit({ id: true, createdAt: true }).extend({
+      startDate: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()])),
+      endDate: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()])).optional()
+    });
+    employeeFines = pgTable("employee_fines", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      vehicleId: integer("vehicle_id"),
+      date: timestamp("date").notNull(),
+      infraction: text("infraction").notNull(),
+      amount: decimal("amount", { precision: 10, scale: 2 }),
+      points: integer("points"),
+      status: text("status").notNull().default("pendente"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeFineSchema = createInsertSchema(employeeFines).omit({ id: true, createdAt: true }).extend({
+      date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
+    });
+    employeeDisciplinary = pgTable("employee_disciplinary", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      type: text("type").notNull(),
+      date: timestamp("date").notNull(),
+      reason: text("reason").notNull(),
+      description: text("description"),
+      status: text("status").notNull().default("ativa"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeDisciplinarySchema = createInsertSchema(employeeDisciplinary).omit({ id: true, createdAt: true }).extend({
+      date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
+    });
+    employeeTimesheets = pgTable("employee_timesheets", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      date: timestamp("date").notNull(),
+      clockIn: text("clock_in"),
+      clockOut: text("clock_out"),
+      lunchOut: text("lunch_out"),
+      lunchIn: text("lunch_in"),
+      overtime: real("overtime"),
+      clockInPhoto: text("clock_in_photo"),
+      clockOutPhoto: text("clock_out_photo"),
+      lunchOutPhoto: text("lunch_out_photo"),
+      lunchInPhoto: text("lunch_in_photo"),
+      clockInLat: text("clock_in_lat"),
+      clockInLng: text("clock_in_lng"),
+      clockOutLat: text("clock_out_lat"),
+      clockOutLng: text("clock_out_lng"),
+      lunchOutLat: text("lunch_out_lat"),
+      lunchOutLng: text("lunch_out_lng"),
+      lunchInLat: text("lunch_in_lat"),
+      lunchInLng: text("lunch_in_lng"),
+      clockInAddress: text("clock_in_address"),
+      clockOutAddress: text("clock_out_address"),
+      lunchOutAddress: text("lunch_out_address"),
+      lunchInAddress: text("lunch_in_address"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeTimesheetSchema = createInsertSchema(employeeTimesheets).omit({ id: true, createdAt: true }).extend({
+      date: z3.preprocess((val) => val === null || val === void 0 || val === "" ? null : val, z3.union([z3.coerce.date(), z3.null()]))
+    });
+    employeePayslips = pgTable("employee_payslips", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      month: integer("month").notNull(),
+      year: integer("year").notNull(),
+      salarioBase: decimal("salario_base", { precision: 10, scale: 2 }),
+      horasExtras: decimal("horas_extras", { precision: 10, scale: 2 }),
+      adicionalNoturno: decimal("adicional_noturno", { precision: 10, scale: 2 }),
+      periculosidade: decimal("periculosidade", { precision: 10, scale: 2 }),
+      dsr: decimal("dsr", { precision: 10, scale: 2 }),
+      valeRefeicao: decimal("vale_refeicao", { precision: 10, scale: 2 }),
+      ajudaCusto: decimal("ajuda_custo", { precision: 10, scale: 2 }),
+      beneficios: decimal("beneficios", { precision: 10, scale: 2 }),
+      descontos: decimal("descontos", { precision: 10, scale: 2 }),
+      grossSalary: decimal("gross_salary", { precision: 10, scale: 2 }),
+      netSalary: decimal("net_salary", { precision: 10, scale: 2 }),
+      deductions: decimal("deductions", { precision: 10, scale: 2 }),
+      benefits: decimal("benefits", { precision: 10, scale: 2 }),
+      status: text("status").default("pendente"),
+      dataPagamento: text("data_pagamento"),
+      documentUrl: text("document_url"),
+      financialTransactionId: integer("financial_transaction_id"),
+      notes: text("notes"),
+      assinaturaStatus: text("assinatura_status").default("pendente"),
+      assinadoEm: timestamp("assinado_em"),
+      assinaturaFacialFoto: text("assinatura_facial_foto"),
+      assinaturaDesenho: text("assinatura_desenho"),
+      assinaturaTermo: text("assinatura_termo"),
+      assinaturaIp: text("assinatura_ip"),
+      assinaturaUserAgent: text("assinatura_user_agent"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeePayslipSchema = createInsertSchema(employeePayslips).omit({ id: true, createdAt: true });
+    employeeSalaryDiscounts = pgTable("employee_salary_discounts", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      month: integer("month").notNull(),
+      year: integer("year").notNull(),
+      type: text("type").notNull(),
+      description: text("description").notNull(),
+      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+      createdBy: text("created_by"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeSalaryDiscountSchema = createInsertSchema(employeeSalaryDiscounts).omit({ id: true, createdAt: true });
+    loginSelfies = pgTable("login_selfies", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id").notNull(),
+      employeeId: integer("employee_id"),
+      userName: text("user_name"),
+      photoData: text("photo_data").notNull(),
+      latitude: text("latitude"),
+      longitude: text("longitude"),
+      ipAddress: text("ip_address"),
+      userAgent: text("user_agent"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertLoginSelfieSchema = createInsertSchema(loginSelfies).omit({ id: true, createdAt: true });
+    auditLogs = pgTable("audit_logs", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id"),
+      userName: text("user_name"),
+      userRole: text("user_role"),
+      action: text("action").notNull(),
+      page: text("page"),
+      details: text("details"),
+      ipAddress: text("ip_address"),
+      userAgent: text("user_agent"),
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+    systemAuditLogs = pgTable("system_audit_logs", {
+      id: serial("id").primaryKey(),
+      userId: integer("user_id"),
+      userName: text("user_name"),
+      userRole: text("user_role"),
+      action: text("action").notNull(),
+      targetId: text("target_id"),
+      targetType: text("target_type"),
+      details: text("details"),
+      ipAddress: text("ip_address"),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
+    });
+    insertSystemAuditLogSchema = createInsertSchema(systemAuditLogs).omit({ id: true, createdAt: true });
+    billingAlerts = pgTable("billing_alerts", {
+      id: serial("id").primaryKey(),
+      clientId: integer("client_id").notNull(),
+      clientName: text("client_name"),
+      alertType: text("alert_type").notNull(),
+      message: text("message").notNull(),
+      billingIds: text("billing_ids"),
+      osNumbers: text("os_numbers"),
+      periodStart: text("period_start"),
+      periodEnd: text("period_end"),
+      resolved: boolean("resolved").default(false),
+      resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+      resolvedBy: text("resolved_by"),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
+    });
+    systemNotifications = pgTable("system_notifications", {
+      id: serial("id").primaryKey(),
+      type: text("type").notNull(),
+      severity: text("severity").notNull().default("critical"),
+      title: text("title").notNull(),
+      message: text("message").notNull(),
+      targetRole: text("target_role").notNull().default("all"),
+      requireAck: boolean("require_ack").notNull().default(true),
+      relatedType: text("related_type"),
+      relatedId: integer("related_id"),
+      ackedByUserIds: integer("acked_by_user_ids").array().notNull().default(sql`'{}'::int[]`),
+      expiresAt: timestamp("expires_at", { withTimezone: true }),
+      createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
+    });
+    insertSystemNotificationSchema = createInsertSchema(systemNotifications).omit({ id: true, createdAt: true, ackedByUserIds: true });
+    companyDocuments = pgTable("company_documents", {
+      id: serial("id").primaryKey(),
+      docType: text("doc_type").notNull(),
+      label: text("label").notNull(),
+      fileName: text("file_name").notNull(),
+      fileData: text("file_data").notNull(),
+      mimeType: text("mime_type").notNull(),
+      uploadedAt: timestamp("uploaded_at").defaultNow()
+    });
+    insertCompanyDocumentSchema = createInsertSchema(companyDocuments).omit({ id: true, uploadedAt: true });
+    homologationLogs = pgTable("homologation_logs", {
+      id: serial("id").primaryKey(),
+      clientId: integer("client_id").notNull(),
+      clientName: text("client_name"),
+      recipientEmail: text("recipient_email").notNull(),
+      recipientName: text("recipient_name"),
+      documentsSent: text("documents_sent").array(),
+      sentBy: text("sent_by"),
+      status: text("status").notNull().default("enviado"),
+      sentAt: timestamp("sent_at").defaultNow()
+    });
+    insertHomologationLogSchema = createInsertSchema(homologationLogs).omit({ id: true, sentAt: true });
+    missionUpdates = pgTable("mission_updates", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id").notNull(),
+      osNumber: text("os_number"),
+      employeeId: integer("employee_id"),
+      employeeName: text("employee_name"),
+      message: text("message").notNull(),
+      missionStep: text("mission_step"),
+      latitude: text("latitude"),
+      longitude: text("longitude"),
+      photoUrl: text("photo_url"),
+      readByAdmin: integer("read_by_admin").default(0),
+      copiadoPor: text("copiado_por"),
+      copiadoEm: timestamp("copiado_em"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertMissionUpdateSchema = createInsertSchema(missionUpdates).omit({ id: true, createdAt: true });
+    employeeOccurrences = pgTable("employee_occurrences", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      vehicleId: integer("vehicle_id"),
+      type: text("type").notNull(),
+      description: text("description").notNull(),
+      photos: text("photos").array(),
+      latitude: text("latitude"),
+      longitude: text("longitude"),
+      status: text("status").notNull().default("aberta"),
+      adminNotes: text("admin_notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertEmployeeOccurrenceSchema = createInsertSchema(employeeOccurrences).omit({ id: true, createdAt: true });
+    referencePoints = pgTable("reference_points", {
+      id: serial("id").primaryKey(),
+      name: text("name").notNull(),
+      latitude: real("latitude").notNull(),
+      longitude: real("longitude").notNull(),
+      radiusMeters: integer("radius_meters").notNull().default(500),
+      color: text("color").notNull().default("#6366f1"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertReferencePointSchema = createInsertSchema(referencePoints).omit({ id: true, createdAt: true });
+    missionPositions = pgTable("mission_positions", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id").notNull(),
+      vehicleId: integer("vehicle_id"),
+      latitude: real("latitude").notNull(),
+      longitude: real("longitude").notNull(),
+      speed: real("speed"),
+      ignition: integer("ignition"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertMissionPositionSchema = createInsertSchema(missionPositions).omit({ id: true, createdAt: true });
+    clientForwards = pgTable("client_forwards", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id").notNull(),
+      missionUpdateId: integer("mission_update_id"),
+      clientId: integer("client_id").notNull(),
+      recipientEmail: text("recipient_email").notNull(),
+      subject: text("subject"),
+      message: text("message"),
+      photoIncluded: boolean("photo_included").default(false),
+      sentBy: text("sent_by"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertClientForwardSchema = createInsertSchema(clientForwards).omit({ id: true, createdAt: true });
+    missionCosts = pgTable("mission_costs", {
+      id: serial("id").primaryKey(),
+      serviceOrderId: integer("service_order_id"),
+      vehicleId: integer("vehicle_id"),
+      employeeId: integer("employee_id"),
+      category: text("category").notNull(),
+      description: text("description"),
+      amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+      costType: text("cost_type").default("expense"),
+      photoUrl: text("photo_url"),
+      latitude: real("latitude"),
+      longitude: real("longitude"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    insertMissionCostSchema = createInsertSchema(missionCosts).omit({ id: true, createdAt: true });
+    systemSettings = pgTable("system_settings", {
+      id: serial("id").primaryKey(),
+      key: text("key").notNull().unique(),
+      value: text("value").notNull(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    insertSystemSettingSchema = createInsertSchema(systemSettings).omit({ id: true, updatedAt: true });
+    invoices = pgTable("invoices", {
+      id: serial("id").primaryKey(),
+      clientId: integer("client_id"),
+      clientName: text("client_name").notNull(),
+      clientCpfCnpj: text("client_cpf_cnpj"),
+      asaasCustomerId: text("asaas_customer_id"),
+      asaasPaymentId: text("asaas_payment_id"),
+      serviceOrderId: integer("service_order_id"),
+      description: text("description").notNull(),
+      value: decimal("value", { precision: 12, scale: 2 }).notNull(),
+      netValue: decimal("net_value", { precision: 12, scale: 2 }),
+      dueDate: text("due_date").notNull(),
+      billingType: text("billing_type").notNull().default("BOLETO"),
+      status: text("status").notNull().default("PENDING"),
+      invoiceUrl: text("invoice_url"),
+      bankSlipUrl: text("bank_slip_url"),
+      pixQrCode: text("pix_qr_code"),
+      pixCopiaECola: text("pix_copia_e_cola"),
+      paymentDate: text("payment_date"),
+      externalReference: text("external_reference"),
+      notes: text("notes"),
+      providerCnpj: text("provider_cnpj"),
+      createdBy: integer("created_by"),
+      // Última mensagem de erro retornada pelo Asaas ao tentar emitir a NFS-e
+      nfseErrorMessage: text("nfse_error_message"),
+      // Gateway de cobrança: 'asaas' (legado) | 'inter' (novo)
+      gateway: text("gateway").notNull().default("asaas"),
+      // ID único da cobrança no Banco Inter (codigoSolicitacao)
+      interCodigoSolicitacao: text("inter_codigo_solicitacao"),
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
+    jornadaCalculos = pgTable("jornada_calculos", {
+      id: serial("id").primaryKey(),
+      employeeId: integer("employee_id").notNull(),
+      serviceOrderId: integer("service_order_id"),
+      inicioMissao: timestamp("inicio_missao").notNull(),
+      fimMissao: timestamp("fim_missao").notNull(),
+      horasAtivo: decimal("horas_ativo", { precision: 8, scale: 2 }).notNull(),
+      horasSobreaviso: decimal("horas_sobreaviso", { precision: 8, scale: 2 }).notNull(),
+      horasNoturnas: decimal("horas_noturnas", { precision: 8, scale: 2 }).notNull(),
+      horasExtras: decimal("horas_extras", { precision: 8, scale: 2 }).notNull(),
+      valorHoraNormal: decimal("valor_hora_normal", { precision: 10, scale: 2 }).notNull(),
+      valorSobreaviso: decimal("valor_sobreaviso", { precision: 10, scale: 2 }).notNull(),
+      valorNoturno: decimal("valor_noturno", { precision: 10, scale: 2 }).notNull(),
+      valorExtra: decimal("valor_extra", { precision: 10, scale: 2 }).notNull(),
+      totalBruto: decimal("total_bruto", { precision: 12, scale: 2 }).notNull(),
+      mesReferencia: text("mes_referencia").notNull(),
+      createdAt: timestamp("created_at").defaultNow(),
+      createdBy: text("created_by")
+    });
+    insertJornadaCalculoSchema = createInsertSchema(jornadaCalculos).omit({ id: true, createdAt: true });
+    missionAcceptances = pgTable("mission_acceptances", {
+      id: text("id").primaryKey(),
+      serviceOrderId: integer("service_order_id").notNull(),
+      employeeId: integer("employee_id").notNull(),
+      userId: integer("user_id"),
+      status: text("status").notNull().default("pendente"),
+      notifiedAt: timestamp("notified_at").defaultNow(),
+      respondedAt: timestamp("responded_at"),
+      ipAddress: text("ip_address"),
+      deviceInfo: text("device_info"),
+      locationLat: decimal("location_lat", { precision: 10, scale: 7 }),
+      locationLng: decimal("location_lng", { precision: 10, scale: 7 }),
+      acceptanceToken: text("acceptance_token"),
+      notes: text("notes"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    interExtratoLancamentos = pgTable("inter_extrato_lancamentos", {
+      id: serial("id").primaryKey(),
+      dataEntrada: text("data_entrada").notNull(),
+      // YYYY-MM-DD
+      tipoTransacao: text("tipo_transacao"),
+      // PIX, BOLETO_RECEBIDO, etc
+      tipoOperacao: text("tipo_operacao").notNull(),
+      // 'C' (crédito) | 'D' (débito)
+      valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
+      titulo: text("titulo"),
+      descricao: text("descricao"),
+      codigoTransacao: text("codigo_transacao").unique(),
+      detalhes: jsonb("detalhes"),
+      invoiceId: integer("invoice_id"),
+      reconciledAt: timestamp("reconciled_at"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+    interPagamentos = pgTable("inter_pagamentos", {
+      id: serial("id").primaryKey(),
+      tipo: text("tipo").notNull(),
+      // 'boleto' | 'pix'
+      codigoTransacaoInter: text("codigo_transacao_inter").unique(),
+      valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
+      dataPagamento: text("data_pagamento").notNull(),
+      descricao: text("descricao"),
+      // Boleto
+      codBarras: text("cod_barras"),
+      beneficiarioNome: text("beneficiario_nome"),
+      beneficiarioCpfCnpj: text("beneficiario_cpf_cnpj"),
+      // PIX
+      pixChave: text("pix_chave"),
+      pixDestinoNome: text("pix_destino_nome"),
+      pixDestinoCpfCnpj: text("pix_destino_cpf_cnpj"),
+      // Status: PENDENTE | APROVADO | REJEITADO | CANCELADO
+      status: text("status").notNull().default("PENDENTE"),
+      errorMsg: text("error_msg"),
+      financialTransactionId: text("financial_transaction_id"),
+      createdBy: integer("created_by"),
+      createdAt: timestamp("created_at").defaultNow(),
+      updatedAt: timestamp("updated_at").defaultNow()
+    });
+    insertInterPagamentoSchema = createInsertSchema(interPagamentos).omit({ id: true, createdAt: true, updatedAt: true });
+    interWebhookEvents = pgTable("inter_webhook_events", {
+      id: serial("id").primaryKey(),
+      evento: text("evento").notNull(),
+      codigoSolicitacao: text("codigo_solicitacao"),
+      payload: jsonb("payload").notNull(),
+      processed: boolean("processed").default(false),
+      errorMsg: text("error_msg"),
+      createdAt: timestamp("created_at").defaultNow()
+    });
+  }
 });
 
 // server/lib/photo-data-uri.ts
-var MIME_RE = /^image\/[\w.+-]+$/;
 function normalizePhotoDataUri(photoData, mime) {
   if (typeof photoData !== "string" || photoData.length === 0) return null;
   if (photoData.startsWith("data:")) return photoData;
   const safeMime = typeof mime === "string" && MIME_RE.test(mime) ? mime : "image/jpeg";
   return `data:${safeMime};base64,${photoData}`;
 }
-
-// server/routes.ts
-init_pg_fallback();
-init_helpers();
-import OpenAI8 from "openai";
-
-// server/routes/clients.ts
-init_storage();
-init_supabase();
-init_auth();
-init_apibrasil();
-init_normalize_contact();
+var MIME_RE;
+var init_photo_data_uri = __esm({
+  "server/lib/photo-data-uri.ts"() {
+    "use strict";
+    MIME_RE = /^image\/[\w.+-]+$/;
+  }
+});
 
 // server/contract-pdf.ts
 import PDFDocument2 from "pdfkit";
-var COMPANY2 = {
-  name: "TORRES VIGIL\xC2NCIA PATRIMONIAL LTDA",
-  shortName: "TORRES VIGIL\xC2NCIA PATRIMONIAL",
-  cnpj: "36.982.392/0001-89",
-  city: "S\xE3o Paulo",
-  state: "SP",
-  footer: "www.torresseguranca.com.br \u2022 @grupotorres.seguranca \u2022 (11) 96369-6699 \u2022 escolta@torresseguranca.com.br"
-};
 function generateContractPDF(res, data) {
   const doc = new PDFDocument2({
     size: "A4",
@@ -23985,9 +23020,22 @@ function generateContractPDF(res, data) {
   }
   doc.end();
 }
+var COMPANY2;
+var init_contract_pdf = __esm({
+  "server/contract-pdf.ts"() {
+    "use strict";
+    COMPANY2 = {
+      name: "TORRES VIGIL\xC2NCIA PATRIMONIAL LTDA",
+      shortName: "TORRES VIGIL\xC2NCIA PATRIMONIAL",
+      cnpj: "36.982.392/0001-89",
+      city: "S\xE3o Paulo",
+      state: "SP",
+      footer: "www.torresseguranca.com.br \u2022 @grupotorres.seguranca \u2022 (11) 96369-6699 \u2022 escolta@torresseguranca.com.br"
+    };
+  }
+});
 
 // server/routes/clients.ts
-init_zapi();
 function registerClientRoutes(app3) {
   app3.get("/api/clients", requireAuth, requireAdminRole, async (_req, res) => {
     const data = await storage.getClients();
@@ -24123,12 +23171,280 @@ function registerClientRoutes(app3) {
     }
   });
 }
+var init_clients = __esm({
+  "server/routes/clients.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_apibrasil();
+    init_normalize_contact();
+    init_contract_pdf();
+    init_zapi();
+  }
+});
+
+// server/lib/fleet-summary.ts
+var fleet_summary_exports = {};
+__export(fleet_summary_exports, {
+  buildFleetOperationalSummary: () => buildFleetOperationalSummary,
+  handlePvResumoRequest: () => handlePvResumoRequest,
+  isAuthorizedResumoPhone: () => isAuthorizedResumoPhone,
+  isResumoIntent: () => isResumoIntent
+});
+function allowedSuffixes() {
+  const env = process.env.WHATSAPP_RESUMO_ALLOWED_PHONES;
+  const raw = env ? env.split(",") : DEFAULT_ALLOWED_PHONES;
+  return raw.map((s) => String(s).replace(/\D/g, "")).filter((d) => d.length >= 11).map((d) => d.slice(-11));
+}
+function isAuthorizedResumoPhone(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length < 11) return false;
+  return allowedSuffixes().includes(d.slice(-11));
+}
+function isResumoIntent(text2) {
+  if (!text2) return false;
+  return /\b(resumo|frota)\b/i.test(text2.trim());
+}
+function brtToday3() {
+  return currentBrtDayRange().from;
+}
+function brtDateLabel() {
+  const [y, m, d] = brtToday3().split("-");
+  return `${d}/${m}/${y}`;
+}
+function osDateKey(o) {
+  const src = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt;
+  return brtDateKey(src);
+}
+function parseBRT(v) {
+  const s = String(v);
+  return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+}
+function brtTime(v) {
+  if (!v) return void 0;
+  const d = parseBRT(v);
+  if (isNaN(d.getTime())) return void 0;
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+}
+function money(v) {
+  return "R$ " + (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function isActiveMission(o) {
+  if (o.status !== "em_andamento") return false;
+  const ms = String(o.missionStatus || "").toLowerCase();
+  return !FINISHED_MISSION.has(ms);
+}
+function isFutureScheduled(o) {
+  if (o.status !== "agendada" || !o.scheduledDate) return false;
+  return parseBRT(o.scheduledDate).getTime() > Date.now();
+}
+function latestPhotoByStep(photos, step) {
+  let best;
+  for (const p of photos) {
+    if (p.step !== step) continue;
+    if (!best || new Date(p.createdAt || 0).getTime() >= new Date(best.createdAt || 0).getTime()) best = p;
+  }
+  return best;
+}
+function osFaturamento(o, ctx) {
+  if (o.custosCongeladosEm && o.fatCalculado != null) {
+    return Number(o.fatCalculado) || 0;
+  }
+  const contrato = o.escortContractId ? ctx.contractById.get(o.escortContractId) || DEFAULT_CONTRATO : o.clientId ? ctx.activeContractByClient.get(o.clientId) || DEFAULT_CONTRATO : DEFAULT_CONTRATO;
+  const photos = ctx.photosByOS.get(o.id) || [];
+  const kmSaida = photos.find((p) => p.step === "km_saida");
+  const kmChegada = photos.find((p) => p.step === "km_chegada");
+  const kmFinal = latestPhotoByStep(photos, "km_final");
+  const kmInicial = Number(kmChegada?.kmValue) || Number(kmSaida?.kmValue) || 0;
+  const kmAtual = Number(kmFinal?.kmValue) || kmInicial;
+  const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
+  const missionNotStartedYet = !o.missionStatus || o.missionStatus === "aguardando";
+  const skipHours = missionNotStartedYet || o.status === "agendada" && isFutureScheduled(o);
+  const horasMissao = skipHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate, o.scheduledDate);
+  const { despesas_pedagio, despesas_combustivel, receitas_os } = splitMissionCostsForBilling(
+    ctx.costsByOS.get(o.id) || []
+  );
+  try {
+    const esc3 = calcularEscolta({
+      km_inicial: kmInicial,
+      km_final: kmFinalNorm,
+      km_vazio: 0,
+      horas_missao: horasMissao,
+      horas_estadia: 0,
+      teve_pernoite: false,
+      horario_inicio: brtTime(o.missionStartedAt),
+      horario_fim: brtTime(o.completedDate),
+      horario_agendado: brtTime(o.scheduledDate),
+      inicio_ts: o.missionStartedAt || null,
+      fim_ts: o.completedDate || null,
+      scheduled_date: o.scheduledDate || null,
+      despesas_pedagio,
+      despesas_combustivel,
+      despesas_outras: 0,
+      receitas_os,
+      contrato
+    });
+    let canonFat = esc3.fat_total;
+    if (canonFat === 0 && o.status === "agendada" && o.valorEstimado) {
+      canonFat = Number(o.valorEstimado) || 0;
+    }
+    return Math.round(canonFat * 100) / 100;
+  } catch {
+    return 0;
+  }
+}
+async function fetchByOsIdsChunked(table, ids, columns) {
+  const out = [];
+  const CHUNK2 = 150;
+  for (let i = 0; i < ids.length; i += CHUNK2) {
+    const slice = ids.slice(i, i + CHUNK2);
+    const { data } = await supabaseAdmin.from(table).select(columns).in("service_order_id", slice);
+    if (data) out.push(...data);
+  }
+  return out;
+}
+async function buildFleetOperationalSummary() {
+  const [vehicles4, orders] = await Promise.all([
+    storage.getVehicles(),
+    storage.getServiceOrders()
+  ]);
+  const today = brtToday3();
+  const relevant = orders.filter(
+    (o) => !EXCLUDED_OS_STATUS.has(String(o.status)) && (isActiveMission(o) || osDateKey(o) === today)
+  );
+  const relevantIds = relevant.map((o) => o.id);
+  const ctx = {
+    photosByOS: /* @__PURE__ */ new Map(),
+    costsByOS: /* @__PURE__ */ new Map(),
+    contractById: /* @__PURE__ */ new Map(),
+    activeContractByClient: /* @__PURE__ */ new Map()
+  };
+  if (relevantIds.length > 0) {
+    const [photos, costs, contractsRes] = await Promise.all([
+      fetchByOsIdsChunked("mission_photos", relevantIds, "service_order_id, step, km_value, created_at"),
+      fetchByOsIdsChunked("mission_costs", relevantIds, "service_order_id, amount, category, cost_type"),
+      supabaseAdmin.from("escort_contracts").select("*")
+    ]);
+    for (const p of photos) {
+      const arr = ctx.photosByOS.get(p.service_order_id) || [];
+      arr.push({ step: p.step, kmValue: p.km_value, createdAt: p.created_at });
+      ctx.photosByOS.set(p.service_order_id, arr);
+    }
+    for (const c of costs) {
+      const arr = ctx.costsByOS.get(c.service_order_id) || [];
+      arr.push(c);
+      ctx.costsByOS.set(c.service_order_id, arr);
+    }
+    for (const c of contractsRes.data || []) {
+      if (c.id) ctx.contractById.set(c.id, c);
+      if (c.status === "Ativo" && c.client_id && !ctx.activeContractByClient.has(c.client_id)) {
+        ctx.activeContractByClient.set(c.client_id, c);
+      }
+    }
+  }
+  const ordersByVehicle = /* @__PURE__ */ new Map();
+  for (const o of orders) {
+    if (!o.vehicleId) continue;
+    const arr = ordersByVehicle.get(o.vehicleId) || [];
+    arr.push(o);
+    ordersByVehicle.set(o.vehicleId, arr);
+  }
+  const disponiveis = [];
+  const emViagem = [];
+  let totalFaturado = 0;
+  const sortedVehicles = [...vehicles4].sort(
+    (a, b) => String(a.plate || "").localeCompare(String(b.plate || ""), "pt-BR")
+  );
+  for (const v of sortedVehicles) {
+    const plate = String(v.plate || "\u2014").toUpperCase();
+    const vOrders = ordersByVehicle.get(v.id) || [];
+    const activeOrders = vOrders.filter(isActiveMission);
+    const todayOrders = vOrders.filter(
+      (o) => osDateKey(o) === today && !EXCLUDED_OS_STATUS.has(String(o.status))
+    );
+    const todayFat = todayOrders.reduce((s, o) => s + osFaturamento(o, ctx), 0);
+    totalFaturado += todayFat;
+    if (activeOrders.length > 0) {
+      const primary = [...activeOrders].sort(
+        (a, b) => parseBRT(b.missionStartedAt || b.scheduledDate || 0).getTime() - parseBRT(a.missionStartedAt || a.scheduledDate || 0).getTime()
+      )[0];
+      const origem = shortLocal(primary.origin) || "\u2014";
+      const destino = shortLocal(primary.destination) || "\u2014";
+      const fatSuffix = todayFat > 0 ? `: ${money(todayFat)}` : "";
+      emViagem.push(`- ${plate}${fatSuffix} (${origem} \u279C ${destino})`);
+    } else {
+      const proxima = vOrders.filter(isFutureScheduled).sort((a, b) => parseBRT(a.scheduledDate).getTime() - parseBRT(b.scheduledDate).getTime())[0];
+      const proximaSuffix = proxima?.osNumber ? ` (${proxima.osNumber})` : "";
+      disponiveis.push(`- ${plate}: ${money(todayFat)}${proximaSuffix}`);
+    }
+  }
+  const pad22 = (n4) => String(n4).padStart(2, "0");
+  const unidades = (n4) => n4 === 1 ? "01 UNIDADE" : `${pad22(n4)} UNIDADES`;
+  const parts = [];
+  parts.push(SEP);
+  parts.push("\u{1F6E1}\uFE0F [TMSEGo] RELAT\xD3RIO DI\xC1RIO");
+  parts.push(`\u{1F4C5} ${brtDateLabel()}`);
+  parts.push("");
+  parts.push(`[\u{1F7E2}] DISPON\xCDVEIS: ${unidades(disponiveis.length)}`);
+  parts.push(disponiveis.length ? disponiveis.join("\n") : "- Nenhuma");
+  parts.push("");
+  parts.push(`[\u{1F7E1}] EM VIAGEM: ${unidades(emViagem.length)}`);
+  parts.push(emViagem.length ? emViagem.join("\n") : "- Nenhuma");
+  parts.push("");
+  parts.push(`[\u{1F4B0}] TOTAL FATURADO: ${money(totalFaturado)}`);
+  parts.push(SEP);
+  return parts.join("\n");
+}
+async function handlePvResumoRequest(msg) {
+  try {
+    if (!isResumoIntent(msg.text)) return;
+    if (!isAuthorizedResumoPhone(msg.senderPhone || msg.chatId)) return;
+    if (!isZapiConfigured()) return;
+    const text2 = await buildFleetOperationalSummary();
+    await sendText({ groupOrPhone: msg.chatId, message: text2, senderName: "Central Torres" });
+  } catch (e) {
+    console.warn("[fleet-summary] handlePvResumoRequest:", e?.message);
+  }
+}
+var DEFAULT_ALLOWED_PHONES, SEP, FINISHED_MISSION, EXCLUDED_OS_STATUS, DEFAULT_CONTRATO;
+var init_fleet_summary = __esm({
+  "server/lib/fleet-summary.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_zapi();
+    init_agent_central_mention();
+    init_billing_calc();
+    init_brt_date();
+    DEFAULT_ALLOWED_PHONES = ["11963696699", "11954563755", "11972368645"];
+    SEP = "\u2501".repeat(20);
+    FINISHED_MISSION = /* @__PURE__ */ new Set([
+      "encerrada",
+      "finalizada",
+      "retorno_base",
+      "chegada_base",
+      "cancelada",
+      "recusada"
+    ]);
+    EXCLUDED_OS_STATUS = /* @__PURE__ */ new Set(["recusada", "cancelada"]);
+    DEFAULT_CONTRATO = {
+      valor_km_carregado: 2.8,
+      valor_km_vazio: 1.4,
+      franquia_minima_km: 50,
+      valor_hora_estadia: 50,
+      valor_diaria: 200,
+      vrp_base: 150,
+      adicional_noturno_vrp_pct: 20,
+      adicional_noturno_km_pct: 15,
+      adicional_periculosidade_pct: 30,
+      periculosidade_horas_limite: 8
+    };
+  }
+});
 
 // server/routes/whatsapp.ts
-init_supabase();
-init_auth();
-init_zapi();
-var WEBHOOK_TOKEN = process.env.ZAPI_TOKEN || "";
 function isGroupId2(id) {
   return id.endsWith("@g.us") || id.endsWith("-group");
 }
@@ -24448,50 +23764,22 @@ ${text2.trim()}`;
     res.json({ ok: true });
   });
 }
-
-// server/routes/employees.ts
-init_storage();
-init_supabase();
-init_auth();
-init_apibrasil();
-init_normalize_contact();
-init_payroll();
-import OpenAI4 from "openai";
-
-// server/routes/probation-contracts.ts
-init_supabase();
-init_auth();
-init_storage();
+var WEBHOOK_TOKEN;
+var init_whatsapp = __esm({
+  "server/routes/whatsapp.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_zapi();
+    init_whatsapp_monitor();
+    WEBHOOK_TOKEN = process.env.ZAPI_TOKEN || "";
+  }
+});
 
 // server/probation-contract-pdf.ts
 import PDFDocument3 from "pdfkit";
-import fs6 from "fs";
-import path7 from "path";
-var DEFAULT_PROBATION_TEMPLATE = {
-  cabecalho: `Pelo presente instrumento particular de Contrato de Experi\xEAncia, a empresa {{empresa_nome}} com sede \xE0 {{empresa_endereco}} Cidade {{empresa_cidade}} Estado {{empresa_estado}}, inscrita no CNPJ do MF sob N\xBA {{empresa_cnpj}}, denominada Empregadora, E O SR.(A) {{empregado_nome}}, DOMICILIADO \xC0 {{empregado_endereco}}, NO BAIRRO {{empregado_bairro}}, NA CIDADE DE {{empregado_cidade}}/{{empregado_estado}}, PORTADOR DA CTPS N\xBA/S\xC9RIE {{ctps_numero}}/{{ctps_serie}} DORAVANTE CHAMADO EMPREGADO, FICA JUSTO E ACERTADO O PRESENTE CONTRATO INDIVIDUAL DE TRABALHO, REGIDO PELAS SEGUINTES CLAUSULAS:`,
-  clausula1: `1 - O Empregado trabalhar\xE1 para a Empregadora na fun\xE7\xE3o de {{funcao}} e mais as fun\xE7\xF5es que vierem a ser objeto de ordens verbais, cartas ou avisos, segundo as necessidades da Empregadora desde que compat\xEDveis com suas atribui\xE7\xF5es.`,
-  clausula2: `2 - O local de trabalho situa-se {{local_trabalho}}, podendo a Empregadora, a qualquer tempo, transferir o Empregado a t\xEDtulo tempor\xE1rio ou definitivo, tanto no \xE2mbito da unidade para a qual foi admitido, como para outras, em qualquer localidade deste Estado ou de outro dentro do Pa\xEDs, em conformidade com o par\xE1grafo 1\xBA do artigo 469 da Consolida\xE7\xE3o das Leis do Trabalho.`,
-  clausula3Titulo: `3 - O hor\xE1rio de trabalho do empregado ser\xE1 o seguinte:`,
-  jornadaPadrao: `A jornada de trabalho ser\xE1 flex\xEDvel`,
-  clausula4Titulo: `4 - O Empregado perceber\xE1 a remunera\xE7\xE3o de:`,
-  clausula5: `5 - O prazo deste contrato \xE9 de {{duracao}} dias, com inicio em {{data_inicio}} e t\xE9rmino em {{data_fim}}.`,
-  clausula6: `6 - Al\xE9m dos descontos previstos na Lei, reserva-se a Empregadora o direito de descontar do Empregado as import\xE2ncias correspondentes aos danos causados por ele, com fundamento no par\xE1grafo 1\xBA do artigo 462 da Consolida\xE7\xE3o das Leis de Trabalho.`,
-  clausula7: `7 - O Empregado fica ciente do Regulamento da Empresa e das Normas de Seguran\xE7a que regulam suas atividades na Empregadora e se compromete a usar os equipamentos de seguran\xE7a fornecidos, sob a pena de ser punido por falta grave, nos termos da Legisla\xE7\xE3o vigente e demais disposi\xE7\xF5es inerentes \xE0 seguran\xE7a e medicina do trabalho.`,
-  clausula8: `8 - Permanecendo o Empregado a servi\xE7o da Empregadora ap\xF3s o t\xE9rmino da experi\xEAncia, continuar\xE3o em vigor as cl\xE1usulas constantes deste contrato.`,
-  clausula9: `9 - A rescis\xE3o do presente contrato, sem justa causa, por parte da empregadora ou do empregado, antes do t\xE9rmino do contrato, implicar\xE1 em indeniza\xE7\xE3o, e por metade, a indeniza\xE7\xE3o que teria direito at\xE9 o t\xE9rmino do contrato, conforme art. 479 e 480 da CLT.`,
-  fechamento: `Tendo assim contratado, assinam o presente instrumento, em duas vias, na presen\xE7a da testemunha abaixo.`,
-  prorrogacaoTitulo: `PRORROGA\xC7\xC3O DE CONTRATO DE EXPERI\xCANCIA`,
-  prorrogacaoTexto: `Por m\xFAtuo acordo, o presente contrato de experi\xEAncia fica prorrogado at\xE9 ____/____/______.`,
-  prorrogacaoLinhaData: `____________________, ___ de __________________ de ________`
-};
-var COMPANY3 = {
-  name: "TORRES VIGILANCIA PATRIMONIAL LTDA",
-  address: "AV RAIMUNDO PEREIRA DE MAGALHAES, 5720 PIRITUBA",
-  city: "SAO PAULO",
-  state: "SP",
-  cnpj: "36.982.392/0001-89"
-};
-var MESES_PT4 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+import fs5 from "fs";
+import path5 from "path";
 function fmtDateBr2(d) {
   const [y, m, day] = d.split("-").map(Number);
   if (!y || !m || !day) return d;
@@ -24507,12 +23795,12 @@ function fmtBrl2(v) {
 }
 function loadLogo2() {
   const candidates = [
-    path7.join(process.cwd(), "client/public/icon-192x192.png"),
-    path7.join(process.cwd(), "client/public/logo-torres-dark.jpeg")
+    path5.join(process.cwd(), "client/public/icon-192x192.png"),
+    path5.join(process.cwd(), "client/public/logo-torres-dark.jpeg")
   ];
   for (const p of candidates) {
     try {
-      if (fs6.existsSync(p)) return fs6.readFileSync(p);
+      if (fs5.existsSync(p)) return fs5.readFileSync(p);
     } catch {
     }
   }
@@ -24649,6 +23937,37 @@ function generateProbationContractPDF(res, data, template = DEFAULT_PROBATION_TE
   }
   doc.end();
 }
+var DEFAULT_PROBATION_TEMPLATE, COMPANY3, MESES_PT4;
+var init_probation_contract_pdf = __esm({
+  "server/probation-contract-pdf.ts"() {
+    "use strict";
+    DEFAULT_PROBATION_TEMPLATE = {
+      cabecalho: `Pelo presente instrumento particular de Contrato de Experi\xEAncia, a empresa {{empresa_nome}} com sede \xE0 {{empresa_endereco}} Cidade {{empresa_cidade}} Estado {{empresa_estado}}, inscrita no CNPJ do MF sob N\xBA {{empresa_cnpj}}, denominada Empregadora, E O SR.(A) {{empregado_nome}}, DOMICILIADO \xC0 {{empregado_endereco}}, NO BAIRRO {{empregado_bairro}}, NA CIDADE DE {{empregado_cidade}}/{{empregado_estado}}, PORTADOR DA CTPS N\xBA/S\xC9RIE {{ctps_numero}}/{{ctps_serie}} DORAVANTE CHAMADO EMPREGADO, FICA JUSTO E ACERTADO O PRESENTE CONTRATO INDIVIDUAL DE TRABALHO, REGIDO PELAS SEGUINTES CLAUSULAS:`,
+      clausula1: `1 - O Empregado trabalhar\xE1 para a Empregadora na fun\xE7\xE3o de {{funcao}} e mais as fun\xE7\xF5es que vierem a ser objeto de ordens verbais, cartas ou avisos, segundo as necessidades da Empregadora desde que compat\xEDveis com suas atribui\xE7\xF5es.`,
+      clausula2: `2 - O local de trabalho situa-se {{local_trabalho}}, podendo a Empregadora, a qualquer tempo, transferir o Empregado a t\xEDtulo tempor\xE1rio ou definitivo, tanto no \xE2mbito da unidade para a qual foi admitido, como para outras, em qualquer localidade deste Estado ou de outro dentro do Pa\xEDs, em conformidade com o par\xE1grafo 1\xBA do artigo 469 da Consolida\xE7\xE3o das Leis do Trabalho.`,
+      clausula3Titulo: `3 - O hor\xE1rio de trabalho do empregado ser\xE1 o seguinte:`,
+      jornadaPadrao: `A jornada de trabalho ser\xE1 flex\xEDvel`,
+      clausula4Titulo: `4 - O Empregado perceber\xE1 a remunera\xE7\xE3o de:`,
+      clausula5: `5 - O prazo deste contrato \xE9 de {{duracao}} dias, com inicio em {{data_inicio}} e t\xE9rmino em {{data_fim}}.`,
+      clausula6: `6 - Al\xE9m dos descontos previstos na Lei, reserva-se a Empregadora o direito de descontar do Empregado as import\xE2ncias correspondentes aos danos causados por ele, com fundamento no par\xE1grafo 1\xBA do artigo 462 da Consolida\xE7\xE3o das Leis de Trabalho.`,
+      clausula7: `7 - O Empregado fica ciente do Regulamento da Empresa e das Normas de Seguran\xE7a que regulam suas atividades na Empregadora e se compromete a usar os equipamentos de seguran\xE7a fornecidos, sob a pena de ser punido por falta grave, nos termos da Legisla\xE7\xE3o vigente e demais disposi\xE7\xF5es inerentes \xE0 seguran\xE7a e medicina do trabalho.`,
+      clausula8: `8 - Permanecendo o Empregado a servi\xE7o da Empregadora ap\xF3s o t\xE9rmino da experi\xEAncia, continuar\xE3o em vigor as cl\xE1usulas constantes deste contrato.`,
+      clausula9: `9 - A rescis\xE3o do presente contrato, sem justa causa, por parte da empregadora ou do empregado, antes do t\xE9rmino do contrato, implicar\xE1 em indeniza\xE7\xE3o, e por metade, a indeniza\xE7\xE3o que teria direito at\xE9 o t\xE9rmino do contrato, conforme art. 479 e 480 da CLT.`,
+      fechamento: `Tendo assim contratado, assinam o presente instrumento, em duas vias, na presen\xE7a da testemunha abaixo.`,
+      prorrogacaoTitulo: `PRORROGA\xC7\xC3O DE CONTRATO DE EXPERI\xCANCIA`,
+      prorrogacaoTexto: `Por m\xFAtuo acordo, o presente contrato de experi\xEAncia fica prorrogado at\xE9 ____/____/______.`,
+      prorrogacaoLinhaData: `____________________, ___ de __________________ de ________`
+    };
+    COMPANY3 = {
+      name: "TORRES VIGILANCIA PATRIMONIAL LTDA",
+      address: "AV RAIMUNDO PEREIRA DE MAGALHAES, 5720 PIRITUBA",
+      city: "SAO PAULO",
+      state: "SP",
+      cnpj: "36.982.392/0001-89"
+    };
+    MESES_PT4 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  }
+});
 
 // server/routes/probation-contracts.ts
 async function loadProbationTemplate() {
@@ -24662,8 +23981,6 @@ async function loadProbationTemplate() {
   }
   return DEFAULT_PROBATION_TEMPLATE;
 }
-var PROBATION_DAYS = 45;
-var VIGILANTE_BASE_SALARY = 2565.31;
 function todayBrtIso2() {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
   return fmt.format(/* @__PURE__ */ new Date());
@@ -24951,19 +24268,21 @@ function registerProbationContractRoutes(app3) {
     }
   });
 }
+var PROBATION_DAYS, VIGILANTE_BASE_SALARY;
+var init_probation_contracts = __esm({
+  "server/routes/probation-contracts.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_storage();
+    init_probation_contract_pdf();
+    PROBATION_DAYS = 45;
+    VIGILANTE_BASE_SALARY = 2565.31;
+  }
+});
 
 // server/routes/employees.ts
-init_control_id();
-init_holidays();
-var EMPLOYEE_DATE_FIELDS = [
-  "birthDate",
-  "hireDate",
-  "vacationExpiry",
-  "cnhExpiry",
-  "cnvExpiry",
-  "cnvIssueDate",
-  "vestExpiry"
-];
+import OpenAI4 from "openai";
 function registerEmployeeRoutes(app3) {
   app3.get("/api/employees", requireAuth, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -25868,18 +25187,33 @@ ${pdfText}` }
     }
   });
 }
-
-// server/routes/vehicles.ts
-init_storage();
-init_supabase();
-init_auth();
-init_apibrasil();
+var EMPLOYEE_DATE_FIELDS;
+var init_employees = __esm({
+  "server/routes/employees.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_apibrasil();
+    init_normalize_contact();
+    init_payroll();
+    init_probation_contracts();
+    init_control_id();
+    init_holidays();
+    EMPLOYEE_DATE_FIELDS = [
+      "birthDate",
+      "hireDate",
+      "vacationExpiry",
+      "cnhExpiry",
+      "cnvExpiry",
+      "cnvIssueDate",
+      "vestExpiry"
+    ];
+  }
+});
 
 // server/notifications.ts
-init_supabase();
-init_helpers();
-var ESCOLTA_EMAIL2 = "escolta@torresseguranca.com.br";
-var ADM_EMAIL2 = "adm@torresseguranca.com.br";
 async function createSystemNotification(input) {
   const row = {
     type: input.type,
@@ -25956,6 +25290,16 @@ async function notifyVehicleMaintenance(vehicle, reason) {
     console.error(`[notify-maint] Email failed for vehicle ${plate}:`, err.message);
   }
 }
+var ESCOLTA_EMAIL2, ADM_EMAIL2;
+var init_notifications = __esm({
+  "server/notifications.ts"() {
+    "use strict";
+    init_supabase();
+    init_helpers();
+    ESCOLTA_EMAIL2 = "escolta@torresseguranca.com.br";
+    ADM_EMAIL2 = "adm@torresseguranca.com.br";
+  }
+});
 
 // server/routes/vehicles.ts
 function registerVehicleRoutes(app3) {
@@ -26032,10 +25376,19 @@ function registerVehicleRoutes(app3) {
     }
   });
 }
+var init_vehicles = __esm({
+  "server/routes/vehicles.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_apibrasil();
+    init_notifications();
+  }
+});
 
 // server/routes/notifications.ts
-init_supabase();
-init_auth();
 function registerNotificationRoutes(app3) {
   app3.get("/api/notifications/critical", requireAuth, async (req, res) => {
     try {
@@ -26080,19 +25433,15 @@ function registerNotificationRoutes(app3) {
     }
   });
 }
-
-// server/routes/service-orders.ts
-init_storage();
-init_supabase();
-init_auth();
-init_truckscontrol();
-init_db_init();
-init_helpers();
-init_billing_calc();
+var init_notifications2 = __esm({
+  "server/routes/notifications.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+  }
+});
 
 // server/lib/cancelada-billing.ts
-init_supabase();
-init_billing_calc();
 async function getTabela100km(clientId) {
   if (!clientId) return null;
   const { data } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", clientId).eq("franquia_km", 100).eq("franquia_horas", 3).eq("status", "Ativo").order("valor_acionamento", { ascending: true }).limit(1);
@@ -26101,8 +25450,6 @@ async function getTabela100km(clientId) {
   if (d2?.length) return d2[0];
   return null;
 }
-var n = (v) => Number(v) || 0;
-var toBRT = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
 async function computeCanceladaBilling(input) {
   let contrato = await getTabela100km(input.clientId);
   let usouTabela100 = !!contrato;
@@ -26191,33 +25538,43 @@ async function computeCanceladaBilling(input) {
   };
   return { contrato, usouTabela100, resultado, kmIni, kmFin, fatFields, horarios };
 }
-
-// server/routes/service-orders.ts
-init_balanco_cache();
-
-// server/lib/boletim-resync.ts
-init_supabase();
+var n, toBRT;
+var init_cancelada_billing = __esm({
+  "server/lib/cancelada-billing.ts"() {
+    "use strict";
+    init_supabase();
+    init_billing_calc();
+    n = (v) => Number(v) || 0;
+    toBRT = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+});
 
 // server/lib/boletim-totals.ts
-var round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
-var osCanonicalTotal = (b) => round2(
-  Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0)
-);
-var billingTotalForBoletim = (b, osStatus) => {
-  if (osStatus === "recusada") return 0;
-  const ft = round2(Number(b.fat_total || 0));
-  return ft > 0 ? ft : osCanonicalTotal(b);
-};
-var billingElegivelParaBoletim = (b, osStatus) => {
-  if (osStatus === "recusada") {
-    return { ok: false, motivo: "OS recusada" };
+var round2, osCanonicalTotal, billingTotalForBoletim, billingElegivelParaBoletim;
+var init_boletim_totals = __esm({
+  "server/lib/boletim-totals.ts"() {
+    "use strict";
+    round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    osCanonicalTotal = (b) => round2(
+      Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0)
+    );
+    billingTotalForBoletim = (b, osStatus) => {
+      if (osStatus === "recusada") return 0;
+      const ft = round2(Number(b.fat_total || 0));
+      return ft > 0 ? ft : osCanonicalTotal(b);
+    };
+    billingElegivelParaBoletim = (b, osStatus) => {
+      if (osStatus === "recusada") {
+        return { ok: false, motivo: "OS recusada" };
+      }
+      const st = String(b?.status || "").toUpperCase();
+      if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
+        return { ok: false, motivo: `billing j\xE1 ${st}` };
+      }
+      return { ok: true };
+    };
   }
-  const st = String(b?.status || "").toUpperCase();
-  if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
-    return { ok: false, motivo: `billing j\xE1 ${st}` };
-  }
-  return { ok: true };
-};
+});
 
 // server/lib/boletim-resync.ts
 function rebuildSnapshotEntry(billing, osStatus, prev) {
@@ -26299,208 +25656,15 @@ async function resyncPendingBoletinsForServiceOrder(serviceOrderId) {
     console.error(`[boletim-resync] falha (n\xE3o bloqueante) OS ${serviceOrderId}: ${e?.message || e}`);
   }
 }
-
-// server/routes/service-orders.ts
-import { randomUUID as randomUUID2 } from "crypto";
+var init_boletim_resync = __esm({
+  "server/lib/boletim-resync.ts"() {
+    "use strict";
+    init_supabase();
+    init_boletim_totals();
+  }
+});
 
 // server/toll-engine.ts
-var TOLL_PLAZAS = [
-  {
-    id: "dutra-aruja",
-    name: "Aruj\xE1",
-    road: "BR-116 (Via Dutra)",
-    city: "Aruj\xE1",
-    state: "SP",
-    lat: -23.3967,
-    lng: -46.3217,
-    price: 4.5,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "dutra-guararema",
-    name: "Guararema",
-    road: "BR-116 (Via Dutra)",
-    city: "Guararema",
-    state: "SP",
-    lat: -23.4128,
-    lng: -46.035,
-    price: 4.5,
-    bidirectional: false,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "dutra-jacarei",
-    name: "Jacare\xED",
-    road: "BR-116 (Via Dutra)",
-    city: "Jacare\xED",
-    state: "SP",
-    lat: -23.305,
-    lng: -45.9669,
-    price: 8.1,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "dutra-moreira-cesar",
-    name: "Moreira C\xE9sar",
-    road: "BR-116 (Via Dutra)",
-    city: "Pindamonhangaba",
-    state: "SP",
-    lat: -22.8547,
-    lng: -45.4636,
-    price: 16.9,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "dutra-itatiaia",
-    name: "Itatiaia",
-    road: "BR-116 (Via Dutra)",
-    city: "Itatiaia",
-    state: "RJ",
-    lat: -22.4897,
-    lng: -44.5614,
-    price: 14.5,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "dutra-freeflow-sp",
-    name: "Free Flow Regi\xE3o Metropolitana SP",
-    road: "BR-116 (Via Dutra)",
-    city: "Guarulhos/S\xE3o Paulo",
-    state: "SP",
-    lat: -23.48,
-    lng: -46.52,
-    price: 4.5,
-    bidirectional: false,
-    type: "free_flow",
-    updatedAt: "2025-12-06"
-  },
-  {
-    id: "anchieta-riachuelo",
-    name: "Riacho Grande (Anchieta)",
-    road: "SP-150 (Anchieta-Imigrantes)",
-    city: "S\xE3o Bernardo do Campo",
-    state: "SP",
-    lat: -23.78,
-    lng: -46.57,
-    price: 33.9,
-    bidirectional: false,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "bandeirantes-jundiai",
-    name: "Jundia\xED",
-    road: "SP-348 (Bandeirantes)",
-    city: "Jundia\xED",
-    state: "SP",
-    lat: -23.186,
-    lng: -46.8841,
-    price: 10,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "bandeirantes-caieiras",
-    name: "Caieiras",
-    road: "SP-348 (Bandeirantes)",
-    city: "Caieiras",
-    state: "SP",
-    lat: -23.36,
-    lng: -46.74,
-    price: 5.6,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "anhanguera-valinhos",
-    name: "Valinhos",
-    road: "SP-330 (Anhanguera)",
-    city: "Valinhos",
-    state: "SP",
-    lat: -22.97,
-    lng: -47.01,
-    price: 9.1,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "fernao-dias-mairipora",
-    name: "Mairipor\xE3",
-    road: "BR-381 (Fern\xE3o Dias)",
-    city: "Mairipor\xE3",
-    state: "SP",
-    lat: -23.32,
-    lng: -46.59,
-    price: 7.4,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "fernao-dias-atibaia",
-    name: "Atibaia",
-    road: "BR-381 (Fern\xE3o Dias)",
-    city: "Atibaia",
-    state: "SP",
-    lat: -23.117,
-    lng: -46.556,
-    price: 4.1,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "raposo-km31",
-    name: "Raposo Tavares km 31",
-    road: "SP-270 (Raposo Tavares)",
-    city: "Cotia",
-    state: "SP",
-    lat: -23.595,
-    lng: -46.843,
-    price: 4.3,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "castelo-branco-itapevi",
-    name: "Itapevi",
-    road: "SP-280 (Castelo Branco)",
-    city: "Itapevi",
-    state: "SP",
-    lat: -23.549,
-    lng: -46.934,
-    price: 4.3,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  },
-  {
-    id: "rio-santos-mangaratiba",
-    name: "Mangaratiba",
-    road: "BR-101 (Rio-Santos)",
-    city: "Mangaratiba",
-    state: "RJ",
-    lat: -22.9596,
-    lng: -44.0409,
-    price: 13,
-    bidirectional: true,
-    type: "conventional",
-    updatedAt: "2025-09-01"
-  }
-];
 function haversineDistKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -26580,9 +25744,211 @@ function estimateTolls(originLat, originLng, destLat, destLng, waypoints, corrid
 function getAllTollPlazas() {
   return TOLL_PLAZAS;
 }
+var TOLL_PLAZAS;
+var init_toll_engine = __esm({
+  "server/toll-engine.ts"() {
+    "use strict";
+    TOLL_PLAZAS = [
+      {
+        id: "dutra-aruja",
+        name: "Aruj\xE1",
+        road: "BR-116 (Via Dutra)",
+        city: "Aruj\xE1",
+        state: "SP",
+        lat: -23.3967,
+        lng: -46.3217,
+        price: 4.5,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "dutra-guararema",
+        name: "Guararema",
+        road: "BR-116 (Via Dutra)",
+        city: "Guararema",
+        state: "SP",
+        lat: -23.4128,
+        lng: -46.035,
+        price: 4.5,
+        bidirectional: false,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "dutra-jacarei",
+        name: "Jacare\xED",
+        road: "BR-116 (Via Dutra)",
+        city: "Jacare\xED",
+        state: "SP",
+        lat: -23.305,
+        lng: -45.9669,
+        price: 8.1,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "dutra-moreira-cesar",
+        name: "Moreira C\xE9sar",
+        road: "BR-116 (Via Dutra)",
+        city: "Pindamonhangaba",
+        state: "SP",
+        lat: -22.8547,
+        lng: -45.4636,
+        price: 16.9,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "dutra-itatiaia",
+        name: "Itatiaia",
+        road: "BR-116 (Via Dutra)",
+        city: "Itatiaia",
+        state: "RJ",
+        lat: -22.4897,
+        lng: -44.5614,
+        price: 14.5,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "dutra-freeflow-sp",
+        name: "Free Flow Regi\xE3o Metropolitana SP",
+        road: "BR-116 (Via Dutra)",
+        city: "Guarulhos/S\xE3o Paulo",
+        state: "SP",
+        lat: -23.48,
+        lng: -46.52,
+        price: 4.5,
+        bidirectional: false,
+        type: "free_flow",
+        updatedAt: "2025-12-06"
+      },
+      {
+        id: "anchieta-riachuelo",
+        name: "Riacho Grande (Anchieta)",
+        road: "SP-150 (Anchieta-Imigrantes)",
+        city: "S\xE3o Bernardo do Campo",
+        state: "SP",
+        lat: -23.78,
+        lng: -46.57,
+        price: 33.9,
+        bidirectional: false,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "bandeirantes-jundiai",
+        name: "Jundia\xED",
+        road: "SP-348 (Bandeirantes)",
+        city: "Jundia\xED",
+        state: "SP",
+        lat: -23.186,
+        lng: -46.8841,
+        price: 10,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "bandeirantes-caieiras",
+        name: "Caieiras",
+        road: "SP-348 (Bandeirantes)",
+        city: "Caieiras",
+        state: "SP",
+        lat: -23.36,
+        lng: -46.74,
+        price: 5.6,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "anhanguera-valinhos",
+        name: "Valinhos",
+        road: "SP-330 (Anhanguera)",
+        city: "Valinhos",
+        state: "SP",
+        lat: -22.97,
+        lng: -47.01,
+        price: 9.1,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "fernao-dias-mairipora",
+        name: "Mairipor\xE3",
+        road: "BR-381 (Fern\xE3o Dias)",
+        city: "Mairipor\xE3",
+        state: "SP",
+        lat: -23.32,
+        lng: -46.59,
+        price: 7.4,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "fernao-dias-atibaia",
+        name: "Atibaia",
+        road: "BR-381 (Fern\xE3o Dias)",
+        city: "Atibaia",
+        state: "SP",
+        lat: -23.117,
+        lng: -46.556,
+        price: 4.1,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "raposo-km31",
+        name: "Raposo Tavares km 31",
+        road: "SP-270 (Raposo Tavares)",
+        city: "Cotia",
+        state: "SP",
+        lat: -23.595,
+        lng: -46.843,
+        price: 4.3,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "castelo-branco-itapevi",
+        name: "Itapevi",
+        road: "SP-280 (Castelo Branco)",
+        city: "Itapevi",
+        state: "SP",
+        lat: -23.549,
+        lng: -46.934,
+        price: 4.3,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      },
+      {
+        id: "rio-santos-mangaratiba",
+        name: "Mangaratiba",
+        road: "BR-101 (Rio-Santos)",
+        city: "Mangaratiba",
+        state: "RJ",
+        lat: -22.9596,
+        lng: -44.0409,
+        price: 13,
+        bidirectional: true,
+        type: "conventional",
+        updatedAt: "2025-09-01"
+      }
+    ];
+  }
+});
 
 // server/lib/billing-display.ts
-var n2 = (v) => Number(v) || 0;
 function oficialBillingView(b, osStatus, contrato) {
   const isRecusada = osStatus === "recusada" || b?.status === "RECUSADA" || b?.status === "REJEITADA";
   if (isRecusada || !b) {
@@ -26652,30 +26018,16 @@ function resolverContratoParaBilling(b, os, contratos) {
   if (clientId != null) return contratos.find((c) => String(c.client_id) === String(clientId) && c.status === "Ativo") || null;
   return null;
 }
+var n2;
+var init_billing_display = __esm({
+  "server/lib/billing-display.ts"() {
+    "use strict";
+    init_boletim_totals();
+    n2 = (v) => Number(v) || 0;
+  }
+});
 
 // server/lib/gestor-medicao.ts
-init_supabase();
-init_billing_calc();
-var cents = (v) => Math.round((Number(v) || 0) * 100);
-var fmtBRL2 = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-var hhmm2 = (horas) => {
-  const totalMin = Math.round((Number(horas) || 0) * 60);
-  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
-};
-var TOLERANCIA_CENTS = 1;
-var FROZEN = /* @__PURE__ */ new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
-var VERDE = "CALCULADO OK \u2014 PODE APROVAR";
-var VERMELHO = "DIVERG\xCANCIA ENCONTRADA \u2014 REVISAR C\xC1LCULO";
-var AMARELO = "ATEN\xC7\xC3O \u2014 AN\xC1LISE MANUAL NECESS\xC1RIA";
-var LARANJA = "DIVERG\xCANCIA DE COMPOSI\xC7\xC3O \u2014 TOTAL CORRETO, COMPONENTES DIFEREM";
-var COMPONENTES = [
-  { key: "fat_acionamento", label: "Acionamento" },
-  { key: "fat_km", label: "KM excedente" },
-  { key: "fat_hora_extra", label: "Hora excedente" },
-  { key: "fat_adicional_noturno", label: "Adicional noturno" },
-  { key: "fat_estadia", label: "Estadia" },
-  { key: "fat_pernoite", label: "Pernoite" }
-];
 async function auditarOsCore(so, billing, contratos, contratoAtivoPorCliente) {
   const issues = [];
   const osStatus = String(so.status || "");
@@ -26927,7 +26279,6 @@ function montarMemoria(contrato, resultado, billing, extra) {
     }
   };
 }
-var SO_COLS = "id, os_number, status, mission_status, client_id, escort_contract_id, scheduled_date, mission_started_at, completed_date, step_logs";
 async function pageAll(query) {
   const out = [];
   const PAGE = 1e3;
@@ -27055,8 +26406,375 @@ async function salvarAudits(results, user) {
     if (error) throw error;
   }
 }
+var cents, fmtBRL2, hhmm2, TOLERANCIA_CENTS, FROZEN, VERDE, VERMELHO, AMARELO, LARANJA, COMPONENTES, SO_COLS;
+var init_gestor_medicao = __esm({
+  "server/lib/gestor-medicao.ts"() {
+    "use strict";
+    init_supabase();
+    init_billing_calc();
+    init_boletim_totals();
+    init_cancelada_billing();
+    cents = (v) => Math.round((Number(v) || 0) * 100);
+    fmtBRL2 = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    hhmm2 = (horas) => {
+      const totalMin = Math.round((Number(horas) || 0) * 60);
+      return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+    };
+    TOLERANCIA_CENTS = 1;
+    FROZEN = /* @__PURE__ */ new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+    VERDE = "CALCULADO OK \u2014 PODE APROVAR";
+    VERMELHO = "DIVERG\xCANCIA ENCONTRADA \u2014 REVISAR C\xC1LCULO";
+    AMARELO = "ATEN\xC7\xC3O \u2014 AN\xC1LISE MANUAL NECESS\xC1RIA";
+    LARANJA = "DIVERG\xCANCIA DE COMPOSI\xC7\xC3O \u2014 TOTAL CORRETO, COMPONENTES DIFEREM";
+    COMPONENTES = [
+      { key: "fat_acionamento", label: "Acionamento" },
+      { key: "fat_km", label: "KM excedente" },
+      { key: "fat_hora_extra", label: "Hora excedente" },
+      { key: "fat_adicional_noturno", label: "Adicional noturno" },
+      { key: "fat_estadia", label: "Estadia" },
+      { key: "fat_pernoite", label: "Pernoite" }
+    ];
+    SO_COLS = "id, os_number, status, mission_status, client_id, escort_contract_id, scheduled_date, mission_started_at, completed_date, step_logs";
+  }
+});
+
+// server/routes/onboarding.ts
+var onboarding_exports = {};
+__export(onboarding_exports, {
+  DOCUMENT_GATE_ENABLED: () => DOCUMENT_GATE_ENABLED,
+  assertOnboardingComplete: () => assertOnboardingComplete,
+  computeOnboarding: () => computeOnboarding,
+  registerOnboardingRoutes: () => registerOnboardingRoutes
+});
+import { z as z4 } from "zod";
+function rolesForEmployee(role) {
+  const r = (role || "").toLowerCase();
+  const out = ["*"];
+  if (/vigilan/.test(r)) out.push("vigilante");
+  if (/escolt/.test(r)) out.push("escolta");
+  if (/motoris|condutor/.test(r)) out.push("motorista");
+  return out;
+}
+function todayBRT() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(/* @__PURE__ */ new Date());
+}
+function ymBRT(d) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(d).slice(0, 7);
+}
+function lastNMonths(n4) {
+  const out = [];
+  const now = /* @__PURE__ */ new Date();
+  for (let i = 1; i <= n4; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(ymBRT(d));
+  }
+  return out;
+}
+async function computeOnboarding(employeeId) {
+  const emp = await storage.getEmployee(employeeId);
+  if (!emp) throw new Error(`Funcion\xE1rio ${employeeId} n\xE3o encontrado`);
+  const today = todayBRT();
+  const roles = rolesForEmployee(emp.role);
+  const reqDocs = filterReciclagemByCnv(
+    getMandatoryDocTypesForProfile(profileFromRole(emp.role)),
+    emp.cnvIssueDate
+  );
+  const reqTrainings = Array.from(
+    new Map(
+      roles.flatMap((r) => REQUIRED_TRAININGS[r] || []).map((t) => [t.type, t])
+    ).values()
+  );
+  const docs = await storage.getEmployeeDocuments(employeeId);
+  const itensDoc = [];
+  const hireDateStr = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
+  let asoGraceUntil = null;
+  if (hireDateStr) {
+    const dt = /* @__PURE__ */ new Date(hireDateStr + "T00:00:00");
+    dt.setDate(dt.getDate() + ASO_GRACE_DAYS);
+    asoGraceUntil = dt.toISOString().slice(0, 10);
+  }
+  const empPhotoUrl = emp.photoUrl || emp.photo_url;
+  for (const tipo of reqDocs) {
+    let has = docs.find((d) => (d.type || "").toLowerCase() === tipo.toLowerCase());
+    if (!has && tipo === "Fotos 3x4" && empPhotoUrl) {
+      has = { type: tipo, expiryDate: null, _fromAvatar: true };
+    }
+    const isASO = tipo === "ASO";
+    if (!has) {
+      if (isASO && asoGraceUntil && asoGraceUntil >= today) {
+        itensDoc.push({ label: tipo, status: "ok", detail: `Em car\xEAncia \u2014 entregar at\xE9 ${asoGraceUntil} (alerta enviado ao ADM)` });
+      } else if (isASO && asoGraceUntil) {
+        itensDoc.push({ label: tipo, status: "pendente", detail: `Prazo de car\xEAncia expirou em ${asoGraceUntil} \u2014 bloqueado para OS` });
+      } else {
+        itensDoc.push({ label: tipo, status: "pendente", detail: "Documento n\xE3o cadastrado" });
+      }
+    } else if (has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
+      itensDoc.push({ label: tipo, status: "vencido", detail: `Venceu em ${String(has.expiryDate).slice(0, 10)}` });
+    } else if (has._fromAvatar) {
+      itensDoc.push({ label: tipo, status: "ok", detail: "Foto cadastral do sistema" });
+    } else {
+      itensDoc.push({ label: tipo, status: "ok", detail: has.expiryDate ? `V\xE1lido at\xE9 ${String(has.expiryDate).slice(0, 10)}` : void 0 });
+    }
+  }
+  const { data: depRows } = await supabaseAdmin.from("employee_dependents").select("id").eq("employee_id", employeeId);
+  const declaradoSem = emp.dependentesDeclarados === true || emp.dependentes_declarados === true;
+  if ((depRows || []).length > 0) {
+    itensDoc.push({ label: "Dependentes", status: "ok", detail: `${depRows.length} cadastrado(s)` });
+  } else if (declaradoSem) {
+    itensDoc.push({ label: "Dependentes", status: "ok", detail: "Sem dependentes (declarado)" });
+  } else {
+    itensDoc.push({ label: "Dependentes", status: "pendente", detail: "Informe os dependentes ou declare 'sem dependentes' na aba Dependentes" });
+  }
+  const docPend = itensDoc.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
+  const docStatus = itensDoc.some((i) => i.status === "vencido") ? "vencido" : itensDoc.some((i) => i.status === "pendente") ? "pendente" : "ok";
+  const itensCon = [];
+  if (/vigilan|escolt/.test((emp.role || "").toLowerCase())) {
+    const { data: probRows } = await supabaseAdmin.from("employee_probation_contracts").select("id, assinatura_status, bypass_diretoria, end_date, start_date, created_at").eq("employee_id", employeeId).order("created_at", { ascending: false }).limit(5);
+    const prob = (probRows || [])[0];
+    const probLegacy = prob && String(prob.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
+    if (!prob) {
+      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "pendente", detail: "N\xE3o emitido" });
+    } else if (probLegacy) {
+      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "ok", detail: "OK por autoriza\xE7\xE3o (contrato pr\xE9-existente)" });
+    } else if (prob.assinatura_status === "assinado" || prob.bypass_diretoria) {
+      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "ok", detail: prob.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
+    } else {
+      itensCon.push({ label: "Contrato de Experi\xEAncia (45d)", status: "pendente", detail: "Aguardando assinatura" });
+    }
+    const probEnd = prob?.end_date ? String(prob.end_date).slice(0, 10) : null;
+    const expExpirou = probEnd && probEnd < today;
+    if (expExpirou) {
+      const { data: permRows } = await supabaseAdmin.from("employee_permanent_contracts").select("id, assinatura_status, bypass_diretoria, created_at").eq("employee_id", employeeId).order("created_at", { ascending: false }).limit(1);
+      const perm = (permRows || [])[0];
+      const permLegacy = perm && String(perm.created_at || "").slice(0, 10) < LEGACY_CONTRACT_CUTOFF;
+      if (!perm) {
+        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "pendente", detail: "N\xE3o emitido" });
+      } else if (permLegacy) {
+        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: "OK por autoriza\xE7\xE3o (contrato pr\xE9-existente)" });
+      } else if (perm.assinatura_status === "assinado" || perm.bypass_diretoria) {
+        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "ok", detail: perm.bypass_diretoria ? "Liberado pela Diretoria" : "Assinado" });
+      } else {
+        itensCon.push({ label: "Contrato Definitivo (CLT)", status: "pendente", detail: "Aguardando assinatura" });
+      }
+    }
+  } else {
+    itensCon.push({ label: "Contratos", status: "ok", detail: "N\xE3o aplic\xE1vel a esta fun\xE7\xE3o" });
+  }
+  const conPend = itensCon.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
+  const conStatus = itensCon.some((i) => i.status === "vencido") ? "vencido" : itensCon.some((i) => i.status === "pendente") ? "pendente" : "ok";
+  const itensTr = [];
+  if (reqTrainings.length === 0) {
+    itensTr.push({ label: "Treinamentos", status: "ok", detail: "N\xE3o aplic\xE1vel a esta fun\xE7\xE3o" });
+  } else {
+    const { data: trRows } = await supabaseAdmin.from("employee_trainings").select("id, type, completed_at, expiry_date").eq("employee_id", employeeId).order("completed_at", { ascending: false });
+    const all = trRows || [];
+    for (const req of reqTrainings) {
+      const matches = all.filter((t) => (t.type || "").toLowerCase().includes(req.type.toLowerCase()) || req.type.toLowerCase().includes((t.type || "").toLowerCase()));
+      if (matches.length === 0) {
+        itensTr.push({ label: req.type, status: "pendente", detail: "N\xE3o realizado" });
+        continue;
+      }
+      const last = matches[0];
+      const completed = String(last.completed_at).slice(0, 10);
+      let expiry = last.expiry_date ? String(last.expiry_date).slice(0, 10) : null;
+      if (!expiry && req.validityMonths) {
+        const dt = /* @__PURE__ */ new Date(completed + "T00:00:00");
+        dt.setMonth(dt.getMonth() + req.validityMonths);
+        expiry = dt.toISOString().slice(0, 10);
+      }
+      if (expiry && expiry < today) {
+        itensTr.push({ label: req.type, status: "vencido", detail: `Vencido em ${expiry} \u2014 necess\xE1ria reciclagem` });
+      } else {
+        itensTr.push({ label: req.type, status: "ok", detail: expiry ? `V\xE1lido at\xE9 ${expiry}` : `Realizado em ${completed}` });
+      }
+    }
+  }
+  const trPend = itensTr.filter((i) => i.status !== "ok").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
+  const trStatus = itensTr.some((i) => i.status === "vencido") ? "vencido" : itensTr.some((i) => i.status === "pendente") ? "pendente" : "ok";
+  const itensHl = [];
+  const meses = lastNMonths(3);
+  const { data: payRows } = await supabaseAdmin.from("employee_payslips").select("id, month, year, assinado_em, assinatura_status").eq("employee_id", employeeId);
+  const pay = payRows || [];
+  const hireDate = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
+  for (const ym of meses) {
+    if (hireDate && ym < hireDate.slice(0, 7)) continue;
+    const [y, m] = ym.split("-").map(Number);
+    const found = pay.find((p) => Number(p.year) === y && Number(p.month) === m);
+    if (!found) {
+      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "N\xE3o emitido" });
+    } else if (!found.assinado_em && found.assinatura_status !== "assinado") {
+      itensHl.push({ label: `Holerite ${ym}`, status: "pendente", detail: "Aguardando assinatura" });
+    } else {
+      itensHl.push({ label: `Holerite ${ym}`, status: "ok", detail: "Assinado" });
+    }
+  }
+  let hlNeutro = false;
+  if (itensHl.length === 0) {
+    itensHl.push({ label: "Holerites", status: "neutro", detail: "Sem holerites a emitir ainda" });
+    hlNeutro = true;
+  }
+  const hlPend = itensHl.filter((i) => i.status === "pendente" || i.status === "vencido").map((i) => `${i.label}${i.detail ? " \u2014 " + i.detail : ""}`);
+  const hlStatus = itensHl.some((i) => i.status === "vencido") ? "vencido" : itensHl.some((i) => i.status === "pendente") ? "pendente" : hlNeutro ? "neutro" : "ok";
+  const stages = [
+    { key: "documentacao", label: "Documenta\xE7\xE3o", status: docStatus, blocking: true, pendencias: docPend, itens: itensDoc },
+    { key: "contratos", label: "Contratos", status: conStatus, blocking: true, pendencias: conPend, itens: itensCon },
+    { key: "treinamento", label: "Treinamento", status: trStatus, blocking: true, pendencias: trPend, itens: itensTr },
+    { key: "holerites", label: "Holerites", status: hlStatus, blocking: false, pendencias: hlPend, itens: itensHl }
+  ];
+  const apto = stages.filter((s) => s.blocking).every((s) => s.status === "ok");
+  return {
+    employeeId,
+    employeeName: emp.name,
+    role: emp.role || null,
+    status: apto ? "ok" : "pendente",
+    apto,
+    stages,
+    pendencias: stages.flatMap((s) => s.pendencias.map((p) => `[${s.label}] ${p}`)),
+    computedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function assertOnboardingComplete(employeeId) {
+  if (!ONBOARDING_GATE_ENABLED) {
+    console.log(`[onboarding-liberado] gate desligado (at\xE9 segunda ordem) \u2014 emp=${employeeId} n\xE3o bloqueado.`);
+    return;
+  }
+  const r = await computeOnboarding(employeeId);
+  if (r.apto) return;
+  const today = todayBRT();
+  if (today <= ONBOARDING_BLOCK_START_DATE) {
+    console.log(`[onboarding-grace] ${r.employeeName} (id=${employeeId}) \u2014 trava global ativa at\xE9 ${ONBOARDING_BLOCK_START_DATE} (hoje=${today}). Bloqueio liberado.`);
+    return;
+  }
+  const top = r.pendencias.slice(0, 6).join(" \u2022 ");
+  const err = new Error(`Onboarding incompleto de ${r.employeeName}: ${top}`);
+  err.code = "ONBOARDING_INCOMPLETE";
+  err.detail = r;
+  throw err;
+}
+function registerOnboardingRoutes(app3) {
+  app3.get("/api/employees/:id/onboarding", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const r = await computeOnboarding(id);
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+  app3.get("/api/onboarding-summary", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const all = await storage.getEmployees();
+      const out = await Promise.all(
+        all.filter((e) => e.status !== "inativo").map(async (e) => {
+          try {
+            const r = await computeOnboarding(e.id);
+            return {
+              employeeId: e.id,
+              apto: r.apto,
+              stages: r.stages.map((s) => ({ key: s.key, status: s.status, blocking: s.blocking, count: s.pendencias.length }))
+            };
+          } catch {
+            return { employeeId: e.id, apto: false, stages: [] };
+          }
+        })
+      );
+      res.json(out);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+  app3.post("/api/employees/:id/dependentes/declarar-sem", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: true }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+  app3.post("/api/employees/:id/dependentes/limpar-declaracao", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("employees").update({ dependentes_declarados: false }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+  app3.get("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { data } = await supabaseAdmin.from("employee_trainings").select("*").eq("employee_id", id).order("completed_at", { ascending: false });
+    res.json((data || []).map((t) => ({
+      id: t.id,
+      employeeId: t.employee_id,
+      type: t.type,
+      completedAt: t.completed_at,
+      expiryDate: t.expiry_date,
+      certificateUrl: t.certificate_url,
+      instructor: t.instructor,
+      cargaHoraria: t.carga_horaria,
+      notes: t.notes,
+      createdAt: t.created_at
+    })));
+  });
+  app3.post("/api/employees/:id/trainings", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const parsed = trainingSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inv\xE1lidos", errors: parsed.error.errors });
+    const { data, error } = await supabaseAdmin.from("employee_trainings").insert({
+      employee_id: id,
+      type: parsed.data.type,
+      completed_at: parsed.data.completedAt,
+      expiry_date: parsed.data.expiryDate || null,
+      certificate_url: parsed.data.certificateUrl || null,
+      instructor: parsed.data.instructor || null,
+      carga_horaria: parsed.data.cargaHoraria || null,
+      notes: parsed.data.notes || null
+    }).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data);
+  });
+  app3.delete("/api/trainings/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { error } = await supabaseAdmin.from("employee_trainings").delete().eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
+  });
+}
+var LEGACY_CONTRACT_CUTOFF, ASO_GRACE_DAYS, ONBOARDING_GATE_ENABLED, DOCUMENT_GATE_ENABLED, ONBOARDING_BLOCK_START_DATE, REQUIRED_TRAININGS, trainingSchema;
+var init_onboarding = __esm({
+  "server/routes/onboarding.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_storage();
+    init_documents_catalog();
+    LEGACY_CONTRACT_CUTOFF = "2026-05-11";
+    ASO_GRACE_DAYS = 15;
+    ONBOARDING_GATE_ENABLED = false;
+    DOCUMENT_GATE_ENABLED = false;
+    ONBOARDING_BLOCK_START_DATE = "2026-06-30";
+    REQUIRED_TRAININGS = {
+      vigilante: [
+        { type: "Forma\xE7\xE3o de Vigilante", validityMonths: 24 },
+        { type: "Reciclagem", validityMonths: 24 }
+      ],
+      escolta: [
+        { type: "Forma\xE7\xE3o de Vigilante", validityMonths: 24 },
+        { type: "Especializa\xE7\xE3o Escolta Armada", validityMonths: 24 },
+        { type: "Reciclagem", validityMonths: 24 }
+      ],
+      motorista: [],
+      "*": []
+    };
+    trainingSchema = z4.object({
+      type: z4.string().min(1),
+      completedAt: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      expiryDate: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+      certificateUrl: z4.string().optional().nullable(),
+      instructor: z4.string().optional().nullable(),
+      cargaHoraria: z4.number().int().optional().nullable(),
+      notes: z4.string().optional().nullable()
+    });
+  }
+});
 
 // server/routes/service-orders.ts
+import { randomUUID as randomUUID2 } from "crypto";
 function estimadoFromContract(c) {
   if (!c) return null;
   const acion = Number(c.valor_acionamento || 0);
@@ -29012,8 +28730,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
   async function generateOsReportPdfBuffer(osId2) {
     const PDFDocument4 = (await import("pdfkit")).default;
     const QRCode = (await import("qrcode")).default;
-    const path10 = await import("path");
-    const fs9 = await import("fs");
+    const path8 = await import("path");
+    const fs8 = await import("fs");
     const os = await storage.getServiceOrder(osId2);
     if (!os) throw new Error("OS n\xE3o encontrada");
     const client = os.clientId ? await storage.getClient(os.clientId) : null;
@@ -29032,8 +28750,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
     let osLogoBuffer = null;
     try {
-      const logoSrc = path10.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
-      if (fs9.existsSync(logoSrc)) {
+      const logoSrc = path8.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+      if (fs8.existsSync(logoSrc)) {
         osLogoBuffer = await sharp(logoSrc).negate({ alpha: false }).flatten({ background: { r: 34, g: 34, b: 34 } }).png().toBuffer();
       }
     } catch {
@@ -30028,8 +29746,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
       };
       var sanitize2 = sanitize3, isInvalidDate = isInvalidDate2, fmtDate = fmtDate2, fmtTime = fmtTime2, fmtTimeShort = fmtTimeShort2, gmapsUrl = gmapsUrl2, drawFooter = drawFooter2, newPage = newPage2, ensureSpace = ensureSpace2, sectionTitle = sectionTitle2, measureFieldCellHeight = measureFieldCellHeight2, drawFieldCell = drawFieldCell2, drawKmTimeCard = drawKmTimeCard2, drawTableHeader = drawTableHeader2, drawTableRow = drawTableRow2, measureTeamCardHeight = measureTeamCardHeight2;
       const PDFDocument4 = (await import("pdfkit")).default;
-      const path10 = await import("path");
-      const fs9 = await import("fs");
+      const path8 = await import("path");
+      const fs8 = await import("fs");
       const os = await storage.getServiceOrder(Number(req.params.id));
       if (!os) return res.status(404).json({ message: "OS nao encontrada" });
       const client = os.clientId ? await storage.getClient(os.clientId) : null;
@@ -30055,8 +29773,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
       const sharpMod = (await import("sharp")).default;
       let osLogoBuffer = null;
       try {
-        const logoSrc = path10.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
-        if (fs9.existsSync(logoSrc)) {
+        const logoSrc = path8.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+        if (fs8.existsSync(logoSrc)) {
           osLogoBuffer = await sharpMod(logoSrc).resize(120).png().toBuffer();
         }
       } catch {
@@ -30763,13 +30481,27 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     }
   });
 }
+var init_service_orders = __esm({
+  "server/routes/service-orders.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_truckscontrol();
+    init_db_init();
+    init_helpers();
+    init_billing_calc();
+    init_cancelada_billing();
+    init_balanco_cache();
+    init_boletim_resync();
+    init_toll_engine();
+    init_billing_display();
+    init_gestor_medicao();
+  }
+});
 
 // server/routes/fleet.ts
-init_storage();
-init_supabase();
-init_auth();
-init_helpers();
-var FUELING_MAX_KM_JUMP = 1500;
 function validateFuelingKm(kmRaw, vehicleKmRaw, allowKmOverride) {
   const km = Number(kmRaw) || 0;
   const vehicleKm = Number(vehicleKmRaw) || 0;
@@ -31315,11 +31047,21 @@ function registerFleetRoutes(app3) {
     }
   });
 }
+var FUELING_MAX_KM_JUMP;
+var init_fleet = __esm({
+  "server/routes/fleet.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_helpers();
+    init_notifications();
+    FUELING_MAX_KM_JUMP = 1500;
+  }
+});
 
 // server/routes/consultas.ts
-init_storage();
-init_auth();
-init_apibrasil();
 function registerConsultaRoutes(app3) {
   app3.get("/api/cnpj/:cnpj", requireAuth, async (req, res) => {
     const cnpj = String(req.params.cnpj).replace(/\D/g, "");
@@ -31711,22 +31453,16 @@ function registerConsultaRoutes(app3) {
     res.json(log2);
   });
 }
-
-// server/routes/operational.ts
-init_storage();
-init_supabase();
-init_auth();
-init_truckscontrol();
+var init_consultas = __esm({
+  "server/routes/consultas.ts"() {
+    "use strict";
+    init_storage();
+    init_auth();
+    init_apibrasil();
+  }
+});
 
 // server/telemetry-engine.ts
-init_storage();
-init_truckscontrol();
-var SPEED_LIMIT = 120;
-var IDLE_THRESHOLD_MS = 5 * 60 * 1e3;
-var speedAlertCooldown = /* @__PURE__ */ new Map();
-var idleAlertSent = /* @__PURE__ */ new Map();
-var TELEMETRY_MAP_MAX = 300;
-var SPEED_COOLDOWN_MS = 5 * 60 * 1e3;
 function processTelemetry(vehicles4) {
   const now = Date.now();
   for (const v of vehicles4) {
@@ -31814,20 +31550,22 @@ function checkIdleViolation(v, now) {
     });
   }
 }
+var SPEED_LIMIT, IDLE_THRESHOLD_MS, speedAlertCooldown, idleAlertSent, TELEMETRY_MAP_MAX, SPEED_COOLDOWN_MS;
+var init_telemetry_engine = __esm({
+  "server/telemetry-engine.ts"() {
+    "use strict";
+    init_storage();
+    init_truckscontrol();
+    SPEED_LIMIT = 120;
+    IDLE_THRESHOLD_MS = 5 * 60 * 1e3;
+    speedAlertCooldown = /* @__PURE__ */ new Map();
+    idleAlertSent = /* @__PURE__ */ new Map();
+    TELEMETRY_MAP_MAX = 300;
+    SPEED_COOLDOWN_MS = 5 * 60 * 1e3;
+  }
+});
 
 // server/routes/operational.ts
-init_db_init();
-init_billing_calc();
-init_helpers();
-init_swr_cache();
-init_brt_date();
-var SWR_TTL_3H = 3 * 60 * 60 * 1e3;
-var lastMissionPos = /* @__PURE__ */ new Map();
-var lastRecordedPos = /* @__PURE__ */ new Map();
-var MISSION_POS_MIN_DISTANCE = 50;
-var SMART_INTERVAL_DEFAULT_MS = 10 * 60 * 1e3;
-var SMART_INTERVAL_FAST_MS = 1 * 60 * 1e3;
-var SMART_INTERVAL_DISPLACEMENT_M = 500;
 function pruneMap(map, max = 500) {
   if (map.size > max) {
     const excess = map.size - max;
@@ -32965,46 +32703,82 @@ function registerOperationalRoutes(app3) {
     res.json([...tracked, ...spyEntries]);
   });
 }
+var SWR_TTL_3H, lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE, SMART_INTERVAL_DEFAULT_MS, SMART_INTERVAL_FAST_MS, SMART_INTERVAL_DISPLACEMENT_M;
+var init_operational = __esm({
+  "server/routes/operational.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_truckscontrol();
+    init_telemetry_engine();
+    init_db_init();
+    init_billing_calc();
+    init_helpers();
+    init_swr_cache();
+    init_brt_date();
+    SWR_TTL_3H = 3 * 60 * 60 * 1e3;
+    lastMissionPos = /* @__PURE__ */ new Map();
+    lastRecordedPos = /* @__PURE__ */ new Map();
+    MISSION_POS_MIN_DISTANCE = 50;
+    SMART_INTERVAL_DEFAULT_MS = 10 * 60 * 1e3;
+    SMART_INTERVAL_FAST_MS = 1 * 60 * 1e3;
+    SMART_INTERVAL_DISPLACEMENT_M = 500;
+  }
+});
+
+// server/lib/correct-text-ai.ts
+var correct_text_ai_exports = {};
+__export(correct_text_ai_exports, {
+  correctAgentMessage: () => correctAgentMessage
+});
+import OpenAI5 from "openai";
+async function correctAgentMessage(raw) {
+  const text2 = (raw || "").trim();
+  if (!text2) return "";
+  if (text2.length < 4) return text2;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return text2;
+  try {
+    const openai = new OpenAI5({ apiKey });
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      max_completion_tokens: 400,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: text2 }
+      ]
+    });
+    const corrected = response.choices?.[0]?.message?.content?.trim();
+    if (!corrected) return text2;
+    if (corrected.length > Math.max(text2.length * 2 + 50, 200)) return text2;
+    return corrected;
+  } catch (err) {
+    console.warn("[correct-text-ai] OpenAI falhou, devolvendo texto cru:", err?.message);
+    return text2;
+  }
+}
+var SYSTEM_PROMPT;
+var init_correct_text_ai = __esm({
+  "server/lib/correct-text-ai.ts"() {
+    "use strict";
+    SYSTEM_PROMPT = `Voc\xEA corrige mensagens curtas escritas por agentes de seguran\xE7a em campo, no celular.
+
+REGRAS:
+1. Corrija ortografia, acentos, pontua\xE7\xE3o e capitaliza\xE7\xE3o.
+2. Reescreva o m\xEDnimo necess\xE1rio pra a mensagem ficar clara e com nexo em portugu\xEAs brasileiro.
+3. NUNCA invente informa\xE7\xE3o que n\xE3o est\xE1 no texto original (n\xE3o criar hor\xE1rios, locais, placas, nomes).
+4. NUNCA traduza \u2014 mantenha em portugu\xEAs.
+5. Mantenha jarg\xE3o de seguran\xE7a/escolta intacto (ex.: "OS", "VTR", "rota", "ponto de apoio", "PA", "QAP", "QSL", "QRA", "vulto", "abordagem", "ocorr\xEAncia", "carreta", "cavalo", "engate", "deslocamento", "checkpoint").
+6. Mantenha n\xFAmeros, placas, nomes pr\xF3prios e hor\xE1rios exatamente como est\xE3o.
+7. Se a mensagem j\xE1 estiver correta, devolva ela igual.
+8. Resposta: S\xD3 o texto corrigido, sem aspas, sem coment\xE1rio, sem prefixo.`;
+  }
+});
 
 // server/routes/mission.ts
-init_storage();
-init_supabase();
-init_mission_photos();
-init_auth();
-init_truckscontrol();
-init_helpers();
-init_billing_calc();
-init_cron_whatsapp_forward();
-init_audit();
 import { randomUUID as randomUUID3 } from "crypto";
-var INSPECTION_STEPS = {
-  viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa vis\xEDvel" },
-  viatura_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda da viatura" },
-  viatura_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita da viatura" },
-  viatura_traseira: { type: "vehicle_condition", expectedItem: "Traseira da viatura" },
-  escoltado_frente: { type: "plate", expectedItem: "Frente do ve\xEDculo escoltado com placa vis\xEDvel" },
-  escoltado_traseira: { type: "plate", expectedItem: "Traseira do ve\xEDculo escoltado" },
-  viatura_retorno_frente: { type: "plate", expectedItem: "Dianteira da viatura no retorno com placa" },
-  viatura_retorno_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda viatura retorno" },
-  viatura_retorno_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita viatura retorno" },
-  viatura_retorno_traseira: { type: "vehicle_condition", expectedItem: "Traseira viatura retorno" },
-  km_saida: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM de sa\xEDda" },
-  km_chegada: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM de chegada" },
-  km_final: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM final" },
-  base_hodometro: { type: "odometer", expectedItem: "Hod\xF4metro do painel na base" },
-  agente_equipado: { type: "agent", expectedItem: "Agente de escolta devidamente equipado com colete e armamento" },
-  arma_pistola_1: { type: "weapon", expectedItem: "Pistola principal do agente" },
-  arma_pistola_2: { type: "weapon", expectedItem: "Segunda pistola" },
-  arma_espingarda: { type: "weapon", expectedItem: "Espingarda / arma longa" },
-  foto_local_destino: { type: "scene", expectedItem: "Local de destino da entrega" },
-  foto_local_origem: { type: "scene", expectedItem: "Local de origem da coleta" }
-};
-var CHECKLIST_EQUIPMENT_MAP = {
-  estepe: "pneu estepe reserva",
-  chave_roda: "chave de roda",
-  macaco: "macaco hidr\xE1ulico ou mec\xE2nico",
-  triangulo: "tri\xE2ngulo de sinaliza\xE7\xE3o"
-};
 function isNightTime() {
   const brHour = parseInt((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
   return brHour >= 18 || brHour < 6;
@@ -35911,15 +35685,105 @@ function registerMissionRoutes(app3) {
     }
   });
 }
+var INSPECTION_STEPS, CHECKLIST_EQUIPMENT_MAP;
+var init_mission = __esm({
+  "server/routes/mission.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_mission_photos();
+    init_auth();
+    init_schema();
+    init_truckscontrol();
+    init_operational();
+    init_helpers();
+    init_billing_calc();
+    init_cancelada_billing();
+    init_cron_whatsapp_forward();
+    init_audit();
+    INSPECTION_STEPS = {
+      viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa vis\xEDvel" },
+      viatura_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda da viatura" },
+      viatura_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita da viatura" },
+      viatura_traseira: { type: "vehicle_condition", expectedItem: "Traseira da viatura" },
+      escoltado_frente: { type: "plate", expectedItem: "Frente do ve\xEDculo escoltado com placa vis\xEDvel" },
+      escoltado_traseira: { type: "plate", expectedItem: "Traseira do ve\xEDculo escoltado" },
+      viatura_retorno_frente: { type: "plate", expectedItem: "Dianteira da viatura no retorno com placa" },
+      viatura_retorno_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda viatura retorno" },
+      viatura_retorno_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita viatura retorno" },
+      viatura_retorno_traseira: { type: "vehicle_condition", expectedItem: "Traseira viatura retorno" },
+      km_saida: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM de sa\xEDda" },
+      km_chegada: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM de chegada" },
+      km_final: { type: "odometer", expectedItem: "Hod\xF4metro do painel mostrando KM final" },
+      base_hodometro: { type: "odometer", expectedItem: "Hod\xF4metro do painel na base" },
+      agente_equipado: { type: "agent", expectedItem: "Agente de escolta devidamente equipado com colete e armamento" },
+      arma_pistola_1: { type: "weapon", expectedItem: "Pistola principal do agente" },
+      arma_pistola_2: { type: "weapon", expectedItem: "Segunda pistola" },
+      arma_espingarda: { type: "weapon", expectedItem: "Espingarda / arma longa" },
+      foto_local_destino: { type: "scene", expectedItem: "Local de destino da entrega" },
+      foto_local_origem: { type: "scene", expectedItem: "Local de origem da coleta" }
+    };
+    CHECKLIST_EQUIPMENT_MAP = {
+      estepe: "pneu estepe reserva",
+      chave_roda: "chave de roda",
+      macaco: "macaco hidr\xE1ulico ou mec\xE2nico",
+      triangulo: "tri\xE2ngulo de sinaliza\xE7\xE3o"
+    };
+  }
+});
+
+// shared/payroll-period.ts
+var payroll_period_exports = {};
+__export(payroll_period_exports, {
+  formatPayrollPeriodWithMonthName: () => formatPayrollPeriodWithMonthName,
+  getPayrollPeriod: () => getPayrollPeriod,
+  getPayrollPeriodForDate: () => getPayrollPeriodForDate
+});
+function pad2(n4) {
+  return String(n4).padStart(2, "0");
+}
+function ymdUtc(d) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+function getPayrollPeriod(year, month) {
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error(`getPayrollPeriod: par\xE2metros inv\xE1lidos (year=${year}, month=${month})`);
+  }
+  const start = new Date(Date.UTC(year, month - 2, 26));
+  const end = new Date(Date.UTC(year, month - 1, 26));
+  const lastInclusive = new Date(Date.UTC(year, month - 1, 25));
+  const startDate = ymdUtc(start);
+  const endDate = ymdUtc(lastInclusive);
+  const sMon = MESES_PT_SHORT[start.getUTCMonth()];
+  const eMon = MESES_PT_SHORT[lastInclusive.getUTCMonth()];
+  const labelShort = `26/${sMon} \u2192 25/${eMon}`;
+  const label = `${labelShort}/${year}`;
+  return { month, year, start, end, startDate, endDate, label, labelShort };
+}
+function getPayrollPeriodForDate(date2) {
+  const brt = new Date(date2.getTime() - 3 * 36e5);
+  const day = brt.getUTCDate();
+  const y = brt.getUTCFullYear();
+  const m = brt.getUTCMonth() + 1;
+  if (day <= 25) return getPayrollPeriod(y, m);
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextY = m === 12 ? y + 1 : y;
+  return getPayrollPeriod(nextY, nextM);
+}
+function formatPayrollPeriodWithMonthName(p) {
+  return `${MESES_PT_LONG[p.month - 1]}/${p.year} (${p.labelShort})`;
+}
+var MESES_PT_SHORT, MESES_PT_LONG;
+var init_payroll_period = __esm({
+  "shared/payroll-period.ts"() {
+    "use strict";
+    MESES_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    MESES_PT_LONG = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  }
+});
 
 // server/routes/hr.ts
-init_storage();
-init_supabase();
-init_auth();
-init_audit();
 import { randomBytes } from "crypto";
-init_apibrasil();
-init_helpers();
 import OpenAI6 from "openai";
 function parseHoleriteTorres(text2) {
   const toNum = (s) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
@@ -37337,16 +37201,18 @@ ${pdfText}` : [
     }
   });
 }
-
-// server/routes/escort.ts
-init_storage();
-init_supabase();
-init_auth();
-init_audit();
-init_swr_cache();
-init_balanco_cache();
-init_billing_calc();
-init_helpers();
+var init_hr = __esm({
+  "server/routes/hr.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_audit();
+    init_schema();
+    init_apibrasil();
+    init_helpers();
+  }
+});
 
 // server/lib/financial-cancel-guard.ts
 function canCancelAguardando(tx) {
@@ -37369,6 +37235,11 @@ function canCancelAguardando(tx) {
   }
   return { ok: true };
 }
+var init_financial_cancel_guard = __esm({
+  "server/lib/financial-cancel-guard.ts"() {
+    "use strict";
+  }
+});
 
 // server/lib/recusada-guard.ts
 async function osIsRecusada(sb, serviceOrderId) {
@@ -37405,9 +37276,13 @@ function buildRecusadaZeroPayload(motivo, observacaoAtual) {
     observacoes
   };
 }
+var init_recusada_guard = __esm({
+  "server/lib/recusada-guard.ts"() {
+    "use strict";
+  }
+});
 
 // server/routes/escort.ts
-var SWR_TTL_3H2 = 3 * 60 * 60 * 1e3;
 function canEditTransactionDocs(user, _existing) {
   return user?.role === "diretoria" || user?.role === "admin";
 }
@@ -37579,9 +37454,9 @@ function registerEscortRoutes(app3) {
     try {
       const { data: tx, error: txErr } = await supabaseAdmin.from("financial_transactions").select("comprovante_path, comprovante_url").eq("id", req.params.id).single();
       if (txErr || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path10 = tx.comprovante_path || tx.comprovante_url;
-      if (!path10) return res.status(404).json({ message: "Comprovante n\xE3o anexado" });
-      const { data, error } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path10, 60);
+      const path8 = tx.comprovante_path || tx.comprovante_url;
+      if (!path8) return res.status(404).json({ message: "Comprovante n\xE3o anexado" });
+      const { data, error } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path8, 60);
       if (error || !data?.signedUrl) return res.status(500).json({ message: error?.message || "Falha ao gerar URL" });
       res.json({ url: data.signedUrl });
     } catch (err) {
@@ -37960,9 +37835,9 @@ function registerEscortRoutes(app3) {
     try {
       const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("boleto_path,boleto_url").eq("id", req.params.id).single();
       if (error || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path10 = tx.boleto_path || tx.boleto_url;
-      if (!path10) return res.status(404).json({ message: "Boleto n\xE3o anexado" });
-      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path10, 60);
+      const path8 = tx.boleto_path || tx.boleto_url;
+      if (!path8) return res.status(404).json({ message: "Boleto n\xE3o anexado" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path8, 60);
       if (signErr) throw signErr;
       res.json({ url: data?.signedUrl });
     } catch (err) {
@@ -38010,9 +37885,9 @@ function registerEscortRoutes(app3) {
     try {
       const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("nf_path,nf_url").eq("id", req.params.id).single();
       if (error || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path10 = tx.nf_path || tx.nf_url;
-      if (!path10) return res.status(404).json({ message: "NF n\xE3o anexada" });
-      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path10, 60);
+      const path8 = tx.nf_path || tx.nf_url;
+      if (!path8) return res.status(404).json({ message: "NF n\xE3o anexada" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path8, 60);
       if (signErr) throw signErr;
       res.json({ url: data?.signedUrl });
     } catch (err) {
@@ -40396,8 +40271,8 @@ function registerEscortRoutes(app3) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=MINUTA_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
-      const fs9 = await import("fs");
-      const path10 = await import("path");
+      const fs8 = await import("fs");
+      const path8 = await import("path");
       const W = 465;
       const LM = 65;
       const BRAND = "#111111";
@@ -40410,8 +40285,8 @@ function registerEscortRoutes(app3) {
       let logoBuffer = null;
       try {
         const sharp3 = (await import("sharp")).default;
-        const logoSrc = path10.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774457182066.jpeg");
-        if (fs9.existsSync(logoSrc)) {
+        const logoSrc = path8.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774457182066.jpeg");
+        if (fs8.existsSync(logoSrc)) {
           logoBuffer = await sharp3(logoSrc).resize({ height: 120 }).negate({ alpha: false }).flatten({ background: { r: 17, g: 17, b: 17 } }).png().toBuffer();
         }
       } catch {
@@ -40750,15 +40625,28 @@ function registerEscortRoutes(app3) {
     }
   });
 }
+var SWR_TTL_3H2;
+var init_escort = __esm({
+  "server/routes/escort.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_audit();
+    init_swr_cache();
+    init_balanco_cache();
+    init_billing_calc();
+    init_helpers();
+    init_financial_cancel_guard();
+    init_recusada_guard();
+    init_boletim_resync();
+    init_billing_display();
+    init_gestor_medicao();
+    SWR_TTL_3H2 = 3 * 60 * 60 * 1e3;
+  }
+});
 
 // server/routes/mobile.ts
-init_storage();
-init_supabase();
-init_auth();
-init_helpers();
-var HQ_FALLBACK_LAT = -23.489;
-var HQ_FALLBACK_LNG = -46.7234;
-var HQ_FALLBACK_RADIUS = 2e3;
 async function getBaseCoords() {
   const { data: bases } = await supabaseAdmin.from("reference_points").select("*").limit(1);
   if (bases && bases.length > 0) {
@@ -41585,12 +41473,22 @@ function registerMobileRoutes(app3) {
     }
   });
 }
+var HQ_FALLBACK_LAT, HQ_FALLBACK_LNG, HQ_FALLBACK_RADIUS;
+var init_mobile = __esm({
+  "server/routes/mobile.ts"() {
+    "use strict";
+    init_storage();
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_helpers();
+    HQ_FALLBACK_LAT = -23.489;
+    HQ_FALLBACK_LNG = -46.7234;
+    HQ_FALLBACK_RADIUS = 2e3;
+  }
+});
 
 // server/routes/chat.ts
-init_auth();
-init_supabase();
-init_storage();
-init_audit();
 import { randomUUID as randomUUID4 } from "crypto";
 function registerChatRoutes(app3) {
   app3.get("/api/chat/conversations", requireAuth, async (req, res) => {
@@ -42034,21 +41932,21 @@ function registerChatRoutes(app3) {
     }
   });
 }
+var init_chat = __esm({
+  "server/routes/chat.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_storage();
+    init_audit();
+  }
+});
 
 // server/routes/boletim-approval.ts
-init_supabase();
-init_auth();
-init_helpers();
-init_asaas();
-init_balanco_cache();
 import crypto6 from "crypto";
 import ExcelJS from "exceljs";
-import path8 from "path";
-import fs7 from "fs";
-var requireAdminRole2 = (req, res, next) => {
-  if (!req.user) return res.status(401).json({ message: "N\xE3o autenticado" });
-  next();
-};
+import path6 from "path";
+import fs6 from "fs";
 function generateToken() {
   return crypto6.randomBytes(32).toString("hex");
 }
@@ -42057,17 +41955,6 @@ function getBaseUrl(req) {
   const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
   return `${proto}://${host}`;
 }
-var DARK_BG = "1B1B1B";
-var HEADER_BG = "2D2D2D";
-var GROUP_BG = "444444";
-var ACCENT_BG = "F5F5DC";
-var WHITE_C = "FFFFFF";
-var RED_C = "FF0000";
-var BORDER_COLOR = "D4D4D4";
-var BRL_FMT = '"R$ "#,##0.00';
-var thinBorder = { style: "thin", color: { argb: BORDER_COLOR } };
-var allBorders = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
-var noBorder = { top: {}, left: {}, bottom: {}, right: {} };
 function fmtHHMM(h) {
   if (isNaN(h) || h <= 0) return "00:00";
   const hrs = Math.floor(h);
@@ -42158,8 +42045,8 @@ async function generateBoletimExcel(clientName, periodStart, periodEnd, billings
   };
   let logoBuffer = null;
   try {
-    const logoPath = path8.resolve("public", "logo-torres-dark.jpeg");
-    if (fs7.existsSync(logoPath)) logoBuffer = fs7.readFileSync(logoPath);
+    const logoPath = path6.resolve("public", "logo-torres-dark.jpeg");
+    if (fs6.existsSync(logoPath)) logoBuffer = fs6.readFileSync(logoPath);
   } catch {
   }
   const emptyArr = Array(colCount).fill(null);
@@ -43011,15 +42898,35 @@ function registerBoletimApprovalRoutes(app3) {
   });
   console.log("[boletim-approval] Rotas de aprova\xE7\xE3o de boletim registradas");
 }
+var requireAdminRole2, DARK_BG, HEADER_BG, GROUP_BG, ACCENT_BG, WHITE_C, RED_C, BORDER_COLOR, BRL_FMT, thinBorder, allBorders, noBorder;
+var init_boletim_approval = __esm({
+  "server/routes/boletim-approval.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_helpers();
+    init_asaas();
+    init_boletim_totals();
+    init_balanco_cache();
+    requireAdminRole2 = (req, res, next) => {
+      if (!req.user) return res.status(401).json({ message: "N\xE3o autenticado" });
+      next();
+    };
+    DARK_BG = "1B1B1B";
+    HEADER_BG = "2D2D2D";
+    GROUP_BG = "444444";
+    ACCENT_BG = "F5F5DC";
+    WHITE_C = "FFFFFF";
+    RED_C = "FF0000";
+    BORDER_COLOR = "D4D4D4";
+    BRL_FMT = '"R$ "#,##0.00';
+    thinBorder = { style: "thin", color: { argb: BORDER_COLOR } };
+    allBorders = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
+    noBorder = { top: {}, left: {}, bottom: {}, right: {} };
+  }
+});
 
 // server/routes/gestor-medicao.ts
-init_supabase();
-init_auth();
-init_audit();
-init_balanco_cache();
-init_helpers();
-init_billing_calc();
-var num2 = (v) => v === void 0 || v === null || v === "" ? void 0 : Number(v);
 function resumo(results) {
   const div = results.filter((r) => String(r.analysisStatus || r.analysis_status).startsWith("DIVERGENCIA"));
   const ok = results.filter((r) => (r.analysisStatus || r.analysis_status) === "CALCULADO_OK");
@@ -43461,27 +43368,28 @@ REGRAS ABSOLUTAS:
     }
   });
 }
-
-// server/routes/os-financeiro.ts
-init_supabase();
-init_auth();
+var num2;
+var init_gestor_medicao2 = __esm({
+  "server/routes/gestor-medicao.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_audit();
+    init_balanco_cache();
+    init_helpers();
+    init_gestor_medicao();
+    init_boletim_totals();
+    init_billing_calc();
+    num2 = (v) => v === void 0 || v === null || v === "" ? void 0 : Number(v);
+  }
+});
 
 // server/lib/os-financeiro.ts
-init_brt_date();
-var PAID = /* @__PURE__ */ new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"]);
-var OPEN = /* @__PURE__ */ new Set(["PENDING", "OVERDUE", "AWAITING_PAYMENT", "AWAITING_RISK_ANALYSIS"]);
-var CANCELLED = /* @__PURE__ */ new Set(["CANCELLED", "CANCELED"]);
-var n3 = (v) => {
-  if (v === null || v === void 0 || v === "") return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-};
 function diffDias(hoje, venc) {
   const a = (/* @__PURE__ */ new Date(hoje + "T12:00:00Z")).getTime();
   const b = (/* @__PURE__ */ new Date(venc + "T12:00:00Z")).getTime();
   return Math.round((a - b) / 864e5);
 }
-var TOL = 0.05;
 function derivarSituacaoFinanceira(inp) {
   const { billing, invoice, osStatus } = inp;
   const hoje = inp.hoje || brtDateKey((/* @__PURE__ */ new Date()).toISOString());
@@ -43577,21 +43485,35 @@ function derivarSituacaoFinanceira(inp) {
   }
   return { ...base, status: "DIVERGENCIA", detalhe: `Status de fatura desconhecido (${st})`, causaDivergencia: `Fatura com status n\xE3o reconhecido "${st}" \u2014 verificar no gateway.` };
 }
-var SITUACAO_FINANCEIRA_META = {
-  NAO_FATURADA: { label: "N\xE3o faturada", color: "gray" },
-  AGUARDANDO_PAGAMENTO: { label: "Aguardando pagamento", color: "blue" },
-  VENCIDA: { label: "Vencida", color: "red" },
-  PAGA: { label: "Paga", color: "emerald" },
-  PARCIALMENTE_PAGA: { label: "Parcialmente paga", color: "amber" },
-  ESTORNADA: { label: "Estornada", color: "orange" },
-  FATURA_CANCELADA: { label: "Fatura cancelada", color: "amber" },
-  SEM_COBRANCA: { label: "Sem cobran\xE7a", color: "gray" },
-  DIVERGENCIA: { label: "Diverg\xEAncia financeira", color: "red" }
-};
+var PAID, OPEN, CANCELLED, n3, TOL, SITUACAO_FINANCEIRA_META;
+var init_os_financeiro = __esm({
+  "server/lib/os-financeiro.ts"() {
+    "use strict";
+    init_brt_date();
+    PAID = /* @__PURE__ */ new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"]);
+    OPEN = /* @__PURE__ */ new Set(["PENDING", "OVERDUE", "AWAITING_PAYMENT", "AWAITING_RISK_ANALYSIS"]);
+    CANCELLED = /* @__PURE__ */ new Set(["CANCELLED", "CANCELED"]);
+    n3 = (v) => {
+      if (v === null || v === void 0 || v === "") return null;
+      const x = Number(v);
+      return Number.isFinite(x) ? x : null;
+    };
+    TOL = 0.05;
+    SITUACAO_FINANCEIRA_META = {
+      NAO_FATURADA: { label: "N\xE3o faturada", color: "gray" },
+      AGUARDANDO_PAGAMENTO: { label: "Aguardando pagamento", color: "blue" },
+      VENCIDA: { label: "Vencida", color: "red" },
+      PAGA: { label: "Paga", color: "emerald" },
+      PARCIALMENTE_PAGA: { label: "Parcialmente paga", color: "amber" },
+      ESTORNADA: { label: "Estornada", color: "orange" },
+      FATURA_CANCELADA: { label: "Fatura cancelada", color: "amber" },
+      SEM_COBRANCA: { label: "Sem cobran\xE7a", color: "gray" },
+      DIVERGENCIA: { label: "Diverg\xEAncia financeira", color: "red" }
+    };
+  }
+});
 
 // server/routes/os-financeiro.ts
-init_brt_date();
-var CHUNK = 200;
 async function fetchByIdsChunked(table, col, ids, select) {
   const all = [];
   for (let i = 0; i < ids.length; i += CHUNK) {
@@ -43660,15 +43582,20 @@ function registerOsFinanceiroRoutes(app3) {
     }
   });
 }
-
-// server/routes/gestor-dados.ts
-init_supabase();
-init_auth();
+var CHUNK;
+var init_os_financeiro2 = __esm({
+  "server/routes/os-financeiro.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_os_financeiro();
+    init_billing_display();
+    init_brt_date();
+    CHUNK = 200;
+  }
+});
 
 // server/lib/gestor-dados.ts
-init_supabase();
-var TOL2 = 0.05;
-var DATA_CORTE = "2026-06-01";
 async function fetchAll(table, select, filter) {
   const PAGE = 1e3;
   const out = [];
@@ -43682,9 +43609,6 @@ async function fetchAll(table, select, filter) {
   }
   return out;
 }
-var norm = (s) => String(s || "").trim().toUpperCase().replace(/\s+/g, " ");
-var num3 = (v) => Number(v || 0);
-var cancelada = (s) => !!s && /CANCEL/i.test(String(s));
 async function executarValidacao(de, ate) {
   const DE = de && /^\d{4}-\d{2}-\d{2}$/.test(de) && de > DATA_CORTE ? de : DATA_CORTE;
   const ATE = ate && /^\d{4}-\d{2}-\d{2}$/.test(ate) ? ate : null;
@@ -44017,12 +43941,21 @@ async function executarValidacao(de, ate) {
     }
   };
 }
+var TOL2, DATA_CORTE, norm, num3, cancelada;
+var init_gestor_dados = __esm({
+  "server/lib/gestor-dados.ts"() {
+    "use strict";
+    init_supabase();
+    init_billing_display();
+    TOL2 = 0.05;
+    DATA_CORTE = "2026-06-01";
+    norm = (s) => String(s || "").trim().toUpperCase().replace(/\s+/g, " ");
+    num3 = (v) => Number(v || 0);
+    cancelada = (s) => !!s && /CANCEL/i.test(String(s));
+  }
+});
 
 // server/routes/gestor-dados.ts
-var TTL_MS2 = 15 * 60 * 1e3;
-var MAX_PERIOD_CACHE = 8;
-var cacheVal = /* @__PURE__ */ new Map();
-var inflight2 = /* @__PURE__ */ new Map();
 async function getValidacao(force = false, de, ate) {
   const key = `${de || ""}|${ate || ""}`;
   const hit = cacheVal.get(key);
@@ -44161,63 +44094,33 @@ ${JSON.stringify(contexto)}` }
     }
   });
 }
+var TTL_MS2, MAX_PERIOD_CACHE, cacheVal, inflight2;
+var init_gestor_dados2 = __esm({
+  "server/routes/gestor-dados.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_gestor_dados();
+    init_billing_display();
+    TTL_MS2 = 15 * 60 * 1e3;
+    MAX_PERIOD_CACHE = 8;
+    cacheVal = /* @__PURE__ */ new Map();
+    inflight2 = /* @__PURE__ */ new Map();
+  }
+});
 
 // server/routes/leads.ts
-init_supabase();
-init_auth();
-init_helpers();
-init_normalize_contact();
 import cron3 from "node-cron";
-import fs8 from "fs";
-import path9 from "path";
-var AUTOMATION_FILE = path9.resolve(".local/leads-automation.json");
-var automationEnabled = true;
-try {
-  if (fs8.existsSync(AUTOMATION_FILE)) {
-    const raw = JSON.parse(fs8.readFileSync(AUTOMATION_FILE, "utf-8"));
-    if (typeof raw.enabled === "boolean") automationEnabled = raw.enabled;
-  }
-} catch (_e) {
-}
+import fs7 from "fs";
+import path7 from "path";
 function persistAutomation() {
   try {
-    fs8.mkdirSync(path9.dirname(AUTOMATION_FILE), { recursive: true });
-    fs8.writeFileSync(AUTOMATION_FILE, JSON.stringify({ enabled: automationEnabled }, null, 2));
+    fs7.mkdirSync(path7.dirname(AUTOMATION_FILE), { recursive: true });
+    fs7.writeFileSync(AUTOMATION_FILE, JSON.stringify({ enabled: automationEnabled }, null, 2));
   } catch (e) {
     console.error("[leads-automation] persist err:", e.message);
   }
 }
-var LEAD_STATUSES = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho", "perdido", "descartado"];
-var SETORES_ALVO = [
-  "Transportadora",
-  "Log\xEDstica",
-  "Atacadista",
-  "Centro de Distribui\xE7\xE3o",
-  "Ind\xFAstria Farmac\xEAutica",
-  "Transporte de Valores",
-  "E-commerce",
-  "Varejo",
-  "Agroneg\xF3cio",
-  "Ind\xFAstria Aliment\xEDcia",
-  "Distribuidora",
-  "Armaz\xE9m Geral"
-];
-var ORIGENS = ["google_places", "indicacao", "site", "telefone", "email", "evento", "rede_social", "prospecao_ativa", "outro"];
-var SCORING_SETOR = {
-  "Transporte de Valores": 10,
-  "Ind\xFAstria Farmac\xEAutica": 10,
-  "Transportadora": 9,
-  "Log\xEDstica": 8,
-  "Centro de Distribui\xE7\xE3o": 8,
-  "E-commerce": 7,
-  "Distribuidora": 7,
-  "Atacadista": 7,
-  "Armaz\xE9m Geral": 6,
-  "Ind\xFAstria Aliment\xEDcia": 6,
-  "Agroneg\xF3cio": 5,
-  "Varejo": 4
-};
-var ZONAS_RISCO = ["Cajamar", "Guarulhos", "Campinas", "Santos", "Dutra", "Raposo", "Castelo Branco", "Anhanguera", "Bandeirantes", "Fern\xE3o Dias", "R\xE9gis Bittencourt", "Anchieta", "Imigrantes", "Barueri", "Osasco", "Jundia\xED", "Embu"];
 function calcLeadScore(setor, endereco, temperatura, valor_estimado) {
   let score = SCORING_SETOR[setor || ""] || 3;
   const addr = (endereco || "").toLowerCase();
@@ -44233,41 +44136,6 @@ function calcLeadScore(setor, endereco, temperatura, valor_estimado) {
   else if ((valor_estimado || 0) >= 2e4) score += 1;
   return Math.min(score, 15);
 }
-var CONTATO_CARGOS = [
-  "Gerente de Log\xEDstica",
-  "Gerente de Opera\xE7\xF5es",
-  "Supervisor de Transportes",
-  "Coordenador de GR",
-  "Gerente de Riscos",
-  "Analista de Seguros",
-  "Diretor de Opera\xE7\xF5es",
-  "Gerente de Seguran\xE7a",
-  "Coordenador de Frota",
-  "Gerente Comercial",
-  "Supervisor de Expedi\xE7\xE3o",
-  "Contato Geral"
-];
-var EMAIL_PREFIXES = [
-  "contato",
-  "comercial",
-  "logistica",
-  "operacoes",
-  "transportes",
-  "gr",
-  "riscos",
-  "seguros",
-  "seguranca",
-  "gerencia",
-  "diretoria",
-  "financeiro",
-  "compras",
-  "administrativo",
-  "sac"
-];
-var REPLY_TO_ADDRESSES = "escolta@torresseguranca.com.br, diretoria@torresseguranca.com.br";
-var BATCH_SIZE = 10;
-var BATCH_INTERVAL_MINUTES = 5;
-var emailDispatchRunning = false;
 async function ensureLeadsTable() {
 }
 async function ensureEmailQueueTable() {
@@ -44522,10 +44390,6 @@ async function processEmailQueue() {
     emailDispatchRunning = false;
   }
 }
-var AUTO_ENQUEUE_HOUR_START = 7;
-var AUTO_ENQUEUE_HOUR_END = 21;
-var MAX_EMAILS_PER_LEAD = 5;
-var DAYS_BETWEEN_EMAILS = 3;
 async function autoEnqueueLeads() {
   try {
     const now = /* @__PURE__ */ new Date();
@@ -44572,181 +44436,14 @@ async function autoEnqueueLeads() {
     console.error("[auto-enqueue] Erro:", err.message);
   }
 }
-var AUTO_PROSPECT_QUERIES = [
-  "transportadora de cargas S\xE3o Paulo SP",
-  "empresa de log\xEDstica S\xE3o Paulo SP",
-  "transportadora S\xE3o Paulo SP",
-  "log\xEDstica e distribui\xE7\xE3o S\xE3o Paulo SP",
-  "transporte de cargas Guarulhos SP",
-  "transportadora Campinas SP",
-  "log\xEDstica Osasco SP",
-  "transportadora cargas Barueri SP",
-  "log\xEDstica transporte Santos SP",
-  "transportadora S\xE3o Bernardo SP",
-  "empresa transporte de cargas ABC paulista",
-  "log\xEDstica armazenagem S\xE3o Paulo SP",
-  "centro de distribui\xE7\xE3o S\xE3o Paulo SP",
-  "atacadista distribuidor S\xE3o Paulo SP",
-  "transportadora refrigerada S\xE3o Paulo SP",
-  "transporte e-commerce S\xE3o Paulo SP",
-  "operador log\xEDstico S\xE3o Paulo SP",
-  "transportadora cargas Jundia\xED SP",
-  "log\xEDstica Ribeir\xE3o Preto SP",
-  "transportadora Sorocaba SP",
-  "transportadora cargas Mogi das Cruzes SP",
-  "log\xEDstica S\xE3o Jos\xE9 dos Campos SP",
-  "transportadora de mudan\xE7as S\xE3o Paulo SP",
-  "frete cargas S\xE3o Paulo SP",
-  "transportadora expressa S\xE3o Paulo SP",
-  "transporte cargas especiais S\xE3o Paulo SP",
-  "transportadora de alimentos S\xE3o Paulo SP",
-  "log\xEDstica terceirizada S\xE3o Paulo SP",
-  "transportadora regional interior SP",
-  "transporte industrial Diadema SP",
-  "transportadora de cargas Rio de Janeiro RJ",
-  "log\xEDstica Belo Horizonte MG",
-  "transportadora Curitiba PR",
-  "transportadora Porto Alegre RS",
-  "log\xEDstica Goi\xE2nia GO",
-  "transportadora Manaus AM",
-  "empresa de escolta armada S\xE3o Paulo SP",
-  "seguran\xE7a patrimonial S\xE3o Paulo SP",
-  "empresa de seguran\xE7a S\xE3o Paulo SP",
-  "vigil\xE2ncia patrimonial S\xE3o Paulo SP",
-  "ind\xFAstria farmac\xEAutica S\xE3o Paulo SP",
-  "distribuidora de medicamentos S\xE3o Paulo SP",
-  "e-commerce log\xEDstica S\xE3o Paulo SP",
-  "armaz\xE9m geral S\xE3o Paulo SP",
-  "transporte de valores S\xE3o Paulo SP",
-  "empresa de mudan\xE7as S\xE3o Paulo SP",
-  "transportadora carga pesada S\xE3o Paulo SP",
-  "operador portu\xE1rio Santos SP",
-  "agente de cargas S\xE3o Paulo SP",
-  "despachante aduaneiro S\xE3o Paulo SP",
-  "operador log\xEDstico alto valor S\xE3o Paulo SP",
-  "distribuidora de medicamentos S\xE3o Paulo SP contato",
-  "transporte eletr\xF4nicos carga monitorada SP",
-  "transportadora produtos qu\xEDmicos Barueri SP",
-  "gerenciamento de risco transporte SP",
-  "distribuidora cosm\xE9ticos S\xE3o Paulo SP",
-  "transporte carga fracionada S\xE3o Paulo SP",
-  "log\xEDstica reversa S\xE3o Paulo SP",
-  "transportadora de bebidas S\xE3o Paulo SP",
-  "armaz\xE9m log\xEDstico Cajamar SP",
-  "condom\xEDnio log\xEDstico Embu das Artes SP",
-  "transporte de autope\xE7as S\xE3o Paulo SP",
-  "distribuidora de alimentos atacado SP",
-  "log\xEDstica integrada Guarulhos SP",
-  "transportadora de encomendas SP",
-  "centro distribui\xE7\xE3o Itaquaquecetuba SP",
-  "operador log\xEDstico Cajamar Jundia\xED SP",
-  "transportadora cross docking SP",
-  "log\xEDstica last mile S\xE3o Paulo SP",
-  "distribuidora farmac\xEAutica Campinas SP",
-  "transporte de carga seca interior SP",
-  "transportadora de cosm\xE9ticos perfumaria SP",
-  "distribuidora de materiais el\xE9tricos SP",
-  "log\xEDstica fullfilment e-commerce SP",
-  "transportadora carga lota\xE7\xE3o S\xE3o Paulo SP",
-  "empresa de transporte dedicado SP",
-  "log\xEDstica de perec\xEDveis S\xE3o Paulo SP",
-  "transporte de m\xE1quinas equipamentos SP",
-  "distribuidora de embalagens S\xE3o Paulo SP",
-  "transportadora de papel celulose SP",
-  "centro log\xEDstico Extrema MG",
-  "transportadora de cargas Uberl\xE2ndia MG",
-  "log\xEDstica transporte Joinville SC",
-  "transportadora Florian\xF3polis SC",
-  "distribuidora atacado Goi\xE2nia GO",
-  "procurement manager log\xEDstica S\xE3o Paulo SP",
-  "strategic sourcing logistics S\xE3o Paulo",
-  "indirect procurement transporte S\xE3o Paulo SP",
-  "supply chain buyer S\xE3o Paulo SP",
-  "commodity manager log\xEDstica transporte SP",
-  "vendor manager transporte log\xEDstica SP",
-  "comprador de log\xEDstica S\xE3o Paulo SP",
-  "compras indiretas transporte S\xE3o Paulo SP",
-  "gestor de contratos transporte S\xE3o Paulo SP",
-  "sourcing specialist logistics SP",
-  "gerente preven\xE7\xE3o de perdas S\xE3o Paulo SP",
-  "loss prevention manager S\xE3o Paulo SP",
-  "gerente gerenciamento de risco transporte SP",
-  "risk management log\xEDstica S\xE3o Paulo SP",
-  "security manager log\xEDstica S\xE3o Paulo SP",
-  "asset protection manager S\xE3o Paulo SP",
-  "gestor torre de controle log\xEDstica SP",
-  "control tower manager logistics S\xE3o Paulo",
-  "coordenador transportes inbound outbound SP",
-  "coordenador de transportes S\xE3o Paulo SP",
-  "CEVA log\xEDstica S\xE3o Paulo SP contato",
-  "DHL supply chain S\xE3o Paulo SP contato",
-  "FedEx log\xEDstica S\xE3o Paulo SP contato",
-  "Kuehne Nagel S\xE3o Paulo SP contato",
-  "DB Schenker S\xE3o Paulo SP contato",
-  "XPO logistics S\xE3o Paulo SP contato",
-  "Maersk log\xEDstica S\xE3o Paulo SP contato",
-  "Gefco log\xEDstica S\xE3o Paulo SP contato",
-  "RFQ transporte escolta S\xE3o Paulo SP",
-  "concorr\xEAncia transporte monitorado S\xE3o Paulo SP",
-  "licita\xE7\xE3o transporte escolta armada SP",
-  "cota\xE7\xE3o escolta armada carga valiosa SP",
-  "fornecedor escolta armada transporte SP",
-  "empresa escolta armada carga monitorada SP",
-  "seguran\xE7a transporte alto valor S\xE3o Paulo SP",
-  "escolta armada rodovia S\xE3o Paulo SP",
-  "monitoramento carga transporte escolta SP",
-  "gest\xE3o risco transporte rodovi\xE1rio SP"
-];
-var QUERIES_PER_CYCLE = 3;
-var autoProspectRunning = false;
 async function ensureProspectState() {
 }
-var USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0"
-];
 function randomUA() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 function randomDelay(min, max) {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
 }
-var UA = randomUA();
-var SKIP_DOMAINS = /* @__PURE__ */ new Set([
-  "google.com",
-  "youtube.com",
-  "facebook.com",
-  "instagram.com",
-  "linkedin.com",
-  "twitter.com",
-  "wikipedia.org",
-  "blogspot.com",
-  "wordpress.com",
-  "wix.com",
-  "squarespace.com",
-  "reclameaqui.com.br",
-  "jusbrasil.com.br",
-  "gov.br",
-  "guiamais.com.br",
-  "yelp.com",
-  "tripadvisor.com",
-  "infojobs.com.br",
-  "indeed.com",
-  "glassdoor.com",
-  "olx.com.br",
-  "mercadolivre.com.br",
-  "telelistas.net",
-  "maps.google.com",
-  "pinterest.com",
-  "tiktok.com",
-  "bing.com",
-  "msn.com",
-  "yahoo.com"
-]);
 function extractUrlsFromHtml(html) {
   const urls = [];
   const regex = /uddg=(https?%3A%2F%2F[^&"]+)/g;
@@ -44783,79 +44480,6 @@ function extractUrlsFromBing(html) {
   }
   return urls;
 }
-var EXCLUSION_TERMS = " -vigil\xE2ncia -escolta -seguran\xE7a -monitoramento -portaria -vigilante";
-var BLACKLIST_COMPETITOR = [
-  "escolta armada",
-  "vigil\xE2ncia patrimonial",
-  "seguran\xE7a patrimonial",
-  "seguranca privada",
-  "seguran\xE7a privada",
-  "monitoramento eletr\xF4nico",
-  "portaria remota",
-  "seguran\xE7a eletr\xF4nica",
-  "empresa de vigil\xE2ncia",
-  "servi\xE7o de escolta",
-  "escolta de cargas",
-  "rastreamento veicular",
-  "central de monitoramento",
-  "cftv",
-  "alarme monitorado",
-  "pronta resposta",
-  "ronda motorizada",
-  "vigil\xE2ncia org\xE2nica"
-];
-var BLACKLIST_BRANDS = [
-  "prosegur",
-  "gruber",
-  "ictsi",
-  "verzani",
-  "sandrini",
-  "g4s",
-  "protege",
-  "emmo",
-  "aster",
-  "grupofort",
-  "grupo fort",
-  "tps seguran\xE7a",
-  "gocil",
-  "segurpro",
-  "servnac",
-  "brinks",
-  "securitas",
-  "magnus",
-  "transvip",
-  "nordeste seguran\xE7a",
-  "prosseguir",
-  "forteseg"
-];
-var POSITIVE_TERMS = [
-  "transporte",
-  "log\xEDstica",
-  "logistica",
-  "distribui\xE7\xE3o",
-  "distribuicao",
-  "frota",
-  "carga",
-  "armaz\xE9m",
-  "armazenagem",
-  "frete",
-  "entrega",
-  "atacado",
-  "atacadista",
-  "importa\xE7\xE3o",
-  "exporta\xE7\xE3o",
-  "e-commerce",
-  "farmac\xEAutica",
-  "medicamento",
-  "alimento",
-  "bebida",
-  "cosm\xE9tico",
-  "ind\xFAstria",
-  "manufatura",
-  "fabricante",
-  "produtor",
-  "operador log\xEDstico"
-];
 function isCompetitor(siteContent, domain) {
   const text2 = siteContent.toLowerCase();
   const dom = (domain || "").toLowerCase();
@@ -45837,19 +45461,335 @@ function registerLeadRoutes(app3) {
   });
   console.log("[leads] Rotas de prospec\xE7\xE3o/CRM registradas");
 }
-
-// server/routes/conciliacao.ts
-init_supabase();
-init_auth();
-init_helpers();
-import { spawnSync } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-import * as XLSX from "xlsx";
-
-// server/lib/auditoria-pedagios-ticketlog.ts
-init_supabase();
+var AUTOMATION_FILE, automationEnabled, LEAD_STATUSES, SETORES_ALVO, ORIGENS, SCORING_SETOR, ZONAS_RISCO, CONTATO_CARGOS, EMAIL_PREFIXES, REPLY_TO_ADDRESSES, BATCH_SIZE, BATCH_INTERVAL_MINUTES, emailDispatchRunning, AUTO_ENQUEUE_HOUR_START, AUTO_ENQUEUE_HOUR_END, MAX_EMAILS_PER_LEAD, DAYS_BETWEEN_EMAILS, AUTO_PROSPECT_QUERIES, QUERIES_PER_CYCLE, autoProspectRunning, USER_AGENTS, UA, SKIP_DOMAINS, EXCLUSION_TERMS, BLACKLIST_COMPETITOR, BLACKLIST_BRANDS, POSITIVE_TERMS;
+var init_leads = __esm({
+  "server/routes/leads.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_helpers();
+    init_normalize_contact();
+    AUTOMATION_FILE = path7.resolve(".local/leads-automation.json");
+    automationEnabled = true;
+    try {
+      if (fs7.existsSync(AUTOMATION_FILE)) {
+        const raw = JSON.parse(fs7.readFileSync(AUTOMATION_FILE, "utf-8"));
+        if (typeof raw.enabled === "boolean") automationEnabled = raw.enabled;
+      }
+    } catch (_e) {
+    }
+    LEAD_STATUSES = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho", "perdido", "descartado"];
+    SETORES_ALVO = [
+      "Transportadora",
+      "Log\xEDstica",
+      "Atacadista",
+      "Centro de Distribui\xE7\xE3o",
+      "Ind\xFAstria Farmac\xEAutica",
+      "Transporte de Valores",
+      "E-commerce",
+      "Varejo",
+      "Agroneg\xF3cio",
+      "Ind\xFAstria Aliment\xEDcia",
+      "Distribuidora",
+      "Armaz\xE9m Geral"
+    ];
+    ORIGENS = ["google_places", "indicacao", "site", "telefone", "email", "evento", "rede_social", "prospecao_ativa", "outro"];
+    SCORING_SETOR = {
+      "Transporte de Valores": 10,
+      "Ind\xFAstria Farmac\xEAutica": 10,
+      "Transportadora": 9,
+      "Log\xEDstica": 8,
+      "Centro de Distribui\xE7\xE3o": 8,
+      "E-commerce": 7,
+      "Distribuidora": 7,
+      "Atacadista": 7,
+      "Armaz\xE9m Geral": 6,
+      "Ind\xFAstria Aliment\xEDcia": 6,
+      "Agroneg\xF3cio": 5,
+      "Varejo": 4
+    };
+    ZONAS_RISCO = ["Cajamar", "Guarulhos", "Campinas", "Santos", "Dutra", "Raposo", "Castelo Branco", "Anhanguera", "Bandeirantes", "Fern\xE3o Dias", "R\xE9gis Bittencourt", "Anchieta", "Imigrantes", "Barueri", "Osasco", "Jundia\xED", "Embu"];
+    CONTATO_CARGOS = [
+      "Gerente de Log\xEDstica",
+      "Gerente de Opera\xE7\xF5es",
+      "Supervisor de Transportes",
+      "Coordenador de GR",
+      "Gerente de Riscos",
+      "Analista de Seguros",
+      "Diretor de Opera\xE7\xF5es",
+      "Gerente de Seguran\xE7a",
+      "Coordenador de Frota",
+      "Gerente Comercial",
+      "Supervisor de Expedi\xE7\xE3o",
+      "Contato Geral"
+    ];
+    EMAIL_PREFIXES = [
+      "contato",
+      "comercial",
+      "logistica",
+      "operacoes",
+      "transportes",
+      "gr",
+      "riscos",
+      "seguros",
+      "seguranca",
+      "gerencia",
+      "diretoria",
+      "financeiro",
+      "compras",
+      "administrativo",
+      "sac"
+    ];
+    REPLY_TO_ADDRESSES = "escolta@torresseguranca.com.br, diretoria@torresseguranca.com.br";
+    BATCH_SIZE = 10;
+    BATCH_INTERVAL_MINUTES = 5;
+    emailDispatchRunning = false;
+    AUTO_ENQUEUE_HOUR_START = 7;
+    AUTO_ENQUEUE_HOUR_END = 21;
+    MAX_EMAILS_PER_LEAD = 5;
+    DAYS_BETWEEN_EMAILS = 3;
+    AUTO_PROSPECT_QUERIES = [
+      "transportadora de cargas S\xE3o Paulo SP",
+      "empresa de log\xEDstica S\xE3o Paulo SP",
+      "transportadora S\xE3o Paulo SP",
+      "log\xEDstica e distribui\xE7\xE3o S\xE3o Paulo SP",
+      "transporte de cargas Guarulhos SP",
+      "transportadora Campinas SP",
+      "log\xEDstica Osasco SP",
+      "transportadora cargas Barueri SP",
+      "log\xEDstica transporte Santos SP",
+      "transportadora S\xE3o Bernardo SP",
+      "empresa transporte de cargas ABC paulista",
+      "log\xEDstica armazenagem S\xE3o Paulo SP",
+      "centro de distribui\xE7\xE3o S\xE3o Paulo SP",
+      "atacadista distribuidor S\xE3o Paulo SP",
+      "transportadora refrigerada S\xE3o Paulo SP",
+      "transporte e-commerce S\xE3o Paulo SP",
+      "operador log\xEDstico S\xE3o Paulo SP",
+      "transportadora cargas Jundia\xED SP",
+      "log\xEDstica Ribeir\xE3o Preto SP",
+      "transportadora Sorocaba SP",
+      "transportadora cargas Mogi das Cruzes SP",
+      "log\xEDstica S\xE3o Jos\xE9 dos Campos SP",
+      "transportadora de mudan\xE7as S\xE3o Paulo SP",
+      "frete cargas S\xE3o Paulo SP",
+      "transportadora expressa S\xE3o Paulo SP",
+      "transporte cargas especiais S\xE3o Paulo SP",
+      "transportadora de alimentos S\xE3o Paulo SP",
+      "log\xEDstica terceirizada S\xE3o Paulo SP",
+      "transportadora regional interior SP",
+      "transporte industrial Diadema SP",
+      "transportadora de cargas Rio de Janeiro RJ",
+      "log\xEDstica Belo Horizonte MG",
+      "transportadora Curitiba PR",
+      "transportadora Porto Alegre RS",
+      "log\xEDstica Goi\xE2nia GO",
+      "transportadora Manaus AM",
+      "empresa de escolta armada S\xE3o Paulo SP",
+      "seguran\xE7a patrimonial S\xE3o Paulo SP",
+      "empresa de seguran\xE7a S\xE3o Paulo SP",
+      "vigil\xE2ncia patrimonial S\xE3o Paulo SP",
+      "ind\xFAstria farmac\xEAutica S\xE3o Paulo SP",
+      "distribuidora de medicamentos S\xE3o Paulo SP",
+      "e-commerce log\xEDstica S\xE3o Paulo SP",
+      "armaz\xE9m geral S\xE3o Paulo SP",
+      "transporte de valores S\xE3o Paulo SP",
+      "empresa de mudan\xE7as S\xE3o Paulo SP",
+      "transportadora carga pesada S\xE3o Paulo SP",
+      "operador portu\xE1rio Santos SP",
+      "agente de cargas S\xE3o Paulo SP",
+      "despachante aduaneiro S\xE3o Paulo SP",
+      "operador log\xEDstico alto valor S\xE3o Paulo SP",
+      "distribuidora de medicamentos S\xE3o Paulo SP contato",
+      "transporte eletr\xF4nicos carga monitorada SP",
+      "transportadora produtos qu\xEDmicos Barueri SP",
+      "gerenciamento de risco transporte SP",
+      "distribuidora cosm\xE9ticos S\xE3o Paulo SP",
+      "transporte carga fracionada S\xE3o Paulo SP",
+      "log\xEDstica reversa S\xE3o Paulo SP",
+      "transportadora de bebidas S\xE3o Paulo SP",
+      "armaz\xE9m log\xEDstico Cajamar SP",
+      "condom\xEDnio log\xEDstico Embu das Artes SP",
+      "transporte de autope\xE7as S\xE3o Paulo SP",
+      "distribuidora de alimentos atacado SP",
+      "log\xEDstica integrada Guarulhos SP",
+      "transportadora de encomendas SP",
+      "centro distribui\xE7\xE3o Itaquaquecetuba SP",
+      "operador log\xEDstico Cajamar Jundia\xED SP",
+      "transportadora cross docking SP",
+      "log\xEDstica last mile S\xE3o Paulo SP",
+      "distribuidora farmac\xEAutica Campinas SP",
+      "transporte de carga seca interior SP",
+      "transportadora de cosm\xE9ticos perfumaria SP",
+      "distribuidora de materiais el\xE9tricos SP",
+      "log\xEDstica fullfilment e-commerce SP",
+      "transportadora carga lota\xE7\xE3o S\xE3o Paulo SP",
+      "empresa de transporte dedicado SP",
+      "log\xEDstica de perec\xEDveis S\xE3o Paulo SP",
+      "transporte de m\xE1quinas equipamentos SP",
+      "distribuidora de embalagens S\xE3o Paulo SP",
+      "transportadora de papel celulose SP",
+      "centro log\xEDstico Extrema MG",
+      "transportadora de cargas Uberl\xE2ndia MG",
+      "log\xEDstica transporte Joinville SC",
+      "transportadora Florian\xF3polis SC",
+      "distribuidora atacado Goi\xE2nia GO",
+      "procurement manager log\xEDstica S\xE3o Paulo SP",
+      "strategic sourcing logistics S\xE3o Paulo",
+      "indirect procurement transporte S\xE3o Paulo SP",
+      "supply chain buyer S\xE3o Paulo SP",
+      "commodity manager log\xEDstica transporte SP",
+      "vendor manager transporte log\xEDstica SP",
+      "comprador de log\xEDstica S\xE3o Paulo SP",
+      "compras indiretas transporte S\xE3o Paulo SP",
+      "gestor de contratos transporte S\xE3o Paulo SP",
+      "sourcing specialist logistics SP",
+      "gerente preven\xE7\xE3o de perdas S\xE3o Paulo SP",
+      "loss prevention manager S\xE3o Paulo SP",
+      "gerente gerenciamento de risco transporte SP",
+      "risk management log\xEDstica S\xE3o Paulo SP",
+      "security manager log\xEDstica S\xE3o Paulo SP",
+      "asset protection manager S\xE3o Paulo SP",
+      "gestor torre de controle log\xEDstica SP",
+      "control tower manager logistics S\xE3o Paulo",
+      "coordenador transportes inbound outbound SP",
+      "coordenador de transportes S\xE3o Paulo SP",
+      "CEVA log\xEDstica S\xE3o Paulo SP contato",
+      "DHL supply chain S\xE3o Paulo SP contato",
+      "FedEx log\xEDstica S\xE3o Paulo SP contato",
+      "Kuehne Nagel S\xE3o Paulo SP contato",
+      "DB Schenker S\xE3o Paulo SP contato",
+      "XPO logistics S\xE3o Paulo SP contato",
+      "Maersk log\xEDstica S\xE3o Paulo SP contato",
+      "Gefco log\xEDstica S\xE3o Paulo SP contato",
+      "RFQ transporte escolta S\xE3o Paulo SP",
+      "concorr\xEAncia transporte monitorado S\xE3o Paulo SP",
+      "licita\xE7\xE3o transporte escolta armada SP",
+      "cota\xE7\xE3o escolta armada carga valiosa SP",
+      "fornecedor escolta armada transporte SP",
+      "empresa escolta armada carga monitorada SP",
+      "seguran\xE7a transporte alto valor S\xE3o Paulo SP",
+      "escolta armada rodovia S\xE3o Paulo SP",
+      "monitoramento carga transporte escolta SP",
+      "gest\xE3o risco transporte rodovi\xE1rio SP"
+    ];
+    QUERIES_PER_CYCLE = 3;
+    autoProspectRunning = false;
+    USER_AGENTS = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0"
+    ];
+    UA = randomUA();
+    SKIP_DOMAINS = /* @__PURE__ */ new Set([
+      "google.com",
+      "youtube.com",
+      "facebook.com",
+      "instagram.com",
+      "linkedin.com",
+      "twitter.com",
+      "wikipedia.org",
+      "blogspot.com",
+      "wordpress.com",
+      "wix.com",
+      "squarespace.com",
+      "reclameaqui.com.br",
+      "jusbrasil.com.br",
+      "gov.br",
+      "guiamais.com.br",
+      "yelp.com",
+      "tripadvisor.com",
+      "infojobs.com.br",
+      "indeed.com",
+      "glassdoor.com",
+      "olx.com.br",
+      "mercadolivre.com.br",
+      "telelistas.net",
+      "maps.google.com",
+      "pinterest.com",
+      "tiktok.com",
+      "bing.com",
+      "msn.com",
+      "yahoo.com"
+    ]);
+    EXCLUSION_TERMS = " -vigil\xE2ncia -escolta -seguran\xE7a -monitoramento -portaria -vigilante";
+    BLACKLIST_COMPETITOR = [
+      "escolta armada",
+      "vigil\xE2ncia patrimonial",
+      "seguran\xE7a patrimonial",
+      "seguranca privada",
+      "seguran\xE7a privada",
+      "monitoramento eletr\xF4nico",
+      "portaria remota",
+      "seguran\xE7a eletr\xF4nica",
+      "empresa de vigil\xE2ncia",
+      "servi\xE7o de escolta",
+      "escolta de cargas",
+      "rastreamento veicular",
+      "central de monitoramento",
+      "cftv",
+      "alarme monitorado",
+      "pronta resposta",
+      "ronda motorizada",
+      "vigil\xE2ncia org\xE2nica"
+    ];
+    BLACKLIST_BRANDS = [
+      "prosegur",
+      "gruber",
+      "ictsi",
+      "verzani",
+      "sandrini",
+      "g4s",
+      "protege",
+      "emmo",
+      "aster",
+      "grupofort",
+      "grupo fort",
+      "tps seguran\xE7a",
+      "gocil",
+      "segurpro",
+      "servnac",
+      "brinks",
+      "securitas",
+      "magnus",
+      "transvip",
+      "nordeste seguran\xE7a",
+      "prosseguir",
+      "forteseg"
+    ];
+    POSITIVE_TERMS = [
+      "transporte",
+      "log\xEDstica",
+      "logistica",
+      "distribui\xE7\xE3o",
+      "distribuicao",
+      "frota",
+      "carga",
+      "armaz\xE9m",
+      "armazenagem",
+      "frete",
+      "entrega",
+      "atacado",
+      "atacadista",
+      "importa\xE7\xE3o",
+      "exporta\xE7\xE3o",
+      "e-commerce",
+      "farmac\xEAutica",
+      "medicamento",
+      "alimento",
+      "bebida",
+      "cosm\xE9tico",
+      "ind\xFAstria",
+      "manufatura",
+      "fabricante",
+      "produtor",
+      "operador log\xEDstico"
+    ];
+  }
+});
 
 // server/lib/ticketlog-pedagio-csv.ts
 function stripBomAndNormalize(txt) {
@@ -46079,6 +46019,11 @@ function cruzarPedagios(csvRows, oss, missionCosts2, vehiclesPlatesSet) {
     }
   };
 }
+var init_ticketlog_pedagio_csv = __esm({
+  "server/lib/ticketlog-pedagio-csv.ts"() {
+    "use strict";
+  }
+});
 
 // server/lib/auditoria-pedagios-ticketlog.ts
 function normalizeName3(s) {
@@ -46223,8 +46168,20 @@ async function rodarAuditoriaPedagiosCsv(csvContent) {
   out.result = cruzarPedagios(parsed.rows, osCandidates, missionCosts2, allPlatesSet);
   return out;
 }
+var init_auditoria_pedagios_ticketlog = __esm({
+  "server/lib/auditoria-pedagios-ticketlog.ts"() {
+    "use strict";
+    init_supabase();
+    init_ticketlog_pedagio_csv();
+  }
+});
 
 // server/routes/conciliacao.ts
+import { spawnSync } from "child_process";
+import { writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import * as XLSX from "xlsx";
 function parseTicketLogText(txt) {
   const lines = txt.split("\n");
   const out = [];
@@ -46416,11 +46373,6 @@ function normalizeFuel(f) {
   if (u.includes("GNV")) return "GNV";
   return u;
 }
-var AUDITORIA_PEDAGIOS_DISABLED = true;
-var ticketlogDisabledGuard = (_req, res, _next) => res.status(503).json({
-  message: "Auditoria de ped\xE1gios TicketLog desativada. Opera\xE7\xE3o indispon\xEDvel.",
-  code: "TICKETLOG_DISABLED"
-});
 function registerConciliacaoRoutes(app3) {
   if (AUDITORIA_PEDAGIOS_DISABLED) {
     app3.use("/api/auditoria-pedagios-ticketlog", ticketlogDisabledGuard);
@@ -46459,8 +46411,8 @@ function registerConciliacaoRoutes(app3) {
           }
           return res.status(500).json({ message: "Falha ao extrair texto do PDF", stderr: result.stderr?.toString() });
         }
-        const fs9 = await import("fs");
-        const txt = fs9.readFileSync(tmpTxt, "utf8");
+        const fs8 = await import("fs");
+        const txt = fs8.readFileSync(tmpTxt, "utf8");
         try {
           unlinkSync(tmpTxt);
         } catch {
@@ -47168,23 +47120,24 @@ function registerConciliacaoRoutes(app3) {
     }
   );
 }
-
-// server/routes/fixed-costs.ts
-init_supabase();
-init_auth();
-init_holidays();
-import { z as z6 } from "zod";
+var AUDITORIA_PEDAGIOS_DISABLED, ticketlogDisabledGuard;
+var init_conciliacao = __esm({
+  "server/routes/conciliacao.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_helpers();
+    init_auditoria_pedagios_ticketlog();
+    AUDITORIA_PEDAGIOS_DISABLED = true;
+    ticketlogDisabledGuard = (_req, res, _next) => res.status(503).json({
+      message: "Auditoria de ped\xE1gios TicketLog desativada. Opera\xE7\xE3o indispon\xEDvel.",
+      code: "TICKETLOG_DISABLED"
+    });
+  }
+});
 
 // server/routes/daily-allowances.ts
-init_supabase();
-init_auth();
 import { z as z5 } from "zod";
-var insertSchema2 = z5.object({
-  employeeId: z5.number().int().positive(),
-  date: z5.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  amount: z5.union([z5.string(), z5.number()]).transform((v) => String(v)),
-  description: z5.string().optional().nullable()
-});
 async function sumDailyAllowancesForPeriod(fromISO, toISO) {
   const { data, error } = await supabaseAdmin.from("agent_daily_allowances").select("employee_id, amount, date").gte("date", fromISO).lte("date", toISO);
   if (error || !data) return { total: 0, porAgente: {} };
@@ -47248,12 +47201,20 @@ function registerDailyAllowancesRoutes(app3) {
     res.json({ ok: true });
   });
 }
-
-// server/routes/fixed-costs.ts
-init_payroll();
-init_swr_cache();
-init_brt_date();
-init_hours_calc();
+var insertSchema2;
+var init_daily_allowances = __esm({
+  "server/routes/daily-allowances.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    insertSchema2 = z5.object({
+      employeeId: z5.number().int().positive(),
+      date: z5.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      amount: z5.union([z5.string(), z5.number()]).transform((v) => String(v)),
+      description: z5.string().optional().nullable()
+    });
+  }
+});
 
 // server/lib/create-limit.ts
 function createLimit(concurrency) {
@@ -47280,20 +47241,14 @@ function createLimit(concurrency) {
     next();
   });
 }
+var init_create_limit = __esm({
+  "server/lib/create-limit.ts"() {
+    "use strict";
+  }
+});
 
 // server/routes/fixed-costs.ts
-var SWR_TTL_3H3 = 3 * 60 * 60 * 1e3;
-var fixedCostInputSchema = insertFixedCostSchema.extend({
-  monthlyValue: z6.union([z6.string(), z6.number()]).transform((v) => String(v)),
-  dueDay: z6.union([z6.number(), z6.string(), z6.null()]).optional().transform((v) => {
-    if (v === null || v === void 0 || v === "") return null;
-    return typeof v === "string" ? Number(v) : v;
-  }),
-  active: z6.boolean().optional().default(true),
-  notes: z6.string().nullable().optional()
-});
-var FLEET_RENT_PER_VEHICLE = 3400;
-var INACTIVE_VEHICLE_STATUSES = /* @__PURE__ */ new Set(["baixado", "vendido", "alienado", "inativo"]);
+import { z as z6 } from "zod";
 async function getActiveVehicleCount() {
   const { data, error } = await supabaseAdmin.from("vehicles").select("id, status");
   if (error) {
@@ -47896,18 +47851,36 @@ function registerFixedCostsRoutes(app3) {
     }
   });
 }
-
-// server/routes.ts
-init_holidays();
-
-// server/routes/inter.ts
-init_auth();
-init_supabase();
-init_client();
+var SWR_TTL_3H3, fixedCostInputSchema, FLEET_RENT_PER_VEHICLE, INACTIVE_VEHICLE_STATUSES;
+var init_fixed_costs = __esm({
+  "server/routes/fixed-costs.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_schema();
+    init_holidays();
+    init_daily_allowances();
+    init_payroll();
+    init_swr_cache();
+    init_brt_date();
+    init_hours_calc();
+    init_create_limit();
+    SWR_TTL_3H3 = 3 * 60 * 60 * 1e3;
+    fixedCostInputSchema = insertFixedCostSchema.extend({
+      monthlyValue: z6.union([z6.string(), z6.number()]).transform((v) => String(v)),
+      dueDay: z6.union([z6.number(), z6.string(), z6.null()]).optional().transform((v) => {
+        if (v === null || v === void 0 || v === "") return null;
+        return typeof v === "string" ? Number(v) : v;
+      }),
+      active: z6.boolean().optional().default(true),
+      notes: z6.string().nullable().optional()
+    });
+    FLEET_RENT_PER_VEHICLE = 3400;
+    INACTIVE_VEHICLE_STATUSES = /* @__PURE__ */ new Set(["baixado", "vendido", "alienado", "inativo"]);
+  }
+});
 
 // server/services/inter/cobranca.ts
-init_client();
-var SCOPES = "boleto-cobranca.read boleto-cobranca.write";
 async function criarCobranca(input) {
   const client = getInterClient();
   return client.call({
@@ -47984,21 +47957,16 @@ async function excluirWebhook() {
     useContaCorrente: true
   });
 }
-
-// server/routes/inter.ts
-init_banking();
-init_audit();
-init_helpers();
-init_invoice_payment();
+var SCOPES;
+var init_cobranca = __esm({
+  "server/services/inter/cobranca.ts"() {
+    "use strict";
+    init_client();
+    SCOPES = "boleto-cobranca.read boleto-cobranca.write";
+  }
+});
 
 // server/lib/inter-webhook-parser.ts
-var PAYMENT_CONFIRMATION_EVENTS = /* @__PURE__ */ new Set([
-  "RECEBIDO",
-  "PAGO",
-  "PAYMENT_RECEIVED",
-  "PAYMENT_CONFIRMED",
-  "MARCADA_RECEBIDA"
-]);
 function parseInterWebhookEvent(ev, nowIsoFactory = () => (/* @__PURE__ */ new Date()).toISOString()) {
   if (!ev || typeof ev !== "object") {
     return {
@@ -48033,6 +48001,19 @@ function classifyInterPayment(opts) {
   const descPrefix = isPartial ? `[PAGAMENTO PARCIAL] Recebido ${valorRecebido.toFixed(2)} de ${valorEsperado.toFixed(2)} \u2014 ` : "Recebimento Inter \u2014 ";
   return { valorRecebido, isPartial, novoStatus, descPrefix };
 }
+var PAYMENT_CONFIRMATION_EVENTS;
+var init_inter_webhook_parser = __esm({
+  "server/lib/inter-webhook-parser.ts"() {
+    "use strict";
+    PAYMENT_CONFIRMATION_EVENTS = /* @__PURE__ */ new Set([
+      "RECEBIDO",
+      "PAGO",
+      "PAYMENT_RECEIVED",
+      "PAYMENT_CONFIRMED",
+      "MARCADA_RECEBIDA"
+    ]);
+  }
+});
 
 // server/routes/inter.ts
 function registerInterRoutes(app3) {
@@ -48496,12 +48477,22 @@ function registerInterRoutes(app3) {
     }
   });
 }
+var init_inter = __esm({
+  "server/routes/inter.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_client();
+    init_cobranca();
+    init_banking();
+    init_audit();
+    init_helpers();
+    init_invoice_payment();
+    init_inter_webhook_parser();
+  }
+});
 
 // server/routes/control-id.ts
-init_auth();
-init_supabase();
-init_control_id();
-init_rhid_reconciliation();
 function registerControlIdRoutes(app3) {
   app3.get("/api/control-id/devices", requireAuth, async (_req, res) => {
     const { data } = await supabaseAdmin.from("control_id_devices").select("id,nome,tipo,base_url,login,ativo,notas,last_sync_at,last_sync_status,last_sync_message,created_at").order("id", { ascending: true });
@@ -49085,12 +49076,18 @@ function registerControlIdRoutes(app3) {
     }
   });
 }
+var init_control_id2 = __esm({
+  "server/routes/control-id.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_control_id();
+    init_rhid_reconciliation();
+    init_fixed_costs();
+  }
+});
 
 // server/routes/relatorio-horas.ts
-init_auth();
-init_supabase();
-init_hours_calc();
-var BRT_OFFSET_MS = 3 * 60 * 60 * 1e3;
 function startOfTodayBRT() {
   const now = /* @__PURE__ */ new Date();
   const brtMs = now.getTime() - BRT_OFFSET_MS;
@@ -49292,10 +49289,18 @@ function registerRelatorioHorasRoutes(app3) {
     }
   });
 }
+var BRT_OFFSET_MS;
+var init_relatorio_horas = __esm({
+  "server/routes/relatorio-horas.ts"() {
+    "use strict";
+    init_auth();
+    init_supabase();
+    init_hours_calc();
+    BRT_OFFSET_MS = 3 * 60 * 60 * 1e3;
+  }
+});
 
 // server/routes/diarias-jornada-longa.ts
-init_auth();
-init_diarias_jornada_longa();
 function registerDiariasJornadaLongaRoutes(app3) {
   app3.get("/api/diarias-jornada-longa", requireAuth, requireAdminRole, async (req, res) => {
     const date2 = req.query.date || new Date(Date.now() - 24 * 3600 * 1e3).toISOString().slice(0, 10);
@@ -49323,10 +49328,15 @@ function registerDiariasJornadaLongaRoutes(app3) {
     }
   });
 }
+var init_diarias_jornada_longa2 = __esm({
+  "server/routes/diarias-jornada-longa.ts"() {
+    "use strict";
+    init_auth();
+    init_diarias_jornada_longa();
+  }
+});
 
 // server/routes/branded-contracts.ts
-init_supabase();
-init_auth();
 function registerBrandedContractRoutes(app3) {
   app3.get("/api/branded-contracts", requireAuth, async (req, res) => {
     try {
@@ -49438,13 +49448,15 @@ function registerBrandedContractRoutes(app3) {
     }
   });
 }
-
-// server/routes.ts
-init_permanent_contracts();
+var init_branded_contracts = __esm({
+  "server/routes/branded-contracts.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+  }
+});
 
 // server/routes/pendencias.ts
-init_supabase();
-init_auth();
 function registerPendenciasRoutes(app3) {
   app3.get("/api/admin/pendencias", requireAuth, requireAdminRole, async (_req, res) => {
     try {
@@ -49516,17 +49528,15 @@ function registerPendenciasRoutes(app3) {
     }
   });
 }
-
-// server/routes/signable-documents.ts
-init_supabase();
-init_auth();
-init_storage();
-import { z as z7 } from "zod";
+var init_pendencias = __esm({
+  "server/routes/pendencias.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+  }
+});
 
 // server/lib/signable-doc-notify.ts
-init_zapi();
-init_whatsapp_humanize();
-init_normalize_contact();
 import OpenAI7 from "openai";
 function toIntlPhone3(rawPhone) {
   const digits = normalizePhone(rawPhone);
@@ -49800,10 +49810,16 @@ function notifyDocsBackground(targets, docTitle, isReminder = false, persist) {
     }
   })().catch((e) => console.warn("[signable-docs:notify] dispatcher falhou:", e?.message));
 }
+var init_signable_doc_notify = __esm({
+  "server/lib/signable-doc-notify.ts"() {
+    "use strict";
+    init_zapi();
+    init_whatsapp_humanize();
+    init_normalize_contact();
+  }
+});
 
 // server/lib/signable-doc-templates.ts
-var EMPRESA = "TORRES VIGIL\xC2NCIA PATRIMONIAL LTDA";
-var CIDADE = "S\xE3o Paulo";
 function esc2(s) {
   return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -49811,20 +49827,37 @@ function formatCpfMask(cpf) {
   const d = (cpf || "").replace(/\D/g, "");
   return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : cpf || "";
 }
-var TERMO_ACEITE_PADRAO = `DECLARA\xC7\xC3O DE CI\xCANCIA E ACEITE
+function formatBrtLongDate(d = /* @__PURE__ */ new Date()) {
+  const iso = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const [y, m, day] = iso.split("-").map(Number);
+  return `${String(day).padStart(2, "0")} de ${MESES[m - 1]} de ${y}`;
+}
+function getTemplate(type) {
+  return TEMPLATES[type] || TEMPLATES.outros;
+}
+function listTemplates() {
+  return Object.keys(TEMPLATES).map((t) => ({ type: t, title: TEMPLATES[t].title }));
+}
+var EMPRESA, CIDADE, TERMO_ACEITE_PADRAO, TEMPLATES, MESES, DOC_TYPE_LABELS;
+var init_signable_doc_templates = __esm({
+  "server/lib/signable-doc-templates.ts"() {
+    "use strict";
+    EMPRESA = "TORRES VIGIL\xC2NCIA PATRIMONIAL LTDA";
+    CIDADE = "S\xE3o Paulo";
+    TERMO_ACEITE_PADRAO = `DECLARA\xC7\xC3O DE CI\xCANCIA E ACEITE
 
 Declaro, para os devidos fins, que LI INTEGRALMENTE o presente documento e estou CIENTE e DE ACORDO com todo o seu conte\xFAdo.
 
 Confirmo a autenticidade desta assinatura digital realizada por mim, mediante reconhecimento facial (selfie) e assinatura manuscrita, conforme a Lei 14.063/2020, MP 2.200-2/2001 e o art. 219 do C\xF3digo Civil, reconhecendo seu pleno valor jur\xEDdico equivalente \xE0 assinatura f\xEDsica.`;
-var TEMPLATES = {
-  beneficio_flash: {
-    type: "beneficio_flash",
-    title: "Termo de Recebimento de Cart\xE3o de Benef\xEDcios e Di\xE1rias",
-    termo: TERMO_ACEITE_PADRAO,
-    buildBodyHtml: (e) => {
-      const nome = esc2(e.name);
-      const cpf = esc2(formatCpfMask(e.cpf));
-      return `
+    TEMPLATES = {
+      beneficio_flash: {
+        type: "beneficio_flash",
+        title: "Termo de Recebimento de Cart\xE3o de Benef\xEDcios e Di\xE1rias",
+        termo: TERMO_ACEITE_PADRAO,
+        buildBodyHtml: (e) => {
+          const nome = esc2(e.name);
+          const cpf = esc2(formatCpfMask(e.cpf));
+          return `
         <h1>Termo de Recebimento de Cart\xE3o de Benef\xEDcios e Di\xE1rias</h1>
         <p>Eu, <b>${nome}</b>, portador(a) do CPF n\xBA <b>${cpf}</b>, colaborador(a) da empresa <b>${EMPRESA}</b>, declaro, para os devidos fins, que nesta data recebi o Cart\xE3o Flash, destinado ao pagamento de benef\xEDcios e di\xE1rias concedidos pela empresa.</p>
         <p><b>Declaro estar ciente de que:</b></p>
@@ -49837,115 +49870,155 @@ var TEMPLATES = {
         </ul>
         <p>Por ser a express\xE3o da verdade, firmo o presente Termo de Recebimento.</p>
         <p class="data">Local e Data: ${esc2(CIDADE)}, ${formatBrtLongDate()}.</p>`;
-    }
-  },
-  lgpd: {
-    type: "lgpd",
-    title: "Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)",
-    termo: TERMO_ACEITE_PADRAO,
-    buildBodyHtml: (e) => {
-      const nome = esc2(e.name);
-      const cpf = esc2(formatCpfMask(e.cpf));
-      return `
+        }
+      },
+      lgpd: {
+        type: "lgpd",
+        title: "Termo de Consentimento para Tratamento de Dados Pessoais (LGPD)",
+        termo: TERMO_ACEITE_PADRAO,
+        buildBodyHtml: (e) => {
+          const nome = esc2(e.name);
+          const cpf = esc2(formatCpfMask(e.cpf));
+          return `
         <h1>Termo de Consentimento para Tratamento de Dados Pessoais</h1>
         <p>Eu, <b>${nome}</b>, portador(a) do CPF n\xBA <b>${cpf}</b>, colaborador(a) da empresa <b>${EMPRESA}</b>, declaro estar ciente e CONSINTO, nos termos da Lei n\xBA 13.709/2018 (LGPD), com o tratamento dos meus dados pessoais pela empresa para fins de gest\xE3o do contrato de trabalho, folha de pagamento, benef\xEDcios, controle de jornada, seguran\xE7a operacional e obriga\xE7\xF5es legais e regulat\xF3rias.</p>
         <p>Declaro estar ciente de que meus dados ser\xE3o armazenados de forma segura, utilizados estritamente para as finalidades acima e que posso, a qualquer tempo, solicitar informa\xE7\xF5es sobre o tratamento dos meus dados pelos canais oficiais da empresa.</p>
         <p class="data">Local e Data: ${esc2(CIDADE)}, ${formatBrtLongDate()}.</p>`;
-    }
-  },
-  regulamento: {
-    type: "regulamento",
-    title: "Regulamento Interno",
-    termo: TERMO_ACEITE_PADRAO,
-    buildBodyHtml: (e) => {
-      const nome = esc2(e.name);
-      return `
+        }
+      },
+      regulamento: {
+        type: "regulamento",
+        title: "Regulamento Interno",
+        termo: TERMO_ACEITE_PADRAO,
+        buildBodyHtml: (e) => {
+          const nome = esc2(e.name);
+          return `
         <h1>Ci\xEAncia do Regulamento Interno</h1>
         <p>Eu, <b>${nome}</b>, colaborador(a) da empresa <b>${EMPRESA}</b>, declaro que recebi, li e estou ciente do Regulamento Interno da empresa, comprometendo-me a cumprir integralmente todas as normas, pol\xEDticas e procedimentos nele estabelecidos.</p>
         <p class="data">Local e Data: ${esc2(CIDADE)}, ${formatBrtLongDate()}.</p>`;
-    }
-  },
-  contrato_servico: {
-    type: "contrato_servico",
-    title: "Contrato de Presta\xE7\xE3o de Servi\xE7os",
-    termo: TERMO_ACEITE_PADRAO,
-    buildBodyHtml: (e) => {
-      const nome = esc2(e.name);
-      const cpf = esc2(formatCpfMask(e.cpf));
-      return `
+        }
+      },
+      contrato_servico: {
+        type: "contrato_servico",
+        title: "Contrato de Presta\xE7\xE3o de Servi\xE7os",
+        termo: TERMO_ACEITE_PADRAO,
+        buildBodyHtml: (e) => {
+          const nome = esc2(e.name);
+          const cpf = esc2(formatCpfMask(e.cpf));
+          return `
         <h1>Contrato de Presta\xE7\xE3o de Servi\xE7os</h1>
         <p>Eu, <b>${nome}</b>, portador(a) do CPF n\xBA <b>${cpf}</b>, declaro ci\xEAncia e concord\xE2ncia com os termos do presente Contrato de Presta\xE7\xE3o de Servi\xE7os firmado com a empresa <b>${EMPRESA}</b>.</p>
         <p class="data">Local e Data: ${esc2(CIDADE)}, ${formatBrtLongDate()}.</p>`;
-    }
-  },
-  outros: {
-    type: "outros",
-    title: "Documento RH",
-    termo: TERMO_ACEITE_PADRAO,
-    buildBodyHtml: (e) => {
-      const nome = esc2(e.name);
-      return `
+        }
+      },
+      outros: {
+        type: "outros",
+        title: "Documento RH",
+        termo: TERMO_ACEITE_PADRAO,
+        buildBodyHtml: (e) => {
+          const nome = esc2(e.name);
+          return `
         <h1>Documento RH</h1>
         <p>Eu, <b>${nome}</b>, colaborador(a) da empresa <b>${EMPRESA}</b>, declaro ci\xEAncia e concord\xE2ncia com o conte\xFAdo do presente documento.</p>
         <p class="data">Local e Data: ${esc2(CIDADE)}, ${formatBrtLongDate()}.</p>`;
-    }
+        }
+      }
+    };
+    MESES = ["janeiro", "fevereiro", "mar\xE7o", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    DOC_TYPE_LABELS = {
+      beneficio_flash: "Cart\xE3o Flash",
+      lgpd: "LGPD",
+      regulamento: "Regulamento Interno",
+      contrato_servico: "Contrato de Servi\xE7o",
+      outros: "Outros"
+    };
   }
-};
-var MESES = ["janeiro", "fevereiro", "mar\xE7o", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-function formatBrtLongDate(d = /* @__PURE__ */ new Date()) {
-  const iso = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-  const [y, m, day] = iso.split("-").map(Number);
-  return `${String(day).padStart(2, "0")} de ${MESES[m - 1]} de ${y}`;
+});
+
+// server/lib/signable-doc-storage.ts
+var signable_doc_storage_exports = {};
+__export(signable_doc_storage_exports, {
+  SIGNABLE_DOC_BUCKET: () => SIGNABLE_DOC_BUCKET,
+  downloadSignableImageDataUri: () => downloadSignableImageDataUri,
+  ensureSignableDocsBucket: () => ensureSignableDocsBucket,
+  isStoragePath: () => isStoragePath2,
+  resolveSignableImage: () => resolveSignableImage,
+  signSignableImage: () => signSignableImage,
+  uploadSignableImage: () => uploadSignableImage
+});
+async function ensureSignableDocsBucket() {
+  try {
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+    const exists = (buckets || []).some((b) => b.name === SIGNABLE_DOC_BUCKET);
+    if (!exists) {
+      const { error } = await supabaseAdmin.storage.createBucket(SIGNABLE_DOC_BUCKET, {
+        public: false,
+        fileSizeLimit: 10 * 1024 * 1024
+      });
+      if (error && !/already exists/i.test(error.message || "")) {
+        console.warn(`[storage] createBucket ${SIGNABLE_DOC_BUCKET}:`, error.message);
+      } else {
+        console.log(`[storage] Bucket '${SIGNABLE_DOC_BUCKET}' criado (private)`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[storage] ensureSignableDocsBucket skipped:`, e?.message);
+  }
 }
-function getTemplate(type) {
-  return TEMPLATES[type] || TEMPLATES.outros;
+function isStoragePath2(v) {
+  return typeof v === "string" && v.length > 0 && !v.startsWith("data:") && !v.startsWith("http://") && !v.startsWith("https://");
 }
-function listTemplates() {
-  return Object.keys(TEMPLATES).map((t) => ({ type: t, title: TEMPLATES[t].title }));
+async function uploadSignableImage(docId, kind, base64OrDataUri, mimeHint) {
+  const mimeMatch = /^data:([^;]+);base64,/.exec(base64OrDataUri);
+  const mime = mimeMatch?.[1] || (mimeHint && /^image\//i.test(mimeHint) ? mimeHint : "image/jpeg");
+  const cleanBase64 = String(base64OrDataUri).replace(/^data:[^;]+;base64,/, "").trim();
+  const buffer = Buffer.from(cleanBase64, "base64");
+  if (buffer.length === 0) throw new Error("Imagem vazia/ inv\xE1lida");
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const rand = Math.random().toString(36).slice(2, 8);
+  const storagePath = `${docId}/${Date.now()}_${kind}_${rand}.${ext}`;
+  const { error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).upload(storagePath, buffer, { contentType: mime, upsert: true });
+  if (error) throw error;
+  return storagePath;
 }
-var DOC_TYPE_LABELS = {
-  beneficio_flash: "Cart\xE3o Flash",
-  lgpd: "LGPD",
-  regulamento: "Regulamento Interno",
-  contrato_servico: "Contrato de Servi\xE7o",
-  outros: "Outros"
-};
+async function signSignableImage(path8) {
+  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).createSignedUrl(path8, SIGNED_URL_TTL_SEC2);
+  if (error) {
+    console.warn(`[storage] signSignableImage erro (${path8}):`, error.message);
+    return null;
+  }
+  return data?.signedUrl || null;
+}
+async function resolveSignableImage(v) {
+  if (!v || typeof v !== "string") return null;
+  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
+  return await signSignableImage(v);
+}
+async function downloadSignableImageDataUri(v) {
+  if (!v || typeof v !== "string") return null;
+  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
+  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).download(v);
+  if (error || !data) {
+    console.warn(`[storage] downloadSignableImage erro (${v}):`, error?.message);
+    return null;
+  }
+  const buf = Buffer.from(await data.arrayBuffer());
+  const ext = v.split(".").pop()?.toLowerCase();
+  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  return `data:${mime};base64,${buf.toString("base64")}`;
+}
+var SIGNABLE_DOC_BUCKET, SIGNED_URL_TTL_SEC2;
+var init_signable_doc_storage = __esm({
+  "server/lib/signable-doc-storage.ts"() {
+    "use strict";
+    init_supabase();
+    SIGNABLE_DOC_BUCKET = "signable-docs";
+    SIGNED_URL_TTL_SEC2 = 300;
+  }
+});
 
 // server/routes/signable-documents.ts
-init_signable_doc_storage();
-var TABLE = "employee_signable_documents";
-var CNPJ = "36.982.392/0001-89";
-var emitSchema = z7.object({
-  employeeId: z7.coerce.number().int().positive(),
-  documentType: z7.string().min(1).optional(),
-  title: z7.string().trim().min(1).max(200).optional()
-});
-var bulkSchema = z7.object({
-  employeeIds: z7.array(z7.coerce.number().int().positive()).min(1),
-  documentType: z7.string().min(1).optional(),
-  title: z7.string().trim().min(1).max(200).optional()
-});
-var geoSchema = z7.object({
-  lat: z7.number().optional(),
-  lng: z7.number().optional(),
-  accuracy: z7.number().optional()
-}).partial().optional();
-var signSchema = z7.object({
-  // formato novo WAF-safe (base64 cru + mime)
-  facialFotoBase64: z7.string().min(1).optional(),
-  facialFotoMime: z7.string().optional(),
-  assinaturaBase64: z7.string().min(1).optional(),
-  assinaturaMime: z7.string().optional(),
-  // legado: data URI completo
-  facialFoto: z7.string().optional(),
-  assinaturaDesenho: z7.string().optional(),
-  termoAceito: z7.literal(true, { errorMap: () => ({ message: "\xC9 necess\xE1rio aceitar o termo de ci\xEAncia" }) }),
-  termoTexto: z7.string().max(4e3).optional(),
-  geo: geoSchema
-}).refine((d) => !!(d.facialFotoBase64 || d.facialFoto), { message: "Foto facial obrigat\xF3ria", path: ["facialFotoBase64"] }).refine((d) => !!(d.assinaturaBase64 || d.assinaturaDesenho), { message: "Assinatura digital obrigat\xF3ria", path: ["assinaturaBase64"] });
-var dashboardQuerySchema = z7.object({
-  days: z7.coerce.number().int().min(1).max(365).default(30)
-});
+import { z as z7 } from "zod";
 function zodError(res, err) {
   return res.status(400).json({ message: err.errors[0]?.message || "Dados inv\xE1lidos", errors: err.errors });
 }
@@ -50376,15 +50449,53 @@ function registerSignableDocumentRoutes(app3) {
     }
   });
 }
-
-// server/routes.ts
-init_onboarding();
+var TABLE, CNPJ, emitSchema, bulkSchema, geoSchema, signSchema, dashboardQuerySchema;
+var init_signable_documents = __esm({
+  "server/routes/signable-documents.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_storage();
+    init_signable_doc_notify();
+    init_signable_doc_templates();
+    init_signable_doc_storage();
+    TABLE = "employee_signable_documents";
+    CNPJ = "36.982.392/0001-89";
+    emitSchema = z7.object({
+      employeeId: z7.coerce.number().int().positive(),
+      documentType: z7.string().min(1).optional(),
+      title: z7.string().trim().min(1).max(200).optional()
+    });
+    bulkSchema = z7.object({
+      employeeIds: z7.array(z7.coerce.number().int().positive()).min(1),
+      documentType: z7.string().min(1).optional(),
+      title: z7.string().trim().min(1).max(200).optional()
+    });
+    geoSchema = z7.object({
+      lat: z7.number().optional(),
+      lng: z7.number().optional(),
+      accuracy: z7.number().optional()
+    }).partial().optional();
+    signSchema = z7.object({
+      // formato novo WAF-safe (base64 cru + mime)
+      facialFotoBase64: z7.string().min(1).optional(),
+      facialFotoMime: z7.string().optional(),
+      assinaturaBase64: z7.string().min(1).optional(),
+      assinaturaMime: z7.string().optional(),
+      // legado: data URI completo
+      facialFoto: z7.string().optional(),
+      assinaturaDesenho: z7.string().optional(),
+      termoAceito: z7.literal(true, { errorMap: () => ({ message: "\xC9 necess\xE1rio aceitar o termo de ci\xEAncia" }) }),
+      termoTexto: z7.string().max(4e3).optional(),
+      geo: geoSchema
+    }).refine((d) => !!(d.facialFotoBase64 || d.facialFoto), { message: "Foto facial obrigat\xF3ria", path: ["facialFotoBase64"] }).refine((d) => !!(d.assinaturaBase64 || d.assinaturaDesenho), { message: "Assinatura digital obrigat\xF3ria", path: ["assinaturaBase64"] });
+    dashboardQuerySchema = z7.object({
+      days: z7.coerce.number().int().min(1).max(365).default(30)
+    });
+  }
+});
 
 // server/routes/fornecedores.ts
-init_supabase();
-init_auth();
-init_audit();
-init_contact_validation();
 function registerFornecedoresRoutes(app3) {
   console.log("[fornecedores] Rotas registradas");
   app3.get("/api/fornecedores", requireAuth, requireAdminRole, async (req, res) => {
@@ -50558,16 +50669,17 @@ function registerFornecedoresRoutes(app3) {
     }
   });
 }
-
-// server/routes/ssx.ts
-init_supabase();
-init_auth();
-import crypto7 from "crypto";
+var init_fornecedores = __esm({
+  "server/routes/fornecedores.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_audit();
+    init_contact_validation();
+  }
+});
 
 // server/ssx-client.ts
-var SSX_BASE = process.env.SSX_BASE_URL || "https://integration.systemsatx.com.br";
-var tokenCache = null;
-var inflightLogin = null;
 function ssxCredentials() {
   const Username = process.env.SSX_EMAIL || "";
   const Password = process.env.SSX_PASSWORD || "";
@@ -50603,16 +50715,16 @@ async function getToken2(forceRefresh = false) {
   });
   return inflightLogin;
 }
-async function ssxFetch(path10, init = {}) {
+async function ssxFetch(path8, init = {}) {
   const token = await getToken2();
   const headers = new Headers(init.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const resp = await fetch(`${SSX_BASE}${path10}`, { ...init, headers });
+  const resp = await fetch(`${SSX_BASE}${path8}`, { ...init, headers });
   if (resp.status === 401 && !init._retried) {
     tokenCache = null;
-    return ssxFetch(path10, { ...init, _retried: true });
+    return ssxFetch(path8, { ...init, _retried: true });
   }
   return resp;
 }
@@ -50656,27 +50768,18 @@ async function pingSsx() {
     return { ok: false, error: String(err?.message || err) };
   }
 }
+var SSX_BASE, tokenCache, inflightLogin;
+var init_ssx_client = __esm({
+  "server/ssx-client.ts"() {
+    "use strict";
+    SSX_BASE = process.env.SSX_BASE_URL || "https://integration.systemsatx.com.br";
+    tokenCache = null;
+    inflightLogin = null;
+  }
+});
 
 // server/routes/ssx.ts
-init_audit();
-var ALERT_TIPOS = /* @__PURE__ */ new Set([
-  "celular",
-  "fumando",
-  "fadiga",
-  "panico",
-  "blitz",
-  "distracao",
-  "telefone",
-  "sonolencia",
-  "colisao",
-  // Telemetria de condução (ADAS): a SSX também emite eventos de comportamento.
-  "freada_brusca",
-  "frenagem_brusca",
-  "aceleracao_brusca",
-  "curva_brusca",
-  "curva_acentuada",
-  "excesso_velocidade"
-]);
+import crypto7 from "crypto";
 function registerSsxRoutes(app3) {
   app3.get("/api/ssx/ping", requireAuth, requireAdminRole, async (_req, res) => {
     const r = await pingSsx();
@@ -50912,14 +51015,37 @@ function registerSsxRoutes(app3) {
     }
   });
 }
+var ALERT_TIPOS;
+var init_ssx = __esm({
+  "server/routes/ssx.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    init_ssx_client();
+    init_audit();
+    ALERT_TIPOS = /* @__PURE__ */ new Set([
+      "celular",
+      "fumando",
+      "fadiga",
+      "panico",
+      "blitz",
+      "distracao",
+      "telefone",
+      "sonolencia",
+      "colisao",
+      // Telemetria de condução (ADAS): a SSX também emite eventos de comportamento.
+      "freada_brusca",
+      "frenagem_brusca",
+      "aceleracao_brusca",
+      "curva_brusca",
+      "curva_acentuada",
+      "excesso_velocidade"
+    ]);
+  }
+});
 
 // server/routes/conferencia-tmseg.ts
-init_supabase();
-init_auth();
 import ExcelJS2 from "exceljs";
-var TOL_MONEY = 0.01;
-var TOL_KM = 1;
-var MATCH_TOL_KM = 5;
 function normPlate2(v) {
   return String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -50967,7 +51093,6 @@ function parseDateBR(v) {
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   return null;
 }
-var UF_RE = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO";
 function extractCity2(addr) {
   if (!addr) return "";
   const s = addr.toUpperCase().replace(/\s+/g, " ").trim();
@@ -50998,21 +51123,6 @@ function routeMatches(a, b) {
   }
   return false;
 }
-var HEADER_ALIASES = {
-  numero: ["n\xBA", "n\xB0", "no", "num"],
-  rota: ["rota"],
-  valor: ["valor"],
-  hrFranq: ["hr franq"],
-  kmFranq: ["km franq"],
-  dataInicio: ["data in\xEDcio", "data inicio"],
-  viatura: ["viatura"],
-  escoltado: ["ve\xEDc. escoltado", "veic. escoltado", "ve\xEDc escoltado"],
-  kmInicial: ["km inicial", "inicial"],
-  kmFinal: ["km final", "final"],
-  kmTotal: ["km total"],
-  pedagio: ["ped\xE1gio", "pedagio"],
-  total: ["total"]
-};
 function findHeaderRow(ws) {
   for (let r = 1; r <= Math.min(ws.rowCount, 20); r++) {
     const row = ws.getRow(r);
@@ -51307,8 +51417,159 @@ function registerConferenciaTmsegRoutes(app3) {
     }
   });
 }
+var TOL_MONEY, TOL_KM, MATCH_TOL_KM, UF_RE, HEADER_ALIASES;
+var init_conferencia_tmseg = __esm({
+  "server/routes/conferencia-tmseg.ts"() {
+    "use strict";
+    init_supabase();
+    init_auth();
+    TOL_MONEY = 0.01;
+    TOL_KM = 1;
+    MATCH_TOL_KM = 5;
+    UF_RE = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO";
+    HEADER_ALIASES = {
+      numero: ["n\xBA", "n\xB0", "no", "num"],
+      rota: ["rota"],
+      valor: ["valor"],
+      hrFranq: ["hr franq"],
+      kmFranq: ["km franq"],
+      dataInicio: ["data in\xEDcio", "data inicio"],
+      viatura: ["viatura"],
+      escoltado: ["ve\xEDc. escoltado", "veic. escoltado", "ve\xEDc escoltado"],
+      kmInicial: ["km inicial", "inicial"],
+      kmFinal: ["km final", "final"],
+      kmTotal: ["km total"],
+      pedagio: ["ped\xE1gio", "pedagio"],
+      total: ["total"]
+    };
+  }
+});
+
+// server/lib/db-maintenance.ts
+var db_maintenance_exports = {};
+__export(db_maintenance_exports, {
+  VacuumBusyError: () => VacuumBusyError,
+  getVacuumState: () => getVacuumState,
+  startVacuum: () => startVacuum
+});
+import pg4 from "pg";
+function getVacuumState() {
+  return state;
+}
+async function tableSizeBytes(client, table) {
+  const r = await client.query("SELECT pg_total_relation_size($1) AS b", [table]);
+  return Number(r.rows[0]?.b || 0);
+}
+async function startVacuum(table) {
+  if (state.status === "running") throw new VacuumBusyError();
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`Tabela n\xE3o permitida para compacta\xE7\xE3o: ${table}`);
+  }
+  const dbUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("Sem SUPABASE_DATABASE_URL configurada");
+  const startedAt = Date.now();
+  state = {
+    status: "running",
+    table,
+    startedAt,
+    finishedAt: null,
+    beforeBytes: null,
+    afterBytes: null,
+    durationMs: null,
+    error: null
+  };
+  let client;
+  let before;
+  try {
+    client = new pg4.Client({
+      connectionString: dbUrl,
+      connectionTimeoutMillis: 15e3,
+      statement_timeout: 0,
+      // VACUUM FULL pode levar minutos — sem teto.
+      query_timeout: 0
+    });
+    await client.connect();
+    before = await tableSizeBytes(client, table);
+    state = { ...state, beforeBytes: before };
+  } catch (e) {
+    try {
+      await client?.end();
+    } catch {
+    }
+    state = {
+      ...state,
+      status: "error",
+      finishedAt: Date.now(),
+      durationMs: Date.now() - startedAt,
+      error: e?.message || String(e)
+    };
+    throw e;
+  }
+  (async () => {
+    try {
+      await client.query(`VACUUM (FULL, ANALYZE) "${table}"`);
+      const after = await tableSizeBytes(client, table);
+      state = {
+        ...state,
+        status: "done",
+        finishedAt: Date.now(),
+        afterBytes: after,
+        durationMs: Date.now() - startedAt
+      };
+      console.log(
+        `[db-vacuum] ${table} OK: ${(before / 1048576).toFixed(0)}MB -> ${(after / 1048576).toFixed(0)}MB em ${(state.durationMs / 1e3).toFixed(0)}s`
+      );
+    } catch (e) {
+      state = {
+        ...state,
+        status: "error",
+        finishedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        error: e?.message || String(e)
+      };
+      console.error(`[db-vacuum] ${table} FALHOU:`, e?.message);
+    } finally {
+      await client.end().catch(() => {
+      });
+    }
+  })();
+  return state;
+}
+var state, ALLOWED_TABLES, VacuumBusyError;
+var init_db_maintenance = __esm({
+  "server/lib/db-maintenance.ts"() {
+    "use strict";
+    state = {
+      status: "idle",
+      table: null,
+      startedAt: null,
+      finishedAt: null,
+      beforeBytes: null,
+      afterBytes: null,
+      durationMs: null,
+      error: null
+    };
+    ALLOWED_TABLES = /* @__PURE__ */ new Set([
+      "mission_updates",
+      "mission_photos",
+      "employee_documents",
+      "mission_costs",
+      "vehicle_fueling",
+      "audit_logs",
+      "control_id_punches",
+      "login_selfies"
+    ]);
+    VacuumBusyError = class extends Error {
+      code = "VACUUM_BUSY";
+      constructor() {
+        super("J\xE1 existe uma compacta\xE7\xE3o em andamento.");
+      }
+    };
+  }
+});
 
 // server/routes.ts
+import OpenAI8 from "openai";
 async function ensureInterTables() {
   const migrations = [
     // Adiciona colunas Inter na tabela invoices
@@ -51623,14 +51884,6 @@ async function ensureFinancialOriginColumns() {
     console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
   }
 }
-ensureFinancialOriginColumns();
-ensureInterTables();
-ensureComprovantesBucket();
-Promise.resolve().then(() => (init_mission_photos(), mission_photos_exports)).then((m) => m.ensureMissionFotosBucket()).catch(() => {
-});
-Promise.resolve().then(() => (init_signable_doc_storage(), signable_doc_storage_exports)).then((m) => m.ensureSignableDocsBucket()).catch(() => {
-});
-ensureCategoryHierarchy();
 async function ensureCategoryHierarchy() {
   try {
     const migrations = [
@@ -51866,35 +52119,6 @@ async function syncFuelingMissionCosts() {
     console.error("[Sync] Error syncing fueling mission costs:", err.message);
   }
 }
-setTimeout(() => {
-  if (!isSupabaseHealthy()) {
-    console.log("[Sync] Skipping auto-tx sync \u2014 Supabase offline at startup");
-    return;
-  }
-  syncMissingAutoTransactions().catch((e) => console.error("[Sync] auto-tx error:", e.message));
-  setTimeout(() => syncFuelingMissionCosts().catch((e) => console.error("[Sync] fueling-cost error:", e.message)), 15e3);
-}, 3e4);
-var DEFAULT_REPORT_TEMPLATE = `*TORRES VIGIL\xC2NCIA PATRIMONIAL*
-*OS {{osNumber}}* | *STATUS:* {{transitStatus}}
-
-\u{1F5D3} *DATA:* {{date}}    *HORA:* {{time}}
-\u{1F6E1} *OPERA\xC7\xC3O:* {{statusLabel}}
-\u{1F3E2} *CLIENTE:* {{clientName}}
-
-\u{1F4CD} *ORIGEM:* {{origin}}{{waypointsBlock}}
-\u{1F3C1} *DESTINO:* {{destination}}
-
-\u{1F69B} *VE\xCDCULO:* {{driverPlate}}
-\u{1F464} *MOTORISTA:* {{driverName}}
-\u{1F4DE} *CONTATO:* {{driverPhone}}
-
-\u{1F694} *VIATURA:* {{vehiclePlate}}
-\u{1F46E} *AGENTE 01:* {{agent1}}
-\u{1F46E} *AGENTE 02:* {{agent2}}
-
-\u{1F4C8} *PROGRESSO DA MISS\xC3O:* {{progress}}%
-\u{1F532} *ATUALIZA\xC7\xC3O:* {{etapaAvancada}}
-\u{1F3D9}\uFE0F *LOCALIZA\xC7\xC3O:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 async function ensureSystemSettingsTable() {
   try {
     try {
@@ -53162,26 +53386,103 @@ Regras:
   });
   return httpServer2;
 }
+var DEFAULT_REPORT_TEMPLATE;
+var init_routes = __esm({
+  "server/routes.ts"() {
+    "use strict";
+    init_storage();
+    init_auth();
+    init_supabase();
+    init_server();
+    init_schema();
+    init_photo_data_uri();
+    init_pg_fallback();
+    init_helpers();
+    init_clients();
+    init_whatsapp();
+    init_employees();
+    init_vehicles();
+    init_notifications2();
+    init_service_orders();
+    init_fleet();
+    init_consultas();
+    init_operational();
+    init_mission();
+    init_hr();
+    init_escort();
+    init_mobile();
+    init_chat();
+    init_boletim_approval();
+    init_gestor_medicao2();
+    init_os_financeiro2();
+    init_gestor_dados2();
+    init_leads();
+    init_conciliacao();
+    init_fixed_costs();
+    init_holidays();
+    init_daily_allowances();
+    init_inter();
+    init_control_id2();
+    init_relatorio_horas();
+    init_diarias_jornada_longa2();
+    init_branded_contracts();
+    init_probation_contracts();
+    init_permanent_contracts();
+    init_pendencias();
+    init_signable_documents();
+    init_onboarding();
+    init_fornecedores();
+    init_ssx();
+    init_conferencia_tmseg();
+    ensureFinancialOriginColumns();
+    ensureInterTables();
+    ensureComprovantesBucket();
+    Promise.resolve().then(() => (init_mission_photos(), mission_photos_exports)).then((m) => m.ensureMissionFotosBucket()).catch(() => {
+    });
+    Promise.resolve().then(() => (init_signable_doc_storage(), signable_doc_storage_exports)).then((m) => m.ensureSignableDocsBucket()).catch(() => {
+    });
+    ensureCategoryHierarchy();
+    setTimeout(() => {
+      if (!isSupabaseHealthy()) {
+        console.log("[Sync] Skipping auto-tx sync \u2014 Supabase offline at startup");
+        return;
+      }
+      syncMissingAutoTransactions().catch((e) => console.error("[Sync] auto-tx error:", e.message));
+      setTimeout(() => syncFuelingMissionCosts().catch((e) => console.error("[Sync] fueling-cost error:", e.message)), 15e3);
+    }, 3e4);
+    DEFAULT_REPORT_TEMPLATE = `*TORRES VIGIL\xC2NCIA PATRIMONIAL*
+*OS {{osNumber}}* | *STATUS:* {{transitStatus}}
 
-// server/create-app.ts
-init_auth();
-init_db_init();
-init_asaas();
-init_constants();
+\u{1F5D3} *DATA:* {{date}}    *HORA:* {{time}}
+\u{1F6E1} *OPERA\xC7\xC3O:* {{statusLabel}}
+\u{1F3E2} *CLIENTE:* {{clientName}}
+
+\u{1F4CD} *ORIGEM:* {{origin}}{{waypointsBlock}}
+\u{1F3C1} *DESTINO:* {{destination}}
+
+\u{1F69B} *VE\xCDCULO:* {{driverPlate}}
+\u{1F464} *MOTORISTA:* {{driverName}}
+\u{1F4DE} *CONTATO:* {{driverPhone}}
+
+\u{1F694} *VIATURA:* {{vehiclePlate}}
+\u{1F46E} *AGENTE 01:* {{agent1}}
+\u{1F46E} *AGENTE 02:* {{agent2}}
+
+\u{1F4C8} *PROGRESSO DA MISS\xC3O:* {{progress}}%
+\u{1F532} *ATUALIZA\xC7\xC3O:* {{etapaAvancada}}
+\u{1F3D9}\uFE0F *LOCALIZA\xC7\xC3O:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+  }
+});
 
 // server/slow-routes.ts
-init_logger();
-var SLOW_THRESHOLD_MS2 = 500;
-var MAX_SLOW_ENTRIES2 = 50;
-var slowRoutes2 = [];
 function installRequestLogger(app3) {
   app3.use((req, res, next) => {
     const start = Date.now();
-    const path10 = req.path;
+    const path8 = req.path;
     let responseSummary = void 0;
     const originalResJson = res.json;
     res.json = function(bodyJson, ...args) {
-      if (path10.startsWith("/api")) {
+      if (path8.startsWith("/api")) {
         try {
           if (Array.isArray(bodyJson)) {
             responseSummary = `[Array(${bodyJson.length})]`;
@@ -53199,14 +53500,14 @@ function installRequestLogger(app3) {
     };
     res.on("finish", () => {
       const duration = Date.now() - start;
-      if (path10.startsWith("/api")) {
-        const logLine = responseSummary ? `${req.method} ${path10} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path10} ${res.statusCode} in ${duration}ms`;
+      if (path8.startsWith("/api")) {
+        const logLine = responseSummary ? `${req.method} ${path8} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path8} ${res.statusCode} in ${duration}ms`;
         log(logLine);
         if (duration > SLOW_THRESHOLD_MS2) {
-          console.warn(`[SLOW] ${req.method} ${path10} ${res.statusCode} took ${duration}ms`);
+          console.warn(`[SLOW] ${req.method} ${path8} ${res.statusCode} took ${duration}ms`);
           slowRoutes2.push({
             method: req.method,
-            path: path10,
+            path: path8,
             status: res.statusCode,
             duration,
             ts: (/* @__PURE__ */ new Date()).toISOString()
@@ -53219,16 +53520,37 @@ function installRequestLogger(app3) {
     next();
   });
 }
+var SLOW_THRESHOLD_MS2, MAX_SLOW_ENTRIES2, slowRoutes2;
+var init_slow_routes = __esm({
+  "server/slow-routes.ts"() {
+    "use strict";
+    init_logger();
+    SLOW_THRESHOLD_MS2 = 500;
+    MAX_SLOW_ENTRIES2 = 50;
+    slowRoutes2 = [];
+  }
+});
 
 // server/platform.ts
 function isVercel() {
   return process.env.VERCEL === "1";
 }
+var init_platform = __esm({
+  "server/platform.ts"() {
+    "use strict";
+  }
+});
 
 // server/create-app.ts
-init_supabase();
-process.env.TZ = "America/Sao_Paulo";
-var appReady = null;
+var create_app_exports = {};
+__export(create_app_exports, {
+  createApp: () => createApp,
+  getOrCreateApp: () => getOrCreateApp
+});
+import "dotenv/config";
+import express3 from "express";
+import compression2 from "compression";
+import { createServer as createServer2 } from "http";
 function siteBaseUrl2(req) {
   if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, "");
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`.replace(/\/$/, "");
@@ -53364,7 +53686,7 @@ async function createApp(options = {}) {
   });
   const useVite = options.enableVite === true && process.env.NODE_ENV !== "production";
   if (useVite) {
-    const { setupVite: setupVite2 } = await Promise.resolve().then(() => (init_vite(), vite_exports));
+    const { setupVite: setupVite2 } = await Promise.resolve().then(() => (init_vite_dev_stub(), vite_dev_stub_exports));
     await setupVite2(httpServer2, app3);
   } else if (!isVercel()) {
     serveStatic(app3);
@@ -53385,6 +53707,26 @@ function getOrCreateApp(options = {}) {
   if (!appReady) appReady = createApp(options);
   return appReady.then(({ app: app3 }) => app3);
 }
+var appReady;
+var init_create_app = __esm({
+  "server/create-app.ts"() {
+    "use strict";
+    init_routes();
+    init_static();
+    init_auth();
+    init_db_init();
+    init_asaas();
+    init_driver_control();
+    init_cobranca_judicial();
+    init_push();
+    init_constants();
+    init_slow_routes();
+    init_platform();
+    init_supabase();
+    process.env.TZ = "America/Sao_Paulo";
+    appReady = null;
+  }
+});
 
 // api/_index.ts
 var app2 = null;
@@ -53399,7 +53741,8 @@ async function vercelHandler(req, res) {
       return res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
     }
     if (!app2) {
-      app2 = await getOrCreateApp();
+      const { getOrCreateApp: getOrCreateApp2 } = await Promise.resolve().then(() => (init_create_app(), create_app_exports));
+      app2 = await getOrCreateApp2();
     }
     app2(req, res);
   } catch (e) {
