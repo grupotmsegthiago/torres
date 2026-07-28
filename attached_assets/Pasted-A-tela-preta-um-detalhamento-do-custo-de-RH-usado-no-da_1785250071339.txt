@@ -1,0 +1,1197 @@
+A tela preta é um detalhamento do custo de RH usado no dashboard. Hoje ela aparentemente monta o valor de R$ 88.404,39 somando salário, periculosidade, horas extras, adicional noturno, benefícios e diárias. Porém, há um risco importante: ela pode estar recalculando a folha separadamente, em vez de utilizar os valores efetivamente apurados na Folha de Ponto e nos pagamentos do próprio sistema.
+
+Além disso, a planilha apresentada possui valores e regras diferentes das exibidas na tela, como salários-base, valores de hora extra, descontos e totais. Por isso, o Replit não deve simplesmente ajustar o visual: ele precisa rastrear a origem de cada valor, identificar duplicidades e validar todo o fluxo.
+
+Abaixo está o prompt completo para enviar ao Replit.
+
+PROMPT COMPLETO — AUDITORIA E CORREÇÃO DO DASHBOARD FINANCEIRO E DA FOLHA DE RH
+
+Atue como um Desenvolvedor Full Stack Sênior, Arquiteto de Sistemas, Especialista Financeiro e Auditor de Folha de Pagamento.
+
+Preciso que você faça uma análise integral do meu sistema antes de alterar qualquer código.
+
+O objetivo é corrigir e validar o dashboard financeiro, principalmente:
+
+custo total de RH;
+integração com a folha de ponto;
+integração com pagamentos;
+período de abertura e fechamento da folha;
+classificação dos custos;
+percentuais em relação ao faturamento;
+lucro líquido;
+margem líquida;
+previsões;
+detalhamento individual dos colaboradores;
+consistência entre dashboard, folha, financeiro e banco de dados.
+REGRA PRINCIPAL
+
+Não crie uma nova folha de pagamento dentro do dashboard.
+
+O dashboard deve consumir os valores já calculados e consolidados pelo próprio sistema, especialmente:
+
+Folha de ponto;
+Saldo atual de cada colaborador;
+Pagamentos lançados;
+Benefícios;
+Diárias;
+Horas extras;
+Adicional noturno;
+Periculosidade;
+Descontos;
+Encargos;
+Adiantamentos;
+Pagamentos já realizados;
+Valores pendentes.
+
+A Folha de Ponto e o módulo financeiro devem ser a fonte única da verdade.
+
+Caso existam cálculos duplicados no dashboard, eles devem ser removidos ou substituídos por consultas aos valores oficiais.
+
+1. ANÁLISE OBRIGATÓRIA ANTES DE PROGRAMAR
+
+Antes de implementar qualquer alteração, faça um mapeamento completo.
+
+Apresente:
+
+1.1 Arquivos envolvidos
+
+Liste todos os arquivos relacionados a:
+
+dashboard gerencial;
+custos totais;
+custos de RH;
+folha de ponto;
+colaboradores;
+pagamentos;
+contas a pagar;
+benefícios;
+diárias;
+horas extras;
+adicional noturno;
+faturamento;
+custos operacionais;
+custos de estrutura;
+lucro líquido;
+margem líquida;
+previsões financeiras;
+filtros de período;
+permissões de usuário;
+APIs;
+services;
+hooks;
+queries;
+views;
+RPCs;
+triggers;
+tabelas do banco.
+1.2 Banco de dados
+
+Identifique todas as tabelas e colunas utilizadas para formar os valores.
+
+Exemplo de informações que devem ser localizadas:
+
+ID do colaborador;
+salário-base;
+tipo de contrato;
+valor da hora;
+carga horária mensal;
+periculosidade;
+horas extras diurnas;
+horas extras noturnas;
+adicional noturno;
+vale-refeição;
+cesta básica;
+diária de missão;
+adiantamentos;
+descontos;
+faltas;
+INSS;
+FGTS;
+IRRF;
+vale-transporte;
+seguro de vida;
+data de competência;
+data do pagamento;
+status do pagamento;
+valor bruto;
+valor líquido;
+saldo atual;
+valor pago;
+valor pendente.
+
+Informe de qual tabela vem cada valor apresentado na tela preta.
+
+1.3 Fluxo atual
+
+Descreva o fluxo completo:
+
+Folha de ponto
+→ cálculo das horas
+→ cálculo da folha
+→ saldo do colaborador
+→ contas a pagar
+→ pagamento
+→ dashboard financeiro
+
+Informe em qual etapa o dashboard está buscando os valores atualmente.
+
+Não faça alterações até identificar se o dashboard:
+
+está recalculando a folha;
+está utilizando valores salvos;
+está somando lançamentos;
+está duplicando pagamentos;
+está misturando competência e data de pagamento;
+está considerando colaboradores inativos;
+está contabilizando valores previstos como realizados.
+2. FONTE ÚNICA DA VERDADE DO RH
+
+O custo de RH exibido no dashboard deve vir dos valores oficiais apurados pelo sistema.
+
+Para cada colaborador, devem existir pelo menos os seguintes valores:
+
+Salário-base do período
+Periculosidade
+Horas extras diurnas
+Horas extras noturnas
+Adicional noturno
+Vale-refeição
+Cesta básica
+Diárias
+Outros benefícios
+Outros adicionais
+Descontos
+Adiantamentos
+Encargos patronais
+Valor bruto
+Valor líquido
+Valor pago
+Valor pendente
+Saldo atual
+Regra de integração
+
+O dashboard deve utilizar o valor consolidado da folha correspondente ao período selecionado.
+
+Prioridade da fonte:
+
+1. Folha fechada/consolidada;
+2. Saldo atual da folha;
+3. Contas a pagar vinculadas à folha;
+4. Pagamentos realizados vinculados à folha.
+
+Nunca utilizar cálculos independentes no front-end para substituir o valor oficial.
+
+O front-end pode exibir os detalhes, mas a apuração deve acontecer no back-end, banco de dados, view ou RPC.
+
+3. PERÍODO CORRETO DA FOLHA
+
+A folha deve funcionar sempre no período:
+
+Dia 26 do mês anterior
+até
+Dia 25 do mês atual
+
+Exemplos:
+
+Folha de julho de 2026:
+26/06/2026 até 25/07/2026
+
+Folha de agosto de 2026:
+26/07/2026 até 25/08/2026
+
+Folha de janeiro de 2027:
+26/12/2026 até 25/01/2027
+Regra técnica
+
+Ao selecionar uma competência, o sistema deve calcular automaticamente:
+
+periodStart = dia 26 do mês anterior;
+periodEnd = dia 25 do mês da competência;
+
+O filtro deve incluir todo o período:
+
+Data inicial: 00:00:00
+Data final: 23:59:59.999
+
+Preferencialmente, utilizar intervalo semiaberto:
+
+data_evento >= period_start
+AND data_evento < period_end + INTERVAL '1 day'
+
+Isso evita perder registros do dia 25 por causa do horário.
+
+Atenção ao fuso horário
+
+Validar o fuso horário usado pelo banco e pela aplicação.
+
+Utilizar o padrão da operação:
+
+America/Sao_Paulo
+
+Não permitir que registros do dia 25 ou 26 mudem de competência por conversão incorreta de UTC.
+
+4. STATUS DA FOLHA
+
+A folha deve possuir status claros:
+
+ABERTA
+EM_APURACAO
+CONFERIDA
+FECHADA
+PAGA_PARCIALMENTE
+PAGA
+CANCELADA
+Regras
+Folha aberta pode receber alterações.
+Folha fechada não deve mudar automaticamente.
+Alterações depois do fechamento devem gerar ajuste ou reabertura controlada.
+Folha paga deve estar vinculada aos pagamentos realizados.
+Pagamentos parciais devem atualizar o saldo pendente.
+Não duplicar custo ao fechar e depois pagar.
+5. DIFERENÇA ENTRE COMPETÊNCIA E CAIXA
+
+O sistema precisa distinguir dois conceitos.
+
+5.1 Regime de competência
+
+O custo pertence ao período trabalhado, independentemente da data do pagamento.
+
+Exemplo:
+
+Período trabalhado: 26/06 a 25/07
+Pagamento: 05/08
+Competência: julho
+5.2 Regime de caixa
+
+O custo aparece quando o dinheiro foi efetivamente pago.
+
+O dashboard deve deixar claro qual visão está sendo utilizada.
+
+Criar ou validar um seletor:
+
+Visão por competência
+Visão por caixa
+
+Se a tela atual for gerencial e medir a rentabilidade do período operacional, usar por padrão:
+
+Visão por competência
+
+Mas não misturar competência com caixa no mesmo total.
+
+6. CUSTO DE RH
+
+O card de RH deve mostrar o custo oficial do período.
+
+Separar visualmente:
+
+6.1 Vencimentos
+Salário-base proporcional
+Periculosidade
+Horas extras diurnas
+Horas extras noturnas
+Adicional noturno
+Outros adicionais
+6.2 Benefícios e diárias
+Vale-refeição
+Vale-alimentação
+Cesta básica
+Vale-transporte
+Diárias
+Ajuda de custo
+Outros benefícios
+6.3 Encargos patronais
+FGTS
+INSS patronal
+Seguro de vida
+Provisões
+Outros encargos patronais
+6.4 Descontos do funcionário
+INSS descontado
+IRRF
+Vale-transporte descontado
+Faltas
+Adiantamentos
+Outros descontos
+Regra conceitual importante
+
+Descontos do funcionário não devem ser somados como custo adicional da empresa.
+
+Exemplo:
+
+Salário bruto: R$ 3.000,00
+INSS descontado do colaborador: R$ 270,00
+Salário líquido: R$ 2.730,00
+
+O custo salarial não é:
+
+R$ 3.000,00 + R$ 270,00
+
+O INSS descontado já faz parte do salário bruto e apenas é retido para recolhimento.
+
+O que pode ser custo adicional é a parcela patronal, quando aplicável.
+
+Verifique se a tela atual está duplicando descontos e recolhimentos.
+
+7. REGRAS DE CÁLCULO DA FOLHA
+
+Não presuma valores fixos sem verificar a configuração do sistema.
+
+A tabela de referência fornecida possui exemplos como:
+
+Hora extra diurna: R$ 16,00
+Hora extra noturna: R$ 16,50
+Carga mensal: 220 horas
+INSS: 9%
+Vale-transporte: 6%
+
+Porém, esses valores não devem ser aplicados globalmente sem validar:
+
+contrato do colaborador;
+salário individual;
+jornada;
+convenção;
+configuração vigente;
+percentual de hora extra;
+adicional noturno;
+periculosidade;
+competência;
+vigência da regra.
+Regra recomendada para hora normal
+Valor da hora normal = salário-base ÷ carga horária mensal
+Hora extra
+
+A fórmula deve ser configurável.
+
+Exemplo genérico:
+
+Hora extra 50% = valor da hora normal × 1,50
+Hora extra 100% = valor da hora normal × 2,00
+
+Não usar automaticamente R$ 15,00, R$ 16,00 ou R$ 16,50 para todos sem comprovar que esta é a regra oficial cadastrada.
+
+Periculosidade
+
+Quando aplicável:
+
+Periculosidade = base configurada × 30%
+
+Validar:
+
+quem tem direito;
+base utilizada;
+proporcionalidade;
+data de início;
+afastamentos;
+faltas;
+encerramento do contrato.
+Adicional noturno
+
+O sistema deve identificar:
+
+faixa noturna;
+quantidade de horas;
+percentual;
+hora noturna reduzida, quando configurada;
+reflexos sobre hora extra;
+regra individual ou coletiva.
+
+Não calcular apenas multiplicando todas as horas noturnas por um valor fixo sem validar a regra cadastrada.
+
+8. SALDO ATUAL DO COLABORADOR
+
+O valor exibido no dashboard deve estar vinculado ao saldo real de cada colaborador.
+
+A lógica deve considerar:
+
+Valor devido no período
++ ajustes positivos
+- descontos
+- adiantamentos
+- pagamentos realizados
+= saldo atual pendente
+
+Fórmula:
+
+Saldo atual =
+valor líquido da folha
++ benefícios pagos separadamente
++ diárias pendentes
++ ajustes positivos
+- adiantamentos
+- pagamentos já realizados
+- ajustes negativos
+
+A fórmula exata deve respeitar o modelo atual do banco.
+
+Obrigatório
+
+Cada pagamento deve possuir vínculo com:
+
+colaborador;
+competência da folha;
+folha específica;
+tipo do pagamento;
+valor;
+data;
+status;
+ID da transação;
+conta financeira;
+usuário responsável.
+
+Não somar pagamento sem vínculo com a folha correspondente.
+
+9. TRATAMENTO DE COLABORADORES
+
+Validar:
+
+colaboradores ativos;
+inativos;
+desligados;
+admitidos durante o período;
+afastados;
+férias;
+faltas;
+suspensão;
+colaboradores sem ponto;
+colaboradores com folha zerada;
+colaboradores com valor manual;
+prestadores;
+autônomos;
+funcionários CLT.
+Proporcionalidade
+
+O salário proporcional não deve usar automaticamente “30 dias” sem validar a regra.
+
+A tela preta menciona:
+
+rateado por período mensal = 30 dias
+
+Verifique se isso está correto para todos os vínculos.
+
+Caso seja a regra oficial, documente.
+
+Caso não seja, criar regra por tipo de vínculo.
+
+10. CARD “CUSTOS TOTAIS”
+
+O card de Custos Totais precisa mostrar:
+
+Custos operacionais
+Custos de RH
+Custos de estrutura
+Total geral
+Fórmulas
+Custos totais =
+custos operacionais
++ custos de RH
++ custos de estrutura
+Percentual de cada categoria sobre o faturamento
+% Operacional =
+custos operacionais ÷ faturamento total × 100
+% RH =
+custos de RH ÷ faturamento total × 100
+% Estrutura =
+custos de estrutura ÷ faturamento total × 100
+% Custos Totais =
+custos totais ÷ faturamento total × 100
+Exibição desejada
+
+Exemplo:
+
+CUSTOS TOTAIS
+R$ 136.524,93
+67,3% do faturamento
+
+Operacionais
+R$ 27.108,79
+13,4% do faturamento
+
+RH
+R$ 88.404,39
+43,6% do faturamento
+
+Estrutura
+R$ 21.011,75
+10,4% do faturamento
+
+Os valores acima são apenas exemplos. Usar os dados reais do sistema.
+
+No final do detalhamento, mostrar:
+
+Soma dos custos operacionais: R$ X
+Soma dos custos de RH: R$ Y
+Soma dos custos de estrutura: R$ Z
+CUSTO TOTAL: R$ X + Y + Z
+11. FATURAMENTO TOTAL
+
+Identificar exatamente como o faturamento é formado.
+
+Validar:
+
+apenas OS concluídas;
+OS faturadas;
+notas fiscais emitidas;
+valores previstos;
+valores cancelados;
+descontos;
+abatimentos;
+impostos;
+competência da OS;
+data de conclusão;
+data de faturamento;
+data de emissão da nota;
+data de recebimento.
+
+O denominador usado nos percentuais deve ser o mesmo faturamento exibido na tela.
+
+Não pode ocorrer:
+
+Card de faturamento usando um filtro
+e
+percentuais de custos usando outro filtro.
+12. LUCRO LÍQUIDO
+
+Validar a fórmula usada atualmente.
+
+A fórmula gerencial deve ser:
+
+Lucro líquido gerencial =
+faturamento líquido
+- custos operacionais
+- custos de RH
+- custos de estrutura
+- impostos
+- demais despesas do período
+
+Caso os impostos já estejam incluídos em alguma categoria, não subtrair novamente.
+
+Criar uma decomposição auditável:
+
+Faturamento bruto
+(-) cancelamentos
+(-) descontos
+(-) impostos sobre faturamento
+(=) faturamento líquido
+
+(-) custos operacionais
+(-) custos de RH
+(-) custos de estrutura
+(-) despesas financeiras
+(=) lucro líquido
+13. MARGEM LÍQUIDA
+
+A fórmula correta deve ser:
+
+Margem líquida =
+lucro líquido ÷ faturamento líquido × 100
+
+Validar se a tela está utilizando faturamento bruto ou líquido.
+
+O denominador deve ser claramente identificado.
+
+Evitar divisão por zero:
+
+const margin =
+  revenue > 0
+    ? (netProfit / revenue) * 100
+    : 0;
+14. CUSTOS OPERACIONAIS
+
+Mapear quais despesas entram em custos operacionais.
+
+Exemplos:
+
+Fornecedor da missão
+Pedágio
+Combustível operacional
+Diárias operacionais
+Hospedagem operacional
+Estacionamento
+Manutenção vinculada à operação
+Terceirização
+Despesas vinculadas à OS
+
+Evitar duplicidade quando uma despesa estiver:
+
+lançada diretamente na OS;
+lançada em contas a pagar;
+importada do cartão;
+vinculada ao fornecedor;
+incluída no custo final da operação.
+
+Cada custo deve possuir uma origem identificável.
+
+15. CUSTOS DE ESTRUTURA
+
+Mapear quais despesas entram em estrutura.
+
+Exemplos:
+
+Aluguel
+Internet
+Energia
+Telefonia
+Sistemas
+Contabilidade
+Material de escritório
+Seguros administrativos
+Serviços jurídicos
+Despesas bancárias
+Manutenção administrativa
+Assinaturas
+
+Não incluir despesas de RH ou custos diretamente vinculados às missões dentro de estrutura.
+
+16. TELA PRETA DE DETALHAMENTO DO RH
+
+A tela preta deve deixar de ser apenas um texto montado manualmente e passar a ser um detalhamento auditável.
+
+Organizar em blocos.
+
+Cabeçalho
+RH — FOLHA REAL
+Competência: julho/2026
+Período: 26/06/2026 a 25/07/2026
+Status: FECHADA
+Visão: COMPETÊNCIA
+Última atualização: data e hora
+Resumo
+Total de vencimentos
+Total de benefícios
+Total de diárias
+Total de encargos patronais
+Total de descontos
+Total líquido da folha
+Total pago
+Total pendente
+Custo empresarial total de RH
+Lista por colaborador
+
+Para cada colaborador:
+
+Nome
+Salário-base
+Salário proporcional
+Periculosidade
+Horas extras diurnas
+Horas extras noturnas
+Adicional noturno
+Benefícios
+Diárias
+Descontos
+Encargos patronais
+Valor bruto
+Valor líquido
+Valor pago
+Saldo pendente
+Status
+Ação ao clicar
+
+Ao clicar no colaborador, abrir o detalhamento:
+
+Espelho de ponto
+Eventos da folha
+Pagamentos
+Adiantamentos
+Ajustes
+Memória de cálculo
+Histórico de alterações
+17. CORREÇÃO DE POSSÍVEIS DUPLICIDADES
+
+Pesquisar obrigatoriamente os seguintes cenários:
+
+Cenário 1
+
+Salário é lançado na folha e também em contas a pagar.
+
+Resultado incorreto:
+
+Folha + conta a pagar = custo duplicado
+Cenário 2
+
+Benefício está dentro da folha e também em uma despesa separada.
+
+Cenário 3
+
+Diária está na folha e também na OS.
+
+Cenário 4
+
+Encargo está incluído no custo de RH e novamente em estrutura.
+
+Cenário 5
+
+Pagamento parcial é somado como um novo custo.
+
+Pagamento não cria custo novo. Ele apenas reduz o saldo a pagar.
+
+Cenário 6
+
+Folha prevista e folha fechada são somadas juntas.
+
+Cenário 7
+
+Colaborador aparece duas vezes por possuir mais de um registro contratual.
+
+Cenário 8
+
+O mesmo evento de ponto é importado ou processado mais de uma vez.
+
+Implementar proteção por:
+
+ID único;
+chave de idempotência;
+vínculo com competência;
+vínculo com colaborador;
+vínculo com evento original.
+18. COMPARAÇÃO COM A PLANILHA FORNECIDA
+
+Usar a planilha/imagem de referência como base de conferência, mas não como fonte absoluta.
+
+Comparar:
+
+quantidade de colaboradores;
+salário de cada colaborador;
+horas totais;
+horas extras;
+horas noturnas;
+valor das horas extras;
+valor do holerite;
+INSS;
+vale-transporte;
+valor líquido aproximado;
+total da folha;
+total de horas extras;
+total de descontos;
+divergência por colaborador;
+divergência total.
+
+Gerar uma tabela de auditoria:
+
+Colaborador	Sistema	Referência	Diferença	Motivo provável
+Nome	R$ 0,00	R$ 0,00	R$ 0,00	descrição
+
+Não force o sistema a reproduzir a planilha se a planilha estiver desatualizada ou utilizar regras incorretas.
+
+Primeiro identifique qual fonte representa a regra atual oficial.
+
+19. RELATÓRIO DE AUDITORIA OBRIGATÓRIO
+
+Antes de corrigir, apresentar um relatório contendo:
+
+19.1 Origem dos dados
+
+Para cada indicador:
+
+Indicador
+Tabela
+Coluna
+Filtro
+Fórmula
+Status usado
+Regime usado
+Possível problema
+19.2 Divergências
+
+Classificar cada divergência:
+
+CRÍTICA
+ALTA
+MÉDIA
+BAIXA
+
+Exemplos:
+
+custo duplicado;
+período incorreto;
+colaborador ausente;
+colaborador duplicado;
+salário divergente;
+hora extra divergente;
+pagamento não abatido;
+folha paga aparecendo como pendente;
+desconto somado como custo;
+percentual calculado sobre faturamento incorreto;
+margem errada;
+mistura entre competência e caixa.
+19.3 Resultado da auditoria
+
+Apresentar:
+
+Valor atual exibido
+Valor correto encontrado
+Diferença
+Percentual da diferença
+Causa
+Correção proposta
+Risco da alteração
+20. IMPLEMENTAÇÃO NO BACK-END
+
+Priorizar a criação de uma camada única de consolidação.
+
+Pode ser:
+
+uma View;
+uma Materialized View;
+uma função SQL;
+uma RPC;
+um service de domínio;
+uma combinação dessas opções.
+
+Exemplo conceitual:
+
+get_financial_dashboard(
+  p_competence_date date,
+  p_accounting_view text
+)
+
+Retorno esperado:
+
+{
+  "period": {
+    "start": "2026-06-26",
+    "end": "2026-07-25",
+    "competence": "2026-07",
+    "view": "competence"
+  },
+  "revenue": {
+    "gross": 0,
+    "deductions": 0,
+    "taxes": 0,
+    "net": 0
+  },
+  "costs": {
+    "operational": 0,
+    "payroll": 0,
+    "structure": 0,
+    "total": 0
+  },
+  "percentages": {
+    "operational": 0,
+    "payroll": 0,
+    "structure": 0,
+    "total": 0
+  },
+  "profit": {
+    "net": 0,
+    "margin": 0
+  }
+}
+Detalhamento da folha
+
+Exemplo conceitual:
+
+get_payroll_dashboard_details(
+  p_competence_date date
+)
+
+Retornar resumo e colaboradores.
+
+21. VALIDAÇÕES AUTOMÁTICAS
+
+Criar validações de integridade.
+
+Validação 1
+Custos totais =
+operacional + RH + estrutura
+Validação 2
+Percentual total =
+custos totais ÷ faturamento × 100
+Validação 3
+Lucro líquido =
+faturamento líquido - todos os custos e despesas
+Validação 4
+Margem líquida =
+lucro líquido ÷ faturamento líquido × 100
+Validação 5
+Total do RH =
+soma dos custos individuais dos colaboradores
+Validação 6
+Saldo pendente da folha =
+valor devido - pagamentos vinculados
+Validação 7
+Total pago + total pendente =
+total líquido devido
+
+Considerar ajustes e estornos.
+
+Validação 8
+
+Nenhum lançamento deve ser contado duas vezes.
+
+22. TESTES OBRIGATÓRIOS
+
+Criar testes unitários, de integração e consultas de conferência.
+
+Testes de período
+competência normal;
+troca de mês;
+troca de ano;
+fevereiro;
+ano bissexto;
+registros no dia 25 às 23:59;
+registros no dia 26 às 00:00;
+conversão UTC para America/Sao_Paulo.
+Testes financeiros
+faturamento zero;
+custo zero;
+custo maior que faturamento;
+lucro negativo;
+pagamento parcial;
+folha sem pagamento;
+folha totalmente paga;
+estorno;
+ajuste positivo;
+ajuste negativo;
+colaborador admitido no período;
+colaborador desligado no período;
+folha reaberta.
+Testes de duplicidade
+mesmo pagamento repetido;
+mesma folha processada duas vezes;
+mesma diária em folha e OS;
+mesmo salário em folha e contas a pagar.
+23. LOGS E RASTREABILIDADE
+
+Criar logs para alterações sensíveis.
+
+Registrar:
+
+Usuário
+Data e hora
+Valor anterior
+Valor novo
+Motivo
+Origem
+Folha
+Competência
+Colaborador
+Pagamento
+
+Para cálculos gerenciais, disponibilizar memória de cálculo.
+
+Cada valor do dashboard deve ser rastreável até os registros que o compõem.
+
+24. PERMISSÕES
+
+A parte financeira e gerencial completa deve ser visível apenas para:
+
+DIRETORIA
+ADMINISTRADOR AUTORIZADO
+
+Usuários comerciais podem visualizar somente informações comerciais permitidas.
+
+Não permitir que o perfil comercial visualize:
+
+salários;
+folha individual;
+encargos;
+pagamentos de funcionários;
+lucro líquido completo;
+custo individual de colaboradores;
+margem financeira restrita;
+detalhamento da estrutura.
+
+Implementar a permissão também no back-end e banco de dados, não somente escondendo componentes no front-end.
+
+25. INTERFACE
+
+Manter o padrão visual atual, mas melhorar a clareza.
+
+No card Custos Totais, mostrar:
+
+Valor da categoria
+Percentual sobre o faturamento
+Barra proporcional
+Total final
+
+No detalhamento do RH:
+
+permitir busca por colaborador;
+permitir ordenação por maior custo;
+exibir status;
+permitir exportação;
+destacar divergências;
+mostrar tooltip explicativo;
+permitir abrir memória de cálculo.
+
+Não utilizar apenas textos longos em tooltip.
+
+Preferir modal, drawer ou painel lateral com seções organizadas.
+
+26. ALERTAS GERENCIAIS
+
+Criar alertas quando:
+
+custo de RH variar muito em relação ao período anterior;
+horas extras aumentarem acima do limite;
+colaborador possuir saldo sem pagamento;
+folha fechada divergir do financeiro;
+folha não fechar matematicamente;
+custo total ultrapassar meta;
+margem ficar abaixo da meta;
+custo duplicado for detectado;
+pagamento estiver sem vínculo;
+colaborador estiver sem configuração salarial.
+
+Exemplos:
+
+Atenção: custo de RH subiu 18,4% em relação ao período anterior.
+
+Divergência: folha fechada em R$ 88.404,39, mas contas a pagar vinculadas totalizam R$ 86.902,15.
+
+Pagamento sem vínculo: existem 3 pagamentos de colaboradores sem competência associada.
+27. PREVISÃO FINANCEIRA
+
+As previsões semanal, mensal e anual não podem ser simples multiplicações sem contexto.
+
+Identificar a regra atual.
+
+Separar:
+
+Realizado
+Previsto
+Projetado
+Meta
+
+Não misturar faturamento projetado com faturamento realizado.
+
+Exemplo:
+
+Realizado até hoje
+Média diária
+Projeção até o fechamento
+Meta do período
+Percentual atingido
+
+Documentar a fórmula usada.
+
+28. NÃO FAZER
+
+Não realizar as seguintes ações:
+
+não alterar salários diretamente;
+não alterar regras de folha sem relatório;
+não substituir valores salvos por números fixos;
+não usar valores da planilha como regra definitiva;
+não apagar histórico;
+não alterar registros de folhas fechadas sem controle;
+não calcular tudo apenas no front-end;
+não duplicar lógica em vários componentes;
+não misturar competência com caixa;
+não somar descontos do funcionário como custo adicional;
+não somar pagamento como novo custo;
+não esconder divergências;
+não modificar integrações financeiras sem mapear impacto.
+29. PLANO DE EXECUÇÃO
+
+Executar em fases.
+
+Fase 1 — Diagnóstico
+mapear banco;
+mapear telas;
+mapear fórmulas;
+mapear filtros;
+mapear pagamentos;
+identificar divergências;
+apresentar relatório.
+Fase 2 — Correção da fonte de dados
+criar fonte única da verdade;
+padronizar competência;
+corrigir período 26 a 25;
+vincular folha e pagamentos;
+eliminar duplicidades.
+Fase 3 — Correção financeira
+corrigir custos;
+corrigir percentuais;
+corrigir lucro;
+corrigir margem;
+separar competência e caixa.
+Fase 4 — Interface
+corrigir cards;
+melhorar detalhamento de RH;
+adicionar memória de cálculo;
+adicionar alertas;
+adicionar comparação.
+Fase 5 — Testes
+testes automáticos;
+comparação com banco;
+comparação com folha;
+comparação com pagamentos;
+validação por colaborador;
+validação dos totais.
+Fase 6 — Entrega
+
+Apresentar:
+
+arquivos alterados;
+migrations;
+SQL;
+services;
+componentes;
+testes;
+relatório antes e depois;
+riscos;
+plano de rollback.
+30. CRITÉRIOS DE ACEITE
+
+A tarefa só estará concluída quando:
+
+O período da folha for sempre do dia 26 ao dia 25.
+O custo de RH vier da folha oficial do sistema.
+O saldo de cada colaborador estiver integrado.
+Os pagamentos reduzirem o saldo sem criar novo custo.
+Custos operacionais, RH e estrutura estiverem separados.
+O card mostrar o percentual de cada custo sobre o faturamento.
+A soma das categorias for igual ao custo total.
+O lucro líquido fechar matematicamente.
+A margem líquida estiver correta.
+Não houver lançamentos duplicados.
+A soma dos colaboradores for igual ao total de RH.
+Competência e caixa estiverem separados.
+A tela mostrar memória de cálculo.
+As divergências com a planilha forem explicadas.
+Existirem testes automatizados.
+Existir rastreabilidade de todos os valores.
+Somente a diretoria tiver acesso aos dados sensíveis.
+Nenhuma regra existente for alterada sem justificativa.
+O sistema apresentar relatório de antes e depois.
+Todos os valores puderem ser rastreados até sua origem no banco.
+31. FORMATO DA PRIMEIRA RESPOSTA
+
+Não comece alterando o código.
+
+Na primeira resposta, entregue obrigatoriamente:
+
+1. Entendimento do problema
+2. Arquivos envolvidos
+3. Tabelas envolvidas
+4. Fluxo atual encontrado
+5. Fórmulas atuais encontradas
+6. Possíveis erros
+7. Possíveis duplicidades
+8. Divergências entre dashboard e folha
+9. Plano de correção
+10. Riscos
+11. Perguntas realmente necessárias
+
+Somente depois do diagnóstico confirmado, iniciar a implementação.
+
+Não apresente apenas trechos genéricos. Analise o projeto real, o banco real e as funções reais antes de propor a solução.
+
+Ponto mais importante da análise
+
+A tela mostra R$ 88.404,39 como custo de RH, enquanto a planilha apresentada possui totais diferentes, como R$ 59.657,77 de holerite e R$ 41.013,66 de valor aproximado. Esses números podem representar conceitos distintos: bruto, líquido, custo empresarial ou valor após descontos.
+
+O Replit deve identificar e nomear corretamente cada um deles. Não deve tentar fazer todos os valores coincidirem sem antes definir:
+
+Valor bruto da folha
+Valor líquido dos colaboradores
+Encargos patronais
+Benefícios
+Diárias
+Custo empresarial total
+Valor efetivamente pago
+Saldo ainda pendente
+
+Essa separação é essencial para não confundir folha líquida, custo total da empresa e fluxo de caixa.
