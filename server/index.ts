@@ -1,10 +1,11 @@
+import "dotenv/config";
 process.env.TZ = "America/Sao_Paulo";
 
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer } from "http";
+import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { setupAuth } from "./auth";
 import { initCronJobs } from "./cron";
 import { initWhatsappForwardCron } from "./cron-whatsapp-forward";
@@ -204,10 +205,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Healthcheck registrado IMEDIATAMENTE, antes de qualquer await em Supabase.
-// Garante que o deploy do Replit detecte porta aberta mesmo se o Supabase
-// estiver fora — caso contrário db-init pendura por minutos e o deploy
-// aborta com "port 5000 never opened". Ver replit.md (Boot resiliente).
+  // Healthcheck registrado IMEDIATAMENTE, antes de qualquer await em Supabase.
+// Garante que o healthcheck responda mesmo se o Supabase estiver fora.
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now() }));
 
 (async () => {
@@ -251,16 +250,17 @@ app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now
   initWhatsappForwardCron();
   initWhatsappMonitor();
 
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  const listenOpts: { port: number; host: string; reusePort?: boolean } = {
+    port,
+    host: "0.0.0.0",
+  };
+  // reusePort não é suportado no Windows
+  if (process.platform !== "win32") {
+    listenOpts.reusePort = true;
+  }
+  httpServer.listen(listenOpts, () => {
+    log(`serving on port ${port}`);
+  });
 
   // db-init em BACKGROUND — não bloqueia o listen acima. Se o Supabase
   // estiver fora, o app sobe em modo fallback e o schema é checado quando

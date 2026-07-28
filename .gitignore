@@ -4,3 +4,16 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Secrets — nunca commitar
+.env
+.env.*
+!.env.example
+*.replit-dump.bak
+.env.*.bak
+
+# Ambientes / tooling local
+.vercel
+.turbo
+*.pem
+Thumbs.db

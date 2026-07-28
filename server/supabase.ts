@@ -1,12 +1,21 @@
+import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { setSupabaseHealth } from "./pg-fallback";
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
+export function isServerSupabaseConfigured(): boolean {
+  return Boolean(
+    process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+  );
+}
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+
+if (!isServerSupabaseConfigured()) {
+  console.warn(
+    "[supabase] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes — APIs que usam o admin falharão até configurar.",
+  );
 }
 
 const MAX_RETRIES = 2;

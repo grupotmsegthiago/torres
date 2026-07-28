@@ -393,11 +393,11 @@ async function autoEnqueueLeads() {
     if (!leads || leads.length === 0) return;
 
     let enqueued = 0;
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.REPL_SLUG
-        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-        : "https://234c7c6a-bb34-4080-913c-2c786d224185-00-1ne4rfjd9dnv5.spock.replit.dev";
+    const baseUrl = (
+      process.env.PUBLIC_SITE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+      "https://torresseguranca.vercel.app"
+    ).replace(/\/$/, "");
 
     for (const lead of leads) {
       if (!lead.email) continue;
