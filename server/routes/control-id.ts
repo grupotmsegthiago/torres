@@ -344,6 +344,21 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // Sincronização COMPLETA sob demanda: processa a fila de envio (nossas batidas
+  // manuais → RHID) e importa as batidas novas do RHID (facial → nós).
+  // É o que o botão "Sincronizar agora" do badge chama — antes ele só drenava a
+  // fila e ficava inerte quando não havia pendências, dando a impressão de que
+  // "não sincronizou".
+  app.post("/api/control-id/sync-now", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const drain = await ctrl.processRhidSyncQueue(200).catch((e: any) => ({ processed: 0, done: 0, failed: 0, error: e?.message }));
+      const imported = await ctrl.syncAllDevices();
+      res.json({ ok: true, drain, imported });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message });
+    }
+  });
+
   // Deletar batida local (mantém no RHID por segurança)
   app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
     try {

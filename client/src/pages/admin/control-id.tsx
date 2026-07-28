@@ -135,13 +135,20 @@ function SyncQueueBadge() {
   });
   const drainMut = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/control-id/sync-queue/drain", { method: "POST", credentials: "include" });
+      const r = await fetch("/api/control-id/sync-now", { method: "POST", credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
     onSuccess: (r: any) => {
-      toast({ title: "Fila processada", description: `${r.done || 0} OK, ${r.failed || 0} falhou` });
+      const drain = r?.drain || {};
+      const imp = r?.imported || {};
+      toast({
+        title: "Sincronização concluída",
+        description: `Fila: ${drain.done || 0} enviada(s), ${drain.failed || 0} falhou. Importadas do RHID: ${imp.totalSaved || 0} batida(s) nova(s).`,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/sync-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/devices"] });
     },
     onError: (e: any) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
@@ -197,10 +204,10 @@ function SyncQueueBadge() {
           variant="outline"
           className="w-full h-7 text-[11px]"
           onClick={() => drainMut.mutate()}
-          disabled={drainMut.isPending || pending === 0}
+          disabled={drainMut.isPending}
           data-testid="btn-drain-rhid-queue"
         >
-          {drainMut.isPending ? "Processando..." : `Sincronizar agora${pending > 0 ? ` (${pending})` : ""}`}
+          {drainMut.isPending ? "Sincronizando..." : `Sincronizar agora${pending > 0 ? ` (${pending} pendente${pending > 1 ? "s" : ""})` : ""}`}
         </Button>
       </HoverCardContent>
     </HoverCard>
