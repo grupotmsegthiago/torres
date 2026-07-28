@@ -71,3 +71,6 @@ Nosso sistema é SEMPRE a verdade. Facial (relógio fixo) → importa pra nós; 
 
 ## Endpoints de conciliação expõem CPF/PIS → exigem admin
 **Regra:** `GET /api/control-id/reconciliation/last` e `/live` precisam de `requireAdminRole` (além de `requireAuth`). O cron diário roda 05:00 com `{ timezone: "America/Sao_Paulo" }`.
+
+## Portal RHID só mostra a pessoa ATUAL — corrigir exige re-export
+O portal/apuração da Control iD exibe só os eventos do idPerson vigente; batidas gravadas sob um cadastro excluído nunca voltam a aparecer lá (AFD append-only, pessoa 404). Correção aceita pelo dono (28/07/2026): re-exportar as batidas locais pro uid novo, deduplicando por minuto contra os eventos que já existem no uid novo (nunca reenvio cego). Manter o mapping antigo ATIVO — a união da conciliação ainda precisa dele pros períodos anteriores; as marcas "duplicada" resultantes são benignas.

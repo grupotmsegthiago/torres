@@ -142,9 +142,11 @@ function SyncQueueBadge() {
     onSuccess: (r: any) => {
       const drain = r?.drain || {};
       const imp = r?.imported || {};
+      const detail = `Fila: ${drain.done || 0} enviada(s), ${drain.failed || 0} falhou. Importadas do RHID: ${imp.totalSaved || 0} batida(s) nova(s).`;
       toast({
-        title: "Sincronização concluída",
-        description: `Fila: ${drain.done || 0} enviada(s), ${drain.failed || 0} falhou. Importadas do RHID: ${imp.totalSaved || 0} batida(s) nova(s).`,
+        title: r?.partial ? "Sincronização concluída com falhas" : "Sincronização concluída",
+        description: r?.drainError ? `${detail} Erro na fila: ${r.drainError}` : detail,
+        variant: r?.partial ? "destructive" : undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/sync-queue"] });
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });

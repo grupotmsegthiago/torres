@@ -349,13 +349,23 @@ export function registerControlIdRoutes(app: Express) {
   // É o que o botão "Sincronizar agora" do badge chama — antes ele só drenava a
   // fila e ficava inerte quando não havia pendências, dando a impressão de que
   // "não sincronizou".
+  let syncNowRunning = false; // single-flight: evita duplo clique/2 abas rodando import em paralelo
   app.post("/api/control-id/sync-now", requireAuth, requireAdminRole, async (_req, res) => {
+    if (syncNowRunning) return res.status(409).json({ message: "Sincronização já em andamento — aguarde terminar." });
+    syncNowRunning = true;
     try {
-      const drain = await ctrl.processRhidSyncQueue(200).catch((e: any) => ({ processed: 0, done: 0, failed: 0, error: e?.message }));
+      let drainError: string | null = null;
+      const drain = await ctrl.processRhidSyncQueue(200).catch((e: any) => {
+        drainError = e?.message || String(e);
+        return { processed: 0, done: 0, failed: 0 };
+      });
       const imported = await ctrl.syncAllDevices();
-      res.json({ ok: true, drain, imported });
+      const partial = !!drainError || (drain as any).failed > 0;
+      res.json({ ok: !partial, partial, drainError, drain, imported });
     } catch (e: any) {
       res.status(500).json({ message: e?.message });
+    } finally {
+      syncNowRunning = false;
     }
   });
 
