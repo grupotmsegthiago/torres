@@ -1,12 +1,12 @@
 ---
-name: HE R$ 15,00/h e noturno R$ 15,50/h fixos
+name: HE R$ 16,00/h e noturno R$ 16,50/h fixos
 description: Convenção unificada de cálculo de hora extra e adicional noturno em toda a folha (holerite, custo, RH/Ponto)
 ---
 
-# HE = R$ 15,00/h e noturno = R$ 15,50/h FIXOS (ordens do dono 16/07/2026)
+# HE = R$ 16,00/h e noturno = R$ 16,50/h FIXOS (planilha oficial, 28/07/2026)
 
 **Regra atual:** em TODO o sistema, hora extra e adicional noturno valem
-valor FIXO por hora, independente do salário base: **HE R$ 15,00/h** e **noturno R$ 15,50/h**.
+valor FIXO por hora, independente do salário base: **HE R$ 16,00/h** e **noturno R$ 16,50/h** (atualizado de 15,00/15,50 em 28/07/2026, auditoria vs planilha oficial).
 Constantes `VALOR_HORA_EXTRA_FIXO` / `VALOR_HORA_NOTURNA_FIXO` em
 `server/lib/payroll.ts`; `buildFolhaStats` (Control iD) usa as mesmas.
 

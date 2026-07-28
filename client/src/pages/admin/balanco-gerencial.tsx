@@ -1086,7 +1086,7 @@ export default function BalancoGerencialPage() {
 
               // ── COMPOSIÇÃO AGREGADA — mesma fórmula da tela Ponto Eletrônico ("Custo Real")
               // Total do card = Vencimentos (salário ratado + periculosidade 30% + HE com adicional
-              // a R$ 15,00/h + adicional noturno a R$ 15,50/h) + Benefícios (VR por dias úteis + cesta básica ratada +
+              // a R$ 16,00/h + adicional noturno a R$ 16,50/h) + Benefícios (VR por dias úteis + cesta básica ratada +
               // diárias). Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são
               // só informativos, NÃO entram no total. SEM provisões, SEM DSR.
               const bk = rhSummary?.breakdown;
@@ -1128,8 +1128,8 @@ export default function BalancoGerencialPage() {
                 rhRows.push({ label: "── Vencimentos ──", value: vencimentos * fatorPeriodo });
                 rhRows.push({ label: "  Salário base (ratado)", value: agg.base * fatorPeriodo });
                 rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
-                if (agg.he > 0) rhRows.push({ label: "  Hora extra (R$ 15,00/h)", value: agg.he * fatorPeriodo });
-                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno (R$ 15,50/h)", value: agg.noturno * fatorPeriodo });
+                if (agg.he > 0) rhRows.push({ label: "  Hora extra (R$ 16,00/h)", value: agg.he * fatorPeriodo });
+                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno (R$ 16,50/h)", value: agg.noturno * fatorPeriodo });
                 rhRows.push({ label: "── Benefícios + Diárias ──", value: beneficios * fatorPeriodo });
                 if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
                 if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });

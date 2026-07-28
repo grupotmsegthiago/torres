@@ -14,15 +14,14 @@
  *   2) Periculosidade somada (salarioProporcional × peric%) → compõe o "Salário"
  *      da planilha. A hora-base (valorHora) TAMBÉM inclui peric (Súmula 132 TST):
  *      valorHora = base × (1 + peric%) ÷ horasMensais.
- *   3) Horas Extras: R$ 15,00/h FIXO × horas_extras (ordem do dono 16/07/2026).
- *   4) Hora Noturna: R$ 15,50/h FIXO × horas_noturnas (ordem do dono 16/07/2026).
+ *   3) Horas Extras: R$ 16,00/h FIXO × horas_extras (planilha oficial, 28/07/2026).
+ *   4) Hora Noturna: R$ 16,50/h FIXO × horas_noturnas (planilha oficial, 28/07/2026).
  *   5) DSR: NÃO aplicado → aplicarDsr=false.
  *   6) Total tributável = Salário(c/ peric) + HE + Noturno (sem DSR).
- *   7) INSS = 12% fixo sobre o total tributável (inssModo="flat", inssFlatPct=12).
- *   8) IRRF = 22% fixo sobre o total tributável (irrfModo="flat", irrfFlatPct=22).
- *      Decisão do dono (26/06/2026): a alíquota real varia 18–27,5%, então usa-se a
- *      média de 22% direto sobre o bruto. NÃO usa tabela progressiva. Ver memória
- *      payroll-irrf-flat.
+ *   7) INSS = 9% fixo sobre o total tributável (inssModo="flat", inssFlatPct=9;
+ *      planilha do dono, 28/07/2026 — substitui os 12%).
+ *   8) IRRF = 0% (planilha do dono, 28/07/2026 — substitui os 22% flat de
+ *      26/06/2026). NÃO usa tabela progressiva. Ver memória payroll-irrf-flat.
  *   9) FGTS 8% sobre o total tributável.
  *   10) Líquido = Total − IRRF − INSS − VT (FGTS NÃO desconta do líquido —
  *      é depósito do empregador; decisão do dono 26/06/2026, fgtsNoLiquido=false).
@@ -59,11 +58,16 @@ export const IRRF_2024 = {
 
 export const FGTS_ALIQUOTA = 0.08;
 export const PERICULOSIDADE_PADRAO = 0.30;
-/** Valor FIXO da hora extra (R$/h) — ordem do dono 16/07/2026: "substituir tudo
- * por 15,00 hora extra e noturna". Substitui o modelo valorHora×1,6. */
-export const VALOR_HORA_EXTRA_FIXO = 15;
-/** Valor FIXO da hora noturna (R$/h) — mesma ordem. Substitui valorHora×1,8. */
-export const VALOR_HORA_NOTURNA_FIXO = 15.5;
+/** Valor FIXO da hora extra (R$/h) — ordem do dono 28/07/2026 (planilha oficial):
+ * HE diurna R$ 16,00/h. Substitui os R$ 15,00 de 16/07/2026 e o modelo valorHora×1,6. */
+export const VALOR_HORA_EXTRA_FIXO = 16;
+/** Valor FIXO da hora noturna (R$/h) — mesma ordem 28/07/2026: R$ 16,50/h.
+ * Substitui os R$ 15,50 e o modelo valorHora×1,8. */
+export const VALOR_HORA_NOTURNA_FIXO = 16.5;
+/** INSS do funcionário — alíquota flat oficial (planilha do dono, 28/07/2026). */
+export const INSS_FLAT_PCT_PADRAO = 9;
+/** IRRF do funcionário — 0% (planilha do dono, 28/07/2026; substitui os 22% flat). */
+export const IRRF_FLAT_PCT_PADRAO = 0;
 export const INSS_PROVISAO_FERIAS_13 = 0.075; // alíquota efetiva validada vs contábil
 
 // ===== HELPERS =====
@@ -232,9 +236,9 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     aplicarPericulosidade = true,
     aplicarDsr = false,
     inssModo = "flat",
-    inssFlatPct = 12,
+    inssFlatPct = INSS_FLAT_PCT_PADRAO,
     irrfModo = "flat",
-    irrfFlatPct = 22,
+    irrfFlatPct = IRRF_FLAT_PCT_PADRAO,
     fgtsNoLiquido = false,
     vtDesconto = 0,
     diasUteis = 0,

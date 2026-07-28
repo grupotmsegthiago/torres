@@ -1832,7 +1832,7 @@ function FolhaTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Adicional Noturno</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">{hhmmH(stats.horasNoturnas ?? 0)} (22h–05h) × {fmtBRL(stats.valorHoraNoturna ?? 15.5)}/h</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">{hhmmH(stats.horasNoturnas ?? 0)} (22h–05h) × {fmtBRL(stats.valorHoraNoturna ?? 16.5)}/h</div>
                     </div>
                     <span className={`font-semibold tabular-nums ${(stats.adicionalNoturno ?? 0) > 0 ? "text-indigo-700" : "text-neutral-400"}`} data-testid="text-adicional-noturno">{fmtBRL(stats.adicionalNoturno ?? 0)}</span>
                   </div>
