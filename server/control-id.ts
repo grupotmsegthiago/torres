@@ -1389,17 +1389,17 @@ export async function buildFolhaStats(
     | undefined;
   if (faixas) {
     try {
-      // Janela = competência de RH (ciclo 26 → 25), não mês civil.
-      // Ex: monthYear="2026-05" → atestados de 26/abr a 25/mai.
-      const { getPayrollPeriod } = await import("@shared/payroll-period");
-      const periodAbs = getPayrollPeriod(yyyy, mm);
+      // Janela = MÊS CIVIL (01 → 30/31) — benefícios seguem o mês civil
+      // (regra do dono 28/07/2026; só salário/HE seguem o ciclo 26 → 25).
+      const absFrom = `${monthYear}-01`;
+      const absTo = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
       const { data: absRows } = await supabaseAdmin
         .from("employee_absences")
         .select("id, type, start_date, end_date, status")
         .eq("employee_id", employeeId)
         .eq("status", "aprovado")
-        .gte("start_date", `${periodAbs.startDate}T00:00:00`)
-        .lte("start_date", `${periodAbs.endDate}T23:59:59`);
+        .gte("start_date", `${absFrom}T00:00:00`)
+        .lte("start_date", `${absTo}T23:59:59`);
       const qualificados = (absRows || []).filter((a: any) => {
         const t = String(a.type || "").toLowerCase();
         // Conta atestado médico e qualquer falta justificada/afastamento aprovado.
@@ -1429,10 +1429,14 @@ export async function buildFolhaStats(
   // (salário base, periculosidade, cesta básica, seguro de vida) é ratado por
   // dias corridos decorridos / total dias do mês; VR é por dias úteis efetivamente
   // decorridos. Mês fechado (anterior) usa o mês inteiro normalmente.
-  // Dias úteis da competência de RH (26 → 25), não mês civil.
+  // REGRA DO DONO (28/07/2026): SÓ salário + HE/noturno seguem o ciclo 26 → 25.
+  // O RESTANTE (VR, cesta, diárias, seguro de vida) conta pelo MÊS CIVIL (01 → 30/31).
   const { countBusinessDays, loadHolidaySet, payrollPeriodRange } = await import("./routes/holidays");
-  const { from, to } = payrollPeriodRange(yyyy, mm); // strings YYYY-MM-DD inclusivas
-  const holidaySet = await loadHolidaySet(from, to);
+  const { from, to } = payrollPeriodRange(yyyy, mm); // ciclo 26→25 (salário/HE)
+  // Mês civil correspondente à competência (ex.: "JULHO" → 01/07 a 31/07).
+  const civilFrom = `${monthYear}-01`;
+  const civilTo = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
+  const holidaySet = await loadHolidaySet(civilFrom, civilTo);
 
   // "Agora" em BRT — calculado no frame da COMPETÊNCIA (26 → 25), não mês civil.
   // Mês passado     = período inteiro decorrido
@@ -1469,11 +1473,34 @@ export async function buildFolhaStats(
     cutoffIso = to;
   }
 
-  const diasUteisTotal = countBusinessDays(from, to, holidaySet);
-  const diasUteis = isMesCorrente
-    ? countBusinessDays(from, cutoffIso, holidaySet)
-    : (isMesFuturo ? 0 : diasUteisTotal);
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
+
+  // ===== Frame CIVIL (01 → 30/31) — usado por VR, cesta, diárias e seguro =====
+  const civilStartBrt = new Date(`${civilFrom}T00:00:00-03:00`);
+  const civilEndBrt = new Date(`${civilTo}T23:59:59-03:00`);
+  const isCivilFuturo = nowBrt.getTime() < civilStartBrt.getTime();
+  const isCivilCorrente = !isCivilFuturo && nowBrt.getTime() <= civilEndBrt.getTime();
+  const totalDiasCivil = Math.round((civilEndBrt.getTime() - civilStartBrt.getTime()) / msPerDay) + 1;
+  let diasCivilElapsed: number;
+  let cutoffCivilIso: string;
+  if (isCivilFuturo) {
+    diasCivilElapsed = 0;
+    cutoffCivilIso = civilFrom;
+  } else if (isCivilCorrente) {
+    diasCivilElapsed = Math.min(
+      totalDiasCivil,
+      Math.floor((nowBrt.getTime() - civilStartBrt.getTime()) / msPerDay) + 1,
+    );
+    cutoffCivilIso = `${monthYear}-${String(diasCivilElapsed).padStart(2, "0")}`;
+  } else {
+    diasCivilElapsed = totalDiasCivil;
+    cutoffCivilIso = civilTo;
+  }
+  const fatorRateioCivil = totalDiasCivil > 0 ? diasCivilElapsed / totalDiasCivil : 0;
+  const diasUteisTotal = countBusinessDays(civilFrom, civilTo, holidaySet);
+  const diasUteis = isCivilCorrente
+    ? countBusinessDays(civilFrom, cutoffCivilIso, holidaySet)
+    : (isCivilFuturo ? 0 : diasUteisTotal);
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
   const horaExtra = Math.max(0, hoursWorked - hoursLimit);
@@ -1492,20 +1519,19 @@ export async function buildFolhaStats(
   const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
   const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
-  const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
+  const cestaBasicaReal = +(cestaBasica * fatorRateioCivil).toFixed(2);
 
-  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados na
-  // COMPETÊNCIA RH (26 → 25), não no mês civil.
+  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados no
+  // MÊS CIVIL (01 → 30/31), regra do dono 28/07/2026.
   let diarias = 0;
   try {
-    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
     const { data: diariaRows } = await supabaseAdmin
       .from("operational_payments")
       .select("amount")
       .eq("employee_id", employeeId)
       .eq("type", "diaria")
-      .gte("payment_date", from)
-      .lte("payment_date", cutoffStr);
+      .gte("payment_date", civilFrom)
+      .lte("payment_date", cutoffCivilIso);
     if (Array.isArray(diariaRows)) {
       diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
     }
@@ -1523,7 +1549,7 @@ export async function buildFolhaStats(
   const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
   const fgts = +(baseRecolhimentos * (fgtsPct / 100)).toFixed(2);
   const inssPatronal = +(baseRecolhimentos * (inssPatronalPct / 100)).toFixed(2);
-  const seguroVida = +(Number(seguroVidaMensal) * fatorRateio).toFixed(2);
+  const seguroVida = +(Number(seguroVidaMensal) * fatorRateioCivil).toFixed(2);
   const recolhimentosTotal = +(fgts + inssPatronal + seguroVida).toFixed(2);
 
   // Item 4 (ordem do dono jun/2026): os recolhimentos patronais (FGTS + INSS

@@ -440,9 +440,12 @@ export function registerFixedCostsRoutes(app: Express) {
     let compYear = fy, compMonth = fm;
     if (fd >= 26) { compMonth += 1; if (compMonth > 12) { compMonth = 1; compYear += 1; } }
     const { from, to } = payrollPeriodRange(compYear, compMonth); // 26 do mês anterior → 25
-    const holidaySet = await loadHolidaySet(from, to);
-    const businessDays = countBusinessDays(from, to, holidaySet);
-    const diarias = await sumDailyAllowancesForPeriod(from, to);
+    // REGRA DO DONO (28/07/2026): só salário + HE/noturno seguem o ciclo 26 → 25.
+    // Benefícios (VR, diárias, cesta etc.) contam pelo MÊS CIVIL (01 → 30/31).
+    const civil = monthRange(compYear, compMonth);
+    const holidaySet = await loadHolidaySet(civil.from, civil.to);
+    const businessDays = countBusinessDays(civil.from, civil.to, holidaySet);
+    const diarias = await sumDailyAllowancesForPeriod(civil.from, civil.to);
 
     // Horas trabalhadas no mês — agregado por agente.
     // Fonte: control_id_punches (sync Control iD em tempo real). Fallback: timesheets (manual).

@@ -33,6 +33,7 @@
 - [Monitor de conexão Z-API](whatsapp-zapi-monitor.md) — "bot parado" tem 2 modos (desconectado E número errado); UI/health usa isDown, não só connected; monitor só em prod (evita alerta duplicado).
 - [Re-emissão de NFS-e trava no servidor](nfse-reemissao-trava-servidor.md) — endpoint de reprocessar NF exige papel diretoria + estado em erro no backend (não só UI), senão duplicidade fiscal.
 - [Resumo "resumo" do WhatsApp (cliente)](resumo-whatsapp-cliente.md) — é cliente-facing (sem dado interno/financeiro); equipe Torres OK mostrar (dono 19/06/2026); não há GPS ao vivo/ETA, só mission_status; ts vêm com -03:00.
+- [Competência split 26→25 vs civil](folha-competencia-split.md) — só salário+HE/noturno seguem 26→25; VR/cesta/diárias/seguro/atestados = mês civil (dono 28/07/2026).
 - [Otimização rh-summary (Balanço RH)](rh-summary-optimization.md) — N+1 do buildFolhaStats por func; dedup salário+holiday cache+inject cadastro+pLimit; somar em ordem fixa (float); período 26→25 vs civil é proposital.
 - [Query .in(osIds) corta em 1000](supabase-in-pagination-1000.md) — `.in("service_order_id", osIds)` sem paginar trunca em 1000 linhas e some dado das OSs recentes; filtrar por step + paginar com .range().
 - [Invariante recusada=R$0 em todo writer de billing](recusada-billing-write-paths.md) — §8.1 precisa de guard (osIsRecusada+buildRecusadaZeroPayload) em CADA endpoint que escreve escort_billings (~7), não só na conclusão; novo writer reabre o buraco.
