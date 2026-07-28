@@ -143,7 +143,8 @@ test("modelo Torres: regressão planilha do dono (caso André)", () => {
   assert.ok(Math.abs(f.horasExtrasValor - 16 * horasExtras) < 0.01, "HE = 16,00 × horas (valor fixo)");
   assert.ok(Math.abs(f.adicionalNoturnoValor - 16.5 * horasNoturnas) < 0.01, "Noturno = 16,50 × horas (valor fixo)");
   assert.equal(f.baseTributavel, +(salarioComPeric + f.horasExtrasValor + f.adicionalNoturnoValor).toFixed(2), "Total = salário(c/peric) + HE + Noturno");
-  assert.equal(f.inss, +(f.baseTributavel * 0.09).toFixed(2), "INSS 9% do total");
+  // INSS por faixa (28/07/2026): salário 3.334,90 → faixa 12% → 400,19 (sem HE na base).
+  assert.equal(f.inss, +(salarioComPeric * 0.12).toFixed(2), "INSS 12% (faixa) sobre o salário c/ peric");
   assert.equal(f.irrf, 0, "IRRF 0% (planilha oficial 28/07/2026)");
   assert.equal(f.fgts, +(f.baseTributavel * 0.08).toFixed(2), "FGTS 8% do total");
   assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf).toFixed(2), "líquido = Total − INSS − IRRF (FGTS NÃO desconta)");

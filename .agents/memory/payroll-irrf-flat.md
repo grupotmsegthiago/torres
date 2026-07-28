@@ -1,15 +1,20 @@
 ---
-name: INSS 9% flat, IRRF 0% (modelo Torres, planilha oficial 28/07/2026)
-description: Folha do funcionário usa INSS 9% flat e IRRF 0%; FGTS não desconta do líquido; sem tabela progressiva
+name: INSS por faixa, IRRF 0%, FGTS fora do líquido
+description: Modelo Torres de deduções do funcionário (planilha do dono 28/07/2026)
 ---
 
-# INSS 9% flat + IRRF 0% (modelo Torres)
+# Deduções do funcionário — modelo Torres (28/07/2026)
 
-**Regra (auditoria vs planilha oficial do dono, 28/07/2026):** INSS do funcionário
-= `baseTributavel × 9%` flat; **IRRF = 0%**. FGTS NÃO desconta do líquido.
-Líquido = base − INSS − VT (VT 6% só p/ CLT administrativo, ex.: Katia; vigilante não tem VT).
-Substitui o modelo anterior (INSS 12% / IRRF 22% flat de 26/06/2026). NÃO usar tabela progressiva.
-Defaults centralizados em `server/lib/payroll.ts` (INSS_FLAT_PCT_PADRAO/IRRF_FLAT_PCT_PADRAO)
-e replicados em buildFolhaStats.
+- **INSS**: alíquota POR FAIXA do salário mensal (base + periculosidade, SEM
+  HE/noturno), aplicada DIRETO sobre o salário, sem parcela a deduzir.
+  Faixas: ≤1.621→7,5%; ≤2.902,84→9%; ≤4.354,27→12%; acima→14%
+  (`calcularInssPorFaixaSalario` em server/lib/payroll.ts). Ex: 3.334,90→12%→400,19.
+  Substituiu o 9% flat (que por sua vez substituiu 12%).
+- **IRRF**: 0% (sem tabela progressiva).
+- **FGTS**: 8% sobre vencimentos, informativo — NÃO desconta do líquido.
+- **VT**: 6% só CLT administrativo com VT configurado; vigilante sem VT.
 
-**Histórico:** antes era IRRF 22% flat (média 18–27,5%) e INSS 12% flat; abandonado em 28/07/2026 quando a planilha oficial mostrou INSS 9% e IRRF 0.
+**Why:** planilha oficial do dono; ele validou Edivando INSS=400,19.
+**How to apply:** vale em buildFolhaStats E calcularFolha (flat mode); "progressivo"
+continua sendo a tabela oficial. Atenção: Moacir antes batia com 9% (300,14) —
+com faixa vira 400,19; dono ciente da regra nova.

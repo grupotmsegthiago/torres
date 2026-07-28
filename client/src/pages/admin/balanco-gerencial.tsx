@@ -1169,7 +1169,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE a R$ 15,00/h + adicional noturno a R$ 15,50/h) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE a R$ 16,00/h + adicional noturno a R$ 16,50/h com hora reduzida) + Benefícios (Vale Refeição × dias úteis do mês civil + Cesta Básica fixa + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }

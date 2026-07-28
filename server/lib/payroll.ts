@@ -66,6 +66,26 @@ export const VALOR_HORA_EXTRA_FIXO = 16;
 export const VALOR_HORA_NOTURNA_FIXO = 16.5;
 /** INSS do funcionário — alíquota flat oficial (planilha do dono, 28/07/2026). */
 export const INSS_FLAT_PCT_PADRAO = 9;
+/**
+ * INSS por FAIXA do salário (tabela do dono, 28/07/2026 — Contabilizei):
+ * a alíquota da faixa em que o SALÁRIO MENSAL (base + periculosidade, SEM
+ * HE/noturno) cai é aplicada DIRETO sobre o salário, sem parcela a deduzir.
+ * Ex: salário 3.334,90 → faixa 12% → INSS = 400,19.
+ */
+export const INSS_FAIXAS_SALARIO: Array<{ ate: number; pct: number }> = [
+  { ate: 1621.0, pct: 7.5 },
+  { ate: 2902.84, pct: 9 },
+  { ate: 4354.27, pct: 12 },
+  { ate: Infinity, pct: 14 },
+];
+export function inssAliquotaPorFaixa(salarioMensal: number): number {
+  const s = Number(salarioMensal) || 0;
+  for (const f of INSS_FAIXAS_SALARIO) if (s <= f.ate) return f.pct;
+  return 14;
+}
+export function calcularInssPorFaixaSalario(salarioMensal: number): number {
+  return r2((Number(salarioMensal) || 0) * (inssAliquotaPorFaixa(salarioMensal) / 100));
+}
 /** IRRF do funcionário — 0% (planilha do dono, 28/07/2026; substitui os 22% flat). */
 export const IRRF_FLAT_PCT_PADRAO = 0;
 export const INSS_PROVISAO_FERIAS_13 = 0.075; // alíquota efetiva validada vs contábil
@@ -276,9 +296,13 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   const totalBruto = r2(baseTributavel + refeicao + ajudaCusto);
 
   // 2) Deduções — só CLT tem INSS/IRRF/FGTS. Não-CLT (PJ, fixo) zera tudo.
-  // INSS: modelo Torres usa 12% fixo; "progressivo" mantém a tabela oficial com teto.
+  // INSS (modelo Torres 28/07/2026): alíquota POR FAIXA do salário mensal
+  // (base + periculosidade, SEM HE/noturno), aplicada direto sem parcela a
+  // deduzir. "progressivo" mantém a tabela oficial com teto.
   const inss = isClt
-    ? (inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel))
+    ? (inssModo === "flat"
+        ? calcularInssPorFaixaSalario(salarioProporcional + periculosidade)
+        : calcularINSS(baseTributavel))
     : 0;
   // IRRF: modelo Torres usa 22% fixo direto sobre o bruto (média do recolhimento
   // real 18–27,5%, decisão do dono). "progressivo" mantém a tabela oficial 2024.

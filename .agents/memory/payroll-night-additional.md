@@ -1,25 +1,15 @@
 ---
-name: HE R$ 16,00/h e noturno R$ 16,50/h fixos
-description: Convenção unificada de cálculo de hora extra e adicional noturno em toda a folha (holerite, custo, RH/Ponto)
+name: HE/noturno a valor fixo + hora noturna reduzida
+description: Regras de HE e adicional noturno da folha Torres (28/07/2026)
 ---
 
-# HE = R$ 16,00/h e noturno = R$ 16,50/h FIXOS (planilha oficial, 28/07/2026)
+# HE e adicional noturno — folha Torres
 
-**Regra atual:** em TODO o sistema, hora extra e adicional noturno valem
-valor FIXO por hora, independente do salário base: **HE R$ 16,00/h** e **noturno R$ 16,50/h** (atualizado de 15,00/15,50 em 28/07/2026, auditoria vs planilha oficial).
-Constantes `VALOR_HORA_EXTRA_FIXO` / `VALOR_HORA_NOTURNA_FIXO` em
-`server/lib/payroll.ts`; `buildFolhaStats` (Control iD) usa as mesmas.
+- HE: R$ 16,00/h FIXO; extra = total de horas batidas no ciclo 26→25 acima de
+  220h/mês (teto MENSAL, não diário — "jornada flexível", dono 28/07/2026).
+- Noturno: R$ 16,50/h FIXO sobre horas 22h–05h convertidas pela HORA NOTURNA
+  REDUZIDA (÷0,875; 52min30s=1h) — aplicado em buildFolhaStats na agregação.
+- Multiplicadores antigos 1,6/1,8 e valores 15,00/15,50 abandonados.
+- Só pagamento (folha), nunca faturamento.
 
-**Why:** ordem direta do dono em 16/07/2026 ("nas horas substituir tudo por
-15,00 hora extra e noturna"; depois no mesmo dia: "hora extra R$ 15,00 e noturna R$ 15,50"), substituindo os modelos anteriores.
-
-**Histórico:** noturno já foi ×0,20 (só prêmio), ×1,20 e ×1,80 (hora cheia,
-26/06/2026, batia a planilha); HE já foi valorHora×1,6 (CCT). Todos abandonados
-em 16/07/2026 pelo valor fixo.
-
-**Como aplicar:**
-- Muda em cascata a base tributável (INSS/IRRF/FGTS) e o custo no Balanço RH — esperado.
-- Aplica-se SÓ ao pagamento/custo do funcionário; o faturamento do cliente
-  (`valor_hora_extra` de contrato / escort_billings) é OUTRO fluxo — não tocar.
-- Params `multiplicadorHE`/`multiplicadorAdicNot` viraram legado ignorado.
-- Não voltar aos multiplicadores sem ordem explícita do dono.
+**Why:** planilha oficial do dono 28/07/2026 (Edivando 58,43h relógio → ~66,8h pagas).

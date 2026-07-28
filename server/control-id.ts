@@ -1345,8 +1345,11 @@ export async function buildFolhaStats(
   // bate exatamente com a soma das Normais (ex.: FERNANDO jun/2026 = 447:27).
   const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
   const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
-  // Horas noturnas (22h–05h BRT) efetivamente trabalhadas no mês.
-  const horasNoturnas = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
+  // Horas noturnas (22h–05h BRT) trabalhadas no mês, convertidas pela HORA
+  // NOTURNA REDUZIDA da CLT (52min30s = 1h ⇒ ÷0,875) — confirmação do dono
+  // 28/07/2026 (planilha: Edivando 58,43h relógio → ~66,8h pagas).
+  const horasNoturnasRelogio = dias.reduce((s, d: any) => s + (Number(d.noturnoMin) || 0), 0) / 60;
+  const horasNoturnas = horasNoturnasRelogio / 0.875;
 
   // Carrega cargo do funcionário pra resolver o CCT correto
   // (vigilante→vigilancia, limpeza→siemaco). Usa o cadastro injetado se houver.
@@ -1519,8 +1522,10 @@ export async function buildFolhaStats(
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
   const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
-  const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
-  const cestaBasicaReal = +(cestaBasica * fatorRateioCivil).toFixed(2);
+  // VR é pago INTEGRAL no início do mês civil (dias úteis do mês inteiro × diária)
+  // e cesta básica é FIXA (sem rateio) — regras do dono 28/07/2026.
+  const valeRefeicao = +(vrDiario * diasUteisTotal).toFixed(2);
+  const cestaBasicaReal = +cestaBasica.toFixed(2);
 
   // Diárias de missão (escolta/operacional) — soma de pagamentos lançados no
   // MÊS CIVIL (01 → 30/31), regra do dono 28/07/2026.
@@ -1550,7 +1555,8 @@ export async function buildFolhaStats(
   const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
   const fgts = +(baseRecolhimentos * (fgtsPct / 100)).toFixed(2);
   const inssPatronal = +(baseRecolhimentos * (inssPatronalPct / 100)).toFixed(2);
-  const seguroVida = +(Number(seguroVidaMensal) * fatorRateioCivil).toFixed(2);
+  // Seguro de vida é valor FIXO mensal (sem rateio) — dono 28/07/2026.
+  const seguroVida = +Number(seguroVidaMensal).toFixed(2);
   const recolhimentosTotal = +(fgts + inssPatronal + seguroVida).toFixed(2);
 
   // Item 4 (ordem do dono jun/2026): os recolhimentos patronais (FGTS + INSS
@@ -1617,7 +1623,12 @@ export async function buildFolhaStats(
   // empregador, decisão do dono 26/06/2026). Não entra no custo da empresa
   // (o custo geral = vencimentos + benefícios; recolhimentos são informativos).
   const baseTributavelFunc = vencimentosTotal;
-  const inssFuncionario = isClt ? +(baseTributavelFunc * 0.09).toFixed(2) : 0;
+  // INSS por FAIXA sobre o SALÁRIO MENSAL (base + periculosidade, SEM HE/noturno),
+  // alíquota da faixa aplicada direto (sem parcela a deduzir) — dono 28/07/2026.
+  // Ex: Edivando salário 3.334,90 → faixa 12% → R$ 400,19.
+  const { calcularInssPorFaixaSalario } = await import("./lib/payroll");
+  const salarioMensalComPeric = baseSalary * fatorPericVH;
+  const inssFuncionario = isClt ? calcularInssPorFaixaSalario(salarioMensalComPeric) : 0;
   const irrfFuncionario = 0; // IRRF 0% — planilha oficial do dono (28/07/2026)
   const fgtsFuncionario = fgts; // 8% sobre vencimentos — NÃO desconta do líquido (modelo Torres)
   const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
