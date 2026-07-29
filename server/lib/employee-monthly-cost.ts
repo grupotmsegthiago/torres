@@ -2,7 +2,7 @@
  * Custo mensal unificado do colaborador (cadastro salary-summary + Balanço rh-summary).
  *
  * Unifica:
- *  - HE/noturno: ponto_operacional → jornada_calculos → batidas (buildFolhaPonto)
+ *  - HE/noturno: batidas Control iD (banco mensal) → ponto_operacional → jornada_calculos
  *  - Diárias: operational_payments + agent_daily_allowances no mesmo período
  *  - Encargos CCT: FGTS (folha) + INSS patronal + seguro de vida
  *  - Separação: realizado / provisionado / descontos empregado / encargos
@@ -23,9 +23,47 @@ export type HorasPeriodoResult = {
   registros: number;
 };
 
+async function heFromBatidas(opts: {
+  employeeId: number;
+  mesRef: string;
+  horasMensais?: number;
+}): Promise<HorasPeriodoResult | null> {
+  try {
+    const { buildFolhaPonto } = await import("../control-id");
+    const dias = await buildFolhaPonto(opts.employeeId, opts.mesRef, {
+      horasMensais: opts.horasMensais,
+    });
+    if (!dias || dias.length === 0) return null;
+    const noturnoMin = dias.reduce(
+      (s: number, d: any) => s + (Number(d.noturnoMin) || 0),
+      0,
+    );
+    const hoursWorked =
+      dias.reduce((s: number, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
+    const limit = opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
+    // Banco mensal (= card Folha Control iD). NÃO usar Σ extraMin diário (8h48).
+    const horasExtras = Math.max(0, hoursWorked - limit);
+    const horasNoturnas = noturnoMin / 60;
+    if (horasExtras <= 0 && horasNoturnas <= 0) {
+      return { horasExtras: 0, horasNoturnas: 0, fonte: "batidas", registros: dias.length };
+    }
+    return {
+      horasExtras: r2(horasExtras),
+      horasNoturnas: r2(horasNoturnas),
+      fonte: "batidas",
+      registros: dias.length,
+    };
+  } catch (e: any) {
+    console.warn("[resolveHoras] batidas:", e?.message || e);
+    return null;
+  }
+}
+
 /**
  * Resolve HE/noturnas do período.
- * Se a fonte anterior existir mas vier zerada, cai para a próxima (não trava em HE=0).
+ * Prioridade (pagamento Folha — caso Reis 29/07/2026):
+ *   1) batidas Control iD — banco mensal (trab − 220), HH:MM sem segundos
+ *   2) ponto_operacional / jornada_calculos — só se não houver batidas com valor
  */
 export async function resolveHorasExtrasNoturnas(opts: {
   employeeId: number;
@@ -34,7 +72,7 @@ export async function resolveHorasExtrasNoturnas(opts: {
   mesRef: string;
   horasMensais?: number;
   /**
-   * Fallback batidas usa o ciclo 26→25 do `mesRef` (não o from/to do filtro).
+   * Batidas usam o ciclo 26→25 do `mesRef` (não o from/to do filtro).
    * Default true: vigilantes batem no Control iD; o rateio do período é feito
    * depois no Balanço (costDays/30). Sem isso, filtro semanal fica HE=0.
    */
@@ -45,11 +83,24 @@ export async function resolveHorasExtrasNoturnas(opts: {
   const fim = `${to}T23:59:59-03:00`;
   const allowBatidas = opts.allowBatidasFallback !== false;
 
+  // 1) Canônico: batidas Control iD (banco mensal + noturno da mesma folha).
+  if (allowBatidas) {
+    const fromBatidas = await heFromBatidas({
+      employeeId,
+      mesRef,
+      horasMensais: opts.horasMensais,
+    });
+    if (fromBatidas && (fromBatidas.horasExtras > 0 || fromBatidas.horasNoturnas > 0)) {
+      return fromBatidas;
+    }
+  }
+
   let horasExtras = 0;
   let horasNoturnas = 0;
   let fonte: HorasFonte = "nenhuma";
   let registros = 0;
 
+  // 2) Fallback: ponto do app
   try {
     const { data: pontos } = await supabaseAdmin
       .from("ponto_operacional")
@@ -77,6 +128,7 @@ export async function resolveHorasExtrasNoturnas(opts: {
     console.warn("[resolveHoras] ponto_operacional:", e?.message || e);
   }
 
+  // 3) Fallback: jornada_calculos
   try {
     const { data: jorn } = await supabaseAdmin
       .from("jornada_calculos")
@@ -105,42 +157,6 @@ export async function resolveHorasExtrasNoturnas(opts: {
     console.warn("[resolveHoras] jornada_calculos:", e?.message || e);
   }
 
-  // Fallback: batidas Control iD — MESMA regra do card Folha Control iD / buildFolhaStats:
-  // HE = max(0, horasTrabalhadas − horas_mensais)  (banco mensal, ex.: 323:45 − 220 = 103:45).
-  // NÃO usa Σ extraMin diário (8h48) — essa coluna da tabela é só transparência e
-  // ficava ~40h acima do card (caso Reis 29/07/2026: 141:19 vs 103:45).
-  if (allowBatidas) {
-    try {
-      const { buildFolhaPonto } = await import("../control-id");
-      const dias = await buildFolhaPonto(employeeId, mesRef, {
-        horasMensais: opts.horasMensais,
-      });
-      if (dias && dias.length > 0) {
-        const noturnoMin = dias.reduce(
-          (s: number, d: any) => s + (Number(d.noturnoMin) || 0),
-          0,
-        );
-        const hoursWorked =
-          dias.reduce((s: number, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
-        const limit = opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
-        horasExtras = Math.max(0, hoursWorked - limit);
-        horasNoturnas = noturnoMin / 60;
-        if (horasExtras > 0 || horasNoturnas > 0) {
-          return {
-            horasExtras: r2(horasExtras),
-            horasNoturnas: r2(horasNoturnas),
-            fonte: "batidas",
-            registros: dias.length,
-          };
-        }
-        fonte = fonte === "nenhuma" ? "batidas" : fonte;
-        registros = dias.length;
-      }
-    } catch (e: any) {
-      console.warn("[resolveHoras] batidas:", e?.message || e);
-    }
-  }
-
   return {
     horasExtras: r2(horasExtras),
     horasNoturnas: r2(horasNoturnas),
@@ -151,7 +167,8 @@ export async function resolveHorasExtrasNoturnas(opts: {
 
 /**
  * Agrega HE/noturno para vários funcionários no período (Balanço).
- * Batidas só como fallback individual quando ponto+jornada = 0 (evita N+1 pesado).
+ * 1) Batidas Control iD (canônico — banco mensal) para todos
+ * 2) Quem ficar zerado: ponto_operacional / jornada_calculos
  */
 export async function resolveHorasExtrasNoturnasBulk(opts: {
   employeeIds: number[];
@@ -167,17 +184,42 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
   }
   if (employeeIds.length === 0) return out;
 
+  // 1) Canônico: batidas para todos (pagamento = card Folha Control iD).
+  const { createLimit } = await import("./create-limit");
+  const limitBat = createLimit(4);
+  await Promise.all(
+    employeeIds.map((id) =>
+      limitBat(async () => {
+        const fromBatidas = await heFromBatidas({
+          employeeId: id,
+          mesRef,
+          horasMensais: opts.horasMensaisByEmp?.get(id),
+        });
+        if (fromBatidas && (fromBatidas.horasExtras > 0 || fromBatidas.horasNoturnas > 0)) {
+          out.set(id, fromBatidas);
+        }
+      }),
+    ),
+  );
+
+  const faltantes = employeeIds.filter((id) => {
+    const cur = out.get(id)!;
+    return cur.horasExtras <= 0 && cur.horasNoturnas <= 0;
+  });
+  if (faltantes.length === 0) return out;
+
   const inicio = `${from}T00:00:00-03:00`;
   const fim = `${to}T23:59:59-03:00`;
   const comPontoValor = new Set<number>();
 
+  // 2) Fallback em lote: ponto do app
   try {
     const { data: pontos } = await supabaseAdmin
       .from("ponto_operacional")
       .select("employee_id, horas_extras, horas_noturno")
       .gte("entrada", inicio)
       .lte("entrada", fim)
-      .in("employee_id", employeeIds);
+      .in("employee_id", faltantes);
     const regCount = new Map<number, number>();
     for (const p of (pontos || []) as any[]) {
       const id = Number(p.employee_id);
@@ -199,19 +241,21 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
     console.warn("[resolveHorasBulk] ponto:", e?.message || e);
   }
 
+  const aindaFaltam = faltantes.filter((id) => !comPontoValor.has(id));
+  if (aindaFaltam.length === 0) return out;
+
+  // 3) Fallback: jornada_calculos
   try {
     const { data: jorn } = await supabaseAdmin
       .from("jornada_calculos")
       .select("employee_id, horas_extras, horas_noturnas")
       .eq("mes_referencia", mesRef)
-      .in("employee_id", employeeIds);
+      .in("employee_id", aindaFaltam);
     const regCount = new Map<number, number>();
     for (const r of (jorn || []) as any[]) {
       const id = Number(r.employee_id);
-      if (!id || !out.has(id) || comPontoValor.has(id)) continue;
+      if (!id || !out.has(id)) continue;
       const cur = out.get(id)!;
-      if (cur.fonte === "ponto_operacional" && (cur.horasExtras > 0 || cur.horasNoturnas > 0)) continue;
-      // Zera se estava em ponto zerado e vamos usar jornada
       if (cur.fonte !== "jornada_calculos") {
         cur.horasExtras = 0;
         cur.horasNoturnas = 0;
@@ -230,35 +274,6 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
     }
   } catch (e: any) {
     console.warn("[resolveHorasBulk] jornada:", e?.message || e);
-  }
-
-  // Fallback batidas para quem ainda está zerado (ponto/jornada sem HE).
-  // Batidas sempre no ciclo mesRef; rateio do período fica a cargo do Balanço.
-  const faltantes = employeeIds.filter((id) => {
-    const cur = out.get(id)!;
-    return cur.horasExtras <= 0 && cur.horasNoturnas <= 0;
-  });
-  if (faltantes.length > 0) {
-    const { createLimit } = await import("./create-limit");
-    const limit = createLimit(4);
-    await Promise.all(
-      faltantes.map((id) =>
-        limit(async () => {
-          const resolved = await resolveHorasExtrasNoturnas({
-            employeeId: id,
-            from,
-            to,
-            mesRef,
-            horasMensais: opts.horasMensaisByEmp?.get(id),
-            allowBatidasFallback: true,
-          });
-          // Só sobrescreve se batidas trouxe valor (senão mantém fonte anterior)
-          if (resolved.fonte === "batidas" && (resolved.horasExtras > 0 || resolved.horasNoturnas > 0)) {
-            out.set(id, resolved);
-          }
-        }),
-      ),
-    );
   }
 
   return out;

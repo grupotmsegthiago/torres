@@ -10,15 +10,19 @@ description: Balanço/cadastro usam a mesma HE do card Folha Control iD, não a 
 Control iD**:
 
 ```
-HE = max(0, horasTrabalhadas − horas_mensais)   // ex.: 323:45 − 220 = 103:45
+HE = max(0, horasTrabalhadas − horas_mensais)   // ex.: 322:22 − 220 = 102:22
 ```
 
 **Não usar** a soma da coluna "H. Extra" da tabela diária (`Σ max(0, dia − 8h48)`),
-que no Reis deu **141:19** (~40h a mais). Essa coluna continua na tela de ponto
-como transparência, mas **não** alimenta o R$ de HE no Balanço.
+nem `ponto_operacional` / `jornada_calculos` quando houver batidas Control iD.
+Essas fontes inflaram o Reis para ~117h (R$ 1.885) vs alvo 102,22h × R$ 16.
 
-**Fonte:** mesmas batidas (`buildFolhaPonto` / `control_id_punches`), mesma agregação
-de `buildFolhaStats.horaExtra`.
+**Prioridade em `resolveHorasExtrasNoturnas`:**
+1. batidas (`buildFolhaPonto`, HH:MM sem segundos)
+2. ponto_operacional
+3. jornada_calculos
 
-**How to apply:** `resolveHorasExtrasNoturnas` path `batidas` → `heMensal`.
-Cache `rh-summary-v6`.
+**Taxas:** CCT `horaExtraValor` 16 / `horaExtraNoturnaValor` 16,50.
+Alvo Reis: HE 102,22×16 = 1.635,52; noturno 82,47×16,50 = 1.360,76.
+
+**Cache:** `rh-summary-v9`.

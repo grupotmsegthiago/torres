@@ -263,10 +263,10 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    // v8: HE só HH:MM (sem segundos); alinha com baseKey rh-summary-v8.
-    queryKey: ["/api/fixed-costs/rh-summary", "v8", "cached", gridRange.from, gridRange.to],
+    // v9: HE batidas banco mensal + HH:MM; alinha com baseKey rh-summary-v9.
+    queryKey: ["/api/fixed-costs/rh-summary", "v9", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = "rh-summary-v8-forced";
+      const bustKey = "rh-summary-v9-forced";
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {

@@ -13,6 +13,7 @@ export function bustBalancoCaches() {
   bustSwrCache("rh-summary-v6");
   bustSwrCache("rh-summary-v7");
   bustSwrCache("rh-summary-v8");
+  bustSwrCache("rh-summary-v9");
 }
 
 /** Invalida só o cache de RH (salário/custo empresa) — chamar após write em employee_salaries. */
@@ -23,4 +24,5 @@ export function bustRhSummaryCache() {
   bustSwrCache("rh-summary-v6");
   bustSwrCache("rh-summary-v7");
   bustSwrCache("rh-summary-v8");
+  bustSwrCache("rh-summary-v9");
 }

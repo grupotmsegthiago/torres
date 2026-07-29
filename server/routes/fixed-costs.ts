@@ -499,9 +499,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v8 (29/07/2026): jornada HE só HH:MM (zera segundos da batida).
+  // baseKey v9 (29/07/2026): HE canônico = batidas banco mensal (não ponto/jornada).
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v8",
+    baseKey: "rh-summary-v9",
     ttlMs: SWR_TTL_3H,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],
