@@ -187,21 +187,23 @@ export type DayWorkPair = { inMs: number; outMs: number; workedMin: number };
 
 /**
  * Jornada do dia no estilo cartão Control iD (pagamento Folha / Balanço):
- *  1) ignora marcadores 00:00/00:01/23:59
- *  2) dedup por minuto BRT
- *  3) soma pares guloso entrada→saída (cada intervalo entre pares = pausa)
- *  4) teto diário opcional (default 19:59)
+ *  1) dedup por minuto BRT
+ *  2) soma pares guloso entrada→saída (cada intervalo entre pares = pausa/almoço)
+ *  3) teto diário opcional (default 19:59)
  *
- * Substitui o antigo (última−primeira)−1º almoço, que:
- *  - inchava com marcadores de meia-noite mesmo abaixo do teto 19:59;
- *  - não descontava 2º intervalo (6+ batidas).
+ * IMPORTANTE: por padrão NÃO remove 00:00/00:01/23:59 — esses marcadores do
+ * import PDF costuram o turno que cruza a meia-noite (18:00→23:59 + 00:00→06:00).
+ * Removê-los zerava HE de vigilantes noturnos (caso Reis em prod 29/07/2026).
+ *
+ * `stripSyntheticMarkers: true` só para testes / cenários sem virada de dia.
  */
 export function computeDayWorkedMinutesFromPunches(
   punchAts: Array<string | Date | number>,
-  opts?: { dailyCapMin?: number; hardMaxGapMin?: number },
+  opts?: { dailyCapMin?: number; hardMaxGapMin?: number; stripSyntheticMarkers?: boolean },
 ): { workedMin: number; pairs: DayWorkPair[]; ignoredMarkers: number } {
   const dailyCapMin = opts?.dailyCapMin ?? 1199;
   const hardMaxGapMin = opts?.hardMaxGapMin ?? 18 * 60;
+  const stripMarkers = opts?.stripSyntheticMarkers === true;
 
   const raw = punchAts
     .map((p) => (typeof p === "number" ? new Date(p) : new Date(p)))
@@ -209,18 +211,18 @@ export function computeDayWorkedMinutesFromPunches(
     .sort((a, b) => a.getTime() - b.getTime());
 
   let ignoredMarkers = 0;
-  const withoutMarkers: Date[] = [];
+  const filtered: Date[] = [];
   for (const d of raw) {
-    if (isSyntheticMidnightMarker(d)) {
+    if (stripMarkers && isSyntheticMidnightMarker(d)) {
       ignoredMarkers++;
       continue;
     }
-    withoutMarkers.push(d);
+    filtered.push(d);
   }
 
   const seen = new Set<string>();
   const cleanMs: number[] = [];
-  for (const d of withoutMarkers) {
+  for (const d of filtered) {
     const k = minuteKeyBRT(d);
     if (seen.has(k)) continue;
     seen.add(k);

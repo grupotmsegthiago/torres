@@ -2145,21 +2145,18 @@ export async function buildFolhaPonto(
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-    // Jornada = pares reais (sem marcadores 00:00/23:59). UI ainda lista todas as batidas.
+    // Pares guloso NO DIA (mantém 00:00/23:59 — costuram turno noturno).
+    // stripSyntheticMarkers=false: removê-los zerava HE de quem cruza meia-noite.
     const dayCalc = computeDayWorkedMinutesFromPunches(
       sorted.map((p: any) => p.punch_at),
-      { dailyCapMin: NORMAL_DAILY_CAP_MIN },
+      { dailyCapMin: NORMAL_DAILY_CAP_MIN, stripSyntheticMarkers: false },
     );
-    const realSorted = sorted.filter((p: any) => {
-      try { return !isSyntheticMidnightMarker(new Date(p.punch_at)); } catch { return true; }
-    });
-    const show = realSorted.length >= 2 ? realSorted : sorted;
     const entry: any = {
       date: day,
-      clockIn: show[0] ? fmt(show[0].punch_at) : null,
-      lunchOut: show.length >= 4 ? fmt(show[1].punch_at) : null,
-      lunchIn: show.length >= 4 ? fmt(show[2].punch_at) : null,
-      clockOut: show.length >= 2 ? fmt(show[show.length - 1].punch_at) : null,
+      clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
+      lunchOut: sorted.length >= 4 ? fmt(sorted[1].punch_at) : null,
+      lunchIn: sorted.length >= 4 ? fmt(sorted[2].punch_at) : null,
+      clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
       totalPunches: sorted.length,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
       punches: sorted.map((p: any) => ({
@@ -2169,32 +2166,29 @@ export async function buildFolhaPonto(
         direction: p.direction,
         source: p.source,
       })),
-      ignoredSyntheticMarkers: dayCalc.ignoredMarkers,
     };
-    // Cartão Control iD: pares HH:MM + teto 19:59 (sem first→last com 00:00/23:59).
-    if (dayCalc.pairs.length > 0 || dayCalc.workedMin > 0) {
+    if (dayCalc.workedMin > 0 || dayCalc.pairs.length > 0) {
       const workedMin = dayCalc.workedMin;
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = workedMin;
       entry.normaisMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
-      const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
-      entry.extraMin = Math.round(extraMin);
+      entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      // Noturno = soma nos pares reais (pausas entre pares não contam).
       let noturnoMin = 0;
       for (const pair of dayCalc.pairs) {
         noturnoMin += nightMinutesBRT(pair.inMs, pair.outMs);
       }
-      entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
+      // Cap noturno ao worked do dia (pares já descontam pausas).
+      entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), workedMin));
     } else if (entry.clockIn && entry.clockOut) {
-      // Fallback legado (sem pares): mantém comportamento anterior.
-      const inMs = truncateToMinuteMs(new Date(show[0].punch_at).getTime());
-      const outMs = truncateToMinuteMs(new Date(show[show.length - 1].punch_at).getTime());
+      // Fallback: first→last − 1º almoço (legado).
+      const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
+      const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
       let workedMin = workedMinutesBetween(inMs, outMs);
-      if (show.length >= 4) {
+      if (sorted.length >= 4) {
         workedMin -= workedMinutesBetween(
-          truncateToMinuteMs(new Date(show[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(show[2].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
         );
       }
       workedMin = Math.min(Math.max(0, workedMin), NORMAL_DAILY_CAP_MIN);
@@ -2204,13 +2198,13 @@ export async function buildFolhaPonto(
       entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
       let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (show.length >= 4) {
+      if (sorted.length >= 4) {
         noturnoMin -= nightMinutesBRT(
-          truncateToMinuteMs(new Date(show[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(show[2].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
         );
       }
-      entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
+      entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));
     } else {
       entry.workedMin = 0;
       entry.normaisMin = 0;

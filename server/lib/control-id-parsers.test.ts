@@ -350,10 +350,9 @@ test("minuteKeyBRT: bucketiza por minuto em BRT (UTC-3)", () => {
   assert.equal(k, "2026-06-01 09:34");
 });
 
-test("computeDayWorkedMinutes: ignora 00:00/23:59 e desconta todos os intervalos", () => {
-  // Dia com marcadores sintéticos + almoço + 2ª pausa.
-  // Real: 08:00-12:00 + 13:00-15:00 + 15:30-18:00 = 4h+2h+2h30 = 8h30.
-  // Antigo first→last−1º almoço: (23:59-00:00)-(13:00-12:00) = 22:59 → cap 19:59 (ERRADO).
+test("computeDayWorkedMinutes: opt-in strip remove 00:00/23:59 e desconta pausas", () => {
+  // Dia diurno com marcadores + almoço + 2ª pausa.
+  // Real: 08:00-12:00 + 13:00-15:00 + 15:30-18:00 = 8h30.
   const punches = [
     "2026-07-01T03:00:00.000Z", // 00:00 BRT marcador
     "2026-07-01T11:00:00.000Z", // 08:00 BRT
@@ -366,10 +365,34 @@ test("computeDayWorkedMinutes: ignora 00:00/23:59 e desconta todos os intervalos
   ];
   assert.equal(isSyntheticMidnightMarker(new Date(punches[0])), true);
   assert.equal(isSyntheticMidnightMarker(new Date(punches[7])), true);
-  const r = computeDayWorkedMinutesFromPunches(punches);
+  const r = computeDayWorkedMinutesFromPunches(punches, { stripSyntheticMarkers: true });
   assert.equal(r.ignoredMarkers, 2);
   assert.equal(r.pairs.length, 3);
   assert.equal(r.workedMin, 8 * 60 + 30); // 8h30
+});
+
+test("computeDayWorkedMinutes: default mantém 00:00/23:59 (turno noturno Control iD)", () => {
+  // Espelho costura virada no mesmo dia BRT: 00:00–06:00 + 18:00–23:59.
+  const fullNight = [
+    "2026-06-27T03:00:00.000Z", // 00:00 BRT
+    "2026-06-27T09:00:00.000Z", // 06:00
+    "2026-06-27T21:00:00.000Z", // 18:00
+    "2026-06-28T02:59:00.000Z", // 23:59 BRT
+  ];
+  const keep = computeDayWorkedMinutesFromPunches(fullNight);
+  assert.equal(keep.ignoredMarkers, 0);
+  assert.equal(keep.pairs.length, 2);
+  assert.equal(keep.workedMin, 360 + 359); // 6h + 5h59
+
+  // Meia jornada da noite (só saída até meia-noite): sem 23:59 a batida 18:00 fica órfã → 0.
+  const eveningOnly = [
+    "2026-06-27T21:00:00.000Z", // 18:00
+    "2026-06-28T02:59:00.000Z", // 23:59 marcador
+  ];
+  assert.equal(computeDayWorkedMinutesFromPunches(eveningOnly).workedMin, 359);
+  const strippedEve = computeDayWorkedMinutesFromPunches(eveningOnly, { stripSyntheticMarkers: true });
+  assert.equal(strippedEve.ignoredMarkers, 1);
+  assert.equal(strippedEve.workedMin, 0); // regressão prod: HE/noturno zerados
 });
 
 test("computeDayWorkedMinutes: dia normal 4 batidas = (out−in)−almoço", () => {
