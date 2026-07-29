@@ -2816,7 +2816,11 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
         </div>
         <div className="flex items-center gap-1.5">
           {/* Kit CCT só faz sentido para CLT — PJ usa valor fixo cadastrado. */}
-          {(summary?.isClt !== false && summary?.tipoContratacao !== "pj") &&
+          {(() => {
+            const t = String((employee as any).tipoContratacao || (employee as any).tipo_contratacao || summary?.tipoContratacao || "clt").toLowerCase();
+            const isPjEmp = t === "pj" || t === "fixo" || summary?.isClt === false;
+            return !isPjEmp;
+          })() &&
             (employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
             <>
               <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => { const today = new Date().toISOString().slice(0, 10); setSalForm({ baseSalary: String(cctCfg.salarioBase), effectiveDate: today, reason: `Kit ${cctCfg.label}` }); setShowSalForm(true); }} data-testid="button-apply-cct-kit">
