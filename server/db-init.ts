@@ -2012,13 +2012,13 @@ export async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS beneficios_outros NUMERIC(10,2) DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS encargos_pct NUMERIC(5,2) DEFAULT 80.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS horas_mensais NUMERIC(6,2) DEFAULT 220.00`);
-    // Novas colunas (CCT atual): VR diário (R$ 43/dia útil) + Cesta Básica mensal (R$ 200)
+    // CCT: VR diário (R$ 43 × 22 = 946). Kit R$ 200 = ajuda de custo (não cesta).
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_refeicao_diario NUMERIC(10,2) DEFAULT 43.00`);
-    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 200.00`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 0`);
     // Folha 2025: periculosidade, dependentes IR, ajuda de custo fixa
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS periculosidade_pct NUMERIC(5,2) DEFAULT 30.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS dependentes_ir INTEGER DEFAULT 0`);
-    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 200.00`);
     // Modelo Torres (planilha do dono): Vale Alimentação + Assiduidade (benefícios à parte)
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_alimentacao_mensal NUMERIC(10,2) DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS assiduidade_mensal NUMERIC(10,2) DEFAULT 0`);
@@ -2028,9 +2028,26 @@ export async function ensureCalcMissionRPC() {
     await execSql(`UPDATE employee_salaries SET ajuda_custo_mensal = 0 WHERE ajuda_custo_mensal IS NULL`);
     await execSql(`UPDATE employee_salaries SET vale_alimentacao_mensal = 0 WHERE vale_alimentacao_mensal IS NULL`);
     await execSql(`UPDATE employee_salaries SET assiduidade_mensal = 0 WHERE assiduidade_mensal IS NULL`);
+    // 29/07/2026 — kit vigilância/escolta: cesta 200/208.45 → ajuda de custo (idempotente).
+    // Não toca SIEMACO (cesta II 315/240/140) nem quem já tem ajuda preenchida.
+    await execSql(`
+      UPDATE employee_salaries es
+      SET ajuda_custo_mensal = es.cesta_basica,
+          cesta_basica = 0
+      FROM employees e
+      WHERE es.employee_id = e.id
+        AND (
+          lower(coalesce(e.role, '')) LIKE '%vigilante%'
+          OR lower(coalesce(e.role, '')) LIKE '%escolta%'
+          OR lower(coalesce(e.role, '')) LIKE '%operador%'
+          OR lower(coalesce(e.role, '')) LIKE '%operacional%'
+        )
+        AND coalesce(es.ajuda_custo_mensal, 0) = 0
+        AND round(coalesce(es.cesta_basica, 0)::numeric, 2) IN (200.00, 208.45)
+    `);
     // Recarrega o schema cache do PostgREST p/ as novas colunas aparecerem na API REST
     await execSql(`NOTIFY pgrst, 'reload schema'`);
-    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta + folha 2025 + VA/assiduidade)");
+    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + ajuda de custo + folha 2025)");
   } catch (e: any) {
     console.error("[db-init] employee_salaries alter error:", e.message);
   }
