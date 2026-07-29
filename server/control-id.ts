@@ -23,15 +23,12 @@ import {
   nameMatchScore,
   monthToFechamento,
   minuteKeyBRT,
-  truncateToMinuteMs,
-  workedMinutesBetween,
   decideImport,
   rhidNumericCore,
   dedupPunchesByCore,
 } from "./lib/control-id-parsers";
 import {
   computeJornadaByEngine,
-  nightMinutesBRT as nightMinutesBRTCanon,
   resolveFolhaEngine,
   type FolhaEngine,
 } from "./lib/jornada-pares";
@@ -2065,14 +2062,6 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     });
   }
   return result;
-}
-
-/**
- * Conta os MINUTOS dentro da faixa noturna (22h–05h BRT) entre dois instantes.
- * Delega ao motor canônico (`jornada-pares.nightMinutesBRT`).
- */
-function nightMinutesBRT(startMs: number, endMs: number): number {
-  return nightMinutesBRTCanon(startMs, endMs);
 }
 
 export async function buildFolhaPonto(
