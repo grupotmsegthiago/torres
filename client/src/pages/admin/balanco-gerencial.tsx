@@ -1759,9 +1759,12 @@ export default function BalancoGerencialPage() {
             allEmployees={allEmployees || []}
             eficiencia={eficiencia}
             metaPeriodo={(META_DIARIA_VIATURA * daysInPeriod * Math.max((allVehicles || []).filter(isActiveVehicle).length, 1))}
+            impostoPct={metaCfg.impostoPct}
+            custoVarPct={metaCfg.custoVarPct}
+            auditUser={user?.email || user?.name || null}
             dataReady={{
               dashboard: !!data,
-              grid: filtered.missions.length >= 0,
+              grid: Array.isArray(gridData),
               rh: !!rhSummary,
               fixedCosts: !!fixedCostsSummary,
             }}
@@ -1784,7 +1787,7 @@ export default function BalancoGerencialPage() {
 
 function BalancoTab({
   missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria,
-  rhSummary, allEmployees, eficiencia, metaPeriodo, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia,
+  rhSummary, allEmployees, eficiencia, metaPeriodo, impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia,
 }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
@@ -1800,6 +1803,9 @@ function BalancoTab({
   rhSummary: any; allEmployees: any[];
   eficiencia: { mediaKmL: number; totalKm: number; totalLiters: number; abaixo: any[] };
   metaPeriodo: number;
+  impostoPct: number;
+  custoVarPct: number;
+  auditUser?: string | null;
   dataReady: { dashboard: boolean; grid: boolean; rh: boolean; fixedCosts: boolean };
   updatedAt: Date | null;
   onSync: () => void; syncing: boolean;
@@ -1870,6 +1876,9 @@ function BalancoTab({
         allEmployees={allEmployees}
         eficiencia={eficiencia}
         metaPeriodo={metaPeriodo}
+        impostoPct={impostoPct}
+        custoVarPct={custoVarPct}
+        auditUser={auditUser}
         dataReady={dataReady}
         updatedAt={updatedAt}
         onSync={onSync}
