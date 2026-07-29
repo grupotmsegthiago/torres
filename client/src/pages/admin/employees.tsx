@@ -109,6 +109,31 @@ function formatCepBR(value: string): string {
   return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
+/** Normaliza datas da API (ISO) para YYYY-MM-DD — senão o input type="date" invalida o form e o Salvar “não faz nada”. */
+function toDateInput(value: unknown): string {
+  if (value == null) return "";
+  const s = String(value).trim();
+  if (!s) return "";
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : "";
+}
+
+function parseApiErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || "Erro ao salvar");
+  // apiRequest joga "400: {json}" — extrai message legível
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart));
+      if (parsed?.message) return String(parsed.message);
+      if (Array.isArray(parsed?.errors) && parsed.errors[0]?.message) {
+        return String(parsed.errors[0].message);
+      }
+    } catch { /* keep raw */ }
+  }
+  return raw.replace(/^\d{3}:\s*/, "");
+}
+
 const CNH_CATEGORIAS = ["A", "B", "AB", "C", "AC", "D", "AD", "E", "AE"];
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
@@ -770,6 +795,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   });
 
   const [formInitialized, setFormInitialized] = useState(!employee);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [geoPending, setGeoPending] = useState(false);
   const [form, setForm] = useState({
     matricula: "",
     name: "",
@@ -833,10 +860,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         ufEmissor: e.ufEmissor || "",
         cnhNumber: e.cnhNumber || "",
         cnhCategoria: e.cnhCategoria || "",
-        cnhExpiry: e.cnhExpiry || "",
+        cnhExpiry: toDateInput(e.cnhExpiry),
         cnvNumber: e.cnvNumber || "",
-        cnvExpiry: e.cnvExpiry || "",
-        cnvIssueDate: e.cnvIssueDate || "",
+        cnvExpiry: toDateInput(e.cnvExpiry),
+        cnvIssueDate: toDateInput(e.cnvIssueDate),
         ctpsNumber: e.ctpsNumber || "",
         ctpsSerie: e.ctpsSerie || "",
         pis: e.pis || "",
@@ -855,16 +882,16 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         bairro: e.bairro || "",
         city: e.city || "",
         state: e.state || "",
-        addressLat: e.addressLat || null,
-        addressLng: e.addressLng || null,
-        birthDate: e.birthDate || "",
+        addressLat: e.addressLat != null ? Number(e.addressLat) : null,
+        addressLng: e.addressLng != null ? Number(e.addressLng) : null,
+        birthDate: toDateInput(e.birthDate),
         motherName: e.motherName || "",
         fatherName: e.fatherName || "",
         nationality: e.nationality || "",
         maritalStatus: e.maritalStatus || "",
         education: e.education || "",
-        hireDate: e.hireDate || "",
-        vacationExpiry: e.vacationExpiry || "",
+        hireDate: toDateInput(e.hireDate),
+        vacationExpiry: toDateInput(e.vacationExpiry),
         sindicato: e.sindicato || "",
         paymentMethod: e.paymentMethod || "PIX",
         bankName: e.bankName || "",
@@ -1136,9 +1163,29 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
+      // Datas vazias → null (Postgres rejeita ""); ISO → YYYY-MM-DD
+      const dateKeys = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry", "cnvIssueDate"] as const;
+      const cleaned: Record<string, any> = { ...data };
+      for (const k of dateKeys) {
+        const d = toDateInput(cleaned[k]);
+        cleaned[k] = d || null;
+      }
+      // Strings vazias opcionais → null (evita lixo / falha de schema)
+      for (const k of Object.keys(cleaned)) {
+        if (cleaned[k] === "") cleaned[k] = null;
+      }
+      // Restaura campos texto obrigatórios se nullified
+      cleaned.name = data.name;
+      cleaned.cpf = data.cpf;
+      cleaned.rg = data.rg || "";
+      cleaned.role = data.role;
+      cleaned.status = data.status;
+      cleaned.motherName = data.motherName;
+
       const payload = {
-        ...data,
+        ...cleaned,
         matricula: employee ? employee.matricula : (nextMatricula?.matricula || data.matricula),
+        tipoContratacao: data.tipoContratacao === "pj" ? "pj" : "clt",
       };
       let employeeId: number;
       let autoUserInfo: { autoUserCreated?: boolean; autoUserError?: string | null } = {};
@@ -1175,6 +1222,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       return autoUserInfo;
     },
     onSuccess: (autoUserInfo) => {
+      setSubmitError(null);
       invalidateRelatedQueries("employee");
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
@@ -1189,7 +1237,9 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      const msg = parseApiErrorMessage(err);
+      setSubmitError(msg);
+      toast({ title: "Erro ao salvar", description: msg, variant: "destructive" });
     },
   });
 
@@ -1291,33 +1341,58 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </div>
       )}
 
-      <form onSubmit={async (e) => {
+      <form
+        noValidate
+        onSubmit={async (e) => {
         e.preventDefault();
+        setSubmitError(null);
+        if (!form.name?.trim()) {
+          const msg = "O nome completo é obrigatório";
+          setSubmitError(msg);
+          toast({ title: "Campo obrigatório", description: msg, variant: "destructive" });
+          return;
+        }
+        if (!form.cpf?.replace(/\D/g, "") || form.cpf.replace(/\D/g, "").length !== 11) {
+          const msg = "CPF inválido — informe os 11 dígitos";
+          setSubmitError(msg);
+          toast({ title: "Campo obrigatório", description: msg, variant: "destructive" });
+          return;
+        }
         if (!form.motherName?.trim()) {
-          toast({ title: "Campo obrigatório", description: "O nome da mãe é obrigatório", variant: "destructive" });
+          const msg = "O nome da mãe é obrigatório";
+          setSubmitError(msg);
+          toast({ title: "Campo obrigatório", description: msg, variant: "destructive" });
           return;
         }
         {
           const d = (form.phone || "").replace(/\D/g, "");
           if (d.length > 0 && (d.length < 10 || d.length > 11)) {
-            toast({ title: "Telefone inválido", description: "Telefone deve ter 10 ou 11 dígitos (DDD + número).", variant: "destructive" });
+            const msg = "Telefone deve ter 10 ou 11 dígitos (DDD + número).";
+            setSubmitError(msg);
+            toast({ title: "Telefone inválido", description: msg, variant: "destructive" });
             return;
           }
         }
         {
           const d = (form.zip || "").replace(/\D/g, "");
           if (d.length > 0 && d.length !== 8) {
-            toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
+            const msg = "CEP incompleto — preencha os 8 dígitos ou deixe em branco.";
+            setSubmitError(msg);
+            toast({ title: "CEP inválido", description: msg, variant: "destructive" });
             return;
           }
         }
         if (form.status === "bloqueado_definitivo") {
           if (!form.blockType) {
-            toast({ title: "Campo obrigatório", description: "Selecione o tipo de bloqueio (Criminal, Processo ou Ambos)", variant: "destructive" });
+            const msg = "Selecione o tipo de bloqueio (Criminal, Processo ou Ambos)";
+            setSubmitError(msg);
+            toast({ title: "Campo obrigatório", description: msg, variant: "destructive" });
             return;
           }
           if (!form.blockReason.trim()) {
-            toast({ title: "Campo obrigatório", description: "O motivo do bloqueio é obrigatório", variant: "destructive" });
+            const msg = "O motivo do bloqueio é obrigatório";
+            setSubmitError(msg);
+            toast({ title: "Campo obrigatório", description: msg, variant: "destructive" });
             return;
           }
         }
@@ -1326,19 +1401,35 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           submitData.blockType = "";
           submitData.blockReason = "";
         }
-        if (submitData.address && (!submitData.addressLat || !submitData.addressLng) && window.google?.maps?.Geocoder) {
+        // Geocode com timeout — nunca trava o Salvar se o Google Maps não responder.
+        if (submitData.address && (submitData.addressLat == null || submitData.addressLng == null) && window.google?.maps?.Geocoder) {
+          setGeoPending(true);
           try {
-            const geocoder = new window.google.maps.Geocoder();
-            const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-              geocoder.geocode({ address: submitData.address, region: "br" }, (results, status) => {
-                if (status === "OK" && results && results.length > 0) resolve(results);
-                else reject(new Error(status));
-              });
+            const coords = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+              const timer = setTimeout(() => resolve(null), 2500);
+              try {
+                const geocoder = new window.google.maps.Geocoder();
+                geocoder.geocode({ address: submitData.address, region: "br" }, (results, status) => {
+                  clearTimeout(timer);
+                  if (status === "OK" && results && results.length > 0) {
+                    const loc = results[0].geometry.location;
+                    resolve({ lat: loc.lat(), lng: loc.lng() });
+                  } else {
+                    resolve(null);
+                  }
+                });
+              } catch {
+                clearTimeout(timer);
+                resolve(null);
+              }
             });
-            const loc = result[0].geometry.location;
-            submitData.addressLat = loc.lat();
-            submitData.addressLng = loc.lng();
-          } catch {}
+            if (coords) {
+              submitData.addressLat = coords.lat;
+              submitData.addressLng = coords.lng;
+            }
+          } finally {
+            setGeoPending(false);
+          }
         }
         mutation.mutate(submitData);
       }} className="space-y-6">
@@ -1358,7 +1449,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <input ref={fileInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhotoCapture} />
             <p className="text-[10px] text-neutral-400 text-center mt-1">Clique para foto</p>
           </div>
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Matrícula</label>
               <Input value={displayMatricula} disabled className="bg-neutral-50 font-mono" data-testid="input-employee-matricula" />
@@ -1380,6 +1471,18 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cargo *</label>
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-employee-role">
                 {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Regime *</label>
+              <select
+                value={form.tipoContratacao}
+                onChange={(e) => setForm({ ...form, tipoContratacao: e.target.value as "clt" | "pj" })}
+                className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200"
+                data-testid="select-employee-tipo-contratacao-top"
+              >
+                <option value="clt">CLT</option>
+                <option value="pj">PJ</option>
               </select>
             </div>
           </div>
@@ -1753,11 +1856,20 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-employee-notes" />
         </div>
 
-        <div className="flex gap-3">
-          <Button type="submit" disabled={mutation.isPending} data-testid="button-save-employee">
-            {mutation.isPending ? "Salvando..." : "Salvar"}
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+        <div className="space-y-2">
+          {submitError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="error-employee-save">
+              {submitError}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <Button type="submit" disabled={mutation.isPending || geoPending} data-testid="button-save-employee">
+              {(mutation.isPending || geoPending) ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-1" /> Salvando...</>
+              ) : "Salvar"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          </div>
         </div>
       </form>
     </Card>
