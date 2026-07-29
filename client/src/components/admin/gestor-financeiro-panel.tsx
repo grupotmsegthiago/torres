@@ -212,6 +212,8 @@ export function GestorFinanceiroPanel(props: Props) {
   const [memoria, setMemoria] = useState<MemoriaCalculo | null>(null);
   const [finding, setFinding] = useState<ValidationFinding | null>(null);
   const [hoverAgentId, setHoverAgentId] = useState<number | null>(null);
+  const [overlayHoverId, setOverlayHoverId] = useState<number | null>(null);
+  const [showFolhaOverlay, setShowFolhaOverlay] = useState(false);
   const [showAiFull, setShowAiFull] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [showCert, setShowCert] = useState(false);
@@ -246,6 +248,7 @@ export function GestorFinanceiroPanel(props: Props) {
     const folhaTotal = list.reduce((s, a) => s + Number(a.totalOperacional ?? a.total ?? 0) * scale, 0) || 1;
     const custoEmpresa = totals.custoTotal || 1;
 
+    const s = (v: any) => Number(v || 0) * scale;
     return list
       .map((a) => {
         const emp = (allEmployees || []).find((e: any) => e.id === a.id);
@@ -255,6 +258,30 @@ export function GestorFinanceiroPanel(props: Props) {
         const horas = Number(a.horasTrabalhadas || a.horas || 0);
         return {
           ...a,
+          // Valores do PERÍODO (mensal × dias/30) — o que entra no Balanço
+          salarioProporcional: s(a.salarioProporcional),
+          periculosidade: s(a.periculosidade),
+          horaExtra: s(a.horaExtra),
+          adicionalNoturno: s(a.adicionalNoturno),
+          dsr: s(a.dsr),
+          fgts: s(a.fgts),
+          inss: s(a.inss),
+          inssPatronal: s(a.inssPatronal),
+          seguroVida: s(a.seguroVida),
+          irrf: s(a.irrf),
+          vrTotal: s(a.vrTotal),
+          vt: s(a.vt),
+          cesta: s(a.cesta),
+          diarias: s(a.diarias),
+          ajudaCusto: s(a.ajudaCusto),
+          outros: s(a.outros),
+          ferias: s(a.ferias),
+          decimoTerceiro: s(a.decimoTerceiro),
+          provisaoTercoFerias: s(a.provisaoTercoFerias),
+          totalProvisoes: s(a.totalProvisoes),
+          totalBruto: s(a.totalBruto),
+          liquidoFuncionario: s(a.liquidoFuncionario),
+          encargos: s(a.encargos),
           photoUrl: emp?.photoUrl || null,
           role: emp?.role || "Agente",
           custoTotal,
@@ -266,6 +293,9 @@ export function GestorFinanceiroPanel(props: Props) {
           custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
           receita: Number(ops?.fat || 0),
           status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
+          // O que entra no custo empresa (vencimentos + benefícios) vs só informativo
+          entraNoCusto: custoTotal,
+          informativoEncargos: s(a.fgts) + s(a.inssPatronal) + s(a.seguroVida),
         };
       })
       .sort((a, b) => b.custoTotal - a.custoTotal);
@@ -323,6 +353,7 @@ export function GestorFinanceiroPanel(props: Props) {
   const tend = lucroTendencia(dailyChart);
 
   const hoverAgent = folhaAgents.find((a) => a.id === hoverAgentId) || null;
+  const overlayAgent = folhaAgents.find((a) => a.id === overlayHoverId) || folhaAgents[0] || null;
 
   const rankingVehicles = useMemo(() => {
     return [...(vehicles || [])]
@@ -515,6 +546,14 @@ export function GestorFinanceiroPanel(props: Props) {
               </div>
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => { setOverlayHoverId(folhaAgents[0]?.id ?? null); setShowFolhaOverlay(true); }}
+            className="w-full text-left text-[10px] font-black uppercase text-amber-300 hover:text-amber-200 underline underline-offset-2"
+            data-testid="link-ver-funcionarios-rh"
+          >
+            → Ver todos os funcionários da folha ({folhaAgents.length})
+          </button>
           {operacional > 0 && (
             <p className="text-[9px] text-slate-500">
               VRP referência (não soma — já no RH): <span className="font-mono text-slate-400">{fmt(operacional)}</span>
@@ -673,9 +712,17 @@ export function GestorFinanceiroPanel(props: Props) {
       {/* Custos dos funcionários + hover */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
         <div className="xl:col-span-2 rounded-2xl border border-slate-700/80 bg-slate-950/80 overflow-hidden" data-testid="tabela-custos-funcionarios">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2 flex-wrap">
             <Users size={14} className="text-amber-300" />
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-200">Custos dos Funcionários</h4>
+            <button
+              type="button"
+              onClick={() => { setOverlayHoverId(folhaAgents[0]?.id ?? null); setShowFolhaOverlay(true); }}
+              className="text-[10px] font-black uppercase text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+              data-testid="link-abrir-overlay-folha"
+            >
+              Abrir painel flutuante
+            </button>
             <span className="text-[10px] text-slate-500 font-bold ml-auto">{folhaAgents.length} na folha</span>
           </div>
           <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -741,81 +788,7 @@ export function GestorFinanceiroPanel(props: Props) {
               <p className="text-[11px] mt-1">Passe o mouse sobre um colaborador para ver remuneração, encargos, benefícios e indicadores.</p>
             </div>
           ) : (
-            <div className="space-y-3 text-[11px] max-h-[520px] overflow-y-auto" data-testid={`hover-agente-${hoverAgent.id}`}>
-              <div className="flex items-center gap-2">
-                {hoverAgent.photoUrl ? (
-                  <img src={hoverAgent.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-black">{String(hoverAgent.name).slice(0, 2).toUpperCase()}</div>
-                )}
-                <div>
-                  <p className="font-black text-slate-50 text-sm">{hoverAgent.name}</p>
-                  <p className="text-slate-400">{hoverAgent.role}</p>
-                </div>
-              </div>
-              <Section title="Remuneração" rows={[
-                ["Salário", hoverAgent.salarioProporcional],
-                ["Horas Extras", hoverAgent.horaExtra],
-                ["Adic. Noturno", hoverAgent.adicionalNoturno],
-                ["Periculosidade", hoverAgent.periculosidade],
-                ["Insalubridade", hoverAgent.insalubridade ?? 0],
-                ["Gratificações", hoverAgent.gratificacoes ?? 0],
-                ["Comissões", hoverAgent.comissoes ?? 0],
-                ["Premiações", hoverAgent.premiacoes ?? 0],
-                ["DSR", hoverAgent.dsr],
-              ]} />
-              <Section title="Encargos" rows={[
-                ["FGTS", hoverAgent.fgts],
-                ["INSS", hoverAgent.inss],
-                ["INSS Patronal", hoverAgent.inssPatronal],
-                ["Seguro", hoverAgent.seguroVida],
-                ["RAT", hoverAgent.rat ?? 0],
-                ["FAP", hoverAgent.fap ?? 0],
-                ["IRRF", hoverAgent.irrf],
-              ]} />
-              <Section title="Benefícios" rows={[
-                ["Vale Refeição", hoverAgent.vrTotal],
-                ["Vale Alimentação", hoverAgent.va ?? hoverAgent.valeAlimentacao ?? 0],
-                ["Vale Transporte", hoverAgent.vt],
-                ["Plano Saúde", hoverAgent.planoSaude ?? 0],
-                ["Plano Odontológico", hoverAgent.planoOdonto ?? 0],
-                ["Cesta", hoverAgent.cesta],
-                ["Diárias", hoverAgent.diarias],
-                ["Auxílio", hoverAgent.ajudaCusto],
-              ]} />
-              <Section title="Provisões" rows={[
-                ["Férias", hoverAgent.ferias ?? 0],
-                ["13º", hoverAgent.decimoTerceiro ?? 0],
-                ["1/3", hoverAgent.provisaoTercoFerias ?? 0],
-                ["Rescisão", hoverAgent.rescisao ?? 0],
-                ["Encargos s/ prov.", hoverAgent.provisaoFGTSsobreFerias13 ?? 0],
-                ["Total provisões", hoverAgent.totalProvisoes ?? 0],
-              ]} />
-              <Section title="Custos Indiretos" rows={[
-                ["Uniformes", hoverAgent.uniformes ?? 0],
-                ["EPIs", hoverAgent.epis ?? 0],
-                ["Treinamentos", hoverAgent.treinamentos ?? 0],
-                ["Equipamentos", hoverAgent.equipamentos ?? 0],
-                ["Adm.", hoverAgent.custosAdm ?? 0],
-              ]} />
-              <Section title="Indicadores Operacionais" rows={[
-                ["Missões", hoverAgent.missoes, true],
-                ["Receita gerada", hoverAgent.receita],
-                ["Custo/hora", hoverAgent.custoHora],
-                ["Custo/missão", hoverAgent.custoMissao],
-                ["Lucro operacional", hoverAgent.receita - hoverAgent.custoTotal],
-              ]} />
-              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-2 space-y-1">
-                <p className="font-black uppercase text-cyan-300 text-[10px]">Resumo</p>
-                <Row label="Custo total" value={fmt(hoverAgent.custoTotal)} />
-                <Row label="Custo diário" value={fmt(hoverAgent.custoDiario)} />
-                <Row label="Custo hora" value={fmt(Number(hoverAgent.custoHora || 0))} />
-                <Row label="Custo missão" value={hoverAgent.missoes ? fmt(hoverAgent.custoMissao) : "—"} />
-                <Row label="% folha" value={fmtPct(hoverAgent.pctFolha)} />
-                <Row label="% custos empresa" value={fmtPct(hoverAgent.pctEmpresa)} />
-              </div>
-              <p className="text-[9px] text-slate-500">Campos zerados = sem lançamento no cadastro/RH do colaborador (não inventados).</p>
-            </div>
+            <AgentDetailPanel agent={hoverAgent} periodLabel={periodLabel} />
           )}
         </div>
       </div>
@@ -997,6 +970,168 @@ export function GestorFinanceiroPanel(props: Props) {
           </p>
         </DialogContent>
       </Dialog>
+
+      {/* Overlay flutuante — todos os funcionários + detalhe no hover */}
+      <Dialog open={showFolhaOverlay} onOpenChange={setShowFolhaOverlay}>
+        <DialogContent
+          className="max-w-5xl w-[95vw] bg-slate-950 border-slate-700 text-slate-100 p-0 gap-0 overflow-hidden"
+          data-testid="dialog-folha-funcionarios"
+        >
+          <DialogHeader className="px-5 py-4 border-b border-slate-800">
+            <DialogTitle className="text-slate-50 flex items-center gap-2">
+              <Users size={18} className="text-amber-300" />
+              Folha — todos os funcionários
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {periodLabel} · passe o mouse sobre um nome para ver cada valor · {folhaAgents.length} colaboradores · total RH {fmt(totals.provisaoRH)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-5 min-h-[60vh] max-h-[75vh]">
+            <div className="md:col-span-2 border-r border-slate-800 overflow-y-auto">
+              {folhaAgents.length === 0 ? (
+                <p className="text-center text-slate-500 py-16 text-sm">Sem funcionários na folha</p>
+              ) : (
+                <ul className="divide-y divide-slate-800/80" data-testid="lista-folha-overlay">
+                  {folhaAgents.map((a, idx) => {
+                    const active = (overlayHoverId ?? folhaAgents[0]?.id) === a.id;
+                    return (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                            active ? "bg-amber-500/15 border-l-2 border-amber-400" : "hover:bg-slate-800/60 border-l-2 border-transparent"
+                          }`}
+                          onMouseEnter={() => setOverlayHoverId(a.id)}
+                          onFocus={() => setOverlayHoverId(a.id)}
+                          onClick={() => setOverlayHoverId(a.id)}
+                          data-testid={`overlay-func-${a.id}`}
+                        >
+                          {a.photoUrl ? (
+                            <img src={a.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover border border-slate-600" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-black text-slate-300">
+                              {String(a.name || "?").slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-100 truncate text-sm">
+                              <span className="text-slate-500 font-mono text-[10px] mr-1.5">{idx + 1}.</span>
+                              {a.name}
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate">{a.role} · {a.status}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-mono font-black text-amber-300 text-xs">{fmt(a.custoTotal)}</p>
+                            <p className="text-[9px] text-slate-500">{fmtPct(a.pctFolha)} folha</p>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="md:col-span-3 overflow-y-auto p-4 bg-slate-900/40" data-testid="painel-detalhe-overlay">
+              {!overlayAgent ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center px-6">
+                  <Users size={32} className="mb-2 opacity-40" />
+                  <p className="text-xs font-bold uppercase">Passe o mouse sobre um funcionário</p>
+                  <p className="text-[11px] mt-1">O detalhe de cada valor aparece aqui.</p>
+                </div>
+              ) : (
+                <AgentDetailPanel agent={overlayAgent} periodLabel={periodLabel} />
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: string }) {
+  const entraCusto =
+    Number(agent.salarioProporcional || 0) +
+    Number(agent.periculosidade || 0) +
+    Number(agent.horaExtra || 0) +
+    Number(agent.adicionalNoturno || 0) +
+    Number(agent.vrTotal || 0) +
+    Number(agent.cesta || 0) +
+    Number(agent.diarias || 0) +
+    Number(agent.ajudaCusto || 0) +
+    Number(agent.outros || 0);
+
+  return (
+    <div className="space-y-3 text-[11px]" data-testid={`detalhe-agente-${agent.id}`}>
+      <div className="flex items-center gap-3">
+        {agent.photoUrl ? (
+          <img src={agent.photoUrl} alt="" className="w-12 h-12 rounded-full object-cover border border-slate-600" />
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center font-black text-sm">
+            {String(agent.name).slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div>
+          <p className="font-black text-slate-50 text-base">{agent.name}</p>
+          <p className="text-slate-400">{agent.role} · {agent.status}</p>
+          <p className="text-[10px] text-slate-500">Valores do período: {periodLabel}</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
+        <p className="font-black uppercase text-emerald-300 text-[10px]">Entra no custo da empresa (Balanço)</p>
+        <Row label="Soma vencimentos + benefícios" value={fmt(entraCusto)} />
+        <Row label="Custo total no período" value={fmt(agent.custoTotal)} />
+        <p className="text-[9px] text-slate-500 pt-1">Salário, peril, HE, noturno, VR, cesta e diárias.</p>
+      </div>
+
+      <Section title="Remuneração (entra no custo)" rows={[
+        ["Salário base", agent.salarioProporcional],
+        ["Horas Extras", agent.horaExtra],
+        ["Adic. Noturno", agent.adicionalNoturno],
+        ["Periculosidade", agent.periculosidade],
+        ["DSR", agent.dsr],
+        ["Total bruto", agent.totalBruto],
+      ]} />
+      <Section title="Benefícios (entra no custo)" rows={[
+        ["Vale Refeição", agent.vrTotal],
+        ["Vale Transporte", agent.vt],
+        ["Cesta", agent.cesta],
+        ["Diárias", agent.diarias],
+        ["Auxílio / ajuda de custo", agent.ajudaCusto],
+        ["Outros", agent.outros],
+      ]} />
+      <Section title="Encargos (só informativo — NÃO soma no Balanço)" rows={[
+        ["FGTS (empresa)", agent.fgts],
+        ["INSS Patronal", agent.inssPatronal],
+        ["Seguro de vida", agent.seguroVida],
+        ["INSS funcionário (desconto)", agent.inss],
+        ["IRRF (desconto)", agent.irrf],
+        ["Líquido do funcionário", agent.liquidoFuncionario],
+      ]} />
+      <Section title="Provisões (fora do fluxo operacional)" rows={[
+        ["Férias", agent.ferias ?? 0],
+        ["13º", agent.decimoTerceiro ?? 0],
+        ["1/3 férias", agent.provisaoTercoFerias ?? 0],
+        ["Total provisões", agent.totalProvisoes ?? 0],
+      ]} />
+      <Section title="Indicadores operacionais" rows={[
+        ["Missões no período", agent.missoes, true],
+        ["Receita gerada (OS)", agent.receita],
+        ["Custo / dia", agent.custoDiario],
+        ["Custo / missão", agent.custoMissao],
+        ["Lucro operacional (receita − custo)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],
+      ]} />
+      <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-2 space-y-1">
+        <p className="font-black uppercase text-cyan-300 text-[10px]">Resumo</p>
+        <Row label="Custo no Balanço" value={fmt(agent.custoTotal)} />
+        <Row label="% da folha" value={fmtPct(agent.pctFolha)} />
+        <Row label="% dos custos da empresa" value={fmtPct(agent.pctEmpresa)} />
+        <Row label="Encargos informativos" value={fmt(Number(agent.informativoEncargos || 0))} />
+      </div>
+      <p className="text-[9px] text-slate-500">
+        Campos zerados = sem lançamento no cadastro. Encargos patronais são exibidos mas não entram no custo total do Balanço (regra do sistema).
+      </p>
     </div>
   );
 }
