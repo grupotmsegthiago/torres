@@ -21,6 +21,7 @@ import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
+import { GestorFinanceiroPanel } from "@/components/admin/gestor-financeiro-panel";
 
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
@@ -788,8 +789,12 @@ export default function BalancoGerencialPage() {
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-slate-50 uppercase tracking-tight" data-testid="title-balanco">Balanço Gerencial</h2>
-            <p className="text-xs text-slate-400 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
+            <h2 className="text-xl font-black text-slate-50 uppercase tracking-tight" data-testid="title-balanco">
+              {activeTab === "BALANCO" ? "Balanço Gerencial • Gestor de Dados Financeiro" : "Balanço Gerencial"}
+            </h2>
+            <p className="text-xs text-slate-400 font-bold uppercase">
+              {activeTab === "BALANCO" ? "Centro de inteligência financeira — dados certificados do ERP" : "Controle de faturamento, custos e lucratividade"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-400 font-bold text-right leading-tight" data-testid="text-cache-status">
@@ -848,8 +853,8 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        {/* Faixa de gauges (visão executiva) */}
-        {(() => {
+        {/* KPIs legados — escondidos na aba Balanço (substituídos pelo Gestor Financeiro) */}
+        {activeTab !== "BALANCO" && (() => {
           const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
           const totalViaturas = activeVehicles.length;
           const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * Math.max(totalViaturas, 1);
@@ -887,7 +892,7 @@ export default function BalancoGerencialPage() {
           );
         })()}
 
-        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
+        {activeTab !== "BALANCO" && <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
           {(() => {
             const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
             const totalViaturas = activeVehicles.length;
@@ -1456,10 +1461,10 @@ export default function BalancoGerencialPage() {
               </Card>
             );
           })()}
-        </div>
+        </div>}
 
         {/* === META DE FATURAMENTO REAL (configurada em "Custos Fixos") === */}
-        {isDiretoria && custoFixoTotalMensal > 0 && metaResult.realista.valida && (() => {
+        {activeTab !== "BALANCO" && isDiretoria && custoFixoTotalMensal > 0 && metaResult.realista.valida && (() => {
           const metaPeriodo = metaResult.realista.diaria * daysInPeriod;
           const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
           const tone = metaPct >= 100 ? "green" : metaPct >= 70 ? "amber" : "red";
@@ -1737,7 +1742,36 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} daysInPeriod={daysInPeriod} allVehicles={allVehicles || []} provisaoDiaria={provisaoDiaria} />}
+        {activeTab === "BALANCO" && (
+          <BalancoTab
+            missions={filtered.missions}
+            vehicles={filtered.vehicles}
+            agents={filtered.agents}
+            totals={totals}
+            range={range}
+            period={period}
+            expenses={filtered.expenses}
+            periodExpenses={filtered.periodExpenses}
+            daysInPeriod={daysInPeriod}
+            allVehicles={allVehicles || []}
+            provisaoDiaria={provisaoDiaria}
+            rhSummary={rhSummary}
+            allEmployees={allEmployees || []}
+            eficiencia={eficiencia}
+            metaPeriodo={(META_DIARIA_VIATURA * daysInPeriod * Math.max((allVehicles || []).filter(isActiveVehicle).length, 1))}
+            dataReady={{
+              dashboard: !!data,
+              grid: filtered.missions.length >= 0,
+              rh: !!rhSummary,
+              fixedCosts: !!fixedCostsSummary,
+            }}
+            updatedAt={dataGeradoEm}
+            onSync={atualizarAgora}
+            syncing={atualizando || gridFetching || rhFetching}
+            onOpenOsAbertas={() => { setOsExpandidaId(null); setShowOsAbertasModal(true); }}
+            onOpenEficiencia={() => setShowEficienciaModal(true)}
+          />
+        )}
         {activeTab === "ESTATISTICAS" && <EstatisticasTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} range={range} data={data!} allEmployees={allEmployees || []} allVehicles={allVehicles || []} />}
         {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
         {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} daysInPeriod={daysInPeriod} period={period} />}
@@ -1748,17 +1782,28 @@ export default function BalancoGerencialPage() {
   );
 }
 
-function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria }: {
+function BalancoTab({
+  missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria,
+  rhSummary, allEmployees, eficiencia, metaPeriodo, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia,
+}: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
+    fatCongelado: number; fatAberto: number; countCongelado: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
-    provisaoRH: number; custoTotal: number; custosFixosRateados: number;
+    provisaoRH: number; custoTotal: number; custosFixosRateados: number; custosFixosMensal?: number;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
   daysInPeriod: number; allVehicles: any[]; provisaoDiaria: number;
+  rhSummary: any; allEmployees: any[];
+  eficiencia: { mediaKmL: number; totalKm: number; totalLiters: number; abaixo: any[] };
+  metaPeriodo: number;
+  dataReady: { dashboard: boolean; grid: boolean; rh: boolean; fixedCosts: boolean };
+  updatedAt: Date | null;
+  onSync: () => void; syncing: boolean;
+  onOpenOsAbertas: () => void; onOpenEficiencia: () => void;
 }) {
   const dailyData = useMemo(() => {
     const map: Record<string, {
@@ -1790,28 +1835,71 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
   }, [missions, periodExpenses, provisaoDiaria]);
 
+  const dailyChart = useMemo(() => {
+    const fatSum = dailyData.reduce((s, d) => s + d.fat, 0) || 1;
+    return dailyData.map((d) => {
+      const custo =
+        d.pag +
+        (d.combustivel || 0) +
+        (d.pedagio || 0) +
+        (d.manutencao || 0) +
+        d.custoRH +
+        ((totals.custosFixosRateados || 0) * d.fat) / fatSum;
+      return {
+        name: new Date(d.date + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        fat: Math.round(d.fat),
+        custo: Math.round(custo),
+        lucro: Math.round(d.fat - custo),
+      };
+    });
+  }, [dailyData, totals.custosFixosRateados]);
+
   return (
-    <BalancoExecutivoPanel
-      dailyData={dailyData}
-      totals={{
-        fat: totals.fat,
-        pag: totals.pag,
-        desp_combustivel: totals.desp_combustivel,
-        desp_pedagio: totals.desp_pedagio,
-        desp_manutencao: totals.desp_manutencao,
-        provisaoRH: totals.provisaoRH,
-        custosFixosRateados: totals.custosFixosRateados || 0,
-        custoTotal: totals.custoTotal,
-        lucro: totals.lucro,
-        margem: totals.margem,
-        total: totals.total,
-      }}
-      period={period}
-      vehicles={vehicles}
-      agents={agents}
-      daysInPeriod={daysInPeriod}
-      metaDiariaViatura={META_DIARIA_VIATURA}
-    />
+    <div className="space-y-4">
+      <GestorFinanceiroPanel
+        periodLabel={range.label}
+        daysInPeriod={daysInPeriod}
+        period={period}
+        rangeStart={range.start}
+        rangeEnd={range.end}
+        totals={totals}
+        missions={missions}
+        vehicles={vehicles}
+        agents={agents}
+        rhSummary={rhSummary}
+        allEmployees={allEmployees}
+        eficiencia={eficiencia}
+        metaPeriodo={metaPeriodo}
+        dataReady={dataReady}
+        updatedAt={updatedAt}
+        onSync={onSync}
+        syncing={syncing}
+        dailyChart={dailyChart}
+        onOpenOsAbertas={onOpenOsAbertas}
+        onOpenEficiencia={onOpenEficiencia}
+      />
+      <BalancoExecutivoPanel
+        dailyData={dailyData}
+        totals={{
+          fat: totals.fat,
+          pag: totals.pag,
+          desp_combustivel: totals.desp_combustivel,
+          desp_pedagio: totals.desp_pedagio,
+          desp_manutencao: totals.desp_manutencao,
+          provisaoRH: totals.provisaoRH,
+          custosFixosRateados: totals.custosFixosRateados || 0,
+          custoTotal: totals.custoTotal,
+          lucro: totals.lucro,
+          margem: totals.margem,
+          total: totals.total,
+        }}
+        period={period}
+        vehicles={vehicles}
+        agents={agents}
+        daysInPeriod={daysInPeriod}
+        metaDiariaViatura={META_DIARIA_VIATURA}
+      />
+    </div>
   );
 }
 
