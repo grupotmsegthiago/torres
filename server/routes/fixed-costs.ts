@@ -499,9 +499,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v10 (29/07/2026): HE diurna CCT R$ 16 mesmo se preset tiver 0 (evita salário×1,6).
+  // baseKey v11: jornada Folha = pares Control iD (sem marcadores 00:00/23:59).
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v10",
+    baseKey: "rh-summary-v11",
     ttlMs: SWR_TTL_3H,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],

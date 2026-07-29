@@ -23,6 +23,9 @@ Essas fontes inflaram o Reis para ~117h (R$ 1.885) vs alvo 102,22h × R$ 16.
 3. jornada_calculos
 
 **Taxas:** CCT `horaExtraValor` 16 / `horaExtraNoturnaValor` 16,50.
-Alvo Reis: HE 102,22×16 = 1.635,52; noturno 82,47×16,50 = 1.360,76.
+Alvo Reis (cartão Control iD): HE **102:22** × R$ 16 ≈ R$ 1.637,87
+(minuto-exato; não misturar com decimal 102,22×16=1.635,52).
+Noturno alvo ~82,47×16,50 = 1.360,76 (conferir batidas).
+Ver também `folha-he-pares-controlid.md`.
 
 **Cache:** `rh-summary-v9`.

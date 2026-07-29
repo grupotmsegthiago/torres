@@ -13,6 +13,8 @@ import {
   minuteKeyBRT,
   truncateToMinuteMs,
   workedMinutesBetween,
+  computeDayWorkedMinutesFromPunches,
+  isSyntheticMidnightMarker,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -346,6 +348,40 @@ test("minuteKeyBRT: bucketiza por minuto em BRT (UTC-3)", () => {
   // 2026-06-01T12:34:56Z → 09:34 BRT
   const k = minuteKeyBRT(new Date("2026-06-01T12:34:56.000Z"));
   assert.equal(k, "2026-06-01 09:34");
+});
+
+test("computeDayWorkedMinutes: ignora 00:00/23:59 e desconta todos os intervalos", () => {
+  // Dia com marcadores sintéticos + almoço + 2ª pausa.
+  // Real: 08:00-12:00 + 13:00-15:00 + 15:30-18:00 = 4h+2h+2h30 = 8h30.
+  // Antigo first→last−1º almoço: (23:59-00:00)-(13:00-12:00) = 22:59 → cap 19:59 (ERRADO).
+  const punches = [
+    "2026-07-01T03:00:00.000Z", // 00:00 BRT marcador
+    "2026-07-01T11:00:00.000Z", // 08:00 BRT
+    "2026-07-01T15:00:00.000Z", // 12:00
+    "2026-07-01T16:00:00.000Z", // 13:00
+    "2026-07-01T18:00:00.000Z", // 15:00
+    "2026-07-01T18:30:00.000Z", // 15:30
+    "2026-07-01T21:00:00.000Z", // 18:00
+    "2026-07-02T02:59:00.000Z", // 23:59 BRT marcador
+  ];
+  assert.equal(isSyntheticMidnightMarker(new Date(punches[0])), true);
+  assert.equal(isSyntheticMidnightMarker(new Date(punches[7])), true);
+  const r = computeDayWorkedMinutesFromPunches(punches);
+  assert.equal(r.ignoredMarkers, 2);
+  assert.equal(r.pairs.length, 3);
+  assert.equal(r.workedMin, 8 * 60 + 30); // 8h30
+});
+
+test("computeDayWorkedMinutes: dia normal 4 batidas = (out−in)−almoço", () => {
+  const punches = [
+    "2026-07-01T11:00:00.000Z", // 08:00
+    "2026-07-01T15:00:00.000Z", // 12:00
+    "2026-07-01T16:00:00.000Z", // 13:00
+    "2026-07-01T21:00:00.000Z", // 18:00
+  ];
+  const r = computeDayWorkedMinutesFromPunches(punches);
+  assert.equal(r.workedMin, 9 * 60); // 9h
+  assert.equal(r.ignoredMarkers, 0);
 });
 
 test("truncateToMinuteMs / workedMinutesBetween: jornada ignora segundos", () => {

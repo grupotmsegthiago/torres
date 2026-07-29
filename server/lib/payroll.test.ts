@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcularFolha, resolveCestaAjudaTorres, IRRF_ISENTO_ATE, VR_DIAS_UTEIS_CCT } from "./payroll";
+import { calcularFolha, resolveCestaAjudaTorres, IRRF_ISENTO_ATE, VR_DIAS_UTEIS_CCT, r2 } from "./payroll";
 
 test("calcularFolha CLT (default) calcula INSS/FGTS e provisões", () => {
   const f = calcularFolha({
@@ -200,18 +200,20 @@ test("resolveCestaAjudaTorres: kit 200 vira ajuda de custo", () => {
 });
 
 test("CCT Torres: HE diurna 16 e noturna 16,50 (taxas fixas)", () => {
-  // Reis ~103,75h HE + ~80,2h noturnas → usa R$/h do Kit CCT, não salário×1,6.
+  // Reis alvo Control iD: HE 102:22 (= 102 + 22/60 h) × R$ 16.
+  const heMin = 102 * 60 + 22;
+  const heHoras = heMin / 60;
   const f = calcularFolha({
     salarioBaseCheio: 2565.31,
     diasTrabalhados: 30,
     horasMensais: 220,
     periculosidadePct: 0.3,
-    horasExtras: 103.75,
+    horasExtras: heHoras,
     horasNoturnas: 80.2,
     valorHoraExtraFixo: 16,
     valorHoraNoturnaFixo: 16.5,
   });
-  assert.equal(f.horasExtrasValor, 1660, "103,75 × 16");
+  assert.equal(f.horasExtrasValor, r2(heHoras * 16), "102:22 × 16");
   assert.equal(f.adicionalNoturnoValor, 1323.3, "80,2 × 16,50");
   // Sem taxa fixa, multiplicador do salário daria valor bem maior (~24,26/h).
   const semFixo = calcularFolha({
@@ -219,7 +221,7 @@ test("CCT Torres: HE diurna 16 e noturna 16,50 (taxas fixas)", () => {
     diasTrabalhados: 30,
     horasMensais: 220,
     periculosidadePct: 0.3,
-    horasExtras: 103.75,
+    horasExtras: heHoras,
     horasNoturnas: 80.2,
   });
   assert.ok(semFixo.horasExtrasValor > f.horasExtrasValor + 500, "multiplicador salário ≠ CCT fixa");

@@ -169,6 +169,82 @@ export function workedMinutesBetween(startMs: number, endMs: number): number {
   return (b - a) / 60_000;
 }
 
+/** HH:MM em America/Sao_Paulo. */
+export function hhmmBRT(d: Date): string {
+  return minuteKeyBRT(d).slice(11);
+}
+
+/**
+ * Marcadores sintéticos do import PDF RHID (folha_pdf_import): 00:00 / 00:01 / 23:59.
+ * Inflam first→last do dia; o cartão oficial Control iD não os conta como jornada.
+ */
+export function isSyntheticMidnightMarker(d: Date): boolean {
+  const t = hhmmBRT(d);
+  return t === "00:00" || t === "00:01" || t === "23:59";
+}
+
+export type DayWorkPair = { inMs: number; outMs: number; workedMin: number };
+
+/**
+ * Jornada do dia no estilo cartão Control iD (pagamento Folha / Balanço):
+ *  1) ignora marcadores 00:00/00:01/23:59
+ *  2) dedup por minuto BRT
+ *  3) soma pares guloso entrada→saída (cada intervalo entre pares = pausa)
+ *  4) teto diário opcional (default 19:59)
+ *
+ * Substitui o antigo (última−primeira)−1º almoço, que:
+ *  - inchava com marcadores de meia-noite mesmo abaixo do teto 19:59;
+ *  - não descontava 2º intervalo (6+ batidas).
+ */
+export function computeDayWorkedMinutesFromPunches(
+  punchAts: Array<string | Date | number>,
+  opts?: { dailyCapMin?: number; hardMaxGapMin?: number },
+): { workedMin: number; pairs: DayWorkPair[]; ignoredMarkers: number } {
+  const dailyCapMin = opts?.dailyCapMin ?? 1199;
+  const hardMaxGapMin = opts?.hardMaxGapMin ?? 18 * 60;
+
+  const raw = punchAts
+    .map((p) => (typeof p === "number" ? new Date(p) : new Date(p)))
+    .filter((d) => d.getTime() > 0)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  let ignoredMarkers = 0;
+  const withoutMarkers: Date[] = [];
+  for (const d of raw) {
+    if (isSyntheticMidnightMarker(d)) {
+      ignoredMarkers++;
+      continue;
+    }
+    withoutMarkers.push(d);
+  }
+
+  const seen = new Set<string>();
+  const cleanMs: number[] = [];
+  for (const d of withoutMarkers) {
+    const k = minuteKeyBRT(d);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    cleanMs.push(truncateToMinuteMs(d.getTime()));
+  }
+
+  const pairs: DayWorkPair[] = [];
+  for (let i = 0; i < cleanMs.length; ) {
+    const inMs = cleanMs[i];
+    const outMs = cleanMs[i + 1];
+    if (outMs != null && outMs - inMs <= hardMaxGapMin * 60_000 && outMs > inMs) {
+      const workedMin = (outMs - inMs) / 60_000;
+      pairs.push({ inMs, outMs, workedMin });
+      i += 2;
+    } else {
+      i += 1; // órfã — não conta (esqueceu saída)
+    }
+  }
+
+  let workedMin = pairs.reduce((s, p) => s + p.workedMin, 0);
+  if (dailyCapMin > 0) workedMin = Math.min(workedMin, dailyCapMin);
+  return { workedMin: Math.round(workedMin), pairs, ignoredMarkers };
+}
+
 export function normalizeName(s: string): string {
   return String(s || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")

@@ -263,11 +263,11 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    // v10: HE CCT diurna R$ 16 (normalize 0→16) + batidas banco mensal.
+    // v11: pares Control iD (sem 00:00/23:59) + HE CCT R$ 16.
     // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
-    queryKey: ["/api/fixed-costs/rh-summary", "v10", "cached", gridRange.from, gridRange.to],
+    queryKey: ["/api/fixed-costs/rh-summary", "v11", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = `rh-summary-v10-forced:${gridRange.from}:${gridRange.to}`;
+      const bustKey = `rh-summary-v11-forced:${gridRange.from}:${gridRange.to}`;
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
@@ -720,13 +720,13 @@ export default function BalancoGerencialPage() {
         authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
-      // Importante: invalidar pelo PREFIXO — a query ativa é v10; invalidar só vN
+      // Importante: invalidar pelo PREFIXO — a query ativa é v11; invalidar só vN
       // antigo deixava a Folha do Personalizado com cache velho após "Sincronizar".
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
       await queryClient.refetchQueries({
-        queryKey: ["/api/fixed-costs/rh-summary", "v10", "cached", gridRange.from, gridRange.to],
+        queryKey: ["/api/fixed-costs/rh-summary", "v11", "cached", gridRange.from, gridRange.to],
       });
       setDataGeradoEm(new Date());
       toast({
