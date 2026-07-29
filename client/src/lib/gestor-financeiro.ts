@@ -563,31 +563,33 @@ export function buildMemoriaFaturamento(input: GestorInput, breakdown?: FatBreak
 }
 
 export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
-  const variaveis = input.totals.desp_combustivel + input.totals.desp_pedagio + input.totals.desp_manutencao;
-  const impostosRef = (input.totals.fat * input.impostoPct) / 100;
   return {
     indicator: "Custos Totais",
     formula:
-      "Mão de obra (VRP + adicionais, SEM reembolso de combustível/pedágio) + Combustível (só vehicle_fueling/FT fueling) + Pedágio (só mission_cost/FT) + Manutenção + RH rateado + Fixos rateados (÷30 × dias). Impostos = referência Meta (fora do total). Sem provisões 13º/férias.",
-    modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento", "Meta / DRE"],
+      "Mão de obra (VRP + adicionais, SEM combustível/pedágio) + Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). Sem provisões 13º/férias. Imposto% da tela Meta NÃO entra neste total.",
+    modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento"],
     tables: ["escort_billings.pag_labor", "financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
     recordsConsidered: input.missions.length,
     recordsExcluded: [
       { reason: "Provisões 13º/férias (fora do fluxo de caixa operacional)", count: 0 },
-      { reason: "Combustível/pedágio retirados do pag_total (evita duplicar com FT oficial)", count: 0 },
+      { reason: "Combustível/pedágio retirados do pag_total (fonte oficial = FT)", count: 0 },
+      {
+        reason: `Imposto ${input.impostoPct}% da Meta (fat×${input.impostoPct}% = planejamento — NÃO é custo do período)`,
+        count: 0,
+      },
     ],
-    filters: [`Período: ${input.periodLabel}`, `Imposto ref. ${input.impostoPct}% (não soma no custo)`, `Var. meta ${input.custoVarPct}% (só meta)`],
+    filters: [`Período: ${input.periodLabel}`],
     updatedAt: input.updatedAt,
     lastUser: input.auditUser || null,
     notes: [
       `Mão de obra (sem comb/pedágio): ${money(input.totals.pag)}`,
-      `Combustível (só relatório abastecimento / FT fueling): ${money(input.totals.desp_combustivel)}`,
-      `Pedágio (só FT mission_cost): ${money(input.totals.desp_pedagio)}`,
+      `Combustível (abastecimento): ${money(input.totals.desp_combustivel)}`,
+      `Pedágio: ${money(input.totals.desp_pedagio)}`,
       `Manutenção: ${money(input.totals.desp_manutencao)}`,
-      `RH: ${money(input.totals.provisaoRH)}`,
-      `Fixos: ${money(input.totals.custosFixosRateados)}`,
-      `Impostos (ref. meta — NÃO entra no custoTotal): ${money(impostosRef)}`,
-      `Total motor DRE: ${money(input.totals.custoTotal)}`,
+      `RH (folha rateada): ${money(input.totals.provisaoRH)}`,
+      `Fixos rateados: ${money(input.totals.custosFixosRateados)}`,
+      `TOTAL que entra na DRE: ${money(input.totals.custoTotal)}`,
+      `Obs.: o % imposto da Meta serve só para calcular a meta de faturamento em Custos Fixos — não é DAS/ISS pago e não soma aqui.`,
     ],
   };
 }

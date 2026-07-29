@@ -316,8 +316,6 @@ export function GestorFinanceiroPanel(props: Props) {
   }, [missions]);
 
   const operacional = totals.pag || 0;
-  const variaveis = (totals.desp_combustivel || 0) + (totals.desp_pedagio || 0) + (totals.desp_manutencao || 0);
-  const impostosRef = (totals.fat * impostoPct) / 100;
   const custoKm = (eficiencia.totalKm || totals.km || 0) > 0
     ? (totals.desp_combustivel || 0) / (eficiencia.totalKm || totals.km)
     : 0;
@@ -504,10 +502,9 @@ export function GestorFinanceiroPanel(props: Props) {
             ["Mão de obra (sem comb/pedágio)", operacional, "bg-rose-400"],
             ["RH", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
-            ["Combustível (só abastecimento)", totals.desp_combustivel, "bg-orange-400"],
-            ["Pedágio (só mission_cost)", totals.desp_pedagio, "bg-yellow-400"],
+            ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
+            ["Pedágio", totals.desp_pedagio, "bg-yellow-400"],
             ["Manutenção", totals.desp_manutencao, "bg-pink-400"],
-            ["Impostos (ref. meta — fora do total)", impostosRef, "bg-slate-500"],
           ].map(([label, val, bar]) => (
             <div key={String(label)} className="space-y-0.5">
               <div className="flex justify-between text-[10px]">
@@ -519,7 +516,9 @@ export function GestorFinanceiroPanel(props: Props) {
               </div>
             </div>
           ))}
-          <p className="text-[9px] text-slate-500">Combustível e pedágio entram só pelas FTs oficiais — nunca somados de novo no pagamento do agente/OS. Impostos ({impostoPct}%) são só referência da Meta.</p>
+          <p className="text-[9px] text-slate-500">
+            Soma destas linhas = custo da DRE. O percentual de imposto da Meta ({impostoPct}%) não aparece aqui — não é custo do período.
+          </p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo
           </Button>
