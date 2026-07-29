@@ -2815,7 +2815,9 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
           </select>
         </div>
         <div className="flex items-center gap-1.5">
-          {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
+          {/* Kit CCT só faz sentido para CLT — PJ usa valor fixo cadastrado. */}
+          {(summary?.isClt !== false && summary?.tipoContratacao !== "pj") &&
+            (employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
             <>
               <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => { const today = new Date().toISOString().slice(0, 10); setSalForm({ baseSalary: String(cctCfg.salarioBase), effectiveDate: today, reason: `Kit ${cctCfg.label}` }); setShowSalForm(true); }} data-testid="button-apply-cct-kit">
                 <ShieldCheck className="w-3 h-3" /> Kit CCT
@@ -2870,6 +2872,11 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <p className="text-[11px] text-purple-700 mt-0.5">
                 Valor fixo mensal — impostos, benefícios variáveis e hora extra não entram no Custo Empresa.
               </p>
+              {summary.semSalarioPj && (
+                <p className="text-[11px] text-red-700 font-semibold mt-1" data-testid="banner-pj-sem-salario">
+                  Cadastre o valor fixo em “Histórico Salarial” (ex.: 4.000,00). Sem isso o custo fica R$ 0,00.
+                </p>
+              )}
             </div>
           )}
           <div className="bg-neutral-900 rounded-xl p-4 md:p-5" data-testid="card-salary-hero">
@@ -2926,6 +2933,20 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total)}</span>
               </div>
               <div className="p-3 space-y-2">
+                {(summary.isClt === false || summary.tipoContratacao === "pj") ? (
+                  <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-valor-fixo-pj">
+                    <div>
+                      <div className="text-xs font-semibold text-neutral-800">Valor Fixo PJ</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        {summary.semSalarioPj
+                          ? "Sem valor cadastrado no histórico salarial"
+                          : `Valor mensal acordado${propTag}`}
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.salarioBase)}</span>
+                  </div>
+                ) : (
+                  <>
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
                   <div>
                     <div className="text-xs font-semibold text-neutral-800">Salário Base</div>
@@ -2940,6 +2961,10 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.periculosidade)}</span>
                 </div>
+                  </>
+                )}
+                {(summary.isClt !== false && summary.tipoContratacao !== "pj") && (
+                  <>
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
                   <div>
                     <div className="text-xs font-semibold text-neutral-800">Vale Refeição</div>
@@ -2954,6 +2979,8 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
                 </div>
+                  </>
+                )}
                 {summary.horasExtras?.horas > 0 && (
                   <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-he-auto">
                     <div className="flex-1 min-w-0">
@@ -3290,8 +3317,10 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
           <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 mb-3 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Salário Base (R$)</label>
-                <Input type="text" inputMode="decimal" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="2432.50" className="text-xs h-9" data-testid="input-salary-value-pasta" />
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">
+                  {(summary?.tipoContratacao === "pj" || summary?.isClt === false) ? "Valor Fixo PJ (R$)" : "Salário Base (R$)"}
+                </label>
+                <Input type="text" inputMode="decimal" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="4.000,00" className="text-xs h-9" data-testid="input-salary-value-pasta" />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data Vigência</label>
@@ -3851,16 +3880,31 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
         throw new Error("Informe salário base e data de vigência");
       }
       // "4.000,00" → 4000 — sem parse o Postgres rejeita e o histórico não grava.
+      const isPj = String((employee as any).tipoContratacao || (employee as any).tipo_contratacao || "").toLowerCase() === "pj"
+        || String((employee as any).tipoContratacao || "").toLowerCase() === "fixo";
       await apiRequest("POST", `/api/employees/${employee.id}/salaries`, {
         baseSalary: base,
         effectiveDate: salForm.effectiveDate,
         reason: salForm.reason || null,
+        // PJ: grava peric/benefícios zerados para o valor fixo ser respeitado à risca.
+        ...(isPj ? {
+          periculosidadePct: 0,
+          valeRefeicaoDiario: 0,
+          cestaBasica: 0,
+          valeTransporteMensal: 0,
+          beneficiosOutros: 0,
+          encargosPct: 0,
+        } : {}),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employees/salaries-bulk"] });
       queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      // Invalida o resumo do mês (valor fixo PJ / Custo Empresa)
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0] || "").includes(`/api/employees/${employee.id}/salary-summary`),
+      });
       setShowSalForm(false);
       setSalForm({ baseSalary: "", effectiveDate: "", reason: "" });
       toast({ title: "Salário cadastrado" });

@@ -296,6 +296,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         return res.status(400).json({ message: "Data de vigência inválida" });
       }
       const optDec = (v: unknown) => (v === undefined || v === "" || v == null ? null : toDecimalString(v, { allowZero: true }));
+      const empIsClt = isCltContrato((emp as any).tipoContratacao ?? (emp as any).tipo_contratacao);
       const payload: any = {
         employeeId: emp.id,
         baseSalary: baseNorm,
@@ -303,6 +304,18 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         reason: reason || null,
         notes: notes || null,
       };
+      // PJ: valor fixo puro — grava peric/VR/cesta zerados quando não informados
+      // (evita herdar 30% CCT no salary-summary via `?? fallback`).
+      if (!empIsClt) {
+        payload.periculosidadePct = optDec(periculosidadePct) ?? "0";
+        payload.valeRefeicaoDiario = optDec(valeRefeicaoDiario) ?? "0";
+        payload.cestaBasica = optDec(cestaBasica) ?? "0";
+        payload.valeTransporteMensal = optDec(valeTransporteMensal) ?? "0";
+        payload.beneficiosOutros = optDec(beneficiosOutros) ?? "0";
+        payload.encargosPct = optDec(encargosPct) ?? "0";
+        payload.valeAlimentacaoMensal = optDec(valeAlimentacaoMensal) ?? "0";
+        payload.assiduidadeMensal = optDec(assiduidadeMensal) ?? "0";
+      }
       const vr = optDec(valeRefeicaoDiario); if (vr != null) payload.valeRefeicaoDiario = vr;
       const cesta = optDec(cestaBasica); if (cesta != null) payload.cestaBasica = cesta;
       const vt = optDec(valeTransporteMensal); if (vt != null) payload.valeTransporteMensal = vt;
@@ -430,14 +443,26 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       // estava vazio. Bug pego no code review de 26/05/2026.
       const { getCctConfigByCargo } = await import("../lib/cct-config");
       const CCT_FALLBACK = await getCctConfigByCargo(emp.role);
-      const baseSalary = Number(sal.base_salary || CCT_FALLBACK.salarioBase);
-      const periculosidadePct = Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100;
-      const vrDiario = Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia);
-      const cestaMensal = Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica);
-      const vt = Number(sal.vale_transporte_mensal || 0);
-      const outros = Number(sal.beneficios_outros || 0);
+      // Regime antecipado: PJ usa só o valor fixo cadastrado (sem kit CCT / sem peric 30%).
+      const tipoContratacaoEarly = normalizeTipoContratacao(
+        (emp as any).tipoContratacao ?? (emp as any).tipo_contratacao,
+      );
+      const isCltEarly = isCltContrato(tipoContratacaoEarly);
+      const temSalario = sal.base_salary != null && sal.base_salary !== "";
+      // PJ sem histórico → 0 (não inventa CCT). CLT sem histórico → kit CCT do cargo.
+      const baseSalary = temSalario
+        ? Number(sal.base_salary)
+        : (isCltEarly ? Number(CCT_FALLBACK.salarioBase) : 0);
+      const periculosidadePct = isCltEarly
+        ? Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100
+        : 0;
+      const vrDiario = isCltEarly ? Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia) : 0;
+      const cestaMensal = isCltEarly ? Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica) : 0;
+      const vt = isCltEarly ? Number(sal.vale_transporte_mensal || 0) : 0;
+      const outros = isCltEarly ? Number(sal.beneficios_outros || 0) : 0;
       const horasMensais = Number(sal.horas_mensais || 220);
       const ajudaCustoMensal = Number(sal.ajuda_custo_mensal || 0);
+      const semSalarioPj = !isCltEarly && !temSalario;
 
       // Dias úteis da competência de RH (ciclo 26 → 25) — descontando feriados.
       const { from, to } = payrollPeriodRange(year, month);
@@ -510,10 +535,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       horasNoturnas = Math.round(horasNoturnas * 100) / 100;
 
       // Regime: CLT (encargos/HE/benefícios) ou PJ (valor fixo — sem impostos/variáveis/HE).
-      const tipoContratacao = normalizeTipoContratacao(
-        (emp as any).tipoContratacao ?? (emp as any).tipo_contratacao,
-      );
-      const isClt = isCltContrato(tipoContratacao);
+      const tipoContratacao = tipoContratacaoEarly;
+      const isClt = isCltEarly;
 
       // VT desconto só CLT (modelo Torres: 6% do salário c/ peric quando há VT).
       const salarioComPericProp = baseSalary * (diasTrabalhados / 30) * (1 + periculosidadePct);
@@ -573,6 +596,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis: isClt ? diasUteis : 0,
         tipoContratacao,
         isClt,
+        semSalario: !temSalario,
+        semSalarioPj,
         // Fonte canônica da vigência (mesma do Balanço)
         salarioBaseCheio: baseSalary,
         effectiveDate: sal.effective_date ? String(sal.effective_date).slice(0, 10) : null,

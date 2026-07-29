@@ -171,8 +171,9 @@ export interface PayrollInput {
    * e todas as provisões). Quando `false` (PJ):
    *   - zera impostos/provisões (INSS, IRRF, FGTS, 13º, férias)
    *   - zera variáveis e HE (horas extras, noturno, DSR, VR por dia)
-   *   - permanece: salário proporcional + periculosidade + ajuda de custo fixa
-   * O valor acordado do PJ é o custo da empresa (sem encargos).
+   *   - zera periculosidade automática (o valor fixo já é o acordado)
+   *   - permanece: salário proporcional (valor fixo) + ajuda de custo fixa
+   * `salarioBaseCheio` no PJ = valor mensal cheio (ex.: 4000), sem somar 30%.
    */
   isClt?: boolean;
 }
@@ -230,24 +231,27 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     isClt = true,
   } = input;
 
-  // PJ: não contabiliza HE, noturno, VR variável nem DSR — só o valor fixo.
+  // PJ: valor fixo mensal — sem HE, noturno, VR, DSR nem periculosidade automática.
   const horasExtras = isClt ? (input.horasExtras ?? 0) : 0;
   const horasNoturnas = isClt ? (input.horasNoturnas ?? 0) : 0;
   const diasUteis = isClt ? (input.diasUteis ?? 0) : 0;
   const refeicaoDiaria = isClt ? (input.refeicaoDiaria ?? 0) : 0;
   const vtDesconto = isClt ? (input.vtDesconto ?? 0) : 0;
   const aplicarDsrEfetivo = isClt && aplicarDsr;
+  const aplicarPericulosidadeEfetivo = isClt && aplicarPericulosidade;
+  const pericPctEfetivo = aplicarPericulosidadeEfetivo ? periculosidadePct : 0;
 
   const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
 
   // 1) Vencimentos
   const salarioProporcional = r2((salarioBaseCheio / 30) * diasTrabalhados);
-  // Periculosidade somada (base do cadastro é SEM peric). Compõe o "Salário" da planilha.
-  const periculosidade = aplicarPericulosidade ? r2(salarioProporcional * periculosidadePct) : 0;
+  // Periculosidade somada (CLT: base do cadastro é SEM peric). PJ: nunca soma — o
+  // valor fixo cadastrado já é o total acordado (ex.: R$ 4.000).
+  const periculosidade = aplicarPericulosidadeEfetivo ? r2(salarioProporcional * pericPctEfetivo) : 0;
 
   // Hora cheia baseada no salário CHEIO COM periculosidade (Súmula 132 TST): a peric
   // integra a base de cálculo de HE e adicional noturno. valorHora = base × (1+peric) ÷ horas.
-  const fatorPeric = aplicarPericulosidade ? 1 + periculosidadePct : 1;
+  const fatorPeric = aplicarPericulosidadeEfetivo ? 1 + pericPctEfetivo : 1;
   const valorHoraNormal = horasMensais > 0 ? (salarioBaseCheio * fatorPeric) / horasMensais : 0;
   const horasExtrasValor = r2(valorHoraNormal * multiplicadorHE * horasExtras);
   const adicionalNoturnoValor = r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);

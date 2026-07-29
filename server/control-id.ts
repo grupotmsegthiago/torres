@@ -1495,9 +1495,10 @@ export async function buildFolhaStats(
   const multiplicadorAdicNot = (CCT as any).multiplicadorAdicNot ?? 1.8;
   const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnasCusto).toFixed(2);
 
-  // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
+  // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente).
+  // PJ: valor fixo = base cadastrada, sem somar periculosidade CCT.
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
-  const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
+  const periculosidade = isClt ? +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2) : 0;
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
   const valeRefeicao = isClt ? +(vrDiario * diasUteis).toFixed(2) : 0;
   const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;

@@ -45,27 +45,27 @@ test("calcularFolha não-CLT (isClt=false) zera INSS/IRRF/FGTS/provisões", () =
   assert.equal(f.liquidoFuncionario, f.baseTributavel, "líquido = base (sem descontos, sem benefícios)");
 });
 
-test("calcularFolha PJ (isClt=false) zera HE/noturno/VR e preserva salário+peric", () => {
+test("calcularFolha PJ: valor fixo = base cadastrada (sem peric/HE/VR)", () => {
+  // Caso Moacir: PJ com R$ 4.000 acordados — não soma 30% CCT em cima.
   const f = calcularFolha({
-    salarioBaseCheio: 3000,
+    salarioBaseCheio: 4000,
     diasTrabalhados: 30,
     horasMensais: 220,
     periculosidadePct: 0.3,
-    aplicarPericulosidade: true,
+    aplicarPericulosidade: true, // ignorado em PJ
     horasExtras: 10,
     horasNoturnas: 8,
     diasUteis: 22,
     refeicaoDiaria: 43,
-    ajudaCustoMensal: 200,
+    ajudaCustoMensal: 0,
     isClt: false,
   });
-  assert.equal(f.salarioProporcional, 3000, "salário proporcional preservado");
-  assert.equal(f.periculosidade, 900, "periculosidade 30% preservada quando ligada");
+  assert.equal(f.salarioProporcional, 4000, "valor fixo = base cadastrada");
+  assert.equal(f.periculosidade, 0, "PJ não soma periculosidade automática");
   assert.equal(f.horasExtrasValor, 0, "PJ não contabiliza HE");
   assert.equal(f.adicionalNoturnoValor, 0, "PJ não contabiliza noturno");
   assert.equal(f.refeicao, 0, "PJ não contabiliza VR variável");
-  assert.equal(f.ajudaCusto, 200, "ajuda de custo fixa permanece");
-  assert.equal(f.custoTotalEmpresa, 4100, "custo PJ = salário + peric + ajuda");
+  assert.equal(f.custoTotalEmpresa, 4000, "custo PJ = valor fixo");
 });
 
 test("modelo Torres (default): peric somada, DSR desligado", () => {

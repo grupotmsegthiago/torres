@@ -254,40 +254,69 @@ export async function calculateAgentMonthlyCost(
     if (horasNoturnasMedia === undefined) horasNoturnasMedia = 0;
   }
 
-  // Sem salário cadastrado na vigência: Kit CCT do cargo (mesma regra do cadastro).
+  // Regime: CLT ou PJ (legado "fixo" = PJ) — resolve antes do fallback de salário.
+  let tipoContratacao = opts?.tipoContratacao;
+  if (tipoContratacao === undefined) {
+    const { data: empRowTipo } = await supabaseAdmin
+      .from("employees")
+      .select("tipo_contratacao")
+      .eq("id", employeeId)
+      .limit(1);
+    tipoContratacao = empRowTipo?.[0] ? (empRowTipo[0] as any).tipo_contratacao : null;
+  }
+  const isClt = isCltContrato(tipoContratacao);
+
+  // Sem salário na vigência: CLT → kit CCT; PJ → zera (não inventa CCT+peric).
   const vigente = selectSalaryVigenteFromHistory(data || [], referenceDate);
   const semSalario = !!(error || !vigente);
   let s: any = vigente || null;
   if (semSalario) {
-    const { getCctConfigByCargo } = await import("../lib/cct-config");
-    const cct = await getCctConfigByCargo(opts?.role || null);
-    s = {
-      base_salary: cct.salarioBase,
-      periculosidade_pct: cct.periculosidadePct,
-      vale_refeicao_diario: cct.valeRefeicaoDia,
-      cesta_basica: cct.cestaBasica,
-      vale_transporte_mensal: 0,
-      beneficios_outros: 0,
-      horas_mensais: 220,
-      ajuda_custo_mensal: 0,
-      vale_alimentacao_mensal: 0,
-      assiduidade_mensal: 0,
-      dependentes_ir: 0,
-    };
+    if (isClt) {
+      const { getCctConfigByCargo } = await import("../lib/cct-config");
+      const cct = await getCctConfigByCargo(opts?.role || null);
+      s = {
+        base_salary: cct.salarioBase,
+        periculosidade_pct: cct.periculosidadePct,
+        vale_refeicao_diario: cct.valeRefeicaoDia,
+        cesta_basica: cct.cestaBasica,
+        vale_transporte_mensal: 0,
+        beneficios_outros: 0,
+        horas_mensais: 220,
+        ajuda_custo_mensal: 0,
+        vale_alimentacao_mensal: 0,
+        assiduidade_mensal: 0,
+        dependentes_ir: 0,
+      };
+    } else {
+      s = {
+        base_salary: 0,
+        periculosidade_pct: 0,
+        vale_refeicao_diario: 0,
+        cesta_basica: 0,
+        vale_transporte_mensal: 0,
+        beneficios_outros: 0,
+        horas_mensais: 220,
+        ajuda_custo_mensal: 0,
+        vale_alimentacao_mensal: 0,
+        assiduidade_mensal: 0,
+        dependentes_ir: 0,
+      };
+    }
   }
 
   const base = Number(s.base_salary || 0);
-  const vrDiario = Number(s.vale_refeicao_diario ?? 43);
-  const vrLegacy = Number(s.vale_refeicao_mensal || 0);
+  const vrDiario = isClt ? Number(s.vale_refeicao_diario ?? 43) : 0;
+  const vrLegacy = isClt ? Number(s.vale_refeicao_mensal || 0) : 0;
   const vrTotal = vrLegacy > 0 ? vrLegacy : vrDiario * vrDias;
-  const vt = Number(s.vale_transporte_mensal || 0);
-  const cesta = Number(s.cesta_basica ?? 200);
-  const outros = Number(s.beneficios_outros || 0);
-  const valeAlimentacao = Number(s.vale_alimentacao_mensal || 0);
-  const assiduidade = Number(s.assiduidade_mensal || 0);
-  const diarias = opts?.diariasManuais ?? 0;
+  const vt = isClt ? Number(s.vale_transporte_mensal || 0) : 0;
+  const cesta = isClt ? Number(s.cesta_basica ?? 200) : 0;
+  const outros = isClt ? Number(s.beneficios_outros || 0) : 0;
+  const valeAlimentacao = isClt ? Number(s.vale_alimentacao_mensal || 0) : 0;
+  const assiduidade = isClt ? Number(s.assiduidade_mensal || 0) : 0;
+  const diarias = isClt ? (opts?.diariasManuais ?? 0) : 0;
   const horasMensais = Number(s.horas_mensais || 220);
-  const periculosidadePct = Number(s.periculosidade_pct ?? 30) / 100;
+  // PJ: nunca herda 30% CCT — valor fixo = base_salary cadastrado.
+  const periculosidadePct = isClt ? Number(s.periculosidade_pct ?? 30) / 100 : 0;
   const ajudaCustoMensal = Number(s.ajuda_custo_mensal || 0);
   const diasTrabalhados = opts?.diasTrabalhados ?? 30; // default mês cheio
 
@@ -305,20 +334,8 @@ export async function calculateAgentMonthlyCost(
     /* mantém fallback */
   }
 
-  // Regime: CLT ou PJ (legado "fixo" = PJ).
-  let tipoContratacao = opts?.tipoContratacao;
-  if (tipoContratacao === undefined) {
-    const { data: empRowTipo } = await supabaseAdmin
-      .from("employees")
-      .select("tipo_contratacao")
-      .eq("id", employeeId)
-      .limit(1);
-    tipoContratacao = empRowTipo?.[0] ? (empRowTipo[0] as any).tipo_contratacao : null;
-  }
-  const isClt = isCltContrato(tipoContratacao);
-
   // Engine de folha 2025 — MESMA do cadastro (salary-summary → calcularFolha).
-  // PJ: sem HE/noturno/VR/impostos; só valor fixo (+ peric/ajuda).
+  // PJ: valor fixo = base (sem peric/HE/VR/impostos).
   const folha = calcularFolha({
     salarioBaseCheio: base,
     diasTrabalhados,
