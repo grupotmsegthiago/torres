@@ -148,7 +148,7 @@ export function BalancoExecutivoPanel({
   dailyData: DailyRow[];
   totals: {
     fat: number;
-    pag: number;
+    pag?: number;
     desp_combustivel: number;
     desp_pedagio: number;
     desp_manutencao: number;
@@ -158,7 +158,6 @@ export function BalancoExecutivoPanel({
     lucro: number;
     margem: number;
     total: number;
-    vrpExcludedFromTotal?: boolean;
   };
   period: string;
   vehicles: { plate: string; model: string; fat_total: number; pag_total: number; despesas: number; missions: number }[];
@@ -180,7 +179,6 @@ export function BalancoExecutivoPanel({
 
   const lines: DreLine[] = useMemo(() => {
     const fat = cols.map((c) => c.fat);
-    const pag = cols.map((c) => c.pag ?? 0);
     // RH e Fixos: rateio IGUAL (não proporcional ao faturamento do dia).
     // No mês: ÷ dias do período. Em visão agregada (trimestre/ano): ÷ nº de colunas.
     const aggregated = period === "YEAR" || period === "SEMESTER" || period === "QUARTER";
@@ -192,9 +190,8 @@ export function BalancoExecutivoPanel({
     const combVals = cols.map((c) => c.combustivel || 0);
     const pedVals = cols.map((c) => c.pedagio || 0);
     const manVals = cols.map((c) => c.manutencao || 0);
-    // Com folha RH, VRP é só referência (já pago via salário) — não soma no custo do dia
-    const vrpInCusto = totals.vrpExcludedFromTotal ? cols.map(() => 0) : pag;
-    const custo = cols.map((_, i) => vrpInCusto[i] + combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
+    // Mão de obra da missão NÃO entra no DRE — custo real do vigilante é a folha RH.
+    const custo = cols.map((_, i) => combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
     const lucro = cols.map((_, i) => fat[i] - custo[i]);
     const margem = cols.map((_, i) => (fat[i] > 0 ? (lucro[i] / fat[i]) * 100 : 0));
 
@@ -202,15 +199,6 @@ export function BalancoExecutivoPanel({
 
     return [
       { key: "fat", label: "Faturamento Bruto", color: "#34d399", values: fat, total: sum(fat) || totals.fat, kind: "money", emphasize: true },
-      {
-        key: "pag",
-        label: totals.vrpExcludedFromTotal ? "VRP / Agentes (ref. — já no RH)" : "VRP / Agentes",
-        color: "#f87171",
-        values: pag,
-        total: sum(pag) || totals.pag,
-        kind: "money",
-        negative: true,
-      },
       { key: "comb", label: "Combustível", color: "#fb923c", values: combVals, total: sum(combVals) || totals.desp_combustivel, kind: "money", negative: true },
       { key: "ped", label: "Pedágio", color: "#fbbf24", values: pedVals, total: sum(pedVals) || totals.desp_pedagio, kind: "money", negative: true },
       { key: "man", label: "Manutenção", color: "#f472b6", values: manVals, total: sum(manVals) || totals.desp_manutencao, kind: "money", negative: true },
@@ -225,16 +213,6 @@ export function BalancoExecutivoPanel({
   const drillRows = useMemo(() => {
     if (!drill) return [] as Array<{ label: string; detail?: string; amount: number }>;
     const day = drill.date;
-    if (drill.key === "pag") {
-      return missions
-        .filter((m) => (m.data || "").split("T")[0] === day)
-        .map((m) => ({
-          label: m.os_number || `OS #${m.service_order_id || m.id}`,
-          detail: `${m.vigilante || "—"} · ${m.placa_viatura || "—"} · ${m.client_name || ""}`,
-          amount: Number(m.pag_labor ?? m.pag_total) || 0,
-        }))
-        .filter((r) => r.amount > 0);
-    }
     if (drill.key === "comb" || drill.key === "ped" || drill.key === "man") {
       return periodExpenses
         .filter((t) => (t.date || "").split("T")[0] === day)
@@ -303,10 +281,8 @@ export function BalancoExecutivoPanel({
             <span className="text-[10px] font-bold text-slate-500 uppercase">{cols.length} colunas</span>
           </div>
           <p className="text-[10px] text-slate-500">
-            Clique em VRP, Combustível ou Pedágio para auditar o dia. Fixos e RH = rateio igual (÷ {daysInPeriod}).
-            {totals.vrpExcludedFromTotal
-              ? " VRP é referência da missão e NÃO entra no Custo Total — mão de obra já está no RH."
-              : ""}
+            Clique em Combustível, Pedágio ou Manutenção para auditar o dia. Fixos e RH = rateio igual (÷ {daysInPeriod}).
+            Mão de obra entra só pela folha RH.
           </p>
         </div>
         {cols.length === 0 ? (
@@ -327,7 +303,7 @@ export function BalancoExecutivoPanel({
               </thead>
               <tbody>
                 {lines.map((line, idx) => {
-                  const clickable = ["pag", "comb", "ped", "man", "rh", "fix"].includes(line.key);
+                  const clickable = ["comb", "ped", "man", "rh", "fix"].includes(line.key);
                   return (
                   <tr
                     key={line.key}

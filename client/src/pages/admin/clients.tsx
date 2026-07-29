@@ -2634,7 +2634,7 @@ function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => vo
                     <div className="bg-red-50 p-4 rounded-xl border border-red-100">
                       <p className="text-[9px] font-black text-red-700 uppercase mb-2">Pagamento (Vigilante)</p>
                       <div className="space-y-1">
-                        {Number(b.pag_vrp || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">VRP</span><span className="font-mono font-bold">{fmt(Number(b.pag_vrp))}</span></div>}
+                        {Number(b.pag_vrp || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Pag. Base</span><span className="font-mono font-bold">{fmt(Number(b.pag_vrp))}</span></div>}
                         {Number(b.pag_periculosidade || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Periculosidade</span><span className="font-mono font-bold">{fmt(Number(b.pag_periculosidade))}</span></div>}
                         {Number(b.pag_adicional_noturno || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Ad. Noturno</span><span className="font-mono font-bold">{fmt(Number(b.pag_adicional_noturno))}</span></div>}
                         {Number(b.pag_reembolsos || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Reembolsos</span><span className="font-mono font-bold">{fmt(Number(b.pag_reembolsos))}</span></div>}

@@ -4953,8 +4953,8 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                 {custoDiarias > 0 && (
                   <div className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
                     <div className="min-w-0 flex-1">
-                      <span className="text-neutral-700">Diárias (VRP)</span>
-                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
+                      <span className="text-neutral-700">Diárias Agentes</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">BASE + PERICULOSIDADE</span>
                     </div>
                     <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(custoDiarias)}</span>
                   </div>
@@ -5001,7 +5001,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Pedágio</span><span className="font-bold text-red-600">{fmtBRL(custoPedagio)}</span></div>
               )}
               {custoDiarias > 0 && (
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias (VRP)</span><span className="font-bold text-red-600">{fmtBRL(custoDiarias)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias Agentes</span><span className="font-bold text-red-600">{fmtBRL(custoDiarias)}</span></div>
               )}
               {custoOutros > 0 && (
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(custoOutros)}</span></div>
@@ -5844,7 +5844,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     </TooltipTrigger>
                                     <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
                                       <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
-                                      <p className="text-neutral-700">VRP/Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
+                                      <p className="text-neutral-700">Pag. Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
                                       {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
                                       {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
                                       {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
@@ -6582,7 +6582,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   </TooltipTrigger>
                                   <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
                                     <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
-                                    <p className="text-neutral-700">VRP/Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
+                                    <p className="text-neutral-700">Pag. Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
                                     {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
                                     {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
                                     {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}

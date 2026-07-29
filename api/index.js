@@ -28516,7 +28516,7 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
         doc.save();
         doc.rect(LM, tblY, W, 18).fill("#0f172a");
         doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("FATURAMENTO (Cliente)", LM + 6, tblY + 4, { width: col1W - 12 });
-        doc.text("PAGAMENTO (VRP/Agente)", LM + col1W + 6, tblY + 4, { width: col2W - 12 });
+        doc.text("PAGAMENTO (Agente)", LM + col1W + 6, tblY + 4, { width: col2W - 12 });
         doc.restore();
         doc.y = tblY + 18;
         const pedagioIdaVoltaPdf = !!os.pedagioIdaVolta;
@@ -28533,7 +28533,7 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
           ...despPedPdf > 0 ? [[pedagioLabel, BRL(despPedPdf)]] : []
         ];
         const pagRows = [
-          ["VRP Base", BRL(resultado.pagamento.vrp)],
+          ["Pag. Base Agente", BRL(resultado.pagamento.vrp)],
           ["Hora Extra / Periculosidade", BRL(resultado.pagamento.periculosidade)],
           ["Adicional Noturno", BRL(resultado.pagamento.adicional_noturno)],
           ["Reembolsos", BRL(resultado.pagamento.reembolsos)],
@@ -38432,8 +38432,8 @@ function registerEscortRoutes(app2) {
           ["Franquia M\xEDnima", `${Number(priceTable.franquia_minima_km || 0)} km`],
           ["Hora Estadia", `R$ ${Number(priceTable.valor_hora_estadia || 0).toFixed(2)} / hora`],
           ["Di\xE1ria / Pernoite", `R$ ${Number(priceTable.valor_diaria || 0).toFixed(2)}`],
-          ["VRP Base", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
-          ["Adic. Noturno (VRP)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
+          ["Pag. Base Agente", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
+          ["Adic. Noturno (Base)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
           ["Adic. Noturno (KM)", `${Number(priceTable.adicional_noturno_km_pct || 0)}%`],
           ["Periculosidade", `${Number(priceTable.adicional_periculosidade_pct || 0)}%`]
         ];

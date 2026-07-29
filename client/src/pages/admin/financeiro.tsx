@@ -2918,7 +2918,7 @@ export default function FinanceiroPage() {
                   <div className="bg-white p-3 rounded-lg border border-neutral-100">
                     <p className="text-[9px] font-black text-neutral-400 uppercase mb-2">Pagamento ao Vigilante</p>
                     <div className="grid grid-cols-2 gap-1 text-[10px]">
-                      <span className="font-bold text-neutral-600">VRP:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.vrp)}</span>
+                      <span className="font-bold text-neutral-600">Base Agente:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.vrp)}</span>
                       <span className="font-bold text-neutral-600">Periculosidade:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.periculosidade)}</span>
                       <span className="font-bold text-neutral-600">Ad. Noturno:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.adicional_noturno)}</span>
                     </div>
@@ -3393,7 +3393,7 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
                     <div key={`diaria-${i}`} className="flex justify-between items-center text-xs py-1">
                       <div className="min-w-0 flex-1">
                         <span className="text-neutral-600">{d.agentName}</span>
-                        <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
+                        <span className="text-[10px] text-neutral-400 uppercase font-semibold block">BASE + PERICULOSIDADE</span>
                       </div>
                       <span className="font-bold text-red-600">{fmtBRL(d.valor)}</span>
                     </div>

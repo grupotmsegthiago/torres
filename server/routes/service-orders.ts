@@ -3759,7 +3759,7 @@ import type { Express } from "express";
         doc.rect(LM, tblY, W, 18).fill("#0f172a");
         doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff")
           .text("FATURAMENTO (Cliente)", LM + 6, tblY + 4, { width: col1W - 12 });
-        doc.text("PAGAMENTO (VRP/Agente)", LM + col1W + 6, tblY + 4, { width: col2W - 12 });
+        doc.text("PAGAMENTO (Agente)", LM + col1W + 6, tblY + 4, { width: col2W - 12 });
         doc.restore();
         doc.y = tblY + 18;
 
@@ -3777,7 +3777,7 @@ import type { Express } from "express";
           ...(despPedPdf > 0 ? [[pedagioLabel, BRL(despPedPdf)] as [string, string]] : []),
         ];
         const pagRows: [string, string][] = [
-          ["VRP Base", BRL(resultado.pagamento.vrp)],
+          ["Pag. Base Agente", BRL(resultado.pagamento.vrp)],
           ["Hora Extra / Periculosidade", BRL(resultado.pagamento.periculosidade)],
           ["Adicional Noturno", BRL(resultado.pagamento.adicional_noturno)],
           ["Reembolsos", BRL(resultado.pagamento.reembolsos)],

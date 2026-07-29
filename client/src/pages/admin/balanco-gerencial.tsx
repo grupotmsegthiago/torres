@@ -597,8 +597,8 @@ export default function BalancoGerencialPage() {
 
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
-    // pag = só mão de obra (VRP/adicionais). Combustível e pedágio NÃO vêm do boletim:
-    // entram exclusivamente por financial_transactions (fueling / mission_cost).
+    // pag = mão de obra teórica do boletim (não entra no DRE / custoTotal — custo real = RH).
+    // Combustível e pedágio entram exclusivamente por financial_transactions (fueling / mission_cost).
     const pag = filtered.missions.reduce((a, m) => a + (m.pag_labor ?? m.pag_total), 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
@@ -613,12 +613,8 @@ export default function BalancoGerencialPage() {
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * costDays;
-    // VRP NÃO entra no custoTotal quando há folha RH: o vigilante CLT já está inteiro no RH.
-    // VRP do boletim é custo teórico da missão (contrato.vrp_base) — útil na DRE da OS,
-    // mas somar com a folha dobra a mão de obra e derruba a margem sem ser caixa real.
-    // Só usa VRP no total se não houver RH (fallback / operação sem folha cadastrada).
-    const vrpNoTotal = provisaoRH > 0 ? 0 : pag;
-    const custoTotal = vrpNoTotal + despReaisOperacional + provisaoRH + custosFixosRateados;
+    // Pagamento teórico da missão NÃO entra no custoTotal: mão de obra = folha RH.
+    const custoTotal = despReaisOperacional + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -642,8 +638,6 @@ export default function BalancoGerencialPage() {
       custosFixosMensal,
       custosFixosRateados,
       custoTotal,
-      /** VRP exibido na DRE mas excluído do total quando RH > 0 */
-      vrpExcludedFromTotal: provisaoRH > 0,
     };
   }, [filtered, provisaoRH, fixedCostsSummary, costDays]);
 
@@ -899,7 +893,6 @@ export default function BalancoGerencialPage() {
               </div>
               <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-3 space-y-1.5">
                 <p className="text-[10px] font-black uppercase text-slate-500">Custos</p>
-                <div className="flex justify-between text-[11px]"><span className="text-slate-400">VRP</span><span className="font-mono font-bold text-rose-300">{fmt(totals.pag)}</span></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">Combustível</span><span className="font-mono font-bold text-orange-300">{fmt(totals.desp_combustivel)}</span></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">RH</span><span className="font-mono font-bold text-amber-300">{fmt(totals.provisaoRH)}</span></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">Fixos</span><span className="font-mono font-bold text-violet-300">{fmt(totals.custosFixosRateados)}</span></div>
@@ -1028,7 +1021,7 @@ export default function BalancoGerencialPage() {
             );
           })()}
           {(() => {
-            // Operacional do custo total = só variáveis oficiais. VRP não entra com RH.
+            // Operacional do custo total = só variáveis oficiais (sem pagamento teórico da missão).
             const operacional =
               (totals.desp_combustivel || 0) +
               (totals.desp_pedagio || 0) +
@@ -1057,19 +1050,11 @@ export default function BalancoGerencialPage() {
               for (const [label, v] of linhasDesp) {
                 if (v > 0) opRows.push({ label, value: v });
               }
-              if (totals.pag > 0) {
-                opRows.push({
-                  label: totals.vrpExcludedFromTotal
-                    ? "VRP (ref. — NÃO soma; já no RH)"
-                    : "VRP (entra no total — sem folha RH)",
-                  value: totals.pag,
-                });
-              }
               cats.push({
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Só combustível + pedágio + manutenção (FT oficiais) entram no valor. VRP é referência quando há folha RH.`,
+                tipDesc: `Só combustível + pedágio + manutenção (FT oficiais). Mão de obra entra pela folha RH.`,
                 rows: opRows,
               });
             }
@@ -1811,7 +1796,6 @@ function BalancoTab({
     fatCongelado: number; fatAberto: number; countCongelado: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
     provisaoRH: number; custoTotal: number; custosFixosRateados: number; custosFixosMensal?: number;
-    vrpExcludedFromTotal?: boolean;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
@@ -1891,11 +1875,9 @@ function BalancoTab({
     // Fixos: rateio IGUAL por dia do período (não proporcional ao fat do dia)
     const fixoDia = (totals.custosFixosRateados || 0) / Math.max(daysInPeriod, 1);
     const rhDia = (totals.provisaoRH || 0) / Math.max(daysInPeriod, 1);
-    // Com RH na folha, VRP não entra no custo do dia (evita dobrar mão de obra)
-    const includeVrp = !totals.vrpExcludedFromTotal;
+    // Pagamento teórico da missão não entra no custo do dia (mão de obra = RH).
     return dailyData.map((d) => {
       const custo =
-        (includeVrp ? d.pag : 0) +
         (d.combustivel || 0) +
         (d.pedagio || 0) +
         (d.manutencao || 0) +
@@ -1908,7 +1890,7 @@ function BalancoTab({
         lucro: Math.round(d.fat - custo),
       };
     });
-  }, [dailyData, totals.custosFixosRateados, totals.provisaoRH, totals.vrpExcludedFromTotal, daysInPeriod]);
+  }, [dailyData, totals.custosFixosRateados, totals.provisaoRH, daysInPeriod]);
 
   return (
     <div className="space-y-4">
@@ -1941,7 +1923,6 @@ function BalancoTab({
         dailyData={dailyData}
         totals={{
           fat: totals.fat,
-          pag: totals.pag,
           desp_combustivel: totals.desp_combustivel,
           desp_pedagio: totals.desp_pedagio,
           desp_manutencao: totals.desp_manutencao,
@@ -1951,7 +1932,6 @@ function BalancoTab({
           lucro: totals.lucro,
           margem: totals.margem,
           total: totals.total,
-          vrpExcludedFromTotal: !!totals.vrpExcludedFromTotal,
         }}
         period={period}
         vehicles={vehicles}
@@ -2303,7 +2283,7 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
                       <p className="text-sm font-black text-green-700 font-mono">{fmt(a.fat_total)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs font-black text-neutral-400 uppercase">VRP Pago</p>
+                      <p className="text-xs font-black text-neutral-400 uppercase">Pag. Missão</p>
                       <p className="text-sm font-black text-red-600 font-mono">{fmt(a.pag_total)}</p>
                     </div>
                     <div className="text-center">
@@ -2845,8 +2825,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                         <div className="bg-white rounded-lg border border-neutral-200 p-3">
                           <p className="text-[10px] font-black text-red-700 uppercase tracking-wide mb-2">Custos</p>
                           <div className="space-y-1 text-xs">
-                            {m.pag_vrp > 0 && <div className="flex justify-between"><span className="text-neutral-500">VRP Agentes</span><span className="font-bold text-neutral-800">{fmt(m.pag_vrp)}</span></div>}
-                            {m.pag_total > 0 && m.pag_total !== m.pag_vrp && <div className="flex justify-between"><span className="text-neutral-500">Pagamento Total</span><span className="font-bold text-neutral-800">{fmt(m.pag_total)}</span></div>}
+                            {m.pag_total > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pag. Missão</span><span className="font-bold text-neutral-800">{fmt(m.pag_total)}</span></div>}
                             {m.despesas_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio</span><span className="font-bold text-neutral-800">{fmt(m.despesas_pedagio)}</span></div>}
                             {m.despesas_combustivel > 0 && <div className="flex justify-between"><span className="text-neutral-500">Combustível</span><span className="font-bold text-neutral-800">{fmt(m.despesas_combustivel)}</span></div>}
                             {m.despesas > 0 && m.despesas !== (m.despesas_pedagio || 0) + (m.despesas_combustivel || 0) && <div className="flex justify-between"><span className="text-neutral-500">Outras Despesas</span><span className="font-bold text-neutral-800">{fmt(m.despesas - (m.despesas_pedagio || 0) - (m.despesas_combustivel || 0))}</span></div>}

@@ -345,7 +345,6 @@ export function GestorFinanceiroPanel(props: Props) {
     return s.size;
   }, [missions]);
 
-  const operacional = totals.pag || 0;
   const custoKm = (eficiencia.totalKm || totals.km || 0) > 0
     ? (totals.desp_combustivel || 0) / (eficiencia.totalKm || totals.km)
     : 0;
@@ -554,13 +553,8 @@ export function GestorFinanceiroPanel(props: Props) {
           >
             → Ver todos os funcionários da folha ({folhaAgents.length})
           </button>
-          {operacional > 0 && (
-            <p className="text-[9px] text-slate-500">
-              VRP referência (não soma — já no RH): <span className="font-mono text-slate-400">{fmt(operacional)}</span>
-            </p>
-          )}
           <p className="text-[9px] text-slate-500">
-            Soma das barras = custo da DRE. VRP do boletim não entra com a folha (evita dobrar o vigilante).
+            Soma das barras = custo da DRE. Mão de obra entra só pela folha RH.
           </p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo

@@ -566,13 +566,13 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
   return {
     indicator: "Custos Totais",
     formula:
-      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). VRP do boletim NÃO entra quando há folha RH (evita dobrar custo do vigilante). Sem provisões 13º/férias.",
+      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). Pagamento teórico da missão NÃO entra (mão de obra = folha RH). Sem provisões 13º/férias.",
     modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento"],
     tables: ["financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
     recordsConsidered: input.missions.length,
     recordsExcluded: [
       { reason: "Provisões 13º/férias (fora do fluxo de caixa operacional)", count: 0 },
-      { reason: "VRP / pagamento teórico da missão (já coberto pelo RH · Folha)", count: input.rhMonthly > 0 ? 1 : 0 },
+      { reason: "Pagamento teórico da missão (já coberto pelo RH · Folha)", count: 1 },
       { reason: "Combustível/pedágio retirados do pag_total (fonte oficial = FT)", count: 0 },
       {
         reason: `Imposto ${input.impostoPct}% da Meta (planejamento — NÃO é custo do período)`,
@@ -583,7 +583,6 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
     updatedAt: input.updatedAt,
     lastUser: input.auditUser || null,
     notes: [
-      `VRP referência (NÃO soma no total — já no RH): ${money(input.totals.pag)}`,
       `Combustível (abastecimento): ${money(input.totals.desp_combustivel)}`,
       `Pedágio: ${money(input.totals.desp_pedagio)}`,
       `Manutenção: ${money(input.totals.desp_manutencao)}`,

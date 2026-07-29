@@ -2926,7 +2926,7 @@ import type { Express } from "express";
           byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
         }
         byVehicle[plate].fat_total += calcFat(b);
-        // Só mão de obra (VRP + adicionais + outras). Combustível/pedágio NÃO entram aqui —
+        // Só mão de obra (base agente + adicionais + outras). Combustível/pedágio NÃO entram aqui —
         // ficam em financial_transactions (fueling / mission_cost) para não duplicar.
         byVehicle[plate].pag_total += calcPagLabor(b);
         byVehicle[plate].missions += 1;
@@ -3043,7 +3043,7 @@ import type { Express } from "express";
         fat_pernoite: Number(b.fat_pernoite || 0),
         receitas_os: Number(b.receitas_os || 0),
         pag_total: pag,
-        // Pagamento laboral (VRP + peric. + ad. noturno + outras). Sem comb/pedágio.
+        // Pagamento laboral (base + peric. + ad. noturno + outras). Sem comb/pedágio.
         pag_labor: pagLabor,
         pag_vrp: Number(b.pag_vrp || 0),
         despesas: desp,
@@ -3414,8 +3414,8 @@ import type { Express } from "express";
           ["Franquia Mínima", `${Number(priceTable.franquia_minima_km || 0)} km`],
           ["Hora Estadia", `R$ ${Number(priceTable.valor_hora_estadia || 0).toFixed(2)} / hora`],
           ["Diária / Pernoite", `R$ ${Number(priceTable.valor_diaria || 0).toFixed(2)}`],
-          ["VRP Base", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
-          ["Adic. Noturno (VRP)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
+          ["Pag. Base Agente", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
+          ["Adic. Noturno (Base)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
           ["Adic. Noturno (KM)", `${Number(priceTable.adicional_noturno_km_pct || 0)}%`],
           ["Periculosidade", `${Number(priceTable.adicional_periculosidade_pct || 0)}%`],
         ];

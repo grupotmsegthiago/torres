@@ -364,7 +364,7 @@ function OSSummaryModal({ os, fatTotal, resultado, margem, onClose, onNavigateFi
                       <span className="font-mono">{fmtBRL(cv.valor_km_carregado)}/km</span>
                     </div>
                     <div className="flex justify-between text-neutral-500">
-                      <span>VRP Base</span>
+                      <span>Pag. Base Agente</span>
                       <span className="font-mono">{fmtBRL(cv.vrp_base)}</span>
                     </div>
                   </div>
@@ -376,7 +376,7 @@ function OSSummaryModal({ os, fatTotal, resultado, margem, onClose, onNavigateFi
               <h4 className="text-xs font-bold text-red-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <TrendingDown className="w-3.5 h-3.5" /> Despesas (Custos)
               </h4>
-              <MoneyRow label="Pagamento Agentes (VRP)" value={lc?.pagamento || 0} color="text-red-700" />
+              <MoneyRow label="Pagamento Agentes" value={lc?.pagamento || 0} color="text-red-700" />
               <MoneyRow label="Salários (rateio diário)" value={lc?.custo_salario || 0} color="text-red-700" />
               <MoneyRow label="Diária Contrato (rateio)" value={lc?.custo_diaria || 0} color="text-red-700" />
               <MoneyRow label="Combustível (rateio)" value={lc?.custo_combustivel || 0} color="text-red-700" />
@@ -854,7 +854,7 @@ export default function RelatorioOSPage() {
                   <div className="font-bold text-neutral-700 mb-2 uppercase text-[10px] tracking-wider">Detalhamento de Custos do Período</div>
                   <div className="space-y-1">
                     {[
-                      { label: "Pagamento Agentes (VRP)", v: totals.pagamento },
+                      { label: "Pagamento Agentes", v: totals.pagamento },
                       { label: "Salários (rateio diário)", v: totals.salario },
                       { label: "Diária Contrato (rateio)", v: totals.diaria },
                       { label: "Combustível (rateio)", v: totals.combustivel },
@@ -1062,7 +1062,7 @@ export default function RelatorioOSPage() {
                                 {(() => {
                                   const lc = o.liveCost!;
                                   const items: { label: string; v: number }[] = [
-                                    { label: "Pagamento Agentes (VRP)", v: lc.pagamento || 0 },
+                                    { label: "Pagamento Agentes", v: lc.pagamento || 0 },
                                     { label: "Salários (rateio diário)", v: lc.custo_salario || 0 },
                                     { label: "Diária Contrato (rateio)", v: lc.custo_diaria || 0 },
                                     { label: "Combustível (rateio)", v: lc.custo_combustivel || 0 },

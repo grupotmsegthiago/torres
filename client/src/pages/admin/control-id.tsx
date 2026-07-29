@@ -1760,7 +1760,7 @@ function FolhaTab() {
                       <span className="font-semibold tabular-nums text-neutral-800">{fmtBRL(stats.custoTotalEstimado)}</span>
                     </div>
                     {(stats.faturamentoEmpregado ?? 0) > 0 && stats.custoTotalEstimado > 0 && (() => {
-                      // Lucro real = margem líquida das OSs (já desconta VRP, combustível,
+                      // Lucro real = margem líquida das OSs (já desconta pag. agentes, combustível,
                       // pedágio, despesas operacionais) MENOS o custo CLT mensal do agente.
                       // NÃO usar faturamentoEmpregado bruto — isso ignoraria custos da OS.
                       const margemLiquida = stats.faturamentoMargem ?? 0;
