@@ -458,8 +458,50 @@ export function registerControlIdRoutes(app: Express) {
     try {
       const employeeId = Number(req.params.employeeId);
       const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
-      const folha = await ctrl.buildFolhaPonto(employeeId, monthYear);
+      // engine=pares só é honrado fora de produção (ou via FOLHA_ENGINE em dev).
+      // Em produção resolveFolhaEngine ignora o env e mantém first_last.
+      const engineQ = String(req.query.engine || "");
+      const engine =
+        engineQ === "pares" || engineQ === "first_last"
+          ? (engineQ as "pares" | "first_last")
+          : undefined;
+      const folha = await ctrl.buildFolhaPonto(employeeId, monthYear, { engine });
       res.json(folha);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  /**
+   * Simulação somente leitura: first_last × pares.
+   * NÃO grava histórico, NÃO altera batidas, NÃO recalcula competências fechadas.
+   * Admin only.
+   */
+  app.get("/api/control-id/simular-folha-pares", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const employeeId = req.query.employeeId != null ? Number(req.query.employeeId) : undefined;
+      const { simulateAllEmployeesMonth, simulateEmployeeMonth, formatSimReportText } = await import(
+        "../lib/simular-folha-pares"
+      );
+      if (employeeId && Number.isFinite(employeeId)) {
+        const row = await simulateEmployeeMonth({ employeeId, monthYear });
+        return res.json({ monthYear, employee: row, text: formatSimReportText({
+          generatedAt: new Date().toISOString(),
+          monthYear,
+          horasMensaisDefault: 220,
+          heRateBRL: 16,
+          employees: [row],
+          totals: {
+            employeesCompared: 1,
+            employeesWithDelta: row.deltaMin !== 0 ? 1 : 0,
+            sumDeltaMin: row.deltaMin,
+            sumHeImpactBRL: row.heImpactBRL,
+          },
+        }) });
+      }
+      const report = await simulateAllEmployeesMonth({ monthYear });
+      res.json({ ...report, text: formatSimReportText(report) });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

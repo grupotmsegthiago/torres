@@ -1,28 +1,25 @@
-# HE Folha = first→last − 1º almoço (cartão Control iD)
+# HE Folha — motor de pares (dev) × first_last (prod default)
 
-**Alvo Reis (26/06→25/07/2026):** HE **102:22** (= trab 322:22 − 220) × R$ 16.
+**Alvo Reis cartão oficial (26/06→25/07/2026):** TOTAL **322:22** · HE **102:22** × R$ 16.
 
-## Regra de pagamento (INTOCÁVEL)
+## Estado (PR desenvolvimento)
 
-Por dia BRT, com batidas ordenadas (inclui marcadores `00:00`/`23:59`):
+| Motor | Onde | Reis (fixture) |
+|-------|------|----------------|
+| `first_last` (legado) | default produção | Torres **323:45** / HE **103:45** |
+| `pares` (canônico novo) | `FOLHA_ENGINE=pares` só fora de prod; `server/lib/jornada-pares.ts` | Oficial **322:22**; Torres dump/reconstr. **313:06** / HE **93:06** |
 
-```
-worked = min( (última − primeira) − (batida[2] − batida[1] se 4+), 19:59 )
-HE_mês = max(0, Σ worked − 220h)
-```
+**313:06 é o valor EXATO** (não 313:05): `323:45 − 10:39 = 313:06` e `322:22 − 09:15 − 00:01 = 313:06`.
 
-- Mantém marcadores de meia-noite (costuram turno noturno).
-- Desconta **só o 1º intervalo** (almoço), não todas as pausas.
-- Teto 19:59 remove fantasma do import PDF.
+Ativação em produção exige simulação FASE 4 + autorização expressa. Legado permanece para A×B.
 
 ## Regressões a NÃO repetir
 
 | Tentativa | Resultado |
 |-----------|-----------|
-| Pares gulosos (todas as pausas) | Reis **93:05** (subconta ~9h) |
 | Strip `00:00`/`23:59` | HE **0:00** (órfãs no noturno) |
-
-`computeDayWorkedMinutesFromPunches` fica para análises/testes; **Folha usa first→last**.
+| Exigir 322:22 no dump Torres | Falso — 30/06/04/07 divergem do cartão |
+| Hardcode −01:23 / employee_id 22 | Proibido |
 
 ## Taxa
 
