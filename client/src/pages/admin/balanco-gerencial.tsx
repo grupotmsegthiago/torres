@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
 
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
@@ -781,61 +782,110 @@ export default function BalancoGerencialPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-4" data-testid="page-balanco-gerencial">
+      <div
+        className="-mx-3 sm:-mx-4 md:-mx-6 -mt-2 px-3 sm:px-4 md:px-6 py-4 space-y-4 rounded-none md:rounded-2xl bg-[radial-gradient(1200px_600px_at_10%_-10%,rgba(34,211,238,0.12),transparent_55%),radial-gradient(900px_500px_at_90%_0%,rgba(52,211,153,0.10),transparent_50%),linear-gradient(180deg,#070b14_0%,#0b1220_45%,#0a101c_100%)] text-slate-100"
+        data-testid="page-balanco-gerencial"
+      >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight" data-testid="title-balanco">Balanço Gerencial</h2>
-            <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
+            <h2 className="text-xl font-black text-slate-50 uppercase tracking-tight" data-testid="title-balanco">Balanço Gerencial</h2>
+            <p className="text-xs text-slate-400 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-neutral-500 font-bold text-right leading-tight" data-testid="text-cache-status">
+            <span className="text-[11px] text-slate-400 font-bold text-right leading-tight" data-testid="text-cache-status">
               {dataGeradoEm
                 ? `Atualizado ${dataGeradoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
                 : "Carregando..."}
               <br />
-              <span className="text-neutral-400">atualiza a cada 3h</span>
+              <span className="text-slate-500">atualiza a cada 3h</span>
             </span>
-            <Button variant="outline" size="sm" onClick={atualizarAgora} disabled={atualizando} data-testid="button-refresh-dashboard">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={atualizarAgora}
+              disabled={atualizando}
+              className="border-slate-600 bg-slate-900/60 text-slate-100 hover:bg-slate-800 hover:text-white"
+              data-testid="button-refresh-dashboard"
+            >
               <RefreshCw size={14} className={atualizando ? "animate-spin" : ""} />
               <span className="ml-1.5 text-xs font-bold">{atualizando ? "Atualizando" : "Atualizar agora"}</span>
             </Button>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-3">
+        <div className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-3 backdrop-blur">
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
               {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
                 <button key={p} onClick={() => { setPeriod(p); setRefDate(new Date()); }} data-testid={`period-${p.toLowerCase()}`}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
-                    period === p ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"
+                    period === p ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   }`}>
                   {PERIOD_LABELS[p]}
                 </button>
               ))}
             </div>
             <div className="flex items-center gap-1 md:gap-2 md:ml-auto">
-              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} data-testid="button-prev-period">
+              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-prev-period">
                 <ChevronLeft size={16} />
               </Button>
-              <span className="text-xs sm:text-sm font-black text-neutral-700 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
+              <span className="text-xs sm:text-sm font-black text-slate-100 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
                 {range.label}
               </span>
               {(gridFetching || rhFetching) && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 uppercase whitespace-nowrap" data-testid="status-period-loading">
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 uppercase whitespace-nowrap" data-testid="status-period-loading">
                   <RefreshCw size={12} className="animate-spin" />
                   Calculando…
                 </span>
               )}
-              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} data-testid="button-next-period">
+              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-next-period">
                 <ChevronRight size={16} />
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setRefDate(new Date())} className="text-xs font-black uppercase" data-testid="button-today">
+              <Button variant="outline" size="sm" onClick={() => setRefDate(new Date())} className="text-xs font-black uppercase border-slate-600 bg-slate-900/50 text-slate-100 hover:bg-slate-800" data-testid="button-today">
                 Hoje
               </Button>
             </div>
           </div>
         </div>
+
+        {/* Faixa de gauges (visão executiva) */}
+        {(() => {
+          const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
+          const totalViaturas = activeVehicles.length;
+          const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * Math.max(totalViaturas, 1);
+          const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
+          const metaColor = metaPct >= 100 ? "#34d399" : metaPct >= 50 ? "#fbbf24" : "#f87171";
+          const margemColor = totals.margem >= 35 ? "#34d399" : totals.margem >= 25 ? "#fbbf24" : "#f87171";
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="strip-gauges-balanco">
+              <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-3 flex items-center justify-around gap-2">
+                <GaugeRing pct={metaPct} color={metaColor} label="Meta frota" sublabel={fmt(totals.fat)} testId="gauge-meta-frota" />
+                <GaugeRing pct={Math.max(0, totals.margem)} color={margemColor} label="Margem" sublabel={fmt(totals.lucro)} testId="gauge-margem-kpi" />
+              </div>
+              <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-3 space-y-1.5">
+                <p className="text-[10px] font-black uppercase text-slate-500">Resumo</p>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Faturamento</span><span className="font-mono font-black text-emerald-300">{fmt(totals.fat)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Custo total</span><span className="font-mono font-black text-rose-300">{fmt(totals.custoTotal)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Lucro</span><span className={`font-mono font-black ${totals.lucro >= 0 ? "text-sky-300" : "text-rose-400"}`}>{fmt(totals.lucro)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Missões</span><span className="font-mono font-black text-slate-200">{totals.total}</span></div>
+              </div>
+              <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-3 space-y-1.5">
+                <p className="text-[10px] font-black uppercase text-slate-500">Custos</p>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">VRP</span><span className="font-mono font-bold text-rose-300">{fmt(totals.pag)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Combustível</span><span className="font-mono font-bold text-orange-300">{fmt(totals.desp_combustivel)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">RH</span><span className="font-mono font-bold text-amber-300">{fmt(totals.provisaoRH)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Fixos</span><span className="font-mono font-bold text-violet-300">{fmt(totals.custosFixosRateados)}</span></div>
+              </div>
+              <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-3 space-y-1.5">
+                <p className="text-[10px] font-black uppercase text-slate-500">Operação</p>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">KM</span><span className="font-mono font-bold text-cyan-300">{Math.round(totals.km).toLocaleString("pt-BR")}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Finalizado</span><span className="font-mono font-bold text-emerald-300">{fmt(totals.fatCongelado)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Em aberto</span><span className="font-mono font-bold text-amber-300">{fmt(totals.fatAberto)}</span></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Viaturas meta</span><span className="font-mono font-bold text-slate-200">{totalViaturas}</span></div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
           {(() => {
@@ -874,16 +924,16 @@ export default function BalancoGerencialPage() {
             const hasAgendado = agendadoFat > 0.005;
 
             return (
-              <Card className={`p-4 border-neutral-200 ${mc.icon ? "ring-2 ring-green-400" : ""}`} data-testid="card-faturamento">
+              <Card className={`p-4 border-slate-700/80 bg-slate-950/70 text-slate-100 ${mc.icon ? "ring-2 ring-emerald-400/60" : ""}`} data-testid="card-faturamento">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mc.bg}`}>
-                    {mc.icon ? <Trophy size={16} className="text-green-600" /> : <ArrowUpRight size={16} className="text-green-700" />}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mc.icon ? "bg-emerald-500/20" : "bg-emerald-500/10"}`}>
+                    {mc.icon ? <Trophy size={16} className="text-emerald-400" /> : <ArrowUpRight size={16} className="text-emerald-400" />}
                   </div>
-                  <span className="text-xs font-black text-neutral-400 uppercase">Faturamento</span>
-                  {mc.icon && <Badge className="bg-green-600 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                  <span className="text-xs font-black text-slate-400 uppercase">Faturamento</span>
+                  {mc.icon && <Badge className="bg-emerald-500 text-slate-950 text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
                 </div>
-                <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
-                <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
+                <p className="text-xl font-black text-emerald-300 font-mono">{fmt(totals.fat)}</p>
+                <p className="text-xs text-slate-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
                 {totals.fat > 0 && (
                   <div className="mt-2 grid grid-cols-2 gap-1.5" data-testid="breakdown-faturamento">
                     <div
@@ -1167,7 +1217,7 @@ export default function BalancoGerencialPage() {
 
             return (
               <TooltipProvider delayDuration={150}>
-                <Card className="p-4 border-neutral-200" data-testid="card-custos">
+                <Card className="p-4 border-slate-700/80 bg-slate-950/70 text-slate-100" data-testid="card-custos">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
                       <ArrowDownRight size={16} className="text-red-700" />
@@ -1249,7 +1299,7 @@ export default function BalancoGerencialPage() {
               </TooltipProvider>
             );
           })()}
-          <Card className="p-4 border-neutral-200" data-testid="card-lucro">
+          <Card className="p-4 border-slate-700/80 bg-slate-950/70 text-slate-100" data-testid="card-lucro">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
                 <DollarSign size={16} className="text-blue-700" />
@@ -1269,36 +1319,36 @@ export default function BalancoGerencialPage() {
             const labelMap: Record<string, string> = { green: "Saudável", amber: "Atenção", red: "ABAIXO DA META" };
             return (
               <Card
-                className={`p-4 border-2 ${ok ? "border-green-200" : atencao ? "border-amber-300" : "border-red-400"}`}
+                className={`p-4 border-2 bg-slate-950/70 text-slate-100 ${ok ? "border-emerald-500/40" : atencao ? "border-amber-400/50" : "border-rose-500/50"}`}
                 data-testid="card-margem"
                 title={`Meta: margem líquida ≥ ${META}% (Faturamento − custo total) ÷ Faturamento`}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${ok ? "bg-green-100" : atencao ? "bg-amber-100" : "bg-red-100"}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${ok ? "bg-emerald-500/20" : atencao ? "bg-amber-500/20" : "bg-rose-500/20"}`}>
                     {ok || atencao
-                      ? <TrendingUp size={16} className={ok ? "text-green-700" : "text-amber-700"} />
-                      : <TrendingDown size={16} className="text-red-700" />}
+                      ? <TrendingUp size={16} className={ok ? "text-emerald-400" : "text-amber-300"} />
+                      : <TrendingDown size={16} className="text-rose-400" />}
                   </div>
-                  <span className="text-xs font-black text-neutral-400 uppercase">Margem Líquida</span>
+                  <span className="text-xs font-black text-slate-400 uppercase">Margem Líquida</span>
                   {!ok && (
                     <Badge className={`text-[10px] font-black px-1.5 py-0 border-0 ${atencao ? "bg-amber-500" : "bg-red-600"} text-white`}>
                       {atencao ? "ATENÇÃO" : "ABAIXO DA META"}
                     </Badge>
                   )}
                 </div>
-                <p className={`text-xl font-black font-mono ${ok ? "text-green-700" : atencao ? "text-amber-700" : "text-red-700"}`} data-testid="text-margem">
+                <p className={`text-xl font-black font-mono ${ok ? "text-emerald-300" : atencao ? "text-amber-300" : "text-rose-400"}`} data-testid="text-margem">
                   {fmtPct(totals.margem)}
                 </p>
                 <div className="mt-2">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-neutral-400">Meta: {META}%</span>
-                    <span className={`text-[10px] font-black ${ok ? "text-green-700" : atencao ? "text-amber-700" : "text-red-700"}`}>
+                    <span className="text-[10px] font-bold text-slate-500">Meta: {META}%</span>
+                    <span className={`text-[10px] font-black ${ok ? "text-emerald-300" : atencao ? "text-amber-300" : "text-rose-400"}`}>
                       {labelMap[tone]}
                     </span>
                   </div>
-                  <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${ok ? "bg-green-500" : atencao ? "bg-amber-500" : "bg-red-500"}`}
+                      className={`h-full rounded-full transition-all ${ok ? "bg-emerald-400" : atencao ? "bg-amber-400" : "bg-rose-500"}`}
                       style={{ width: `${Math.min(Math.max(totals.margem, 0) / META * 100, 100)}%` }}
                     />
                   </div>
@@ -1323,19 +1373,19 @@ export default function BalancoGerencialPage() {
             const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
             const fmtBRL2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
             return (
-              <Card className="p-4 border-neutral-200" data-testid="card-km">
+              <Card className="p-4 border-slate-700/80 bg-slate-950/70 text-slate-100" data-testid="card-km">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                    <Gauge size={16} className="text-indigo-700" />
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                    <Gauge size={16} className="text-indigo-300" />
                   </div>
                   <span
-                    className="text-xs font-black text-neutral-400 uppercase cursor-help"
+                    className="text-xs font-black text-slate-400 uppercase cursor-help"
                     title="KM declarado nas missões (faturado). Para o KM total rodado pelas viaturas (hodômetro), veja o card Eficiência."
                   >
                     KM Rodado (missões)
                   </span>
                 </div>
-                <p className="text-xl font-black text-indigo-700 font-mono" data-testid="text-km-total">
+                <p className="text-xl font-black text-indigo-300 font-mono" data-testid="text-km-total">
                   {fmtKm(kmTotal)} <span className="text-sm">km</span>
                 </p>
                 <div className="text-xs font-bold mt-1 space-y-0.5">
@@ -1420,13 +1470,13 @@ export default function BalancoGerencialPage() {
           }[tone];
 
           return (
-            <Card className="p-4 border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50" data-testid="card-meta-faturamento">
+            <Card className="p-4 border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-950/80 to-slate-950 text-slate-100" data-testid="card-meta-faturamento">
               <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
                 <div>
-                  <h3 className="text-sm font-black text-emerald-900 uppercase tracking-tight flex items-center gap-2">
+                  <h3 className="text-sm font-black text-emerald-200 uppercase tracking-tight flex items-center gap-2">
                     <Target size={16} /> Meta de Faturamento — {metaCfg.lucroPct}% lucro REAL
                   </h3>
-                  <p className="text-[11px] text-emerald-700/80 font-bold">
+                  <p className="text-[11px] text-emerald-300/70 font-bold">
                     Cobre custos fixos+RH ({fmt(custoFixoTotalMensal)}/mês) · impostos {metaCfg.impostoPct}% · custos variáveis {metaCfg.custoVarPct}%
                   </p>
                   {metaResult.pisoAplicado && (
@@ -1673,12 +1723,12 @@ export default function BalancoGerencialPage() {
           </DialogContent>
         </Dialog>}
 
-        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
+        <div className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-1">
           <div className="flex overflow-x-auto gap-1">
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-${tab.id.toLowerCase()}`}
                 className={`flex items-center gap-2 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
-                  activeTab === tab.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                  activeTab === tab.id ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800"
                 }`}>
                 <tab.icon size={16} />
                 {tab.label}
@@ -1703,21 +1753,24 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
-    provisaoRH: number; custoTotal: number;
+    provisaoRH: number; custoTotal: number; custosFixosRateados: number;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
   daysInPeriod: number; allVehicles: any[]; provisaoDiaria: number;
 }) {
-  const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
   const dailyData = useMemo(() => {
-    const map: Record<string, { date: string; fat: number; custoReal: number; custoRH: number; custo: number; missions: number }> = {};
+    const map: Record<string, {
+      date: string; fat: number; custoReal: number; custoRH: number; custo: number; missions: number;
+      pag: number; combustivel: number; pedagio: number; manutencao: number;
+    }> = {};
     missions.forEach(m => {
       const d = m.data?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };
+      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0, pag: 0, combustivel: 0, pedagio: 0, manutencao: 0 };
       map[d].fat += m.fat_total;
+      map[d].pag += m.pag_total || 0;
       map[d].custoReal += m.pag_total;
       map[d].custo += m.pag_total;
       map[d].missions += 1;
@@ -1725,145 +1778,40 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
     (periodExpenses || []).forEach(t => {
       const d = t.date?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };
+      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0, pag: 0, combustivel: 0, pedagio: 0, manutencao: 0 };
       map[d].custoReal += t.amount;
       map[d].custo += t.amount;
+      const origin = String(t.origin_type || "").toLowerCase();
+      const cat = String(t.category_name || "").toLowerCase();
+      if (origin.includes("fuel") || cat.includes("combust")) map[d].combustivel += t.amount;
+      else if (origin.includes("mission") || cat.includes("pedág") || cat.includes("pedag")) map[d].pedagio += t.amount;
+      else if (origin.includes("maint") || cat.includes("manut")) map[d].manutencao += t.amount;
     });
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
   }, [missions, periodExpenses, provisaoDiaria]);
 
-  const maxVal = useMemo(() => Math.max(...dailyData.map(d => Math.max(d.fat, d.custo)), 1), [dailyData]);
-
   return (
-    <div className="space-y-4" data-testid="panel-balanco">
-      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
-        <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
-          <Calendar size={16} /> Balanço {period === "DAY" ? "do Dia" : "por Dia"}
-        </h4>
-        <div className="flex gap-4 mb-3 text-[10px] font-bold uppercase text-neutral-500">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Faturamento</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Custos Reais</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block" /> Provisão RH</span>
-        </div>
-        {dailyData.length === 0 ? (
-          <div className="text-center py-12 text-neutral-400">
-            <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-bold uppercase">Nenhuma missão no período</p>
-            <p className="text-xs mt-1">Selecione outro período ou aguarde novos dados</p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {dailyData.map(d => {
-              const lucro = d.fat - d.custo;
-              const pct = d.fat > 0 ? (lucro / d.fat) * 100 : 0;
-              return (
-                <div key={d.date} className="flex items-center gap-3 p-2 rounded-lg hover:bg-neutral-50" data-testid={`row-day-${d.date}`}>
-                  <span className="text-xs font-black text-neutral-500 w-20 shrink-0">
-                    {new Date(d.date + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
-                  </span>
-                  <div className="flex-1 flex flex-col gap-1">
-                    <div className="flex gap-1 items-center h-5">
-                      <div className="bg-green-500 rounded h-full transition-all" style={{ width: `${(d.fat / maxVal) * 100}%` }} />
-                      <span className="text-xs font-bold text-green-700 font-mono shrink-0">{fmt(d.fat)}</span>
-                    </div>
-                    <div className="flex gap-1 items-center h-5">
-                      <div className="flex rounded h-full overflow-hidden transition-all" style={{ width: `${(d.custo / maxVal) * 100}%` }}>
-                        <div className="bg-red-400 h-full" style={{ width: d.custo > 0 ? `${(d.custoReal / d.custo) * 100}%` : "0%" }} />
-                        <div className="bg-amber-400 h-full" style={{ width: d.custo > 0 ? `${(d.custoRH / d.custo) * 100}%` : "0%" }} />
-                      </div>
-                      <span className="text-xs font-bold text-red-600 font-mono shrink-0">{fmt(d.custo)}</span>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 w-28">
-                    <p className={`text-sm font-black font-mono ${lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucro)}</p>
-                    <p className="text-xs font-bold text-neutral-400">{fmtPct(pct)} | {d.missions} OS</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
-          <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
-            <Car size={16} /> Top Viaturas
-          </h4>
-          {vehicles.length === 0 ? (
-            <p className="text-xs text-neutral-400 font-bold text-center py-6">Sem dados</p>
-          ) : (
-            <div className="space-y-3">
-              {vehicles.slice(0, 5).map((v, i) => {
-                const lucro = v.fat_total - v.pag_total - v.despesas;
-                const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
-                const metaPct = metaPeriodoViatura > 0 ? (v.fat_total / metaPeriodoViatura) * 100 : 0;
-                const mc = getMetaColor(metaPct);
-                return (
-                  <div key={v.plate} className="space-y-1" data-testid={`top-vehicle-${i}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
-                          {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
-                          {mc.icon && <Trophy size={14} className="text-green-600" />}
-                        </p>
-                        <p className="text-xs font-bold text-neutral-500">{v.missions} missões | {fmt(v.fat_total)} fat.</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
-                        <p className="text-xs font-bold font-mono text-green-700">{fmt(v.fat_total)}</p>
-                      </div>
-                    </div>
-                    <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
-          <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
-            <Users size={16} /> Top Agentes
-          </h4>
-          {agents.length === 0 ? (
-            <p className="text-xs text-neutral-400 font-bold text-center py-6">Sem dados</p>
-          ) : (
-            <div className="space-y-3">
-              {agents.slice(0, 5).map((a: any, i: number) => {
-                const lucro = a.fat_total - a.pag_total;
-                const metaPct = metaPeriodoViatura > 0 ? (a.fat_total / metaPeriodoViatura) * 100 : 0;
-                const mc = getMetaColor(metaPct);
-                return (
-                  <div key={a.name} className="space-y-1" data-testid={`top-agent-${i}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
-                          {a.name}
-                          {mc.icon && <Trophy size={14} className="text-green-600" />}
-                        </p>
-                        <p className="text-xs font-bold text-neutral-500">{a.missions} missões | {fmtHoras(a.horas_trabalhadas || 0)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
-                        <p className="text-xs font-bold font-mono text-green-700">{fmt(a.fat_total)}</p>
-                      </div>
-                    </div>
-                    <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <BalancoExecutivoPanel
+      dailyData={dailyData}
+      totals={{
+        fat: totals.fat,
+        pag: totals.pag,
+        desp_combustivel: totals.desp_combustivel,
+        desp_pedagio: totals.desp_pedagio,
+        desp_manutencao: totals.desp_manutencao,
+        provisaoRH: totals.provisaoRH,
+        custosFixosRateados: totals.custosFixosRateados || 0,
+        custoTotal: totals.custoTotal,
+        lucro: totals.lucro,
+        margem: totals.margem,
+        total: totals.total,
+      }}
+      period={period}
+      vehicles={vehicles}
+      agents={agents}
+      daysInPeriod={daysInPeriod}
+      metaDiariaViatura={META_DIARIA_VIATURA}
+    />
   );
 }
 
