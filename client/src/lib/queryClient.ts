@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { queryKeys } from "@shared/cache-keys";
 import { supabase, isSupabaseConfigured } from "./supabase";
 
 const CACHE_VERSION = "20260521-realtime-trim-v3";
@@ -160,6 +161,8 @@ export const GLOBAL_QUERY_KEYS = {
   employees: ["/api/employees"],
   serviceOrders: ["/api/service-orders"],
   operationalGrid: ["/api/operational-grid"],
+  /** Folha / RH summary (Balanço) — prefixo estável; invalida todas as competências. */
+  rhSummary: [...queryKeys.rhSummaryRoot] as string[],
   escortBillings: ["/api/escort/billings"],
   escortContracts: ["/api/escort/contracts"],
   boletimOs: ["/api/boletim-medicao/os-concluidas"],
@@ -245,6 +248,7 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.employees);
     inv(keys.financialDashboard);
     inv(keys.operationalGrid);
+    inv(keys.rhSummary);
   }
   if (scope === "billing") {
     inv(keys.escortBillings);
@@ -325,6 +329,8 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.ponto);
     inv(keys.timesheets);
     inv(keys.holerites);
+    inv(keys.rhSummary);
+    inv(keys.financialDashboard);
     queryClient.invalidateQueries({ queryKey: ["/api/my/hr-summary"] });
     queryClient.invalidateQueries({ queryKey: ["/api/mobile/ponto/today"] });
   }

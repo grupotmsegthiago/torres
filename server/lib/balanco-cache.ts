@@ -1,4 +1,5 @@
 import { bustSwrCache } from "./swr-cache";
+import { RH_SUMMARY_SWR_BUST_PREFIXES } from "@shared/cache-keys";
 
 // Mudança de status/valores de escort_billings muda o que o Balanço Gerencial e o Grid mostram
 // ("AGUARDA BOLETIM" vs valor travado do boletim). Sem invalidar, o cache SWR (TTL 3h, com
@@ -7,22 +8,14 @@ import { bustSwrCache } from "./swr-cache";
 export function bustBalancoCaches() {
   bustSwrCache("operational-grid");
   bustSwrCache("financial-dashboard");
-  bustSwrCache("rh-summary");
-  bustSwrCache("rh-summary-v4");
-  bustSwrCache("rh-summary-v5");
-  bustSwrCache("rh-summary-v6");
-  bustSwrCache("rh-summary-v7");
-  bustSwrCache("rh-summary-v8");
-  bustSwrCache("rh-summary-v9");
+  for (const prefix of RH_SUMMARY_SWR_BUST_PREFIXES) {
+    bustSwrCache(prefix);
+  }
 }
 
 /** Invalida só o cache de RH (salário/custo empresa) — chamar após write em employee_salaries. */
 export function bustRhSummaryCache() {
-  bustSwrCache("rh-summary");
-  bustSwrCache("rh-summary-v4");
-  bustSwrCache("rh-summary-v5");
-  bustSwrCache("rh-summary-v6");
-  bustSwrCache("rh-summary-v7");
-  bustSwrCache("rh-summary-v8");
-  bustSwrCache("rh-summary-v9");
+  for (const prefix of RH_SUMMARY_SWR_BUST_PREFIXES) {
+    bustSwrCache(prefix);
+  }
 }

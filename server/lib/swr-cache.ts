@@ -112,8 +112,17 @@ function setEntry(key: string, entry: CacheEntry, persist = true) {
 export interface SwrCacheOptions {
   /** Validade em ms. Passando disso, serve o valor velho e recalcula em background. */
   ttlMs: number;
+  /**
+   * Janela "fresco" p/ `?validate=1` (Folha/RH/Balanço).
+   * Se age < freshTtlMs → HIT; senão aguarda recálculo (não serve 3h silencioso).
+   */
+  freshTtlMs?: number;
   /** Prefixo da chave (1 por rota). Os parâmetros de query entram automaticamente. */
   baseKey: string;
+  /** Anexa `_cacheMeta` no JSON (status/age/fresh) — opt-in p/ não quebrar testes legados. */
+  attachCacheMeta?: boolean;
+  /** Schema técnico (ex.: RH_SUMMARY_SCHEMA) espelhado em `_cacheMeta.schema`. */
+  schema?: number;
   /**
    * Query-params das chaves a manter aquecidas pelo warm-up serializado
    * (ver startSwrWarmup). Função (não valor) p/ ranges "correntes" (semana/mês)
@@ -127,10 +136,32 @@ type Handler = (req: any, res: any, next?: any) => any;
 function buildKey(baseKey: string, req: any): string {
   const q = req?.query || {};
   const parts = Object.keys(q)
-    .filter((k) => k !== "cached" && k !== "force")
+    .filter((k) => k !== "cached" && k !== "force" && k !== "validate")
     .sort()
     .map((k) => `${k}=${String(q[k])}`);
   return parts.length ? `${baseKey}?${parts.join("&")}` : baseKey;
+}
+
+function attachMeta(
+  payload: any,
+  opts: SwrCacheOptions,
+  status: string,
+  ageSec: number,
+  computedAtMs: number | null,
+  fresh: boolean,
+): any {
+  if (!opts.attachCacheMeta) return payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  return {
+    ...payload,
+    _cacheMeta: {
+      status,
+      ageSec,
+      computedAt: computedAtMs ? new Date(computedAtMs).toISOString() : null,
+      fresh,
+      schema: opts.schema ?? null,
+    },
+  };
 }
 
 // res "fake" que só captura o JSON, usado no recálculo em segundo plano (não há
@@ -242,8 +273,10 @@ function triggerBackgroundRefresh(key: string, handler: Handler, req: any) {
 
 /**
  * Embrulha um handler Express adicionando cache stale-while-revalidate quando a
- * requisição vier com `?cached=1`. `?force=1` (junto com cached=1) recalcula na
- * hora e atualiza o cache (botão "Atualizar agora").
+ * requisição vier com `?cached=1`.
+ * - `?force=1` — recalcula na hora (Sincronizar).
+ * - `?validate=1` — se age >= freshTtlMs (ou sem freshTtl), aguarda recálculo;
+ *   se ainda fresco, serve HIT. Impede F5 silencioso com dado de até 3h.
  */
 export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
   if (opts.warmQueries) {
@@ -254,75 +287,133 @@ export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
 
     const key = buildKey(opts.baseKey, req);
     const now = Date.now();
+    const wantForce = req.query.force === "1";
+    const wantValidate = req.query.validate === "1";
+    const freshTtl = opts.freshTtlMs != null ? opts.freshTtlMs : opts.ttlMs;
+    res.set("Cache-Control", "no-store");
 
-    if (req.query.force === "1") {
+    const purgeKey = () => {
       store.delete(key);
-      // Sem isso, "Atualizar" recalcula na memória mas o snapshot persistido
-      // antigo volta no próximo restart/deploy (bug Folha HE=0, 29/07/2026).
       if (!PERSIST_DISABLED) {
         void supabaseAdmin.from(PERSIST_TABLE).delete().eq("key", key).then(() => {});
       }
       persistChecked.delete(key);
+    };
+
+    // Snapshot anterior (antes de purge) — fallback explícito se o recálculo falhar.
+    const prior = await getEntryWithPersistFallback(key);
+    const softCopy: CacheEntry | null = prior
+      ? { at: prior.at, data: prior.data }
+      : null;
+    // Preserva o json original — fallback STALE não pode passar pelo override.
+    const sendJson = res.json.bind(res);
+
+    if (wantForce) purgeKey();
+
+    let entry = wantForce ? undefined : prior;
+
+    // validate=1: se não há entry fresco o bastante → aguarda recálculo (como force).
+    if (wantValidate && !wantForce) {
+      const ageMs = entry ? now - entry.at : Infinity;
+      if (!entry || ageMs >= freshTtl) {
+        purgeKey();
+        entry = undefined;
+      }
     }
 
-    // MISS frio (memória zerada por restart/deploy): tenta o snapshot persistido
-    // antes de recalcular — 1 leitura barata em vez de centenas de sub-consultas.
-    const entry = req.query.force === "1" ? store.get(key) : await getEntryWithPersistFallback(key);
-    res.set("Cache-Control", "no-store");
+    const serveSoftStale = (): boolean => {
+      if (!softCopy) return false;
+      // Restaura só em memória (não regrava snapshot como se fosse sucesso).
+      setEntry(key, softCopy, false);
+      const ageSec = Math.floor((Date.now() - softCopy.at) / 1000);
+      res.statusCode = 200;
+      res.set("X-Cache", "STALE");
+      res.set("X-Cache-Age", String(ageSec));
+      res.set("X-Cache-Fresh", "0");
+      sendJson(attachMeta(softCopy.data, opts, "STALE", ageSec, softCopy.at, false));
+      return true;
+    };
 
     if (entry && now - entry.at < opts.ttlMs) {
+      const ageSec = Math.floor((now - entry.at) / 1000);
+      const fresh = ageSec * 1000 < freshTtl;
+      // Sem validate: HIT dentro do hard TTL (legado). Com validate já filtramos acima.
       res.set("X-Cache", "HIT");
-      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1000)));
-      return res.json(entry.data);
+      res.set("X-Cache-Age", String(ageSec));
+      res.set("X-Cache-Fresh", fresh ? "1" : "0");
+      return res.json(attachMeta(entry.data, opts, "HIT", ageSec, entry.at, fresh));
     }
 
-    if (entry) {
-      // velho: responde já com o que tem e recalcula em segundo plano
+    if (entry && !wantForce && !wantValidate) {
+      // STALE legado: responde antigo + refresh background (grid/dashboard sem validate).
+      const ageSec = Math.floor((now - entry.at) / 1000);
       res.set("X-Cache", "STALE");
-      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1000)));
-      res.json(entry.data);
+      res.set("X-Cache-Age", String(ageSec));
+      res.set("X-Cache-Fresh", "0");
+      res.json(attachMeta(entry.data, opts, "STALE", ageSec, entry.at, false));
       triggerBackgroundRefresh(key, handler, req);
       return;
     }
 
-    // sem cache: se já há um cálculo em andamento p/ essa chave (singleflight),
-    // espera ele e serve o mesmo resultado em vez de recalcular em paralelo.
+    // validate/force com entry além do hard TTL — purga e recalcula.
+    if (entry && (wantForce || wantValidate)) {
+      purgeKey();
+      entry = undefined;
+    }
+
     const pending = inflight.get(key);
     if (pending) {
       try {
         const payload = await pending;
-        res.set("X-Cache", "HIT");
+        const label = wantForce ? "FORCE" : wantValidate ? "VALIDATE" : "HIT";
+        res.set("X-Cache", label);
         res.set("X-Cache-Age", "0");
-        return res.json(payload);
+        res.set("X-Cache-Fresh", "1");
+        return res.json(attachMeta(payload, opts, label, 0, Date.now(), true));
       } catch {
-        // o líder falhou; cai pro cálculo normal abaixo
+        if ((wantForce || wantValidate) && serveSoftStale()) return;
+        /* líder falhou e sem soft — cai no recálculo próprio abaixo */
       }
     }
 
-    // líder: calcula na hora, guarda o sucesso e compartilha via inflight.
-    res.set("X-Cache", "MISS");
+    const cacheLabel = wantForce ? "FORCE" : wantValidate ? "VALIDATE" : "MISS";
+    res.set("X-Cache", cacheLabel);
     res.set("X-Cache-Age", "0");
+    res.set("X-Cache-Fresh", "1");
     let resolveInflight: (v: any) => void = () => {};
     let rejectInflight: (e: any) => void = () => {};
     const promise = new Promise<any>((resolve, reject) => { resolveInflight = resolve; rejectInflight = reject; });
-    promise.catch(() => {}); // evita unhandledRejection quando não há follower aguardando
+    promise.catch(() => {});
     inflight.set(key, promise);
 
-    const origJson = res.json.bind(res);
     let settled = false;
     res.json = (payload: any) => {
       if ((res.statusCode || 200) === 200 && payload !== undefined) {
-        setEntry(key, { at: Date.now(), data: payload });
+        const at = Date.now();
+        setEntry(key, { at, data: payload });
         if (!settled) { settled = true; resolveInflight(payload); inflight.delete(key); }
-      } else if (!settled) {
+        return sendJson(attachMeta(payload, opts, cacheLabel, 0, at, true));
+      }
+      if (!settled) {
         settled = true; rejectInflight(new Error("non-200")); inflight.delete(key);
       }
-      return origJson(payload);
+      // validate/force falhou: não devolver erro cru se há snapshot — banner no cliente.
+      if ((wantForce || wantValidate) && softCopy) {
+        const ageSec = Math.floor((Date.now() - softCopy.at) / 1000);
+        setEntry(key, softCopy, false);
+        res.statusCode = 200;
+        res.set("X-Cache", "STALE");
+        res.set("X-Cache-Age", String(ageSec));
+        res.set("X-Cache-Fresh", "0");
+        return sendJson(attachMeta(softCopy.data, opts, "STALE", ageSec, softCopy.at, false));
+      }
+      return sendJson(payload);
     };
     try {
       return await handler(req, res, next);
     } catch (err) {
       if (!settled) { settled = true; rejectInflight(err); inflight.delete(key); }
+      if ((wantForce || wantValidate) && serveSoftStale()) return;
       throw err;
     }
   };

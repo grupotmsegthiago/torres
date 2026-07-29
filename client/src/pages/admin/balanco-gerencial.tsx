@@ -1,7 +1,7 @@
 import AdminLayout from "@/components/admin/layout";
 import { formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
 import { computeProjection } from "@/lib/balanco-projection";
@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
+import { fetchCachedJson, formatCacheAge, logCacheEvent } from "@/lib/cache-fetch";
+import { queryKeys, type CacheMeta } from "@shared/cache-keys";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
@@ -184,25 +186,37 @@ export default function BalancoGerencialPage() {
   const [osConcluindoId, setOsConcluindoId] = useState<number | null>(null);
   const [dataGeradoEm, setDataGeradoEm] = useState<Date | null>(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [rhCacheMeta, setRhCacheMeta] = useState<CacheMeta | null>(null);
+  /** Gerações de sync — impede resposta antiga sobrescrever UI após sync mais novo. */
+  const syncGenRef = useRef(0);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
 
-  // Tela pesada: abre instantâneo servindo o último cálculo (cache no servidor) e
-  // o backend recalcula sozinho a cada 3h. Botão "Atualizar agora" força na hora.
-  const SWR_3H = 3 * 60 * 60 * 1000;
+  // Revalidação obrigatória ao abrir/F5 (validate=1). Sem polling contínuo.
+  // Sincronizar = force=1 + invalidate por domínio + refetch das mesmas chaves.
+  const applyCacheMeta = (meta: CacheMeta, domain: string) => {
+    logCacheEvent(`${domain}-fetch`, {
+      status: meta.status,
+      ageSec: meta.ageSec,
+      fresh: meta.fresh,
+      schema: meta.schema ?? null,
+    });
+    if (domain === "rh-summary") setRhCacheMeta(meta);
+    if (meta.computedAt) setDataGeradoEm(new Date(meta.computedAt));
+    else if (meta.ageSec >= 0) setDataGeradoEm(new Date(Date.now() - meta.ageSec * 1000));
+  };
 
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ["/api/financial/dashboard", "cached"],
-    queryFn: async () => {
-      const res = await authFetch(`/api/financial/dashboard?cached=1`);
-      const ageHdr = res.headers.get("X-Cache-Age");
-      if (ageHdr != null) setDataGeradoEm(new Date(Date.now() - Number(ageHdr) * 1000));
-      if (!res.ok) throw new Error("Falha ao carregar painel");
-      return res.json();
+    queryKey: queryKeys.financialDashboard(),
+    queryFn: async ({ signal }) => {
+      const result = await fetchCachedJson<DashboardData>("/api/financial/dashboard", "validate");
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      applyCacheMeta(result.meta, "financial-dashboard");
+      return result.data;
     },
-    staleTime: SWR_3H,
-    refetchInterval: SWR_3H,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: allVehicles } = useQuery<any[]>({
@@ -229,8 +243,7 @@ export default function BalancoGerencialPage() {
     refetchInterval: 600_000,
   });
 
-  // Custos de RH = Custo Empresa CCT do cadastro do funcionário (calcularFolha)
-  const { data: rhSummaryRaw, isFetching: rhFetching, isPlaceholderData: rhPlaceholder } = useQuery<{
+  type RhSummaryPayload = {
     monthly: number;
     monthlyOperacional?: number;
     daily: number;
@@ -262,31 +275,26 @@ export default function BalancoGerencialPage() {
       totalProvisoes?: number;
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
-  }>({
-    // v9: HE batidas banco mensal + HH:MM; alinha com baseKey rh-summary-v9.
-    // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
-    queryKey: ["/api/fixed-costs/rh-summary", "v9", "cached", gridRange.from, gridRange.to],
-    queryFn: async () => {
-      const bustKey = `rh-summary-v9-forced:${gridRange.from}:${gridRange.to}`;
-      let force = "";
-      try {
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
-          force = "&force=1";
-          sessionStorage.setItem(bustKey, "1");
-        }
-      } catch { /* private mode */ }
-      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1${force}&from=${gridRange.from}&to=${gridRange.to}`);
-      if (!res.ok) throw new Error("Falha ao carregar RH");
-      return res.json();
-    },
-    staleTime: SWR_3H,
-    refetchInterval: SWR_3H,
-    // Mantém dado anterior só para não “piscar” vazio; abaixo ignoramos placeholder
-    // nos totais para o filtro de período não mostrar números do range antigo.
-    placeholderData: (prev: any) => prev,
-  });
-  const rhSummary = rhPlaceholder ? undefined : rhSummaryRaw;
+  };
 
+  // Custos de RH — chave centralizada (shared/cache-keys). Sem placeholder entre períodos.
+  const rhQueryKey = queryKeys.rhSummary(gridRange.from, gridRange.to);
+  const { data: rhSummary, isFetching: rhFetching, isLoading: rhLoading } = useQuery<RhSummaryPayload>({
+    queryKey: rhQueryKey,
+    queryFn: async ({ queryKey, signal }) => {
+      const from = String(queryKey[3] ?? gridRange.from);
+      const to = String(queryKey[4] ?? gridRange.to);
+      const result = await fetchCachedJson<RhSummaryPayload>(
+        `/api/fixed-costs/rh-summary?from=${from}&to=${to}`,
+        "validate",
+      );
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      applyCacheMeta(result.meta, "rh-summary");
+      return result.data;
+    },
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
   const [metaCfg] = useMetaConfig();
   // Balanço Gerencial = fluxo de caixa operacional. Usa folha SEM provisões (13º, férias, 1/3,
@@ -315,20 +323,27 @@ export default function BalancoGerencialPage() {
   // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
-  const { data: gridDataRaw, isFetching: gridFetching, isPlaceholderData: gridPlaceholder } = useQuery<any[]>({
-    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
-    queryFn: async () => {
-      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
-      if (!res.ok) return [];
-      return res.json();
+  const gridQueryKey = queryKeys.operationalGrid(gridRange.from, gridRange.to);
+  const { data: gridDataRaw, isFetching: gridFetching, isLoading: gridLoading } = useQuery<any[]>({
+    queryKey: gridQueryKey,
+    queryFn: async ({ queryKey, signal }) => {
+      const from = String(queryKey[1] ?? gridRange.from);
+      const to = String(queryKey[2] ?? gridRange.to);
+      const result = await fetchCachedJson<any[]>(
+        `/api/operational-grid?from=${from}&to=${to}`,
+        "validate",
+      );
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      applyCacheMeta(result.meta, "operational-grid");
+      return Array.isArray(result.data) ? result.data : [];
     },
-    staleTime: SWR_3H,
-    refetchInterval: SWR_3H,
-    placeholderData: (prev: any) => prev,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
-  // Enquanto a query do NOVO período ainda não chegou, não usa OS/RH do período anterior.
-  const gridData = gridPlaceholder ? [] : (gridDataRaw || []);
-  const periodDataPending = gridPlaceholder || rhPlaceholder || gridFetching || rhFetching;
+  // Sem placeholderData: troca de competência não reaproveita números do período anterior.
+  const gridData = gridDataRaw || [];
+  const gridPlaceholder = gridLoading && !gridDataRaw;
+  const periodDataPending = gridPlaceholder || rhLoading || gridFetching || rhFetching;
 
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
   // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
@@ -707,36 +722,69 @@ export default function BalancoGerencialPage() {
     { id: "MISSOES", label: "Missões", icon: Crosshair },
   ];
 
-  // "Atualizar agora": força o servidor a recalcular os 3 endpoints pesados na
-  // hora (?force=1) e recarrega as queries com o número fresquinho.
+  // Sincronizar: force no servidor → aguarda → invalida domínio → refetch mesmas chaves.
   const atualizarAgora = async () => {
     if (atualizando) return;
+    const gen = ++syncGenRef.current;
     setAtualizando(true);
+    logCacheEvent("balanco-sync-start", { gen, from: gridRange.from, to: gridRange.to });
     try {
-      // Recalcula no servidor com o from/to do filtro (Personalizado 26/06→25/07 etc.).
-      const respostas = await Promise.all([
-        authFetch(`/api/financial/dashboard?cached=1&force=1`),
-        authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1&from=${gridRange.from}&to=${gridRange.to}`),
-        authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
+      const [dash, rh, grid] = await Promise.all([
+        fetchCachedJson<DashboardData>("/api/financial/dashboard", "force"),
+        fetchCachedJson<RhSummaryPayload>(
+          `/api/fixed-costs/rh-summary?from=${gridRange.from}&to=${gridRange.to}`,
+          "force",
+        ),
+        fetchCachedJson<any[]>(
+          `/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}`,
+          "force",
+        ),
       ]);
-      if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
-      // Importante: invalidar pelo PREFIXO — a query ativa é v9; invalidar só v6
-      // deixava a Folha do Personalizado com cache velho após "Sincronizar".
-      await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      await queryClient.refetchQueries({
-        queryKey: ["/api/fixed-costs/rh-summary", "v9", "cached", gridRange.from, gridRange.to],
-      });
-      setDataGeradoEm(new Date());
-      toast({
-        title: "Atualizado",
-        description: `Dados recalculados para ${gridRange.from} → ${gridRange.to}.`,
+      // Resposta antiga (sync anterior / clique duplo): não sobrescreve UI.
+      if (gen !== syncGenRef.current) {
+        logCacheEvent("balanco-sync-dropped-stale", { gen, current: syncGenRef.current });
+        return;
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.financialDashboardRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.rhSummaryRoot }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.operationalGridRoot }),
+      ]);
+      if (gen !== syncGenRef.current) return;
+      queryClient.setQueryData(queryKeys.financialDashboard(), dash.data);
+      queryClient.setQueryData(queryKeys.rhSummary(gridRange.from, gridRange.to), rh.data);
+      queryClient.setQueryData(
+        queryKeys.operationalGrid(gridRange.from, gridRange.to),
+        Array.isArray(grid.data) ? grid.data : [],
+      );
+      applyCacheMeta(rh.meta, "rh-summary");
+      applyCacheMeta(dash.meta, "financial-dashboard");
+      applyCacheMeta(grid.meta, "operational-grid");
+      if (!rh.meta.fresh || rh.meta.status === "STALE") {
+        toast({
+          title: "Dados temporariamente desatualizados",
+          description: `Servidor devolveu snapshot (idade ${formatCacheAge(rh.meta.ageSec)}). Tente novamente.`,
+          variant: "destructive",
+        });
+      } else {
+        setDataGeradoEm(new Date());
+        toast({
+          title: "Atualizado",
+          description: `Dados recalculados para ${gridRange.from} → ${gridRange.to}.`,
+        });
+      }
+      logCacheEvent("balanco-sync-done", {
+        gen,
+        rhStatus: rh.meta.status,
+        rhFresh: rh.meta.fresh,
+        rhAgeSec: rh.meta.ageSec,
       });
     } catch {
-      toast({ title: "Erro ao atualizar", variant: "destructive" });
+      if (gen === syncGenRef.current) {
+        toast({ title: "Erro ao atualizar", variant: "destructive" });
+      }
     } finally {
-      setAtualizando(false);
+      if (gen === syncGenRef.current) setAtualizando(false);
     }
   };
 
@@ -770,8 +818,12 @@ export default function BalancoGerencialPage() {
         throw new Error(j?.message || "Falha ao concluir a OS");
       }
       toast({ title: "OS concluída", description: `OS ${label} concluída com sucesso.` });
-      await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`).catch(() => null);
-      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
+      await fetchCachedJson(
+        `/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}`,
+        "force",
+      ).catch(() => null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.operationalGridRoot });
+      await queryClient.refetchQueries({ queryKey: queryKeys.operationalGrid(gridRange.from, gridRange.to) });
       invalidateRelatedQueries("service-order");
     } catch (e: any) {
       toast({ title: "Erro ao concluir OS", description: e?.message || "", variant: "destructive" });
@@ -808,10 +860,14 @@ export default function BalancoGerencialPage() {
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-400 font-bold text-right leading-tight" data-testid="text-cache-status">
               {dataGeradoEm
-                ? `Atualizado ${dataGeradoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                ? `Atualizado ${dataGeradoEm.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
                 : "Carregando..."}
               <br />
-              <span className="text-slate-500">atualiza a cada 3h</span>
+              <span className="text-slate-500">
+                {rhCacheMeta
+                  ? `${rhCacheMeta.status}${rhCacheMeta.fresh ? " · fresco" : ` · idade ${formatCacheAge(rhCacheMeta.ageSec)}`}`
+                  : "revalida ao abrir"}
+              </span>
             </span>
             <Button
               variant="outline"
@@ -826,6 +882,37 @@ export default function BalancoGerencialPage() {
             </Button>
           </div>
         </div>
+
+        {rhCacheMeta && !rhCacheMeta.fresh && (
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+            data-testid="banner-cache-stale"
+            role="status"
+          >
+            <div className="text-xs text-amber-100 font-bold leading-snug">
+              Dados temporariamente desatualizados
+              <span className="block font-medium text-amber-200/80">
+                {rhCacheMeta.computedAt
+                  ? `Calculado em ${new Date(rhCacheMeta.computedAt).toLocaleString("pt-BR")}`
+                  : dataGeradoEm
+                    ? `Referência ${dataGeradoEm.toLocaleString("pt-BR")}`
+                    : "Origem: snapshot"}
+                {" · "}idade {formatCacheAge(rhCacheMeta.ageSec)} · status {rhCacheMeta.status}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={atualizarAgora}
+              disabled={atualizando}
+              className="border-amber-400/50 text-amber-50 hover:bg-amber-500/20 shrink-0"
+              data-testid="button-retry-cache-stale"
+            >
+              <RefreshCw size={14} className={atualizando ? "animate-spin" : ""} />
+              <span className="ml-1.5 text-xs font-bold">Tentar novamente</span>
+            </Button>
+          </div>
+        )}
 
         <div className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-3 backdrop-blur">
           <div className="flex flex-col gap-3">
@@ -1876,7 +1963,7 @@ export default function BalancoGerencialPage() {
             dataReady={{
               dashboard: !!data,
               grid: !gridPlaceholder && Array.isArray(gridDataRaw),
-              rh: !rhPlaceholder && !!rhSummaryRaw,
+              rh: !!rhSummary && !rhLoading,
               fixedCosts: !!fixedCostsSummary,
             }}
             updatedAt={dataGeradoEm}
