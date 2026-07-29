@@ -1076,7 +1076,7 @@ export default function BalancoGerencialPage() {
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Despesas variáveis ligadas à execução das missões no período: VRP de cada agente + combustível + pedágios + manutenção (origem oficial). Lançamentos manuais com fornecedor não contam aqui.`,
+                tipDesc: `Despesas variáveis das missões: combustível + pedágios + manutenção (origem oficial). VRP aparece como referência — com folha RH cadastrada ele NÃO soma no custo total (mão de obra já está no RH).`,
                 rows: opRows,
               });
             }
