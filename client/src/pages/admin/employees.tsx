@@ -2772,15 +2772,15 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-neutral-400">Vencimentos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total)}</span></span>
+                <span className="text-[10px] text-neutral-400">Realizado: <span className="text-emerald-400 font-semibold">{fmtR(summary.custoRealizado ?? summary.vencimentos.total)}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-violet-400" />
+                <span className="text-[10px] text-neutral-400">Provisionado: <span className="text-violet-300 font-semibold">{fmtR(summary.custoProvisionado ?? summary.provisoes?.total ?? 0)}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-amber-400" />
-                <span className="text-[10px] text-neutral-400">INSS+IRRF: <span className="text-amber-400 font-semibold">{fmtR(summary.deducoesLegais?.total || 0)}</span></span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-[10px] text-neutral-400">Ocorrências: <span className="text-red-400 font-semibold">{fmtR(summary.totalDescontos)}</span></span>
+                <span className="text-[10px] text-neutral-400">Descontos emp.: <span className="text-amber-400 font-semibold">{fmtR(summary.descontosEmpregado?.total ?? summary.deducoesLegais?.total ?? 0)}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-blue-400" />
@@ -2834,11 +2834,22 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
                         Horas Extras
-                        <span className="text-[9px] bg-indigo-200/60 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Auto · Ponto iD</span>
+                        <span className="text-[9px] bg-indigo-200/60 text-indigo-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">
+                          Auto · {summary.horasExtras.fonte === "batidas" ? "Batidas" : summary.horasExtras.fonte === "jornada_calculos" ? "Manual" : "Ponto iD"}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-indigo-500 mt-0.5">{hhmmH(Number(summary.horasExtras.horas))} × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
+                      <div className="text-[10px] text-indigo-500 mt-0.5">{hhmmH(Number(summary.horasExtras.horas))} × valor hora × 1,60 ({summary.horasExtras.fonte === "ponto_operacional" ? "Control iD" : summary.horasExtras.fonte === "batidas" ? "fallback batidas" : "lançamento manual"} · {summary.horasExtras.registros} reg.)</div>
                     </div>
                     <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(summary.vencimentos.horasExtrasValor || 0)}</span>
+                  </div>
+                )}
+                {(summary.diarias?.total > 0 || summary.vencimentos?.diarias > 0) && (
+                  <div className="bg-fuchsia-50 border border-fuchsia-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-diarias">
+                    <div>
+                      <div className="text-xs font-semibold text-fuchsia-800">Diárias</div>
+                      <div className="text-[10px] text-fuchsia-500 mt-0.5">Competência 26→25 · pagamentos operacionais + lançamentos</div>
+                    </div>
+                    <span className="text-sm font-bold text-fuchsia-700 tabular-nums">+ {fmtR(summary.diarias?.total ?? summary.vencimentos?.diarias ?? 0)}</span>
                   </div>
                 )}
                 {summary.horasExtras?.noturnas > 0 && (
@@ -2959,6 +2970,28 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-sm font-bold text-blue-700 tabular-nums">{fmtR(summary.deducoesLegais?.fgts || 0)}</span>
                 </div>
+                {(summary.encargos?.inssPatronal > 0 || summary.encargos?.seguroVida > 0) && (
+                  <>
+                    {summary.encargos.inssPatronal > 0 && (
+                      <div className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-inss-patronal">
+                        <div>
+                          <div className="text-xs font-semibold text-neutral-800">INSS Patronal ({summary.encargos.inssPatronalPct || 20}%)</div>
+                          <div className="text-[10px] text-neutral-400 mt-0.5">Encargo CCT · entra no Custo Empresa</div>
+                        </div>
+                        <span className="text-sm font-bold text-amber-800 tabular-nums">{fmtR(summary.encargos.inssPatronal)}</span>
+                      </div>
+                    )}
+                    {summary.encargos.seguroVida > 0 && (
+                      <div className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between" data-testid="row-seguro-vida">
+                        <div>
+                          <div className="text-xs font-semibold text-neutral-800">Seguro de Vida</div>
+                          <div className="text-[10px] text-neutral-400 mt-0.5">Encargo CCT mensal · entra no Custo Empresa</div>
+                        </div>
+                        <span className="text-sm font-bold text-amber-800 tabular-nums">{fmtR(summary.encargos.seguroVida)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 

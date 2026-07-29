@@ -1186,7 +1186,7 @@ export default function BalancoGerencialPage() {
                 .filter((a) => a._opTotal > 0)
                 .sort((a, b) => b._opTotal - a._opTotal);
 
-              // Composição = mesma do cadastro (Custo Empresa): vencimentos + benefícios + FGTS + provisões.
+              // Composição = mesma do cadastro (Custo Empresa): vencimentos + benefícios + encargos + provisões.
               const bk = rhSummary?.breakdown;
               const agg = porAgente.length > 0
                 ? porAgente.reduce(
@@ -1201,11 +1201,13 @@ export default function BalancoGerencialPage() {
                       diarias: acc.diarias + Number(a.diarias || 0),
                       ajuda: acc.ajuda + Number(a.ajudaCusto || 0),
                       fgts: acc.fgts + Number(a.fgts || 0),
+                      inssPatronal: acc.inssPatronal + Number(a.inssPatronal || 0),
+                      seguroVida: acc.seguroVida + Number(a.seguroVida || 0),
                       provisoes: acc.provisoes + Number(a.totalProvisoes || 0),
                       ferias: acc.ferias + Number(a.ferias || 0),
                       decimo: acc.decimo + Number(a.decimoTerceiro || 0),
                     }),
-                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, vt: 0, diarias: 0, ajuda: 0, fgts: 0, provisoes: 0, ferias: 0, decimo: 0 }
+                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, vt: 0, diarias: 0, ajuda: 0, fgts: 0, inssPatronal: 0, seguroVida: 0, provisoes: 0, ferias: 0, decimo: 0 }
                   )
                 : {
                     base: Number(bk?.salarioProporcional || 0),
@@ -1218,13 +1220,16 @@ export default function BalancoGerencialPage() {
                     diarias: Number(bk?.diarias || 0),
                     ajuda: Number(bk?.ajudaCusto || 0),
                     fgts: Number(bk?.fgts || 0),
+                    inssPatronal: Number(bk?.inssPatronal || 0),
+                    seguroVida: Number(bk?.seguroVida || 0),
                     provisoes: Number(bk?.totalProvisoes || 0),
                     ferias: Number(bk?.ferias || 0),
                     decimo: Number(bk?.decimoTerceiro || 0),
                   };
               const vencimentos = agg.base + agg.peric + agg.he + agg.noturno;
               const beneficios = agg.vr + agg.cesta + agg.vt + agg.diarias + agg.ajuda;
-              const hasBreakdown = vencimentos + beneficios + agg.fgts + agg.provisoes > 0;
+              const encargosEmp = agg.fgts + agg.inssPatronal + agg.seguroVida;
+              const hasBreakdown = vencimentos + beneficios + encargosEmp + agg.provisoes > 0;
 
               if (hasBreakdown) {
                 rhRows.push({ label: "── Vencimentos (CCT) ──", value: vencimentos * fatorPeriodo });
@@ -1238,9 +1243,11 @@ export default function BalancoGerencialPage() {
                 if (agg.vt > 0) rhRows.push({ label: "  Vale Transporte", value: agg.vt * fatorPeriodo });
                 if (agg.ajuda > 0) rhRows.push({ label: "  Ajuda de custo", value: agg.ajuda * fatorPeriodo });
                 if (agg.diarias > 0) rhRows.push({ label: "  Diárias", value: agg.diarias * fatorPeriodo });
-                if (agg.fgts > 0) {
-                  rhRows.push({ label: "── Encargos (entra no Custo Empresa) ──", value: agg.fgts * fatorPeriodo });
-                  rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
+                if (encargosEmp > 0) {
+                  rhRows.push({ label: "── Encargos (entra no Custo Empresa) ──", value: encargosEmp * fatorPeriodo });
+                  if (agg.fgts > 0) rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
+                  if (agg.inssPatronal > 0) rhRows.push({ label: "  INSS Patronal", value: agg.inssPatronal * fatorPeriodo });
+                  if (agg.seguroVida > 0) rhRows.push({ label: "  Seguro de Vida", value: agg.seguroVida * fatorPeriodo });
                 }
                 if (agg.provisoes > 0) {
                   rhRows.push({ label: "── Provisões CCT ──", value: agg.provisoes * fatorPeriodo });
@@ -1274,7 +1281,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Custo Empresa CCT", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Custo Empresa (cadastro CCT)",
-                tipDesc: `Mesmo cálculo da tela de cadastro do funcionário (Custo Empresa). Soma bruto + FGTS + provisões (13º/férias/1/3) + benefícios (VR, cesta, VT etc.) de cada ativo. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30).`,
+                tipDesc: `Mesmo cálculo da tela de cadastro do funcionário (Custo Empresa). Soma bruto + benefícios (VR, cesta, VT, diárias) + FGTS + INSS patronal + seguro + provisões (13º/férias/1/3) de cada ativo. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30).`,
                 rows: rhRows,
               });
             }

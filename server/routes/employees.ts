@@ -7,7 +7,12 @@ import type { Express } from "express";
   import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
   import { calcularFolha, endOfMonthYmd, selectSalaryVigenteFromHistory } from "../lib/payroll";
-import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
+  import {
+    composeCustoEmpresaDetalhado,
+    resolveHorasExtrasNoturnas,
+    sumDiariasForEmployee,
+  } from "../lib/employee-monthly-cost";
+  import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
@@ -468,45 +473,24 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         if (typeof count === "number" && count > 0) dependentesIR = count;
       } catch { /* fallback */ }
 
-      // ===== HORAS EXTRAS / NOTURNAS automáticas do Ponto iD (Control iD) =====
-      // Janela = competência de RH (26 → 25), não mês civil.
+      // ===== HORAS EXTRAS / NOTURNAS (26 → 25) =====
+      // ponto_operacional → jornada_calculos → batidas (quando HE=0).
       const mesRef = `${year}-${String(month).padStart(2, "0")}`;
-      const inicioMes = `${from}T00:00:00-03:00`;
-      const fimMes = `${to}T23:59:59-03:00`;
+      const horasRes = await resolveHorasExtrasNoturnas({
+        employeeId: empId,
+        from,
+        to,
+        mesRef,
+        horasMensais,
+      });
+      const horasExtras = horasRes.horasExtras;
+      const horasNoturnas = horasRes.horasNoturnas;
+      const horasFonte = horasRes.fonte;
+      const registrosPonto = horasRes.registros;
 
-      let horasExtras = 0;
-      let horasNoturnas = 0;
-      let horasFonte: "ponto_operacional" | "jornada_calculos" | "nenhuma" = "nenhuma";
-      let registrosPonto = 0;
-
-      // 1ª fonte: ponto_operacional (Ponto iD oficial)
-      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
-        .select("horas_extras, horas_noturno")
-        .eq("employee_id", empId)
-        .gte("entrada", inicioMes).lte("entrada", fimMes);
-      if (pontos && pontos.length > 0) {
-        for (const p of pontos) {
-          horasExtras += Number((p as any).horas_extras || 0);
-          horasNoturnas += Number((p as any).horas_noturno || 0);
-        }
-        horasFonte = "ponto_operacional";
-        registrosPonto = pontos.length;
-      } else {
-        // 2ª fonte: jornada_calculos (lançamentos manuais da diretoria)
-        const { data: jorn } = await supabaseAdmin.from("jornada_calculos")
-          .select("horas_extras, horas_noturnas")
-          .eq("employee_id", empId).eq("mes_referencia", mesRef);
-        if (jorn && jorn.length > 0) {
-          for (const j of jorn) {
-            horasExtras += Number((j as any).horas_extras || 0);
-            horasNoturnas += Number((j as any).horas_noturnas || 0);
-          }
-          horasFonte = "jornada_calculos";
-          registrosPonto = jorn.length;
-        }
-      }
-      horasExtras = Math.round(horasExtras * 100) / 100;
-      horasNoturnas = Math.round(horasNoturnas * 100) / 100;
+      // Diárias unificadas (operational_payments + agent_daily_allowances) no 26→25
+      const diariasRes = await sumDiariasForEmployee(empId, from, to);
+      const diarias = diariasRes.total;
 
       // Regime de contratação: não-CLT (PJ, fixo) não tem INSS/IRRF/FGTS.
       const isClt = (emp as any).tipoContratacao !== "fixo" && (emp as any).tipo_contratacao !== "fixo";
@@ -550,8 +534,23 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const liquido = +(folha.liquidoFuncionario - totalDescontosManuais).toFixed(2);
       const totalReceber = +(liquido + totalBeneficios).toFixed(2);
 
-      // Custo total para a empresa (idêntico ao fixed-costs)
-      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros + valeAlimentacao + assiduidade).toFixed(2);
+      // Custo Empresa: folha + benefícios + diárias + INSS patronal + seguro (CCT)
+      const custo = composeCustoEmpresaDetalhado({
+        folha,
+        beneficios: {
+          cesta: cestaMensal,
+          vt,
+          outros,
+          valeAlimentacao,
+          assiduidade,
+        },
+        diarias,
+        inssPatronalPct: Number(CCT_FALLBACK.inssPatronalPct ?? 20),
+        seguroVidaMensal: Number(CCT_FALLBACK.seguroVidaMensal ?? 0),
+        isClt,
+        vtDesconto,
+      });
+      const custoTotalEmpresa = custo.custoTotalEmpresa;
 
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
@@ -573,11 +572,12 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           valeTransporte: vt,
           ajudaCusto: folha.ajudaCusto,
           outros,
-          total: totalVencimentos,
+          diarias,
+          total: +(totalVencimentos + diarias).toFixed(2),
           baseTributavel: folha.baseTributavel,
           totalBruto: folha.totalBruto,
         },
-        // ► Horas extras auto via Ponto iD
+        // ► Horas extras auto (ponto → jornada → batidas)
         horasExtras: {
           horas: horasExtras,
           noturnas: horasNoturnas,
@@ -605,7 +605,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           assiduidade,
           ajudaCusto: folha.ajudaCusto,
           outros,
-          total: totalBeneficios,
+          diarias,
+          total: +(totalBeneficios + diarias).toFixed(2),
         },
         // ► Provisões mensais (custo da empresa)
         provisoes: {
@@ -615,6 +616,23 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           fgtsSobreFerias13: folha.provisaoFGTSsobreFerias13,
           inssSobreFerias13: folha.provisaoINSSsobreFerias13,
           total: folha.totalProvisoes,
+        },
+        // ► Encargos empresa + separação realizado / provisionado
+        encargos: {
+          fgts: folha.fgts,
+          inssPatronal: custo.inssPatronal,
+          inssPatronalPct: custo.inssPatronalPct,
+          seguroVida: custo.seguroVida,
+          total: custo.encargos,
+        },
+        custoRealizado: custo.custoRealizado,
+        custoProvisionado: custo.custoProvisionado,
+        descontosEmpregado: custo.descontosEmpregado,
+        diarias: {
+          total: diarias,
+          operationalPayments: diariasRes.operationalPayments,
+          agentAllowances: diariasRes.agentAllowances,
+          periodo: { from, to },
         },
         // ► Compat com UI antiga
         descontos: (discounts || []).map((d: any) => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.created_by, createdAt: d.created_at })),
