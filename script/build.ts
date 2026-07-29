@@ -88,8 +88,27 @@ async function buildAll() {
     logLevel: "info",
   });
 
-  // Vercel: bundle ESM — Node não executa server/*.ts em runtime no serverless
+  // Vercel: bundle ESM — Node não executa server/*.ts em runtime no serverless.
+  // Stub de vite/static: imports top-level de "vite" derrubam a função (FUNCTION_INVOCATION_FAILED).
   console.log("building Vercel API handlers...");
+  const stubVitePlugin = {
+    name: "stub-vite-for-vercel",
+    setup(build: { onResolve: Function; onLoad: Function }) {
+      const filter =
+        /(?:^|\/)(vite|vite\.config|static)(?:\.ts|\.js)?$|@vitejs\/|@replit\/vite-/;
+      build.onResolve({ filter }, (args: { path: string }) => ({
+        path: args.path,
+        namespace: "stub-vite",
+      }));
+      build.onLoad({ filter: /.*/, namespace: "stub-vite" }, () => ({
+        contents:
+          "export default {}; export const defineConfig = () => ({}); " +
+          "export const createServer = async () => ({}); export const createLogger = () => ({ info(){}, error(){}, warn(){} }); " +
+          "export function setupVite() {} export function serveStatic() {}",
+        loader: "js",
+      }));
+    },
+  };
   for (const [entry, outfile] of [
     ["api/_index.ts", "api/index.js"],
     ["api/_cron.ts", "api/cron.js"],
@@ -101,6 +120,7 @@ async function buildAll() {
       format: "esm",
       outfile,
       packages: "external",
+      plugins: [stubVitePlugin as never],
       logLevel: "info",
     });
   }

@@ -714,8 +714,8 @@ async function resilientFetch(url, init) {
     if (fetchDuration > 500) {
       const method = init?.method || "GET";
       const urlStr = typeof url === "string" ? url : url.toString();
-      const path9 = urlStr.replace(/https?:\/\/[^/]+/, "").split("?")[0];
-      console.warn(`[SLOW-SUPA] ${method} ${path9} took ${fetchDuration}ms`);
+      const path6 = urlStr.replace(/https?:\/\/[^/]+/, "").split("?")[0];
+      console.warn(`[SLOW-SUPA] ${method} ${path6} took ${fetchDuration}ms`);
     }
     return response;
   } finally {
@@ -4062,10 +4062,10 @@ async function uploadMissionPhoto(serviceOrderId, base64OrDataUri) {
   if (error) throw error;
   return storagePath;
 }
-async function signMissionPhoto(path9) {
-  const { data, error } = await supabaseAdmin.storage.from(MISSION_PHOTO_BUCKET).createSignedUrl(path9, SIGNED_URL_TTL_SEC);
+async function signMissionPhoto(path6) {
+  const { data, error } = await supabaseAdmin.storage.from(MISSION_PHOTO_BUCKET).createSignedUrl(path6, SIGNED_URL_TTL_SEC);
   if (error) {
-    console.warn(`[storage] signMissionPhoto erro (${path9}):`, error.message);
+    console.warn(`[storage] signMissionPhoto erro (${path6}):`, error.message);
     return null;
   }
   return data?.signedUrl || null;
@@ -8916,8 +8916,8 @@ async function tryFetch(url, init = {}) {
     clearTimeout(t);
   }
 }
-function joinUrl(base, path9) {
-  return `${String(base).replace(/\/+$/, "")}${path9.startsWith("/") ? path9 : `/${path9}`}`;
+function joinUrl(base, path6) {
+  return `${String(base).replace(/\/+$/, "")}${path6.startsWith("/") ? path6 : `/${path6}`}`;
 }
 async function loginDevice(device) {
   const password = decryptSecret(device.password_enc);
@@ -8985,8 +8985,8 @@ async function getOrLoginToken(device) {
   }
   return loginDevice(device);
 }
-async function postJson(device, token, path9, body) {
-  const url = joinUrl(device.base_url, path9);
+async function postJson(device, token, path6, body) {
+  const url = joinUrl(device.base_url, path6);
   let r = await tryFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Session": token, "Authorization": `Bearer ${token}` },
@@ -9002,7 +9002,7 @@ async function postJson(device, token, path9, body) {
   }
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`POST ${path9} \u2192 HTTP ${r.status} ${txt.slice(0, 200)}`);
+    throw new Error(`POST ${path6} \u2192 HTTP ${r.status} ${txt.slice(0, 200)}`);
   }
   return r.json();
 }
@@ -13155,9 +13155,9 @@ async function reconcileAllInvoicesAsaas(opts) {
   }
   return nfReconcileState;
 }
-async function asaasRequest(method, path9, body) {
+async function asaasRequest(method, path6, body) {
   const apiKey = getApiKey();
-  const url = `${ASAAS_API_URL}${path9}`;
+  const url = `${ASAAS_API_URL}${path6}`;
   const headers = {
     "Content-Type": "application/json",
     "access_token": apiKey,
@@ -13605,9 +13605,9 @@ function registerAsaasRoutes(app2) {
       const q = req.query.q || "";
       const offset = parseInt(req.query.offset) || 0;
       const limit = parseInt(req.query.limit) || 20;
-      let path9 = `/customers?offset=${offset}&limit=${limit}`;
-      if (q) path9 += `&name=${encodeURIComponent(q)}`;
-      const data = await asaasRequest("GET", path9);
+      let path6 = `/customers?offset=${offset}&limit=${limit}`;
+      if (q) path6 += `&name=${encodeURIComponent(q)}`;
+      const data = await asaasRequest("GET", path6);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -14731,9 +14731,9 @@ function registerAsaasRoutes(app2) {
       const offset = parseInt(req.query.offset) || 0;
       const limit = parseInt(req.query.limit) || 20;
       const status = req.query.status;
-      let path9 = `/payments?offset=${offset}&limit=${limit}`;
-      if (status) path9 += `&status=${status}`;
-      const data = await asaasRequest("GET", path9);
+      let path6 = `/payments?offset=${offset}&limit=${limit}`;
+      if (status) path6 += `&status=${status}`;
+      const data = await asaasRequest("GET", path6);
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -16545,9 +16545,9 @@ var init_client = __esm({
       }
       /** Request HTTPS com mTLS. Resolve com JSON parsed, texto ou Buffer. */
       rawRequest(opts) {
-        const { method, path: path9, body, contentType, headers = {}, rawBuffer } = opts;
+        const { method, path: path6, body, contentType, headers = {}, rawBuffer } = opts;
         const { cert, key } = loadCertKey();
-        const url = new URL(this.getBaseUrl() + path9);
+        const url = new URL(this.getBaseUrl() + path6);
         const finalHeaders = { ...headers };
         if (body != null) {
           finalHeaders["Content-Type"] = contentType || "application/json";
@@ -16583,7 +16583,7 @@ var init_client = __esm({
                   }
                 } else {
                   const txt = buf.toString("utf8");
-                  const err = new Error(`Inter API ${status} ${method} ${path9}: ${txt.slice(0, 500)}`);
+                  const err = new Error(`Inter API ${status} ${method} ${path6}: ${txt.slice(0, 500)}`);
                   err.status = status;
                   err.body = txt;
                   reject(err);
@@ -16622,19 +16622,19 @@ var init_client = __esm({
       }
       /** Chamada autenticada às APIs Inter. */
       async call(opts) {
-        const { method, path: path9, scopes, body, query, useContaCorrente, rawBuffer } = opts;
+        const { method, path: path6, scopes, body, query, useContaCorrente, rawBuffer } = opts;
         if (!this.isConfigured()) {
           throw new Error(
             "Banco Inter n\xE3o configurado. Defina INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CONTA_CORRENTE, INTER_CERT_CRT, INTER_CERT_KEY."
           );
         }
         const token = await this.getToken(scopes);
-        let fullPath = path9;
+        let fullPath = path6;
         if (query) {
           const qs = new URLSearchParams(
             Object.entries(query).filter(([_, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])
           ).toString();
-          if (qs) fullPath += (path9.includes("?") ? "&" : "?") + qs;
+          if (qs) fullPath += (path6.includes("?") ? "&" : "?") + qs;
         }
         const headers = { Authorization: `Bearer ${token}` };
         if (useContaCorrente && this.getContaCorrente()) {
@@ -17909,10 +17909,10 @@ async function uploadSignableImage(docId, kind, base64OrDataUri, mimeHint) {
   if (error) throw error;
   return storagePath;
 }
-async function signSignableImage(path9) {
-  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).createSignedUrl(path9, SIGNED_URL_TTL_SEC2);
+async function signSignableImage(path6) {
+  const { data, error } = await supabaseAdmin.storage.from(SIGNABLE_DOC_BUCKET).createSignedUrl(path6, SIGNED_URL_TTL_SEC2);
   if (error) {
-    console.warn(`[storage] signSignableImage erro (${path9}):`, error.message);
+    console.warn(`[storage] signSignableImage erro (${path6}):`, error.message);
     return null;
   }
   return data?.signedUrl || null;
@@ -20851,119 +20851,64 @@ var init_db_maintenance = __esm({
   }
 });
 
-// vite.config.ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path7 from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
-var vite_config_default;
-var init_vite_config = __esm({
-  async "vite.config.ts"() {
-    "use strict";
-    vite_config_default = defineConfig({
-      plugins: [
-        react(),
-        runtimeErrorOverlay(),
-        ...process.env.NODE_ENV !== "production" && process.env.REPL_ID !== void 0 ? [
-          await import("@replit/vite-plugin-cartographer").then(
-            (m) => m.cartographer()
-          ),
-          await import("@replit/vite-plugin-dev-banner").then(
-            (m) => m.devBanner()
-          )
-        ] : []
-      ],
-      resolve: {
-        alias: {
-          "@": path7.resolve(import.meta.dirname, "client", "src"),
-          "@shared": path7.resolve(import.meta.dirname, "shared"),
-          "@assets": path7.resolve(import.meta.dirname, "attached_assets")
-        }
-      },
-      root: path7.resolve(import.meta.dirname, "client"),
-      build: {
-        outDir: path7.resolve(import.meta.dirname, "dist/public"),
-        emptyOutDir: true
-      },
-      server: {
-        fs: {
-          strict: true,
-          deny: ["**/.*"]
-        }
-      }
-    });
+// stub-vite:./vite
+var vite_exports = {};
+__export(vite_exports, {
+  createLogger: () => createLogger,
+  createServer: () => createServer,
+  default: () => vite_default,
+  defineConfig: () => defineConfig,
+  serveStatic: () => serveStatic,
+  setupVite: () => setupVite
+});
+function setupVite() {
+}
+function serveStatic() {
+}
+var vite_default, defineConfig, createServer, createLogger;
+var init_vite = __esm({
+  "stub-vite:./vite"() {
+    vite_default = {};
+    defineConfig = () => ({});
+    createServer = async () => ({});
+    createLogger = () => ({ info() {
+    }, error() {
+    }, warn() {
+    } });
   }
 });
 
-// server/vite.ts
-var vite_exports = {};
-__export(vite_exports, {
-  setupVite: () => setupVite
+// stub-vite:./static
+var static_exports = {};
+__export(static_exports, {
+  createLogger: () => createLogger2,
+  createServer: () => createServer2,
+  default: () => static_default,
+  defineConfig: () => defineConfig2,
+  serveStatic: () => serveStatic2,
+  setupVite: () => setupVite2
 });
-import { createServer as createViteServer, createLogger } from "vite";
-import fs7 from "fs";
-import path8 from "path";
-import { nanoid } from "nanoid";
-async function setupVite(server, app2) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server, path: "/vite-hmr" },
-    allowedHosts: true
-  };
-  const vite = await createViteServer({
-    ...vite_config_default,
-    configFile: false,
-    customLogger: {
-      ...viteLogger,
-      error: (msg, options) => {
-        viteLogger.error(msg, options);
-        process.exit(1);
-      }
-    },
-    server: serverOptions,
-    appType: "custom"
-  });
-  app2.use(vite.middlewares);
-  app2.use("/{*path}", async (req, res, next) => {
-    const url = req.originalUrl;
-    try {
-      const clientTemplate = path8.resolve(
-        import.meta.dirname,
-        "..",
-        "client",
-        "index.html"
-      );
-      let template = await fs7.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`
-      );
-      const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({
-        "Content-Type": "text/html",
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      }).end(page);
-    } catch (e) {
-      vite.ssrFixStacktrace(e);
-      next(e);
-    }
-  });
+function setupVite2() {
 }
-var viteLogger;
-var init_vite = __esm({
-  async "server/vite.ts"() {
-    "use strict";
-    await init_vite_config();
-    viteLogger = createLogger();
+function serveStatic2() {
+}
+var static_default, defineConfig2, createServer2, createLogger2;
+var init_static = __esm({
+  "stub-vite:./static"() {
+    static_default = {};
+    defineConfig2 = () => ({});
+    createServer2 = async () => ({});
+    createLogger2 = () => ({ info() {
+    }, error() {
+    }, warn() {
+    } });
   }
 });
 
 // server/create-app.ts
-import express2 from "express";
+import express from "express";
 import compression from "compression";
-import { createServer } from "http";
+import { createServer as createServer3 } from "http";
 
 // server/routes.ts
 init_storage();
@@ -20981,11 +20926,11 @@ function getSlowRoutes() {
 function installRequestLogger(app2) {
   app2.use((req, res, next) => {
     const start = Date.now();
-    const path9 = req.path;
+    const path6 = req.path;
     let responseSummary = void 0;
     const originalResJson = res.json;
     res.json = function(bodyJson, ...args) {
-      if (path9.startsWith("/api")) {
+      if (path6.startsWith("/api")) {
         try {
           if (Array.isArray(bodyJson)) {
             responseSummary = `[Array(${bodyJson.length})]`;
@@ -21003,14 +20948,14 @@ function installRequestLogger(app2) {
     };
     res.on("finish", () => {
       const duration = Date.now() - start;
-      if (path9.startsWith("/api")) {
-        const logLine = responseSummary ? `${req.method} ${path9} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path9} ${res.statusCode} in ${duration}ms`;
+      if (path6.startsWith("/api")) {
+        const logLine = responseSummary ? `${req.method} ${path6} ${res.statusCode} in ${duration}ms :: ${responseSummary}` : `${req.method} ${path6} ${res.statusCode} in ${duration}ms`;
         log(logLine);
         if (duration > SLOW_THRESHOLD_MS) {
-          console.warn(`[SLOW] ${req.method} ${path9} ${res.statusCode} took ${duration}ms`);
+          console.warn(`[SLOW] ${req.method} ${path6} ${res.statusCode} took ${duration}ms`);
           slowRoutes.push({
             method: req.method,
-            path: path9,
+            path: path6,
             status: res.statusCode,
             duration,
             ts: (/* @__PURE__ */ new Date()).toISOString()
@@ -26957,8 +26902,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
   async function generateOsReportPdfBuffer(osId2) {
     const PDFDocument4 = (await import("pdfkit")).default;
     const QRCode = (await import("qrcode")).default;
-    const path9 = await import("path");
-    const fs8 = await import("fs");
+    const path6 = await import("path");
+    const fs6 = await import("fs");
     const os = await storage.getServiceOrder(osId2);
     if (!os) throw new Error("OS n\xE3o encontrada");
     const client = os.clientId ? await storage.getClient(os.clientId) : null;
@@ -26977,8 +26922,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
     let osLogoBuffer = null;
     try {
-      const logoSrc = path9.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
-      if (fs8.existsSync(logoSrc)) {
+      const logoSrc = path6.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+      if (fs6.existsSync(logoSrc)) {
         osLogoBuffer = await sharp(logoSrc).negate({ alpha: false }).flatten({ background: { r: 34, g: 34, b: 34 } }).png().toBuffer();
       }
     } catch {
@@ -27969,8 +27914,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
       };
       var sanitize2 = sanitize3, isInvalidDate = isInvalidDate2, fmtDate = fmtDate2, fmtTime = fmtTime2, fmtTimeShort = fmtTimeShort2, gmapsUrl = gmapsUrl2, drawFooter = drawFooter2, newPage = newPage2, ensureSpace = ensureSpace2, sectionTitle = sectionTitle2, measureFieldCellHeight = measureFieldCellHeight2, drawFieldCell = drawFieldCell2, drawKmTimeCard = drawKmTimeCard2, drawTableHeader = drawTableHeader2, drawTableRow = drawTableRow2, measureTeamCardHeight = measureTeamCardHeight2;
       const PDFDocument4 = (await import("pdfkit")).default;
-      const path9 = await import("path");
-      const fs8 = await import("fs");
+      const path6 = await import("path");
+      const fs6 = await import("fs");
       const os = await storage.getServiceOrder(Number(req.params.id));
       if (!os) return res.status(404).json({ message: "OS nao encontrada" });
       const client = os.clientId ? await storage.getClient(os.clientId) : null;
@@ -27996,8 +27941,8 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
       const sharpMod = (await import("sharp")).default;
       let osLogoBuffer = null;
       try {
-        const logoSrc = path9.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
-        if (fs8.existsSync(logoSrc)) {
+        const logoSrc = path6.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+        if (fs6.existsSync(logoSrc)) {
           osLogoBuffer = await sharpMod(logoSrc).resize(120).png().toBuffer();
         }
       } catch {
@@ -35503,9 +35448,9 @@ function registerEscortRoutes(app2) {
     try {
       const { data: tx, error: txErr } = await supabaseAdmin.from("financial_transactions").select("comprovante_path, comprovante_url").eq("id", req.params.id).single();
       if (txErr || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path9 = tx.comprovante_path || tx.comprovante_url;
-      if (!path9) return res.status(404).json({ message: "Comprovante n\xE3o anexado" });
-      const { data, error } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path9, 60);
+      const path6 = tx.comprovante_path || tx.comprovante_url;
+      if (!path6) return res.status(404).json({ message: "Comprovante n\xE3o anexado" });
+      const { data, error } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path6, 60);
       if (error || !data?.signedUrl) return res.status(500).json({ message: error?.message || "Falha ao gerar URL" });
       res.json({ url: data.signedUrl });
     } catch (err) {
@@ -35884,9 +35829,9 @@ function registerEscortRoutes(app2) {
     try {
       const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("boleto_path,boleto_url").eq("id", req.params.id).single();
       if (error || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path9 = tx.boleto_path || tx.boleto_url;
-      if (!path9) return res.status(404).json({ message: "Boleto n\xE3o anexado" });
-      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path9, 60);
+      const path6 = tx.boleto_path || tx.boleto_url;
+      if (!path6) return res.status(404).json({ message: "Boleto n\xE3o anexado" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path6, 60);
       if (signErr) throw signErr;
       res.json({ url: data?.signedUrl });
     } catch (err) {
@@ -35934,9 +35879,9 @@ function registerEscortRoutes(app2) {
     try {
       const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("nf_path,nf_url").eq("id", req.params.id).single();
       if (error || !tx) return res.status(404).json({ message: "Lan\xE7amento n\xE3o encontrado" });
-      const path9 = tx.nf_path || tx.nf_url;
-      if (!path9) return res.status(404).json({ message: "NF n\xE3o anexada" });
-      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path9, 60);
+      const path6 = tx.nf_path || tx.nf_url;
+      if (!path6) return res.status(404).json({ message: "NF n\xE3o anexada" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path6, 60);
       if (signErr) throw signErr;
       res.json({ url: data?.signedUrl });
     } catch (err) {
@@ -38302,8 +38247,8 @@ function registerEscortRoutes(app2) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=MINUTA_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
-      const fs8 = await import("fs");
-      const path9 = await import("path");
+      const fs6 = await import("fs");
+      const path6 = await import("path");
       const W = 465;
       const LM = 65;
       const BRAND = "#111111";
@@ -38316,8 +38261,8 @@ function registerEscortRoutes(app2) {
       let logoBuffer = null;
       try {
         const sharp3 = (await import("sharp")).default;
-        const logoSrc = path9.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774457182066.jpeg");
-        if (fs8.existsSync(logoSrc)) {
+        const logoSrc = path6.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774457182066.jpeg");
+        if (fs6.existsSync(logoSrc)) {
           logoBuffer = await sharp3(logoSrc).resize({ height: 120 }).negate({ alpha: false }).flatten({ background: { r: 17, g: 17, b: 17 } }).png().toBuffer();
         }
       } catch {
@@ -43138,8 +43083,8 @@ function registerConciliacaoRoutes(app2) {
           }
           return res.status(500).json({ message: "Falha ao extrair texto do PDF", stderr: result.stderr?.toString() });
         }
-        const fs8 = await import("fs");
-        const txt = fs8.readFileSync(tmpTxt, "utf8");
+        const fs6 = await import("fs");
+        const txt = fs6.readFileSync(tmpTxt, "utf8");
         try {
           unlinkSync(tmpTxt);
         } catch {
@@ -47240,16 +47185,16 @@ async function getToken2(forceRefresh = false) {
   });
   return inflightLogin;
 }
-async function ssxFetch(path9, init = {}) {
+async function ssxFetch(path6, init = {}) {
   const token = await getToken2();
   const headers = new Headers(init.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const resp = await fetch(`${SSX_BASE}${path9}`, { ...init, headers });
+  const resp = await fetch(`${SSX_BASE}${path6}`, { ...init, headers });
   if (resp.status === 401 && !init._retried) {
     tokenCache = null;
-    return ssxFetch(path9, { ...init, _retried: true });
+    return ssxFetch(path6, { ...init, _retried: true });
   }
   return resp;
 }
@@ -49714,49 +49659,6 @@ Regras:
   return httpServer;
 }
 
-// server/static.ts
-import express from "express";
-import fs6 from "fs";
-import path6 from "path";
-function resolvePublicDir() {
-  const candidates = [
-    path6.resolve(__dirname, "public"),
-    path6.resolve(__dirname, "..", "dist", "public"),
-    path6.resolve(process.cwd(), "dist", "public")
-  ];
-  for (const candidate of candidates) {
-    if (fs6.existsSync(candidate)) return candidate;
-  }
-  throw new Error(
-    `Could not find the build directory (tried: ${candidates.join(", ")}). Run npm run build first.`
-  );
-}
-function serveStatic(app2) {
-  const distPath = resolvePublicDir();
-  app2.use(express.static(distPath, {
-    etag: true,
-    lastModified: true,
-    setHeaders: (res, filePath) => {
-      const fname = path6.basename(filePath);
-      if (fname === "sw.js" || fname === "manifest.json" || fname === "index.html") {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      } else if (filePath.includes(`${path6.sep}assets${path6.sep}`)) {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      } else {
-        res.setHeader("Cache-Control", "public, max-age=86400");
-      }
-    }
-  }));
-  app2.use("/{*path}", (_req, res, _next) => {
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.sendFile(path6.resolve(distPath, "index.html"));
-  });
-}
-
 // server/create-app.ts
 init_auth();
 init_db_init();
@@ -50793,7 +50695,7 @@ function siteBaseUrl(req) {
   return `${proto}://${host}`.replace(/\/$/, "");
 }
 async function createApp(options = {}) {
-  const app2 = express2();
+  const app2 = express();
   app2.set("etag", false);
   app2.use(compression({ level: 6, threshold: 1024 }));
   const PHOTO_UPLOAD_PATHS = [
@@ -50808,15 +50710,15 @@ async function createApp(options = {}) {
   const rawBodyVerify = (req, _res, buf) => {
     req.rawBody = buf;
   };
-  app2.use(PHOTO_UPLOAD_PATHS, express2.json({ limit: "10mb", verify: rawBodyVerify }));
+  app2.use(PHOTO_UPLOAD_PATHS, express.json({ limit: "10mb", verify: rawBodyVerify }));
   app2.use(
-    express2.json({
+    express.json({
       limit: "2mb",
       verify: rawBodyVerify
     })
   );
-  app2.use(express2.urlencoded({ extended: false }));
-  app2.use(express2.text({ type: "text/plain" }));
+  app2.use(express.urlencoded({ extended: false }));
+  app2.use(express.text({ type: "text/plain" }));
   app2.use("/api", (_req, res, next) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.set("Pragma", "no-cache");
@@ -50890,7 +50792,7 @@ async function createApp(options = {}) {
   registerPushRoutes(app2);
   installRequestLogger(app2);
   app2.get("/healthz", (_req, res) => res.status(200).json({ ok: true, ts: Date.now() }));
-  const httpServer = createServer(app2);
+  const httpServer = createServer3(app2);
   await registerRoutes(httpServer, app2);
   if (!isVercel()) {
     try {
@@ -50913,10 +50815,11 @@ async function createApp(options = {}) {
   });
   const useVite = options.enableVite === true && process.env.NODE_ENV !== "production";
   if (useVite) {
-    const { setupVite: setupVite2 } = await init_vite().then(() => vite_exports);
-    await setupVite2(httpServer, app2);
+    const { setupVite: setupVite3 } = await Promise.resolve().then(() => (init_vite(), vite_exports));
+    await setupVite3(httpServer, app2);
   } else if (!isVercel()) {
-    serveStatic(app2);
+    const { serveStatic: serveStatic3 } = await Promise.resolve().then(() => (init_static(), static_exports));
+    serveStatic3(app2);
   }
   ensureDbSchema().catch(
     (e) => console.error("[db-init] ensureDbSchema (background) falhou:", e?.message || e)
@@ -50938,6 +50841,31 @@ function getOrCreateApp(options = {}) {
 // api/_index.ts
 var app = null;
 var bootError = null;
+function runExpress(appInstance, req, res) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
+    const originalEnd = res.end.bind(res);
+    res.end = (...args) => {
+      const out = originalEnd(...args);
+      done();
+      return out;
+    };
+    try {
+      appInstance(req, res, (err) => {
+        if (err) done(err);
+        else if (res.headersSent) done();
+      });
+    } catch (err) {
+      done(err);
+    }
+  });
+}
 async function vercelHandler(req, res) {
   const pathOnly = (req.url || "").split("?")[0];
   if (pathOnly === "/healthz" || pathOnly === "/api/healthz") {
@@ -50950,7 +50878,7 @@ async function vercelHandler(req, res) {
     if (!app) {
       app = await getOrCreateApp();
     }
-    app(req, res);
+    await runExpress(app, req, res);
   } catch (e) {
     if (!app) {
       bootError = e instanceof Error ? e : new Error(String(e));

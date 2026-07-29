@@ -5,6 +5,38 @@ import { getOrCreateApp } from "../server/create-app.js";
 let app: Express | null = null;
 let bootError: Error | null = null;
 
+/**
+ * Espera o Express terminar sem usar res.on() —
+ * VercelResponse não é Node ServerResponse (res.on is not a function).
+ */
+function runExpress(appInstance: Express, req: VercelRequest, res: VercelResponse): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
+
+    const originalEnd = res.end.bind(res);
+    (res as { end: (...args: unknown[]) => unknown }).end = (...args: unknown[]) => {
+      const out = originalEnd(...args);
+      done();
+      return out;
+    };
+
+    try {
+      appInstance(req as Parameters<Express>[0], res as Parameters<Express>[1], (err?: unknown) => {
+        if (err) done(err);
+        else if (res.headersSent) done();
+      });
+    } catch (err) {
+      done(err);
+    }
+  });
+}
+
 export default async function vercelHandler(req: VercelRequest, res: VercelResponse) {
   const pathOnly = (req.url || "").split("?")[0];
   if (pathOnly === "/healthz" || pathOnly === "/api/healthz") {
@@ -18,7 +50,7 @@ export default async function vercelHandler(req: VercelRequest, res: VercelRespo
     if (!app) {
       app = await getOrCreateApp();
     }
-    app(req as Parameters<Express>[0], res as Parameters<Express>[1]);
+    await runExpress(app, req, res);
   } catch (e: unknown) {
     if (!app) {
       bootError = e instanceof Error ? e : new Error(String(e));

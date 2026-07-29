@@ -5,7 +5,6 @@ import compression from "compression";
 import type { IncomingMessage, ServerResponse } from "http";
 import { createServer, type Server } from "http";
 import { registerRoutes } from "./routes";
-import { serveStatic } from "./static";
 import { setupAuth } from "./auth";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
@@ -172,12 +171,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
     return res.status(status).json({ message });
   });
 
+  // Imports dinâmicos: Vite/static NÃO podem entrar no bundle da Vercel
+  // (import estático de vite quebra o cold start com FUNCTION_INVOCATION_FAILED).
   const useVite = options.enableVite === true && process.env.NODE_ENV !== "production";
   if (useVite) {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   } else if (!isVercel()) {
     // Na Vercel o CDN serve dist/public (vercel.json outputDirectory + rewrites).
+    const { serveStatic } = await import("./static");
     serveStatic(app);
   }
 
