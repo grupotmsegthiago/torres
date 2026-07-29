@@ -169,13 +169,13 @@ export const employeeSalaries = pgTable("employee_salaries", {
   beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
   encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
   horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
-  // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
+  // CCT: VR por dia útil (R$ 43 × 22 = 946). Kit R$ 200 = ajuda de custo (não cesta).
   valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
-  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
+  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("0"),
   // Folha 2025: Periculosidade (30% padrão para vigilantes), Dependentes IR, Ajuda de Custo fixa
   periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
   dependentesIr: integer("dependentes_ir").default(0),
-  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
+  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("200.00"),
   // Modelo Torres (planilha do dono): Vale Alimentação mensal + Assiduidade mensal (benefícios à parte)
   valeAlimentacaoMensal: decimal("vale_alimentacao_mensal", { precision: 10, scale: 2 }).default("0"),
   assiduidadeMensal: decimal("assiduidade_mensal", { precision: 10, scale: 2 }).default("0"),

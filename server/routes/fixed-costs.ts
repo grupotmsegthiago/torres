@@ -5,7 +5,13 @@ import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
-import { calcularFolha, selectSalaryVigenteFromHistory, type PayrollBreakdown } from "../lib/payroll";
+import {
+  calcularFolha,
+  resolveCestaAjudaTorres,
+  selectSalaryVigenteFromHistory,
+  VR_DIAS_UTEIS_CCT,
+  type PayrollBreakdown,
+} from "../lib/payroll";
 import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
@@ -125,9 +131,8 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
  * Usa o salário vigente em `opts.referenceDate` (effective_date <= referência).
  * Mesma regra do cadastro (salary-summary) e do Ponto (buildFolhaStats).
  *
- * `opts.businessDays` — quando informado, usa esse número de dias úteis para o VR.
- *                       Senão, calcula com base nos dias úteis do mês corrente
- *                       (descontando feriados informados em opts.holidaySet).
+ * `opts.businessDays` — legado; VR mensal é FIXO em diasUteisMes CCT (22 → R$ 946).
+ *                       Ignorado no cálculo de VR (decisão dono 29/07/2026).
  * `opts.diariasManuais` — soma de diárias de lançamento manual no período (apenas no breakdown).
  * `opts.rescisaoPct`   — percentual de rescisão sobre a folha bruta (default 8%).
  * `opts.referenceDate` — YYYY-MM-DD; vigência salarial (default = hoje BRT aproximado).
@@ -212,13 +217,8 @@ export async function calculateAgentMonthlyCost(
     .order("id", { ascending: false })
     .limit(20);
 
-  // Dias úteis padrão: mês corrente
-  let vrDias = opts?.businessDays;
-  if (vrDias === undefined) {
-    const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
-    const set = opts?.holidaySet ?? (await loadHolidaySet(from, to));
-    vrDias = countBusinessDays(from, to, set);
-  }
+  // VR mensal FIXO = diário × 22 dias CCT (43 × 22 = 946). Não varia com feriados.
+  const vrDias = VR_DIAS_UTEIS_CCT;
 
   // Horas extras/noturnas do PERÍODO. Se chamador passou override (rota /rh-summary
   // que já agregou batidas Control iD + jornada_calculos do mês), usa direto.
@@ -274,15 +274,16 @@ export async function calculateAgentMonthlyCost(
     if (isClt) {
       const { getCctConfigByCargo } = await import("../lib/cct-config");
       const cct = await getCctConfigByCargo(opts?.role || null);
+      const benKit = resolveCestaAjudaTorres(Number(cct.cestaBasica || 0), Number((cct as any).ajudaCustoMensal || 0));
       s = {
         base_salary: cct.salarioBase,
         periculosidade_pct: cct.periculosidadePct,
         vale_refeicao_diario: cct.valeRefeicaoDia,
-        cesta_basica: cct.cestaBasica,
+        cesta_basica: benKit.cesta,
         vale_transporte_mensal: 0,
         beneficios_outros: 0,
         horas_mensais: 220,
-        ajuda_custo_mensal: 0,
+        ajuda_custo_mensal: benKit.ajudaCusto,
         vale_alimentacao_mensal: 0,
         assiduidade_mensal: 0,
         dependentes_ir: 0,
@@ -309,7 +310,13 @@ export async function calculateAgentMonthlyCost(
   const vrLegacy = isClt ? Number(s.vale_refeicao_mensal || 0) : 0;
   const vrTotal = vrLegacy > 0 ? vrLegacy : vrDiario * vrDias;
   const vt = isClt ? Number(s.vale_transporte_mensal || 0) : 0;
-  const cesta = isClt ? Number(s.cesta_basica ?? 200) : 0;
+  // Kit legado: cesta 200 → ajuda de custo (não cesta básica).
+  const ben = resolveCestaAjudaTorres(
+    isClt ? Number(s.cesta_basica ?? 0) : 0,
+    Number(s.ajuda_custo_mensal || 0),
+  );
+  const cesta = isClt ? ben.cesta : 0;
+  const ajudaCustoMensal = ben.ajudaCusto;
   const outros = isClt ? Number(s.beneficios_outros || 0) : 0;
   const valeAlimentacao = isClt ? Number(s.vale_alimentacao_mensal || 0) : 0;
   const assiduidade = isClt ? Number(s.assiduidade_mensal || 0) : 0;
@@ -317,7 +324,6 @@ export async function calculateAgentMonthlyCost(
   const horasMensais = Number(s.horas_mensais || 220);
   // PJ: nunca herda 30% CCT — valor fixo = base_salary cadastrado.
   const periculosidadePct = isClt ? Number(s.periculosidade_pct ?? 30) / 100 : 0;
-  const ajudaCustoMensal = Number(s.ajuda_custo_mensal || 0);
   const diasTrabalhados = opts?.diasTrabalhados ?? 30; // default mês cheio
 
   // Dependentes IR: prioriza contagem da tabela `employee_dependents` (com certidão).
@@ -715,7 +721,8 @@ export function registerFixedCostsRoutes(app: Express) {
         periculosidade: acc.peric,
         dsr: 0,
         ajudaCusto: acc.ajudaCusto,
-        totalBruto: acc.base + acc.peric + acc.he + acc.noturno + acc.refeicao + acc.ajudaCusto,
+        // Remuneração apenas (VR/ajuda ficam em benefícios) — alinhado a calcularFolha.totalBruto
+        totalBruto: acc.base + acc.peric + acc.he + acc.noturno,
         inss: +acc.inssFunc.toFixed(2), irrf: +acc.irrfFunc.toFixed(2), fgts: acc.fgts,
         inssPatronal: 0,
         seguroVida: 0,

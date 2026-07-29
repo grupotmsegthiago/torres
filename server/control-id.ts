@@ -1328,7 +1328,7 @@ export async function buildFolhaStats(
   const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
   const { data: salaryRows } = await supabaseAdmin
     .from("employee_salaries")
-    .select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, effective_date")
+    .select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, ajuda_custo_mensal, effective_date")
     .eq("employee_id", employeeId)
     .lte("effective_date", monthEndStr)
     .order("effective_date", { ascending: false })
@@ -1373,6 +1373,7 @@ export async function buildFolhaStats(
   const periculosidadePct = sal && sal.periculosidade_pct != null ? Number(sal.periculosidade_pct) : CCT.periculosidadePct;
   const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
   let cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
+  let ajudaCustoMensal = sal && sal.ajuda_custo_mensal != null ? Number(sal.ajuda_custo_mensal) : 0;
 
   // ============================================================
   // Cesta Básica II (SIEMACO e similares) — aplicada por assiduidade.
@@ -1424,6 +1425,12 @@ export async function buildFolhaStats(
     } catch (e: any) {
       console.error("[calcularFolha] erro ao calcular Cesta Básica II:", e?.message);
     }
+  } else {
+    // Vigilância: kit R$ 200 legado em cesta_basica → ajuda de custo.
+    const { resolveCestaAjudaTorres } = await import("./lib/payroll");
+    const ben = resolveCestaAjudaTorres(cestaBasica, ajudaCustoMensal);
+    cestaBasica = ben.cesta;
+    ajudaCustoMensal = ben.ajudaCusto;
   }
 
   // Dias úteis reais do mês (descontando feriados) — proporcional ao "decorrido"
@@ -1471,9 +1478,10 @@ export async function buildFolhaStats(
     cutoffIso = to;
   }
 
-  const diasUteisTotal = countBusinessDays(from, to, holidaySet);
+  const { VR_DIAS_UTEIS_CCT } = await import("./lib/payroll");
+  const diasUteisTotal = VR_DIAS_UTEIS_CCT; // VR fixo CCT (43×22=946)
   const diasUteis = isMesCorrente
-    ? countBusinessDays(from, cutoffIso, holidaySet)
+    ? Math.min(VR_DIAS_UTEIS_CCT, countBusinessDays(from, cutoffIso, holidaySet))
     : (isMesFuturo ? 0 : diasUteisTotal);
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
 
@@ -1502,6 +1510,7 @@ export async function buildFolhaStats(
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
   const valeRefeicao = isClt ? +(vrDiario * diasUteis).toFixed(2) : 0;
   const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
+  const ajudaCustoReal = isClt ? +(ajudaCustoMensal * fatorRateio).toFixed(2) : 0;
 
   // Diárias de missão (escolta/operacional) — só CLT; PJ = valor fixo.
   let diarias = 0;
@@ -1523,7 +1532,7 @@ export async function buildFolhaStats(
   diarias = +diarias.toFixed(2);
 
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
-  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
+  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal + ajudaCustoReal).toFixed(2);
 
   // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE + adic. noturno).
   // Não-CLT (PJ, fixo): zera FGTS, INSS patronal e seguro de vida.
@@ -1594,14 +1603,16 @@ export async function buildFolhaStats(
   faturamentoMargem = +faturamentoMargem.toFixed(2);
 
   // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
-  // Base tributável = Salário(c/ peric) + HE + Noturno (= vencimentosTotal, já ratado).
-  // INSS 12% fixo; IRRF 22% fixo sobre o bruto (decisão do dono 26/06/2026 — média do
-  // recolhimento 18–27,5%, NÃO progressivo); líquido NÃO desconta FGTS (depósito do
-  // empregador, decisão do dono 26/06/2026). Não entra no custo da empresa
-  // (o custo geral = vencimentos + benefícios; recolhimentos são informativos).
+  // Base tributável INSS/FGTS = Salário(c/ peric) + HE + Noturno.
+  // IRRF mensal: só salário+peric; isento ≤ R$ 5.000 (HE paga à parte — 29/07/2026).
+  // Líquido NÃO desconta FGTS (depósito do empregador).
+  const { IRRF_ISENTO_ATE } = await import("./lib/payroll");
   const baseTributavelFunc = vencimentosTotal;
+  const baseIrrfMensalFunc = +(baseSalaryReal + periculosidade).toFixed(2);
   const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
-  const irrfFuncionario = isClt ? +(baseTributavelFunc * 0.22).toFixed(2) : 0;
+  const irrfFuncionario = isClt
+    ? (baseIrrfMensalFunc <= IRRF_ISENTO_ATE ? 0 : +(baseIrrfMensalFunc * 0.22).toFixed(2))
+    : 0;
   const fgtsFuncionario = fgts; // 8% sobre vencimentos — NÃO desconta do líquido (modelo Torres)
   const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
 
@@ -1639,6 +1650,8 @@ export async function buildFolhaStats(
     diarias,
     cestaBasica: cestaBasicaReal,
     cestaBasicaMensal: cestaBasica,
+    ajudaCusto: ajudaCustoReal,
+    ajudaCustoMensal,
     cestaBasicaIIAtestados,
     cestaBasicaIIFaixa,
     cestaBasicaIIAplicada: !!faixas,

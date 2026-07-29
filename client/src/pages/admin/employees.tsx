@@ -74,12 +74,13 @@ const CCT_SP_2025 = {
   periculosidadePct: 30,
   get periculosidade() { return this.salarioBase * (this.periculosidadePct / 100); },
   valeRefeicaoDia: 43.00,
-  cestaBasica: 200.00,
+  cestaBasica: 0,
+  ajudaCustoMensal: 200.00,
   diasUteisMes: 22,
   encargosSociaisPct: 80,
   horaExtraValor: 22.99,
   get valeRefeicaoMes() { return this.valeRefeicaoDia * this.diasUteisMes; },
-  get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.cestaBasica; },
+  get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.ajudaCustoMensal; },
   pagamentoDiaUtil: 5,
 };
 const ESCOLARIDADE = ["Fundamental", "Médio", "Superior", "Pós-graduação", "Mestrado", "Doutorado"];
@@ -3400,7 +3401,14 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
     salarioBase: String(i.salarioBase),
     periculosidadePct: String(i.periculosidadePct),
     valeRefeicaoDia: String(i.valeRefeicaoDia),
-    cestaBasica: String(i.cestaBasica),
+    cestaBasica: String(
+      Number(i.cestaBasica) === 200 || Number(i.cestaBasica) === 208.45 ? 0 : (i.cestaBasica ?? 0),
+    ),
+    ajudaCustoMensal: String(
+      (i as any).ajudaCustoMensal != null && Number((i as any).ajudaCustoMensal) > 0
+        ? (i as any).ajudaCustoMensal
+        : (Number(i.cestaBasica) === 200 || Number(i.cestaBasica) === 208.45 ? i.cestaBasica : 200),
+    ),
     diasUteisMes: String(i.diasUteisMes),
     encargosSociaisPct: String(i.encargosSociaisPct),
     horaExtraValor: String(i.horaExtraValor),
@@ -3419,7 +3427,7 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
   const num = (v: string) => Number(String(v).replace(",", "."));
   const periculosidade = +(num(form.salarioBase) * (num(form.periculosidadePct) / 100) || 0).toFixed(2);
   const valeRefeicaoMes = +(num(form.valeRefeicaoDia) * num(form.diasUteisMes) || 0).toFixed(2);
-  const totalBruto = +(num(form.salarioBase) + periculosidade + valeRefeicaoMes + num(form.cestaBasica) || 0).toFixed(2);
+  const totalBruto = +(num(form.salarioBase) + periculosidade + valeRefeicaoMes + num(form.ajudaCustoMensal) + num(form.cestaBasica) || 0).toFixed(2);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -3428,7 +3436,9 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         salarioBase: num(form.salarioBase),
         periculosidadePct: num(form.periculosidadePct),
         valeRefeicaoDia: num(form.valeRefeicaoDia),
-        cestaBasica: num(form.cestaBasica),
+        // Persistimos o kit R$ 200 em cestaBasica por compat com API CCT;
+        // o motor remapeia para ajuda de custo na folha (resolveCestaAjudaTorres).
+        cestaBasica: num(form.ajudaCustoMensal) || num(form.cestaBasica),
         diasUteisMes: Math.max(1, Math.round(num(form.diasUteisMes))),
         encargosSociaisPct: num(form.encargosSociaisPct),
         horaExtraValor: num(form.horaExtraValor),
@@ -3476,7 +3486,7 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
             <CctField label="Periculosidade" value={form.periculosidadePct} onChange={(v) => setForm({ ...form, periculosidadePct: v })} suffix="%" testId="input-cct-periculosidade" />
             <CctField label="Vale-Refeição / dia" value={form.valeRefeicaoDia} onChange={(v) => setForm({ ...form, valeRefeicaoDia: v })} suffix="R$" testId="input-cct-vr" />
             <CctField label="Dias úteis / mês" value={form.diasUteisMes} onChange={(v) => setForm({ ...form, diasUteisMes: v })} suffix="dias" testId="input-cct-dias" />
-            <CctField label="Cesta Básica" value={form.cestaBasica} onChange={(v) => setForm({ ...form, cestaBasica: v })} suffix="R$" testId="input-cct-cesta" />
+            <CctField label="Ajuda de custo" value={form.ajudaCustoMensal} onChange={(v) => setForm({ ...form, ajudaCustoMensal: v, cestaBasica: "0" })} suffix="R$" testId="input-cct-ajuda" />
             <CctField label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
             <CctField label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
             <CctField label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
@@ -3497,7 +3507,7 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
             <div className="flex justify-between text-xs"><span className="text-neutral-600">Salário Base</span><span className="font-semibold tabular-nums">R$ {num(form.salarioBase).toFixed(2)}</span></div>
             <div className="flex justify-between text-xs"><span className="text-neutral-600">+ Periculosidade ({form.periculosidadePct}%)</span><span className="font-semibold tabular-nums">R$ {periculosidade.toFixed(2)}</span></div>
             <div className="flex justify-between text-xs"><span className="text-neutral-600">+ VR ({form.valeRefeicaoDia}/dia × {form.diasUteisMes})</span><span className="font-semibold tabular-nums">R$ {valeRefeicaoMes.toFixed(2)}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-neutral-600">+ Cesta Básica</span><span className="font-semibold tabular-nums">R$ {num(form.cestaBasica).toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-neutral-600">+ Ajuda de custo</span><span className="font-semibold tabular-nums">R$ {num(form.ajudaCustoMensal).toFixed(2)}</span></div>
             <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-neutral-200"><span>Total Bruto Mensal</span><span className="text-emerald-700 tabular-nums">R$ {totalBruto.toFixed(2)}</span></div>
           </div>
 

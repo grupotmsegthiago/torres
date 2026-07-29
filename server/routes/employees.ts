@@ -6,7 +6,13 @@ import type { Express } from "express";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
-  import { calcularFolha, endOfMonthYmd, selectSalaryVigenteFromHistory } from "../lib/payroll";
+  import {
+    calcularFolha,
+    endOfMonthYmd,
+    resolveCestaAjudaTorres,
+    selectSalaryVigenteFromHistory,
+    VR_DIAS_UTEIS_CCT,
+  } from "../lib/payroll";
   import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
   import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
@@ -457,17 +463,23 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         ? Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100
         : 0;
       const vrDiario = isCltEarly ? Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia) : 0;
-      const cestaMensal = isCltEarly ? Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica) : 0;
+      const ben = resolveCestaAjudaTorres(
+        isCltEarly ? Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica) : 0,
+        Number(sal.ajuda_custo_mensal || 0),
+      );
+      const cestaMensal = isCltEarly ? ben.cesta : 0;
+      const ajudaCustoMensal = ben.ajudaCusto;
       const vt = isCltEarly ? Number(sal.vale_transporte_mensal || 0) : 0;
       const outros = isCltEarly ? Number(sal.beneficios_outros || 0) : 0;
       const horasMensais = Number(sal.horas_mensais || 220);
-      const ajudaCustoMensal = Number(sal.ajuda_custo_mensal || 0);
       const semSalarioPj = !isCltEarly && !temSalario;
 
-      // Dias úteis da competência de RH (ciclo 26 → 25) — descontando feriados.
+      // Competência de RH (ciclo 26 → 25) — usada para HE/ponto. VR usa dias CCT fixos.
       const { from, to } = payrollPeriodRange(year, month);
       const holidaySet = await loadHolidaySet(from, to);
-      const diasUteis = countBusinessDays(from, to, holidaySet);
+      const diasUteisPeriodo = countBusinessDays(from, to, holidaySet);
+      // VR mensal fixo CCT (43 × 22 = 946) — não varia com feriados do período.
+      const diasUteis = VR_DIAS_UTEIS_CCT;
 
       // Proporcional na admissão
       let proporcional = false;
@@ -566,10 +578,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const vtCusto = isClt ? vt : 0;
       const outrosCusto = isClt ? outros : 0;
 
-      // Vencimentos: CLT = bruto + benefícios CCT; PJ = só o valor fixo (folha.totalBruto).
-      const totalVencimentos = isClt
-        ? +(folha.totalBruto + cestaCusto + vtCusto + outrosCusto).toFixed(2)
-        : +folha.totalBruto.toFixed(2);
+      // Vencimentos = remuneração (salário+peric+HE+noturno). Benefícios à parte.
+      const totalVencimentos = +folha.totalBruto.toFixed(2);
       const totalBeneficios = isClt
         ? +(folha.refeicao + folha.ajudaCusto + cestaCusto + valeAlimentacao + assiduidade + outrosCusto).toFixed(2)
         : +folha.ajudaCusto.toFixed(2);
@@ -593,7 +603,9 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
-        month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis: isClt ? diasUteis : 0,
+        month, year, proporcional, diasTrabalhados, fatorProporcional,
+        diasUteis: isClt ? diasUteis : 0,
+        diasUteisPeriodo: isClt ? diasUteisPeriodo : 0,
         tipoContratacao,
         isClt,
         semSalario: !temSalario,
@@ -743,14 +755,17 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const CCT = preset.config;
       const effectiveDate = req.body?.effectiveDate || new Date().toISOString().slice(0, 10);
       const periculosidade = Number(CCT.salarioBase) * Number(CCT.periculosidadePct) / 100;
-      const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
-      const notes = `Pgto ${CCT.pagamentoDiaUtil}º dia útil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Cesta: R$${CCT.cestaBasica}`;
+      // Kit vigilância: R$ 200 = ajuda de custo (não cesta). SIEMACO mantém cesta II.
+      const benKit = resolveCestaAjudaTorres(Number(CCT.cestaBasica || 0), Number((CCT as any).ajudaCustoMensal || 0));
+      const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Ajuda R$${benKit.ajudaCusto})`;
+      const notes = `Pgto ${CCT.pagamentoDiaUtil}º dia útil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Ajuda de custo: R$${benKit.ajudaCusto}`;
 
       const sal = await storage.createEmployeeSalary({
         employeeId: empId,
         baseSalary: String(CCT.salarioBase),
         valeRefeicaoDiario: String(CCT.valeRefeicaoDia),
-        cestaBasica: String(CCT.cestaBasica),
+        cestaBasica: String(benKit.cesta),
+        ajudaCustoMensal: String(benKit.ajudaCusto),
         periculosidadePct: String(CCT.periculosidadePct),
         horasMensais: "220",
         effectiveDate,
@@ -770,16 +785,22 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const allEmployees = await storage.getEmployees();
       const vigilantes = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
       const effectiveDate = req.body.effectiveDate || new Date().toISOString().slice(0, 10);
-      const reason = `Kit CCT SP 2025/2026 (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
+      const benKit = resolveCestaAjudaTorres(Number(CCT.cestaBasica || 0), Number((CCT as any).ajudaCustoMensal || 0));
+      const reason = `Kit CCT SP 2025/2026 (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Ajuda R$${benKit.ajudaCusto})`;
       let count = 0;
       for (const emp of vigilantes) {
         await storage.createEmployeeSalary({
           employeeId: emp.id,
           baseSalary: String(CCT.salarioBase),
+          valeRefeicaoDiario: String(CCT.valeRefeicaoDia),
+          cestaBasica: String(benKit.cesta),
+          ajudaCustoMensal: String(benKit.ajudaCusto),
+          periculosidadePct: String(CCT.periculosidadePct),
+          horasMensais: "220",
           effectiveDate,
           reason,
-          notes: `Pgto 5º dia útil | Periculosidade: R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Cesta: R$${CCT.cestaBasica}`,
-        });
+          notes: `Pgto 5º dia útil | Periculosidade: R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Ajuda de custo: R$${benKit.ajudaCusto}`,
+        } as any);
         count++;
       }
       res.json({ message: `Kit CCT aplicado para ${count} vigilante(s)`, count });

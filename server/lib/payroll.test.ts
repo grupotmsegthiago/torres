@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcularFolha } from "./payroll";
+import { calcularFolha, resolveCestaAjudaTorres, IRRF_ISENTO_ATE, VR_DIAS_UTEIS_CCT } from "./payroll";
 
-test("calcularFolha CLT (default) calcula INSS/IRRF/FGTS e provisões", () => {
+test("calcularFolha CLT (default) calcula INSS/FGTS e provisões", () => {
   const f = calcularFolha({
     salarioBaseCheio: 3000,
     diasTrabalhados: 30,
@@ -15,8 +15,10 @@ test("calcularFolha CLT (default) calcula INSS/IRRF/FGTS e provisões", () => {
   assert.ok(f.fgts > 0, "FGTS deve ser > 0 em CLT");
   assert.ok(f.provisaoDecimoTerceiro > 0, "13º deve provisionar em CLT");
   assert.ok(f.provisaoFerias > 0, "férias devem provisionar em CLT");
-  assert.ok(f.custoTotalEmpresa > f.totalBruto, "custo empresa > bruto em CLT (FGTS+provisões)");
-  assert.ok(f.liquidoFuncionario < f.totalBruto, "líquido < bruto em CLT (descontos)");
+  // Base mensal 3900 ≤ 5000 → IRRF 0; custo ainda inclui FGTS+provisões+VR
+  assert.equal(f.irrf, 0, "IRRF isento até 5k (salário+peric)");
+  assert.ok(f.custoTotalEmpresa > f.totalBruto, "custo empresa > bruto em CLT (VR+FGTS+provisões)");
+  assert.ok(f.liquidoFuncionario < f.totalBruto, "líquido < bruto em CLT (INSS)");
 });
 
 test("calcularFolha não-CLT (isClt=false) zera INSS/IRRF/FGTS/provisões", () => {
@@ -96,8 +98,8 @@ test("modelo Torres: hora noturna = valorHora(c/ peric) × 1.8 × horas", () => 
   assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * 10) < 0.01, "noturno 1.8× sobre hora c/ peric");
 });
 
-test("modelo Torres: INSS 12% + IRRF 22% fixos + FGTS NÃO desconta do líquido", () => {
-  // peric desligada p/ isolar: base = 2200.
+test("modelo Torres: INSS 12% + IRRF isento ≤5k + FGTS NÃO desconta do líquido", () => {
+  // peric desligada p/ isolar: base = 2200 ≤ 5000 → IRRF 0.
   const f = calcularFolha({
     salarioBaseCheio: 2200,
     diasTrabalhados: 30,
@@ -105,14 +107,51 @@ test("modelo Torres: INSS 12% + IRRF 22% fixos + FGTS NÃO desconta do líquido"
     aplicarPericulosidade: false,
   });
   assert.equal(f.baseTributavel, 2200, "base = salário (sem peric/dsr)");
+  assert.equal(f.baseIrrfMensal, 2200, "base IRRF = salário+peric");
   assert.equal(f.inss, 264, "INSS 12% fixo (2200 × 0.12)");
-  assert.equal(f.irrf, 484, "IRRF 22% fixo sobre o bruto (2200 × 0.22)");
+  assert.equal(f.irrf, 0, "IRRF isento (2200 ≤ 5000)");
   assert.equal(f.fgts, 176, "FGTS 8% (2200 × 0.08)");
-  // líquido = base − inss − irrf (FGTS NÃO desconta do líquido).
-  assert.equal(f.liquidoFuncionario, +(2200 - 264 - 484).toFixed(2), "líquido = base − INSS − IRRF (sem FGTS)");
+  assert.equal(f.liquidoFuncionario, +(2200 - 264).toFixed(2), "líquido = base − INSS (sem IRRF/FGTS)");
 });
 
-test("modelo Torres: regressão planilha do dono (caso André)", () => {
+test("caso Jorge: bruto = salário+peric; IRRF 0; VR fixo 946; ajuda 200", () => {
+  const base = 2565.31;
+  const f = calcularFolha({
+    salarioBaseCheio: base,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0.3,
+    diasUteis: VR_DIAS_UTEIS_CCT,
+    refeicaoDiaria: 43,
+    ajudaCustoMensal: 200,
+  });
+  assert.equal(+(f.salarioProporcional + f.periculosidade).toFixed(2), 3334.9);
+  assert.equal(f.totalBruto, 3334.9, "Total bruto = salário+peric (sem VR)");
+  assert.equal(f.refeicao, 946, "VR fixo 43×22");
+  assert.equal(f.ajudaCusto, 200);
+  assert.equal(f.irrf, 0, "IRRF 0 (base mensal 3334.90 ≤ 5000)");
+  assert.equal(f.inss, +(3334.9 * 0.12).toFixed(2));
+  assert.equal(f.baseIrrfMensal, 3334.9);
+  // Custo inclui VR + ajuda mesmo com IRRF 0
+  assert.ok(f.custoTotalEmpresa >= f.totalBruto + f.refeicao + f.ajudaCusto);
+});
+
+test("IRRF flat só acima do teto de isenção (sobre salário+peric, sem HE)", () => {
+  // Base alta sem peric: 6000 > 5000 → 22% sobre 6000.
+  const f = calcularFolha({
+    salarioBaseCheio: 6000,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    aplicarPericulosidade: false,
+    horasExtras: 50, // HE NÃO entra na base de IRRF
+  });
+  assert.equal(f.baseIrrfMensal, 6000);
+  assert.ok(f.baseTributavel > 6000, "HE entra na base tributável INSS/FGTS");
+  assert.equal(f.irrf, +(6000 * 0.22).toFixed(2), "IRRF 22% só sobre salário (sem HE)");
+  assert.ok(f.baseIrrfMensal > IRRF_ISENTO_ATE);
+});
+
+test("modelo Torres: regressão planilha do dono (caso André) — HE fora do IRRF", () => {
   // André: cadastro base 2.565,31 + peric 30% = salário 3.334,90 (planilha).
   // HE 132h17m; Noturnas 84h46m. Horas reais (H + M/60).
   const base = 2565.31;
@@ -131,17 +170,26 @@ test("modelo Torres: regressão planilha do dono (caso André)", () => {
     refeicaoDiaria: 43,
   });
   const salarioComPeric = base * (1 + peric); // 3334.90
-  const vh = salarioComPeric / horasMensais; // 15.1586 → bate com 24,26/27,29 da planilha
-  // "Salário" da planilha = base + peric
+  const vh = salarioComPeric / horasMensais;
   assert.equal(+(f.salarioProporcional + f.periculosidade).toFixed(2), +salarioComPeric.toFixed(2), "salário c/ peric = 3334.90");
+  assert.equal(f.totalBruto, f.baseTributavel, "bruto = remuneração (sem VR)");
   assert.equal(f.dsr, 0);
   assert.ok(Math.abs(f.horasExtrasValor - vh * 1.6 * horasExtras) < 0.01, "HE = valorHora(c/peric) × 1.6 × horas");
   assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * horasNoturnas) < 0.01, "Noturno = valorHora(c/peric) × 1.8 × horas");
   assert.equal(f.baseTributavel, +(salarioComPeric + f.horasExtrasValor + f.adicionalNoturnoValor).toFixed(2), "Total = salário(c/peric) + HE + Noturno");
   assert.equal(f.inss, +(f.baseTributavel * 0.12).toFixed(2), "INSS 12% do total");
-  assert.equal(f.irrf, +(f.baseTributavel * 0.22).toFixed(2), "IRRF 22% fixo do total (modelo Torres)");
+  // IRRF: base mensal 3334.90 ≤ 5000 → 0 (HE paga à parte)
+  assert.equal(f.baseIrrfMensal, +salarioComPeric.toFixed(2));
+  assert.equal(f.irrf, 0, "IRRF isento na folha mensal (≤5k; HE à parte)");
   assert.equal(f.fgts, +(f.baseTributavel * 0.08).toFixed(2), "FGTS 8% do total");
   assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf).toFixed(2), "líquido = Total − INSS − IRRF (FGTS NÃO desconta)");
-  // Sanidade: total perto dos R$ 8.846 da planilha (difere uns reais pelo artefato HH:MM dela)
   assert.ok(Math.abs(f.baseTributavel - 8846.26) < 25, `Total (${f.baseTributavel}) ~ 8846,26`);
+});
+
+test("resolveCestaAjudaTorres: kit 200 vira ajuda de custo", () => {
+  assert.deepEqual(resolveCestaAjudaTorres(200, 0), { cesta: 0, ajudaCusto: 200 });
+  assert.deepEqual(resolveCestaAjudaTorres(208.45, 0), { cesta: 0, ajudaCusto: 208.45 });
+  assert.deepEqual(resolveCestaAjudaTorres(200, 50), { cesta: 200, ajudaCusto: 50 }, "não remapeia se já há ajuda");
+  assert.deepEqual(resolveCestaAjudaTorres(0, 200), { cesta: 0, ajudaCusto: 200 });
+  assert.deepEqual(resolveCestaAjudaTorres(315, 0), { cesta: 315, ajudaCusto: 0 }, "SIEMACO cesta II intacta");
 });
