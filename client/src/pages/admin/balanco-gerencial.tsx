@@ -613,8 +613,12 @@ export default function BalancoGerencialPage() {
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * costDays;
-    // Fonte única: labor + FT oficiais (comb/pedágio/manut) + RH + fixos — sem reembolso duplicado
-    const custoTotal = pag + despReaisOperacional + provisaoRH + custosFixosRateados;
+    // VRP NÃO entra no custoTotal quando há folha RH: o vigilante CLT já está inteiro no RH.
+    // VRP do boletim é custo teórico da missão (contrato.vrp_base) — útil na DRE da OS,
+    // mas somar com a folha dobra a mão de obra e derruba a margem sem ser caixa real.
+    // Só usa VRP no total se não houver RH (fallback / operação sem folha cadastrada).
+    const vrpNoTotal = provisaoRH > 0 ? 0 : pag;
+    const custoTotal = vrpNoTotal + despReaisOperacional + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -638,6 +642,8 @@ export default function BalancoGerencialPage() {
       custosFixosMensal,
       custosFixosRateados,
       custoTotal,
+      /** VRP exibido na DRE mas excluído do total quando RH > 0 */
+      vrpExcludedFromTotal: provisaoRH > 0,
     };
   }, [filtered, provisaoRH, fixedCostsSummary, costDays]);
 
@@ -1890,13 +1896,16 @@ function BalancoTab({
   const dailyChart = useMemo(() => {
     // Fixos: rateio IGUAL por dia do período (não proporcional ao fat do dia)
     const fixoDia = (totals.custosFixosRateados || 0) / Math.max(daysInPeriod, 1);
+    const rhDia = (totals.provisaoRH || 0) / Math.max(daysInPeriod, 1);
+    // Com RH na folha, VRP não entra no custo do dia (evita dobrar mão de obra)
+    const includeVrp = !totals.vrpExcludedFromTotal;
     return dailyData.map((d) => {
       const custo =
-        d.pag +
+        (includeVrp ? d.pag : 0) +
         (d.combustivel || 0) +
         (d.pedagio || 0) +
         (d.manutencao || 0) +
-        d.custoRH +
+        rhDia +
         fixoDia;
       return {
         name: new Date(d.date + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
@@ -1905,7 +1914,7 @@ function BalancoTab({
         lucro: Math.round(d.fat - custo),
       };
     });
-  }, [dailyData, totals.custosFixosRateados, daysInPeriod]);
+  }, [dailyData, totals.custosFixosRateados, totals.provisaoRH, totals.vrpExcludedFromTotal, daysInPeriod]);
 
   return (
     <div className="space-y-4">
@@ -1948,6 +1957,7 @@ function BalancoTab({
           lucro: totals.lucro,
           margem: totals.margem,
           total: totals.total,
+          vrpExcludedFromTotal: !!totals.vrpExcludedFromTotal,
         }}
         period={period}
         vehicles={vehicles}

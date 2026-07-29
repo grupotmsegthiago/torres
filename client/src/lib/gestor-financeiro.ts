@@ -566,15 +566,16 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
   return {
     indicator: "Custos Totais",
     formula:
-      "Mão de obra (VRP + adicionais, SEM combustível/pedágio) + Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). Sem provisões 13º/férias. Imposto% da tela Meta NÃO entra neste total.",
+      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). VRP do boletim NÃO entra quando há folha RH (evita dobrar custo do vigilante). Sem provisões 13º/férias.",
     modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento"],
-    tables: ["escort_billings.pag_labor", "financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
+    tables: ["financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
     recordsConsidered: input.missions.length,
     recordsExcluded: [
       { reason: "Provisões 13º/férias (fora do fluxo de caixa operacional)", count: 0 },
+      { reason: "VRP / pagamento teórico da missão (já coberto pelo RH · Folha)", count: input.rhMonthly > 0 ? 1 : 0 },
       { reason: "Combustível/pedágio retirados do pag_total (fonte oficial = FT)", count: 0 },
       {
-        reason: `Imposto ${input.impostoPct}% da Meta (fat×${input.impostoPct}% = planejamento — NÃO é custo do período)`,
+        reason: `Imposto ${input.impostoPct}% da Meta (planejamento — NÃO é custo do período)`,
         count: 0,
       },
     ],
@@ -582,14 +583,13 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
     updatedAt: input.updatedAt,
     lastUser: input.auditUser || null,
     notes: [
-      `Mão de obra (sem comb/pedágio): ${money(input.totals.pag)}`,
+      `VRP referência (NÃO soma no total — já no RH): ${money(input.totals.pag)}`,
       `Combustível (abastecimento): ${money(input.totals.desp_combustivel)}`,
       `Pedágio: ${money(input.totals.desp_pedagio)}`,
       `Manutenção: ${money(input.totals.desp_manutencao)}`,
-      `RH (folha rateada): ${money(input.totals.provisaoRH)}`,
+      `RH (folha rateada) — custo real do vigilante: ${money(input.totals.provisaoRH)}`,
       `Fixos rateados: ${money(input.totals.custosFixosRateados)}`,
-      `TOTAL que entra na DRE: ${money(input.totals.custoTotal)}`,
-      `Obs.: o % imposto da Meta serve só para calcular a meta de faturamento em Custos Fixos — não é DAS/ISS pago e não soma aqui.`,
+      `TOTAL na DRE: ${money(input.totals.custoTotal)}`,
     ],
   };
 }

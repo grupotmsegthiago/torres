@@ -499,8 +499,7 @@ export function GestorFinanceiroPanel(props: Props) {
           </div>
           <p className="text-lg font-black font-mono text-rose-300">{fmt(totals.custoTotal)}</p>
           {[
-            ["Mão de obra (sem comb/pedágio)", operacional, "bg-rose-400"],
-            ["RH", totals.provisaoRH, "bg-amber-400"],
+            ["RH (folha — custo real do vigilante)", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
             ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
             ["Pedágio", totals.desp_pedagio, "bg-yellow-400"],
@@ -516,8 +515,13 @@ export function GestorFinanceiroPanel(props: Props) {
               </div>
             </div>
           ))}
+          {operacional > 0 && (
+            <p className="text-[9px] text-slate-500">
+              VRP referência (não soma — já no RH): <span className="font-mono text-slate-400">{fmt(operacional)}</span>
+            </p>
+          )}
           <p className="text-[9px] text-slate-500">
-            Soma destas linhas = custo da DRE. O percentual de imposto da Meta ({impostoPct}%) não aparece aqui — não é custo do período.
+            Soma das barras = custo da DRE. VRP do boletim não entra com a folha (evita dobrar o vigilante).
           </p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo

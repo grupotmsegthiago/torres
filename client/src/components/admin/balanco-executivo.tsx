@@ -158,6 +158,7 @@ export function BalancoExecutivoPanel({
     lucro: number;
     margem: number;
     total: number;
+    vrpExcludedFromTotal?: boolean;
   };
   period: string;
   vehicles: { plate: string; model: string; fat_total: number; pag_total: number; despesas: number; missions: number }[];
@@ -191,7 +192,9 @@ export function BalancoExecutivoPanel({
     const combVals = cols.map((c) => c.combustivel || 0);
     const pedVals = cols.map((c) => c.pedagio || 0);
     const manVals = cols.map((c) => c.manutencao || 0);
-    const custo = cols.map((_, i) => pag[i] + combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
+    // Com folha RH, VRP é só referência (já pago via salário) — não soma no custo do dia
+    const vrpInCusto = totals.vrpExcludedFromTotal ? cols.map(() => 0) : pag;
+    const custo = cols.map((_, i) => vrpInCusto[i] + combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
     const lucro = cols.map((_, i) => fat[i] - custo[i]);
     const margem = cols.map((_, i) => (fat[i] > 0 ? (lucro[i] / fat[i]) * 100 : 0));
 
@@ -199,7 +202,15 @@ export function BalancoExecutivoPanel({
 
     return [
       { key: "fat", label: "Faturamento Bruto", color: "#34d399", values: fat, total: sum(fat) || totals.fat, kind: "money", emphasize: true },
-      { key: "pag", label: "VRP / Agentes", color: "#f87171", values: pag, total: sum(pag) || totals.pag, kind: "money", negative: true },
+      {
+        key: "pag",
+        label: totals.vrpExcludedFromTotal ? "VRP / Agentes (ref. — já no RH)" : "VRP / Agentes",
+        color: "#f87171",
+        values: pag,
+        total: sum(pag) || totals.pag,
+        kind: "money",
+        negative: true,
+      },
       { key: "comb", label: "Combustível", color: "#fb923c", values: combVals, total: sum(combVals) || totals.desp_combustivel, kind: "money", negative: true },
       { key: "ped", label: "Pedágio", color: "#fbbf24", values: pedVals, total: sum(pedVals) || totals.desp_pedagio, kind: "money", negative: true },
       { key: "man", label: "Manutenção", color: "#f472b6", values: manVals, total: sum(manVals) || totals.desp_manutencao, kind: "money", negative: true },
@@ -292,7 +303,10 @@ export function BalancoExecutivoPanel({
             <span className="text-[10px] font-bold text-slate-500 uppercase">{cols.length} colunas</span>
           </div>
           <p className="text-[10px] text-slate-500">
-            Clique em VRP, Combustível ou Pedágio de um dia para ver os lançamentos. Fixos e RH são rateio igual (mês ÷ {daysInPeriod} dias).
+            Clique em VRP, Combustível ou Pedágio para auditar o dia. Fixos e RH = rateio igual (÷ {daysInPeriod}).
+            {totals.vrpExcludedFromTotal
+              ? " VRP é referência da missão e NÃO entra no Custo Total — mão de obra já está no RH."
+              : ""}
           </p>
         </div>
         {cols.length === 0 ? (
