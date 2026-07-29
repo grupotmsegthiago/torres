@@ -23,6 +23,8 @@ import {
   nameMatchScore,
   monthToFechamento,
   minuteKeyBRT,
+  truncateToMinuteMs,
+  workedMinutesBetween,
   decideImport,
   rhidNumericCore,
   dedupPunchesByCore,
@@ -2065,9 +2067,12 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
  * que atravessam a meia-noite. Mesma lógica usada em `jornada_calculos` (hr.ts).
  */
 function nightMinutesBRT(startMs: number, endMs: number): number {
-  if (!(endMs > startMs)) return 0;
+  // Só HH:MM — mesmos limites que a jornada (sem segundos da batida).
+  const from = truncateToMinuteMs(startMs);
+  const to = truncateToMinuteMs(endMs);
+  if (!(to > from)) return 0;
   let count = 0;
-  for (let t = startMs; t < endMs; t += 60000) {
+  for (let t = from; t < to; t += 60000) {
     const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
     if (h >= 22 || h < 5) count++;
   }
@@ -2154,14 +2159,17 @@ export async function buildFolhaPonto(
         source: p.source,
       })),
     };
-    // calcula horas trabalhadas
+    // calcula horas trabalhadas — só HH:MM (zera segundos), igual à coluna da tela
+    // e à planilha manual. Batida 08:00:47 conta como 08:00.
     if (entry.clockIn && entry.clockOut) {
-      const inMs = new Date(sorted[0].punch_at).getTime();
-      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
-      let workedMin = (outMs - inMs) / 60000;
+      const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
+      const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
+      let workedMin = workedMinutesBetween(inMs, outMs);
       if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
-        workedMin -= lunchMin;
+        workedMin -= workedMinutesBetween(
+          new Date(sorted[1].punch_at).getTime(),
+          new Date(sorted[2].punch_at).getTime(),
+        );
       }
       // Teto diário de jornada (NORMAL_DAILY_CAP_MIN = 19:59). Remove a
       // duplicação da meia-noite criada pelos marcadores sintéticos 00:00/23:59

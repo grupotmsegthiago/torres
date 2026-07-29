@@ -11,6 +11,8 @@ import {
   nameMatchScore,
   monthToFechamento,
   minuteKeyBRT,
+  truncateToMinuteMs,
+  workedMinutesBetween,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -344,6 +346,19 @@ test("minuteKeyBRT: bucketiza por minuto em BRT (UTC-3)", () => {
   // 2026-06-01T12:34:56Z → 09:34 BRT
   const k = minuteKeyBRT(new Date("2026-06-01T12:34:56.000Z"));
   assert.equal(k, "2026-06-01 09:34");
+});
+
+test("truncateToMinuteMs / workedMinutesBetween: jornada ignora segundos", () => {
+  // 08:00:47 → 18:00:22 BRT (UTC-3 → 11:00:47Z / 21:00:22Z)
+  const inMs = new Date("2026-06-01T11:00:47.500Z").getTime();
+  const outMs = new Date("2026-06-01T21:00:22.900Z").getTime();
+  assert.equal(truncateToMinuteMs(inMs), new Date("2026-06-01T11:00:00.000Z").getTime());
+  assert.equal(truncateToMinuteMs(outMs), new Date("2026-06-01T21:00:00.000Z").getTime());
+  // Com segundos o delta era ~9h59m35s; sem segundos = 10h00 (igual à tela HH:MM).
+  assert.equal(workedMinutesBetween(inMs, outMs), 600);
+  // Saída com segundos altos não pode inflar a jornada além do HH:MM da tela.
+  const outLate = new Date("2026-06-01T21:00:59.999Z").getTime();
+  assert.equal(workedMinutesBetween(inMs, outLate), 600);
 });
 
 test("minuteKeyBRT: ignora segundos/ms (mesma chave para tempos no mesmo minuto)", () => {

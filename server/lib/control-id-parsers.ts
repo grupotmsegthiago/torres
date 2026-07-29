@@ -150,6 +150,25 @@ export function minuteKeyBRT(d: Date): string {
   return `${date} ${time}`;
 }
 
+/**
+ * Zera segundos e ms do timestamp.
+ * Ponto/folha contam só HH:MM (igual à tela e à planilha manual) —
+ * não pode usar fração de segundo da batida no Control iD.
+ * Brasil sem offset de meia hora → truncar por epoch-minuto = truncar o relógio BRT.
+ */
+export function truncateToMinuteMs(ms: number): number {
+  if (!Number.isFinite(ms)) return 0;
+  return Math.floor(ms / 60_000) * 60_000;
+}
+
+/** Minutos trabalhados entre duas batidas, só no HH:MM (sem segundos). */
+export function workedMinutesBetween(startMs: number, endMs: number): number {
+  const a = truncateToMinuteMs(startMs);
+  const b = truncateToMinuteMs(endMs);
+  if (!(b > a)) return 0;
+  return (b - a) / 60_000;
+}
+
 export function normalizeName(s: string): string {
   return String(s || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
