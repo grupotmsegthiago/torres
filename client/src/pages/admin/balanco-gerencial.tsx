@@ -1028,8 +1028,8 @@ export default function BalancoGerencialPage() {
             );
           })()}
           {(() => {
+            // Operacional do custo total = só variáveis oficiais. VRP não entra com RH.
             const operacional =
-              (totals.pag || 0) +
               (totals.desp_combustivel || 0) +
               (totals.desp_pedagio || 0) +
               (totals.desp_manutencao || 0);
@@ -1049,34 +1049,27 @@ export default function BalancoGerencialPage() {
             const cats: Cat[] = [];
             if (operacional > 0) {
               const opRows: Array<{ label: string; value: number }> = [];
-              // 1) VRP detalhado por agente (top contribuintes do período)
-              if (totals.pag > 0) {
-                opRows.push({ label: "── VRP (agentes) ──", value: totals.pag });
-                const agentesVRP = (filtered.agents || [])
-                  .filter((a: any) => Number(a.pag_total || 0) > 0)
-                  .sort((a: any, b: any) => Number(b.pag_total || 0) - Number(a.pag_total || 0));
-                for (const a of agentesVRP) {
-                  opRows.push({ label: `  ${a.name}`, value: Number(a.pag_total || 0) });
-                }
-              }
-              // 2) Despesas variáveis automáticas (origem oficial)
               const linhasDesp: Array<[string, number]> = [
                 ["Combustível", totals.desp_combustivel],
                 ["Pedágio", totals.desp_pedagio],
                 ["Manutenção", totals.desp_manutencao],
               ];
-              const hasDesp = linhasDesp.some(([, v]) => v > 0);
-              if (hasDesp) {
-                opRows.push({ label: "── Despesas (oficiais) ──", value: linhasDesp.reduce((s, [, v]) => s + v, 0) });
-                for (const [label, v] of linhasDesp) {
-                  if (v > 0) opRows.push({ label: `  ${label}`, value: v });
-                }
+              for (const [label, v] of linhasDesp) {
+                if (v > 0) opRows.push({ label, value: v });
+              }
+              if (totals.pag > 0) {
+                opRows.push({
+                  label: totals.vrpExcludedFromTotal
+                    ? "VRP (ref. — NÃO soma; já no RH)"
+                    : "VRP (entra no total — sem folha RH)",
+                  value: totals.pag,
+                });
               }
               cats.push({
                 key: "op", label: "Operacional", value: operacional, color: "red",
                 icon: Truck, bg: "bg-red-50", text: "text-red-700", bar: "bg-red-500",
                 tipTitle: "Custos Operacionais",
-                tipDesc: `Despesas variáveis das missões: combustível + pedágios + manutenção (origem oficial). VRP aparece como referência — com folha RH cadastrada ele NÃO soma no custo total (mão de obra já está no RH).`,
+                tipDesc: `Só combustível + pedágio + manutenção (FT oficiais) entram no valor. VRP é referência quando há folha RH.`,
                 rows: opRows,
               });
             }
