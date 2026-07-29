@@ -9,7 +9,8 @@
 - [Balanço receita canônica](balanco-canonical-revenue.md) — Balanço usa canonico.faturamento (calcularEscolta); Relatório de OS usa faturamento_live; nunca trocar, só adicionar campos. km_vazio sempre 0 (0/246 billings).
 - [WAF bloqueia data:image base64](waf-blocks-data-uri.md) — edge (Cloud Armor) dá 403 HTML em QUALQUER POST com `data:image/...;base64,`; mandar base64 cru + mime e remontar no server. Afeta TODOS os uploads de foto.
 - [WhatsApp Z-API anti-bloqueio + Agente Central](whatsapp-zapi-antiban.md) — Z-API não-oficial⇒risco ban; mitigar c/ texto variado+pacing+delayTyping; "OK"≠entrega; webhook "Ao receber" zera ao trocar instância; domínio prod real=torresseguranca.com.br; conversa natural IA c/ travas (financeiro pós-filtro, throttle antes do await); trava de número OFICIAL fail-closed (número vem do chip pareado, não do código).
-- [HE CCT fixas 16 / 16,50](payroll-cct-he-fixas.md) — Folha/Balanço/Ponto usam `horaExtraValor` e `horaExtraNoturnaValor` do Kit CCT; fallback só se taxa=0; migrar default legado 22,99; cache `rh-summary-v7`.
+- [HE CCT fixas 16 / 16,50](payroll-cct-he-fixas.md) — Folha/Balanço/Ponto usam `horaExtraValor` e `horaExtraNoturnaValor` do Kit CCT; fallback só se taxa=0; migrar default legado 22,99; cache `rh-summary-v8`.
+- [Ponto só HH:MM](ponto-truncar-segundos.md) — jornada/HE truncam segundos da batida (`truncateToMinuteMs`); alinha com tela e planilha manual.
 - [Adicional noturno CCT 16,50](payroll-night-additional.md) — vigilância = taxa CCT fixa; fallback 1,80× só sem taxa; nunca 0,20/1,20.
 - [IRRF 22% flat + FGTS fora do líquido](payroll-irrf-flat.md) — modelo Torres: IRRF = bruto×22% (sem tabela progressiva); FGTS NÃO desconta do líquido; líquido = base−INSS−IRRF−VT; INSS 12% flat.
 - [WhatsApp forward dedup](whatsapp-forward-dedup.md) — dedup é por-linha (whatsapp_forwarded_at), não por-OS; app duplica finalização → "Fim de Missão" sai 2x; throttle só espaça; trava por-OS resolve.
