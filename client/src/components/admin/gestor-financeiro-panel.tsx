@@ -531,7 +531,7 @@ export function GestorFinanceiroPanel(props: Props) {
           </div>
           <p className="text-lg font-black font-mono text-rose-300">{fmt(totals.custoTotal)}</p>
           {[
-            ["RH (folha — custo real do vigilante)", totals.provisaoRH, "bg-amber-400"],
+            ["RH (folha — salário de cada funcionário)", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
             ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
             ["Pedágio", totals.desp_pedagio, "bg-yellow-400"],
@@ -561,7 +561,7 @@ export function GestorFinanceiroPanel(props: Props) {
             </p>
           )}
           <p className="text-[9px] text-slate-500">
-            Soma das barras = custo da DRE. VRP do boletim não entra com a folha (evita dobrar o vigilante).
+            RH = soma do salário cadastrado de cada funcionário. VRP do boletim não entra com a folha.
           </p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo
@@ -732,8 +732,8 @@ export function GestorFinanceiroPanel(props: Props) {
                 <tr>
                   <th className="text-left px-3 py-2 font-black">Colaborador</th>
                   <th className="text-left px-2 py-2 font-bold">Cargo</th>
-                  <th className="text-right px-2 py-2 font-bold">Salário Base</th>
-                  <th className="text-right px-2 py-2 font-bold">Custo Total</th>
+                  <th className="text-right px-2 py-2 font-bold">Salário</th>
+                  <th className="text-right px-2 py-2 font-bold">No Balanço</th>
                   <th className="text-right px-2 py-2 font-bold">Custo/Dia</th>
                   <th className="text-right px-2 py-2 font-bold">% Folha</th>
                   <th className="text-right px-2 py-2 font-bold">Missões</th>
@@ -1054,16 +1054,7 @@ export function GestorFinanceiroPanel(props: Props) {
 }
 
 function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: string }) {
-  const entraCusto =
-    Number(agent.salarioProporcional || 0) +
-    Number(agent.periculosidade || 0) +
-    Number(agent.horaExtra || 0) +
-    Number(agent.adicionalNoturno || 0) +
-    Number(agent.vrTotal || 0) +
-    Number(agent.cesta || 0) +
-    Number(agent.diarias || 0) +
-    Number(agent.ajudaCusto || 0) +
-    Number(agent.outros || 0);
+  const salario = Number(agent.salarioProporcional || agent.custoTotal || 0);
 
   return (
     <div className="space-y-3 text-[11px]" data-testid={`detalhe-agente-${agent.id}`}>
@@ -1084,40 +1075,27 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
 
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
         <p className="font-black uppercase text-emerald-300 text-[10px]">Entra no custo da empresa (Balanço)</p>
-        <Row label="Soma vencimentos + benefícios" value={fmt(entraCusto)} />
-        <Row label="Custo total no período" value={fmt(agent.custoTotal)} />
-        <p className="text-[9px] text-slate-500 pt-1">Salário, peril, HE, noturno, VR, cesta e diárias.</p>
+        <Row label="Salário cadastrado (período)" value={fmt(salario)} />
+        <Row label="No Balanço (RH)" value={fmt(agent.custoTotal)} />
+        <p className="text-[9px] text-slate-500 pt-1">
+          Igual à coluna &quot;Salário&quot; do cadastro do funcionário, rateado pelo período.
+        </p>
       </div>
 
-      <Section title="Remuneração (entra no custo)" rows={[
-        ["Salário base", agent.salarioProporcional],
+      <Section title="Salário (entra no Balanço)" rows={[
+        ["Salário", agent.salarioProporcional],
+      ]} />
+      <Section title="Demais itens da folha (informativo — NÃO soma no Balanço)" rows={[
+        ["Periculosidade", agent.periculosidade],
         ["Horas Extras", agent.horaExtra],
         ["Adic. Noturno", agent.adicionalNoturno],
-        ["Periculosidade", agent.periculosidade],
-        ["DSR", agent.dsr],
-        ["Total bruto", agent.totalBruto],
-      ]} />
-      <Section title="Benefícios (entra no custo)" rows={[
         ["Vale Refeição", agent.vrTotal],
-        ["Vale Transporte", agent.vt],
         ["Cesta", agent.cesta],
         ["Diárias", agent.diarias],
-        ["Auxílio / ajuda de custo", agent.ajudaCusto],
-        ["Outros", agent.outros],
-      ]} />
-      <Section title="Encargos (só informativo — NÃO soma no Balanço)" rows={[
         ["FGTS (empresa)", agent.fgts],
         ["INSS Patronal", agent.inssPatronal],
         ["Seguro de vida", agent.seguroVida],
-        ["INSS funcionário (desconto)", agent.inss],
-        ["IRRF (desconto)", agent.irrf],
         ["Líquido do funcionário", agent.liquidoFuncionario],
-      ]} />
-      <Section title="Provisões (fora do fluxo operacional)" rows={[
-        ["Férias", agent.ferias ?? 0],
-        ["13º", agent.decimoTerceiro ?? 0],
-        ["1/3 férias", agent.provisaoTercoFerias ?? 0],
-        ["Total provisões", agent.totalProvisoes ?? 0],
       ]} />
       <Section title="Indicadores operacionais" rows={[
         ["Missões no período", agent.missoes, true],
@@ -1126,17 +1104,16 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         ["Custo / hora", agent.custoHora],
         ["Custo / dia", agent.custoDiario],
         ["Custo / missão", agent.custoMissao],
-        ["Lucro operacional (receita − custo)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],
+        ["Lucro operacional (receita − salário)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],
       ]} />
       <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-2 space-y-1">
         <p className="font-black uppercase text-cyan-300 text-[10px]">Resumo</p>
-        <Row label="Custo no Balanço" value={fmt(agent.custoTotal)} />
+        <Row label="Salário no Balanço" value={fmt(agent.custoTotal)} />
         <Row label="% da folha" value={fmtPct(agent.pctFolha)} />
         <Row label="% dos custos da empresa" value={fmtPct(agent.pctEmpresa)} />
-        <Row label="Encargos informativos" value={fmt(Number(agent.informativoEncargos || 0))} />
       </div>
       <p className="text-[9px] text-slate-500">
-        Campos zerados = sem lançamento no cadastro. Encargos patronais são exibidos mas não entram no custo total do Balanço (regra do sistema).
+        O RH do Balanço usa apenas o salário cadastrado. Periculosidade, HE, benefícios e encargos aparecem só como referência.
       </p>
     </div>
   );

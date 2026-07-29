@@ -508,6 +508,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
     const porAgente: any[] = [];
     let totalMensal = 0;
+    // Balanço Gerencial: RH operacional = soma dos salários cadastrados (base_salary),
+    // igual à coluna "Salário" de cada funcionário — sem HE/VR/cesta/diárias.
+    let totalSalariosMensal = 0;
     const acc = {
       base: 0, peric: 0, he: 0, noturno: 0, refeicao: 0,
       fgts: 0, inssPatronal: 0, seguroVida: 0,
@@ -552,6 +555,11 @@ export function registerFixedCostsRoutes(app: Express) {
       const total = Number(s.custoTotalEstimado || 0);
       totalMensal += total;
 
+      // Salário cadastrado (employee_salaries.base_salary) — valor cheio do mês,
+      // o mesmo da coluna "Salário" em Funcionários. Rateio do período fica no cliente.
+      const salarioMensal = Number(s.baseSalaryMensal || 0);
+      totalSalariosMensal += salarioMensal;
+
       const base = Number(s.baseSalary || 0);
       const peric = Number(s.periculosidade || 0);
       const heVal = Number(s.custoExtra || 0);
@@ -583,14 +591,16 @@ export function registerFixedCostsRoutes(app: Express) {
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
-        // Total cheio e operacional são iguais — não há provisões no novo cálculo.
+        // total = custo real completo (venc + benefícios) — tela Custos Fixos / Ponto.
+        // totalOperacional = salário cadastrado — Balanço Gerencial / Gestor.
         total,
-        totalOperacional: total,
+        totalOperacional: salarioMensal,
+        salarioMensal,
         totalProvisoes: 0,
         horasNormaisMes,
         horasExtrasMes,
         // Vencimentos
-        salarioProporcional: base,
+        salarioProporcional: salarioMensal > 0 ? salarioMensal : base,
         periculosidade: peric,
         horaExtra: heVal,
         adicionalNoturno: noturnoVal,
@@ -631,10 +641,11 @@ export function registerFixedCostsRoutes(app: Express) {
       });
     }
 
-    porAgente.sort((a, b) => b.total - a.total);
+    porAgente.sort((a, b) => b.totalOperacional - a.totalOperacional || b.total - a.total);
 
-    // Sem provisões neste cálculo (alinhado ao Ponto Eletrônico). monthlyOperacional = monthly.
-    const totalOperacional = totalMensal;
+    // monthly = custo real completo (Custos Fixos / Ponto Eletrônico).
+    // monthlyOperacional = soma dos salários cadastrados (Balanço Gerencial).
+    const totalOperacional = +totalSalariosMensal.toFixed(2);
     const encargosTot = acc.fgts + acc.inssPatronal + acc.seguroVida;
     res.json({
       monthly: totalMensal,
