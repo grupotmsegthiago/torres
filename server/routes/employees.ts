@@ -11,6 +11,7 @@ import { autoCreateProbationContract, isVigilante } from "./probation-contracts"
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
+  import { toDecimalString } from "../lib/parse-money";
 
   // TODAS as colunas do tipo `date` da tabela employees (nomes camelCase do
   // schema). Inputs vazios ("") precisam virar null antes de gravar no Supabase,
@@ -273,37 +274,56 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
   app.post("/api/employees/:id/salaries", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
-    const emp = await storage.getEmployee(Number(req.params.id));
-    if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
-    const { baseSalary, effectiveDate, reason, notes,
-            valeRefeicaoDiario, cestaBasica, valeTransporteMensal,
-            beneficiosOutros, encargosPct, horasMensais,
-            periculosidadePct, dependentesIr, ajudaCustoMensal,
-            valeAlimentacaoMensal, assiduidadeMensal } = req.body;
-    if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
-    const payload: any = {
-      employeeId: emp.id,
-      baseSalary: String(baseSalary),
-      effectiveDate,
-      reason: reason || null,
-      notes: notes || null,
-    };
-    if (valeRefeicaoDiario !== undefined && valeRefeicaoDiario !== "") payload.valeRefeicaoDiario = String(valeRefeicaoDiario);
-    if (cestaBasica !== undefined && cestaBasica !== "") payload.cestaBasica = String(cestaBasica);
-    if (valeTransporteMensal !== undefined && valeTransporteMensal !== "") payload.valeTransporteMensal = String(valeTransporteMensal);
-    if (beneficiosOutros !== undefined && beneficiosOutros !== "") payload.beneficiosOutros = String(beneficiosOutros);
-    if (encargosPct !== undefined && encargosPct !== "") payload.encargosPct = String(encargosPct);
-    if (horasMensais !== undefined && horasMensais !== "") payload.horasMensais = String(horasMensais);
-    // Folha 2025
-    if (periculosidadePct !== undefined && periculosidadePct !== "") payload.periculosidadePct = String(periculosidadePct);
-    if (dependentesIr !== undefined && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr);
-    if (ajudaCustoMensal !== undefined && ajudaCustoMensal !== "") payload.ajudaCustoMensal = String(ajudaCustoMensal);
-    // Modelo Torres: benefícios à parte (VA + Assiduidade)
-    if (valeAlimentacaoMensal !== undefined && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = String(valeAlimentacaoMensal);
-    if (assiduidadeMensal !== undefined && assiduidadeMensal !== "") payload.assiduidadeMensal = String(assiduidadeMensal);
-    const salary = await storage.createEmployeeSalary(payload);
-    bustRhSummaryCache();
-    res.status(201).json(salary);
+    try {
+      const emp = await storage.getEmployee(Number(req.params.id));
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+      const { baseSalary, effectiveDate, reason, notes,
+              valeRefeicaoDiario, cestaBasica, valeTransporteMensal,
+              beneficiosOutros, encargosPct, horasMensais,
+              periculosidadePct, dependentesIr, ajudaCustoMensal,
+              valeAlimentacaoMensal, assiduidadeMensal } = req.body;
+      if (baseSalary == null || baseSalary === "" || !effectiveDate) {
+        return res.status(400).json({ message: "Salário e data são obrigatórios" });
+      }
+      // Aceita "4.000,00" (pt-BR) — sem isso o Postgres rejeita e o histórico não grava.
+      const baseNorm = toDecimalString(baseSalary);
+      if (!baseNorm) {
+        return res.status(400).json({ message: "Salário base inválido. Use um valor numérico (ex.: 4000 ou 4.000,00)." });
+      }
+      const eff = String(effectiveDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eff)) {
+        return res.status(400).json({ message: "Data de vigência inválida" });
+      }
+      const optDec = (v: unknown) => (v === undefined || v === "" || v == null ? null : toDecimalString(v, { allowZero: true }));
+      const payload: any = {
+        employeeId: emp.id,
+        baseSalary: baseNorm,
+        effectiveDate: eff,
+        reason: reason || null,
+        notes: notes || null,
+      };
+      const vr = optDec(valeRefeicaoDiario); if (vr != null) payload.valeRefeicaoDiario = vr;
+      const cesta = optDec(cestaBasica); if (cesta != null) payload.cestaBasica = cesta;
+      const vt = optDec(valeTransporteMensal); if (vt != null) payload.valeTransporteMensal = vt;
+      const outros = optDec(beneficiosOutros); if (outros != null) payload.beneficiosOutros = outros;
+      const enc = optDec(encargosPct); if (enc != null) payload.encargosPct = enc;
+      const horas = optDec(horasMensais); if (horas != null) payload.horasMensais = horas;
+      const peric = optDec(periculosidadePct); if (peric != null) payload.periculosidadePct = peric;
+      if (dependentesIr !== undefined && dependentesIr !== "") {
+        const deps = Number(dependentesIr);
+        if (!Number.isNaN(deps)) payload.dependentesIr = deps;
+      }
+      const ajuda = optDec(ajudaCustoMensal); if (ajuda != null) payload.ajudaCustoMensal = ajuda;
+      const va = optDec(valeAlimentacaoMensal); if (va != null) payload.valeAlimentacaoMensal = va;
+      const assid = optDec(assiduidadeMensal); if (assid != null) payload.assiduidadeMensal = assid;
+
+      const salary = await storage.createEmployeeSalary(payload);
+      bustRhSummaryCache();
+      res.status(201).json(salary);
+    } catch (err: any) {
+      console.error("[employees/salaries POST]", err?.message || err);
+      res.status(500).json({ message: err?.message || "Erro ao salvar salário" });
+    }
   });
 
   // ========== DEPENDENTES (Folha 2025 / IRRF) ==========

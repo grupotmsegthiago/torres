@@ -273,10 +273,26 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", `/api/employees/${employee.id}/salaries`, form);
+      const base = parseBRL(form.baseSalary);
+      if (!(base > 0) || !form.effectiveDate) throw new Error("Informe salário base e data de vigência");
+      await apiRequest("POST", `/api/employees/${employee.id}/salaries`, {
+        ...form,
+        baseSalary: base,
+        valeRefeicaoDiario: parseBRL(form.valeRefeicaoDiario),
+        cestaBasica: parseBRL(form.cestaBasica),
+        valeTransporteMensal: parseBRL(form.valeTransporteMensal),
+        beneficiosOutros: parseBRL(form.beneficiosOutros),
+        encargosPct: parseBRL(form.encargosPct),
+        horasMensais: parseBRL(form.horasMensais),
+        periculosidadePct: parseBRL(form.periculosidadePct),
+        ajudaCustoMensal: parseBRL(form.ajudaCustoMensal),
+        valeAlimentacaoMensal: parseBRL(form.valeAlimentacaoMensal),
+        assiduidadeMensal: parseBRL(form.assiduidadeMensal),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees/salaries-bulk"] });
       queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
       setForm({
         baseSalary: "", effectiveDate: "", reason: "", notes: "",
@@ -288,7 +304,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
       });
       toast({ title: "Salário cadastrado" });
     },
-    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Erro ao salvar salário", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -3704,12 +3720,37 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const [showSalForm, setShowSalForm] = useState(false);
   const [salForm, setSalForm] = useState({ baseSalary: "", effectiveDate: "", reason: "" });
   const addSalary = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/salaries`, salForm); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); setShowSalForm(false); setSalForm({ baseSalary: "", effectiveDate: "", reason: "" }); toast({ title: "Salário cadastrado" }); },
+    mutationFn: async () => {
+      const base = parseBRL(salForm.baseSalary);
+      if (!(base > 0) || !salForm.effectiveDate) {
+        throw new Error("Informe salário base e data de vigência");
+      }
+      // "4.000,00" → 4000 — sem parse o Postgres rejeita e o histórico não grava.
+      await apiRequest("POST", `/api/employees/${employee.id}/salaries`, {
+        baseSalary: base,
+        effectiveDate: salForm.effectiveDate,
+        reason: salForm.reason || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees/salaries-bulk"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      setShowSalForm(false);
+      setSalForm({ baseSalary: "", effectiveDate: "", reason: "" });
+      toast({ title: "Salário cadastrado" });
+    },
+    onError: (err: any) => toast({ title: "Erro ao salvar salário", description: err?.message || "Falha ao gravar", variant: "destructive" }),
   });
   const deleteSalary = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-salaries/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); toast({ title: "Registro removido" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees/salaries-bulk"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      toast({ title: "Registro removido" });
+    },
+    onError: (err: any) => toast({ title: "Erro ao remover", description: err?.message, variant: "destructive" }),
   });
 
   const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "-";
