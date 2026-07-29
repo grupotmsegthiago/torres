@@ -648,6 +648,7 @@ export function registerFixedCostsRoutes(app: Express) {
         totalProvisoes,
         horasNormaisMes: 0,
         horasExtrasMes: Number(heByEmp.get(emp.id) || 0),
+        horasNoturnasMes: Number(notByEmp.get(emp.id) || 0),
         horasExtrasFonte: heFonteByEmp.get(emp.id) || "nenhuma",
         // Vencimentos — salário base contratual ≠ proporcional (não ratear por calendário)
         salarioBaseCheio: Number(b.salarioBaseCheio || base),
@@ -658,7 +659,9 @@ export function registerFixedCostsRoutes(app: Express) {
         horaExtra: heVal,
         adicionalNoturno: noturnoVal,
         dsr: Number(b.dsr || 0),
-        valorHoraExtra: 0,
+        // CCT vigilância (UI: "103,75×16 = R$ …")
+        valorHoraExtra: 16,
+        valorHoraNoturna: 16.5,
         // Benefícios
         vrDiario: Number(b.vrDiario || 0),
         vrDias: Number(b.vrDias || 0),

@@ -69,6 +69,30 @@ import { SeloTermometro, TermometroFinanceiroSvg } from "@/components/admin/term
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 const fmtN = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+/** Horas em decimal pt-BR (ex.: 102,22) — usado no detalhe Hora Extra × taxa CCT. */
+const fmtHorasDec = (h: number) =>
+  (Math.round(h * 100) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+/** CCT vigilância: HE diurna R$ 16 / noturna R$ 16,50. */
+const HE_DIURNA_CCT = 16;
+const HE_NOTURNA_CCT = 16.5;
+
+function formatHeLinha(horas: number, taxa: number, valorFallback?: number): string {
+  const h = Number(horas) || 0;
+  if (!(h > 0)) {
+    return fmt(Number(valorFallback) || 0);
+  }
+  const valor = Number.isFinite(Number(valorFallback)) && Number(valorFallback) > 0
+    ? Number(valorFallback)
+    : Math.round(h * taxa * 100) / 100;
+  const taxaTxt = taxa.toLocaleString("pt-BR", {
+    minimumFractionDigits: Number.isInteger(taxa) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  return `${fmtHorasDec(h)}×${taxaTxt} = ${fmt(valor)}`;
+}
 
 type Props = {
   periodLabel: string;
@@ -1270,28 +1294,42 @@ function AgentDetailPanel({
         ) : null}
       </div>
 
-      <Section title="Remuneração" rows={[
-        ["Salário base", agent.salarioBaseCheio ?? agent.salarioProporcional],
-        ["Horas Extras", agent.horaExtra],
-        ["Adic. Noturno", agent.adicionalNoturno],
-        ["Periculosidade", agent.periculosidade],
-        ["DSR", agent.dsr],
-        ["Total bruto", agent.totalBruto],
-      ]} />
+      <div>
+        <p className="font-black uppercase text-slate-500 text-[10px] mb-1">Remuneração</p>
+        <div className="space-y-0.5">
+          <Row label="Salário base" value={fmt(Number(agent.salarioBaseCheio ?? agent.salarioProporcional ?? 0))} />
+          <Row
+            label="Hora Extra"
+            value={formatHeLinha(
+              Number(agent.horasExtrasMes || 0),
+              Number(agent.valorHoraExtra) > 0 ? Number(agent.valorHoraExtra) : HE_DIURNA_CCT,
+              Number(agent.horaExtra || 0),
+            )}
+            testId={`text-hora-extra-calc-${agent.id}`}
+          />
+          <Row
+            label="Adic. Noturno"
+            value={formatHeLinha(
+              Number(agent.horasNoturnasMes) > 0
+                ? Number(agent.horasNoturnasMes)
+                : Number(agent.adicionalNoturno || 0) > 0
+                  ? Number(agent.adicionalNoturno) / HE_NOTURNA_CCT
+                  : 0,
+              Number(agent.valorHoraNoturna) > 0 ? Number(agent.valorHoraNoturna) : HE_NOTURNA_CCT,
+              Number(agent.adicionalNoturno || 0),
+            )}
+          />
+          <Row label="Periculosidade" value={fmt(Number(agent.periculosidade || 0))} />
+          <Row label="DSR" value={fmt(Number(agent.dsr || 0))} />
+          <Row label="Total bruto" value={fmt(Number(agent.totalBruto || 0))} />
+        </div>
+      </div>
       {(Number(agent.horasExtrasMes) > 0 || agent.horasExtrasFonte) && (
         <p className="text-[9px] text-slate-500 -mt-1 px-0.5" data-testid={`text-he-fonte-${agent.id}`}>
-          HE: {(() => {
-            const h = Number(agent.horasExtrasMes || 0);
-            if (!Number.isFinite(h) || h <= 0) return "0:00";
-            const totalMin = Math.round(h * 60);
-            const hh = Math.floor(totalMin / 60);
-            const mm = String(totalMin % 60).padStart(2, "0");
-            return `${hh}:${mm}`;
-          })()}
           {agent.horasExtrasFonte === "batidas"
-            ? " · banco mensal Control iD (trabalhado − 220h)"
+            ? "banco mensal Control iD (trabalhado − 220h)"
             : agent.horasExtrasFonte && agent.horasExtrasFonte !== "nenhuma"
-            ? ` · fonte ${agent.horasExtrasFonte}`
+            ? `fonte ${agent.horasExtrasFonte}`
             : ""}
         </p>
       )}
@@ -1358,11 +1396,19 @@ function Section({ title, rows }: { title: string; rows: Array<[string, any, boo
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  testId,
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+}) {
   return (
-    <div className="flex justify-between gap-2">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-mono font-bold text-slate-100">{value}</span>
+    <div className="flex justify-between gap-2" data-testid={testId}>
+      <span className="text-slate-400 shrink-0">{label}</span>
+      <span className="font-mono font-bold text-slate-100 text-right">{value}</span>
     </div>
   );
 }
