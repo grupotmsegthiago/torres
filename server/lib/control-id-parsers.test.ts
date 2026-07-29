@@ -109,6 +109,7 @@ test("AFD: parsea array com campos lowercase", () => {
   assert.equal(events[0].userName, "João Silva");
   assert.equal(events[0].source, "facial");
   assert.equal(events[0].direction, "unknown");
+  assert.equal(events[0].directionMissingReason, "afd_no_direction_field");
   assert.ok(events[0].id.startsWith("rhid_"));
 });
 

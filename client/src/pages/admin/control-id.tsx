@@ -629,6 +629,7 @@ function MappingTab() {
 
 // ═════════════════════ BATIDAS ═════════════════════
 function PunchesTab() {
+  const { toast } = useToast();
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const empMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
   const [employeeId, setEmployeeId] = useState<string>("__all__");
@@ -656,18 +657,28 @@ function PunchesTab() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualEmpId, setManualEmpId] = useState("");
   const [manualWhen, setManualWhen] = useState(new Date().toISOString().slice(0, 16));
-  const [manualDir, setManualDir] = useState("in");
+  /** Vazio até escolha explícita — não assume Entrada. */
+  const [manualDir, setManualDir] = useState("");
 
   function startEdit(p: Punch) {
     setEditingPunch(p);
     const d = new Date(p.punch_at);
     const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setEditPunchAt(local);
-    setEditDirection(p.direction || "unknown");
+    // Históricos unknown: exige nova escolha explícita in/out (sem opção unknown na escrita).
+    setEditDirection(p.direction === "in" || p.direction === "out" ? p.direction : "");
   }
 
   async function saveEdit() {
     if (!editingPunch) return;
+    if (editDirection !== "in" && editDirection !== "out") {
+      toast({
+        title: "Direção obrigatória",
+        description: "Selecione Entrada ou Saída antes de salvar.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const r = await authFetch(`/api/control-id/punches/${editingPunch.id}`, {
         method: "PATCH",
@@ -698,6 +709,14 @@ function PunchesTab() {
 
   async function createManual() {
     if (!manualEmpId || !manualWhen) { toast({ title: "Preencha funcionário e data/hora", variant: "destructive" }); return; }
+    if (manualDir !== "in" && manualDir !== "out") {
+      toast({
+        title: "Direção obrigatória",
+        description: "Selecione Entrada ou Saída. Não é permitido lançar sem direção.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const r = await authFetch("/api/control-id/manual-punch", {
         method: "POST",
@@ -708,7 +727,9 @@ function PunchesTab() {
       if (!r.ok) throw new Error(d.message);
       toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID com sucesso." : `Salva localmente. RHID: ${d.rhidError}` });
       setManualOpen(false);
-      setManualEmpId(""); setManualWhen(new Date().toISOString().slice(0, 16));
+      setManualEmpId("");
+      setManualWhen(new Date().toISOString().slice(0, 16));
+      setManualDir("");
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
     } catch (e: any) {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
@@ -765,12 +786,13 @@ function PunchesTab() {
                     <td className="p-2 font-mono text-xs">{p.control_id_user_id || "—"}</td>
                     <td className="p-2 text-center">
                       {isEditing ? (
-                        <Select value={editDirection} onValueChange={setEditDirection}>
-                          <SelectTrigger className="h-7 text-xs w-28" data-testid={`select-edit-dir-${p.id}`}><SelectValue /></SelectTrigger>
+                        <Select value={editDirection || undefined} onValueChange={setEditDirection}>
+                          <SelectTrigger className="h-7 text-xs w-28" data-testid={`select-edit-dir-${p.id}`}>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="in">Entrada</SelectItem>
                             <SelectItem value="out">Saída</SelectItem>
-                            <SelectItem value="unknown">—</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
@@ -819,21 +841,31 @@ function PunchesTab() {
               <Input type="datetime-local" value={manualWhen} onChange={e => setManualWhen(e.target.value)} data-testid="input-manual-when" />
             </div>
             <div>
-              <label className="text-xs font-bold text-neutral-600 mb-1 block">Direção</label>
-              <Select value={manualDir} onValueChange={setManualDir}>
-                <SelectTrigger data-testid="select-manual-dir"><SelectValue /></SelectTrigger>
+              <label className="text-xs font-bold text-neutral-600 mb-1 block">Direção *</label>
+              <Select value={manualDir || undefined} onValueChange={setManualDir}>
+                <SelectTrigger data-testid="select-manual-dir">
+                  <SelectValue placeholder="Selecione Entrada ou Saída" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="in">Entrada</SelectItem>
                   <SelectItem value="out">Saída</SelectItem>
-                  <SelectItem value="unknown">Não informado</SelectItem>
                 </SelectContent>
               </Select>
+              {!manualDir && (
+                <p className="text-[11px] text-amber-700 mt-1">Obrigatório: escolha Entrada ou Saída para lançar.</p>
+              )}
             </div>
             <p className="text-xs text-neutral-500">A batida será criada no nosso sistema e enviada automaticamente ao RHID Cloud (se o funcionário estiver mapeado a um aparelho).</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManualOpen(false)} data-testid="button-manual-cancel">Cancelar</Button>
-            <Button onClick={createManual} data-testid="button-manual-save">Bater Ponto</Button>
+            <Button
+              onClick={createManual}
+              disabled={!manualEmpId || !manualWhen || (manualDir !== "in" && manualDir !== "out")}
+              data-testid="button-manual-save"
+            >
+              Bater Ponto
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2508,10 +2540,11 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [punches, setPunches] = useState<FolhaPunch[]>(day.punches || []);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTime, setEditTime] = useState("");
-  const [editDir, setEditDir] = useState<string>("unknown");
+  const [editDir, setEditDir] = useState<string>("");
   const [adding, setAdding] = useState(false);
   const [newTime, setNewTime] = useState(`${day.date}T08:00`);
-  const [newDir, setNewDir] = useState("unknown");
+  /** Vazio até escolha explícita — não assume Entrada. */
+  const [newDir, setNewDir] = useState("");
   const [forcePunch, setForcePunch] = useState(false);
   const [addingDay, setAddingDay] = useState(false);
   const [dayEntrada, setDayEntrada] = useState(`${day.date}T08:00`);
@@ -2575,10 +2608,18 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
     const d = new Date(p.punchAt);
     const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setEditTime(local);
-    setEditDir(p.direction || "unknown");
+    setEditDir(p.direction === "in" || p.direction === "out" ? p.direction : "");
   }
 
   async function saveEdit(p: FolhaPunch) {
+    if (editDir !== "in" && editDir !== "out") {
+      toast({
+        title: "Direção obrigatória",
+        description: "Selecione Entrada ou Saída antes de salvar.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const r = await authFetch(`/api/control-id/punches/${p.id}`, {
         method: "PATCH",
@@ -2611,6 +2652,14 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
 
   async function addPunch() {
     try {
+      if (newDir !== "in" && newDir !== "out") {
+        toast({
+          title: "Direção obrigatória",
+          description: "Selecione Entrada ou Saída. Não é permitido lançar sem direção.",
+          variant: "destructive",
+        });
+        return;
+      }
       // Detecta horário sensível (00:00 ou 23:59) — backend bloqueia por padrão pra evitar placeholders.
       // Se usuário marcou o checkbox de confirmação, envia force:true.
       const hhmm = newTime.slice(11, 16); // "YYYY-MM-DDTHH:MM"
@@ -2635,6 +2684,7 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
       toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID." : (d.rhidError || "Salva localmente.") });
       setAdding(false);
       setForcePunch(false);
+      setNewDir("");
       onChanged();
       onClose();
     } catch (e: any) {
@@ -2681,12 +2731,11 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                     </td>
                     <td className="p-2 text-center">
                       {editingId === p.id ? (
-                        <Select value={editDir} onValueChange={setEditDir}>
-                          <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
+                        <Select value={editDir || undefined} onValueChange={setEditDir}>
+                          <SelectTrigger className="h-7 text-xs w-28"><SelectValue placeholder="Selecione" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="in">Entrada</SelectItem>
                             <SelectItem value="out">Saída</SelectItem>
-                            <SelectItem value="unknown">—</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
@@ -2728,17 +2777,26 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                 />
               </div>
               <div>
-                <label className="text-[11px] font-medium text-neutral-600">Direção</label>
-                <Select value={newDir} onValueChange={setNewDir}>
-                  <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+                <label className="text-[11px] font-medium text-neutral-600">Direção *</label>
+                <Select value={newDir || undefined} onValueChange={setNewDir}>
+                  <SelectTrigger className="h-8 text-xs w-36"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="in">Entrada</SelectItem>
                     <SelectItem value="out">Saída</SelectItem>
-                    <SelectItem value="unknown">—</SelectItem>
                   </SelectContent>
                 </Select>
+                {!newDir && (
+                  <p className="text-[10px] text-amber-700 mt-0.5">Obrigatório: Entrada ou Saída</p>
+                )}
               </div>
-              <Button size="sm" onClick={addPunch} className="h-8"><Save className="w-3.5 h-3.5 mr-1" /> Adicionar</Button>
+              <Button
+                size="sm"
+                onClick={addPunch}
+                className="h-8"
+                disabled={newDir !== "in" && newDir !== "out"}
+              >
+                <Save className="w-3.5 h-3.5 mr-1" /> Adicionar
+              </Button>
               <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setForcePunch(false); }} className="h-8">Cancelar</Button>
               {(() => {
                 const hhmm = newTime.slice(11, 16);

@@ -4,6 +4,14 @@ import { supabaseAdmin } from "../supabase";
 import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
 import { isAtivo } from "./fixed-costs";
+import {
+  recordManualDirectionRejected,
+  getDirectionMetrics,
+} from "../lib/punch-direction-metrics";
+import {
+  isRhidDirectionNormalizeEnabled,
+  RHID_AFD_DIRECTION_FIELD_CANDIDATES,
+} from "../lib/punch-direction";
 
 export function registerControlIdRoutes(app: Express) {
   // ─────── DEVICES (CRUD) ───────
@@ -254,6 +262,12 @@ export function registerControlIdRoutes(app: Express) {
       if (!targetEmployeeId) return res.status(400).json({ message: "employeeId não identificado" });
       if (!punchAt) return res.status(400).json({ message: "punchAt obrigatório" });
 
+      const dirCheck = ctrl.parseRequiredManualDirection(direction);
+      if (!dirCheck.ok) {
+        recordManualDirectionRejected(dirCheck.error);
+        return res.status(400).json({ message: dirCheck.error, code: "INVALID_DIRECTION" });
+      }
+
       // Bloqueia placeholders 00:00:00 e 23:59:00 (causam jornadas falsas tipo "00:00→23:59 = 24h trabalhadas").
       // Pra forçar (ex: plantão real que começou meia-noite), passar { force: true } no body.
       if (!req.body.force) {
@@ -269,12 +283,15 @@ export function registerControlIdRoutes(app: Express) {
       const r = await ctrl.createManualPunch({
         employeeId: targetEmployeeId,
         punchAt: new Date(punchAt),
-        direction: direction || "unknown",
+        direction: dirCheck.direction,
         source: isAdmin && employeeId !== req.user?.employeeId ? "admin_manual" : "self_manual",
         deviceId: deviceId ? Number(deviceId) : undefined,
       });
       res.status(201).json(r);
     } catch (err: any) {
+      if (err?.statusCode === 400 || err?.code === "INVALID_DIRECTION") {
+        return res.status(400).json({ message: err.message, code: "INVALID_DIRECTION" });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -286,12 +303,32 @@ export function registerControlIdRoutes(app: Express) {
       const { punchAt, direction } = req.body;
       const fields: any = {};
       if (punchAt) fields.punchAt = new Date(punchAt);
-      if (direction !== undefined) fields.direction = direction;
+      if (direction !== undefined) {
+        const dirCheck = ctrl.parseRequiredManualDirection(direction);
+        if (!dirCheck.ok) {
+          recordManualDirectionRejected(dirCheck.error);
+          return res.status(400).json({ message: dirCheck.error, code: "INVALID_DIRECTION" });
+        }
+        fields.direction = dirCheck.direction;
+      }
       const r = await ctrl.updateLocalPunch(id, fields);
       res.json(r);
     } catch (err: any) {
+      if (err?.statusCode === 400 || err?.code === "INVALID_DIRECTION") {
+        return res.status(400).json({ message: err.message, code: "INVALID_DIRECTION" });
+      }
       res.status(500).json({ message: err.message });
     }
+  });
+
+  // Observabilidade Correção 1 — contadores de direção (sem payload sensível)
+  app.get("/api/control-id/direction-stats", requireAuth, requireAdminRole, async (_req, res) => {
+    res.json({
+      metrics: getDirectionMetrics(),
+      rhidDirectionNormalizeEnabled: isRhidDirectionNormalizeEnabled(),
+      afdDirectionFieldCandidates: [...RHID_AFD_DIRECTION_FIELD_CANDIDATES],
+      note: "Contadores em memória do processo. raw_event/biometria nunca são expostos aqui.",
+    });
   });
 
   // Status da fila de sincronização RHID (push pendente / erros / sucesso)

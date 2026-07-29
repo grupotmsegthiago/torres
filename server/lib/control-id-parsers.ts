@@ -5,6 +5,7 @@
  * Extraído para teste — sem dependência de Supabase/Express.
  */
 import crypto from "node:crypto";
+import { resolveAfdRecordDirection } from "./punch-direction";
 
 // ============================ CRIPTOGRAFIA ============================
 
@@ -49,6 +50,11 @@ export interface ControlIdEvent {
   direction?: "in" | "out" | "unknown";
   source?: "facial" | "rfid" | "digital" | "senha";
   raw: any;
+  /**
+   * Classificação técnica separada do payload bruto (nunca muta `raw`).
+   * Ex.: afd_no_direction_field | unrecognized_direction_value
+   */
+  directionMissingReason?: string | null;
 }
 
 export function parseRhidDate(d: any): Date {
@@ -77,13 +83,17 @@ export function parseRhidAfdRecords(afdData: any, since: Date | null): ControlId
     );
     const personName = rec.personName || rec.PersonName || rec.Name || rec.name || "";
     const punchIso = punchDate.toISOString();
+    // Não inferir par/ímpar. Mapeamento só com RHID_DIRECTION_NORMALIZE=1
+    // + candidatos documentados (lista vazia até evidência de payload).
+    const resolved = resolveAfdRecordDirection(rec && typeof rec === "object" ? rec : null);
 
     events.push({
       id: `rhid_${rec.id || personId}_${punchDate.getTime()}`,
       userId: personId,
       userName: personName,
       time: punchIso,
-      direction: "unknown",
+      direction: resolved.direction,
+      directionMissingReason: resolved.missingReason,
       source: rec.faceScore > 0 ? "facial" : undefined,
       raw: rec,
     });
