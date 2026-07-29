@@ -2300,14 +2300,14 @@ export async function ensureCalcMissionRPC() {
       )
     `);
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
-    // 29/07/2026: mata snapshots pré-v4 (HE=0 / IRRF 22% / VR 989) pra não
-    // ressuscitar no MISS frio após deploy. Mantém só rh-summary-v4*.
+    // 29/07/2026: mata snapshots pré-v5 (custo com provisões / HE=0 / etc.).
     await execSql(`
       DELETE FROM swr_cache_snapshots
       WHERE key = 'rh-summary'
          OR key LIKE 'rh-summary?%'
          OR key LIKE 'rh-summary-v2%'
          OR key LIKE 'rh-summary-v3%'
+         OR key LIKE 'rh-summary-v4%'
     `).catch(() => {});
     console.log("[db-init] swr_cache_snapshots table ensured");
   } catch (e: any) {

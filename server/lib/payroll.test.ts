@@ -15,9 +15,14 @@ test("calcularFolha CLT (default) calcula INSS/FGTS e provisões", () => {
   assert.ok(f.fgts > 0, "FGTS deve ser > 0 em CLT");
   assert.ok(f.provisaoDecimoTerceiro > 0, "13º deve provisionar em CLT");
   assert.ok(f.provisaoFerias > 0, "férias devem provisionar em CLT");
-  // Base mensal 3900 ≤ 5000 → IRRF 0; custo ainda inclui FGTS+provisões+VR
+  // Base mensal 3900 ≤ 5000 → IRRF 0; custo = bruto + VR + FGTS (sem provisões)
   assert.equal(f.irrf, 0, "IRRF isento até 5k (salário+peric)");
-  assert.ok(f.custoTotalEmpresa > f.totalBruto, "custo empresa > bruto em CLT (VR+FGTS+provisões)");
+  assert.equal(
+    f.custoTotalEmpresa,
+    +(f.totalBruto + f.refeicao + f.ajudaCusto + f.fgts).toFixed(2),
+    "custo empresa = bruto + VR + FGTS (sem provisões)",
+  );
+  assert.ok(f.totalProvisoes > 0, "provisões ainda calculadas (informativo)");
   assert.ok(f.liquidoFuncionario < f.totalBruto, "líquido < bruto em CLT (INSS)");
 });
 

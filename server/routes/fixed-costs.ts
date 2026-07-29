@@ -491,10 +491,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v4 (29/07/2026): invalida snapshot SWR antigo que servia HE=0 / IRRF 22%
-  // / VR 989 após deploy (swr_cache_snapshots ressuscitava o payload pré-fix).
+  // baseKey v5 (29/07/2026): custo SEM provisões 13º/férias (+ invalida v4).
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v4",
+    baseKey: "rh-summary-v5",
     ttlMs: SWR_TTL_3H,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],
@@ -701,7 +700,8 @@ export function registerFixedCostsRoutes(app: Express) {
       fonte: "cct-cadastro",
       breakdown: {
         base: acc.base,
-        encargos: acc.fgts + acc.totalProvisoes,
+        // Encargos no custo = FGTS (provisões 13º/férias são só informativas)
+        encargos: acc.fgts,
         vr: acc.refeicao,
         vt: acc.vt, cesta: acc.cesta, outros: acc.outros + acc.valeAlimentacao + acc.assiduidade,
         diarias: acc.diarias,

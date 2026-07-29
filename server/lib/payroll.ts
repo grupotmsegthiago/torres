@@ -26,8 +26,9 @@
  *   10) Total bruto (quadro Remuneração) = base tributável (sem VR/ajuda —
  *      benefícios ficam no quadro à parte). Decisão dono 29/07/2026.
  *   11) Líquido = baseTributavel − IRRF − INSS − VT (FGTS NÃO desconta do líquido).
- *   12) Custo empresa = bruto + VR + ajuda + FGTS + provisões.
- *   13) Provisões: 13º, Férias, 1/3, FGTS s/ provisões, INSS s/ provisões.
+ *   12) Custo empresa = bruto + VR + ajuda + FGTS (SEM provisões — decisão
+ *       dono 29/07/2026: 13º/férias/1/3 são só informativos).
+ *   13) Provisões (informativo): 13º, Férias, 1/3, FGTS/INSS s/ provisões.
  *
  * Regra travada revertida pelo dono: adicional noturno passou de 20% (só prêmio)
  * para hora cheia 1,80× — ver memória payroll-night-additional.
@@ -332,9 +333,10 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     provisaoFGTSsobreFerias13 + provisaoINSSsobreFerias13
   );
 
-  // Custo da empresa: remuneração + benefícios (VR/ajuda) + FGTS + provisões.
+  // Custo da empresa: remuneração + benefícios (VR/ajuda) + FGTS.
+  // Provisões (13º/férias/1/3) NÃO entram — só informativas (decisão 29/07/2026).
   // Não-CLT = remuneração (+ ajuda se houver), sem encargos.
-  const custoTotalEmpresa = r2(totalBruto + refeicao + ajudaCusto + fgts + totalProvisoes);
+  const custoTotalEmpresa = r2(totalBruto + refeicao + ajudaCusto + fgts);
   // Líquido modelo Torres: Total tributável − INSS − IRRF − VT.
   // (FGTS NÃO desconta do líquido — é depósito do empregador, decisão do dono
   // 26/06/2026; fica fgtsNoLiquido=false. Benefícios indenizatórios como VR/ajuda

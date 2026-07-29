@@ -24,9 +24,11 @@ test("Fernando HE=0: custo fecha ~5452,83 sem encargos CCT extras", () => {
     inssPatronalPct: 0,
     seguroVidaMensal: 0,
   });
-  // 3334.90 + 989 + 200 + 86 + 266.79 FGTS + 576.14 provisões ≈ 5452.83
-  assert.ok(Math.abs(c.custoTotalEmpresa - 5452.83) < 0.05, `esperado ~5452.83, veio ${c.custoTotalEmpresa}`);
-  assert.equal(c.custoProvisionado, +(folha.fgts + folha.totalProvisoes).toFixed(2));
+  // 3334.90 + 989 + 200 + 86 + 266.79 FGTS = 4876.69 (provisões fora do custo)
+  assert.ok(Math.abs(c.custoTotalEmpresa - 4876.69) < 0.05, `esperado ~4876.69, veio ${c.custoTotalEmpresa}`);
+  assert.equal(c.custoProvisionado, folha.fgts);
+  assert.equal(c.provisoesInformativas, folha.totalProvisoes);
+  assert.ok(c.provisoesInformativas > 0, "provisões seguem informativas");
 });
 
 test("composeCustoEmpresa: INSS patronal + seguro entram no realizado e no total", () => {

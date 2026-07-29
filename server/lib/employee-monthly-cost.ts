@@ -381,11 +381,13 @@ export type CustoEmpresaDetalhado = {
   seguroVida: number;
   /** Bruto folha + benefícios extras + diárias + seguro + INSS patronal (sem FGTS/provisões). */
   custoRealizado: number;
-  /** FGTS mensal + provisões (13º/férias/1/3/encargos s/ provisões). */
+  /** FGTS mensal (provisões 13º/férias ficam só informativas — fora do custo). */
   custoProvisionado: number;
+  /** Provisões CCT informativas (NÃO entram no custo total). */
+  provisoesInformativas: number;
   /** FGTS + seguro + INSS patronal. */
   encargos: number;
-  /** Realizado + provisionado — custo total empresa. */
+  /** Realizado + FGTS/encargos CCT — sem provisões 13º/férias. */
   custoTotalEmpresa: number;
   descontosEmpregado: {
     inss: number;
@@ -440,7 +442,9 @@ export function composeCustoEmpresaDetalhado(input: {
       inssPatronal +
       seguroVida,
   );
-  const custoProvisionado = r2(folha.fgts + folha.totalProvisoes);
+  // FGTS entra no custo; 13º/férias/1/3 só informativos (fora do total).
+  const custoProvisionado = r2(folha.fgts);
+  const provisoesInformativas = r2(folha.totalProvisoes);
   const encargos = r2(folha.fgts + inssPatronal + seguroVida);
   const custoTotalEmpresa = r2(custoRealizado + custoProvisionado);
 
@@ -451,6 +455,7 @@ export function composeCustoEmpresaDetalhado(input: {
     seguroVida,
     custoRealizado,
     custoProvisionado,
+    provisoesInformativas,
     encargos,
     custoTotalEmpresa,
     descontosEmpregado: {

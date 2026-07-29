@@ -263,11 +263,10 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    // v4: invalida React Query + alinha com baseKey rh-summary-v4 no servidor
-    // (snapshot SWR antigo servia HE=0 / IRRF errado após deploy).
-    queryKey: ["/api/fixed-costs/rh-summary", "v4", "cached", gridRange.from, gridRange.to],
+    // v5: custo SEM provisões; alinha com baseKey rh-summary-v5 no servidor.
+    queryKey: ["/api/fixed-costs/rh-summary", "v5", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = "rh-summary-v4-forced";
+      const bustKey = "rh-summary-v5-forced";
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
@@ -717,7 +716,7 @@ export default function BalancoGerencialPage() {
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v4", "cached", gridRange.from, gridRange.to] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v5", "cached", gridRange.from, gridRange.to] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
       setDataGeradoEm(new Date());
       toast({ title: "Atualizado", description: "Dados recalculados agora." });
@@ -1253,7 +1252,7 @@ export default function BalancoGerencialPage() {
                   rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
                 }
                 if (agg.provisoes > 0) {
-                  rhRows.push({ label: "── Provisões CCT ──", value: agg.provisoes * fatorPeriodo });
+                  rhRows.push({ label: "── Provisões CCT (informativo) ──", value: agg.provisoes * fatorPeriodo });
                   if (agg.decimo > 0) rhRows.push({ label: "  13º", value: agg.decimo * fatorPeriodo });
                   if (agg.ferias > 0) rhRows.push({ label: "  Férias + 1/3", value: agg.ferias * fatorPeriodo });
                 }

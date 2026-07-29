@@ -1300,7 +1300,7 @@ function AgentDetailPanel({
         ["IRRF (desconto)", agent.irrf],
         ["Líquido do funcionário", agent.liquidoFuncionario],
       ]} />
-      <Section title="Provisões CCT (entra no Custo Empresa)" rows={[
+      <Section title="Provisões CCT (informativo — não entra no custo)" rows={[
         ["Férias", agent.ferias ?? 0],
         ["13º", agent.decimoTerceiro ?? 0],
         ["1/3 férias", agent.provisaoTercoFerias ?? 0],
