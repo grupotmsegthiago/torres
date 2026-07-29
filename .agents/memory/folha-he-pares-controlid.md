@@ -1,14 +1,30 @@
-# HE Folha = pares Control iD (COM 00:00/23:59 no turno noturno)
+# HE Folha = first→last − 1º almoço (cartão Control iD)
 
-**Regressão 29/07/2026:** strip de `00:00`/`23:59` zerou HE e noturno de
-vigilantes que cruzam meia-noite (Reis: HE 0:00, Adic. Noturno R$ 414).
+**Alvo Reis (26/06→25/07/2026):** HE **102:22** (= trab 322:22 − 220) × R$ 16.
 
-**Regra correta (pagamento Folha):**
-- Manter marcadores `00:00`/`00:01`/`23:59` — o espelho PDF os usa para costurar
-  turno noturno (`18:00→23:59` + `00:00→06:00`).
-- Pares guloso no dia BRT + teto 19:59.
-- `stripSyntheticMarkers: true` só em testes/offline.
-- Cache `rh-summary-v12` (bust de v11).
+## Regra de pagamento (INTOCÁVEL)
 
-**Alvo Reis (26/06→25/07):** HE ~102:22–103:45 × R$ 16; noturno × R$ 16,50.
-`102,22` no Control iD = **102:22** (HH:MM), não decimal 102.22.
+Por dia BRT, com batidas ordenadas (inclui marcadores `00:00`/`23:59`):
+
+```
+worked = min( (última − primeira) − (batida[2] − batida[1] se 4+), 19:59 )
+HE_mês = max(0, Σ worked − 220h)
+```
+
+- Mantém marcadores de meia-noite (costuram turno noturno).
+- Desconta **só o 1º intervalo** (almoço), não todas as pausas.
+- Teto 19:59 remove fantasma do import PDF.
+
+## Regressões a NÃO repetir
+
+| Tentativa | Resultado |
+|-----------|-----------|
+| Pares gulosos (todas as pausas) | Reis **93:05** (subconta ~9h) |
+| Strip `00:00`/`23:59` | HE **0:00** (órfãs no noturno) |
+
+`computeDayWorkedMinutesFromPunches` fica para análises/testes; **Folha usa first→last**.
+
+## Taxa
+
+CCT vigilância: sempre R$ 16 / R$ 16,50 (`normalizeVigilanciaHeRates` força na leitura).
+Cache: `rh-summary-v13`.

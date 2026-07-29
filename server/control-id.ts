@@ -25,8 +25,6 @@ import {
   minuteKeyBRT,
   truncateToMinuteMs,
   workedMinutesBetween,
-  computeDayWorkedMinutesFromPunches,
-  isSyntheticMidnightMarker,
   decideImport,
   rhidNumericCore,
   dedupPunchesByCore,
@@ -2145,12 +2143,6 @@ export async function buildFolhaPonto(
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-    // Pares guloso NO DIA (mantém 00:00/23:59 — costuram turno noturno).
-    // stripSyntheticMarkers=false: removê-los zerava HE de quem cruza meia-noite.
-    const dayCalc = computeDayWorkedMinutesFromPunches(
-      sorted.map((p: any) => p.punch_at),
-      { dailyCapMin: NORMAL_DAILY_CAP_MIN, stripSyntheticMarkers: false },
-    );
     const entry: any = {
       date: day,
       clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
@@ -2167,25 +2159,16 @@ export async function buildFolhaPonto(
         source: p.source,
       })),
     };
-    if (dayCalc.workedMin > 0 || dayCalc.pairs.length > 0) {
-      const workedMin = dayCalc.workedMin;
-      entry.hoursWorked = (workedMin / 60).toFixed(2);
-      entry.workedMin = workedMin;
-      entry.normaisMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
-      entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
-      entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      let noturnoMin = 0;
-      for (const pair of dayCalc.pairs) {
-        noturnoMin += nightMinutesBRT(pair.inMs, pair.outMs);
-      }
-      // Cap noturno ao worked do dia (pares já descontam pausas).
-      entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), workedMin));
-    } else if (entry.clockIn && entry.clockOut) {
-      // Fallback: first→last − 1º almoço (legado).
+    // Cartão Control iD / Folha de pagamento (INTOCÁVEL):
+    //   trabalhado = (última − primeira) − 1º intervalo de almoço (batidas 2–3),
+    //   teto 19:59 (remove fantasma 00:00/23:59 do import).
+    // NÃO usar pares gulosos aqui: descontar todas as pausas subcontava ~9h no
+    // Reis (93:05 vs 102:22 do cartão oficial) em 26/06→25/07/2026.
+    if (entry.clockIn && entry.clockOut) {
       const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
       const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
       let workedMin = workedMinutesBetween(inMs, outMs);
-      if (sorted.length >= 4) {
+      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
         workedMin -= workedMinutesBetween(
           truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
           truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
@@ -2194,11 +2177,11 @@ export async function buildFolhaPonto(
       workedMin = Math.min(Math.max(0, workedMin), NORMAL_DAILY_CAP_MIN);
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = Math.round(workedMin);
-      entry.normaisMin = Math.round(workedMin);
+      entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
       entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
       let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (sorted.length >= 4) {
+      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
         noturnoMin -= nightMinutesBRT(
           truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
           truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),

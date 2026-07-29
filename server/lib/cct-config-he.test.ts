@@ -32,3 +32,13 @@ test("normalize: 16 / 16,50 permanece", () => {
   assert.equal(out.horaExtraValor, 16);
   assert.equal(out.horaExtraNoturnaValor, 16.5);
 });
+
+test("normalize: qualquer taxa gravada → força 16 / 16,50 (nunca salário×1,6)", () => {
+  const out = normalizeVigilanciaHeRates({
+    ...DEFAULT_CCT_CONFIG,
+    horaExtraValor: 24.26,
+    horaExtraNoturnaValor: 27.29,
+  });
+  assert.equal(out.horaExtraValor, 16);
+  assert.equal(out.horaExtraNoturnaValor, 16.5);
+});

@@ -20,28 +20,18 @@ const TTL_MS = 30_000;
 const LEGACY_HE_DIURNA_DEFAULT = 22.99;
 
 /**
- * Vigilância Torres: HE diurna R$ 16 e noturna R$ 16,50.
- * Corrige na leitura:
- *  - legado 22,99 → 16
- *  - diurna ausente/0/NaN → 16  (senão calcularFolha cai em salário×1,6 ≈ R$ 24,26/h)
- *  - noturna ausente/0 → 16,50
+ * Vigilância Torres: taxas HE são FIXAS (decisão do dono).
+ * Sempre R$ 16 (diurna) e R$ 16,50 (noturna) — nunca salário×1,6 (~R$ 24,26).
+ * Também corrige legado 22,99 / 0 / NaN gravados no banco.
  */
 export function normalizeVigilanciaHeRates(cfg: CctConfig): CctConfig {
-  let horaExtraValor = Number(cfg.horaExtraValor);
-  let horaExtraNoturnaValor = Number(cfg.horaExtraNoturnaValor);
+  const horaExtraValor = 16;
+  const horaExtraNoturnaValor = 16.5;
+  // Mantém referência ao legado só para logs/migração (não altera a regra).
+  void LEGACY_HE_DIURNA_DEFAULT;
   if (
-    !Number.isFinite(horaExtraValor) ||
-    horaExtraValor <= 0 ||
-    Math.abs(horaExtraValor - LEGACY_HE_DIURNA_DEFAULT) < 0.011
-  ) {
-    horaExtraValor = 16;
-  }
-  if (!Number.isFinite(horaExtraNoturnaValor) || horaExtraNoturnaValor <= 0) {
-    horaExtraNoturnaValor = 16.5;
-  }
-  if (
-    horaExtraValor === cfg.horaExtraValor &&
-    horaExtraNoturnaValor === cfg.horaExtraNoturnaValor
+    cfg.horaExtraValor === horaExtraValor &&
+    cfg.horaExtraNoturnaValor === horaExtraNoturnaValor
   ) {
     return cfg;
   }

@@ -28,4 +28,5 @@ Alvo Reis (cartão Control iD): HE **102:22** × R$ 16 ≈ R$ 1.637,87
 Noturno alvo ~82,47×16,50 = 1.360,76 (conferir batidas).
 Ver também `folha-he-pares-controlid.md`.
 
-**Cache:** `rh-summary-v9`.
+**Cache:** `rh-summary-v13`.
+**Jornada/dia:** first→last − 1º almoço + teto 19:59 (não pares gulosos).
