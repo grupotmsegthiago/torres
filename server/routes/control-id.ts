@@ -458,13 +458,10 @@ export function registerControlIdRoutes(app: Express) {
     try {
       const employeeId = Number(req.params.employeeId);
       const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
-      // engine=pares só é honrado fora de produção (ou via FOLHA_ENGINE em dev).
-      // Em produção resolveFolhaEngine ignora o env e mantém first_last.
-      const engineQ = String(req.query.engine || "");
-      const engine =
-        engineQ === "pares" || engineQ === "first_last"
-          ? (engineQ as "pares" | "first_last")
-          : undefined;
+      // parseFolhaEngineQuery: em produção retorna undefined (ignora ?engine=pares).
+      // resolveFolhaEngine dentro de buildFolhaPonto também força first_last em prod.
+      const { parseFolhaEngineQuery } = await import("../lib/jornada-pares");
+      const engine = parseFolhaEngineQuery(req.query.engine);
       const folha = await ctrl.buildFolhaPonto(employeeId, monthYear, { engine });
       res.json(folha);
     } catch (err: any) {
@@ -489,15 +486,15 @@ export function registerControlIdRoutes(app: Express) {
         return res.json({ monthYear, employee: row, text: formatSimReportText({
           generatedAt: new Date().toISOString(),
           monthYear,
-          horasMensaisDefault: 220,
-          heRateBRL: 16,
           employees: [row],
           totals: {
             employeesCompared: 1,
             employeesWithDelta: row.deltaMin !== 0 ? 1 : 0,
             sumDeltaMin: row.deltaMin,
             sumHeImpactBRL: row.heImpactBRL,
+            incompleteCount: row.simulacaoIncompleta ? 1 : 0,
           },
+          simulacaoIncompleta: row.simulacaoIncompleta,
         }) });
       }
       const report = await simulateAllEmployeesMonth({ monthYear });

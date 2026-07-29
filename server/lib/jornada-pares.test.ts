@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   computeJornadaPares,
   computeJornadaFirstLast,
+  computeLegacyFirstLastReferenceMin,
   resolveFolhaEngine,
+  parseFolhaEngineQuery,
   hhmmFromMinutes,
   nightMinutesBRT,
 } from "./jornada-pares";
@@ -19,6 +21,7 @@ import {
   REIS_TORRES_FIRST_LAST_TOTAL_MIN,
   REIS_TORRES_PARES_TOTAL_MIN,
   REIS_TORRES_PARES_HE_MIN,
+  REIS_TORRES_IS_RECONSTRUCTION,
   fixtureTorresPunchesToInputs,
   REIS_TORRES_AUDIT,
 } from "./fixtures/reis-torres-dump";
@@ -189,18 +192,79 @@ test("noturno: calculado por par (não first→last com almoço noturno)", () =>
   ));
 });
 
-test("resolveFolhaEngine: produção força first_last", () => {
+test("resolveFolhaEngine: produção SEMPRE first_last (ignora override + FOLHA_ENGINE)", () => {
   const prevNode = process.env.NODE_ENV;
   const prevEng = process.env.FOLHA_ENGINE;
   try {
     process.env.NODE_ENV = "production";
     process.env.FOLHA_ENGINE = "pares";
     assert.equal(resolveFolhaEngine(), "first_last");
-    assert.equal(resolveFolhaEngine("pares"), "pares"); // override explícito (simulação)
+    assert.equal(resolveFolhaEngine("pares"), "first_last");
+    assert.equal(resolveFolhaEngine("first_last"), "first_last");
+    assert.equal(parseFolhaEngineQuery("pares"), undefined);
   } finally {
     process.env.NODE_ENV = prevNode;
     if (prevEng === undefined) delete process.env.FOLHA_ENGINE;
     else process.env.FOLHA_ENGINE = prevEng;
+  }
+});
+
+test("resolveFolhaEngine: dev permite FOLHA_ENGINE=pares e override", () => {
+  const prevNode = process.env.NODE_ENV;
+  const prevEng = process.env.FOLHA_ENGINE;
+  try {
+    process.env.NODE_ENV = "development";
+    process.env.FOLHA_ENGINE = "pares";
+    assert.equal(resolveFolhaEngine(), "pares");
+    assert.equal(resolveFolhaEngine("first_last"), "first_last");
+    delete process.env.FOLHA_ENGINE;
+    assert.equal(resolveFolhaEngine("pares"), "pares");
+  } finally {
+    process.env.NODE_ENV = prevNode;
+    if (prevEng === undefined) delete process.env.FOLHA_ENGINE;
+    else process.env.FOLHA_ENGINE = prevEng;
+  }
+});
+
+test("first_last: dois eventos distintos no mesmo minuto — preserva legado (sem dedup)", () => {
+  // 08:00:10, 08:00:50, 12:00, 13:00, 18:00 BRT
+  // Legado: length=5 → lunch = idx1→idx2 = 08:00→12:00 = 4h
+  //   worked = (18:00−08:00) − 4h = 6h
+  // Pares com dedup/minuto: 08:00,12:00,13:00,18:00 → first_last seria 9h (ERRADO para A)
+  const punches = [
+    { punchAt: "2026-07-01T11:00:10.000Z", id: 1 }, // 08:00:10 BRT
+    { punchAt: "2026-07-01T11:00:50.000Z", id: 2 }, // 08:00:50 BRT (mesmo minuto)
+    { punchAt: "2026-07-01T15:00:00.000Z", id: 3 }, // 12:00
+    { punchAt: "2026-07-01T16:00:00.000Z", id: 4 }, // 13:00
+    { punchAt: "2026-07-01T21:00:00.000Z", id: 5 }, // 18:00
+  ];
+  const ref = computeLegacyFirstLastReferenceMin(punches.map((p) => p.punchAt));
+  const fl = computeJornadaFirstLast(punches);
+  assert.equal(ref.workedMin, 6 * 60);
+  assert.equal(fl.workedMinutes, ref.workedMin);
+  assert.equal(fl.nightMinutes, ref.noturnoMin);
+  assert.equal(fl.eventsAfterDedup.length, 5); // sem colapsar minuto
+  assert.equal(fl.duplicateEvents.length, 0);
+
+  const pares = computeJornadaPares(punches);
+  assert.equal(pares.duplicateEvents.length, 1);
+  assert.equal(pares.eventsAfterDedup.length, 4);
+  // Pares: 08:00→12:00 + 13:00→18:00 = 4h + 5h = 9h (diferente do legado — esperado)
+  assert.equal(pares.workedMinutes, 9 * 60);
+  assert.notEqual(pares.workedMinutes, fl.workedMinutes);
+});
+
+test("first_last ≡ referência legado em dias oficiais do Reis", () => {
+  for (const d of REIS_OFICIAL_DAYS) {
+    const inputs = fixturePunchesToInputs(d);
+    const fl = computeJornadaFirstLast(inputs);
+    const ref = computeLegacyFirstLastReferenceMin(inputs.map((p) => p.punchAt));
+    assert.equal(
+      fl.workedMinutes,
+      ref.workedMin,
+      `${d.date}: first_last=${fl.workedMinutes} ref=${ref.workedMin}`,
+    );
+    assert.equal(fl.nightMinutes, ref.noturnoMin, `${d.date} noturno`);
   }
 });
 
@@ -287,22 +351,20 @@ test("fixture Torres 04/07: dump reconstruído 03:39; oficial 03:40 só na fixtu
   );
 });
 
-test("fixture Torres: first_last mensal 323:45; pares mensal EXATO 313:06 (não 313:05)", () => {
+test("fixture Torres (RECONSTRUÇÃO): first_last 323:45; pares 313:06 — não é dump comprovado", () => {
+  assert.equal(REIS_TORRES_IS_RECONSTRUCTION, true);
   const fl = sumEngine(REIS_TORRES_DAYS, "first_last", fixtureTorresPunchesToInputs);
   const pares = sumEngine(REIS_TORRES_DAYS, "pares", fixtureTorresPunchesToInputs);
 
   assert.equal(fl.total, REIS_TORRES_FIRST_LAST_TOTAL_MIN, `first_last=${hhmmFromMinutes(fl.total)}`);
-  assert.equal(pares.total, REIS_TORRES_PARES_TOTAL_MIN, `pares=${hhmmFromMinutes(pares.total)}`);
+  assert.equal(pares.total, REIS_TORRES_PARES_TOTAL_MIN, `pares reconstrução=${hhmmFromMinutes(pares.total)}`);
   assert.equal(pares.total, 313 * 60 + 6);
   assert.notEqual(pares.total, 313 * 60 + 5);
   assert.equal(pares.total - 220 * 60, REIS_TORRES_PARES_HE_MIN);
-  assert.equal(hhmmFromMinutes(REIS_TORRES_PARES_HE_MIN), "93:06");
 
-  // Identidades da perícia
-  assert.equal(fl.total - pares.total, 10 * 60 + 39); // só o 20/07
+  // Identidades da perícia (reconstrução)
+  assert.equal(fl.total - pares.total, 10 * 60 + 39);
   assert.equal(REIS_OFICIAL_TOTAL_NORMAIS_MIN - (9 * 60 + 15) - 1, REIS_TORRES_PARES_TOTAL_MIN);
-
-  // Soma diária: documentar Δ
   assert.equal(fl.perDay["2026-07-20"] - pares.perDay["2026-07-20"], 10 * 60 + 39);
   assert.equal(pares.perDay["2026-06-30"], 10 * 60 + 44);
   assert.equal(pares.perDay["2026-07-04"], 3 * 60 + 39);

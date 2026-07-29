@@ -3,7 +3,7 @@
  *
  * Regras (autorização parcial — PR de desenvolvimento):
  *  - ordenar cronologicamente;
- *  - deduplicar por minuto BRT (regra oficial já usada em helpers);
+ *  - deduplicar por minuto BRT (somente motor `pares`);
  *  - formar pares 1→2, 3→4, 5→6…;
  *  - somar somente pares completos;
  *  - batida ímpar restante = órfã (não conta + auditFlag);
@@ -13,8 +13,9 @@
  *  - teto diário configurável APÓS a soma dos pares;
  *  - noturno (22h–05h BRT) somado por par, não first→last.
  *
- * O motor `first_last` permanece disponível para comparação A×B e é o
- * default em produção até autorização expressa de ativação.
+ * Motor `first_last` (legado): idêntico ao caminho pré-PR —
+ * ordena por punch_at, usa [0]/último/−almoço [1]→[2] se ≥4, SEM dedup por minuto.
+ * Produção SEMPRE usa `first_last` (ignora env, opts e query).
  */
 import {
   dedupPunchesByCore,
@@ -61,6 +62,13 @@ export type AuditFlag =
   | { code: "minute_duplicate"; minuteKey: string }
   | { code: "non_increasing_punch"; atMs: number };
 
+export type PreparedPunch = {
+  atMs: number;
+  rawMs: number;
+  id?: number | string | null;
+  date: Date;
+};
+
 export type JornadaDayResult = {
   workedMinutes: number;
   nightMinutes: number;
@@ -70,9 +78,13 @@ export type JornadaDayResult = {
   /** Minutos descartados pelo teto diário (raw − capped). */
   cappedMinutes: number;
   auditFlags: AuditFlag[];
-  /** Soma dos pares antes do teto. */
+  /** Soma dos pares / bruto antes do teto. */
   rawWorkedMinutes: number;
-  /** Eventos efetivamente usados após dedup por minuto. */
+  /**
+   * Eventos usados no cálculo.
+   * - first_last: lista cronológica completa (sem colapsar minuto)
+   * - pares: após dedup por minuto BRT
+   */
   eventsAfterDedup: Array<{ atMs: number; id?: number | string | null }>;
 };
 
@@ -108,21 +120,56 @@ function toDate(punchAt: string | Date | number): Date {
 }
 
 /**
- * Resolve qual motor a Folha usa.
- * Produção: sempre `first_last` (sem afetar deploy atual).
- * Dev/test: `FOLHA_ENGINE=pares` ativa o motor novo.
+ * Preparação comum compatível com o legado: filtra inválidos, ordena por
+ * timestamp bruto (igual `sort` de `buildFolhaPonto`), trunca HH:MM por evento.
+ * NÃO colapsa eventos do mesmo minuto.
+ */
+export function preparePunchesChronological(punches: JornadaPunchInput[]): PreparedPunch[] {
+  return punches
+    .filter((p) => p && p.punchAt != null)
+    .map((p) => {
+      const date = toDate(p.punchAt);
+      const rawMs = date.getTime();
+      return {
+        atMs: truncateToMinuteMs(rawMs),
+        rawMs,
+        id: p.id ?? null,
+        date,
+      };
+    })
+    .filter((p) => Number.isFinite(p.rawMs) && p.rawMs > 0 && p.atMs > 0)
+    .sort(
+      (a, b) =>
+        a.rawMs - b.rawMs || String(a.id ?? "").localeCompare(String(b.id ?? "")),
+    );
+}
+
+/**
+ * Resolve qual motor a Folha de pagamento usa.
+ *
+ * PRODUÇÃO: SEMPRE `first_last` — ignora override, FOLHA_ENGINE e qualquer opts.
+ * DEV/TEST: `opts` / `FOLHA_ENGINE=pares` podem ativar o motor novo.
  */
 export function resolveFolhaEngine(override?: FolhaEngine | null): FolhaEngine {
-  if (override === "pares" || override === "first_last") return override;
   if (process.env.NODE_ENV === "production") return "first_last";
+  if (override === "pares" || override === "first_last") return override;
   if (String(process.env.FOLHA_ENGINE || "").toLowerCase() === "pares") return "pares";
   return "first_last";
 }
 
 /**
- * Motor canônico: pares sequenciais completos.
- * Entrada = eventos já selecionados para UMA jornada/dia (ou conjunto a avaliar).
- * Não agrupa por dia — o chamador agrupa.
+ * Interpreta `?engine=` da rota Folha.
+ * Em produção retorna sempre `undefined` (rota não pode ativar pares).
+ */
+export function parseFolhaEngineQuery(raw: unknown): FolhaEngine | undefined {
+  if (process.env.NODE_ENV === "production") return undefined;
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "pares" || s === "first_last") return s;
+  return undefined;
+}
+
+/**
+ * Motor canônico: pares sequenciais completos + dedup por minuto BRT.
  */
 export function computeJornadaPares(
   punches: JornadaPunchInput[],
@@ -131,19 +178,11 @@ export function computeJornadaPares(
   const dailyCapMin = opts.dailyCapMin ?? DEFAULT_DAILY_CAP_MIN;
   const auditFlags: AuditFlag[] = [];
   const duplicateEvents: DuplicateEvent[] = [];
-
-  const sorted = punches
-    .filter((p) => p && p.punchAt != null)
-    .map((p) => {
-      const d = toDate(p.punchAt);
-      return { ...p, atMs: truncateToMinuteMs(d.getTime()), date: d };
-    })
-    .filter((p) => p.atMs > 0)
-    .sort((a, b) => a.atMs - b.atMs || String(a.id ?? "").localeCompare(String(b.id ?? "")));
+  const prepared = preparePunchesChronological(punches);
 
   const seen = new Map<string, { atMs: number; id?: number | string | null }>();
   const clean: Array<{ atMs: number; id?: number | string | null }> = [];
-  for (const p of sorted) {
+  for (const p of prepared) {
     const key = minuteKeyBRT(p.date);
     const prev = seen.get(key);
     if (prev) {
@@ -186,10 +225,7 @@ export function computeJornadaPares(
         id: a.id ?? null,
         reason: "non_increasing",
       });
-      auditFlags.push({
-        code: "non_increasing_punch",
-        atMs: a.atMs,
-      });
+      auditFlags.push({ code: "non_increasing_punch", atMs: a.atMs });
       auditFlags.push({
         code: "orphan_punch",
         atMs: a.atMs,
@@ -225,7 +261,6 @@ export function computeJornadaPares(
       rawMin: rawWorkedMinutes,
       cappedMin: dailyCapMin,
     });
-    // Noturno não pode exceder o trabalhado contabilizado após o teto.
     nightMinutes = Math.min(nightMinutes, workedMinutes);
   }
 
@@ -243,90 +278,113 @@ export function computeJornadaPares(
 }
 
 /**
- * Motor legado (pagamento atual): (última − primeira) − 1º intervalo (batidas 2–3 se ≥4),
- * teto diário. Mantido para A×B e default de produção.
+ * Motor legado idêntico ao `buildFolhaPonto` pré-PR:
+ *   worked = min(max(0, (última−primeira) − (batida[2]−batida[1] se ≥4)), teto)
+ *   noturno = night(first,last) − night(lunch) se ≥4
+ *
+ * SEM deduplicação por minuto. Apenas ordenação cronológica + truncamento HH:MM
+ * (como `truncateToMinuteMs` / `workedMinutesBetween` já faziam no legado).
  */
 export function computeJornadaFirstLast(
   punches: JornadaPunchInput[],
   opts: ComputeJornadaOpts = {},
 ): JornadaDayResult {
   const dailyCapMin = opts.dailyCapMin ?? DEFAULT_DAILY_CAP_MIN;
-  const paresProbe = computeJornadaPares(punches, { dailyCapMin: 0 });
-  const clean = paresProbe.eventsAfterDedup;
-  const auditFlags: AuditFlag[] = [...paresProbe.auditFlags.filter((f) => f.code === "minute_duplicate")];
-  const duplicateEvents = paresProbe.duplicateEvents;
+  const sorted = preparePunchesChronological(punches);
+  const eventsUsed = sorted.map((p) => ({ atMs: p.atMs, id: p.id ?? null }));
+  const auditFlags: AuditFlag[] = [];
 
-  if (clean.length < 2) {
-    const orphanPunches: OrphanPunch[] = clean.map((c) => ({
-      atMs: c.atMs,
-      punchAtIso: new Date(c.atMs).toISOString(),
-      id: c.id ?? null,
-      reason: "unpaired_trailing" as const,
-    }));
-    for (const o of orphanPunches) {
-      auditFlags.push({
-        code: "orphan_punch",
-        atMs: o.atMs,
-        detail: "menos de 2 batidas (first_last)",
-      });
-    }
+  if (sorted.length < 2) {
     return {
       workedMinutes: 0,
       nightMinutes: 0,
       completePairs: [],
-      orphanPunches,
-      duplicateEvents,
+      orphanPunches: [],
+      duplicateEvents: [],
       cappedMinutes: 0,
       auditFlags,
       rawWorkedMinutes: 0,
-      eventsAfterDedup: clean,
+      eventsAfterDedup: eventsUsed,
     };
   }
 
-  const inMs = clean[0].atMs;
-  const outMs = clean[clean.length - 1].atMs;
-  let raw = workedMinutesBetween(inMs, outMs);
-  let night = nightMinutesBRT(inMs, outMs);
-  if (clean.length >= 4) {
-    const lunch = workedMinutesBetween(clean[1].atMs, clean[2].atMs);
-    const lunchNight = nightMinutesBRT(clean[1].atMs, clean[2].atMs);
-    raw -= lunch;
-    night -= lunchNight;
-  }
-  raw = Math.max(0, raw);
-  night = Math.max(0, night);
+  const inMs = sorted[0].atMs;
+  const outMs = sorted[sorted.length - 1].atMs;
+  let workedMin = workedMinutesBetween(inMs, outMs);
+  let noturnoMin = nightMinutesBRT(inMs, outMs);
 
-  let workedMinutes = raw;
-  let cappedMinutes = 0;
-  if (dailyCapMin > 0 && workedMinutes > dailyCapMin) {
-    cappedMinutes = workedMinutes - dailyCapMin;
-    workedMinutes = dailyCapMin;
-    auditFlags.push({
-      code: "daily_cap_applied",
-      rawMin: raw,
-      cappedMin: dailyCapMin,
-    });
+  // Legado: lunchOut/lunchIn só quando length >= 4 (índices 1 e 2).
+  if (sorted.length >= 4) {
+    workedMin -= workedMinutesBetween(sorted[1].atMs, sorted[2].atMs);
+    noturnoMin -= nightMinutesBRT(sorted[1].atMs, sorted[2].atMs);
   }
-  night = Math.min(night, workedMinutes);
+
+  const raw = Math.max(0, workedMin);
+  let cappedMinutes = 0;
+  let workedMinutes = raw;
+  if (dailyCapMin > 0) {
+    workedMinutes = Math.min(workedMinutes, dailyCapMin);
+    if (raw > dailyCapMin) {
+      cappedMinutes = raw - dailyCapMin;
+      auditFlags.push({
+        code: "daily_cap_applied",
+        rawMin: raw,
+        cappedMin: dailyCapMin,
+      });
+    }
+  }
+  const nightMinutes = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMinutes)));
 
   return {
     workedMinutes: Math.round(workedMinutes),
-    nightMinutes: Math.max(0, Math.round(night)),
+    nightMinutes,
     completePairs: [
       {
         inMs,
         outMs,
         workedMin: Math.round(workedMinutes),
-        nightMin: Math.max(0, Math.round(night)),
+        nightMin: nightMinutes,
       },
     ],
     orphanPunches: [],
-    duplicateEvents,
+    duplicateEvents: [],
     cappedMinutes: Math.round(cappedMinutes),
     auditFlags,
     rawWorkedMinutes: Math.round(raw),
-    eventsAfterDedup: clean,
+    eventsAfterDedup: eventsUsed,
   };
+}
+
+/**
+ * Referência pura do algoritmo legado (cópia fiel do bloco pré-PR) para testes
+ * de equivalência — não usar em produção.
+ */
+export function computeLegacyFirstLastReferenceMin(
+  punchAts: Array<string | Date | number>,
+  dailyCapMin: number = DEFAULT_DAILY_CAP_MIN,
+): { workedMin: number; noturnoMin: number } {
+  const sorted = punchAts
+    .map((p) => new Date(p))
+    .filter((d) => d.getTime() > 0)
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (sorted.length < 2) return { workedMin: 0, noturnoMin: 0 };
+  const inMs = truncateToMinuteMs(sorted[0].getTime());
+  const outMs = truncateToMinuteMs(sorted[sorted.length - 1].getTime());
+  let workedMin = workedMinutesBetween(inMs, outMs);
+  let noturnoMin = nightMinutesBRT(inMs, outMs);
+  if (sorted.length >= 4) {
+    workedMin -= workedMinutesBetween(
+      truncateToMinuteMs(sorted[1].getTime()),
+      truncateToMinuteMs(sorted[2].getTime()),
+    );
+    noturnoMin -= nightMinutesBRT(
+      truncateToMinuteMs(sorted[1].getTime()),
+      truncateToMinuteMs(sorted[2].getTime()),
+    );
+  }
+  workedMin = Math.min(Math.max(0, workedMin), dailyCapMin);
+  noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));
+  return { workedMin: Math.round(workedMin), noturnoMin };
 }
 
 export function computeJornadaByEngine(

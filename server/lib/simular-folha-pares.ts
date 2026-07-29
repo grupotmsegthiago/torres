@@ -13,6 +13,8 @@ import {
 } from "./jornada-pares";
 import { getLockedPeriods, isDateLocked } from "./locked-periods";
 
+export type TriState = boolean | "unknown";
+
 export type SimDayDelta = {
   date: string;
   anteriorMin: number;
@@ -27,34 +29,46 @@ export type SimEmployeeMonth = {
   employeeId: number;
   employeeName: string;
   monthYear: string;
+  horasMensais: number;
+  horasMensaisSource: string;
   totalAnteriorMin: number;
   totalNovoMin: number;
   deltaMin: number;
   heAnteriorMin: number;
   heNovoMin: number;
   heDeltaMin: number;
-  heImpactBRL: number;
+  /** Impacto financeiro estimado; null se taxa indisponível. */
+  heImpactBRL: number | null;
+  heRateBRL: number | null;
+  heRateSource: string;
+  heImpactNote: string;
   orphanCount: number;
   duplicateCount: number;
   cappedDays: number;
   daysResponsible: SimDayDelta[];
-  hasHistoricoSnapshot: boolean;
-  hasLockedPeriod: boolean;
-  competenciaFechada: boolean;
+  hasHistoricoSnapshot: TriState;
+  hasLockedPeriod: TriState;
+  /**
+   * true/false só quando historico e lock foram lidos com sucesso.
+   * null = desconhecido (consulta falhou) — NUNCA tratar como aberta.
+   */
+  competenciaFechada: boolean | null;
+  simulacaoIncompleta: boolean;
+  incompletaReasons: string[];
 };
 
 export type SimReport = {
   generatedAt: string;
   monthYear: string;
-  horasMensaisDefault: number;
-  heRateBRL: number;
   employees: SimEmployeeMonth[];
   totals: {
     employeesCompared: number;
     employeesWithDelta: number;
     sumDeltaMin: number;
-    sumHeImpactBRL: number;
+    sumHeImpactBRL: number | null;
+    incompleteCount: number;
   };
+  simulacaoIncompleta: boolean;
   accessNote?: string;
 };
 
@@ -62,7 +76,80 @@ function ymdBRT(iso: string): string {
   return new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 }
 
-async function monthHasHistorico(employeeId: number, monthYear: string): Promise<boolean> {
+async function loadHorasMensais(employeeId: number, monthYear: string): Promise<{
+  horasMensais: number;
+  source: string;
+}> {
+  const [yyyy, mm] = monthYear.split("-").map(Number);
+  const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
+  const { data: salaryRows, error } = await supabaseAdmin
+    .from("employee_salaries")
+    .select("horas_mensais, effective_date")
+    .eq("employee_id", employeeId)
+    .lte("effective_date", monthEndStr)
+    .order("effective_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+  if (error) {
+    throw new Error(`employee_salaries: ${error.message}`);
+  }
+  const hm = salaryRows && salaryRows[0] && (salaryRows[0] as any).horas_mensais != null
+    ? Number((salaryRows[0] as any).horas_mensais)
+    : NaN;
+  if (Number.isFinite(hm) && hm > 0) {
+    return { horasMensais: hm, source: "employee_salaries.horas_mensais" };
+  }
+  return { horasMensais: 220, source: "fallback_220_igual_folha" };
+}
+
+async function loadHeRateBRL(employeeId: number): Promise<{
+  rate: number | null;
+  source: string;
+  note: string;
+}> {
+  try {
+    const { data: emp, error } = await supabaseAdmin
+      .from("employees")
+      .select("role")
+      .eq("id", employeeId)
+      .limit(1);
+    if (error) {
+      return {
+        rate: null,
+        source: "erro",
+        note: `estimativa indisponível (employees.role: ${error.message})`,
+      };
+    }
+    const role = (emp && emp[0] && (emp[0] as any).role) || "";
+    const { getCctConfigByCargo } = await import("./cct-config");
+    const cct = await getCctConfigByCargo(role);
+    const rate = Number(cct.horaExtraValor);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return {
+        rate: null,
+        source: "cct_sem_taxa",
+        note: "estimativa indisponível (CCT sem horaExtraValor)",
+      };
+    }
+    return {
+      rate,
+      source: `cct:${(cct as any).label || role || "cargo"}`,
+      note: `estimativa com taxa configurada R$ ${rate} (CCT do cargo; não é liquidação oficial)`,
+    };
+  } catch (e: any) {
+    return {
+      rate: null,
+      source: "erro",
+      note: `estimativa indisponível (${e?.message || e})`,
+    };
+  }
+}
+
+async function monthHasHistorico(
+  employeeId: number,
+  monthYear: string,
+): Promise<{ value: TriState; error?: string }> {
   try {
     const { data, error } = await supabaseAdmin
       .from("folha_historico_mensal")
@@ -70,24 +157,25 @@ async function monthHasHistorico(employeeId: number, monthYear: string): Promise
       .eq("employee_id", employeeId)
       .eq("month_year", monthYear)
       .limit(1);
-    if (error) return false;
-    return !!(data && data.length);
-  } catch {
-    return false;
+    if (error) return { value: "unknown", error: error.message };
+    return { value: !!(data && data.length) };
+  } catch (e: any) {
+    return { value: "unknown", error: e?.message || String(e) };
   }
 }
 
-async function monthTouchesLock(monthYear: string): Promise<boolean> {
+async function monthTouchesLock(
+  monthYear: string,
+): Promise<{ value: TriState; error?: string }> {
   try {
     const { start, end } = monthToFechamento(monthYear);
     const periods = await getLockedPeriods(null);
-    // Qualquer dia do ciclo dentro de um lock
     for (let t = start.getTime(); t < end.getTime(); t += 24 * 3600_000) {
-      if (isDateLocked(new Date(t).toISOString(), periods)) return true;
+      if (isDateLocked(new Date(t).toISOString(), periods)) return { value: true };
     }
-    return false;
-  } catch {
-    return false;
+    return { value: false };
+  } catch (e: any) {
+    return { value: "unknown", error: e?.message || String(e) };
   }
 }
 
@@ -95,12 +183,44 @@ export async function simulateEmployeeMonth(opts: {
   employeeId: number;
   employeeName?: string;
   monthYear: string;
+  /** Só override explícito de teste; senão consulta employee_salaries como a Folha. */
   horasMensais?: number;
   heRateBRL?: number;
 }): Promise<SimEmployeeMonth> {
-  const horasMensais = opts.horasMensais ?? 220;
-  const heRateBRL = opts.heRateBRL ?? 16;
+  const incompletaReasons: string[] = [];
   const { start, end } = monthToFechamento(opts.monthYear);
+
+  let horasMensais: number;
+  let horasMensaisSource: string;
+  if (opts.horasMensais != null && opts.horasMensais > 0) {
+    horasMensais = opts.horasMensais;
+    horasMensaisSource = "override_explicito";
+  } else {
+    try {
+      const hm = await loadHorasMensais(opts.employeeId, opts.monthYear);
+      horasMensais = hm.horasMensais;
+      horasMensaisSource = hm.source;
+    } catch (e: any) {
+      horasMensais = 220;
+      horasMensaisSource = "fallback_220_apos_erro";
+      incompletaReasons.push(`horas_mensais: ${e?.message || e}`);
+    }
+  }
+
+  let heRateBRL: number | null;
+  let heRateSource: string;
+  let heImpactNote: string;
+  if (opts.heRateBRL != null && opts.heRateBRL > 0) {
+    heRateBRL = opts.heRateBRL;
+    heRateSource = "override_explicito";
+    heImpactNote = `estimativa com taxa configurada R$ ${heRateBRL} (override)`;
+  } else {
+    const r = await loadHeRateBRL(opts.employeeId);
+    heRateBRL = r.rate;
+    heRateSource = r.source;
+    heImpactNote = r.note;
+    if (r.rate == null) incompletaReasons.push(r.note);
+  }
 
   const { data: punchesRaw, error } = await supabaseAdmin
     .from("control_id_punches")
@@ -160,27 +280,52 @@ export async function simulateEmployeeMonth(opts: {
   const heAnteriorMin = Math.max(0, totalAnteriorMin - horasMensais * 60);
   const heNovoMin = Math.max(0, totalNovoMin - horasMensais * 60);
   const heDeltaMin = heNovoMin - heAnteriorMin;
-  const hasHistoricoSnapshot = await monthHasHistorico(opts.employeeId, opts.monthYear);
-  const hasLockedPeriod = await monthTouchesLock(opts.monthYear);
+  const heImpactBRL =
+    heRateBRL != null
+      ? Math.round((heDeltaMin / 60) * heRateBRL * 100) / 100
+      : null;
+
+  const hist = await monthHasHistorico(opts.employeeId, opts.monthYear);
+  const lock = await monthTouchesLock(opts.monthYear);
+  if (hist.value === "unknown") {
+    incompletaReasons.push(`folha_historico_mensal: ${hist.error || "erro"}`);
+  }
+  if (lock.value === "unknown") {
+    incompletaReasons.push(`control_id_locked_periods: ${lock.error || "erro"}`);
+  }
+
+  let competenciaFechada: boolean | null;
+  if (hist.value === "unknown" || lock.value === "unknown") {
+    competenciaFechada = null;
+  } else {
+    competenciaFechada = hist.value === true || lock.value === true;
+  }
 
   return {
     employeeId: opts.employeeId,
     employeeName: opts.employeeName || String(opts.employeeId),
     monthYear: opts.monthYear,
+    horasMensais,
+    horasMensaisSource,
     totalAnteriorMin,
     totalNovoMin,
     deltaMin: totalNovoMin - totalAnteriorMin,
     heAnteriorMin,
     heNovoMin,
     heDeltaMin,
-    heImpactBRL: Math.round((heDeltaMin / 60) * heRateBRL * 100) / 100,
+    heImpactBRL,
+    heRateBRL,
+    heRateSource,
+    heImpactNote,
     orphanCount,
     duplicateCount,
     cappedDays,
     daysResponsible,
-    hasHistoricoSnapshot,
-    hasLockedPeriod,
-    competenciaFechada: hasHistoricoSnapshot || hasLockedPeriod,
+    hasHistoricoSnapshot: hist.value,
+    hasLockedPeriod: lock.value,
+    competenciaFechada,
+    simulacaoIncompleta: incompletaReasons.length > 0,
+    incompletaReasons,
   };
 }
 
@@ -213,7 +358,7 @@ export async function simulateAllEmployeesMonth(opts: {
         heRateBRL: opts.heRateBRL,
       });
       if (row.totalAnteriorMin === 0 && row.totalNovoMin === 0 && row.orphanCount === 0) {
-        continue; // sem batidas no mês
+        continue;
       }
       results.push(row);
     } catch (e: any) {
@@ -222,18 +367,25 @@ export async function simulateAllEmployeesMonth(opts: {
   }
 
   const withDelta = results.filter((r) => r.deltaMin !== 0);
+  const impacts = results.map((r) => r.heImpactBRL);
+  const anyNullImpact = impacts.some((v) => v == null);
+  const sumHeImpactBRL = anyNullImpact
+    ? null
+    : Math.round(impacts.reduce((s: number, v) => s + (v as number), 0) * 100) / 100;
+  const incompleteCount = results.filter((r) => r.simulacaoIncompleta).length;
+
   return {
     generatedAt: new Date().toISOString(),
     monthYear: opts.monthYear,
-    horasMensaisDefault: opts.horasMensais ?? 220,
-    heRateBRL: opts.heRateBRL ?? 16,
     employees: results,
     totals: {
       employeesCompared: results.length,
       employeesWithDelta: withDelta.length,
       sumDeltaMin: results.reduce((s, r) => s + r.deltaMin, 0),
-      sumHeImpactBRL: Math.round(results.reduce((s, r) => s + r.heImpactBRL, 0) * 100) / 100,
+      sumHeImpactBRL,
+      incompleteCount,
     },
+    simulacaoIncompleta: incompleteCount > 0,
   };
 }
 
@@ -244,16 +396,32 @@ export function formatSimReportText(report: SimReport): string {
   lines.push(`Funcionários com batidas: ${report.totals.employeesCompared}`);
   lines.push(`Com diferença: ${report.totals.employeesWithDelta}`);
   lines.push(`Σ Δ minutos: ${report.totals.sumDeltaMin} (${hhmmFromMinutes(Math.abs(report.totals.sumDeltaMin))})`);
-  lines.push(`Σ impacto HE estimado @ R$${report.heRateBRL}: R$ ${report.totals.sumHeImpactBRL}`);
+  lines.push(
+    `Σ impacto HE: ${
+      report.totals.sumHeImpactBRL == null
+        ? "incompleto (taxa ou consulta falhou)"
+        : `R$ ${report.totals.sumHeImpactBRL} (estimativa com taxa configurada)`
+    }`,
+  );
+  lines.push(`Simulação incompleta: ${report.simulacaoIncompleta} (funcs=${report.totals.incompleteCount})`);
   if (report.accessNote) lines.push(`Nota: ${report.accessNote}`);
   lines.push("");
-  for (const e of report.employees.filter((x) => x.deltaMin !== 0 || x.orphanCount > 0)) {
+  for (const e of report.employees.filter((x) => x.deltaMin !== 0 || x.orphanCount > 0 || x.simulacaoIncompleta)) {
+    const fechadaLabel =
+      e.competenciaFechada === null ? "DESCONHECIDA" : String(e.competenciaFechada);
     lines.push(
-      `## ${e.employeeName} (#${e.employeeId})  fechada=${e.competenciaFechada} historico=${e.hasHistoricoSnapshot} lock=${e.hasLockedPeriod}`,
+      `## ${e.employeeName} (#${e.employeeId})  fechada=${fechadaLabel} historico=${e.hasHistoricoSnapshot} lock=${e.hasLockedPeriod}`,
     );
     lines.push(
-      `  anterior=${hhmmFromMinutes(e.totalAnteriorMin)} novo=${hhmmFromMinutes(e.totalNovoMin)} Δ=${e.deltaMin} min | HE ${hhmmFromMinutes(e.heAnteriorMin)}→${hhmmFromMinutes(e.heNovoMin)} impacto R$ ${e.heImpactBRL}`,
+      `  horas_mensais=${e.horasMensais} (${e.horasMensaisSource}) | taxa_HE=${e.heRateBRL ?? "n/d"} (${e.heRateSource})`,
     );
+    lines.push(
+      `  anterior=${hhmmFromMinutes(e.totalAnteriorMin)} novo=${hhmmFromMinutes(e.totalNovoMin)} Δ=${e.deltaMin} min | HE ${hhmmFromMinutes(e.heAnteriorMin)}→${hhmmFromMinutes(e.heNovoMin)} impacto ${e.heImpactBRL == null ? "n/d" : `R$ ${e.heImpactBRL}`}`,
+    );
+    lines.push(`  ${e.heImpactNote}`);
+    if (e.simulacaoIncompleta) {
+      lines.push(`  INCOMPLETA: ${e.incompletaReasons.join("; ")}`);
+    }
     lines.push(`  órfãs=${e.orphanCount} duplicatas=${e.duplicateCount} dias_com_teto=${e.cappedDays}`);
     for (const d of e.daysResponsible) {
       lines.push(

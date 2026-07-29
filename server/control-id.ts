@@ -2145,9 +2145,9 @@ export async function buildFolhaPonto(
       })),
     };
     // Motor de jornada (pagamento Folha):
-    //   - default / produção: first_last (legado) — (última−primeira) − 1º almoço + teto 19:59
-    //   - desenvolvimento: FOLHA_ENGINE=pares ou opts.engine='pares' → pares sequenciais
-    // O legado permanece até simulação + autorização expressa de ativação.
+    //   - PRODUÇÃO: sempre first_last (resolveFolhaEngine ignora opts/env/query)
+    //   - DEV: FOLHA_ENGINE=pares ou opts.engine via parseFolhaEngineQuery
+    // Legado first_last = (última−primeira) − 1º almoço + teto 19:59, sem dedup/minuto.
     const engine = resolveFolhaEngine(opts.engine);
     const jornada = computeJornadaByEngine(
       sorted.map((p: any) => ({

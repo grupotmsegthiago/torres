@@ -33,8 +33,8 @@ import {
 async function runFixtureOffline() {
   let ant = 0;
   let nov = 0;
-  console.log("# Simulação OFFLINE — fixture Torres (reconstrução pericial)");
-  console.log("# Dump SQL real ainda necessário para validar 04/07 e demais dias.\n");
+  console.log("# Simulação OFFLINE — fixture Torres (RECONSTRUÇÃO pericial)");
+  console.log("# 313:06 NÃO é dump comprovado — falta FASE 4 com control_id_punches.\n");
   for (const d of REIS_TORRES_DAYS) {
     const a = computeJornadaFirstLast(fixtureTorresPunchesToInputs(d));
     const b = computeJornadaPares(fixtureTorresPunchesToInputs(d));
@@ -46,9 +46,9 @@ async function runFixtureOffline() {
       );
     }
   }
-  console.log(`\nTOTAL anterior (first_last): ${hhmmFromMinutes(ant)} (esperado ${hhmmFromMinutes(REIS_TORRES_FIRST_LAST_TOTAL_MIN)})`);
-  console.log(`TOTAL novo (pares):         ${hhmmFromMinutes(nov)} (esperado ${hhmmFromMinutes(REIS_TORRES_PARES_TOTAL_MIN)})`);
-  console.log(`HE novo: ${hhmmFromMinutes(nov - 220 * 60)}`);
+  console.log(`\nTOTAL anterior (first_last): ${hhmmFromMinutes(ant)} (reconstrução ${hhmmFromMinutes(REIS_TORRES_FIRST_LAST_TOTAL_MIN)})`);
+  console.log(`TOTAL novo (pares):         ${hhmmFromMinutes(nov)} (reconstrução ${hhmmFromMinutes(REIS_TORRES_PARES_TOTAL_MIN)})`);
+  console.log(`HE novo (reconstrução): ${hhmmFromMinutes(nov - 220 * 60)}`);
 }
 
 async function main() {
@@ -78,15 +78,15 @@ async function main() {
         console.log(formatSimReportText({
           generatedAt: new Date().toISOString(),
           monthYear,
-          horasMensaisDefault: 220,
-          heRateBRL: 16,
           employees: [row],
           totals: {
             employeesCompared: 1,
             employeesWithDelta: row.deltaMin !== 0 ? 1 : 0,
             sumDeltaMin: row.deltaMin,
             sumHeImpactBRL: row.heImpactBRL,
+            incompleteCount: row.simulacaoIncompleta ? 1 : 0,
           },
+          simulacaoIncompleta: row.simulacaoIncompleta,
         }));
       }
     } else {

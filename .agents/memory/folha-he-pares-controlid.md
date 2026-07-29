@@ -7,11 +7,12 @@
 | Motor | Onde | Reis (fixture) |
 |-------|------|----------------|
 | `first_last` (legado) | default produção | Torres **323:45** / HE **103:45** |
-| `pares` (canônico novo) | `FOLHA_ENGINE=pares` só fora de prod; `server/lib/jornada-pares.ts` | Oficial **322:22**; Torres dump/reconstr. **313:06** / HE **93:06** |
+| `pares` (canônico novo) | só fora de prod (`FOLHA_ENGINE` / `?engine`); prod ignora override | Oficial **322:22**; Torres **reconstrução** **313:06** / HE **93:06** |
 
-**313:06 é o valor EXATO** (não 313:05): `323:45 − 10:39 = 313:06` e `322:22 − 09:15 − 00:01 = 313:06`.
+**313:06** = aritmética da reconstrução (não dump SQL comprovado): `323:45 − 10:39` e `322:22 − 09:15 − 00:01`.
 
-Ativação em produção exige simulação FASE 4 + autorização expressa. Legado permanece para A×B.
+Produção: `resolveFolhaEngine` / `parseFolhaEngineQuery` **sempre** `first_last` (ignora opts, env e query).
+Ativação exige FASE 4 + autorização expressa.
 
 ## Regressões a NÃO repetir
 

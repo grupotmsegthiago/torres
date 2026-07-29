@@ -9,15 +9,21 @@
  * Quando o dump real chegar, substituir `REIS_TORRES_DAYS` pelos HH:MM
  * exportados (mesma competência) sem alterar o motor.
  *
- * Aritmética mensal (exata, sem aproximação):
+ * Aritmética da RECONSTRUÇÃO (não comprovada contra dump SQL real):
  *   first_last (prod)     = 323:45 = 19425 min
  *   pares (só corrige 20/07 −10:39) = 19425 − 639 = 18786 min = **313:06**
  *   Confirmação cruzada: 322:22 − 09:15 − 00:01 = 19342 − 555 − 1 = 18786 = **313:06**
  *   HE pares = 313:06 − 220:00 = **93:06**
- *   (A memória antiga citava 313:05 / 93:05 — era aproximação; o valor exato é 313:06.)
+ *
+ * ⚠️ 313:06 NÃO é resultado comprovado do dump real de control_id_punches.
+ *    Só será comprovado após FASE 4 com export SQL do employee_id 22.
+ *    Até lá: tratar como expectativa da reconstrução pericial.
  *
  * Não inventa 00:27 no lugar de 12:18. Não hardcodar employee_id no motor.
  */
+
+/** Flag explícita: fixture B ainda não é dump real. */
+export const REIS_TORRES_IS_RECONSTRUCTION = true as const;
 
 import {
   REIS_OFICIAL_DAYS,
