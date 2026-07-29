@@ -2,10 +2,15 @@
 -- PARTE B — Correção 1 / FASE 5
 -- Consultas SOMENTE LEITURA — executar no Supabase SQL Editor
 -- NÃO exibir biometria, documentos, tokens ou payload pessoal completo.
+--
+-- Executar UM bloco por vez (SQL 1 → SQL 8).
+-- SQL 5 só se SQL 4 indicar algum campo candidato > 0.
+-- Competência: punch_at >= 2026-06-26 00:00 BRT AND punch_at < 2026-07-26 00:00 BRT
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
 -- SQL 1 — Device #1 é rhid_cloud? (qual path de fetch)
+-- CUIDADO: não compartilhar base_url publicamente.
 -- ---------------------------------------------------------------------------
 SELECT id, nome, tipo, base_url, last_sync_at, last_sync_status, last_sync_message
 FROM control_id_devices
@@ -27,7 +32,7 @@ SELECT
 FROM control_id_punches
 WHERE employee_id IN (14,16,18,21,22,25,26,27,31,36,44,45,47,48,51,52,53)
   AND punch_at >= '2026-06-26 00:00:00-03'
-  AND punch_at <= '2026-07-25 23:59:59-03'
+  AND punch_at < '2026-07-26 00:00:00-03'
 GROUP BY 1, 2, 3
 ORDER BY n DESC;
 
@@ -43,14 +48,15 @@ SELECT
   COALESCE(source, '(null)') AS source,
   left(external_id, 24) AS external_id_prefix,
   (
-    SELECT array_agg(k ORDER BY k)
-    FROM jsonb_object_keys(COALESCE(raw_event, '{}'::jsonb)) AS k
+    SELECT array_agg(key_name ORDER BY key_name)
+    FROM jsonb_object_keys(COALESCE(raw_event, '{}'::jsonb))
+         AS keys(key_name)
   ) AS raw_keys
 FROM control_id_punches
 WHERE direction = 'unknown'
   AND external_id LIKE 'rhid_%'
   AND punch_at >= '2026-06-26 00:00:00-03'
-  AND punch_at <= '2026-07-25 23:59:59-03'
+  AND punch_at < '2026-07-26 00:00:00-03'
 ORDER BY punch_at
 LIMIT 30;
 
@@ -63,7 +69,7 @@ WITH unk AS (
   WHERE direction = 'unknown'
     AND external_id LIKE 'rhid_%'
     AND punch_at >= '2026-06-26 00:00:00-03'
-    AND punch_at <= '2026-07-25 23:59:59-03'
+    AND punch_at < '2026-07-26 00:00:00-03'
 )
 SELECT
   COUNT(*) AS total_unknown_rhid,
@@ -93,7 +99,7 @@ CROSS JOIN LATERAL jsonb_each_text(COALESCE(raw_event, '{}'::jsonb)) AS e(key, v
 WHERE direction = 'unknown'
   AND external_id LIKE 'rhid_%'
   AND punch_at >= '2026-06-26 00:00:00-03'
-  AND punch_at <= '2026-07-25 23:59:59-03'
+  AND punch_at < '2026-07-26 00:00:00-03'
   AND key IN (
     'direction', 'flow', 'tipo', 'Tipo', 'event', 'inOut', 'InOut', 'status'
   )
@@ -165,6 +171,6 @@ SELECT
 FROM control_id_punches
 WHERE employee_id IN (14,16,18,21,22,25,26,27,31,36,44,45,47,48,51,52,53)
   AND punch_at >= '2026-06-26 00:00:00-03'
-  AND punch_at <= '2026-07-25 23:59:59-03'
+  AND punch_at < '2026-07-26 00:00:00-03'
 GROUP BY employee_id
 ORDER BY employee_id;
