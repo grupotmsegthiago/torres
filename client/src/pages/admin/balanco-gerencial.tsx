@@ -22,6 +22,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
 import { GestorFinanceiroPanel } from "@/components/admin/gestor-financeiro-panel";
+import {
+  type BalancoPeriod as Period,
+  PERIOD_LABELS,
+  PERIOD_PRESETS,
+  parseYmdLocal,
+  fmtYmdLocal,
+  getDateRange,
+  getDaysInRange,
+  navigatePeriod,
+  resolveCustomPeriodArgs,
+  costDaysForPeriod,
+} from "@/lib/balanco-period";
 
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
@@ -60,110 +72,6 @@ function getMetaColor(pct: number) {
   if (pct >= 100) return { bar: "bg-green-500", text: "text-green-700", bg: "bg-green-100", icon: true };
   if (pct >= 50) return { bar: "bg-amber-500", text: "text-amber-600", bg: "bg-amber-100", icon: false };
   return { bar: "bg-red-400", text: "text-red-600", bg: "bg-red-100", icon: false };
-}
-
-type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR" | "CUSTOM";
-
-const PERIOD_LABELS: Record<Period, string> = {
-  DAY: "Diário",
-  WEEK: "Semanal",
-  MONTH: "Mensal",
-  QUARTER: "Trimestral",
-  SEMESTER: "Semestral",
-  YEAR: "Anual",
-  CUSTOM: "Personalizado",
-};
-
-/** Presets clicáveis (Personalizado abre o seletor de datas). */
-const PERIOD_PRESETS = (Object.keys(PERIOD_LABELS) as Period[]).filter((p) => p !== "CUSTOM");
-
-function parseYmdLocal(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
-}
-
-function fmtYmdLocal(d: Date): string {
-  const pad2 = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function getDateRange(period: Period, refDate: Date, customFrom?: string, customTo?: string): { start: Date; end: Date; label: string } {
-  if (period === "CUSTOM" && customFrom && customTo) {
-    const a = parseYmdLocal(customFrom);
-    const b = parseYmdLocal(customTo);
-    const start = a <= b ? a : b;
-    const end = a <= b ? b : a;
-    end.setHours(23, 59, 59, 999);
-    return {
-      start,
-      end,
-      label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}`,
-    };
-  }
-
-  const y = refDate.getFullYear();
-  const m = refDate.getMonth();
-  const d = refDate.getDate();
-
-  switch (period) {
-    case "DAY":
-      return { start: new Date(y, m, d), end: new Date(y, m, d, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) };
-    case "WEEK": {
-      // Semana padrão BR: segunda (00:00) → domingo (23:59).
-      // getDay(): dom=0, seg=1, ..., sáb=6. Offset pra segunda = (dow + 6) % 7.
-      const dow = refDate.getDay();
-      const offsetToMonday = (dow + 6) % 7;
-      const start = new Date(y, m, d - offsetToMonday);
-      const end = new Date(y, m, d - offsetToMonday + 6, 23, 59, 59);
-      return { start, end, label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}` };
-    }
-    case "MONTH":
-      return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
-    case "QUARTER": {
-      const q = Math.floor(m / 3);
-      return { start: new Date(y, q * 3, 1), end: new Date(y, q * 3 + 3, 0, 23, 59, 59), label: `${q + 1}º Trimestre ${y}` };
-    }
-    case "SEMESTER": {
-      const s = m < 6 ? 0 : 1;
-      return { start: new Date(y, s * 6, 1), end: new Date(y, s * 6 + 6, 0, 23, 59, 59), label: `${s + 1}º Semestre ${y}` };
-    }
-    case "YEAR":
-      return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59), label: String(y) };
-    case "CUSTOM":
-    default: {
-      // Fallback: mês corrente se personalizado sem datas
-      return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
-    }
-  }
-}
-
-function getDaysInRange(range: { start: Date; end: Date }): number {
-  const s = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
-  const e = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
-  return Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-}
-
-function navigatePeriod(period: Period, refDate: Date, direction: number): Date {
-  const d = new Date(refDate);
-  switch (period) {
-    case "DAY": d.setDate(d.getDate() + direction); break;
-    case "WEEK": {
-      // Navega de segunda a segunda (semana BR).
-      const dow = d.getDay();
-      const offsetToMonday = (dow + 6) % 7;
-      const monday = new Date(d);
-      monday.setDate(d.getDate() - offsetToMonday);
-      monday.setDate(monday.getDate() + 7 * direction);
-      d.setTime(monday.getTime());
-      break;
-    }
-    case "MONTH": d.setMonth(d.getMonth() + direction); break;
-    case "QUARTER": d.setMonth(d.getMonth() + 3 * direction); break;
-    case "SEMESTER": d.setMonth(d.getMonth() + 6 * direction); break;
-    case "YEAR": d.setFullYear(d.getFullYear() + direction); break;
-    case "CUSTOM": break; // personalizado usa datas fixas
-  }
-  return d;
 }
 
 interface ExpenseTransaction {
@@ -254,21 +162,14 @@ export default function BalancoGerencialPage() {
     setShowCustomPeriod(true);
   };
 
-  const applyCustomPeriod = (fromYmd?: string, toYmd?: string) => {
-    const rawFrom = fromYmd ?? draftFrom;
-    const rawTo = toYmd ?? draftTo;
-    if (!rawFrom || !rawTo) {
-      toast({ title: "Informe data inicial e final", variant: "destructive" });
+  const applyCustomPeriod = (fromYmd?: unknown, toYmd?: unknown) => {
+    // onClick={applyCustomPeriod} passaria MouseEvent como 1º arg — resolveCustomPeriodArgs ignora.
+    const resolved = resolveCustomPeriodArgs(fromYmd, toYmd, draftFrom, draftTo);
+    if ("error" in resolved) {
+      toast({ title: resolved.error, variant: "destructive" });
       return;
     }
-    const a = parseYmdLocal(rawFrom);
-    const b = parseYmdLocal(rawTo);
-    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
-      toast({ title: "Datas inválidas", variant: "destructive" });
-      return;
-    }
-    const from = a <= b ? rawFrom : rawTo;
-    const to = a <= b ? rawTo : rawFrom;
+    const { from, to } = resolved;
     setCustomFrom(from);
     setCustomTo(to);
     setDraftFrom(from);
@@ -329,7 +230,7 @@ export default function BalancoGerencialPage() {
   });
 
   // Custos de RH = Custo Empresa CCT do cadastro do funcionário (calcularFolha)
-  const { data: rhSummary, isFetching: rhFetching } = useQuery<{
+  const { data: rhSummaryRaw, isFetching: rhFetching, isPlaceholderData: rhPlaceholder } = useQuery<{
     monthly: number;
     monthlyOperacional?: number;
     daily: number;
@@ -370,10 +271,11 @@ export default function BalancoGerencialPage() {
     },
     staleTime: SWR_3H,
     refetchInterval: SWR_3H,
-    // Troca de período: mantém o dado anterior na tela enquanto o novo chega,
-    // em vez de zerar os cards.
+    // Mantém dado anterior só para não “piscar” vazio; abaixo ignoramos placeholder
+    // nos totais para o filtro de período não mostrar números do range antigo.
     placeholderData: (prev: any) => prev,
   });
+  const rhSummary = rhPlaceholder ? undefined : rhSummaryRaw;
 
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
   const [metaCfg] = useMetaConfig();
@@ -403,7 +305,7 @@ export default function BalancoGerencialPage() {
   // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
-  const { data: gridData = [], isFetching: gridFetching } = useQuery<any[]>({
+  const { data: gridDataRaw, isFetching: gridFetching, isPlaceholderData: gridPlaceholder } = useQuery<any[]>({
     queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
     queryFn: async () => {
       const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
@@ -412,21 +314,17 @@ export default function BalancoGerencialPage() {
     },
     staleTime: SWR_3H,
     refetchInterval: SWR_3H,
-    // Troca de período: mantém o dado anterior na tela enquanto o novo chega.
     placeholderData: (prev: any) => prev,
   });
+  // Enquanto a query do NOVO período ainda não chegou, não usa OS/RH do período anterior.
+  const gridData = gridPlaceholder ? [] : (gridDataRaw || []);
+  const periodDataPending = gridPlaceholder || rhPlaceholder || gridFetching || rhFetching;
 
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
   // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
   // independente do calendário (meses de 28/29/31 dias usam 30 mesmo assim).
   // Evita inflar o custo mensal em ~3,3% em meses de 31 dias.
-  const costDays = useMemo(() => {
-    if (period === "CUSTOM") return daysInPeriod;
-    const FIXED: Record<Exclude<Period, "CUSTOM">, number> = {
-      DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365,
-    };
-    return Math.min(daysInPeriod, FIXED[period]);
-  }, [daysInPeriod, period]);
+  const costDays = useMemo(() => costDaysForPeriod(period, daysInPeriod), [daysInPeriod, period]);
 
   const filtered = useMemo(() => {
     if (!data) return {
@@ -943,7 +841,7 @@ export default function BalancoGerencialPage() {
                 <span className="text-xs sm:text-sm font-black text-slate-100 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
                   {range.label}
                 </span>
-                {(gridFetching || rhFetching) && (
+                {periodDataPending && (
                   <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 uppercase whitespace-nowrap" data-testid="status-period-loading">
                     <RefreshCw size={12} className="animate-spin" />
                     Calculando…
@@ -1044,7 +942,7 @@ export default function BalancoGerencialPage() {
                 </Button>
                 <Button
                   className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black uppercase text-xs"
-                  onClick={applyCustomPeriod}
+                  onClick={() => applyCustomPeriod()}
                   data-testid="button-apply-custom-period"
                 >
                   Aplicar período
@@ -1955,8 +1853,8 @@ export default function BalancoGerencialPage() {
             auditUser={user?.email || user?.name || null}
             dataReady={{
               dashboard: !!data,
-              grid: Array.isArray(gridData),
-              rh: !!rhSummary,
+              grid: !gridPlaceholder && Array.isArray(gridDataRaw),
+              rh: !rhPlaceholder && !!rhSummaryRaw,
               fixedCosts: !!fixedCostsSummary,
             }}
             updatedAt={dataGeradoEm}
