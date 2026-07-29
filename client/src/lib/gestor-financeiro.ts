@@ -175,20 +175,29 @@ export function gatesReady(gates: ModuleGate[]): boolean {
 
 export function buildKnowledgeGraph(input: GestorInput): KnowledgeNode[] {
   const ready = input.dataReady.grid && input.dataReady.dashboard;
+  const custoReady = ready && input.dataReady.rh && input.dataReady.fixedCosts;
+  const termo = computeTermometroFinanceiro({
+    faturamento: input.totals.fat,
+    custoTotal: input.totals.custoTotal,
+    lucro: input.totals.lucro,
+  });
+  const pctLabel = termo.pctSobreCusto == null
+    ? "n/d"
+    : `${termo.pctSobreCusto >= 0 ? "+" : ""}${termo.pctSobreCusto.toFixed(1)}%`;
   return [
-    { id: "receita", label: "Receita", ready, valueLabel: money(input.totals.fat) },
-    { id: "contrato", label: "Contrato", ready, valueLabel: `${new Set(input.missions.map((m) => m.client_name).filter(Boolean)).size} clientes` },
-    { id: "cliente", label: "Cliente", ready },
+    { id: "filtro", label: "Filtro período", ready: true, valueLabel: input.periodLabel },
+    { id: "receita", label: "Fat. oficial", ready, valueLabel: money(input.totals.fat) },
     { id: "os", label: "OS", ready, valueLabel: String(input.totals.total) },
     { id: "boletim", label: "Boletim", ready, valueLabel: `${input.totals.countCongelado} cong.` },
     { id: "fatura", label: "Fatura", ready, valueLabel: money(input.totals.fatCongelado) },
-    { id: "nf", label: "NF", ready },
-    { id: "recebimento", label: "Recebimento", ready, valueLabel: money(input.totals.fatAberto) + " aberto" },
-    { id: "fluxo", label: "Fluxo de Caixa", ready: ready && input.dataReady.rh },
-    { id: "dre", label: "DRE", ready: ready && input.dataReady.rh && input.dataReady.fixedCosts, valueLabel: money(input.totals.lucro) },
-    { id: "lucro", label: "Lucro", ready: ready && input.dataReady.rh, valueLabel: money(input.totals.lucro) },
-    { id: "margem", label: "Margem", ready: ready && input.dataReady.rh, valueLabel: `${input.totals.margem.toFixed(1)}%` },
-    { id: "dashboard", label: "Dashboard", ready: gatesReady(buildModuleGates(input)) },
+    { id: "custo_op", label: "Custo operacional", ready: input.dataReady.dashboard, valueLabel: money(input.totals.desp_combustivel + input.totals.desp_pedagio + input.totals.desp_manutencao) },
+    { id: "custo_rh", label: "Custo RH CCT", ready: input.dataReady.rh, valueLabel: money(input.totals.provisaoRH) },
+    { id: "custo_fixo", label: "Custos fixos", ready: input.dataReady.fixedCosts, valueLabel: money(input.totals.custosFixosRateados) },
+    { id: "custo_total", label: "Custo total", ready: custoReady, valueLabel: money(input.totals.custoTotal) },
+    { id: "lucro", label: "Lucro/prejuízo", ready: custoReady, valueLabel: money(input.totals.lucro) },
+    { id: "pct_custo", label: "% sobre custo", ready: custoReady && termo.faixa !== "insuficiente", valueLabel: pctLabel },
+    { id: "termometro", label: "Termômetro", ready: custoReady, valueLabel: termo.statusLabel },
+    { id: "dashboard", label: "Balanço", ready: gatesReady(buildModuleGates(input)) },
   ];
 }
 
@@ -668,5 +677,185 @@ export function lucroTendencia(daily: Array<{ lucro: number }>): { delta: number
   return {
     delta,
     label: delta >= 0 ? `Tendência no período: +${money(delta)}/dia vs 1ª metade` : `Tendência no período: ${money(delta)}/dia vs 1ª metade`,
+  };
+}
+
+// ── Termômetro Faturamento vs Custo vs Lucro ──────────────────────────────
+// Fonte única: totals oficiais do Balanço (fat / custoTotal / lucro).
+// Percentual = ((Fat − Custo) ÷ Custo) × 100  — NÃO confundir com margem ÷ Fat.
+
+export type TermometroFaixa = "prejuizo" | "margem_baixa" | "atencao" | "saudavel" | "insuficiente";
+export type TermometroCor = "vermelho" | "laranja" | "amarelo" | "verde" | "cinza";
+export type TermometroSelo = "certificado" | "conferencia" | "divergencia" | "insuficiente";
+
+export type TermometroResultado = {
+  faturamento: number;
+  custo: number;
+  lucro: number;
+  /** null quando custo <= 0 (não divide por zero) */
+  pctSobreCusto: number | null;
+  faixa: TermometroFaixa;
+  cor: TermometroCor;
+  statusLabel: string;
+  frase: string;
+  /** 0–100: altura do preenchimento do termômetro (base → topo) */
+  fillPct: number;
+  dadoFaltante: string | null;
+};
+
+/**
+ * Classifica o percentual sobre o custo nas faixas oficiais.
+ * Bordas: <0 vermelho · 0–19,99 laranja · 20–34,99 amarelo · ≥35 verde.
+ */
+export function classificarFaixaTermometro(pctSobreCusto: number | null): {
+  faixa: TermometroFaixa;
+  cor: TermometroCor;
+  statusLabel: string;
+} {
+  if (pctSobreCusto == null || !Number.isFinite(pctSobreCusto)) {
+    return { faixa: "insuficiente", cor: "cinza", statusLabel: "DADOS INSUFICIENTES" };
+  }
+  if (pctSobreCusto < 0) {
+    return { faixa: "prejuizo", cor: "vermelho", statusLabel: "PREJUÍZO" };
+  }
+  if (pctSobreCusto < 20) {
+    return { faixa: "margem_baixa", cor: "laranja", statusLabel: "MARGEM BAIXA" };
+  }
+  if (pctSobreCusto < 35) {
+    return { faixa: "atencao", cor: "amarelo", statusLabel: "ATENÇÃO" };
+  }
+  return { faixa: "saudavel", cor: "verde", statusLabel: "SAUDÁVEL" };
+}
+
+/** Mapeia % sobre o custo → preenchimento visual (vermelho embaixo, verde em cima). */
+export function pctSobreCustoToFill(pct: number | null): number {
+  if (pct == null || !Number.isFinite(pct)) return 0;
+  if (pct < 0) {
+    // Zona vermelha (0–25%): −100% → 0, 0% → 25
+    return Math.max(0, Math.min(25, 25 + (pct / 100) * 25));
+  }
+  if (pct < 20) {
+    // Laranja (25–50%)
+    return 25 + (pct / 20) * 25;
+  }
+  if (pct < 35) {
+    // Amarelo (50–75%)
+    return 50 + ((pct - 20) / 15) * 25;
+  }
+  // Verde (75–100%): 35% → 75, 100%+ → 100
+  return Math.min(100, 75 + ((pct - 35) / 65) * 25);
+}
+
+export function fraseTermometro(r: {
+  faixa: TermometroFaixa;
+  faturamento: number;
+  custo: number;
+  lucro: number;
+  pctSobreCusto: number | null;
+  dadoFaltante?: string | null;
+}): string {
+  if (r.faixa === "insuficiente") {
+    return `DADOS INSUFICIENTES: ${r.dadoFaltante || "custo total ausente ou igual a zero"}. O termômetro não classifica o resultado.`;
+  }
+  const pct = Math.abs(Number(r.pctSobreCusto || 0)).toFixed(2).replace(".", ",");
+  const gap = money(Math.abs(r.faturamento - r.custo));
+  if (r.faixa === "prejuizo") {
+    return `ALERTA CRÍTICO: o faturamento está ${gap} abaixo do custo do período. A operação está gerando prejuízo.`;
+  }
+  if (r.faixa === "margem_baixa") {
+    return `MARGEM BAIXA: o faturamento cobre os custos, mas está apenas ${pct}% acima do custo. Revise despesas e rentabilidade.`;
+  }
+  if (r.faixa === "atencao") {
+    return `ATENÇÃO: o faturamento está ${pct}% acima do custo. Existe lucro, mas o resultado ainda está abaixo do nível saudável de 35%.`;
+  }
+  return `RESULTADO SAUDÁVEL: o faturamento está ${pct}% acima do custo, com lucro de ${money(r.lucro)} no período.`;
+}
+
+/**
+ * Termômetro oficial — consome totals do Balanço (sem recálculo paralelo).
+ * Lucro = Fat − Custo (mesmo motor da DRE).
+ * % = ((Fat − Custo) ÷ Custo) × 100.
+ */
+export function computeTermometroFinanceiro(input: {
+  faturamento: number;
+  custoTotal: number;
+  lucro?: number;
+}): TermometroResultado {
+  const faturamento = Number(input.faturamento) || 0;
+  const custo = Number(input.custoTotal) || 0;
+  const lucro = input.lucro != null ? Number(input.lucro) : faturamento - custo;
+
+  if (!(custo > 0)) {
+    const dadoFaltante = custo === 0
+      ? "custo total do período = R$ 0,00 (sem RH/fixos/operacional)"
+      : "custo total ausente";
+    return {
+      faturamento,
+      custo,
+      lucro,
+      pctSobreCusto: null,
+      faixa: "insuficiente",
+      cor: "cinza",
+      statusLabel: "DADOS INSUFICIENTES",
+      frase: fraseTermometro({ faixa: "insuficiente", faturamento, custo, lucro, pctSobreCusto: null, dadoFaltante }),
+      fillPct: 0,
+      dadoFaltante,
+    };
+  }
+
+  const pctSobreCusto = ((faturamento - custo) / custo) * 100;
+  const cls = classificarFaixaTermometro(pctSobreCusto);
+  return {
+    faturamento,
+    custo,
+    lucro,
+    pctSobreCusto,
+    ...cls,
+    frase: fraseTermometro({ ...cls, faturamento, custo, lucro, pctSobreCusto }),
+    fillPct: pctSobreCustoToFill(pctSobreCusto),
+    dadoFaltante: null,
+  };
+}
+
+export function buildMemoriaTermometro(input: GestorInput, termo: TermometroResultado): MemoriaCalculo {
+  const pctLabel = termo.pctSobreCusto == null
+    ? "n/d"
+    : `${termo.pctSobreCusto >= 0 ? "+" : ""}${termo.pctSobreCusto.toFixed(2)}%`;
+  return {
+    indicator: "Faturamento vs Custo vs Lucro",
+    formula:
+      "Lucro = Fat oficial − Custo Total (DRE). % sobre o custo = ((Fat − Custo) ÷ Custo) × 100. " +
+      "Faixas: <0 PREJUÍZO · 0–19,99% MARGEM BAIXA · 20–34,99% ATENÇÃO · ≥35% SAUDÁVEL.",
+    modules: ["Balanço Gerencial", "DRE", "RH (CCT cadastro)", "Custos Fixos", "Operações", "Knowledge Graph"],
+    tables: [
+      "operational-grid (fat)",
+      "financial_transactions (fueling/mission_cost/maintenance)",
+      "rh-summary (Custo Empresa CCT)",
+      "fixed_costs",
+    ],
+    recordsConsidered: input.missions.length,
+    recordsExcluded: [
+      { reason: "OS recusada (fora do faturamento)", count: input.missions.filter(isRecusado).length },
+      { reason: "Pagamento teórico da missão (mão de obra = RH)", count: 1 },
+    ],
+    filters: [`Período: ${input.periodLabel}`, "Fuso: America/Sao_Paulo"],
+    updatedAt: input.updatedAt,
+    lastUser: input.auditUser || null,
+    notes: [
+      `Faturamento oficial: ${money(termo.faturamento)}`,
+      `  · Finalizado: ${money(input.totals.fatCongelado)}`,
+      `  · Em aberto: ${money(input.totals.fatAberto)}`,
+      `  · Missões: ${input.totals.total}`,
+      `(−) Custo total: ${money(termo.custo)}`,
+      `  · RH Custo Empresa CCT: ${money(input.totals.provisaoRH)}`,
+      `  · Fixos rateados: ${money(input.totals.custosFixosRateados)}`,
+      `  · Combustível: ${money(input.totals.desp_combustivel)}`,
+      `  · Pedágio: ${money(input.totals.desp_pedagio)}`,
+      `  · Manutenção: ${money(input.totals.desp_manutencao)}`,
+      `(=) Lucro/prejuízo: ${money(termo.lucro)}`,
+      `Percentual acima do custo: ${pctLabel}`,
+      `Faixa: ${termo.statusLabel} (${termo.cor.toUpperCase()})`,
+      termo.frase,
+    ],
   };
 }

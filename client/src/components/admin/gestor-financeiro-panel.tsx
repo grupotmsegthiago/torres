@@ -49,15 +49,19 @@ import {
   buildMemoriaKm,
   buildMemoriaLucro,
   buildMemoriaMargem,
+  buildMemoriaTermometro,
   buildModuleGates,
   computeIntegrityScore,
+  computeTermometroFinanceiro,
   gatesReady,
   lucroTendencia,
   runGestorValidation,
   type MemoriaCalculo,
+  type TermometroSelo,
   type ValidationFinding,
 } from "@/lib/gestor-financeiro";
 import { computeProjection } from "@/lib/balanco-projection";
+import { SeloTermometro, TermometroFinanceiroSvg } from "@/components/admin/termometro-financeiro";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
@@ -347,6 +351,29 @@ export function GestorFinanceiroPanel(props: Props) {
     return s.size;
   }, [missions]);
 
+  const termometro = useMemo(
+    () =>
+      computeTermometroFinanceiro({
+        faturamento: totals.fat,
+        custoTotal: totals.custoTotal,
+        lucro: totals.lucro,
+      }),
+    [totals.fat, totals.custoTotal, totals.lucro],
+  );
+
+  const seloTermometro: TermometroSelo = useMemo(() => {
+    if (termometro.faixa === "insuficiente") return "insuficiente";
+    const hasCritico = findings.some((f) => f.severity === "critico" && f.count > 0);
+    if (hasCritico) return "divergencia";
+    if (certified) return "certificado";
+    return "conferencia";
+  }, [termometro.faixa, findings, certified]);
+
+  const pctSobreCustoLabel =
+    termometro.pctSobreCusto == null
+      ? "n/d"
+      : `${termometro.pctSobreCusto >= 0 ? "+" : ""}${termometro.pctSobreCusto.toFixed(2).replace(".", ",")}%`;
+
   const custoKm = (eficiencia.totalKm || totals.km || 0) > 0
     ? (totals.desp_combustivel || 0) / (eficiencia.totalKm || totals.km)
     : 0;
@@ -495,6 +522,148 @@ export function GestorFinanceiroPanel(props: Props) {
           ))}
         </div>
       </div>
+
+      {/* Termômetro — Faturamento vs Custo vs Lucro (fonte: totals oficiais do Balanço) */}
+      {showKpis && (
+        <div
+          className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-4 space-y-3"
+          data-testid="kpi-termometro-fat-custo-lucro"
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">
+              Faturamento vs Custo vs Lucro
+            </span>
+            <SeloTermometro selo={seloTermometro} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[160px_1fr] gap-4 items-start">
+            <div className="flex justify-center lg:justify-start">
+              <TermometroFinanceiroSvg termo={termometro} />
+            </div>
+
+            <div className="space-y-3 min-w-0">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-2.5">
+                  <p className="text-[9px] font-black uppercase text-slate-500">Faturamento</p>
+                  <p className="text-base font-black font-mono text-emerald-300 truncate" data-testid="termo-faturamento">
+                    {fmt(termometro.faturamento)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-2.5">
+                  <p className="text-[9px] font-black uppercase text-slate-500">Custo total</p>
+                  <p className="text-base font-black font-mono text-rose-300 truncate" data-testid="termo-custo">
+                    {fmt(termometro.custo)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-2.5">
+                  <p className="text-[9px] font-black uppercase text-slate-500">
+                    {termometro.lucro < 0 ? "Prejuízo" : "Lucro"}
+                  </p>
+                  <p
+                    className={`text-base font-black font-mono truncate ${termometro.lucro >= 0 ? "text-sky-300" : "text-rose-400"}`}
+                    data-testid="termo-lucro"
+                  >
+                    {termometro.lucro < 0 ? `−${fmt(Math.abs(termometro.lucro))}` : fmt(termometro.lucro)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-2.5">
+                  <p className="text-[9px] font-black uppercase text-slate-500">Resultado / custo</p>
+                  <p
+                    className="text-base font-black font-mono truncate"
+                    style={{
+                      color:
+                        termometro.cor === "verde"
+                          ? "#34d399"
+                          : termometro.cor === "amarelo"
+                            ? "#fbbf24"
+                            : termometro.cor === "laranja"
+                              ? "#fb923c"
+                              : termometro.cor === "vermelho"
+                                ? "#f87171"
+                                : "#94a3b8",
+                    }}
+                    data-testid="termo-pct-custo"
+                  >
+                    {pctSobreCustoLabel}
+                  </p>
+                  <p className="text-[9px] font-black uppercase mt-0.5" style={{
+                    color:
+                      termometro.cor === "verde"
+                        ? "#34d399"
+                        : termometro.cor === "amarelo"
+                          ? "#fbbf24"
+                          : termometro.cor === "laranja"
+                            ? "#fb923c"
+                            : termometro.cor === "vermelho"
+                              ? "#f87171"
+                              : "#94a3b8",
+                  }}>
+                    {termometro.statusLabel}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2 py-1.5">
+                  <p className="text-emerald-400/80 font-bold uppercase">Finalizado</p>
+                  <p className="font-mono font-black text-emerald-300">{fmt(totals.fatCongelado)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenOsAbertas}
+                  className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2 py-1.5 text-left hover:bg-amber-500/20"
+                >
+                  <p className="text-amber-300/80 font-bold uppercase">Em aberto</p>
+                  <p className="font-mono font-black text-amber-300">{fmt(totals.fatAberto)}</p>
+                </button>
+                <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-2 py-1.5">
+                  <p className="text-slate-500 font-bold uppercase">Missões</p>
+                  <p className="font-mono font-black text-slate-200">{totals.total}</p>
+                </div>
+                <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-2 py-1.5">
+                  <p className="text-slate-500 font-bold uppercase">Clientes</p>
+                  <p className="font-mono font-black text-slate-200">{clientesAtivos}</p>
+                </div>
+              </div>
+
+              {metaPeriodo > 0 && (
+                <p className="text-[10px] text-slate-400">
+                  Meta de faturamento <b className="text-slate-200 font-mono">{fmt(metaPeriodo)}</b>
+                  {" · "}
+                  Atingimento <b className="text-slate-200">{fmtPct(metaPct)}</b>
+                  <span className="text-slate-600"> (indicador distinto do % sobre o custo)</span>
+                </p>
+              )}
+
+              <div
+                className={`rounded-xl border px-3 py-2 text-[11px] font-bold leading-snug ${
+                  termometro.cor === "vermelho"
+                    ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                    : termometro.cor === "laranja"
+                      ? "border-orange-500/40 bg-orange-500/10 text-orange-200"
+                      : termometro.cor === "amarelo"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+                        : termometro.cor === "verde"
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+                          : "border-slate-600 bg-slate-800/60 text-slate-300"
+                }`}
+                data-testid="termo-frase-gestor"
+              >
+                {termometro.frase}
+              </div>
+
+              <Button
+                size="sm"
+                className="w-full h-9 text-[11px] font-black uppercase bg-white text-slate-950 hover:bg-slate-100 rounded-full"
+                onClick={() => setMemoria(buildMemoriaTermometro(gestorInput, termometro))}
+                data-testid="button-memoria-termometro"
+              >
+                Ver memória de cálculo
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Linha 1 — 6 KPIs */}
       {showKpis ? (
