@@ -16,6 +16,7 @@ import {
 import {
   Activity,
   AlertTriangle,
+  Calendar,
   CheckCircle2,
   FileText,
   Fuel,
@@ -90,6 +91,7 @@ type Props = {
   dailyChart: Array<{ name: string; fat: number; custo: number; lucro: number }>;
   onOpenOsAbertas: () => void;
   onOpenEficiencia: () => void;
+  onOpenPeriodFilter?: () => void;
   auditUser?: string | null;
 };
 
@@ -206,7 +208,7 @@ export function GestorFinanceiroPanel(props: Props) {
   const {
     periodLabel, daysInPeriod, totals, missions, vehicles, agents, rhSummary, allEmployees,
     eficiencia, metaPeriodo, impostoPct, custoVarPct, dataReady, updatedAt, onSync, syncing, dailyChart,
-    onOpenOsAbertas, onOpenEficiencia, rangeStart, rangeEnd, auditUser,
+    onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter, rangeStart, rangeEnd, auditUser,
   } = props;
 
   const [memoria, setMemoria] = useState<MemoriaCalculo | null>(null);
@@ -414,8 +416,14 @@ export function GestorFinanceiroPanel(props: Props) {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" className="border-slate-600 bg-slate-900/60 text-slate-100 text-xs font-black uppercase" data-testid="button-periodo-info">
-            Período
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-slate-600 bg-slate-900/60 text-slate-100 text-xs font-black uppercase"
+            data-testid="button-periodo-info"
+            onClick={() => onOpenPeriodFilter?.()}
+          >
+            <Calendar size={14} className="mr-1.5" /> Período
           </Button>
           <Button size="sm" onClick={onSync} disabled={syncing} className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black uppercase" data-testid="button-sincronizar-dados">
             <RefreshCw size={14} className={`mr-1.5 ${syncing ? "animate-spin" : ""}`} />

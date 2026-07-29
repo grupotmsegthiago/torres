@@ -62,7 +62,7 @@ function getMetaColor(pct: number) {
   return { bar: "bg-red-400", text: "text-red-600", bg: "bg-red-100", icon: false };
 }
 
-type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR";
+type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR" | "CUSTOM";
 
 const PERIOD_LABELS: Record<Period, string> = {
   DAY: "Diário",
@@ -71,9 +71,36 @@ const PERIOD_LABELS: Record<Period, string> = {
   QUARTER: "Trimestral",
   SEMESTER: "Semestral",
   YEAR: "Anual",
+  CUSTOM: "Personalizado",
 };
 
-function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; label: string } {
+/** Presets clicáveis (Personalizado abre o seletor de datas). */
+const PERIOD_PRESETS = (Object.keys(PERIOD_LABELS) as Period[]).filter((p) => p !== "CUSTOM");
+
+function parseYmdLocal(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function fmtYmdLocal(d: Date): string {
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function getDateRange(period: Period, refDate: Date, customFrom?: string, customTo?: string): { start: Date; end: Date; label: string } {
+  if (period === "CUSTOM" && customFrom && customTo) {
+    const a = parseYmdLocal(customFrom);
+    const b = parseYmdLocal(customTo);
+    const start = a <= b ? a : b;
+    const end = a <= b ? b : a;
+    end.setHours(23, 59, 59, 999);
+    return {
+      start,
+      end,
+      label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}`,
+    };
+  }
+
   const y = refDate.getFullYear();
   const m = refDate.getMonth();
   const d = refDate.getDate();
@@ -102,6 +129,11 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
     }
     case "YEAR":
       return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59), label: String(y) };
+    case "CUSTOM":
+    default: {
+      // Fallback: mês corrente se personalizado sem datas
+      return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
+    }
   }
 }
 
@@ -129,6 +161,7 @@ function navigatePeriod(period: Period, refDate: Date, direction: number): Date 
     case "QUARTER": d.setMonth(d.getMonth() + 3 * direction); break;
     case "SEMESTER": d.setMonth(d.getMonth() + 6 * direction); break;
     case "YEAR": d.setFullYear(d.getFullYear() + direction); break;
+    case "CUSTOM": break; // personalizado usa datas fixas
   }
   return d;
 }
@@ -198,16 +231,52 @@ export default function BalancoGerencialPage() {
   const [, navigate] = useLocation();
   const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
-  const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
+  const [customFrom, setCustomFrom] = useState(() => fmtYmdLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [customTo, setCustomTo] = useState(() => fmtYmdLocal(new Date()));
+  const [showCustomPeriod, setShowCustomPeriod] = useState(false);
+  const [draftFrom, setDraftFrom] = useState(customFrom);
+  const [draftTo, setDraftTo] = useState(customTo);
+  const range = useMemo(
+    () => getDateRange(period, refDate, customFrom, customTo),
+    [period, refDate, customFrom, customTo],
+  );
   // Range em YYYY-MM-DD do filtro — usado pelo grid E pelo rh-summary (o custo
   // de RH precisa acompanhar o período filtrado, não o mês corrente).
   const gridRange = useMemo(() => {
-    const pad2 = (n: number) => String(n).padStart(2, "0");
-    const fmtDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-    return { from: fmtDate(range.start), to: fmtDate(range.end) };
+    return { from: fmtYmdLocal(range.start), to: fmtYmdLocal(range.end) };
   }, [range]);
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
   const [showEficienciaModal, setShowEficienciaModal] = useState(false);
+
+  const openCustomPeriod = () => {
+    setDraftFrom(period === "CUSTOM" ? customFrom : gridRange.from);
+    setDraftTo(period === "CUSTOM" ? customTo : gridRange.to);
+    setShowCustomPeriod(true);
+  };
+
+  const applyCustomPeriod = (fromYmd?: string, toYmd?: string) => {
+    const rawFrom = fromYmd ?? draftFrom;
+    const rawTo = toYmd ?? draftTo;
+    if (!rawFrom || !rawTo) {
+      toast({ title: "Informe data inicial e final", variant: "destructive" });
+      return;
+    }
+    const a = parseYmdLocal(rawFrom);
+    const b = parseYmdLocal(rawTo);
+    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
+      toast({ title: "Datas inválidas", variant: "destructive" });
+      return;
+    }
+    const from = a <= b ? rawFrom : rawTo;
+    const to = a <= b ? rawTo : rawFrom;
+    setCustomFrom(from);
+    setCustomTo(to);
+    setDraftFrom(from);
+    setDraftTo(to);
+    setPeriod("CUSTOM");
+    setRefDate(parseYmdLocal(from));
+    setShowCustomPeriod(false);
+  };
   // Popup das OSs "Em Aberto" (previsão): lista, detalhe expandido e conclusão direta
   const [showOsAbertasModal, setShowOsAbertasModal] = useState(false);
   const [osExpandidaId, setOsExpandidaId] = useState<number | null>(null);
@@ -352,7 +421,10 @@ export default function BalancoGerencialPage() {
   // independente do calendário (meses de 28/29/31 dias usam 30 mesmo assim).
   // Evita inflar o custo mensal em ~3,3% em meses de 31 dias.
   const costDays = useMemo(() => {
-    const FIXED: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
+    if (period === "CUSTOM") return daysInPeriod;
+    const FIXED: Record<Exclude<Period, "CUSTOM">, number> = {
+      DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365,
+    };
     return Math.min(daysInPeriod, FIXED[period]);
   }, [daysInPeriod, period]);
 
@@ -836,39 +908,151 @@ export default function BalancoGerencialPage() {
         </div>
 
         <div className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-3 backdrop-blur">
-          <div className="flex flex-col md:flex-row md:items-center gap-3">
-            <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
-              {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
-                <button key={p} onClick={() => { setPeriod(p); setRefDate(new Date()); }} data-testid={`period-${p.toLowerCase()}`}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
-                    period === p ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-                  }`}>
-                  {PERIOD_LABELS[p]}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col md:flex-row md:items-center gap-3">
+              <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
+                {PERIOD_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => { setPeriod(p); setRefDate(new Date()); }}
+                    data-testid={`period-${p.toLowerCase()}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
+                      period === p ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                    }`}
+                  >
+                    {PERIOD_LABELS[p]}
+                  </button>
+                ))}
+                <button
+                  onClick={openCustomPeriod}
+                  data-testid="period-custom"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all inline-flex items-center gap-1.5 ${
+                    period === "CUSTOM" ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  }`}
+                >
+                  <Calendar size={12} />
+                  Personalizado
                 </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1 md:gap-2 md:ml-auto">
-              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-prev-period">
-                <ChevronLeft size={16} />
-              </Button>
-              <span className="text-xs sm:text-sm font-black text-slate-100 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
-                {range.label}
-              </span>
-              {(gridFetching || rhFetching) && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 uppercase whitespace-nowrap" data-testid="status-period-loading">
-                  <RefreshCw size={12} className="animate-spin" />
-                  Calculando…
+              </div>
+              <div className="flex items-center gap-1 md:gap-2 md:ml-auto">
+                {period !== "CUSTOM" && (
+                  <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-prev-period">
+                    <ChevronLeft size={16} />
+                  </Button>
+                )}
+                <span className="text-xs sm:text-sm font-black text-slate-100 uppercase flex-1 md:flex-none md:min-w-[180px] text-center" data-testid="text-period-label">
+                  {range.label}
                 </span>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-next-period">
-                <ChevronRight size={16} />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setRefDate(new Date())} className="text-xs font-black uppercase border-slate-600 bg-slate-900/50 text-slate-100 hover:bg-slate-800" data-testid="button-today">
-                Hoje
-              </Button>
+                {(gridFetching || rhFetching) && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 uppercase whitespace-nowrap" data-testid="status-period-loading">
+                    <RefreshCw size={12} className="animate-spin" />
+                    Calculando…
+                  </span>
+                )}
+                {period !== "CUSTOM" && (
+                  <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-next-period">
+                    <ChevronRight size={16} />
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (period === "CUSTOM") openCustomPeriod();
+                    else setRefDate(new Date());
+                  }}
+                  className="text-xs font-black uppercase border-slate-600 bg-slate-900/50 text-slate-100 hover:bg-slate-800"
+                  data-testid="button-today"
+                >
+                  {period === "CUSTOM" ? "Editar datas" : "Hoje"}
+                </Button>
+              </div>
             </div>
+            {period === "CUSTOM" && (
+              <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-2.5" data-testid="custom-period-inline">
+                <div className="flex-1 min-w-0">
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data inicial</label>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-600 bg-slate-900 px-2 text-sm font-mono text-slate-100"
+                    data-testid="input-period-from"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data final</label>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="w-full h-9 rounded-md border border-slate-600 bg-slate-900 px-2 text-sm font-mono text-slate-100"
+                    data-testid="input-period-to"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="h-9 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black uppercase"
+                  onClick={() => applyCustomPeriod(customFrom, customTo)}
+                  data-testid="button-apply-custom-period-inline"
+                >
+                  Aplicar
+                </Button>
+              </div>
+            )}
           </div>
         </div>
+
+        <Dialog open={showCustomPeriod} onOpenChange={setShowCustomPeriod}>
+          <DialogContent className="max-w-md bg-slate-950 border-slate-700 text-slate-100" data-testid="dialog-custom-period">
+            <DialogHeader>
+              <DialogTitle className="text-slate-50 flex items-center gap-2">
+                <Calendar size={16} className="text-cyan-400" /> Selecionar período
+              </DialogTitle>
+              <DialogDescription className="text-slate-400">
+                Escolha a data inicial e a data final para filtrar o Balanço Gerencial.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data inicial</label>
+                <input
+                  type="date"
+                  value={draftFrom}
+                  onChange={(e) => setDraftFrom(e.target.value)}
+                  className="w-full h-10 rounded-md border border-slate-600 bg-slate-900 px-3 text-sm font-mono text-slate-100"
+                  data-testid="input-dialog-period-from"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data final</label>
+                <input
+                  type="date"
+                  value={draftTo}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  className="w-full h-10 rounded-md border border-slate-600 bg-slate-900 px-3 text-sm font-mono text-slate-100"
+                  data-testid="input-dialog-period-to"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="flex-1 border-slate-600 text-slate-200"
+                  onClick={() => setShowCustomPeriod(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black uppercase text-xs"
+                  onClick={applyCustomPeriod}
+                  data-testid="button-apply-custom-period"
+                >
+                  Aplicar período
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* KPIs legados — escondidos na aba Balanço (substituídos pelo Gestor Financeiro) */}
         {activeTab !== "BALANCO" && (() => {
@@ -1058,7 +1242,9 @@ export default function BalancoGerencialPage() {
                 rows: opRows,
               });
             }
-            const PERIOD_BASE_DAYS: Record<Period, number> = { DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365 };
+            const PERIOD_BASE_DAYS: Record<Period, number> = {
+              DAY: 1, WEEK: 7, MONTH: 30, QUARTER: 90, SEMESTER: 180, YEAR: 365, CUSTOM: daysInPeriod,
+            };
             const PERIOD_FOLHA_LABEL: Record<Period, string> = {
               DAY: "Folha diária real",
               WEEK: "Folha semanal real",
@@ -1066,6 +1252,7 @@ export default function BalancoGerencialPage() {
               QUARTER: "Folha trimestral real",
               SEMESTER: "Folha semestral real",
               YEAR: "Folha anual real",
+              CUSTOM: "Folha do período",
             };
             const PERIOD_ESTRUTURA_LABEL: Record<Period, string> = {
               DAY: "Custo diário fixo",
@@ -1074,9 +1261,11 @@ export default function BalancoGerencialPage() {
               QUARTER: "Base trimestral fixa",
               SEMESTER: "Base semestral fixa",
               YEAR: "Base anual fixa",
+              CUSTOM: "Custo fixo do período",
             };
             const PERIOD_ADJ: Record<Period, string> = {
-              DAY: "diário", WEEK: "semanal", MONTH: "mensal", QUARTER: "trimestral", SEMESTER: "semestral", YEAR: "anual",
+              DAY: "diário", WEEK: "semanal", MONTH: "mensal", QUARTER: "trimestral",
+              SEMESTER: "semestral", YEAR: "anual", CUSTOM: "personalizado",
             };
             const baseDays = PERIOD_BASE_DAYS[period];
             // Folha mensal = Custo Empresa CCT do cadastro (calcularFolha).
@@ -1772,6 +1961,7 @@ export default function BalancoGerencialPage() {
             updatedAt={dataGeradoEm}
             onSync={atualizarAgora}
             syncing={atualizando || gridFetching || rhFetching}
+            onOpenPeriodFilter={openCustomPeriod}
             onOpenOsAbertas={() => { setOsExpandidaId(null); setShowOsAbertasModal(true); }}
             onOpenEficiencia={() => setShowEficienciaModal(true)}
           />
@@ -1788,7 +1978,7 @@ export default function BalancoGerencialPage() {
 
 function BalancoTab({
   missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria,
-  rhSummary, allEmployees, eficiencia, metaPeriodo, impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia,
+  rhSummary, allEmployees, eficiencia, metaPeriodo, impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter,
 }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
@@ -1811,6 +2001,7 @@ function BalancoTab({
   updatedAt: Date | null;
   onSync: () => void; syncing: boolean;
   onOpenOsAbertas: () => void; onOpenEficiencia: () => void;
+  onOpenPeriodFilter?: () => void;
 }) {
   const dailyData = useMemo(() => {
     const map: Record<string, {
@@ -1918,6 +2109,7 @@ function BalancoTab({
         dailyChart={dailyChart}
         onOpenOsAbertas={onOpenOsAbertas}
         onOpenEficiencia={onOpenEficiencia}
+        onOpenPeriodFilter={onOpenPeriodFilter}
       />
       <BalancoExecutivoPanel
         dailyData={dailyData}
