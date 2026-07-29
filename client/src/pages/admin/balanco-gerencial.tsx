@@ -1818,6 +1818,7 @@ function BalancoTab({
     fatCongelado: number; fatAberto: number; countCongelado: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
     provisaoRH: number; custoTotal: number; custosFixosRateados: number; custosFixosMensal?: number;
+    vrpExcludedFromTotal?: boolean;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
