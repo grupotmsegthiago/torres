@@ -788,7 +788,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     pis: "",
     role: "Vigilante",
     category: "Mensalista",
-    tipoContratacao: "clt" as "clt" | "fixo",
+    tipoContratacao: "clt" as "clt" | "pj",
     phone: "",
     email: "",
     zip: "",
@@ -842,7 +842,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         pis: e.pis || "",
         role: e.role || "Vigilante",
         category: e.category || "Mensalista",
-        tipoContratacao: (e.tipoContratacao || e.tipo_contratacao || "clt") as "clt" | "fixo",
+        tipoContratacao: (() => {
+          const t = String(e.tipoContratacao || e.tipo_contratacao || "clt").toLowerCase();
+          return t === "pj" || t === "fixo" ? "pj" : "clt";
+        })() as "clt" | "pj",
         phone: e.phone ? formatPhoneBR(e.phone) : "",
         email: e.email || "",
         zip: e.zip ? formatCepBR(e.zip) : "",
@@ -1689,17 +1692,17 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Regime de Contratação</label>
               <select
                 value={form.tipoContratacao}
-                onChange={(e) => setForm({ ...form, tipoContratacao: e.target.value as "clt" | "fixo" })}
+                onChange={(e) => setForm({ ...form, tipoContratacao: e.target.value as "clt" | "pj" })}
                 className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200"
                 data-testid="select-employee-tipo-contratacao"
               >
-                <option value="clt">CLT (com encargos e descontos)</option>
-                <option value="fixo">Valor Fixo (sem encargos/descontos)</option>
+                <option value="clt">CLT — encargos, HE e benefícios CCT</option>
+                <option value="pj">PJ — valor fixo (sem impostos, variáveis nem HE)</option>
               </select>
               <p className="text-[11px] text-neutral-500 mt-1">
-                {form.tipoContratacao === "fixo"
-                  ? "Bruto = líquido. Sem INSS, IRRF, FGTS, férias, 13º."
-                  : "Folha CLT padrão (INSS, IRRF, FGTS, provisões)."}
+                {form.tipoContratacao === "pj"
+                  ? "Custo = valor mensal acordado. Não entra INSS, IRRF, FGTS, férias, 13º, VR, diárias nem hora extra."
+                  : "Folha CLT padrão (INSS, IRRF, FGTS, provisões, HE e benefícios)."}
               </p>
             </div>
             <div>
@@ -2749,9 +2752,19 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
 
       {loadingSummary ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div> : summary && (
         <>
+          {(summary.isClt === false || summary.tipoContratacao === "pj") && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3" data-testid="banner-regime-pj">
+              <div className="text-xs font-bold text-purple-800 uppercase tracking-wide">Regime PJ</div>
+              <p className="text-[11px] text-purple-700 mt-0.5">
+                Valor fixo mensal — impostos, benefícios variáveis e hora extra não entram no Custo Empresa.
+              </p>
+            </div>
+          )}
           <div className="bg-neutral-900 rounded-xl p-4 md:p-5" data-testid="card-salary-hero">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Remuneração Líquida Estimada</span>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">
+                {(summary.isClt === false || summary.tipoContratacao === "pj") ? "Valor Fixo PJ" : "Remuneração Líquida Estimada"}
+              </span>
               <span className="text-[10px] text-neutral-500" data-testid="text-payroll-period">
                 {_periodoFolha ? `${_periodoFolha.labelShort}/${selYear}` : `${MESES[selMonth-1]} ${selYear}`}
               </span>
@@ -5229,12 +5242,16 @@ export default function EmployeesPage() {
     return r === "vigilante" || r.includes("vigil");
   };
   const getRegime = (e: Employee): { label: string; cls: string } => {
+    const tipo = String((e as any).tipoContratacao || (e as any).tipo_contratacao || "").toLowerCase();
+    if (tipo === "pj" || tipo === "fixo") {
+      return { label: "PJ", cls: "bg-purple-50 text-purple-700 border-purple-200" };
+    }
+    if (tipo === "clt" || (e as any).ctpsNumber) {
+      return { label: "CLT", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+    }
     const cat = ((e as any).category || "").toLowerCase();
     if (cat.includes("terceir") || cat.includes("free") || cat === "pj") {
       return { label: "PJ", cls: "bg-purple-50 text-purple-700 border-purple-200" };
-    }
-    if ((e as any).ctpsNumber) {
-      return { label: "CLT", cls: "bg-blue-50 text-blue-700 border-blue-200" };
     }
     return { label: "S/ Registro", cls: "bg-neutral-100 text-neutral-600 border-neutral-300" };
   };

@@ -7,7 +7,8 @@ import type { Express } from "express";
   import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
   import { calcularFolha, endOfMonthYmd, selectSalaryVigenteFromHistory } from "../lib/payroll";
-import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
+  import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
+  import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
@@ -28,7 +29,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
-    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,created_at";
+    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,tipo_contratacao,category,created_at";
 
     let data: any[];
     try {
@@ -508,35 +509,47 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       horasExtras = Math.round(horasExtras * 100) / 100;
       horasNoturnas = Math.round(horasNoturnas * 100) / 100;
 
-      // Regime de contratação: não-CLT (PJ, fixo) não tem INSS/IRRF/FGTS.
-      const isClt = (emp as any).tipoContratacao !== "fixo" && (emp as any).tipo_contratacao !== "fixo";
+      // Regime: CLT (encargos/HE/benefícios) ou PJ (valor fixo — sem impostos/variáveis/HE).
+      const tipoContratacao = normalizeTipoContratacao(
+        (emp as any).tipoContratacao ?? (emp as any).tipo_contratacao,
+      );
+      const isClt = isCltContrato(tipoContratacao);
 
-      // VT desconto (modelo Torres): 6% do salário (c/ peric, proporcional) quando há VT.
+      // VT desconto só CLT (modelo Torres: 6% do salário c/ peric quando há VT).
       const salarioComPericProp = baseSalary * (diasTrabalhados / 30) * (1 + periculosidadePct);
-      const vtDesconto = vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
+      const vtDesconto = isClt && vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
 
       // ===== ENGINE DE FOLHA 2025 (mesmo padrão do custo fixo) =====
+      // PJ: calcularFolha zera HE/noturno/VR/impostos; aqui também zeramos HE na entrada.
       const folha = calcularFolha({
         salarioBaseCheio: baseSalary,
         diasTrabalhados,
         horasMensais,
         periculosidadePct,
-        horasExtras,
-        horasNoturnas,
-        diasUteis,
-        refeicaoDiaria: vrDiario,
+        horasExtras: isClt ? horasExtras : 0,
+        horasNoturnas: isClt ? horasNoturnas : 0,
+        diasUteis: isClt ? diasUteis : 0,
+        refeicaoDiaria: isClt ? vrDiario : 0,
         ajudaCustoMensal,
         dependentesIR,
         isClt,
         vtDesconto,
       });
 
-      // Vencimentos visíveis (CLT — base + peric + HE + DSR + adic + benefícios)
-      const totalVencimentos = +(folha.totalBruto + cestaMensal + vt + outros).toFixed(2);
-      // Benefícios pagos à parte (não entram no líquido salarial do modelo Torres)
-      const valeAlimentacao = Number(sal.vale_alimentacao_mensal || 0);
-      const assiduidade = Number(sal.assiduidade_mensal || 0);
-      const totalBeneficios = +(folha.refeicao + folha.ajudaCusto + cestaMensal + valeAlimentacao + assiduidade + outros).toFixed(2);
+      // Benefícios CCT variáveis (cesta/VT/VA/assiduidade) só entram no CLT.
+      const valeAlimentacao = isClt ? Number(sal.vale_alimentacao_mensal || 0) : 0;
+      const assiduidade = isClt ? Number(sal.assiduidade_mensal || 0) : 0;
+      const cestaCusto = isClt ? cestaMensal : 0;
+      const vtCusto = isClt ? vt : 0;
+      const outrosCusto = isClt ? outros : 0;
+
+      // Vencimentos: CLT = bruto + benefícios CCT; PJ = só o valor fixo (folha.totalBruto).
+      const totalVencimentos = isClt
+        ? +(folha.totalBruto + cestaCusto + vtCusto + outrosCusto).toFixed(2)
+        : +folha.totalBruto.toFixed(2);
+      const totalBeneficios = isClt
+        ? +(folha.refeicao + folha.ajudaCusto + cestaCusto + valeAlimentacao + assiduidade + outrosCusto).toFixed(2)
+        : +folha.ajudaCusto.toFixed(2);
 
       // Descontos manuais (ocorrências) + descontos legais (INSS + IRRF + FGTS + VT)
       const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*")
@@ -550,12 +563,16 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const liquido = +(folha.liquidoFuncionario - totalDescontosManuais).toFixed(2);
       const totalReceber = +(liquido + totalBeneficios).toFixed(2);
 
-      // Custo total para a empresa (idêntico ao fixed-costs)
-      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros + valeAlimentacao + assiduidade).toFixed(2);
+      // Custo Empresa: CLT = folha + benefícios CCT; PJ = só valor fixo (sem variáveis).
+      const custoTotalEmpresa = isClt
+        ? +(folha.custoTotalEmpresa + cestaCusto + vtCusto + outrosCusto + valeAlimentacao + assiduidade).toFixed(2)
+        : +folha.custoTotalEmpresa.toFixed(2);
 
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
-        month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis,
+        month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis: isClt ? diasUteis : 0,
+        tipoContratacao,
+        isClt,
         // Fonte canônica da vigência (mesma do Balanço)
         salarioBaseCheio: baseSalary,
         effectiveDate: sal.effective_date ? String(sal.effective_date).slice(0, 10) : null,
@@ -569,23 +586,24 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           adicionalNoturnoValor: folha.adicionalNoturnoValor,
           dsr: folha.dsr,
           valeRefeicao: folha.refeicao,
-          cestaBasica: cestaMensal,
-          valeTransporte: vt,
+          cestaBasica: cestaCusto,
+          valeTransporte: vtCusto,
           ajudaCusto: folha.ajudaCusto,
-          outros,
+          outros: outrosCusto,
           total: totalVencimentos,
           baseTributavel: folha.baseTributavel,
           totalBruto: folha.totalBruto,
         },
-        // ► Horas extras auto via Ponto iD
+        // ► Horas extras — PJ não contabiliza (zeradas no custo)
         horasExtras: {
-          horas: horasExtras,
-          noturnas: horasNoturnas,
+          horas: isClt ? horasExtras : 0,
+          noturnas: isClt ? horasNoturnas : 0,
           valor: folha.horasExtrasValor,
           dsrValor: folha.dsr,
-          fonte: horasFonte,
-          registros: registrosPonto,
+          fonte: isClt ? horasFonte : "nenhuma",
+          registros: isClt ? registrosPonto : 0,
           mesRef,
+          ignoradasPj: !isClt && (horasExtras > 0 || horasNoturnas > 0),
         },
         // ► Deduções legais (INSS / IRRF / VT). FGTS é depósito do empregador (informativo,
         // NÃO entra no total nem desconta do líquido — decisão do dono 26/06/2026).
@@ -601,13 +619,13 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         beneficios: {
           valeRefeicao: folha.refeicao,
           valeAlimentacao,
-          cestaBasica: cestaMensal,
+          cestaBasica: cestaCusto,
           assiduidade,
           ajudaCusto: folha.ajudaCusto,
-          outros,
+          outros: outrosCusto,
           total: totalBeneficios,
         },
-        // ► Provisões mensais (custo da empresa)
+        // ► Provisões mensais (custo da empresa) — zeradas em PJ
         provisoes: {
           decimoTerceiro: folha.provisaoDecimoTerceiro,
           ferias: folha.provisaoFerias,

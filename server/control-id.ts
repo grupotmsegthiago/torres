@@ -1358,9 +1358,11 @@ export async function buildFolhaStats(
         .eq("id", employeeId)
         .limit(1)).data;
   const empRole = (empRow && empRow[0] && (empRow[0] as any).role) || "";
-  // Não-CLT (PJ, fixo, autônomo): zera todos os encargos da empresa.
-  // O bruto pago = custo total; não há FGTS, INSS patronal, seguro de vida.
-  const isClt = !empRow || !empRow[0] || (empRow[0] as any).tipo_contratacao !== "fixo";
+  // PJ (e legado "fixo"): sem encargos — bruto pago = custo. CLT tem FGTS/INSS/seguro.
+  const { isCltContrato } = await import("@shared/contratacao");
+  const isClt = !empRow || !empRow[0]
+    ? true
+    : isCltContrato((empRow[0] as any).tipo_contratacao);
   const { getCctConfigByCargo } = await import("./lib/cct-config");
   const CCT = await getCctConfigByCargo(empRole);
 
@@ -1476,7 +1478,10 @@ export async function buildFolhaStats(
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
 
   const horasNormais = Math.min(hoursWorked, hoursLimit);
-  const horaExtra = Math.max(0, hoursWorked - hoursLimit);
+  // PJ: não contabiliza HE/noturno/variáveis — só valor fixo (base + peric).
+  const horaExtraRaw = Math.max(0, hoursWorked - hoursLimit);
+  const horaExtra = isClt ? horaExtraRaw : 0;
+  const horasNoturnasCusto = isClt ? horasNoturnas : 0;
   // Hora-base inclui periculosidade (Súmula 132 TST) — bate com a planilha do dono
   // (HE 24,26 = 15,16×1,6 e Noturno 27,29 = 15,16×1,8, onde 15,16 = base×1,3/220).
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
@@ -1488,31 +1493,32 @@ export async function buildFolhaStats(
   // (hora + 60% HE + 20% noturno) sobre as horas entre 22h–05h. Antes era só o
   // prêmio de 20% — ver memória payroll-night-additional.
   const multiplicadorAdicNot = (CCT as any).multiplicadorAdicNot ?? 1.8;
-  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnas).toFixed(2);
+  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnasCusto).toFixed(2);
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente)
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
   const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
-  const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
-  const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
+  const valeRefeicao = isClt ? +(vrDiario * diasUteis).toFixed(2) : 0;
+  const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
 
-  // Diárias de missão (escolta/operacional) — soma de pagamentos lançados na
-  // COMPETÊNCIA RH (26 → 25), não no mês civil.
+  // Diárias de missão (escolta/operacional) — só CLT; PJ = valor fixo.
   let diarias = 0;
-  try {
-    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
-    const { data: diariaRows } = await supabaseAdmin
-      .from("operational_payments")
-      .select("amount")
-      .eq("employee_id", employeeId)
-      .eq("type", "diaria")
-      .gte("payment_date", from)
-      .lte("payment_date", cutoffStr);
-    if (Array.isArray(diariaRows)) {
-      diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
-    }
-  } catch { /* tabela pode não existir em ambientes antigos */ }
+  if (isClt) {
+    try {
+      const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
+      const { data: diariaRows } = await supabaseAdmin
+        .from("operational_payments")
+        .select("amount")
+        .eq("employee_id", employeeId)
+        .eq("type", "diaria")
+        .gte("payment_date", from)
+        .lte("payment_date", cutoffStr);
+      if (Array.isArray(diariaRows)) {
+        diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+      }
+    } catch { /* tabela pode não existir em ambientes antigos */ }
+  }
   diarias = +diarias.toFixed(2);
 
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);

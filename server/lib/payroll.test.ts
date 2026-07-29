@@ -45,22 +45,27 @@ test("calcularFolha não-CLT (isClt=false) zera INSS/IRRF/FGTS/provisões", () =
   assert.equal(f.liquidoFuncionario, f.baseTributavel, "líquido = base (sem descontos, sem benefícios)");
 });
 
-test("calcularFolha não-CLT preserva vencimentos (salário/HE/VR; peric opcional)", () => {
+test("calcularFolha PJ (isClt=false) zera HE/noturno/VR e preserva salário+peric", () => {
   const f = calcularFolha({
     salarioBaseCheio: 3000,
     diasTrabalhados: 30,
     horasMensais: 220,
     periculosidadePct: 0.3,
-    aplicarPericulosidade: true, // peric é opcional; aqui testamos o caminho ligado
+    aplicarPericulosidade: true,
     horasExtras: 10,
+    horasNoturnas: 8,
     diasUteis: 22,
     refeicaoDiaria: 43,
+    ajudaCustoMensal: 200,
     isClt: false,
   });
   assert.equal(f.salarioProporcional, 3000, "salário proporcional preservado");
   assert.equal(f.periculosidade, 900, "periculosidade 30% preservada quando ligada");
-  assert.ok(f.horasExtrasValor > 0, "HE preservada");
-  assert.equal(f.refeicao, 946, "VR preservado (43 × 22)");
+  assert.equal(f.horasExtrasValor, 0, "PJ não contabiliza HE");
+  assert.equal(f.adicionalNoturnoValor, 0, "PJ não contabiliza noturno");
+  assert.equal(f.refeicao, 0, "PJ não contabiliza VR variável");
+  assert.equal(f.ajudaCusto, 200, "ajuda de custo fixa permanece");
+  assert.equal(f.custoTotalEmpresa, 4100, "custo PJ = salário + peric + ajuda");
 });
 
 test("modelo Torres (default): peric somada, DSR desligado", () => {

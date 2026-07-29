@@ -6,6 +6,7 @@ import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, selectSalaryVigenteFromHistory, type PayrollBreakdown } from "../lib/payroll";
+import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
@@ -304,7 +305,7 @@ export async function calculateAgentMonthlyCost(
     /* mantém fallback */
   }
 
-  // Regime de contratação: "fixo" = sem encargos/descontos (PJ, autônomo).
+  // Regime: CLT ou PJ (legado "fixo" = PJ).
   let tipoContratacao = opts?.tipoContratacao;
   if (tipoContratacao === undefined) {
     const { data: empRowTipo } = await supabaseAdmin
@@ -314,25 +315,28 @@ export async function calculateAgentMonthlyCost(
       .limit(1);
     tipoContratacao = empRowTipo?.[0] ? (empRowTipo[0] as any).tipo_contratacao : null;
   }
-  const isClt = tipoContratacao !== "fixo";
+  const isClt = isCltContrato(tipoContratacao);
 
   // Engine de folha 2025 — MESMA do cadastro (salary-summary → calcularFolha).
+  // PJ: sem HE/noturno/VR/impostos; só valor fixo (+ peric/ajuda).
   const folha = calcularFolha({
     salarioBaseCheio: base,
     diasTrabalhados,
     horasMensais,
     periculosidadePct,
-    horasExtras: horasExtrasMedia,
-    horasNoturnas: horasNoturnasMedia,
-    diasUteis: vrDias,
-    refeicaoDiaria: vrDiario,
+    horasExtras: isClt ? horasExtrasMedia : 0,
+    horasNoturnas: isClt ? horasNoturnasMedia : 0,
+    diasUteis: isClt ? vrDias : 0,
+    refeicaoDiaria: isClt ? vrDiario : 0,
     ajudaCustoMensal,
     dependentesIR,
     isClt,
   });
 
-  // Custo Empresa = idêntico ao cadastro: custoTotalEmpresa + cesta/VT/outros/VA/assiduidade (+ diárias do período).
-  const total = +(folha.custoTotalEmpresa + cesta + vt + outros + valeAlimentacao + assiduidade + diarias).toFixed(2);
+  // Custo Empresa: CLT = folha + benefícios CCT + diárias; PJ = só valor fixo.
+  const total = isClt
+    ? +(folha.custoTotalEmpresa + cesta + vt + outros + valeAlimentacao + assiduidade + diarias).toFixed(2)
+    : +folha.custoTotalEmpresa.toFixed(2);
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
 
   // Compat: campos antigos da UI continuam funcionando
@@ -351,7 +355,15 @@ export async function calculateAgentMonthlyCost(
     breakdown: {
       base: folha.salarioProporcional,
       encargos,
-      vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, valeAlimentacao, assiduidade,
+      vrDiario: isClt ? vrDiario : 0,
+      vrDias: isClt ? vrDias : 0,
+      vrTotal: isClt ? vrTotal : 0,
+      vt: isClt ? vt : 0,
+      cesta: isClt ? cesta : 0,
+      outros: isClt ? outros : 0,
+      diarias: isClt ? diarias : 0,
+      valeAlimentacao: isClt ? valeAlimentacao : 0,
+      assiduidade: isClt ? assiduidade : 0,
       horasMensais, custoHora,
       ferias, decimoTerceiro, rescisao,
       horaExtra: folha.horasExtrasValor,

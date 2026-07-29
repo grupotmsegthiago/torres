@@ -168,10 +168,11 @@ export interface PayrollInput {
   dependentesIR?: number;
   /**
    * Regime de contratação. Default `true` (CLT — calcula INSS/IRRF/FGTS
-   * e todas as provisões). Quando `false` (PJ, autônomo, fixo sem encargos),
-   * o bruto vira líquido: zera todos os descontos legais e provisões.
-   * Vencimentos (salário, periculosidade, HE, adic. noturno, DSR, VR, ajuda)
-   * continuam sendo calculados normalmente — só os encargos/descontos somem.
+   * e todas as provisões). Quando `false` (PJ):
+   *   - zera impostos/provisões (INSS, IRRF, FGTS, 13º, férias)
+   *   - zera variáveis e HE (horas extras, noturno, DSR, VR por dia)
+   *   - permanece: salário proporcional + periculosidade + ajuda de custo fixa
+   * O valor acordado do PJ é o custo da empresa (sem encargos).
    */
   isClt?: boolean;
 }
@@ -214,8 +215,6 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     diasTrabalhados = 30,
     horasMensais = 220,
     periculosidadePct = PERICULOSIDADE_PADRAO,
-    horasExtras = 0,
-    horasNoturnas = 0,
     multiplicadorHE = 1.6,
     multiplicadorAdicNot = 1.8,
     aplicarPericulosidade = true,
@@ -225,14 +224,19 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     irrfModo = "flat",
     irrfFlatPct = 22,
     fgtsNoLiquido = false,
-    vtDesconto = 0,
-    diasUteis = 0,
     diasUteisDSR = 25,
-    refeicaoDiaria = 0,
     ajudaCustoMensal = 0,
     dependentesIR = 0,
     isClt = true,
   } = input;
+
+  // PJ: não contabiliza HE, noturno, VR variável nem DSR — só o valor fixo.
+  const horasExtras = isClt ? (input.horasExtras ?? 0) : 0;
+  const horasNoturnas = isClt ? (input.horasNoturnas ?? 0) : 0;
+  const diasUteis = isClt ? (input.diasUteis ?? 0) : 0;
+  const refeicaoDiaria = isClt ? (input.refeicaoDiaria ?? 0) : 0;
+  const vtDesconto = isClt ? (input.vtDesconto ?? 0) : 0;
+  const aplicarDsrEfetivo = isClt && aplicarDsr;
 
   const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
 
@@ -248,8 +252,8 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   const horasExtrasValor = r2(valorHoraNormal * multiplicadorHE * horasExtras);
   const adicionalNoturnoValor = r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
 
-  // DSR sobre HE + Adicional Noturno — desligado no modelo Torres.
-  const dsr = (aplicarDsr && diasUteisDSR > 0)
+  // DSR sobre HE + Adicional Noturno — desligado no modelo Torres (e sempre off em PJ).
+  const dsr = (aplicarDsrEfetivo && diasUteisDSR > 0)
     ? r2((horasExtrasValor + adicionalNoturnoValor) * (diasDescanso / diasUteisDSR))
     : 0;
 
