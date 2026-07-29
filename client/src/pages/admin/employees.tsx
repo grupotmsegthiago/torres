@@ -2802,6 +2802,13 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   };
 
   const propTag = summary?.proporcional ? ` (${summary.diasTrabalhados}/30d)` : "";
+  const fmtDateBr = (ymd: string) => {
+    const s = String(ymd || "").slice(0, 10);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : s || "—";
+  };
+  const refDate = summary?.referenceDate || `${selYear}-${String(selMonth).padStart(2, "0")}-28`;
+  const salarioFuturo = summary?.salarioFuturo as { baseSalary: number; effectiveDate: string } | null | undefined;
 
   return (
     <div className="space-y-5" data-testid="section-salarios">
@@ -2876,11 +2883,23 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <p className="text-[11px] text-purple-700 mt-0.5">
                 Valor fixo mensal — impostos, benefícios variáveis e hora extra não entram no Custo Empresa.
               </p>
-              {summary.semSalarioPj && (
+              {summary.semSalarioPj && salarioFuturo && (
+                <p className="text-[11px] text-amber-800 font-semibold mt-1" data-testid="banner-pj-salario-futuro">
+                  Há R$ {Number(salarioFuturo.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} cadastrado, mas a vigência é {fmtDateBr(salarioFuturo.effectiveDate)} — depois de {MESES[selMonth - 1]}/{selYear}. Ajuste a data de vigência (ex.: 01/{String(selMonth).padStart(2, "0")}/{selYear}) para entrar neste mês.
+                </p>
+              )}
+              {summary.semSalarioPj && !salarioFuturo && (
                 <p className="text-[11px] text-red-700 font-semibold mt-1" data-testid="banner-pj-sem-salario">
                   Cadastre o valor fixo em “Histórico Salarial” (ex.: 4.000,00). Sem isso o custo fica R$ 0,00.
                 </p>
               )}
+            </div>
+          )}
+          {summary.semSalario && summary.isClt !== false && salarioFuturo && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3" data-testid="banner-salario-futuro-clt">
+              <p className="text-[11px] text-amber-900 font-semibold">
+                Há salário R$ {Number(salarioFuturo.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} com vigência {fmtDateBr(salarioFuturo.effectiveDate)} — ainda não vale para {MESES[selMonth - 1]}/{selYear}.
+              </p>
             </div>
           )}
           <div className="bg-neutral-900 rounded-xl p-4 md:p-5" data-testid="card-salary-hero">
@@ -2942,7 +2961,9 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                     <div>
                       <div className="text-xs font-semibold text-neutral-800">Valor Fixo PJ</div>
                       <div className="text-[10px] text-neutral-400 mt-0.5">
-                        {summary.semSalarioPj
+                        {summary.semSalarioPj && salarioFuturo
+                          ? `Vigência só em ${fmtDateBr(salarioFuturo.effectiveDate)} — não vale para este mês`
+                          : summary.semSalarioPj
                           ? "Sem valor cadastrado no histórico salarial"
                           : `Valor mensal acordado${propTag}`}
                       </div>
@@ -3313,10 +3334,26 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             <Clock className="w-4 h-4 text-neutral-400" />
             <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Histórico Salarial</h3>
           </div>
-          <Button size="sm" variant="outline" className="text-xs h-8 gap-1" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-8 gap-1"
+            onClick={() => {
+              const opening = !showSalForm;
+              if (opening && !salForm.effectiveDate) {
+                const defaultVig = `${selYear}-${String(selMonth).padStart(2, "0")}-01`;
+                setSalForm({ ...salForm, effectiveDate: defaultVig });
+              }
+              setShowSalForm(opening);
+            }}
+            data-testid="button-add-salary-pasta"
+          >
             <Plus className="w-3 h-3" /> Novo Registro
           </Button>
         </div>
+        <p className="text-[10px] text-neutral-500 mb-3">
+          O cálculo do mês usa só registros com data de vigência até o último dia do mês selecionado. Se a vigência for futura, o valor fica R$ 0,00 neste período.
+        </p>
         {showSalForm && (
           <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 mb-3 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -3329,6 +3366,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data Vigência</label>
                 <Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} className="text-xs h-9" data-testid="input-salary-date-pasta" />
+                <p className="text-[10px] text-neutral-400 mt-1">Para valer em {MESES[selMonth - 1]}/{selYear}, use até {fmtDateBr(refDate)}.</p>
               </div>
             </div>
             <div>
@@ -3354,9 +3392,15 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {salaries.map((s: any) => (
-                  <tr key={s.id} className="hover:bg-neutral-50 transition-colors" data-testid={`row-salary-pasta-${s.id}`}>
-                    <td className="px-4 py-2.5 font-mono text-neutral-600">{s.effectiveDate}</td>
+                {salaries.map((s: any) => {
+                  const vig = String(s.effectiveDate || "").slice(0, 10);
+                  const futura = vig > String(refDate).slice(0, 10);
+                  return (
+                  <tr key={s.id} className={`hover:bg-neutral-50 transition-colors ${futura ? "bg-amber-50/60" : ""}`} data-testid={`row-salary-pasta-${s.id}`}>
+                    <td className="px-4 py-2.5 font-mono text-neutral-600">
+                      {fmtDateBr(vig)}
+                      {futura && <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-amber-700">Futura</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-right font-semibold text-neutral-900 tabular-nums">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                     <td className="px-4 py-2.5 text-neutral-500 max-w-[200px] truncate">{s.reason || "—"}</td>
                     <td className="px-2 py-2.5">
@@ -3365,7 +3409,8 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

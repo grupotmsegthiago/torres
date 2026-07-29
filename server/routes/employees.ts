@@ -449,6 +449,24 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       );
       const isCltEarly = isCltContrato(tipoContratacaoEarly);
       const temSalario = sal.base_salary != null && sal.base_salary !== "";
+      // Se não há vigência no mês, avisa se existe cadastro só com data futura
+      // (ex.: R$ 4.000 com vigência 2027-06-01 ao filtrar Jul/2026).
+      let salarioFuturo: { baseSalary: number; effectiveDate: string } | null = null;
+      if (!temSalario) {
+        const { data: futureRows } = await supabaseAdmin
+          .from("employee_salaries").select("base_salary, effective_date")
+          .eq("employee_id", empId)
+          .gt("effective_date", referenceDate)
+          .order("effective_date", { ascending: true })
+          .limit(1);
+        const fut = futureRows?.[0] as any;
+        if (fut?.effective_date != null && fut.base_salary != null && fut.base_salary !== "") {
+          salarioFuturo = {
+            baseSalary: Number(fut.base_salary),
+            effectiveDate: String(fut.effective_date).slice(0, 10),
+          };
+        }
+      }
       // PJ sem histórico → 0 (não inventa CCT). CLT sem histórico → kit CCT do cargo.
       const baseSalary = temSalario
         ? Number(sal.base_salary)
@@ -598,6 +616,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         isClt,
         semSalario: !temSalario,
         semSalarioPj,
+        salarioFuturo,
         // Fonte canônica da vigência (mesma do Balanço)
         salarioBaseCheio: baseSalary,
         effectiveDate: sal.effective_date ? String(sal.effective_date).slice(0, 10) : null,
