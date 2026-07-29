@@ -1833,33 +1833,63 @@ function BalancoTab({
       date: string; fat: number; custoReal: number; custoRH: number; custo: number; missions: number;
       pag: number; combustivel: number; pedagio: number; manutencao: number;
     }> = {};
+    const ensure = (d: string) => {
+      if (!map[d]) {
+        map[d] = {
+          date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria,
+          missions: 0, pag: 0, combustivel: 0, pedagio: 0, manutencao: 0,
+        };
+      }
+      return map[d];
+    };
     missions.forEach(m => {
       const d = m.data?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0, pag: 0, combustivel: 0, pedagio: 0, manutencao: 0 };
-      map[d].fat += m.fat_total;
-      map[d].pag += m.pag_total || 0;
-      map[d].custoReal += m.pag_total;
-      map[d].custo += m.pag_total;
-      map[d].missions += 1;
+      const row = ensure(d);
+      row.fat += m.fat_total;
+      // pag_total já é labor-only (sem comb/pedágio)
+      row.pag += m.pag_labor ?? m.pag_total ?? 0;
+      row.custoReal += m.pag_labor ?? m.pag_total ?? 0;
+      row.custo += m.pag_labor ?? m.pag_total ?? 0;
+      row.missions += 1;
     });
+    // Mesma regra do custoTotal mensal: SÓ origem oficial.
+    // Antes, qualquer mission_cost ia para "Pedágio" e manuais por categoria
+    // inflavam o dia — gerando picos irreais (ex.: 4,3k / 16,7k).
     (periodExpenses || []).forEach(t => {
       const d = t.date?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0, pag: 0, combustivel: 0, pedagio: 0, manutencao: 0 };
-      map[d].custoReal += t.amount;
-      map[d].custo += t.amount;
       const origin = String(t.origin_type || "").toLowerCase();
       const cat = String(t.category_name || "").toLowerCase();
-      if (origin.includes("fuel") || cat.includes("combust")) map[d].combustivel += t.amount;
-      else if (origin.includes("mission") || cat.includes("pedág") || cat.includes("pedag")) map[d].pedagio += t.amount;
-      else if (origin.includes("maint") || cat.includes("manut")) map[d].manutencao += t.amount;
+      const amt = Number(t.amount) || 0;
+      if (!(amt > 0)) return;
+
+      const isFueling = origin === "fueling" || origin === "vehicle_fueling";
+      const isMission = origin === "mission_cost";
+      const isMaint = origin === "maintenance";
+      if (!isFueling && !isMission && !isMaint) return;
+
+      const row = ensure(d);
+      if (isFueling) {
+        row.combustivel += amt;
+      } else if (isMaint) {
+        row.manutencao += amt;
+      } else if (isMission) {
+        // mission_cost: classificar pela categoria — não jogar tudo em pedágio
+        if (cat.includes("combust")) row.combustivel += amt;
+        else if (cat.includes("manut")) row.manutencao += amt;
+        else if (cat.includes("pedág") || cat.includes("pedag") || !cat) row.pedagio += amt;
+        else row.pedagio += amt; // pedágio é o caso típico de mission_cost
+      }
+      row.custoReal += amt;
+      row.custo += amt;
     });
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
   }, [missions, periodExpenses, provisaoDiaria]);
 
   const dailyChart = useMemo(() => {
-    const fatSum = dailyData.reduce((s, d) => s + d.fat, 0) || 1;
+    // Fixos: rateio IGUAL por dia do período (não proporcional ao fat do dia)
+    const fixoDia = (totals.custosFixosRateados || 0) / Math.max(daysInPeriod, 1);
     return dailyData.map((d) => {
       const custo =
         d.pag +
@@ -1867,7 +1897,7 @@ function BalancoTab({
         (d.pedagio || 0) +
         (d.manutencao || 0) +
         d.custoRH +
-        ((totals.custosFixosRateados || 0) * d.fat) / fatSum;
+        fixoDia;
       return {
         name: new Date(d.date + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
         fat: Math.round(d.fat),
@@ -1875,7 +1905,7 @@ function BalancoTab({
         lucro: Math.round(d.fat - custo),
       };
     });
-  }, [dailyData, totals.custosFixosRateados]);
+  }, [dailyData, totals.custosFixosRateados, daysInPeriod]);
 
   return (
     <div className="space-y-4">
@@ -1924,6 +1954,8 @@ function BalancoTab({
         agents={agents}
         daysInPeriod={daysInPeriod}
         metaDiariaViatura={META_DIARIA_VIATURA}
+        missions={missions}
+        periodExpenses={periodExpenses}
       />
     </div>
   );

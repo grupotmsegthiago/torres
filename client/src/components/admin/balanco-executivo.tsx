@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Calendar, Car, Users, Trophy } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -141,6 +142,8 @@ export function BalancoExecutivoPanel({
   agents,
   daysInPeriod,
   metaDiariaViatura,
+  missions = [],
+  periodExpenses = [],
 }: {
   dailyData: DailyRow[];
   totals: {
@@ -161,26 +164,30 @@ export function BalancoExecutivoPanel({
   agents: { name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas?: number }[];
   daysInPeriod: number;
   metaDiariaViatura: number;
+  missions?: any[];
+  periodExpenses?: Array<{
+    date?: string;
+    amount: number;
+    origin_type?: string;
+    description?: string;
+    entity_name?: string;
+    category_name?: string;
+  }>;
 }) {
   const { cols, labels } = useMemo(() => buildColumns(dailyData, period), [dailyData, period]);
+  const [drill, setDrill] = useState<null | { key: string; label: string; date: string; amount: number }>(null);
 
   const lines: DreLine[] = useMemo(() => {
     const fat = cols.map((c) => c.fat);
-    const pag = cols.map((c) => c.pag ?? Math.max(0, c.custoReal - (c.combustivel || 0) - (c.pedagio || 0) - (c.manutencao || 0)));
-    const rh = cols.map((c) => c.custoRH);
-    // Rateia fixos e despesas oficiais do período proporcional ao faturamento do dia (fallback: igual)
-    const fatSum = fat.reduce((a, b) => a + b, 0) || cols.length || 1;
-    const fixos = cols.map((c) => (totals.custosFixosRateados * c.fat) / fatSum);
-    const comb = cols.map((c) => c.combustivel || 0);
-    const ped = cols.map((c) => c.pedagio || 0);
-    const man = cols.map((c) => c.manutencao || 0);
-    // Se não houver breakdown diário de combustível etc., rateia totais do período
-    const combSum = comb.reduce((a, b) => a + b, 0);
-    const pedSum = ped.reduce((a, b) => a + b, 0);
-    const manSum = man.reduce((a, b) => a + b, 0);
-    const combVals = combSum > 0 ? comb : cols.map((c) => (totals.desp_combustivel * c.fat) / fatSum);
-    const pedVals = pedSum > 0 ? ped : cols.map((c) => (totals.desp_pedagio * c.fat) / fatSum);
-    const manVals = manSum > 0 ? man : cols.map((c) => (totals.desp_manutencao * c.fat) / fatSum);
+    const pag = cols.map((c) => c.pag ?? 0);
+    // RH e Fixos: rateio IGUAL por dia do período (não sobe/desce com o faturamento do dia)
+    const rhDia = totals.provisaoRH / Math.max(daysInPeriod, 1);
+    const fixoDia = totals.custosFixosRateados / Math.max(daysInPeriod, 1);
+    const rh = cols.map(() => rhDia);
+    const fixos = cols.map(() => fixoDia);
+    const combVals = cols.map((c) => c.combustivel || 0);
+    const pedVals = cols.map((c) => c.pedagio || 0);
+    const manVals = cols.map((c) => c.manutencao || 0);
     const custo = cols.map((_, i) => pag[i] + combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
     const lucro = cols.map((_, i) => fat[i] - custo[i]);
     const margem = cols.map((_, i) => (fat[i] > 0 ? (lucro[i] / fat[i]) * 100 : 0));
@@ -193,13 +200,64 @@ export function BalancoExecutivoPanel({
       { key: "comb", label: "Combustível", color: "#fb923c", values: combVals, total: sum(combVals) || totals.desp_combustivel, kind: "money", negative: true },
       { key: "ped", label: "Pedágio", color: "#fbbf24", values: pedVals, total: sum(pedVals) || totals.desp_pedagio, kind: "money", negative: true },
       { key: "man", label: "Manutenção", color: "#f472b6", values: manVals, total: sum(manVals) || totals.desp_manutencao, kind: "money", negative: true },
-      { key: "rh", label: "RH · Folha", color: "#fcd34d", values: rh, total: sum(rh) || totals.provisaoRH, kind: "money", negative: true },
-      { key: "fix", label: "Custos Fixos", color: "#a78bfa", values: fixos, total: sum(fixos) || totals.custosFixosRateados, kind: "money", negative: true },
+      { key: "rh", label: "RH · Folha", color: "#fcd34d", values: rh, total: totals.provisaoRH, kind: "money", negative: true },
+      { key: "fix", label: "Custos Fixos", color: "#a78bfa", values: fixos, total: totals.custosFixosRateados, kind: "money", negative: true },
       { key: "custo", label: "Custo Total", color: "#f87171", values: custo, total: sum(custo) || totals.custoTotal, kind: "money", emphasize: true, negative: true },
       { key: "lucro", label: "Lucro Líquido", color: "#60a5fa", values: lucro, total: sum(lucro) || totals.lucro, kind: "money", emphasize: true },
       { key: "margem", label: "Margem %", color: "#22d3ee", values: margem, total: totals.margem, kind: "pct", emphasize: true },
     ];
-  }, [cols, totals]);
+  }, [cols, totals, daysInPeriod]);
+
+  const drillRows = useMemo(() => {
+    if (!drill) return [] as Array<{ label: string; detail?: string; amount: number }>;
+    const day = drill.date;
+    if (drill.key === "pag") {
+      return missions
+        .filter((m) => (m.data || "").split("T")[0] === day)
+        .map((m) => ({
+          label: m.os_number || `OS #${m.service_order_id || m.id}`,
+          detail: `${m.vigilante || "—"} · ${m.placa_viatura || "—"} · ${m.client_name || ""}`,
+          amount: Number(m.pag_labor ?? m.pag_total) || 0,
+        }))
+        .filter((r) => r.amount > 0);
+    }
+    if (drill.key === "comb" || drill.key === "ped" || drill.key === "man") {
+      return periodExpenses
+        .filter((t) => (t.date || "").split("T")[0] === day)
+        .filter((t) => {
+          const o = String(t.origin_type || "").toLowerCase();
+          const c = String(t.category_name || "").toLowerCase();
+          if (drill.key === "comb") {
+            return o === "fueling" || o === "vehicle_fueling" || (o === "mission_cost" && c.includes("combust"));
+          }
+          if (drill.key === "man") {
+            return o === "maintenance" || (o === "mission_cost" && c.includes("manut"));
+          }
+          // pedágio
+          return o === "mission_cost" && !c.includes("combust") && !c.includes("manut");
+        })
+        .map((t) => ({
+          label: t.description || t.entity_name || t.category_name || t.origin_type || "Lançamento",
+          detail: `${t.origin_type || "?"} · ${t.category_name || "sem categoria"} · ${t.entity_name || ""}`,
+          amount: Number(t.amount) || 0,
+        }));
+    }
+    if (drill.key === "fix") {
+      return [{
+        label: "Rateio igual do mês",
+        detail: `Custos fixos do período ÷ ${daysInPeriod} dias = valor constante em cada coluna`,
+        amount: totals.custosFixosRateados / Math.max(daysInPeriod, 1),
+      }];
+    }
+    if (drill.key === "rh") {
+      return [{
+        label: "Folha operacional rateada",
+        detail: `RH mensal ÷ ${daysInPeriod} dias (mesmo valor todos os dias)`,
+        amount: totals.provisaoRH / Math.max(daysInPeriod, 1),
+      }];
+    }
+    return [];
+  }, [drill, missions, periodExpenses, daysInPeriod, totals]);
 
   const chartData = useMemo(
     () =>
@@ -223,11 +281,16 @@ export function BalancoExecutivoPanel({
     <div className="space-y-4" data-testid="panel-balanco-executivo">
       {/* DRE densa */}
       <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 overflow-hidden shadow-xl shadow-black/30">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <h4 className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-2">
-            <Calendar size={14} className="text-cyan-400" /> Balanço Gerencial — DRE do período
-          </h4>
-          <span className="text-[10px] font-bold text-slate-500 uppercase">{cols.length} colunas</span>
+        <div className="flex flex-col gap-1 px-4 py-3 border-b border-slate-800">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-2">
+              <Calendar size={14} className="text-cyan-400" /> Balanço Gerencial — DRE do período
+            </h4>
+            <span className="text-[10px] font-bold text-slate-500 uppercase">{cols.length} colunas</span>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            Clique em VRP, Combustível ou Pedágio de um dia para ver os lançamentos. Fixos e RH são rateio igual (mês ÷ {daysInPeriod} dias).
+          </p>
         </div>
         {cols.length === 0 ? (
           <div className="text-center py-16 text-slate-500">
@@ -246,7 +309,9 @@ export function BalancoExecutivoPanel({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line, idx) => (
+                {lines.map((line, idx) => {
+                  const clickable = ["pag", "comb", "ped", "man", "rh", "fix"].includes(line.key);
+                  return (
                   <tr
                     key={line.key}
                     className={`${idx % 2 === 0 ? "bg-slate-950/40" : "bg-slate-900/40"} ${line.emphasize ? "border-y border-slate-700/60" : ""}`}
@@ -258,10 +323,9 @@ export function BalancoExecutivoPanel({
                         {line.label}
                       </span>
                     </td>
-                    {line.values.map((v, i) => (
-                      <td
-                        key={`${line.key}-${i}`}
-                        className={`text-right font-mono px-2 py-2 ${
+                    {line.values.map((v, i) => {
+                      const date = cols[i]?.date || "";
+                      const cellCls = `text-right font-mono px-2 py-2 ${
                           line.kind === "pct"
                             ? v >= 35
                               ? "text-emerald-400"
@@ -273,11 +337,24 @@ export function BalancoExecutivoPanel({
                               : v < 0
                                 ? "text-rose-400"
                                 : "text-slate-200"
-                        } ${line.emphasize ? "font-black" : "font-semibold"}`}
-                      >
-                        {line.kind === "pct" ? fmtPct(v) : fmtCompact(v)}
-                      </td>
-                    ))}
+                        } ${line.emphasize ? "font-black" : "font-semibold"} ${clickable && v > 0 ? "cursor-pointer hover:bg-slate-700/50 underline decoration-slate-600 underline-offset-2" : ""}`;
+                      return clickable && v > 0 ? (
+                        <td key={`${line.key}-${i}`} className={cellCls}>
+                          <button
+                            type="button"
+                            className="w-full text-right"
+                            onClick={() => setDrill({ key: line.key, label: line.label, date, amount: v })}
+                            data-testid={`dre-cell-${line.key}-${date}`}
+                          >
+                            {line.kind === "pct" ? fmtPct(v) : fmtCompact(v)}
+                          </button>
+                        </td>
+                      ) : (
+                        <td key={`${line.key}-${i}`} className={cellCls}>
+                          {line.kind === "pct" ? fmtPct(v) : fmtCompact(v)}
+                        </td>
+                      );
+                    })}
                     <td
                       className={`text-right font-mono font-black px-3 py-2 ${
                         line.kind === "pct"
@@ -296,12 +373,41 @@ export function BalancoExecutivoPanel({
                       {line.kind === "pct" ? fmtPct(line.total) : fmt(line.total)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      <Dialog open={!!drill} onOpenChange={(o) => !o && setDrill(null)}>
+        <DialogContent className="max-w-lg bg-slate-950 border-slate-700 text-slate-100" data-testid="dialog-dre-drill">
+          <DialogHeader>
+            <DialogTitle className="text-slate-50">
+              {drill?.label} — {drill?.date ? new Date(drill.date + "T12:00").toLocaleDateString("pt-BR") : ""}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Origem dos lançamentos deste dia (fonte ERP). Total célula: {drill ? fmt(drill.amount) : "—"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[55vh] overflow-y-auto space-y-2 text-xs">
+            {drillRows.length === 0 ? (
+              <p className="text-slate-500 py-6 text-center">Nenhum lançamento detalhado para este dia.</p>
+            ) : (
+              drillRows.map((r, i) => (
+                <div key={i} className="rounded-lg border border-slate-700 p-2 flex justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-100 truncate">{r.label}</p>
+                    {r.detail && <p className="text-slate-500 truncate">{r.detail}</p>}
+                  </div>
+                  <p className="font-mono font-black text-amber-300 shrink-0">{fmt(r.amount)}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Gráficos inferiores */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
