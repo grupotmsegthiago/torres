@@ -1,26 +1,22 @@
 ---
-name: Adicional noturno = hora cheia 1,80× (modelo Torres)
+name: Adicional noturno — CCT fixa 16,50 (fallback 1,80×)
 description: Convenção unificada de cálculo do adicional noturno em toda a folha (holerite, custo, RH/Ponto)
 ---
 
-# Adicional noturno = hora cheia 1,80× (modelo Torres)
+# Adicional noturno — CCT fixa 16,50 (fallback 1,80×)
 
-**Regra atual (decisão do dono 26/06/2026):** em TODO o sistema o adicional
-noturno é `valorHora × 1,80 × horasNoturnas` — hora cheia + 60% de HE + 20% de
-adicional noturno. NÃO é mais só o prêmio de 20%.
+**Regra atual (decisão do dono 29/07/2026):** vigilância Torres usa taxas **fixas do Kit CCT**:
+- HE diurna = `horaExtraValor` (padrão **R$ 16,00**/h)
+- HE/adicional noturno = `horaExtraNoturnaValor` (padrão **R$ 16,50**/h)
 
-**Why:** a planilha manual do dono (caso de referência validado 100%) paga a hora
-noturna como hora extra noturna a 1,80× — o vigilante que vira a noite recebe a
-hora cheia novamente acrescida dos adicionais, não só o prêmio. O dono decidiu
-que o sistema TEM que bater com a planilha dele. Antes o sistema oscilou entre
-`× 1,20` (double-pay) e `× 0,20` (só prêmio); ambos foram abandonados em favor de
-`× 1,80`.
+O motor (`calcularFolha` / `buildFolhaStats`) aplica essas taxas quando > 0.
+Só se a CCT não tiver taxa (ex.: SIEMACO = 0) cai no fallback antigo
+`valorHora × 1,60` (HE) / `valorHora × 1,80` (noturno).
+
+**Why:** a planilha manual (Reis etc.) paga R$ 16 diurna e R$ 16,50 noturna —
+não o multiplicador do salário (~R$ 24/h). Ver também `payroll-cct-he-fixas.md`.
 
 **Como aplicar:**
-- Motor de folha e callers (holerite, custo, RH/Ponto) usam 1,80×. Mexer nisso
-  muda em cascata a base tributável (INSS/IRRF/FGTS) e o custo no Balanço RH — esperado.
-- Aplica-se SÓ ao pagamento do funcionário / custo; o faturamento do cliente
-  (escolta/escort_billings) é outro fluxo e não foi tocado.
+- Sempre passar `valorHoraExtraFixo` / `valorHoraNoturnaFixo` a partir do Kit CCT do cargo.
 - DSR fica desligado no modelo Torres.
-- Há regressão de teste no caso de referência. NÃO voltar para 0,20 nem 1,20 sem
-  ordem explícita do dono.
+- Não voltar a multiplicador do salário na vigilância sem ordem do dono.

@@ -16,6 +16,39 @@ import {
 let cache: { presets: Record<string, CctPreset>; loadedAt: number } | null = null;
 const TTL_MS = 30_000;
 
+/** Default antigo do código (pré 29/07/2026) — seed gravou isso no banco. */
+const LEGACY_HE_DIURNA_DEFAULT = 22.99;
+
+/**
+ * Vigilância Torres: HE diurna R$ 16 e noturna R$ 16,50.
+ * Se o preset ainda tiver o default legado 22,99 (ou noturna ausente/0), corrige na leitura.
+ */
+export function normalizeVigilanciaHeRates(cfg: CctConfig): CctConfig {
+  let horaExtraValor = Number(cfg.horaExtraValor);
+  let horaExtraNoturnaValor = Number(cfg.horaExtraNoturnaValor);
+  if (Math.abs(horaExtraValor - LEGACY_HE_DIURNA_DEFAULT) < 0.011) {
+    horaExtraValor = 16;
+  }
+  if (!Number.isFinite(horaExtraNoturnaValor) || horaExtraNoturnaValor <= 0) {
+    horaExtraNoturnaValor = 16.5;
+  }
+  if (
+    horaExtraValor === cfg.horaExtraValor &&
+    horaExtraNoturnaValor === cfg.horaExtraNoturnaValor
+  ) {
+    return cfg;
+  }
+  return { ...cfg, horaExtraValor, horaExtraNoturnaValor };
+}
+
+function parseCctConfig(raw: unknown, presetKey?: string): CctConfig {
+  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...((raw as object) || {}) });
+  if (presetKey === CCT_PRESET_VIGILANCIA || !presetKey) {
+    return normalizeVigilanciaHeRates(cfg);
+  }
+  return cfg;
+}
+
 async function loadAllPresetsRaw(): Promise<Record<string, CctPreset>> {
   const out: Record<string, CctPreset> = {};
 
@@ -26,9 +59,10 @@ async function loadAllPresetsRaw(): Promise<Record<string, CctPreset>> {
       .select("key, label, sindicato, cargos, config");
     for (const row of data || []) {
       try {
-        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...((row as any).config || {}) });
-        out[(row as any).key] = {
-          key: (row as any).key,
+        const key = (row as any).key as string;
+        const cfg = parseCctConfig((row as any).config || {}, key);
+        out[key] = {
+          key,
           label: (row as any).label || cfg.label,
           sindicato: (row as any).sindicato || cfg.sindicato || "",
           cargos: (row as any).cargos || [],
@@ -52,7 +86,7 @@ async function loadAllPresetsRaw(): Promise<Record<string, CctPreset>> {
         .limit(1);
       if (data && data.length > 0) {
         const parsed = JSON.parse((data[0] as any).value);
-        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
+        const cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
         out[CCT_PRESET_VIGILANCIA] = {
           ...DEFAULT_VIGILANCIA_PRESET,
           config: cfg,
@@ -104,7 +138,7 @@ export async function getCctConfigByCargo(cargo: string | null | undefined): Pro
 }
 
 export async function savePreset(input: Partial<CctPreset> & { key: string }): Promise<CctPreset> {
-  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...(input.config || {}) });
+  const cfg = parseCctConfig(input.config || {}, input.key);
   const payload = {
     key: input.key,
     label: input.label || cfg.label,
@@ -151,7 +185,7 @@ async function syncLegacyCctSettings(cfg: CctConfig) {
 
 // Backcompat: saveCctConfig salva o preset vigilancia.
 export async function saveCctConfig(input: unknown): Promise<CctConfig> {
-  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...(input as object) });
+  const cfg = parseCctConfig(input, CCT_PRESET_VIGILANCIA);
   const preset = await savePreset({
     key: CCT_PRESET_VIGILANCIA,
     label: cfg.label,
@@ -194,7 +228,7 @@ export async function ensureDefaultPresets(): Promise<void> {
           .limit(1);
         if (legacy && legacy.length > 0) {
           const parsed = JSON.parse((legacy[0] as any).value);
-          cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
+          cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
         }
       } catch {}
       await supabaseAdmin.from("cct_presets").insert({
@@ -205,6 +239,36 @@ export async function ensureDefaultPresets(): Promise<void> {
         config: cfg,
       });
       console.log("[cct-config] preset Vigilância criado (herdado do system_settings ou default)");
+    } else {
+      // Migra HE legado 22,99 → 16 / noturna 16,50 se o preset já existir no banco.
+      try {
+        const { data: vig } = await supabaseAdmin
+          .from("cct_presets")
+          .select("key, label, sindicato, cargos, config")
+          .eq("key", CCT_PRESET_VIGILANCIA)
+          .limit(1);
+        if (vig && vig.length > 0) {
+          const raw = (vig[0] as any).config || {};
+          const before = Number(raw.horaExtraValor);
+          const beforeN = Number(raw.horaExtraNoturnaValor);
+          const needsHe =
+            Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 ||
+            !Number.isFinite(beforeN) ||
+            beforeN <= 0;
+          if (needsHe) {
+            const cfg = parseCctConfig(raw, CCT_PRESET_VIGILANCIA);
+            await supabaseAdmin
+              .from("cct_presets")
+              .update({ config: cfg, updated_at: new Date().toISOString() })
+              .eq("key", CCT_PRESET_VIGILANCIA);
+            await syncLegacyCctSettings(cfg).catch(() => {});
+            invalidateCctConfigCache();
+            console.log("[cct-config] HE vigilância migrada para 16 / 16,50");
+          }
+        }
+      } catch (e) {
+        console.error("[cct-config] migração HE vigilância falhou:", e);
+      }
     }
   } catch (e) {
     console.error("[cct-config] ensureDefaultPresets falhou:", e);

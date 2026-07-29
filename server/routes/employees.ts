@@ -532,7 +532,9 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const vtDesconto = isClt && vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
 
       // ===== ENGINE DE FOLHA 2025 (mesmo padrão do custo fixo) =====
-      // PJ: calcularFolha zera HE/noturno/VR/impostos; aqui também zeramos HE na entrada.
+      // HE/noturno: taxas fixas do Kit CCT (diurna 16 / noturna 16,50).
+      const heDiurnaFixo = isClt ? Number(CCT_FALLBACK.horaExtraValor || 0) : 0;
+      const heNoturnaFixo = isClt ? Number((CCT_FALLBACK as any).horaExtraNoturnaValor || 0) : 0;
       const folha = calcularFolha({
         salarioBaseCheio: baseSalary,
         diasTrabalhados,
@@ -546,6 +548,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         dependentesIR,
         isClt,
         vtDesconto,
+        valorHoraExtraFixo: heDiurnaFixo,
+        valorHoraNoturnaFixo: heNoturnaFixo,
       });
 
       // Benefícios CCT variáveis (cesta/VT/VA/assiduidade) só entram no CLT.
@@ -789,7 +793,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   const CCT_CONFIG = {
     salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00,
     cestaBasica: 208.45, diasUteisMes: 22, encargosSociaisPct: 80,
-    horaExtraValor: 22.99,
+    horaExtraValor: 16,
   };
 
   app.get("/api/employees/monthly-hours", requireAuth, requireAdminRole, async (req, res) => {

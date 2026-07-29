@@ -78,7 +78,8 @@ const CCT_SP_2025 = {
   ajudaCustoMensal: 200.00,
   diasUteisMes: 22,
   encargosSociaisPct: 80,
-  horaExtraValor: 22.99,
+  horaExtraValor: 16.00,
+  horaExtraNoturnaValor: 16.50,
   get valeRefeicaoMes() { return this.valeRefeicaoDia * this.diasUteisMes; },
   get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.ajudaCustoMensal; },
   pagamentoDiaUtil: 5,
@@ -3411,7 +3412,8 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
     ),
     diasUteisMes: String(i.diasUteisMes),
     encargosSociaisPct: String(i.encargosSociaisPct),
-    horaExtraValor: String(i.horaExtraValor),
+    horaExtraValor: String(i.horaExtraValor ?? 16),
+    horaExtraNoturnaValor: String((i as any).horaExtraNoturnaValor ?? 16.5),
     pagamentoDiaUtil: String(i.pagamentoDiaUtil),
     fgtsPct: String((i as any).fgtsPct ?? 8),
     inssPatronalPct: String((i as any).inssPatronalPct ?? 20),
@@ -3442,6 +3444,7 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
         diasUteisMes: Math.max(1, Math.round(num(form.diasUteisMes))),
         encargosSociaisPct: num(form.encargosSociaisPct),
         horaExtraValor: num(form.horaExtraValor),
+        horaExtraNoturnaValor: num(form.horaExtraNoturnaValor),
         pagamentoDiaUtil: Math.max(1, Math.round(num(form.pagamentoDiaUtil))),
         fgtsPct: num(form.fgtsPct),
         inssPatronalPct: num(form.inssPatronalPct),
@@ -3487,7 +3490,8 @@ function CctEditDialog({ open, onOpenChange, initial }: { open: boolean; onOpenC
             <CctField label="Vale-Refeição / dia" value={form.valeRefeicaoDia} onChange={(v) => setForm({ ...form, valeRefeicaoDia: v })} suffix="R$" testId="input-cct-vr" />
             <CctField label="Dias úteis / mês" value={form.diasUteisMes} onChange={(v) => setForm({ ...form, diasUteisMes: v })} suffix="dias" testId="input-cct-dias" />
             <CctField label="Ajuda de custo" value={form.ajudaCustoMensal} onChange={(v) => setForm({ ...form, ajudaCustoMensal: v, cestaBasica: "0" })} suffix="R$" testId="input-cct-ajuda" />
-            <CctField label="Hora Extra" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
+            <CctField label="Hora Extra diurna" value={form.horaExtraValor} onChange={(v) => setForm({ ...form, horaExtraValor: v })} suffix="R$/h" testId="input-cct-he" />
+            <CctField label="Hora Extra noturna" value={form.horaExtraNoturnaValor} onChange={(v) => setForm({ ...form, horaExtraNoturnaValor: v })} suffix="R$/h" testId="input-cct-he-noturna" />
             <CctField label="Encargos Sociais" value={form.encargosSociaisPct} onChange={(v) => setForm({ ...form, encargosSociaisPct: v })} suffix="%" testId="input-cct-encargos" />
             <CctField label="Pagamento (dia útil)" value={form.pagamentoDiaUtil} onChange={(v) => setForm({ ...form, pagamentoDiaUtil: v })} suffix="º" testId="input-cct-dia-pagamento" />
           </div>

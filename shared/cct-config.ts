@@ -26,7 +26,10 @@ export const cctConfigSchema = z.object({
   jornada: z.string().default(""),
   diasUteisMes: z.number().int().positive().default(22),
   encargosSociaisPct: z.number().nonnegative().default(80),
-  horaExtraValor: z.number().nonnegative().default(22.99),
+  /** HE diurna fixa (R$/h) — modelo Torres vigilância: R$ 16,00. */
+  horaExtraValor: z.number().nonnegative().default(16),
+  /** HE/adicional noturno fixo (R$/h) — modelo Torres: R$ 16,50. */
+  horaExtraNoturnaValor: z.number().nonnegative().default(16.5),
   pagamentoDiaUtil: z.number().int().positive().default(5),
   fgtsPct: z.number().nonnegative().default(8),
   inssPatronalPct: z.number().nonnegative().default(20),
@@ -79,6 +82,7 @@ export const DEFAULT_SIEMACO_PRESET: CctPreset = {
     diasUteisMes: 22,
     encargosSociaisPct: 80,
     horaExtraValor: 0,
+    horaExtraNoturnaValor: 0,
     pagamentoDiaUtil: 5,
     fgtsPct: 8,
     inssPatronalPct: 20,

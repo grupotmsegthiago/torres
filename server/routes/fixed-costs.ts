@@ -341,6 +341,12 @@ export async function calculateAgentMonthlyCost(
     /* mantém fallback */
   }
 
+  // Taxas HE CCT (diurna 16 / noturna 16,50) — não inventar multiplicador do salário.
+  const { getCctConfigByCargo } = await import("../lib/cct-config");
+  const cctRates = await getCctConfigByCargo(opts?.role || null);
+  const heDiurnaFixo = isClt ? Number(cctRates.horaExtraValor || 0) : 0;
+  const heNoturnaFixo = isClt ? Number((cctRates as any).horaExtraNoturnaValor || 0) : 0;
+
   // Engine de folha 2025 — MESMA do cadastro (salary-summary → calcularFolha).
   // PJ: valor fixo = base (sem peric/HE/VR/impostos).
   const folha = calcularFolha({
@@ -355,6 +361,8 @@ export async function calculateAgentMonthlyCost(
     ajudaCustoMensal,
     dependentesIR,
     isClt,
+    valorHoraExtraFixo: heDiurnaFixo,
+    valorHoraNoturnaFixo: heNoturnaFixo,
   });
 
   // Custo Empresa: CLT = folha + benefícios CCT + diárias; PJ = só valor fixo.
@@ -491,9 +499,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v6 (29/07/2026): HE = banco mensal Control iD (trab − 220), não Σ diário 8h48.
+  // baseKey v7 (29/07/2026): HE CCT fixas 16 / 16,50 (não salário×1,6/1,8).
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v6",
+    baseKey: "rh-summary-v7",
     ttlMs: SWR_TTL_3H,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],

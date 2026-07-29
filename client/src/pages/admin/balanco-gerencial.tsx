@@ -263,10 +263,10 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    // v6: HE banco mensal Control iD; alinha com baseKey rh-summary-v6.
-    queryKey: ["/api/fixed-costs/rh-summary", "v6", "cached", gridRange.from, gridRange.to],
+    // v7: HE CCT 16 / 16,50; alinha com baseKey rh-summary-v7.
+    queryKey: ["/api/fixed-costs/rh-summary", "v7", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = "rh-summary-v6-forced";
+      const bustKey = "rh-summary-v7-forced";
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {

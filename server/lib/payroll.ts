@@ -150,11 +150,20 @@ export interface PayrollInput {
   horasExtras?: number;
   /** Total de horas noturnas no mês (decimal). */
   horasNoturnas?: number;
-  /** Multiplicador HE (default 1.60 = 60% adicional). */
+  /** Multiplicador HE (default 1.60 = 60% adicional). Usado só se valorHoraExtraFixo não vier. */
   multiplicadorHE?: number;
-  /** Multiplicador da hora noturna (default 1.80 = hora cheia + 60% HE + 20% noturno,
-   * modelo da planilha do dono). Antes era 0.20 (só o prêmio). */
+  /** Multiplicador da hora noturna (default 1.80). Usado só se valorHoraNoturnaFixo não vier. */
   multiplicadorAdicNot?: number;
+  /**
+   * Taxa fixa de HE diurna (R$/h) — CCT `horaExtraValor` (ex.: 16,00).
+   * Se > 0, prevalece sobre valorHora × multiplicadorHE.
+   */
+  valorHoraExtraFixo?: number;
+  /**
+   * Taxa fixa de adicional/HE noturna (R$/h) — CCT `horaExtraNoturnaValor` (ex.: 16,50).
+   * Se > 0, prevalece sobre valorHora × multiplicadorAdicNot.
+   */
+  valorHoraNoturnaFixo?: number;
   /** Aplicar periculosidade separada? Default `false` — no modelo Torres o salário
    * já inclui a periculosidade, então não se soma 30% por cima. */
   aplicarPericulosidade?: boolean;
@@ -249,6 +258,8 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     periculosidadePct = PERICULOSIDADE_PADRAO,
     multiplicadorHE = 1.6,
     multiplicadorAdicNot = 1.8,
+    valorHoraExtraFixo = 0,
+    valorHoraNoturnaFixo = 0,
     aplicarPericulosidade = true,
     aplicarDsr = false,
     inssModo = "flat",
@@ -285,8 +296,15 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   // integra a base de cálculo de HE e adicional noturno. valorHora = base × (1+peric) ÷ horas.
   const fatorPeric = aplicarPericulosidadeEfetivo ? 1 + pericPctEfetivo : 1;
   const valorHoraNormal = horasMensais > 0 ? (salarioBaseCheio * fatorPeric) / horasMensais : 0;
-  const horasExtrasValor = r2(valorHoraNormal * multiplicadorHE * horasExtras);
-  const adicionalNoturnoValor = r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
+  // CCT Torres: taxas fixas (16 / 16,50) prevalecem sobre multiplicador do salário.
+  const heFixo = Number(valorHoraExtraFixo) || 0;
+  const notFixo = Number(valorHoraNoturnaFixo) || 0;
+  const horasExtrasValor = heFixo > 0
+    ? r2(heFixo * horasExtras)
+    : r2(valorHoraNormal * multiplicadorHE * horasExtras);
+  const adicionalNoturnoValor = notFixo > 0
+    ? r2(notFixo * horasNoturnas)
+    : r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
 
   // DSR sobre HE + Adicional Noturno — desligado no modelo Torres (e sempre off em PJ).
   const dsr = (aplicarDsrEfetivo && diasUteisDSR > 0)

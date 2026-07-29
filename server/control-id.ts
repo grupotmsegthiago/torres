@@ -1319,7 +1319,7 @@ export async function buildFolhaStats(
     employee?: { role?: string | null; tipo_contratacao?: string | null };
   } = {},
 ): Promise<any> {
-  const multiplicadorHE = opts.multiplicadorHE ?? 1.6; // CCT vigilância = 60% (HE 24,26 = 15,16×1,6). CLT mínimo é 50%, mas o sistema usa a CCT.
+  const multiplicadorHE = opts.multiplicadorHE ?? 1.6; // fallback se CCT não tiver taxa fixa
 
   // Pega salário vigente mais recente (cuja effective_date <= último dia do mês).
   // Buscado ANTES do ponto pra injetar horas_mensais em buildFolhaPonto e evitar
@@ -1490,18 +1490,19 @@ export async function buildFolhaStats(
   const horaExtraRaw = Math.max(0, hoursWorked - hoursLimit);
   const horaExtra = isClt ? horaExtraRaw : 0;
   const horasNoturnasCusto = isClt ? horasNoturnas : 0;
-  // Hora-base inclui periculosidade (Súmula 132 TST) — bate com a planilha do dono
-  // (HE 24,26 = 15,16×1,6 e Noturno 27,29 = 15,16×1,8, onde 15,16 = base×1,3/220).
+  // Taxas HE: Kit CCT fixas (diurna 16 / noturna 16,50). Fallback = multiplicador do salário.
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? (baseSalary * fatorPericVH) / hoursLimit : 0;
-  // Arredonda o valor-hora ao centavo ANTES de aplicar o multiplicador, batendo
-  // com a CCT do dono: 15,16 × 1,6 = 24,26 (em vez de 15,1586×1,6 = 24,25).
-  const valorHoraExtra = (Math.round(valorHora * 100) / 100) * multiplicadorHE;
-  // Adicional noturno (modelo Torres, revertido pelo dono): hora cheia 1,80×
-  // (hora + 60% HE + 20% noturno) sobre as horas entre 22h–05h. Antes era só o
-  // prêmio de 20% — ver memória payroll-night-additional.
+  const heDiurnaCct = Number(CCT.horaExtraValor || 0);
+  const heNoturnaCct = Number((CCT as any).horaExtraNoturnaValor || 0);
+  const valorHoraExtra = heDiurnaCct > 0
+    ? heDiurnaCct
+    : (Math.round(valorHora * 100) / 100) * multiplicadorHE;
   const multiplicadorAdicNot = (CCT as any).multiplicadorAdicNot ?? 1.8;
-  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnasCusto).toFixed(2);
+  const valorHoraNoturna = heNoturnaCct > 0
+    ? heNoturnaCct
+    : valorHora * multiplicadorAdicNot;
+  const adicionalNoturno = +(valorHoraNoturna * horasNoturnasCusto).toFixed(2);
 
   // Vencimentos (mensal-fixos ratados por dias corridos quando mês corrente).
   // PJ: valor fixo = base cadastrada, sem somar periculosidade CCT.

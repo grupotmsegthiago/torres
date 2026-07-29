@@ -551,7 +551,7 @@ export async function runProvisaoCron(): Promise<void> {
       valeRefeicaoDia: 40.0,
       cestaBasica: 208.45,
       diasUteisMes: 22,
-      horaExtraValor: 22.99,
+      horaExtraValor: 16,
     };
     const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
     const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;

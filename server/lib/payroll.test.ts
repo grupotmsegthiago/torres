@@ -198,3 +198,29 @@ test("resolveCestaAjudaTorres: kit 200 vira ajuda de custo", () => {
   assert.deepEqual(resolveCestaAjudaTorres(0, 200), { cesta: 0, ajudaCusto: 200 });
   assert.deepEqual(resolveCestaAjudaTorres(315, 0), { cesta: 315, ajudaCusto: 0 }, "SIEMACO cesta II intacta");
 });
+
+test("CCT Torres: HE diurna 16 e noturna 16,50 (taxas fixas)", () => {
+  // Reis ~103,75h HE + ~80,2h noturnas → usa R$/h do Kit CCT, não salário×1,6.
+  const f = calcularFolha({
+    salarioBaseCheio: 2565.31,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0.3,
+    horasExtras: 103.75,
+    horasNoturnas: 80.2,
+    valorHoraExtraFixo: 16,
+    valorHoraNoturnaFixo: 16.5,
+  });
+  assert.equal(f.horasExtrasValor, 1660, "103,75 × 16");
+  assert.equal(f.adicionalNoturnoValor, 1323.3, "80,2 × 16,50");
+  // Sem taxa fixa, multiplicador do salário daria valor bem maior (~24,26/h).
+  const semFixo = calcularFolha({
+    salarioBaseCheio: 2565.31,
+    diasTrabalhados: 30,
+    horasMensais: 220,
+    periculosidadePct: 0.3,
+    horasExtras: 103.75,
+    horasNoturnas: 80.2,
+  });
+  assert.ok(semFixo.horasExtrasValor > f.horasExtrasValor + 500, "multiplicador salário ≠ CCT fixa");
+});
