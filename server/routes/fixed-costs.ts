@@ -9,7 +9,6 @@ import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
-import { computeWorkedHours } from "../lib/hours-calc";
 import { createLimit } from "../lib/create-limit";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
@@ -142,6 +141,10 @@ export async function calculateAgentMonthlyCost(
     horasExtras?: number;
     /** Override de horas noturnas do PERÍODO (decimal). Se fornecido, ignora a média. */
     horasNoturnas?: number;
+    /** Cargo do funcionário — usado no fallback Kit CCT (mesmo do cadastro). */
+    role?: string | null;
+    /** tipo_contratacao já carregado (evita re-query). */
+    tipoContratacao?: string | null;
   }
 ): Promise<{
   total: number;
@@ -155,6 +158,8 @@ export async function calculateAgentMonthlyCost(
     cesta: number;
     outros: number;
     diarias: number;
+    valeAlimentacao: number;
+    assiduidade: number;
     horasMensais: number;
     custoHora: number;
     ferias: number;
@@ -177,6 +182,7 @@ export async function calculateAgentMonthlyCost(
     totalDeducoes: number;
     totalProvisoes: number;
     liquidoFuncionario: number;
+    semSalario: boolean;
   };
 }> {
   const { data, error } = await supabaseAdmin
@@ -232,24 +238,27 @@ export async function calculateAgentMonthlyCost(
     if (horasNoturnasMedia === undefined) horasNoturnasMedia = 0;
   }
 
-  if (error || !data || data.length === 0) {
-    return {
-      total: 0,
-      breakdown: {
-        base: 0, encargos: 0,
-        vrDiario: 43, vrDias, vrTotal: 0,
-        vt: 0, cesta: 0, outros: 0, diarias: opts?.diariasManuais ?? 0,
-        horasMensais: 220, custoHora: 0,
-        ferias: 0, decimoTerceiro: 0, rescisao: 0, horaExtra: 0, adicionalNoturno: 0,
-        salarioProporcional: 0, periculosidade: 0, dsr: 0, ajudaCusto: 0,
-        inss: 0, irrf: 0, fgts: 0, provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0, provisaoINSSsobreFerias13: 0,
-        totalBruto: 0, totalDeducoes: 0, totalProvisoes: 0, liquidoFuncionario: 0,
-      },
+  // Sem salário cadastrado: usa Kit CCT do cargo (mesma regra do cadastro / salary-summary).
+  const semSalario = !!(error || !data || data.length === 0);
+  let s: any = data?.[0] || null;
+  if (semSalario) {
+    const { getCctConfigByCargo } = await import("../lib/cct-config");
+    const cct = await getCctConfigByCargo(opts?.role || null);
+    s = {
+      base_salary: cct.salarioBase,
+      periculosidade_pct: cct.periculosidadePct,
+      vale_refeicao_diario: cct.valeRefeicaoDia,
+      cesta_basica: cct.cestaBasica,
+      vale_transporte_mensal: 0,
+      beneficios_outros: 0,
+      horas_mensais: 220,
+      ajuda_custo_mensal: 0,
+      vale_alimentacao_mensal: 0,
+      assiduidade_mensal: 0,
+      dependentes_ir: 0,
     };
   }
 
-  const s: any = data[0];
   const base = Number(s.base_salary || 0);
   const vrDiario = Number(s.vale_refeicao_diario ?? 43);
   const vrLegacy = Number(s.vale_refeicao_mensal || 0);
@@ -257,6 +266,8 @@ export async function calculateAgentMonthlyCost(
   const vt = Number(s.vale_transporte_mensal || 0);
   const cesta = Number(s.cesta_basica ?? 200);
   const outros = Number(s.beneficios_outros || 0);
+  const valeAlimentacao = Number(s.vale_alimentacao_mensal || 0);
+  const assiduidade = Number(s.assiduidade_mensal || 0);
   const diarias = opts?.diariasManuais ?? 0;
   const horasMensais = Number(s.horas_mensais || 220);
   const periculosidadePct = Number(s.periculosidade_pct ?? 30) / 100;
@@ -277,16 +288,19 @@ export async function calculateAgentMonthlyCost(
     /* mantém fallback */
   }
 
-  // Regime de contratação: lê tipo_contratacao do funcionário.
-  // "fixo" = sem encargos/descontos (PJ, autônomo, freelancer pago por fora).
-  const { data: empRowTipo } = await supabaseAdmin
-    .from("employees")
-    .select("tipo_contratacao")
-    .eq("id", employeeId)
-    .limit(1);
-  const isClt = !empRowTipo || !empRowTipo[0] || (empRowTipo[0] as any).tipo_contratacao !== "fixo";
+  // Regime de contratação: "fixo" = sem encargos/descontos (PJ, autônomo).
+  let tipoContratacao = opts?.tipoContratacao;
+  if (tipoContratacao === undefined) {
+    const { data: empRowTipo } = await supabaseAdmin
+      .from("employees")
+      .select("tipo_contratacao")
+      .eq("id", employeeId)
+      .limit(1);
+    tipoContratacao = empRowTipo?.[0] ? (empRowTipo[0] as any).tipo_contratacao : null;
+  }
+  const isClt = tipoContratacao !== "fixo";
 
-  // Engine de folha 2025 (CLT brasileira; não-CLT zera encargos e provisões).
+  // Engine de folha 2025 — MESMA do cadastro (salary-summary → calcularFolha).
   const folha = calcularFolha({
     salarioBaseCheio: base,
     diasTrabalhados,
@@ -301,8 +315,8 @@ export async function calculateAgentMonthlyCost(
     isClt,
   });
 
-  // Custo total para a empresa = Bruto + FGTS + Provisões + outros benefícios não tributáveis (cesta/VT/outros) + diárias manuais
-  const total = folha.custoTotalEmpresa + cesta + vt + outros + diarias;
+  // Custo Empresa = idêntico ao cadastro: custoTotalEmpresa + cesta/VT/outros/VA/assiduidade (+ diárias do período).
+  const total = +(folha.custoTotalEmpresa + cesta + vt + outros + valeAlimentacao + assiduidade + diarias).toFixed(2);
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
 
   // Compat: campos antigos da UI continuam funcionando
@@ -316,7 +330,8 @@ export async function calculateAgentMonthlyCost(
     breakdown: {
       base: folha.salarioProporcional,
       encargos,
-      vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora,
+      vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, valeAlimentacao, assiduidade,
+      horasMensais, custoHora,
       ferias, decimoTerceiro, rescisao,
       horaExtra: folha.horasExtrasValor,
       adicionalNoturno: folha.adicionalNoturnoValor,
@@ -335,6 +350,7 @@ export async function calculateAgentMonthlyCost(
       totalDeducoes: folha.totalDeducoes,
       totalProvisoes: folha.totalProvisoes,
       liquidoFuncionario: folha.liquidoFuncionario,
+      semSalario,
     },
   };
 }
@@ -423,7 +439,7 @@ export function registerFixedCostsRoutes(app: Express) {
   }, async (req, res) => {
     const { data: employees, error } = await supabaseAdmin
       .from("employees")
-      .select("id, name, status, role, tipo_contratacao");
+      .select("id, name, status, role, tipo_contratacao, hire_date");
     if (error) return res.status(500).json({ message: error.message });
 
     const ativos = (employees || []).filter(isAtivo);
@@ -438,107 +454,84 @@ export function registerFixedCostsRoutes(app: Express) {
     const holidaySet = await loadHolidaySet(from, to);
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
+    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+    const yearRef = Number(mesRef.slice(0, 4));
+    const monthRef = Number(mesRef.slice(5, 7));
 
-    // Horas trabalhadas no mês — agregado por agente.
-    // Fonte: control_id_punches (sync Control iD em tempo real). Fallback: timesheets (manual).
-    const horasMes = new Map<number, { normais: number; extras: number }>();
+    // HE / noturno — MESMA fonte do cadastro (salary-summary):
+    // 1ª ponto_operacional no período; 2ª jornada_calculos do mês.
+    const heByEmp = new Map<number, number>();
+    const notByEmp = new Map<number, number>();
     try {
-      const fromIso = new Date(from + "T00:00:00-03:00").toISOString();
-      const toIso = new Date(to + "T23:59:59-03:00").toISOString();
-      const { data: punches } = await supabaseAdmin
-        .from("control_id_punches")
-        .select("employee_id, punch_at")
-        .gte("punch_at", fromIso)
-        .lte("punch_at", toIso)
-        .order("punch_at", { ascending: true });
-
-      // Agrupa batidas por funcionário e usa o cálculo CANÔNICO
-      // (server/lib/hours-calc.ts). Pareia entradas/saídas e atribui ao dia
-      // BRT da entrada — turnos cruzando meia-noite contam corretamente.
-      const punchesByEmp = new Map<number, any[]>();
-      for (const p of (punches || []) as any[]) {
-        const empId = p.employee_id;
-        if (empId == null) continue;
-        if (!punchesByEmp.has(empId)) punchesByEmp.set(empId, []);
-        punchesByEmp.get(empId)!.push(p);
+      const inicioMes = `${from}T00:00:00-03:00`;
+      const fimMes = `${to}T23:59:59-03:00`;
+      const { data: pontos } = await supabaseAdmin
+        .from("ponto_operacional")
+        .select("employee_id, horas_extras, horas_noturno")
+        .gte("entrada", inicioMes)
+        .lte("entrada", fimMes);
+      const comPonto = new Set<number>();
+      for (const p of (pontos || []) as any[]) {
+        const id = Number(p.employee_id);
+        if (!id) continue;
+        comPonto.add(id);
+        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(p.horas_extras || 0));
+        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(p.horas_noturno || 0));
       }
-      for (const [empId, pl] of Array.from(punchesByEmp.entries())) {
-        const calc = computeWorkedHours(pl);
-        if (!horasMes.has(empId)) horasMes.set(empId, { normais: 0, extras: 0 });
-        // HE só começa a contar quando ultrapassar 220h no mês (jornada CLT mensal).
-        // Soma tudo em "normais" — a separação acontece no cap mais abaixo.
-        horasMes.get(empId)!.normais += calc.totalHours;
-      }
-
-      // Fallback: agentes sem batidas no Control iD usam timesheets manuais (se existirem)
-      const { data: ts } = await supabaseAdmin
-        .from("timesheets")
-        .select("employee_id, hours_worked, overtime")
-        .gte("date", from)
-        .lte("date", to);
-      for (const r of (ts || []) as any[]) {
-        const id = Number(r.employee_id);
-        if (horasMes.has(id)) continue; // já tem dados do Control iD
-        if (!horasMes.has(id)) horasMes.set(id, { normais: 0, extras: 0 });
-        const slot = horasMes.get(id)!;
-        slot.normais += Number(r.hours_worked || 0);
-        slot.extras += Number(r.overtime || 0);
-      }
-    } catch (e: any) {
-      console.warn("[rh-summary] horasMes fallback:", e?.message || e);
-    }
-
-    // Horas NOTURNAS do mês — vêm de jornada_calculos (cálculo CCT por missão).
-    // Control iD não diferencia turno noturno, então a fonte oficial é jornada_calculos.
-    const noturnasMes = new Map<number, number>();
-    try {
-      const mesRef = String(from).slice(0, 7); // "YYYY-MM"
       const { data: jornMes } = await supabaseAdmin
         .from("jornada_calculos")
-        .select("employee_id, horas_noturnas")
+        .select("employee_id, horas_extras, horas_noturnas")
         .eq("mes_referencia", mesRef);
       for (const r of (jornMes || []) as any[]) {
         const id = Number(r.employee_id);
-        if (!noturnasMes.has(id)) noturnasMes.set(id, 0);
-        noturnasMes.set(id, noturnasMes.get(id)! + Number(r.horas_noturnas || 0));
+        if (!id || comPonto.has(id)) continue;
+        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(r.horas_extras || 0));
+        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(r.horas_noturnas || 0));
       }
     } catch (e: any) {
-      console.warn("[rh-summary] noturnasMes:", e?.message || e);
+      console.warn("[rh-summary] horas ponto/jornada:", e?.message || e);
     }
 
     const porAgente: any[] = [];
     let totalMensal = 0;
     const acc = {
       base: 0, peric: 0, he: 0, noturno: 0, refeicao: 0,
-      fgts: 0, inssPatronal: 0, seguroVida: 0,
-      cesta: 0, diarias: 0,
+      fgts: 0, vt: 0, cesta: 0, outros: 0, diarias: 0,
+      ajudaCusto: 0, valeAlimentacao: 0, assiduidade: 0,
       inssFunc: 0, irrfFunc: 0, liquidoFunc: 0,
+      ferias: 0, decimoTerceiro: 0, provisaoTerco: 0,
+      provisaoFgts: 0, provisaoInss: 0, totalProvisoes: 0,
     };
 
-    // Alinhado com a tela Ponto Eletrônico (control-id.tsx → buildFolhaStats):
-    // mesma fórmula de Custo Real (Vencimentos + Benefícios; recolhimentos são
-    // informativos e NÃO somam — item 4), HE em 60%
-    // (CCT) em vez dos 50% legais. Sem provisões, sem DSR. Modelo Torres (26/06/2026):
-    // adicional noturno É incluído (hora cheia 1,80×) e INSS/IRRF/líquido do funcionário
-    // vêm de buildFolhaStats só p/ exibição (NÃO entram no custo da empresa).
-    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
-    const { buildFolhaStats } = await import("../control-id");
-
-    // Calcula a folha de cada agente em PARALELO (limite de concorrência) em vez
-    // de um de cada vez. Passa o cadastro já carregado (role/tipo_contratacao)
-    // pra evitar reler `employees` por funcionário. A acumulação (somas/breakdown)
-    // continua logo abaixo na ordem original de `ativos`, então os totais ficam
-    // bit-idênticos ao cálculo serial anterior.
+    // Alinhado com o CADASTRO do funcionário (salary-summary → calcularFolha → Custo Empresa):
+    // bruto + FGTS + provisões (13º/férias/1/3) + cesta/VT/outros/VA/assiduidade.
+    // Mesma engine CCT do Kit do funcionário — NÃO usa buildFolhaStats (Ponto).
     const limit = createLimit(6);
     const statsByIdx = await Promise.all(
       ativos.map((emp) => limit(async () => {
         try {
-          return await buildFolhaStats(emp.id, mesRef, {
-            multiplicadorHE: 1.6,
-            employee: { role: (emp as any).role, tipo_contratacao: (emp as any).tipo_contratacao },
+          // Proporcional na admissão (mesma regra do salary-summary)
+          let diasTrabalhados = 30;
+          const hireRaw = (emp as any).hire_date || (emp as any).hireDate;
+          if (hireRaw) {
+            const hire = new Date(hireRaw);
+            if (hire.getFullYear() === yearRef && hire.getMonth() + 1 === monthRef) {
+              const daysInMonth = new Date(yearRef, monthRef, 0).getDate();
+              diasTrabalhados = Math.max(1, daysInMonth - hire.getDate() + 1);
+            }
+          }
+          return await calculateAgentMonthlyCost(emp.id, {
+            businessDays,
+            holidaySet,
+            diariasManuais: Number(diarias.porAgente[emp.id] || 0),
+            diasTrabalhados,
+            horasExtras: Math.round((heByEmp.get(emp.id) || 0) * 100) / 100,
+            horasNoturnas: Math.round((notByEmp.get(emp.id) || 0) * 100) / 100,
+            role: (emp as any).role,
+            tipoContratacao: (emp as any).tipo_contratacao,
           });
         } catch (err: any) {
-          console.warn(`[rh-summary] buildFolhaStats(${emp.id}) falhou:`, err?.message || err);
+          console.warn(`[rh-summary] calculateAgentMonthlyCost(${emp.id}) falhou:`, err?.message || err);
           return null;
         }
       })),
@@ -546,96 +539,98 @@ export function registerFixedCostsRoutes(app: Express) {
 
     for (let i = 0; i < ativos.length; i++) {
       const emp = ativos[i];
-      const s: any = statsByIdx[i];
-      if (!s) continue;
+      const r = statsByIdx[i];
+      if (!r) continue;
 
-      const total = Number(s.custoTotalEstimado || 0);
+      const b = r.breakdown;
+      const total = Number(r.total || 0);
       totalMensal += total;
 
-      const base = Number(s.baseSalary || 0);
-      const peric = Number(s.periculosidade || 0);
-      const heVal = Number(s.custoExtra || 0);
-      const noturnoVal = Number(s.adicionalNoturno || 0);
-      const inssFuncVal = Number(s.inssFuncionario || 0);
-      const irrfFuncVal = Number(s.irrfFuncionario || 0);
-      const liquidoFuncVal = Number(s.liquidoFuncionario || 0);
-      const vrTotal = Number(s.valeRefeicao || 0);
-      const cesta = Number(s.cestaBasica || 0);
-      // Diárias: usar a mesma fonte que entrou em `custoTotalEstimado` (s.diarias),
-      // pra garantir que monthly === soma do breakdown. Se vier 0 do operational_payments,
-      // tenta o fallback de agent_daily_allowances pra exibição — mas NÃO altera o total.
-      const diariasEmp = Number(s.diarias || 0) > 0
-        ? Number(s.diarias)
-        : Number(diarias.porAgente[emp.id] || 0);
-      const fgts = Number(s.fgts || 0);
-      const inssPatronal = Number(s.inssPatronal || 0);
-      const seguroVida = Number(s.seguroVida || 0);
+      const base = Number(b.salarioProporcional || 0);
+      const peric = Number(b.periculosidade || 0);
+      const heVal = Number(b.horaExtra || 0);
+      const noturnoVal = Number(b.adicionalNoturno || 0);
+      const inssFuncVal = Number(b.inss || 0);
+      const irrfFuncVal = Number(b.irrf || 0);
+      const liquidoFuncVal = Number(b.liquidoFuncionario || 0);
+      const vrTotal = Number(b.vrTotal || 0);
+      const cesta = Number(b.cesta || 0);
+      const vt = Number(b.vt || 0);
+      const outros = Number(b.outros || 0);
+      const diariasEmp = Number(b.diarias || 0);
+      const ajudaCusto = Number(b.ajudaCusto || 0);
+      const valeAlimentacao = Number(b.valeAlimentacao || 0);
+      const assiduidade = Number(b.assiduidade || 0);
+      const fgts = Number(b.fgts || 0);
+      const totalProvisoes = Number(b.totalProvisoes || 0);
+      const ferias = Number(b.ferias || 0);
+      const decimoTerceiro = Number(b.decimoTerceiro || 0);
 
       acc.base += base; acc.peric += peric; acc.he += heVal; acc.noturno += noturnoVal;
-      acc.refeicao += vrTotal; acc.cesta += cesta; acc.diarias += diariasEmp;
-      acc.fgts += fgts; acc.inssPatronal += inssPatronal; acc.seguroVida += seguroVida;
+      acc.refeicao += vrTotal; acc.cesta += cesta; acc.vt += vt; acc.outros += outros;
+      acc.diarias += diariasEmp; acc.ajudaCusto += ajudaCusto;
+      acc.valeAlimentacao += valeAlimentacao; acc.assiduidade += assiduidade;
+      acc.fgts += fgts;
       acc.inssFunc += inssFuncVal; acc.irrfFunc += irrfFuncVal; acc.liquidoFunc += liquidoFuncVal;
-
-      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
-      const horasNormaisMes = Math.min(220, hm.normais);
-      const horasExtrasMes = Number(s.horaExtra || 0);
+      acc.ferias += ferias; acc.decimoTerceiro += decimoTerceiro;
+      acc.provisaoTerco += Number(b.provisaoTercoFerias || 0);
+      acc.provisaoFgts += Number(b.provisaoFGTSsobreFerias13 || 0);
+      acc.provisaoInss += Number(b.provisaoINSSsobreFerias13 || 0);
+      acc.totalProvisoes += totalProvisoes;
 
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
-        // Total cheio e operacional são iguais — não há provisões no novo cálculo.
+        // Custo Empresa CCT (cadastro) — inclui FGTS + provisões
         total,
         totalOperacional: total,
-        totalProvisoes: 0,
-        horasNormaisMes,
-        horasExtrasMes,
+        totalProvisoes,
+        horasNormaisMes: 0,
+        horasExtrasMes: Number(heByEmp.get(emp.id) || 0),
         // Vencimentos
         salarioProporcional: base,
         periculosidade: peric,
         horaExtra: heVal,
         adicionalNoturno: noturnoVal,
-        dsr: 0,
-        valorHoraExtra: Number(s.valorHoraExtra || 0),
+        dsr: Number(b.dsr || 0),
+        valorHoraExtra: 0,
         // Benefícios
-        vrDiario: Number(s.vrDiario || 0),
-        vrDias: Number(s.diasUteis || 0),
+        vrDiario: Number(b.vrDiario || 0),
+        vrDias: Number(b.vrDias || 0),
         vrTotal,
-        ajudaCusto: 0,
-        vt: 0, cesta, outros: 0, diarias: diariasEmp,
-        // Recolhimentos (encargos empresa)
+        ajudaCusto,
+        vt, cesta, outros, diarias: diariasEmp,
+        valeAlimentacao, assiduidade,
+        // Encargos empresa (entram no Custo Empresa do cadastro)
         fgts,
-        fgtsPct: Number(s.fgtsPct || 8),
-        inssPatronal,
-        inssPatronalPct: Number(s.inssPatronalPct || 20),
-        seguroVida,
-        // Compat com UI antiga
+        fgtsPct: 8,
+        inssPatronal: 0,
+        inssPatronalPct: 0,
+        seguroVida: 0,
+        // Compat com UI
         base,
-        encargos: fgts + inssPatronal + seguroVida,
+        encargos: Number(b.encargos || 0),
         inss: inssFuncVal, irrf: irrfFuncVal,
-        totalBruto: base + peric + heVal + noturnoVal,
-        totalDeducoes: +(inssFuncVal + irrfFuncVal).toFixed(2),
+        totalBruto: Number(b.totalBruto || 0),
+        totalDeducoes: Number(b.totalDeducoes || 0),
         liquidoFuncionario: liquidoFuncVal,
-        decimoTerceiro: 0,
-        ferias: 0,
-        provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0,
-        provisaoINSSsobreFerias13: 0,
-        rescisao: 0,
-        horasMensais: 220,
-        custoHora: Number(s.valorHora || 0),
-        semSalario: !s.hasSalary,
-        // Diagnóstico (mês corrente)
-        isMesCorrente: !!s.isMesCorrente,
-        diasCorridosElapsed: Number(s.diasCorridosElapsed || 0),
-        totalDiasMes: Number(s.totalDiasMes || 0),
+        decimoTerceiro,
+        ferias,
+        provisaoTercoFerias: Number(b.provisaoTercoFerias || 0),
+        provisaoFGTSsobreFerias13: Number(b.provisaoFGTSsobreFerias13 || 0),
+        provisaoINSSsobreFerias13: Number(b.provisaoINSSsobreFerias13 || 0),
+        rescisao: Number(b.rescisao || 0),
+        horasMensais: Number(b.horasMensais || 220),
+        custoHora: Number(b.custoHora || 0),
+        semSalario: !!b.semSalario,
+        fonte: "cct-cadastro",
       });
     }
 
     porAgente.sort((a, b) => b.total - a.total);
 
-    // Sem provisões neste cálculo (alinhado ao Ponto Eletrônico). monthlyOperacional = monthly.
+    // monthly = Custo Empresa CCT (soma dos cadastros). monthlyOperacional = mesmo valor.
     const totalOperacional = totalMensal;
-    const encargosTot = acc.fgts + acc.inssPatronal + acc.seguroVida;
     res.json({
       monthly: totalMensal,
       monthlyOperacional: totalOperacional,
@@ -645,34 +640,33 @@ export function registerFixedCostsRoutes(app: Express) {
       yearly: totalMensal * 12,
       agentCount: ativos.length,
       period: { from, to, businessDays, holidaysCount: holidaySet.size },
+      fonte: "cct-cadastro",
       breakdown: {
-        // Compat (UI antiga)
         base: acc.base,
-        encargos: encargosTot, // FGTS + INSS Patronal + Seguro de Vida
+        encargos: acc.fgts + acc.totalProvisoes,
         vr: acc.refeicao,
-        vt: 0, cesta: acc.cesta, outros: 0, diarias: acc.diarias,
-        ferias: 0,
-        decimoTerceiro: 0,
-        rescisao: 0,
+        vt: acc.vt, cesta: acc.cesta, outros: acc.outros + acc.valeAlimentacao + acc.assiduidade,
+        diarias: acc.diarias,
+        ferias: acc.ferias,
+        decimoTerceiro: acc.decimoTerceiro,
+        rescisao: acc.provisaoFgts + acc.provisaoInss,
         horaExtra: acc.he,
         adicionalNoturno: acc.noturno,
-        beneficios: acc.refeicao + acc.cesta + acc.diarias,
-        // Folha (Ponto Eletrônico)
+        beneficios: acc.refeicao + acc.cesta + acc.vt + acc.outros + acc.diarias + acc.valeAlimentacao + acc.assiduidade + acc.ajudaCusto,
         salarioProporcional: acc.base,
         periculosidade: acc.peric,
         dsr: 0,
-        ajudaCusto: 0,
-        totalBruto: acc.base + acc.peric + acc.he + acc.noturno,
+        ajudaCusto: acc.ajudaCusto,
+        totalBruto: acc.base + acc.peric + acc.he + acc.noturno + acc.refeicao + acc.ajudaCusto,
         inss: +acc.inssFunc.toFixed(2), irrf: +acc.irrfFunc.toFixed(2), fgts: acc.fgts,
-        // Novos campos (encargos empresa)
-        inssPatronal: acc.inssPatronal,
-        seguroVida: acc.seguroVida,
+        inssPatronal: 0,
+        seguroVida: 0,
         totalDeducoes: +(acc.inssFunc + acc.irrfFunc).toFixed(2),
         liquidoFuncionario: +acc.liquidoFunc.toFixed(2),
-        provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0,
-        provisaoINSSsobreFerias13: 0,
-        totalProvisoes: 0,
+        provisaoTercoFerias: acc.provisaoTerco,
+        provisaoFGTSsobreFerias13: acc.provisaoFgts,
+        provisaoINSSsobreFerias13: acc.provisaoInss,
+        totalProvisoes: acc.totalProvisoes,
       },
       porAgente,
     });

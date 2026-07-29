@@ -259,7 +259,7 @@ export default function BalancoGerencialPage() {
     refetchInterval: 600_000,
   });
 
-  // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
+  // Custos de RH = Custo Empresa CCT do cadastro do funcionário (calcularFolha)
   const { data: rhSummary, isFetching: rhFetching } = useQuery<{
     monthly: number;
     monthlyOperacional?: number;
@@ -581,8 +581,8 @@ export default function BalancoGerencialPage() {
     };
   }, [data, gridData, range]);
 
-  // RH no Balanço Gerencial = visão FLUXO DE CAIXA (sem provisões 13º/férias/1/3).
-  // Usa `monthlyOperacional` do backend; fallback p/ `monthly` (compat) e CCT antiga.
+  // RH no Balanço = Custo Empresa CCT do cadastro (bruto + FGTS + provisões + benefícios).
+  // Usa `monthlyOperacional`/`monthly` do rh-summary; fallback p/ CCT antiga se API vazia.
   const provisaoRH = useMemo(() => {
     const mensalReal = Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0);
     if (mensalReal > 0) return (mensalReal / 30) * costDays;
@@ -1079,7 +1079,7 @@ export default function BalancoGerencialPage() {
               DAY: "diário", WEEK: "semanal", MONTH: "mensal", QUARTER: "trimestral", SEMESTER: "semestral", YEAR: "anual",
             };
             const baseDays = PERIOD_BASE_DAYS[period];
-            // Folha mensal SEM provisões (visão fluxo de caixa do Balanço Gerencial).
+            // Folha mensal = Custo Empresa CCT do cadastro (calcularFolha).
             const monthlyFolha = Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0) > 0
               ? Number(rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0)
               : (totals.provisaoRH / Math.max(daysInPeriod, 1)) * 30;
@@ -1089,24 +1089,17 @@ export default function BalancoGerencialPage() {
 
             if (totals.provisaoRH > 0) {
               const rhRows: Array<{ label: string; value: number }> = [];
-              // Detalhe agente-a-agente (folha mensal real × fator do período)
-              // Usa costDays (mês comercial 30d) pra evitar inflar em meses de 31 dias.
               const fatorPeriodo = costDays / 30;
-              // Per-agente usa `totalOperacional` (SEM provisões) p/ refletir desembolso do mês.
-              // Fallback p/ `total - totalProvisoes` (caso backend antigo não devolva o campo novo).
+              // Per-agente = Custo Empresa do cadastro (total CCT completo).
               const porAgente = (rhSummary?.porAgente || [])
                 .map((a) => ({
                   ...a,
-                  _opTotal: Number(a.totalOperacional ?? (Number(a.total || 0) - Number(a.totalProvisoes || 0))) || 0,
+                  _opTotal: Number(a.totalOperacional ?? a.total) || 0,
                 }))
                 .filter((a) => a._opTotal > 0)
                 .sort((a, b) => b._opTotal - a._opTotal);
 
-              // ── COMPOSIÇÃO AGREGADA — mesma fórmula da tela Ponto Eletrônico ("Custo Real")
-              // Total do card = Vencimentos (salário ratado + periculosidade 30% + HE com adicional
-              // 60% CCT + adicional noturno) + Benefícios (VR por dias úteis + cesta básica ratada +
-              // diárias). Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são
-              // só informativos, NÃO entram no total. SEM provisões, SEM DSR.
+              // Composição = mesma do cadastro (Custo Empresa): vencimentos + benefícios + FGTS + provisões.
               const bk = rhSummary?.breakdown;
               const agg = porAgente.length > 0
                 ? porAgente.reduce(
@@ -1117,12 +1110,15 @@ export default function BalancoGerencialPage() {
                       noturno: acc.noturno + Number(a.adicionalNoturno || 0),
                       vr: acc.vr + Number(a.vrTotal || 0),
                       cesta: acc.cesta + Number(a.cesta || 0),
+                      vt: acc.vt + Number(a.vt || 0),
                       diarias: acc.diarias + Number(a.diarias || 0),
+                      ajuda: acc.ajuda + Number(a.ajudaCusto || 0),
                       fgts: acc.fgts + Number(a.fgts || 0),
-                      inssPatronal: acc.inssPatronal + Number(a.inssPatronal || 0),
-                      seguroVida: acc.seguroVida + Number(a.seguroVida || 0),
+                      provisoes: acc.provisoes + Number(a.totalProvisoes || 0),
+                      ferias: acc.ferias + Number(a.ferias || 0),
+                      decimo: acc.decimo + Number(a.decimoTerceiro || 0),
                     }),
-                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, diarias: 0, fgts: 0, inssPatronal: 0, seguroVida: 0 }
+                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, vt: 0, diarias: 0, ajuda: 0, fgts: 0, provisoes: 0, ferias: 0, decimo: 0 }
                   )
                 : {
                     base: Number(bk?.salarioProporcional || 0),
@@ -1131,40 +1127,44 @@ export default function BalancoGerencialPage() {
                     noturno: Number(bk?.adicionalNoturno || 0),
                     vr: Number(bk?.vr || 0),
                     cesta: Number(bk?.cesta || 0),
+                    vt: Number(bk?.vt || 0),
                     diarias: Number(bk?.diarias || 0),
+                    ajuda: Number(bk?.ajudaCusto || 0),
                     fgts: Number(bk?.fgts || 0),
-                    inssPatronal: Number((bk as any)?.inssPatronal || 0),
-                    seguroVida: Number((bk as any)?.seguroVida || 0),
+                    provisoes: Number(bk?.totalProvisoes || 0),
+                    ferias: Number(bk?.ferias || 0),
+                    decimo: Number(bk?.decimoTerceiro || 0),
                   };
-              // Vencimentos inclui o adicional noturno (ele ENTRA no total do card — custoTotalEstimado).
               const vencimentos = agg.base + agg.peric + agg.he + agg.noturno;
-              const beneficios = agg.vr + agg.cesta + agg.diarias;
-              const recolhimentos = agg.fgts + agg.inssPatronal + agg.seguroVida;
-              const hasBreakdown = vencimentos + beneficios + recolhimentos > 0;
+              const beneficios = agg.vr + agg.cesta + agg.vt + agg.diarias + agg.ajuda;
+              const hasBreakdown = vencimentos + beneficios + agg.fgts + agg.provisoes > 0;
 
               if (hasBreakdown) {
-                rhRows.push({ label: "── Vencimentos ──", value: vencimentos * fatorPeriodo });
-                rhRows.push({ label: "  Salário base (ratado)", value: agg.base * fatorPeriodo });
-                rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
-                if (agg.he > 0) rhRows.push({ label: "  Hora extra (60% CCT)", value: agg.he * fatorPeriodo });
+                rhRows.push({ label: "── Vencimentos (CCT) ──", value: vencimentos * fatorPeriodo });
+                rhRows.push({ label: "  Salário base", value: agg.base * fatorPeriodo });
+                rhRows.push({ label: "  Periculosidade", value: agg.peric * fatorPeriodo });
+                if (agg.he > 0) rhRows.push({ label: "  Hora extra", value: agg.he * fatorPeriodo });
                 if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno", value: agg.noturno * fatorPeriodo });
-                rhRows.push({ label: "── Benefícios + Diárias ──", value: beneficios * fatorPeriodo });
+                rhRows.push({ label: "── Benefícios ──", value: beneficios * fatorPeriodo });
                 if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
                 if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });
-                if (agg.diarias > 0) rhRows.push({ label: "  Diárias de missão", value: agg.diarias * fatorPeriodo });
-                // Vencimentos + Benefícios = total do card (fecha 100%). Recolhimentos NÃO entram no
-                // total (Balanço é fluxo de caixa do mês) — mostrados só como informativo.
-                if (recolhimentos > 0) {
-                  rhRows.push({ label: "── Recolhimentos (informativo — fora do total) ──", value: recolhimentos * fatorPeriodo });
+                if (agg.vt > 0) rhRows.push({ label: "  Vale Transporte", value: agg.vt * fatorPeriodo });
+                if (agg.ajuda > 0) rhRows.push({ label: "  Ajuda de custo", value: agg.ajuda * fatorPeriodo });
+                if (agg.diarias > 0) rhRows.push({ label: "  Diárias", value: agg.diarias * fatorPeriodo });
+                if (agg.fgts > 0) {
+                  rhRows.push({ label: "── Encargos (entra no Custo Empresa) ──", value: agg.fgts * fatorPeriodo });
                   rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
-                  rhRows.push({ label: "  INSS Patronal (20%)", value: agg.inssPatronal * fatorPeriodo });
-                  if (agg.seguroVida > 0) rhRows.push({ label: "  Seguro de Vida (CCT)", value: agg.seguroVida * fatorPeriodo });
+                }
+                if (agg.provisoes > 0) {
+                  rhRows.push({ label: "── Provisões CCT ──", value: agg.provisoes * fatorPeriodo });
+                  if (agg.decimo > 0) rhRows.push({ label: "  13º", value: agg.decimo * fatorPeriodo });
+                  if (agg.ferias > 0) rhRows.push({ label: "  Férias + 1/3", value: agg.ferias * fatorPeriodo });
                 }
               }
 
               if (porAgente.length > 0) {
                 rhRows.push({
-                  label: `── Por agente (${porAgente.length}) — mesmo total, detalhado ──`,
+                  label: `── Por funcionário (${porAgente.length}) — Custo Empresa CCT ──`,
                   value: monthlyFolha * fatorPeriodo,
                 });
                 for (const a of porAgente) {
@@ -1184,10 +1184,10 @@ export default function BalancoGerencialPage() {
               }
               rhRows.push({ label: "Folha por dia (÷30)", value: monthlyFolha / 30 });
               cats.push({
-                key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
+                key: "rh", label: "RH · Custo Empresa CCT", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
-                tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE com adicional 60% CCT + adicional noturno) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipTitle: "RH — Custo Empresa (cadastro CCT)",
+                tipDesc: `Mesmo cálculo da tela de cadastro do funcionário (Custo Empresa). Soma bruto + FGTS + provisões (13º/férias/1/3) + benefícios (VR, cesta, VT etc.) de cada ativo. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30).`,
                 rows: rhRows,
               });
             }

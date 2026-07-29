@@ -293,9 +293,9 @@ export function GestorFinanceiroPanel(props: Props) {
           custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
           receita: Number(ops?.fat || 0),
           status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
-          // O que entra no custo empresa (vencimentos + benefícios) vs só informativo
+          // Custo Empresa CCT completo (já inclui FGTS + provisões)
           entraNoCusto: custoTotal,
-          informativoEncargos: s(a.fgts) + s(a.inssPatronal) + s(a.seguroVida),
+          informativoEncargos: 0,
         };
       })
       .sort((a, b) => b.custoTotal - a.custoTotal);
@@ -529,7 +529,7 @@ export function GestorFinanceiroPanel(props: Props) {
           </div>
           <p className="text-lg font-black font-mono text-rose-300">{fmt(totals.custoTotal)}</p>
           {[
-            ["RH (folha — custo real do vigilante)", totals.provisaoRH, "bg-amber-400"],
+            ["RH (Custo Empresa CCT — cadastro)", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
             ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
             ["Pedágio", totals.desp_pedagio, "bg-yellow-400"],
@@ -1044,17 +1044,6 @@ export function GestorFinanceiroPanel(props: Props) {
 }
 
 function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: string }) {
-  const entraCusto =
-    Number(agent.salarioProporcional || 0) +
-    Number(agent.periculosidade || 0) +
-    Number(agent.horaExtra || 0) +
-    Number(agent.adicionalNoturno || 0) +
-    Number(agent.vrTotal || 0) +
-    Number(agent.cesta || 0) +
-    Number(agent.diarias || 0) +
-    Number(agent.ajudaCusto || 0) +
-    Number(agent.outros || 0);
-
   return (
     <div className="space-y-3 text-[11px]" data-testid={`detalhe-agente-${agent.id}`}>
       <div className="flex items-center gap-3">
@@ -1073,13 +1062,12 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
       </div>
 
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
-        <p className="font-black uppercase text-emerald-300 text-[10px]">Entra no custo da empresa (Balanço)</p>
-        <Row label="Soma vencimentos + benefícios" value={fmt(entraCusto)} />
+        <p className="font-black uppercase text-emerald-300 text-[10px]">Custo Empresa CCT (cadastro)</p>
         <Row label="Custo total no período" value={fmt(agent.custoTotal)} />
-        <p className="text-[9px] text-slate-500 pt-1">Salário, peril, HE, noturno, VR, cesta e diárias.</p>
+        <p className="text-[9px] text-slate-500 pt-1">Mesmo valor da tela de cadastro do funcionário.</p>
       </div>
 
-      <Section title="Remuneração (entra no custo)" rows={[
+      <Section title="Remuneração" rows={[
         ["Salário base", agent.salarioProporcional],
         ["Horas Extras", agent.horaExtra],
         ["Adic. Noturno", agent.adicionalNoturno],
@@ -1087,7 +1075,7 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         ["DSR", agent.dsr],
         ["Total bruto", agent.totalBruto],
       ]} />
-      <Section title="Benefícios (entra no custo)" rows={[
+      <Section title="Benefícios" rows={[
         ["Vale Refeição", agent.vrTotal],
         ["Vale Transporte", agent.vt],
         ["Cesta", agent.cesta],
@@ -1095,15 +1083,13 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         ["Auxílio / ajuda de custo", agent.ajudaCusto],
         ["Outros", agent.outros],
       ]} />
-      <Section title="Encargos (só informativo — NÃO soma no Balanço)" rows={[
+      <Section title="Encargos (entra no Custo Empresa)" rows={[
         ["FGTS (empresa)", agent.fgts],
-        ["INSS Patronal", agent.inssPatronal],
-        ["Seguro de vida", agent.seguroVida],
         ["INSS funcionário (desconto)", agent.inss],
         ["IRRF (desconto)", agent.irrf],
         ["Líquido do funcionário", agent.liquidoFuncionario],
       ]} />
-      <Section title="Provisões (fora do fluxo operacional)" rows={[
+      <Section title="Provisões CCT (entra no Custo Empresa)" rows={[
         ["Férias", agent.ferias ?? 0],
         ["13º", agent.decimoTerceiro ?? 0],
         ["1/3 férias", agent.provisaoTercoFerias ?? 0],
@@ -1121,10 +1107,9 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         <Row label="Custo no Balanço" value={fmt(agent.custoTotal)} />
         <Row label="% da folha" value={fmtPct(agent.pctFolha)} />
         <Row label="% dos custos da empresa" value={fmtPct(agent.pctEmpresa)} />
-        <Row label="Encargos informativos" value={fmt(Number(agent.informativoEncargos || 0))} />
       </div>
       <p className="text-[9px] text-slate-500">
-        Campos zerados = sem lançamento no cadastro. Encargos patronais são exibidos mas não entram no custo total do Balanço (regra do sistema).
+        Fonte: Kit CCT / salário do cadastro do funcionário (engine calcularFolha).
       </p>
     </div>
   );
