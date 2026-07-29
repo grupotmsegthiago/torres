@@ -1684,16 +1684,6 @@ function minuteKeyBRT2(d) {
   });
   return `${date} ${time}`;
 }
-function truncateToMinuteMs(ms) {
-  if (!Number.isFinite(ms)) return 0;
-  return Math.floor(ms / 6e4) * 6e4;
-}
-function workedMinutesBetween(startMs, endMs) {
-  const a = truncateToMinuteMs(startMs);
-  const b = truncateToMinuteMs(endMs);
-  if (!(b > a)) return 0;
-  return (b - a) / 6e4;
-}
 function normalizeName(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -2012,30 +2002,6 @@ var init_locked_periods = __esm({
   }
 });
 
-// shared/contratacao.ts
-var contratacao_exports = {};
-__export(contratacao_exports, {
-  isCltContrato: () => isCltContrato,
-  labelTipoContratacao: () => labelTipoContratacao,
-  normalizeTipoContratacao: () => normalizeTipoContratacao
-});
-function normalizeTipoContratacao(tipo) {
-  const t = String(tipo || "clt").toLowerCase().trim();
-  if (t === "pj" || t === "fixo") return "pj";
-  return "clt";
-}
-function isCltContrato(tipo) {
-  return normalizeTipoContratacao(tipo) === "clt";
-}
-function labelTipoContratacao(tipo) {
-  return normalizeTipoContratacao(tipo) === "pj" ? "PJ" : "CLT";
-}
-var init_contratacao = __esm({
-  "shared/contratacao.ts"() {
-    "use strict";
-  }
-});
-
 // shared/cct-config.ts
 import { z } from "zod";
 function resolvePresetKeyForCargo(cargo) {
@@ -2070,10 +2036,7 @@ var init_cct_config = __esm({
       jornada: z.string().default(""),
       diasUteisMes: z.number().int().positive().default(22),
       encargosSociaisPct: z.number().nonnegative().default(80),
-      /** HE diurna fixa (R$/h) — modelo Torres vigilância: R$ 16,00. */
-      horaExtraValor: z.number().nonnegative().default(16),
-      /** HE/adicional noturno fixo (R$/h) — modelo Torres: R$ 16,50. */
-      horaExtraNoturnaValor: z.number().nonnegative().default(16.5),
+      horaExtraValor: z.number().nonnegative().default(22.99),
       pagamentoDiaUtil: z.number().int().positive().default(5),
       fgtsPct: z.number().nonnegative().default(8),
       inssPatronalPct: z.number().nonnegative().default(20),
@@ -2109,7 +2072,6 @@ var init_cct_config = __esm({
         diasUteisMes: 22,
         encargosSociaisPct: 80,
         horaExtraValor: 0,
-        horaExtraNoturnaValor: 0,
         pagamentoDiaUtil: 5,
         fgtsPct: 8,
         inssPatronalPct: 20,
@@ -2136,41 +2098,18 @@ __export(cct_config_exports, {
   getCctPresetByCargo: () => getCctPresetByCargo,
   invalidateCctConfigCache: () => invalidateCctConfigCache,
   listCctPresets: () => listCctPresets,
-  normalizeVigilanciaHeRates: () => normalizeVigilanciaHeRates,
   saveCctConfig: () => saveCctConfig,
   savePreset: () => savePreset
 });
-function normalizeVigilanciaHeRates(cfg) {
-  let horaExtraValor = Number(cfg.horaExtraValor);
-  let horaExtraNoturnaValor = Number(cfg.horaExtraNoturnaValor);
-  if (Math.abs(horaExtraValor - LEGACY_HE_DIURNA_DEFAULT) < 0.011) {
-    horaExtraValor = 16;
-  }
-  if (!Number.isFinite(horaExtraNoturnaValor) || horaExtraNoturnaValor <= 0) {
-    horaExtraNoturnaValor = 16.5;
-  }
-  if (horaExtraValor === cfg.horaExtraValor && horaExtraNoturnaValor === cfg.horaExtraNoturnaValor) {
-    return cfg;
-  }
-  return { ...cfg, horaExtraValor, horaExtraNoturnaValor };
-}
-function parseCctConfig(raw, presetKey) {
-  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...raw || {} });
-  if (presetKey === CCT_PRESET_VIGILANCIA || !presetKey) {
-    return normalizeVigilanciaHeRates(cfg);
-  }
-  return cfg;
-}
 async function loadAllPresetsRaw() {
   const out = {};
   try {
     const { data } = await supabaseAdmin.from("cct_presets").select("key, label, sindicato, cargos, config");
     for (const row of data || []) {
       try {
-        const key = row.key;
-        const cfg = parseCctConfig(row.config || {}, key);
-        out[key] = {
-          key,
+        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...row.config || {} });
+        out[row.key] = {
+          key: row.key,
           label: row.label || cfg.label,
           sindicato: row.sindicato || cfg.sindicato || "",
           cargos: row.cargos || [],
@@ -2188,7 +2127,7 @@ async function loadAllPresetsRaw() {
       const { data } = await supabaseAdmin.from("system_settings").select("value").eq("key", CCT_CONFIG_SETTING_KEY).limit(1);
       if (data && data.length > 0) {
         const parsed = JSON.parse(data[0].value);
-        const cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
+        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
         out[CCT_PRESET_VIGILANCIA] = {
           ...DEFAULT_VIGILANCIA_PRESET,
           config: cfg
@@ -2229,7 +2168,7 @@ async function getCctConfigByCargo(cargo) {
   return p.config;
 }
 async function savePreset(input) {
-  const cfg = parseCctConfig(input.config || {}, input.key);
+  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...input.config || {} });
   const payload = {
     key: input.key,
     label: input.label || cfg.label,
@@ -2261,7 +2200,7 @@ async function syncLegacyCctSettings(cfg) {
   }
 }
 async function saveCctConfig(input) {
-  const cfg = parseCctConfig(input, CCT_PRESET_VIGILANCIA);
+  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...input });
   const preset = await savePreset({
     key: CCT_PRESET_VIGILANCIA,
     label: cfg.label,
@@ -2291,7 +2230,7 @@ async function ensureDefaultPresets() {
         const { data: legacy } = await supabaseAdmin.from("system_settings").select("value").eq("key", CCT_CONFIG_SETTING_KEY).limit(1);
         if (legacy && legacy.length > 0) {
           const parsed = JSON.parse(legacy[0].value);
-          cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
+          cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
         }
       } catch {
       }
@@ -2303,26 +2242,6 @@ async function ensureDefaultPresets() {
         config: cfg
       });
       console.log("[cct-config] preset Vigil\xE2ncia criado (herdado do system_settings ou default)");
-    } else {
-      try {
-        const { data: vig } = await supabaseAdmin.from("cct_presets").select("key, label, sindicato, cargos, config").eq("key", CCT_PRESET_VIGILANCIA).limit(1);
-        if (vig && vig.length > 0) {
-          const raw = vig[0].config || {};
-          const before = Number(raw.horaExtraValor);
-          const beforeN = Number(raw.horaExtraNoturnaValor);
-          const needsHe = Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 || !Number.isFinite(beforeN) || beforeN <= 0;
-          if (needsHe) {
-            const cfg = parseCctConfig(raw, CCT_PRESET_VIGILANCIA);
-            await supabaseAdmin.from("cct_presets").update({ config: cfg, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("key", CCT_PRESET_VIGILANCIA);
-            await syncLegacyCctSettings(cfg).catch(() => {
-            });
-            invalidateCctConfigCache();
-            console.log("[cct-config] HE vigil\xE2ncia migrada para 16 / 16,50");
-          }
-        }
-      } catch (e) {
-        console.error("[cct-config] migra\xE7\xE3o HE vigil\xE2ncia falhou:", e);
-      }
     }
   } catch (e) {
     console.error("[cct-config] ensureDefaultPresets falhou:", e);
@@ -2331,7 +2250,7 @@ async function ensureDefaultPresets() {
 function invalidateCctConfigCache() {
   cache = null;
 }
-var cache, TTL_MS, LEGACY_HE_DIURNA_DEFAULT;
+var cache, TTL_MS;
 var init_cct_config2 = __esm({
   "server/lib/cct-config.ts"() {
     "use strict";
@@ -2339,7 +2258,6 @@ var init_cct_config2 = __esm({
     init_cct_config();
     cache = null;
     TTL_MS = 3e4;
-    LEGACY_HE_DIURNA_DEFAULT = 22.99;
   }
 });
 
@@ -2390,212 +2308,6 @@ var init_payroll_period = __esm({
     "use strict";
     MESES_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
     MESES_PT_LONG = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-  }
-});
-
-// server/lib/payroll.ts
-var payroll_exports = {};
-__export(payroll_exports, {
-  FGTS_ALIQUOTA: () => FGTS_ALIQUOTA,
-  INSS_2025: () => INSS_2025,
-  INSS_PROVISAO_FERIAS_13: () => INSS_PROVISAO_FERIAS_13,
-  IRRF_2024: () => IRRF_2024,
-  IRRF_ISENTO_ATE: () => IRRF_ISENTO_ATE,
-  PERICULOSIDADE_PADRAO: () => PERICULOSIDADE_PADRAO,
-  VR_DIAS_UTEIS_CCT: () => VR_DIAS_UTEIS_CCT,
-  calcularFolha: () => calcularFolha,
-  calcularINSS: () => calcularINSS,
-  calcularIRRF: () => calcularIRRF,
-  endOfMonthYmd: () => endOfMonthYmd,
-  hhmmToDecimal: () => hhmmToDecimal,
-  r2: () => r2,
-  resolveCestaAjudaTorres: () => resolveCestaAjudaTorres,
-  selectSalaryVigenteFromHistory: () => selectSalaryVigenteFromHistory
-});
-function resolveCestaAjudaTorres(cestaBasica, ajudaCustoMensal) {
-  const cesta = Number(cestaBasica) || 0;
-  const ajuda = Number(ajudaCustoMensal) || 0;
-  if (ajuda === 0 && CESTA_KIT_LEGADO.has(r2(cesta))) {
-    return { cesta: 0, ajudaCusto: r2(cesta) };
-  }
-  return { cesta: r2(cesta), ajudaCusto: r2(ajuda) };
-}
-function r2(n) {
-  return Math.round(n * 100) / 100;
-}
-function hhmmToDecimal(hhmm2) {
-  const [h, m] = hhmm2.split(":").map(Number);
-  if (isNaN(h)) return 0;
-  return Math.round((h + (m || 0) / 60) * 1e4) / 1e4;
-}
-function calcularINSS(baseTributavel, tabela = INSS_2025) {
-  const base = Math.min(baseTributavel, tabela.teto);
-  let inss = 0;
-  let anterior = 0;
-  for (const f of tabela.faixas) {
-    if (base <= anterior) break;
-    const faixaTopo = Math.min(base, f.ate);
-    inss += (faixaTopo - anterior) * f.aliquota;
-    anterior = f.ate;
-    if (base <= f.ate) break;
-  }
-  return r2(inss);
-}
-function calcularIRRF(baseTributavelBruta, inssDescontado, numeroDependentes = 0, tabela = IRRF_2024) {
-  const baseIRRF = baseTributavelBruta - inssDescontado - numeroDependentes * tabela.deducaoDependente;
-  if (baseIRRF <= 0) return 0;
-  for (const f of tabela.faixas) {
-    if (baseIRRF <= f.ate) {
-      return r2(Math.max(0, baseIRRF * f.aliquota - f.deducao));
-    }
-  }
-  return 0;
-}
-function calcularFolha(input) {
-  const {
-    salarioBaseCheio,
-    diasTrabalhados = 30,
-    horasMensais = 220,
-    periculosidadePct = PERICULOSIDADE_PADRAO,
-    multiplicadorHE = 1.6,
-    multiplicadorAdicNot = 1.8,
-    valorHoraExtraFixo = 0,
-    valorHoraNoturnaFixo = 0,
-    aplicarPericulosidade = true,
-    aplicarDsr = false,
-    inssModo = "flat",
-    inssFlatPct = 12,
-    irrfModo = "flat",
-    irrfFlatPct = 22,
-    irrfIsentoAte = IRRF_ISENTO_ATE,
-    fgtsNoLiquido = false,
-    diasUteisDSR = 25,
-    ajudaCustoMensal = 0,
-    dependentesIR = 0,
-    isClt = true
-  } = input;
-  const horasExtras = isClt ? input.horasExtras ?? 0 : 0;
-  const horasNoturnas = isClt ? input.horasNoturnas ?? 0 : 0;
-  const diasUteis = isClt ? input.diasUteis ?? 0 : 0;
-  const refeicaoDiaria = isClt ? input.refeicaoDiaria ?? 0 : 0;
-  const vtDesconto = isClt ? input.vtDesconto ?? 0 : 0;
-  const aplicarDsrEfetivo = isClt && aplicarDsr;
-  const aplicarPericulosidadeEfetivo = isClt && aplicarPericulosidade;
-  const pericPctEfetivo = aplicarPericulosidadeEfetivo ? periculosidadePct : 0;
-  const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
-  const salarioProporcional = r2(salarioBaseCheio / 30 * diasTrabalhados);
-  const periculosidade = aplicarPericulosidadeEfetivo ? r2(salarioProporcional * pericPctEfetivo) : 0;
-  const fatorPeric = aplicarPericulosidadeEfetivo ? 1 + pericPctEfetivo : 1;
-  const valorHoraNormal = horasMensais > 0 ? salarioBaseCheio * fatorPeric / horasMensais : 0;
-  const heFixo = Number(valorHoraExtraFixo) || 0;
-  const notFixo = Number(valorHoraNoturnaFixo) || 0;
-  const horasExtrasValor = heFixo > 0 ? r2(heFixo * horasExtras) : r2(valorHoraNormal * multiplicadorHE * horasExtras);
-  const adicionalNoturnoValor = notFixo > 0 ? r2(notFixo * horasNoturnas) : r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
-  const dsr = aplicarDsrEfetivo && diasUteisDSR > 0 ? r2((horasExtrasValor + adicionalNoturnoValor) * (diasDescanso / diasUteisDSR)) : 0;
-  const refeicao = r2(refeicaoDiaria * diasUteis);
-  const ajudaCusto = r2(ajudaCustoMensal);
-  const baseTributavel = r2(
-    salarioProporcional + periculosidade + horasExtrasValor + adicionalNoturnoValor + dsr
-  );
-  const totalBruto = baseTributavel;
-  const baseIrrfMensal = r2(salarioProporcional + periculosidade);
-  const inss = isClt ? inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel) : 0;
-  const irrf = isClt ? irrfModo === "flat" ? baseIrrfMensal <= irrfIsentoAte ? 0 : r2(baseIrrfMensal * (irrfFlatPct / 100)) : calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
-  const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
-  const totalDeducoes = r2(inss + irrf);
-  const provisaoDecimoTerceiro = isClt ? r2(salarioBaseCheio / 12) : 0;
-  const provisaoFerias = isClt ? r2(salarioBaseCheio / 12) : 0;
-  const provisaoTercoFerias = isClt ? r2(provisaoFerias / 3) : 0;
-  const baseProvisoes = provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias;
-  const provisaoFGTSsobreFerias13 = isClt ? r2(baseProvisoes * FGTS_ALIQUOTA) : 0;
-  const provisaoINSSsobreFerias13 = isClt ? r2(baseProvisoes * INSS_PROVISAO_FERIAS_13) : 0;
-  const totalProvisoes = r2(
-    provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias + provisaoFGTSsobreFerias13 + provisaoINSSsobreFerias13
-  );
-  const custoTotalEmpresa = r2(totalBruto + refeicao + ajudaCusto + fgts);
-  const liquidoFuncionario = r2(
-    baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
-  );
-  return {
-    salarioProporcional,
-    periculosidade,
-    horasExtrasValor,
-    adicionalNoturnoValor,
-    dsr,
-    refeicao,
-    ajudaCusto,
-    totalBruto,
-    baseTributavel,
-    baseIrrfMensal,
-    inss,
-    irrf,
-    fgts,
-    totalDeducoes,
-    provisaoDecimoTerceiro,
-    provisaoFerias,
-    provisaoTercoFerias,
-    provisaoFGTSsobreFerias13,
-    provisaoINSSsobreFerias13,
-    totalProvisoes,
-    custoTotalEmpresa,
-    liquidoFuncionario
-  };
-}
-function selectSalaryVigenteFromHistory(rows, referenceDate) {
-  const ref = String(referenceDate || "").slice(0, 10);
-  if (!ref || !/^\d{4}-\d{2}-\d{2}$/.test(ref)) return null;
-  const eligible = (rows || []).filter((r) => {
-    const d = String(r.effective_date || r.effectiveDate || "").slice(0, 10);
-    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= ref;
-  });
-  if (eligible.length === 0) return null;
-  eligible.sort((a, b) => {
-    const da = String(a.effective_date || a.effectiveDate || "").slice(0, 10);
-    const db = String(b.effective_date || b.effectiveDate || "").slice(0, 10);
-    if (da !== db) return db.localeCompare(da);
-    const ca = String(a.created_at || a.createdAt || "");
-    const cb = String(b.created_at || b.createdAt || "");
-    if (ca !== cb) return cb.localeCompare(ca);
-    return Number(b.id || 0) - Number(a.id || 0);
-  });
-  return eligible[0];
-}
-function endOfMonthYmd(year, month) {
-  const y = Number(year);
-  const m = Number(month);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
-}
-var INSS_2025, IRRF_2024, FGTS_ALIQUOTA, PERICULOSIDADE_PADRAO, INSS_PROVISAO_FERIAS_13, IRRF_ISENTO_ATE, VR_DIAS_UTEIS_CCT, CESTA_KIT_LEGADO;
-var init_payroll = __esm({
-  "server/lib/payroll.ts"() {
-    "use strict";
-    INSS_2025 = {
-      faixas: [
-        { ate: 1518, aliquota: 0.075 },
-        { ate: 2793.88, aliquota: 0.09 },
-        { ate: 4190.83, aliquota: 0.12 },
-        { ate: 8157.41, aliquota: 0.14 }
-        // teto
-      ],
-      teto: 8157.41
-    };
-    IRRF_2024 = {
-      faixas: [
-        { ate: 2259.2, aliquota: 0, deducao: 0 },
-        { ate: 2826.65, aliquota: 0.075, deducao: 169.44 },
-        { ate: 3751.05, aliquota: 0.15, deducao: 381.44 },
-        { ate: 4664.68, aliquota: 0.225, deducao: 662.77 },
-        { ate: Infinity, aliquota: 0.275, deducao: 896 }
-      ],
-      deducaoDependente: 189.59
-    };
-    FGTS_ALIQUOTA = 0.08;
-    PERICULOSIDADE_PADRAO = 0.3;
-    INSS_PROVISAO_FERIAS_13 = 0.075;
-    IRRF_ISENTO_ATE = 5e3;
-    VR_DIAS_UTEIS_CCT = 22;
-    CESTA_KIT_LEGADO = /* @__PURE__ */ new Set([200, 208.45]);
   }
 });
 
@@ -3659,7 +3371,7 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const multiplicadorHE = opts.multiplicadorHE ?? 1.6;
   const [yyyy, mm] = monthYear.split("-").map(Number);
   const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
-  const { data: salaryRows } = await supabaseAdmin.from("employee_salaries").select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, ajuda_custo_mensal, effective_date").eq("employee_id", employeeId).lte("effective_date", monthEndStr).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
+  const { data: salaryRows } = await supabaseAdmin.from("employee_salaries").select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, effective_date").eq("employee_id", employeeId).lte("effective_date", monthEndStr).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
   const horasMensaisPonto = salaryRows && salaryRows[0] && salaryRows[0].horas_mensais ? Number(salaryRows[0].horas_mensais) : 220;
   const dias = await buildFolhaPonto(employeeId, monthYear, { horasMensais: horasMensaisPonto });
   const hoursWorked = dias.reduce((s, d) => s + (Number(d.workedMin) || 0), 0) / 60;
@@ -3667,8 +3379,7 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const horasNoturnas = dias.reduce((s, d) => s + (Number(d.noturnoMin) || 0), 0) / 60;
   const empRow = opts.employee ? [{ role: opts.employee.role, tipo_contratacao: opts.employee.tipo_contratacao }] : (await supabaseAdmin.from("employees").select("role, tipo_contratacao").eq("id", employeeId).limit(1)).data;
   const empRole = empRow && empRow[0] && empRow[0].role || "";
-  const { isCltContrato: isCltContrato2 } = await Promise.resolve().then(() => (init_contratacao(), contratacao_exports));
-  const isClt = !empRow || !empRow[0] ? true : isCltContrato2(empRow[0].tipo_contratacao);
+  const isClt = !empRow || !empRow[0] || empRow[0].tipo_contratacao !== "fixo";
   const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
   const CCT = await getCctConfigByCargo2(empRole);
   const sal = salaryRows && salaryRows[0];
@@ -3678,7 +3389,6 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const periculosidadePct = sal && sal.periculosidade_pct != null ? Number(sal.periculosidade_pct) : CCT.periculosidadePct;
   const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
   let cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
-  let ajudaCustoMensal = sal && sal.ajuda_custo_mensal != null ? Number(sal.ajuda_custo_mensal) : 0;
   let cestaBasicaIIAtestados = 0;
   let cestaBasicaIIFaixa = null;
   const faixas = CCT.cestaBasicaIIFaixas;
@@ -3708,11 +3418,6 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     } catch (e) {
       console.error("[calcularFolha] erro ao calcular Cesta B\xE1sica II:", e?.message);
     }
-  } else {
-    const { resolveCestaAjudaTorres: resolveCestaAjudaTorres2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
-    const ben = resolveCestaAjudaTorres2(cestaBasica, ajudaCustoMensal);
-    cestaBasica = ben.cesta;
-    ajudaCustoMensal = ben.ajudaCusto;
   }
   const { countBusinessDays: countBusinessDays2, loadHolidaySet: loadHolidaySet2, payrollPeriodRange: payrollPeriodRange2 } = await Promise.resolve().then(() => (init_holidays(), holidays_exports));
   const { from, to } = payrollPeriodRange2(yyyy, mm);
@@ -3745,42 +3450,33 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     diasCorridosElapsed = totalDiasMes;
     cutoffIso = to;
   }
-  const { VR_DIAS_UTEIS_CCT: VR_DIAS_UTEIS_CCT2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
-  const diasUteisTotal = VR_DIAS_UTEIS_CCT2;
-  const diasUteis = isMesCorrente ? Math.min(VR_DIAS_UTEIS_CCT2, countBusinessDays2(from, cutoffIso, holidaySet)) : isMesFuturo ? 0 : diasUteisTotal;
+  const diasUteisTotal = countBusinessDays2(from, to, holidaySet);
+  const diasUteis = isMesCorrente ? countBusinessDays2(from, cutoffIso, holidaySet) : isMesFuturo ? 0 : diasUteisTotal;
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
   const horasNormais = Math.min(hoursWorked, hoursLimit);
-  const horaExtraRaw = Math.max(0, hoursWorked - hoursLimit);
-  const horaExtra = isClt ? horaExtraRaw : 0;
-  const horasNoturnasCusto = isClt ? horasNoturnas : 0;
+  const horaExtra = Math.max(0, hoursWorked - hoursLimit);
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? baseSalary * fatorPericVH / hoursLimit : 0;
-  const heDiurnaCct = Number(CCT.horaExtraValor || 0);
-  const heNoturnaCct = Number(CCT.horaExtraNoturnaValor || 0);
-  const valorHoraExtra = heDiurnaCct > 0 ? heDiurnaCct : Math.round(valorHora * 100) / 100 * multiplicadorHE;
+  const valorHoraExtra = Math.round(valorHora * 100) / 100 * multiplicadorHE;
   const multiplicadorAdicNot = CCT.multiplicadorAdicNot ?? 1.8;
-  const valorHoraNoturna = heNoturnaCct > 0 ? heNoturnaCct : valorHora * multiplicadorAdicNot;
-  const adicionalNoturno = +(valorHoraNoturna * horasNoturnasCusto).toFixed(2);
+  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnas).toFixed(2);
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
-  const periculosidade = isClt ? +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2) : 0;
+  const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
-  const valeRefeicao = isClt ? +(vrDiario * diasUteis).toFixed(2) : 0;
-  const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
-  const ajudaCustoReal = isClt ? +(ajudaCustoMensal * fatorRateio).toFixed(2) : 0;
+  const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
+  const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
   let diarias = 0;
-  if (isClt) {
-    try {
-      const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
-      const { data: diariaRows } = await supabaseAdmin.from("operational_payments").select("amount").eq("employee_id", employeeId).eq("type", "diaria").gte("payment_date", from).lte("payment_date", cutoffStr);
-      if (Array.isArray(diariaRows)) {
-        diarias = diariaRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-      }
-    } catch {
+  try {
+    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
+    const { data: diariaRows } = await supabaseAdmin.from("operational_payments").select("amount").eq("employee_id", employeeId).eq("type", "diaria").gte("payment_date", from).lte("payment_date", cutoffStr);
+    if (Array.isArray(diariaRows)) {
+      diarias = diariaRows.reduce((s, r) => s + Number(r.amount || 0), 0);
     }
+  } catch {
   }
   diarias = +diarias.toFixed(2);
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
-  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal + ajudaCustoReal).toFixed(2);
+  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
   const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra + adicionalNoturno;
   const fgtsPct = isClt ? CCT.fgtsPct ?? 8 : 0;
   const inssPatronalPct = isClt ? CCT.inssPatronalPct ?? 20 : 0;
@@ -3825,11 +3521,9 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   faturamentoBruto = +faturamentoBruto.toFixed(2);
   faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
   faturamentoMargem = +faturamentoMargem.toFixed(2);
-  const { IRRF_ISENTO_ATE: IRRF_ISENTO_ATE2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
   const baseTributavelFunc = vencimentosTotal;
-  const baseIrrfMensalFunc = +(baseSalaryReal + periculosidade).toFixed(2);
   const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
-  const irrfFuncionario = isClt ? baseIrrfMensalFunc <= IRRF_ISENTO_ATE2 ? 0 : +(baseIrrfMensalFunc * 0.22).toFixed(2) : 0;
+  const irrfFuncionario = isClt ? +(baseTributavelFunc * 0.22).toFixed(2) : 0;
   const fgtsFuncionario = fgts;
   const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
   return {
@@ -3866,8 +3560,6 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     diarias,
     cestaBasica: cestaBasicaReal,
     cestaBasicaMensal: cestaBasica,
-    ajudaCusto: ajudaCustoReal,
-    ajudaCustoMensal,
     cestaBasicaIIAtestados,
     cestaBasicaIIFaixa,
     cestaBasicaIIAplicada: !!faixas,
@@ -4155,11 +3847,9 @@ async function buildPainelMes(monthYear) {
   return result;
 }
 function nightMinutesBRT2(startMs, endMs) {
-  const from = truncateToMinuteMs(startMs);
-  const to = truncateToMinuteMs(endMs);
-  if (!(to > from)) return 0;
+  if (!(endMs > startMs)) return 0;
   let count = 0;
-  for (let t = from; t < to; t += 6e4) {
+  for (let t = startMs; t < endMs; t += 6e4) {
     const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
     if (h >= 22 || h < 5) count++;
   }
@@ -4209,14 +3899,12 @@ async function buildFolhaPonto(employeeId, monthYear, opts = {}) {
       }))
     };
     if (entry.clockIn && entry.clockOut) {
-      const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
-      const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
-      let workedMin = workedMinutesBetween(inMs, outMs);
+      const inMs = new Date(sorted[0].punch_at).getTime();
+      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
+      let workedMin = (outMs - inMs) / 6e4;
       if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        workedMin -= workedMinutesBetween(
-          new Date(sorted[1].punch_at).getTime(),
-          new Date(sorted[2].punch_at).getTime()
-        );
+        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 6e4;
+        workedMin -= lunchMin;
       }
       workedMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
       entry.hoursWorked = (workedMin / 60).toFixed(2);
@@ -5661,43 +5349,15 @@ var init_swr_cache = __esm({
   }
 });
 
-// shared/cache-keys.ts
-function rhSummarySwrBaseKey() {
-  return `rh-summary-v${RH_SUMMARY_SCHEMA}`;
-}
-var RH_SUMMARY_SCHEMA, RH_SUMMARY_SWR_BUST_PREFIXES, RH_SUMMARY_FRESH_TTL_MS, RH_SUMMARY_HARD_TTL_MS;
-var init_cache_keys = __esm({
-  "shared/cache-keys.ts"() {
-    "use strict";
-    RH_SUMMARY_SCHEMA = 9;
-    RH_SUMMARY_SWR_BUST_PREFIXES = [
-      "rh-summary",
-      "rh-summary-v4",
-      "rh-summary-v5",
-      "rh-summary-v6",
-      "rh-summary-v7",
-      "rh-summary-v8",
-      "rh-summary-v9",
-      rhSummarySwrBaseKey()
-    ];
-    RH_SUMMARY_FRESH_TTL_MS = 2 * 60 * 1e3;
-    RH_SUMMARY_HARD_TTL_MS = 3 * 60 * 60 * 1e3;
-  }
-});
-
 // server/lib/balanco-cache.ts
 function bustBalancoCaches() {
   bustSwrCache("operational-grid");
   bustSwrCache("financial-dashboard");
-  for (const prefix of RH_SUMMARY_SWR_BUST_PREFIXES) {
-    bustSwrCache(prefix);
-  }
 }
 var init_balanco_cache = __esm({
   "server/lib/balanco-cache.ts"() {
     "use strict";
     init_swr_cache();
-    init_cache_keys();
   }
 });
 
@@ -15284,7 +14944,7 @@ async function runProvisaoCron() {
       valeRefeicaoDia: 40,
       cestaBasica: 208.45,
       diasUteisMes: 22,
-      horaExtraValor: 16
+      horaExtraValor: 22.99
     };
     const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
     const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
