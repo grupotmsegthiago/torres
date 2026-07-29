@@ -7,6 +7,7 @@ import {
   adoptionPatchPreservesDirection,
   isRhidDirectionNormalizeEnabled,
   RHID_AFD_DIRECTION_FIELD_CANDIDATES,
+  RHID_AFD_REJECTED_DIRECTION_FIELDS,
 } from "./punch-direction";
 import { parseRhidAfdRecords } from "./control-id-parsers";
 import {
@@ -54,12 +55,23 @@ describe("resolveAfdRecordDirection — sem heurística inventada", () => {
 
   it("flag ON mas candidatos vazios → unknown + afd_no_direction_field", () => {
     assert.equal(RHID_AFD_DIRECTION_FIELD_CANDIDATES.length, 0);
+    assert.ok(RHID_AFD_REJECTED_DIRECTION_FIELDS.includes("Tipo"));
     const r = resolveAfdRecordDirection(
       { direction: "in" },
       { normalizeEnabled: true, fieldCandidates: [] },
     );
     assert.equal(r.direction, "unknown");
     assert.equal(r.missingReason, "afd_no_direction_field");
+  });
+
+  it("Tipo=3 no payload NÃO vira direction (mesmo com flag ON e candidato Tipo)", () => {
+    // Evidência Parte B: Tipo=3 aparece em in, out e unknown — não é entrada/saída.
+    const r = resolveAfdRecordDirection(
+      { Tipo: 3 },
+      { normalizeEnabled: true, fieldCandidates: ["Tipo"] },
+    );
+    assert.equal(r.direction, "unknown");
+    assert.equal(r.missingReason, "unrecognized_direction_value");
   });
 
   it("flag ON + candidato documentado + alias → mapeia", () => {

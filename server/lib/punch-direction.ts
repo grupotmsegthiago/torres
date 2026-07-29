@@ -3,8 +3,24 @@
  *
  * - Lançamento manual: somente `in` | `out` (sem fallback silencioso).
  * - RHID/AFD: não inventa direção. Mapeamento automático só com feature flag
- *   + campos documentados comprovados por payload real (lista vazia até evidência).
+ *   + campos documentados comprovados por payload real (lista vazia — ver evidência).
  * - `raw_event` permanece imutável; classificação vai em `direction_missing_reason`.
+ *
+ * ## Evidência Parte B (competência 26/06→26/07/2026 exclus., 17 funcs, 1085 batidas)
+ * - Device: rhid_cloud — sync via `/customerdb/afd.svc/a`.
+ * - 301 unknown = 291 AFD (`source` null + `rhid_*`) + 10 manual.
+ * - Payload AFD dos 291: campo `Tipo` presente e **sempre = 3**; ausentes
+ *   direction/flow/tipo/event/inOut/InOut/status.
+ * - `Tipo=3` também aparece em registros já classificados como in/out → NÃO é
+ *   entrada/saída (no código, POST manual envia `Tipo: 3` como tipo de marcação AFD).
+ * - Conclusão: endpoint AFD atual **não** fornece direção confiável.
+ * - Manter: unknown + `afd_no_direction_field`, `RHID_DIRECTION_NORMALIZE=false`,
+ *   sem inferência cronológica. Emp 36 (61/61 unknown) não auto-corrigir.
+ *
+ * ## 24 AFD com in/out (source null) — origem no código (sem alterar dados)
+ * Sync AFD só insere `unknown`. Adoption só atualiza `external_id`.
+ * Único write local de direction sem mudar source: `PATCH` → `updateLocalPunch`.
+ * Hipótese sustentada: import AFD + edição humana posterior na UI admin.
  */
 
 export type PunchDirection = "in" | "out";
@@ -16,8 +32,15 @@ export type DirectionMissingReason =
   | "normalize_disabled"
   | "manual_rejected";
 
-/** Campos AFD elegíveis a mapeamento — VAZIO até SQL/Parte B comprovar chave confiável. */
+/**
+ * Campos AFD elegíveis a mapeamento.
+ * VAZIO de propósito: Parte B comprovou que `Tipo` (único candidato) NÃO é direction.
+ * Não incluir `Tipo` aqui.
+ */
 export const RHID_AFD_DIRECTION_FIELD_CANDIDATES: readonly string[] = Object.freeze([]);
+
+/** Campo AFD avaliado e rejeitado como direção (evidência: sempre 3 em in/out/unknown). */
+export const RHID_AFD_REJECTED_DIRECTION_FIELDS: readonly string[] = Object.freeze(["Tipo"]);
 
 /**
  * Aliases documentados → in/out.
