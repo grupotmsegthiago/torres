@@ -6,6 +6,11 @@ import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 import { calcularFolha, selectSalaryVigenteFromHistory, type PayrollBreakdown } from "../lib/payroll";
+import {
+  composeCustoEmpresaDetalhado,
+  resolveHorasExtrasNoturnasBulk,
+  sumDiariasForPeriodUnified,
+} from "../lib/employee-monthly-cost";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
@@ -149,6 +154,10 @@ export async function calculateAgentMonthlyCost(
     tipoContratacao?: string | null;
     /** Data de referência da vigência salarial (YYYY-MM-DD). */
     referenceDate?: string;
+    /** Override INSS patronal % (CCT). Default = CCT do cargo. */
+    inssPatronalPct?: number;
+    /** Override seguro de vida mensal (CCT). Default = CCT do cargo. */
+    seguroVidaMensal?: number;
   }
 ): Promise<{
   total: number;
@@ -183,6 +192,11 @@ export async function calculateAgentMonthlyCost(
     inss: number;
     irrf: number;
     fgts: number;
+    inssPatronal: number;
+    inssPatronalPct: number;
+    seguroVida: number;
+    custoRealizado: number;
+    custoProvisionado: number;
     provisaoTercoFerias: number;
     provisaoFGTSsobreFerias13: number;
     provisaoINSSsobreFerias13: number;
@@ -256,10 +270,10 @@ export async function calculateAgentMonthlyCost(
   // Sem salário cadastrado na vigência: Kit CCT do cargo (mesma regra do cadastro).
   const vigente = selectSalaryVigenteFromHistory(data || [], referenceDate);
   const semSalario = !!(error || !vigente);
+  const { getCctConfigByCargo } = await import("../lib/cct-config");
+  const cct = await getCctConfigByCargo(opts?.role || null);
   let s: any = vigente || null;
   if (semSalario) {
-    const { getCctConfigByCargo } = await import("../lib/cct-config");
-    const cct = await getCctConfigByCargo(opts?.role || null);
     s = {
       base_salary: cct.salarioBase,
       periculosidade_pct: cct.periculosidadePct,
@@ -274,6 +288,8 @@ export async function calculateAgentMonthlyCost(
       dependentes_ir: 0,
     };
   }
+  const inssPatronalPct = opts?.inssPatronalPct ?? Number(cct.inssPatronalPct ?? 20);
+  const seguroVidaMensal = opts?.seguroVidaMensal ?? Number(cct.seguroVidaMensal ?? 0);
 
   const base = Number(s.base_salary || 0);
   const vrDiario = Number(s.vale_refeicao_diario ?? 43);
@@ -331,12 +347,20 @@ export async function calculateAgentMonthlyCost(
     isClt,
   });
 
-  // Custo Empresa = idêntico ao cadastro: custoTotalEmpresa + cesta/VT/outros/VA/assiduidade (+ diárias do período).
-  const total = +(folha.custoTotalEmpresa + cesta + vt + outros + valeAlimentacao + assiduidade + diarias).toFixed(2);
+  // Custo Empresa = idêntico ao cadastro (composeCustoEmpresaDetalhado).
+  const custo = composeCustoEmpresaDetalhado({
+    folha,
+    beneficios: { cesta, vt, outros, valeAlimentacao, assiduidade },
+    diarias,
+    inssPatronalPct,
+    seguroVidaMensal,
+    isClt,
+  });
+  const total = custo.custoTotalEmpresa;
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
 
   // Compat: campos antigos da UI continuam funcionando
-  const encargos = folha.inss + folha.irrf + folha.fgts; // soma das deduções/encargos (compatibilidade visual)
+  const encargos = custo.encargos;
   const ferias = folha.provisaoFerias + folha.provisaoTercoFerias;
   const decimoTerceiro = folha.provisaoDecimoTerceiro;
   const rescisao = folha.provisaoFGTSsobreFerias13 + folha.provisaoINSSsobreFerias13;
@@ -367,6 +391,11 @@ export async function calculateAgentMonthlyCost(
       inss: folha.inss,
       irrf: folha.irrf,
       fgts: folha.fgts,
+      inssPatronal: custo.inssPatronal,
+      inssPatronalPct: custo.inssPatronalPct,
+      seguroVida: custo.seguroVida,
+      custoRealizado: custo.custoRealizado,
+      custoProvisionado: custo.custoProvisionado,
       provisaoTercoFerias: folha.provisaoTercoFerias,
       provisaoFGTSsobreFerias13: folha.provisaoFGTSsobreFerias13,
       provisaoINSSsobreFerias13: folha.provisaoINSSsobreFerias13,
@@ -477,43 +506,28 @@ export function registerFixedCostsRoutes(app: Express) {
     const to = (req.query.to as string) || def.to;
     const holidaySet = await loadHolidaySet(from, to);
     const businessDays = countBusinessDays(from, to, holidaySet);
-    const diarias = await sumDailyAllowancesForPeriod(from, to);
+    // Diárias unificadas (operational_payments + agent_daily_allowances)
+    const diarias = await sumDiariasForPeriodUnified(from, to);
     const mesRef = String(from).slice(0, 7); // "YYYY-MM"
     const yearRef = Number(mesRef.slice(0, 4));
     const monthRef = Number(mesRef.slice(5, 7));
 
-    // HE / noturno — MESMA fonte do cadastro (salary-summary):
-    // 1ª ponto_operacional no período; 2ª jornada_calculos do mês.
+    // HE / noturno — mesma cascata do cadastro (ponto → jornada → batidas se 0)
     const heByEmp = new Map<number, number>();
     const notByEmp = new Map<number, number>();
     try {
-      const inicioMes = `${from}T00:00:00-03:00`;
-      const fimMes = `${to}T23:59:59-03:00`;
-      const { data: pontos } = await supabaseAdmin
-        .from("ponto_operacional")
-        .select("employee_id, horas_extras, horas_noturno")
-        .gte("entrada", inicioMes)
-        .lte("entrada", fimMes);
-      const comPonto = new Set<number>();
-      for (const p of (pontos || []) as any[]) {
-        const id = Number(p.employee_id);
-        if (!id) continue;
-        comPonto.add(id);
-        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(p.horas_extras || 0));
-        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(p.horas_noturno || 0));
-      }
-      const { data: jornMes } = await supabaseAdmin
-        .from("jornada_calculos")
-        .select("employee_id, horas_extras, horas_noturnas")
-        .eq("mes_referencia", mesRef);
-      for (const r of (jornMes || []) as any[]) {
-        const id = Number(r.employee_id);
-        if (!id || comPonto.has(id)) continue;
-        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(r.horas_extras || 0));
-        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(r.horas_noturnas || 0));
+      const horasMap = await resolveHorasExtrasNoturnasBulk({
+        employeeIds: ativos.map((e: any) => Number(e.id)),
+        from,
+        to,
+        mesRef,
+      });
+      for (const [id, h] of horasMap) {
+        heByEmp.set(id, h.horasExtras);
+        notByEmp.set(id, h.horasNoturnas);
       }
     } catch (e: any) {
-      console.warn("[rh-summary] horas ponto/jornada:", e?.message || e);
+      console.warn("[rh-summary] horas ponto/jornada/batidas:", e?.message || e);
     }
 
     const porAgente: any[] = [];
@@ -525,6 +539,7 @@ export function registerFixedCostsRoutes(app: Express) {
       inssFunc: 0, irrfFunc: 0, liquidoFunc: 0,
       ferias: 0, decimoTerceiro: 0, provisaoTerco: 0,
       provisaoFgts: 0, provisaoInss: 0, totalProvisoes: 0,
+      inssPatronal: 0, seguroVida: 0, custoRealizado: 0, custoProvisionado: 0,
     };
 
     // Alinhado com o CADASTRO do funcionário (salary-summary → calcularFolha → Custo Empresa):
@@ -588,6 +603,10 @@ export function registerFixedCostsRoutes(app: Express) {
       const valeAlimentacao = Number(b.valeAlimentacao || 0);
       const assiduidade = Number(b.assiduidade || 0);
       const fgts = Number(b.fgts || 0);
+      const inssPatronal = Number(b.inssPatronal || 0);
+      const seguroVida = Number(b.seguroVida || 0);
+      const custoRealizado = Number(b.custoRealizado || 0);
+      const custoProvisionado = Number(b.custoProvisionado || 0);
       const totalProvisoes = Number(b.totalProvisoes || 0);
       const ferias = Number(b.ferias || 0);
       const decimoTerceiro = Number(b.decimoTerceiro || 0);
@@ -597,6 +616,8 @@ export function registerFixedCostsRoutes(app: Express) {
       acc.diarias += diariasEmp; acc.ajudaCusto += ajudaCusto;
       acc.valeAlimentacao += valeAlimentacao; acc.assiduidade += assiduidade;
       acc.fgts += fgts;
+      acc.inssPatronal += inssPatronal; acc.seguroVida += seguroVida;
+      acc.custoRealizado += custoRealizado; acc.custoProvisionado += custoProvisionado;
       acc.inssFunc += inssFuncVal; acc.irrfFunc += irrfFuncVal; acc.liquidoFunc += liquidoFuncVal;
       acc.ferias += ferias; acc.decimoTerceiro += decimoTerceiro;
       acc.provisaoTerco += Number(b.provisaoTercoFerias || 0);
@@ -607,7 +628,7 @@ export function registerFixedCostsRoutes(app: Express) {
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
-        // Custo Empresa CCT (cadastro) — inclui FGTS + provisões
+        // Custo Empresa CCT (cadastro) — inclui FGTS + provisões + INSS patronal + seguro
         total,
         totalOperacional: total,
         totalProvisoes,
@@ -633,9 +654,11 @@ export function registerFixedCostsRoutes(app: Express) {
         // Encargos empresa (entram no Custo Empresa do cadastro)
         fgts,
         fgtsPct: 8,
-        inssPatronal: 0,
-        inssPatronalPct: 0,
-        seguroVida: 0,
+        inssPatronal,
+        inssPatronalPct: Number(b.inssPatronalPct || 0),
+        seguroVida,
+        custoRealizado,
+        custoProvisionado,
         // Compat com UI
         base,
         encargos: Number(b.encargos || 0),
@@ -688,8 +711,10 @@ export function registerFixedCostsRoutes(app: Express) {
         ajudaCusto: acc.ajudaCusto,
         totalBruto: acc.base + acc.peric + acc.he + acc.noturno + acc.refeicao + acc.ajudaCusto,
         inss: +acc.inssFunc.toFixed(2), irrf: +acc.irrfFunc.toFixed(2), fgts: acc.fgts,
-        inssPatronal: 0,
-        seguroVida: 0,
+        inssPatronal: +acc.inssPatronal.toFixed(2),
+        seguroVida: +acc.seguroVida.toFixed(2),
+        custoRealizado: +acc.custoRealizado.toFixed(2),
+        custoProvisionado: +acc.custoProvisionado.toFixed(2),
         totalDeducoes: +(acc.inssFunc + acc.irrfFunc).toFixed(2),
         liquidoFuncionario: +acc.liquidoFunc.toFixed(2),
         provisaoTercoFerias: acc.provisaoTerco,
