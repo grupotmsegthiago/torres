@@ -21,12 +21,19 @@ const LEGACY_HE_DIURNA_DEFAULT = 22.99;
 
 /**
  * Vigilância Torres: HE diurna R$ 16 e noturna R$ 16,50.
- * Se o preset ainda tiver o default legado 22,99 (ou noturna ausente/0), corrige na leitura.
+ * Corrige na leitura:
+ *  - legado 22,99 → 16
+ *  - diurna ausente/0/NaN → 16  (senão calcularFolha cai em salário×1,6 ≈ R$ 24,26/h)
+ *  - noturna ausente/0 → 16,50
  */
 export function normalizeVigilanciaHeRates(cfg: CctConfig): CctConfig {
   let horaExtraValor = Number(cfg.horaExtraValor);
   let horaExtraNoturnaValor = Number(cfg.horaExtraNoturnaValor);
-  if (Math.abs(horaExtraValor - LEGACY_HE_DIURNA_DEFAULT) < 0.011) {
+  if (
+    !Number.isFinite(horaExtraValor) ||
+    horaExtraValor <= 0 ||
+    Math.abs(horaExtraValor - LEGACY_HE_DIURNA_DEFAULT) < 0.011
+  ) {
     horaExtraValor = 16;
   }
   if (!Number.isFinite(horaExtraNoturnaValor) || horaExtraNoturnaValor <= 0) {
@@ -252,6 +259,8 @@ export async function ensureDefaultPresets(): Promise<void> {
           const before = Number(raw.horaExtraValor);
           const beforeN = Number(raw.horaExtraNoturnaValor);
           const needsHe =
+            !Number.isFinite(before) ||
+            before <= 0 ||
             Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 ||
             !Number.isFinite(beforeN) ||
             beforeN <= 0;

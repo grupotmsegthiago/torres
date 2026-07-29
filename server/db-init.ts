@@ -2312,6 +2312,7 @@ export async function ensureCalcMissionRPC() {
          OR key LIKE 'rh-summary-v6%'
          OR key LIKE 'rh-summary-v7%'
          OR key LIKE 'rh-summary-v8%'
+         OR key LIKE 'rh-summary-v9%'
     `).catch(() => {});
     console.log("[db-init] swr_cache_snapshots table ensured");
   } catch (e: any) {

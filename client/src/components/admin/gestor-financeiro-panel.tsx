@@ -1280,7 +1280,14 @@ function AgentDetailPanel({
       ]} />
       {(Number(agent.horasExtrasMes) > 0 || agent.horasExtrasFonte) && (
         <p className="text-[9px] text-slate-500 -mt-1 px-0.5" data-testid={`text-he-fonte-${agent.id}`}>
-          HE: {Number(agent.horasExtrasMes || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
+          HE: {(() => {
+            const h = Number(agent.horasExtrasMes || 0);
+            if (!Number.isFinite(h) || h <= 0) return "0:00";
+            const totalMin = Math.round(h * 60);
+            const hh = Math.floor(totalMin / 60);
+            const mm = String(totalMin % 60).padStart(2, "0");
+            return `${hh}:${mm}`;
+          })()}
           {agent.horasExtrasFonte === "batidas"
             ? " · banco mensal Control iD (trabalhado − 220h)"
             : agent.horasExtrasFonte && agent.horasExtrasFonte !== "nenhuma"

@@ -2166,9 +2166,10 @@ export async function buildFolhaPonto(
       const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
       let workedMin = workedMinutesBetween(inMs, outMs);
       if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+        // Mesmo HH:MM do in/out — workedMinutesBetween já trunca segundos.
         workedMin -= workedMinutesBetween(
-          new Date(sorted[1].punch_at).getTime(),
-          new Date(sorted[2].punch_at).getTime(),
+          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
         );
       }
       // Teto diário de jornada (NORMAL_DAILY_CAP_MIN = 19:59). Remove a
@@ -2189,8 +2190,8 @@ export async function buildFolhaPonto(
       let noturnoMin = nightMinutesBRT(inMs, outMs);
       if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
         noturnoMin -= nightMinutesBRT(
-          new Date(sorted[1].punch_at).getTime(),
-          new Date(sorted[2].punch_at).getTime(),
+          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
+          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
         );
       }
       entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
