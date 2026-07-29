@@ -105,8 +105,10 @@ export async function resolveHorasExtrasNoturnas(opts: {
     console.warn("[resolveHoras] jornada_calculos:", e?.message || e);
   }
 
-  // Fallback: batidas Control iD — soma extraMin diário (jornadaDiaria = horas_mensais÷25).
-  // Sempre no ciclo do mesRef; o Balanço rateia o custo pelo período filtrado.
+  // Fallback: batidas Control iD — MESMA regra do card Folha Control iD / buildFolhaStats:
+  // HE = max(0, horasTrabalhadas − horas_mensais)  (banco mensal, ex.: 323:45 − 220 = 103:45).
+  // NÃO usa Σ extraMin diário (8h48) — essa coluna da tabela é só transparência e
+  // ficava ~40h acima do card (caso Reis 29/07/2026: 141:19 vs 103:45).
   if (allowBatidas) {
     try {
       const { buildFolhaPonto } = await import("../control-id");
@@ -114,21 +116,14 @@ export async function resolveHorasExtrasNoturnas(opts: {
         horasMensais: opts.horasMensais,
       });
       if (dias && dias.length > 0) {
-        const extraMin = dias.reduce(
-          (s: number, d: any) => s + (Number(d.extraMin) || 0),
-          0,
-        );
         const noturnoMin = dias.reduce(
           (s: number, d: any) => s + (Number(d.noturnoMin) || 0),
           0,
         );
-        // Preferência: extras diários do ponto. Fallback: hoursWorked − 220 (buildFolhaStats).
         const hoursWorked =
           dias.reduce((s: number, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
         const limit = opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
-        const heDiario = extraMin / 60;
-        const heMensal = Math.max(0, hoursWorked - limit);
-        horasExtras = heDiario > 0 ? heDiario : heMensal;
+        horasExtras = Math.max(0, hoursWorked - limit);
         horasNoturnas = noturnoMin / 60;
         if (horasExtras > 0 || horasNoturnas > 0) {
           return {

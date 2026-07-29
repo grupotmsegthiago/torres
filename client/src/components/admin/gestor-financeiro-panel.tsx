@@ -1281,8 +1281,10 @@ function AgentDetailPanel({
       {(Number(agent.horasExtrasMes) > 0 || agent.horasExtrasFonte) && (
         <p className="text-[9px] text-slate-500 -mt-1 px-0.5" data-testid={`text-he-fonte-${agent.id}`}>
           HE: {Number(agent.horasExtrasMes || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
-          {agent.horasExtrasFonte && agent.horasExtrasFonte !== "nenhuma"
-            ? ` · fonte ${agent.horasExtrasFonte === "batidas" ? "Control iD" : agent.horasExtrasFonte}`
+          {agent.horasExtrasFonte === "batidas"
+            ? " · banco mensal Control iD (trabalhado − 220h)"
+            : agent.horasExtrasFonte && agent.horasExtrasFonte !== "nenhuma"
+            ? ` · fonte ${agent.horasExtrasFonte}`
             : ""}
         </p>
       )}

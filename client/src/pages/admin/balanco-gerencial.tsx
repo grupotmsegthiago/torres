@@ -263,10 +263,10 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    // v5: custo SEM provisões; alinha com baseKey rh-summary-v5 no servidor.
-    queryKey: ["/api/fixed-costs/rh-summary", "v5", "cached", gridRange.from, gridRange.to],
+    // v6: HE banco mensal Control iD; alinha com baseKey rh-summary-v6.
+    queryKey: ["/api/fixed-costs/rh-summary", "v6", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = "rh-summary-v5-forced";
+      const bustKey = "rh-summary-v6-forced";
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
@@ -716,7 +716,7 @@ export default function BalancoGerencialPage() {
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v5", "cached", gridRange.from, gridRange.to] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v6", "cached", gridRange.from, gridRange.to] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
       setDataGeradoEm(new Date());
       toast({ title: "Atualizado", description: "Dados recalculados agora." });
