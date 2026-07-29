@@ -57,8 +57,8 @@ import {
   type ValidationFinding,
 } from "@/lib/gestor-financeiro";
 import { computeProjection } from "@/lib/balanco-projection";
+import { fmtBRL as fmt, fmtHoras } from "@/lib/format-br";
 
-const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 const fmtN = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
@@ -289,8 +289,9 @@ export function GestorFinanceiroPanel(props: Props) {
           pctFolha: (custoTotal / folhaTotal) * 100,
           pctEmpresa: (custoTotal / custoEmpresa) * 100,
           missoes,
+          horasTrabalhadas: horas,
           custoMissao: missoes > 0 ? custoTotal / missoes : 0,
-          custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
+          custoHora: horas > 0 ? custoTotal / horas : Number(a.custoHora ?? 0) * scale,
           receita: Number(ops?.fat || 0),
           status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
           // O que entra no custo empresa (vencimentos + benefícios) vs só informativo
@@ -802,8 +803,11 @@ export function GestorFinanceiroPanel(props: Props) {
               <BarChart data={dailyChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" vertical={false} />
                 <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12, fontSize: 11 }} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 9 }} axisLine={false} tickLine={false} width={72} tickFormatter={(v) => fmt(Number(v))} />
+                <Tooltip
+                  contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12, fontSize: 11 }}
+                  formatter={(value: number) => fmt(Number(value))}
+                />
                 <Bar dataKey="fat" name="Faturamento" fill="#34d399" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
                 <Bar dataKey="custo" name="Custos" fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
                 <Bar dataKey="lucro" name="Lucro" fill="#60a5fa" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
@@ -1117,7 +1121,9 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
       ]} />
       <Section title="Indicadores operacionais" rows={[
         ["Missões no período", agent.missoes, true],
+        ["Horas trabalhadas", fmtHoras(agent.horasTrabalhadas || agent.horas || 0), true],
         ["Receita gerada (OS)", agent.receita],
+        ["Custo / hora", agent.custoHora],
         ["Custo / dia", agent.custoDiario],
         ["Custo / missão", agent.custoMissao],
         ["Lucro operacional (receita − custo)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],
