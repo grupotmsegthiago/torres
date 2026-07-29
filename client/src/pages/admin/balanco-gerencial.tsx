@@ -264,9 +264,10 @@ export default function BalancoGerencialPage() {
     }>;
   }>({
     // v9: HE batidas banco mensal + HH:MM; alinha com baseKey rh-summary-v9.
+    // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
     queryKey: ["/api/fixed-costs/rh-summary", "v9", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = "rh-summary-v9-forced";
+      const bustKey = `rh-summary-v9-forced:${gridRange.from}:${gridRange.to}`;
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
@@ -333,7 +334,10 @@ export default function BalancoGerencialPage() {
   // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
   // independente do calendário (meses de 28/29/31 dias usam 30 mesmo assim).
   // Evita inflar o custo mensal em ~3,3% em meses de 31 dias.
-  const costDays = useMemo(() => costDaysForPeriod(period, daysInPeriod), [daysInPeriod, period]);
+  const costDays = useMemo(
+    () => costDaysForPeriod(period, daysInPeriod, gridRange.from, gridRange.to),
+    [daysInPeriod, period, gridRange.from, gridRange.to],
+  );
 
   const filtered = useMemo(() => {
     if (!data) return {
@@ -709,17 +713,26 @@ export default function BalancoGerencialPage() {
     if (atualizando) return;
     setAtualizando(true);
     try {
+      // Recalcula no servidor com o from/to do filtro (Personalizado 26/06→25/07 etc.).
       const respostas = await Promise.all([
         authFetch(`/api/financial/dashboard?cached=1&force=1`),
         authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1&from=${gridRange.from}&to=${gridRange.to}`),
         authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
-      await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v6", "cached", gridRange.from, gridRange.to] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
+      // Importante: invalidar pelo PREFIXO — a query ativa é v9; invalidar só v6
+      // deixava a Folha do Personalizado com cache velho após "Sincronizar".
+      await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      await queryClient.refetchQueries({
+        queryKey: ["/api/fixed-costs/rh-summary", "v9", "cached", gridRange.from, gridRange.to],
+      });
       setDataGeradoEm(new Date());
-      toast({ title: "Atualizado", description: "Dados recalculados agora." });
+      toast({
+        title: "Atualizado",
+        description: `Dados recalculados para ${gridRange.from} → ${gridRange.to}.`,
+      });
     } catch {
       toast({ title: "Erro ao atualizar", variant: "destructive" });
     } finally {

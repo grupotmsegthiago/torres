@@ -171,9 +171,23 @@ export function navigatePeriod(period: BalancoPeriod, refDate: Date, direction: 
   return d;
 }
 
-/** Dias comerciais para rateio RH/fixos (MONTH=30). CUSTOM usa dias corridos. */
-export function costDaysForPeriod(period: BalancoPeriod, daysInPeriod: number): number {
-  if (period === "CUSTOM") return daysInPeriod;
+/**
+ * Dias comerciais para rateio RH/fixos (MONTH=30).
+ * CUSTOM: dias corridos — EXCETO ciclo RH 26→25 (fechamento), que é sempre
+ * mês comercial 30 (senão jan/26→fev/25 = 31d inflava HE/folha × 31/30).
+ */
+export function costDaysForPeriod(
+  period: BalancoPeriod,
+  daysInPeriod: number,
+  fromYmd?: string,
+  toYmd?: string,
+): number {
+  if (period === "CUSTOM") {
+    const fromDay = Number(String(fromYmd || "").slice(8, 10));
+    const toDay = Number(String(toYmd || "").slice(8, 10));
+    if (fromDay === 26 && toDay === 25) return 30;
+    return daysInPeriod;
+  }
   const FIXED: Record<Exclude<BalancoPeriod, "CUSTOM">, number> = {
     DAY: 1,
     WEEK: 7,

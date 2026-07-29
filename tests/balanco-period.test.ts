@@ -62,6 +62,23 @@ test("costDays MONTH = 30 mesmo com 31 dias de calendário", () => {
   assert.equal(costDaysForPeriod("WEEK", 7), 7);
 });
 
+test("CUSTOM ciclo RH 26→25 usa mês comercial 30 (não calendário 31)", () => {
+  // 26/01→25/02 = 31 dias corridos — NÃO pode ratear HE/folha × 31/30
+  assert.equal(costDaysForPeriod("CUSTOM", 31, "2026-01-26", "2026-02-25"), 30);
+  // 26/06→25/07 = 30 dias — permanece 30
+  assert.equal(costDaysForPeriod("CUSTOM", 30, "2026-06-26", "2026-07-25"), 30);
+  // Personalizado qualquer outra faixa: dias corridos
+  assert.equal(costDaysForPeriod("CUSTOM", 10, "2026-07-01", "2026-07-10"), 10);
+});
+
+test("CUSTOM 26/06→25/07: range e dias do filtro", () => {
+  const range = getDateRange("CUSTOM", new Date(2026, 6, 1), "2026-06-26", "2026-07-25");
+  assert.equal(fmtYmdLocal(range.start), "2026-06-26");
+  assert.equal(fmtYmdLocal(range.end), "2026-07-25");
+  assert.equal(getDaysInRange(range), 30);
+  assert.equal(costDaysForPeriod("CUSTOM", 30, "2026-06-26", "2026-07-25"), 30);
+});
+
 test("navigatePeriod WEEK avança 7 dias (segunda)", () => {
   const monday = new Date(2026, 6, 13); // segunda 13/jul
   const next = navigatePeriod("WEEK", monday, 1);
