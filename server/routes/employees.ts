@@ -13,6 +13,7 @@ import type { Express } from "express";
     selectSalaryVigenteFromHistory,
     VR_DIAS_UTEIS_CCT,
   } from "../lib/payroll";
+  import { resolveHorasExtrasNoturnas } from "../lib/employee-monthly-cost";
   import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
   import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
@@ -506,45 +507,21 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         if (typeof count === "number" && count > 0) dependentesIR = count;
       } catch { /* fallback */ }
 
-      // ===== HORAS EXTRAS / NOTURNAS automáticas do Ponto iD (Control iD) =====
-      // Janela = competência de RH (26 → 25), não mês civil.
+      // ===== HORAS EXTRAS / NOTURNAS (ponto → jornada → batidas Control iD) =====
+      // Janela = competência de RH (26 → 25). Não trava em ponto com HE=0.
       const mesRef = `${year}-${String(month).padStart(2, "0")}`;
-      const inicioMes = `${from}T00:00:00-03:00`;
-      const fimMes = `${to}T23:59:59-03:00`;
-
-      let horasExtras = 0;
-      let horasNoturnas = 0;
-      let horasFonte: "ponto_operacional" | "jornada_calculos" | "nenhuma" = "nenhuma";
-      let registrosPonto = 0;
-
-      // 1ª fonte: ponto_operacional (Ponto iD oficial)
-      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
-        .select("horas_extras, horas_noturno")
-        .eq("employee_id", empId)
-        .gte("entrada", inicioMes).lte("entrada", fimMes);
-      if (pontos && pontos.length > 0) {
-        for (const p of pontos) {
-          horasExtras += Number((p as any).horas_extras || 0);
-          horasNoturnas += Number((p as any).horas_noturno || 0);
-        }
-        horasFonte = "ponto_operacional";
-        registrosPonto = pontos.length;
-      } else {
-        // 2ª fonte: jornada_calculos (lançamentos manuais da diretoria)
-        const { data: jorn } = await supabaseAdmin.from("jornada_calculos")
-          .select("horas_extras, horas_noturnas")
-          .eq("employee_id", empId).eq("mes_referencia", mesRef);
-        if (jorn && jorn.length > 0) {
-          for (const j of jorn) {
-            horasExtras += Number((j as any).horas_extras || 0);
-            horasNoturnas += Number((j as any).horas_noturnas || 0);
-          }
-          horasFonte = "jornada_calculos";
-          registrosPonto = jorn.length;
-        }
-      }
-      horasExtras = Math.round(horasExtras * 100) / 100;
-      horasNoturnas = Math.round(horasNoturnas * 100) / 100;
+      const horasRes = await resolveHorasExtrasNoturnas({
+        employeeId: empId,
+        from,
+        to,
+        mesRef,
+        horasMensais,
+        allowBatidasFallback: true,
+      });
+      const horasExtras = horasRes.horasExtras;
+      const horasNoturnas = horasRes.horasNoturnas;
+      const horasFonte = horasRes.fonte;
+      const registrosPonto = horasRes.registros;
 
       // Regime: CLT (encargos/HE/benefícios) ou PJ (valor fixo — sem impostos/variáveis/HE).
       const tipoContratacao = tipoContratacaoEarly;

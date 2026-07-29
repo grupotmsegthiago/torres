@@ -12,6 +12,7 @@ import {
   VR_DIAS_UTEIS_CCT,
   type PayrollBreakdown,
 } from "../lib/payroll";
+import { resolveHorasExtrasNoturnasBulk } from "../lib/employee-monthly-cost";
 import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
@@ -513,42 +514,32 @@ export function registerFixedCostsRoutes(app: Express) {
     const holidaySet = await loadHolidaySet(from, to);
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
-    const mesRef = String(from).slice(0, 7); // "YYYY-MM"
+    // Competência RH (ciclo 26→25): se o filtro começa no dia 26, o mês de
+    // referência é o do `to` (ex.: 26/06→25/07 → mesRef=2026-07). Senão usa `from`.
+    const fromDay = Number(String(from).slice(8, 10));
+    const mesRef = (fromDay === 26 ? String(to).slice(0, 7) : String(from).slice(0, 7));
     const yearRef = Number(mesRef.slice(0, 4));
     const monthRef = Number(mesRef.slice(5, 7));
 
-    // HE / noturno — MESMA fonte do cadastro (salary-summary):
-    // 1ª ponto_operacional no período; 2ª jornada_calculos do mês.
+    // HE / noturno: ponto_operacional → jornada_calculos → batidas Control iD.
+    // Não trava em ponto com HE=0 (vigilantes batem no Control iD, não no app).
     const heByEmp = new Map<number, number>();
     const notByEmp = new Map<number, number>();
+    const heFonteByEmp = new Map<number, string>();
     try {
-      const inicioMes = `${from}T00:00:00-03:00`;
-      const fimMes = `${to}T23:59:59-03:00`;
-      const { data: pontos } = await supabaseAdmin
-        .from("ponto_operacional")
-        .select("employee_id, horas_extras, horas_noturno")
-        .gte("entrada", inicioMes)
-        .lte("entrada", fimMes);
-      const comPonto = new Set<number>();
-      for (const p of (pontos || []) as any[]) {
-        const id = Number(p.employee_id);
-        if (!id) continue;
-        comPonto.add(id);
-        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(p.horas_extras || 0));
-        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(p.horas_noturno || 0));
-      }
-      const { data: jornMes } = await supabaseAdmin
-        .from("jornada_calculos")
-        .select("employee_id, horas_extras, horas_noturnas")
-        .eq("mes_referencia", mesRef);
-      for (const r of (jornMes || []) as any[]) {
-        const id = Number(r.employee_id);
-        if (!id || comPonto.has(id)) continue;
-        heByEmp.set(id, (heByEmp.get(id) || 0) + Number(r.horas_extras || 0));
-        notByEmp.set(id, (notByEmp.get(id) || 0) + Number(r.horas_noturnas || 0));
+      const horasMap = await resolveHorasExtrasNoturnasBulk({
+        employeeIds: ativos.map((e) => Number(e.id)),
+        from,
+        to,
+        mesRef,
+      });
+      for (const [id, h] of horasMap) {
+        heByEmp.set(id, h.horasExtras);
+        notByEmp.set(id, h.horasNoturnas);
+        heFonteByEmp.set(id, h.fonte);
       }
     } catch (e: any) {
-      console.warn("[rh-summary] horas ponto/jornada:", e?.message || e);
+      console.warn("[rh-summary] horas ponto/jornada/batidas:", e?.message || e);
     }
 
     const porAgente: any[] = [];
@@ -648,6 +639,7 @@ export function registerFixedCostsRoutes(app: Express) {
         totalProvisoes,
         horasNormaisMes: 0,
         horasExtrasMes: Number(heByEmp.get(emp.id) || 0),
+        horasExtrasFonte: heFonteByEmp.get(emp.id) || "nenhuma",
         // Vencimentos — salário base contratual ≠ proporcional (não ratear por calendário)
         salarioBaseCheio: Number(b.salarioBaseCheio || base),
         effectiveDate: b.effectiveDate || null,

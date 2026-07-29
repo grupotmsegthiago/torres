@@ -1278,6 +1278,14 @@ function AgentDetailPanel({
         ["DSR", agent.dsr],
         ["Total bruto", agent.totalBruto],
       ]} />
+      {(Number(agent.horasExtrasMes) > 0 || agent.horasExtrasFonte) && (
+        <p className="text-[9px] text-slate-500 -mt-1 px-0.5" data-testid={`text-he-fonte-${agent.id}`}>
+          HE: {Number(agent.horasExtrasMes || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
+          {agent.horasExtrasFonte && agent.horasExtrasFonte !== "nenhuma"
+            ? ` · fonte ${agent.horasExtrasFonte === "batidas" ? "Control iD" : agent.horasExtrasFonte}`
+            : ""}
+        </p>
+      )}
       <Section title="Benefícios" rows={[
         ["Vale Refeição", agent.vrTotal],
         ["Vale Transporte", agent.vt],
