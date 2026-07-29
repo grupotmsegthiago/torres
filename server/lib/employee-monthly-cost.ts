@@ -27,27 +27,23 @@ export type HorasPeriodoResult = {
  * Resolve HE/noturnas do período.
  * Se a fonte anterior existir mas vier zerada, cai para a próxima (não trava em HE=0).
  */
-function periodDayCount(from: string, to: string): number {
-  const a = Date.parse(`${from}T12:00:00Z`);
-  const b = Date.parse(`${to}T12:00:00Z`);
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 0;
-  return Math.round((b - a) / 86400000) + 1;
-}
-
 export async function resolveHorasExtrasNoturnas(opts: {
   employeeId: number;
   from: string;
   to: string;
   mesRef: string;
   horasMensais?: number;
-  /** Fallback batidas usa ciclo 26→25 do mesRef — só seguro em janelas ~mensais. Default: auto (>=25 dias). */
+  /**
+   * Fallback batidas usa o ciclo 26→25 do `mesRef` (não o from/to do filtro).
+   * Default true: vigilantes batem no Control iD; o rateio do período é feito
+   * depois no Balanço (costDays/30). Sem isso, filtro semanal fica HE=0.
+   */
   allowBatidasFallback?: boolean;
 }): Promise<HorasPeriodoResult> {
   const { employeeId, from, to, mesRef } = opts;
   const inicio = `${from}T00:00:00-03:00`;
   const fim = `${to}T23:59:59-03:00`;
-  const allowBatidas =
-    opts.allowBatidasFallback ?? periodDayCount(from, to) >= 25;
+  const allowBatidas = opts.allowBatidasFallback !== false;
 
   let horasExtras = 0;
   let horasNoturnas = 0;
@@ -109,8 +105,8 @@ export async function resolveHorasExtrasNoturnas(opts: {
     console.warn("[resolveHoras] jornada_calculos:", e?.message || e);
   }
 
-  // Fallback: batidas Control iD — soma extraMin diário (jornadaDiaria = horas_mensais÷25)
-  // e noturnoMin. Só em janela ~mensal (evita HE do mês num filtro de semana/dia).
+  // Fallback: batidas Control iD — soma extraMin diário (jornadaDiaria = horas_mensais÷25).
+  // Sempre no ciclo do mesRef; o Balanço rateia o custo pelo período filtrado.
   if (allowBatidas) {
     try {
       const { buildFolhaPonto } = await import("../control-id");
@@ -241,14 +237,12 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
     console.warn("[resolveHorasBulk] jornada:", e?.message || e);
   }
 
-  // Fallback batidas só para quem ainda está zerado — e só em janela ~mensal.
-  const faltantes =
-    periodDayCount(from, to) >= 25
-      ? employeeIds.filter((id) => {
-          const cur = out.get(id)!;
-          return cur.horasExtras <= 0 && cur.horasNoturnas <= 0;
-        })
-      : [];
+  // Fallback batidas para quem ainda está zerado (ponto/jornada sem HE).
+  // Batidas sempre no ciclo mesRef; rateio do período fica a cargo do Balanço.
+  const faltantes = employeeIds.filter((id) => {
+    const cur = out.get(id)!;
+    return cur.horasExtras <= 0 && cur.horasNoturnas <= 0;
+  });
   if (faltantes.length > 0) {
     const { createLimit } = await import("./create-limit");
     const limit = createLimit(4);

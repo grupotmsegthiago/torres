@@ -255,7 +255,15 @@ export function withSwrCache(opts: SwrCacheOptions, handler: Handler): Handler {
     const key = buildKey(opts.baseKey, req);
     const now = Date.now();
 
-    if (req.query.force === "1") store.delete(key);
+    if (req.query.force === "1") {
+      store.delete(key);
+      // Sem isso, "Atualizar" recalcula na memória mas o snapshot persistido
+      // antigo volta no próximo restart/deploy (bug Folha HE=0, 29/07/2026).
+      if (!PERSIST_DISABLED) {
+        void supabaseAdmin.from(PERSIST_TABLE).delete().eq("key", key).then(() => {});
+      }
+      persistChecked.delete(key);
+    }
 
     // MISS frio (memória zerada por restart/deploy): tenta o snapshot persistido
     // antes de recalcular — 1 leitura barata em vez de centenas de sub-consultas.

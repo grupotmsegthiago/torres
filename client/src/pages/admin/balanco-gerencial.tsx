@@ -263,9 +263,19 @@ export default function BalancoGerencialPage() {
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
     }>;
   }>({
-    queryKey: ["/api/fixed-costs/rh-summary", "cached", gridRange.from, gridRange.to],
+    // v4: invalida React Query + alinha com baseKey rh-summary-v4 no servidor
+    // (snapshot SWR antigo servia HE=0 / IRRF errado após deploy).
+    queryKey: ["/api/fixed-costs/rh-summary", "v4", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1&from=${gridRange.from}&to=${gridRange.to}`);
+      const bustKey = "rh-summary-v4-forced";
+      let force = "";
+      try {
+        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
+          force = "&force=1";
+          sessionStorage.setItem(bustKey, "1");
+        }
+      } catch { /* private mode */ }
+      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1${force}&from=${gridRange.from}&to=${gridRange.to}`);
       if (!res.ok) throw new Error("Falha ao carregar RH");
       return res.json();
     },
@@ -707,7 +717,7 @@ export default function BalancoGerencialPage() {
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard", "cached"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "cached", gridRange.from, gridRange.to] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary", "v4", "cached", gridRange.from, gridRange.to] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
       setDataGeradoEm(new Date());
       toast({ title: "Atualizado", description: "Dados recalculados agora." });
