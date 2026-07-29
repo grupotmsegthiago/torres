@@ -17,6 +17,7 @@ import {
   simulateAllEmployeesMonth,
   simulateEmployeeMonth,
   formatSimReportText,
+  aggregateSimEmployees,
 } from "../server/lib/simular-folha-pares";
 import {
   REIS_TORRES_DAYS,
@@ -75,19 +76,13 @@ async function main() {
       const row = await simulateEmployeeMonth({ employeeId, monthYear });
       if (asJson) console.log(JSON.stringify(row, null, 2));
       else {
-        console.log(formatSimReportText({
-          generatedAt: new Date().toISOString(),
+        console.log(formatSimReportText(aggregateSimEmployees({
           monthYear,
-          employees: [row],
-          totals: {
-            employeesCompared: 1,
-            employeesWithDelta: row.deltaMin !== 0 ? 1 : 0,
-            sumDeltaMin: row.deltaMin,
-            sumHeImpactBRL: row.heImpactBRL,
-            incompleteCount: row.simulacaoIncompleta ? 1 : 0,
-          },
-          simulacaoIncompleta: row.simulacaoIncompleta,
-        }));
+          requested: [{ id: employeeId, name: row.employeeName }],
+          compared: [row],
+          failed: [],
+          ignored: [],
+        })));
       }
     } else {
       const report = await simulateAllEmployeesMonth({ monthYear });

@@ -57,18 +57,42 @@ export type SimEmployeeMonth = {
   incompletaReasons: string[];
 };
 
+export type SimFailedEmployee = {
+  employeeId: number;
+  employeeName: string;
+  error: string;
+};
+
+export type SimIgnoredEmployee = {
+  employeeId: number;
+  employeeName: string;
+  reason: string;
+};
+
 export type SimReport = {
   generatedAt: string;
   monthYear: string;
   employees: SimEmployeeMonth[];
+  failedEmployees: SimFailedEmployee[];
+  ignoredEmployees: SimIgnoredEmployee[];
   totals: {
+    /** Total de funcionários na lista solicitada (antes de comparar). */
+    employeesRequested: number;
+    /** Comparados com sucesso (tiveram batidas / resultado). */
     employeesCompared: number;
+    /** Falharam com exceção (não somam em compared). */
+    employeesFailed: number;
+    /** Ignorados com motivo documentado (ex.: sem batidas). */
+    employeesIgnored: number;
     employeesWithDelta: number;
     sumDeltaMin: number;
     sumHeImpactBRL: number | null;
+    /** Falhas + linhas com simulacaoIncompleta. */
     incompleteCount: number;
   };
   simulacaoIncompleta: boolean;
+  /** true só quando não há falhas e nenhum item incompleto. */
+  conclusaoIntegral: boolean;
   accessNote?: string;
 };
 
@@ -329,11 +353,123 @@ export async function simulateEmployeeMonth(opts: {
   };
 }
 
+export type SimulateEmployeeRunner = (opts: {
+  employeeId: number;
+  employeeName?: string;
+  monthYear: string;
+  horasMensais?: number;
+  heRateBRL?: number;
+}) => Promise<SimEmployeeMonth>;
+
+/**
+ * Agrega resultados da simulação (puro — testável sem banco).
+ * Identidade: requested = compared + failed + ignored.
+ */
+export function aggregateSimEmployees(opts: {
+  monthYear: string;
+  requested: Array<{ id: number; name: string }>;
+  compared: SimEmployeeMonth[];
+  failed: SimFailedEmployee[];
+  ignored: SimIgnoredEmployee[];
+  accessNote?: string;
+}): SimReport {
+  const employeesRequested = opts.requested.length;
+  const employeesCompared = opts.compared.length;
+  const employeesFailed = opts.failed.length;
+  const employeesIgnored = opts.ignored.length;
+  if (employeesRequested !== employeesCompared + employeesFailed + employeesIgnored) {
+    throw new Error(
+      `invariante simulação quebrada: requested(${employeesRequested}) != compared(${employeesCompared})+failed(${employeesFailed})+ignored(${employeesIgnored})`,
+    );
+  }
+  const withDelta = opts.compared.filter((r) => r.deltaMin !== 0);
+  const impacts = opts.compared.map((r) => r.heImpactBRL);
+  const anyNullImpact = impacts.some((v) => v == null) || employeesFailed > 0;
+  const sumHeImpactBRL = anyNullImpact
+    ? null
+    : Math.round(impacts.reduce((s: number, v) => s + (v as number), 0) * 100) / 100;
+  const incompleteFromRows = opts.compared.filter((r) => r.simulacaoIncompleta).length;
+  const incompleteCount = incompleteFromRows + employeesFailed;
+  const simulacaoIncompleta = incompleteCount > 0;
+  return {
+    generatedAt: new Date().toISOString(),
+    monthYear: opts.monthYear,
+    employees: opts.compared,
+    failedEmployees: opts.failed,
+    ignoredEmployees: opts.ignored,
+    totals: {
+      employeesRequested,
+      employeesCompared,
+      employeesFailed,
+      employeesIgnored,
+      employeesWithDelta: withDelta.length,
+      sumDeltaMin: opts.compared.reduce((s, r) => s + r.deltaMin, 0),
+      sumHeImpactBRL,
+      incompleteCount,
+    },
+    simulacaoIncompleta,
+    conclusaoIntegral: !simulacaoIncompleta,
+    accessNote: opts.accessNote,
+  };
+}
+
+/** Loop de comparação por funcionário (testável sem listar employees no banco). */
+export async function runSimEmployeeList(opts: {
+  monthYear: string;
+  list: Array<{ id: number; name: string }>;
+  runEmployee: SimulateEmployeeRunner;
+  horasMensais?: number;
+  heRateBRL?: number;
+}): Promise<SimReport> {
+  const compared: SimEmployeeMonth[] = [];
+  const failed: SimFailedEmployee[] = [];
+  const ignored: SimIgnoredEmployee[] = [];
+
+  for (const emp of opts.list) {
+    try {
+      const row = await opts.runEmployee({
+        employeeId: emp.id,
+        employeeName: emp.name,
+        monthYear: opts.monthYear,
+        horasMensais: opts.horasMensais,
+        heRateBRL: opts.heRateBRL,
+      });
+      if (row.totalAnteriorMin === 0 && row.totalNovoMin === 0 && row.orphanCount === 0) {
+        ignored.push({
+          employeeId: emp.id,
+          employeeName: emp.name,
+          reason: "sem_batidas_no_periodo",
+        });
+        continue;
+      }
+      compared.push(row);
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      console.warn(`[simular-folha-pares] emp ${emp.id}:`, msg);
+      failed.push({
+        employeeId: emp.id,
+        employeeName: emp.name,
+        error: msg,
+      });
+    }
+  }
+
+  return aggregateSimEmployees({
+    monthYear: opts.monthYear,
+    requested: opts.list.map((e) => ({ id: e.id, name: e.name })),
+    compared,
+    failed,
+    ignored,
+  });
+}
+
 export async function simulateAllEmployeesMonth(opts: {
   monthYear: string;
   horasMensais?: number;
   heRateBRL?: number;
   employeeIds?: number[];
+  /** Injeta runner (testes) — default: simulateEmployeeMonth. */
+  runEmployee?: SimulateEmployeeRunner;
 }): Promise<SimReport> {
   const { data: employees, error } = await supabaseAdmin
     .from("employees")
@@ -347,64 +483,55 @@ export async function simulateAllEmployeesMonth(opts: {
     list = list.filter((e) => set.has(e.id));
   }
 
-  const results: SimEmployeeMonth[] = [];
-  for (const emp of list) {
-    try {
-      const row = await simulateEmployeeMonth({
-        employeeId: emp.id,
-        employeeName: emp.name,
-        monthYear: opts.monthYear,
-        horasMensais: opts.horasMensais,
-        heRateBRL: opts.heRateBRL,
-      });
-      if (row.totalAnteriorMin === 0 && row.totalNovoMin === 0 && row.orphanCount === 0) {
-        continue;
-      }
-      results.push(row);
-    } catch (e: any) {
-      console.warn(`[simular-folha-pares] emp ${emp.id}:`, e?.message || e);
-    }
-  }
-
-  const withDelta = results.filter((r) => r.deltaMin !== 0);
-  const impacts = results.map((r) => r.heImpactBRL);
-  const anyNullImpact = impacts.some((v) => v == null);
-  const sumHeImpactBRL = anyNullImpact
-    ? null
-    : Math.round(impacts.reduce((s: number, v) => s + (v as number), 0) * 100) / 100;
-  const incompleteCount = results.filter((r) => r.simulacaoIncompleta).length;
-
-  return {
-    generatedAt: new Date().toISOString(),
+  return runSimEmployeeList({
     monthYear: opts.monthYear,
-    employees: results,
-    totals: {
-      employeesCompared: results.length,
-      employeesWithDelta: withDelta.length,
-      sumDeltaMin: results.reduce((s, r) => s + r.deltaMin, 0),
-      sumHeImpactBRL,
-      incompleteCount,
-    },
-    simulacaoIncompleta: incompleteCount > 0,
-  };
+    list: list.map((e) => ({ id: e.id, name: e.name })),
+    runEmployee: opts.runEmployee || simulateEmployeeMonth,
+    horasMensais: opts.horasMensais,
+    heRateBRL: opts.heRateBRL,
+  });
 }
 
 export function formatSimReportText(report: SimReport): string {
   const lines: string[] = [];
   lines.push(`# Simulação Folha first_last × pares — ${report.monthYear}`);
   lines.push(`Gerado: ${report.generatedAt}`);
-  lines.push(`Funcionários com batidas: ${report.totals.employeesCompared}`);
+  lines.push(
+    `Solicitados=${report.totals.employeesRequested} | comparados=${report.totals.employeesCompared} | falhas=${report.totals.employeesFailed} | ignorados=${report.totals.employeesIgnored}`,
+  );
+  lines.push(
+    `Identidade: ${report.totals.employeesRequested} = ${report.totals.employeesCompared}+${report.totals.employeesFailed}+${report.totals.employeesIgnored}`,
+  );
   lines.push(`Com diferença: ${report.totals.employeesWithDelta}`);
   lines.push(`Σ Δ minutos: ${report.totals.sumDeltaMin} (${hhmmFromMinutes(Math.abs(report.totals.sumDeltaMin))})`);
   lines.push(
     `Σ impacto HE: ${
       report.totals.sumHeImpactBRL == null
-        ? "incompleto (taxa ou consulta falhou)"
+        ? "incompleto (taxa, falha ou consulta)"
         : `R$ ${report.totals.sumHeImpactBRL} (estimativa com taxa configurada)`
     }`,
   );
-  lines.push(`Simulação incompleta: ${report.simulacaoIncompleta} (funcs=${report.totals.incompleteCount})`);
+  lines.push(
+    `Simulação incompleta: ${report.simulacaoIncompleta} (incompleteCount=${report.totals.incompleteCount}) | conclusão integral: ${report.conclusaoIntegral}`,
+  );
+  if (!report.conclusaoIntegral) {
+    lines.push("ATENÇÃO: relatório NÃO declara conclusão integral — há falhas ou itens incompletos.");
+  }
   if (report.accessNote) lines.push(`Nota: ${report.accessNote}`);
+  if (report.failedEmployees?.length) {
+    lines.push("");
+    lines.push("## Falhas (não comparados)");
+    for (const f of report.failedEmployees) {
+      lines.push(`- #${f.employeeId} ${f.employeeName}: ${f.error}`);
+    }
+  }
+  if (report.ignoredEmployees?.length) {
+    lines.push("");
+    lines.push("## Ignorados (motivo documentado)");
+    for (const ig of report.ignoredEmployees) {
+      lines.push(`- #${ig.employeeId} ${ig.employeeName}: ${ig.reason}`);
+    }
+  }
   lines.push("");
   for (const e of report.employees.filter((x) => x.deltaMin !== 0 || x.orphanCount > 0 || x.simulacaoIncompleta)) {
     const fechadaLabel =

@@ -5,6 +5,18 @@ import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
 import { isAtivo } from "./fixed-costs";
 
+/**
+ * Seam testável da rota Folha — produção usa sempre `ctrl.buildFolhaPonto`.
+ * Testes HTTP podem substituir temporariamente `buildFolhaPonto`.
+ */
+export const folhaRouteDeps = {
+  buildFolhaPonto: (
+    employeeId: number,
+    monthYear: string,
+    opts?: Parameters<typeof ctrl.buildFolhaPonto>[2],
+  ) => ctrl.buildFolhaPonto(employeeId, monthYear, opts),
+};
+
 export function registerControlIdRoutes(app: Express) {
   // ─────── DEVICES (CRUD) ───────
   app.get("/api/control-id/devices", requireAuth, async (_req, res) => {
@@ -462,7 +474,7 @@ export function registerControlIdRoutes(app: Express) {
       // resolveFolhaEngine dentro de buildFolhaPonto também força first_last em prod.
       const { parseFolhaEngineQuery } = await import("../lib/jornada-pares");
       const engine = parseFolhaEngineQuery(req.query.engine);
-      const folha = await ctrl.buildFolhaPonto(employeeId, monthYear, { engine });
+      const folha = await folhaRouteDeps.buildFolhaPonto(employeeId, monthYear, { engine });
       res.json(folha);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -483,19 +495,15 @@ export function registerControlIdRoutes(app: Express) {
       );
       if (employeeId && Number.isFinite(employeeId)) {
         const row = await simulateEmployeeMonth({ employeeId, monthYear });
-        return res.json({ monthYear, employee: row, text: formatSimReportText({
-          generatedAt: new Date().toISOString(),
+        const { aggregateSimEmployees } = await import("../lib/simular-folha-pares");
+        const report = aggregateSimEmployees({
           monthYear,
-          employees: [row],
-          totals: {
-            employeesCompared: 1,
-            employeesWithDelta: row.deltaMin !== 0 ? 1 : 0,
-            sumDeltaMin: row.deltaMin,
-            sumHeImpactBRL: row.heImpactBRL,
-            incompleteCount: row.simulacaoIncompleta ? 1 : 0,
-          },
-          simulacaoIncompleta: row.simulacaoIncompleta,
-        }) });
+          requested: [{ id: employeeId, name: row.employeeName }],
+          compared: [row],
+          failed: [],
+          ignored: [],
+        });
+        return res.json({ monthYear, employee: row, ...report, text: formatSimReportText(report) });
       }
       const report = await simulateAllEmployeesMonth({ monthYear });
       res.json({ ...report, text: formatSimReportText(report) });
