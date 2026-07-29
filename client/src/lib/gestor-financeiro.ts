@@ -114,6 +114,9 @@ export type GestorInput = {
     fixedCosts: boolean;
   };
   periodLabel: string;
+  /** Preset do filtro do Balanço (DAY/WEEK/MONTH/…) — meta do termômetro. */
+  period?: string;
+  daysInPeriod?: number;
   updatedAt: string | null;
   impostoPct: number;
   custoVarPct: number;
@@ -180,6 +183,8 @@ export function buildKnowledgeGraph(input: GestorInput): KnowledgeNode[] {
     faturamento: input.totals.fat,
     custoTotal: input.totals.custoTotal,
     lucro: input.totals.lucro,
+    period: input.period,
+    daysInPeriod: input.daysInPeriod,
   });
   const pctLabel = termo.pctSobreCusto == null
     ? "n/d"
@@ -199,6 +204,7 @@ export function buildKnowledgeGraph(input: GestorInput): KnowledgeNode[] {
     { id: "custo_total", label: "Custo total", ready: custoReady, valueLabel: money(input.totals.custoTotal) },
     { id: "lucro", label: "Lucro/prejuízo", ready: custoReady, valueLabel: money(input.totals.lucro) },
     { id: "pct_custo", label: "% sobre custo", ready: custoReady && termo.faixa !== "insuficiente", valueLabel: pctLabel },
+    { id: "meta_termo", label: "Meta termômetro", ready: true, valueLabel: `≥${termo.metaSaudavel}%` },
     { id: "termometro", label: "Termômetro", ready: custoReady, valueLabel: termo.statusLabel },
     { id: "painel_func", label: "Painel por employee_id", ready: input.dataReady.rh, valueLabel: "selectedEmployeeId" },
     { id: "dashboard", label: "Balanço", ready: gatesReady(buildModuleGates(input)) },
@@ -687,10 +693,21 @@ export function lucroTendencia(daily: Array<{ lucro: number }>): { delta: number
 // ── Termômetro Faturamento vs Custo vs Lucro ──────────────────────────────
 // Fonte única: totals oficiais do Balanço (fat / custoTotal / lucro).
 // Percentual = ((Fat − Custo) ÷ Custo) × 100  — NÃO confundir com margem ÷ Fat.
+// Meta SAUDÁVEL depende do período do filtro:
+//   Diário ≥100% · Semanal ≥50% · Mensal (e demais) ≥35%.
 
 export type TermometroFaixa = "prejuizo" | "margem_baixa" | "atencao" | "saudavel" | "insuficiente";
 export type TermometroCor = "vermelho" | "laranja" | "amarelo" | "verde" | "cinza";
 export type TermometroSelo = "certificado" | "conferencia" | "divergencia" | "insuficiente";
+
+export type TermometroFaixas = {
+  /** % acima do custo para entrar em SAUDÁVEL (verde). */
+  metaSaudavel: number;
+  /** Limite superior exclusivo da faixa laranja (MARGEM BAIXA). */
+  margemBaixaMax: number;
+  /** Limite superior exclusivo da faixa amarela (ATENÇÃO) = metaSaudavel. */
+  atencaoMax: number;
+};
 
 export type TermometroResultado = {
   faturamento: number;
@@ -705,49 +722,97 @@ export type TermometroResultado = {
   /** 0–100: altura do preenchimento do termômetro (base → topo) */
   fillPct: number;
   dadoFaltante: string | null;
+  /** Meta verde do período (100 diário / 50 semanal / 35 mensal). */
+  metaSaudavel: number;
+  faixas: TermometroFaixas;
 };
 
 /**
- * Classifica o percentual sobre o custo nas faixas oficiais.
- * Bordas: <0 vermelho · 0–19,99 laranja · 20–34,99 amarelo · ≥35 verde.
+ * Meta “SAUDÁVEL” (% acima do custo) conforme o filtro do Balanço.
+ * Diário 100% · Semanal 50% · Mensal/trimestre/semestre/ano 35%.
+ * Personalizado: ≤2d → 100 · ≤10d → 50 · senão 35.
  */
-export function classificarFaixaTermometro(pctSobreCusto: number | null): {
+export function metaSaudavelTermometro(period?: string, daysInPeriod?: number): number {
+  const p = String(period || "MONTH").toUpperCase();
+  if (p === "DAY") return 100;
+  if (p === "WEEK") return 50;
+  if (p === "MONTH" || p === "QUARTER" || p === "SEMESTER" || p === "YEAR") return 35;
+  if (p === "CUSTOM") {
+    const d = Number(daysInPeriod);
+    if (Number.isFinite(d) && d > 0) {
+      if (d <= 2) return 100;
+      if (d <= 10) return 50;
+    }
+    return 35;
+  }
+  return 35;
+}
+
+/** Faixas intermediárias proporcionais à meta (espelha 20/35 do mensal). */
+export function faixasTermometro(metaSaudavel: number): TermometroFaixas {
+  const meta = Math.max(1, Number(metaSaudavel) || 35);
+  // No mensal: margemBaixaMax=20 ≈ meta×(20/35). Mantém a mesma proporção.
+  const margemBaixaMax = +(meta * (20 / 35)).toFixed(4);
+  return { metaSaudavel: meta, margemBaixaMax, atencaoMax: meta };
+}
+
+/**
+ * Classifica o percentual sobre o custo nas faixas oficiais do período.
+ * Mensal (meta 35): <0 vermelho · 0–19,99 laranja · 20–34,99 amarelo · ≥35 verde.
+ * Semanal (meta 50) e diário (meta 100) escalam a mesma proporção.
+ */
+export function classificarFaixaTermometro(
+  pctSobreCusto: number | null,
+  metaSaudavelOrPeriod: number | string = 35,
+  daysInPeriod?: number,
+): {
   faixa: TermometroFaixa;
   cor: TermometroCor;
   statusLabel: string;
+  faixas: TermometroFaixas;
 } {
+  const meta =
+    typeof metaSaudavelOrPeriod === "number"
+      ? metaSaudavelOrPeriod
+      : metaSaudavelTermometro(metaSaudavelOrPeriod, daysInPeriod);
+  const faixas = faixasTermometro(meta);
+
   if (pctSobreCusto == null || !Number.isFinite(pctSobreCusto)) {
-    return { faixa: "insuficiente", cor: "cinza", statusLabel: "DADOS INSUFICIENTES" };
+    return { faixa: "insuficiente", cor: "cinza", statusLabel: "DADOS INSUFICIENTES", faixas };
   }
   if (pctSobreCusto < 0) {
-    return { faixa: "prejuizo", cor: "vermelho", statusLabel: "PREJUÍZO" };
+    return { faixa: "prejuizo", cor: "vermelho", statusLabel: "PREJUÍZO", faixas };
   }
-  if (pctSobreCusto < 20) {
-    return { faixa: "margem_baixa", cor: "laranja", statusLabel: "MARGEM BAIXA" };
+  if (pctSobreCusto < faixas.margemBaixaMax) {
+    return { faixa: "margem_baixa", cor: "laranja", statusLabel: "MARGEM BAIXA", faixas };
   }
-  if (pctSobreCusto < 35) {
-    return { faixa: "atencao", cor: "amarelo", statusLabel: "ATENÇÃO" };
+  if (pctSobreCusto < faixas.atencaoMax) {
+    return { faixa: "atencao", cor: "amarelo", statusLabel: "ATENÇÃO", faixas };
   }
-  return { faixa: "saudavel", cor: "verde", statusLabel: "SAUDÁVEL" };
+  return { faixa: "saudavel", cor: "verde", statusLabel: "SAUDÁVEL", faixas };
 }
 
 /** Mapeia % sobre o custo → preenchimento visual (vermelho embaixo, verde em cima). */
-export function pctSobreCustoToFill(pct: number | null): number {
+export function pctSobreCustoToFill(pct: number | null, metaSaudavel = 35): number {
   if (pct == null || !Number.isFinite(pct)) return 0;
+  const faixas = faixasTermometro(metaSaudavel);
+  const mid = faixas.margemBaixaMax;
+  const meta = faixas.metaSaudavel;
   if (pct < 0) {
     // Zona vermelha (0–25%): −100% → 0, 0% → 25
     return Math.max(0, Math.min(25, 25 + (pct / 100) * 25));
   }
-  if (pct < 20) {
+  if (pct < mid) {
     // Laranja (25–50%)
-    return 25 + (pct / 20) * 25;
+    return 25 + (pct / mid) * 25;
   }
-  if (pct < 35) {
+  if (pct < meta) {
     // Amarelo (50–75%)
-    return 50 + ((pct - 20) / 15) * 25;
+    const span = Math.max(meta - mid, 0.0001);
+    return 50 + ((pct - mid) / span) * 25;
   }
-  // Verde (75–100%): 35% → 75, 100%+ → 100
-  return Math.min(100, 75 + ((pct - 35) / 65) * 25);
+  // Verde (75–100%): meta → 75, (meta+65)+ → 100 (mesma escala relativa do mensal)
+  return Math.min(100, 75 + ((pct - meta) / 65) * 25);
 }
 
 export function fraseTermometro(r: {
@@ -757,12 +822,15 @@ export function fraseTermometro(r: {
   lucro: number;
   pctSobreCusto: number | null;
   dadoFaltante?: string | null;
+  metaSaudavel?: number;
 }): string {
   if (r.faixa === "insuficiente") {
     return `DADOS INSUFICIENTES: ${r.dadoFaltante || "custo total ausente ou igual a zero"}. O termômetro não classifica o resultado.`;
   }
   const pct = Math.abs(Number(r.pctSobreCusto || 0)).toFixed(2).replace(".", ",");
   const gap = money(Math.abs(r.faturamento - r.custo));
+  const meta = Number(r.metaSaudavel) > 0 ? Number(r.metaSaudavel) : 35;
+  const metaLabel = String(meta).replace(".", ",");
   if (r.faixa === "prejuizo") {
     return `ALERTA CRÍTICO: o faturamento está ${gap} abaixo do custo do período. A operação está gerando prejuízo.`;
   }
@@ -770,24 +838,34 @@ export function fraseTermometro(r: {
     return `MARGEM BAIXA: o faturamento cobre os custos, mas está apenas ${pct}% acima do custo. Revise despesas e rentabilidade.`;
   }
   if (r.faixa === "atencao") {
-    return `ATENÇÃO: o faturamento está ${pct}% acima do custo. Existe lucro, mas o resultado ainda está abaixo do nível saudável de 35%.`;
+    return `ATENÇÃO: o faturamento está ${pct}% acima do custo. Existe lucro, mas o resultado ainda está abaixo do nível saudável de ${metaLabel}% neste período.`;
   }
-  return `RESULTADO SAUDÁVEL: o faturamento está ${pct}% acima do custo, com lucro de ${money(r.lucro)} no período.`;
+  return `RESULTADO SAUDÁVEL: o faturamento está ${pct}% acima do custo (meta do período: ${metaLabel}%), com lucro de ${money(r.lucro)}.`;
 }
 
 /**
  * Termômetro oficial — consome totals do Balanço (sem recálculo paralelo).
  * Lucro = Fat − Custo (mesmo motor da DRE).
  * % = ((Fat − Custo) ÷ Custo) × 100.
+ * Meta verde: diário 100% · semanal 50% · mensal 35%.
  */
 export function computeTermometroFinanceiro(input: {
   faturamento: number;
   custoTotal: number;
   lucro?: number;
+  period?: string;
+  daysInPeriod?: number;
+  /** Override direto da meta (testes). */
+  metaSaudavel?: number;
 }): TermometroResultado {
   const faturamento = Number(input.faturamento) || 0;
   const custo = Number(input.custoTotal) || 0;
   const lucro = input.lucro != null ? Number(input.lucro) : faturamento - custo;
+  const metaSaudavel =
+    input.metaSaudavel != null
+      ? Number(input.metaSaudavel)
+      : metaSaudavelTermometro(input.period, input.daysInPeriod);
+  const faixas = faixasTermometro(metaSaudavel);
 
   if (!(custo > 0)) {
     const dadoFaltante = custo === 0
@@ -801,23 +879,44 @@ export function computeTermometroFinanceiro(input: {
       faixa: "insuficiente",
       cor: "cinza",
       statusLabel: "DADOS INSUFICIENTES",
-      frase: fraseTermometro({ faixa: "insuficiente", faturamento, custo, lucro, pctSobreCusto: null, dadoFaltante }),
+      frase: fraseTermometro({
+        faixa: "insuficiente",
+        faturamento,
+        custo,
+        lucro,
+        pctSobreCusto: null,
+        dadoFaltante,
+        metaSaudavel,
+      }),
       fillPct: 0,
       dadoFaltante,
+      metaSaudavel,
+      faixas,
     };
   }
 
   const pctSobreCusto = ((faturamento - custo) / custo) * 100;
-  const cls = classificarFaixaTermometro(pctSobreCusto);
+  const cls = classificarFaixaTermometro(pctSobreCusto, metaSaudavel);
   return {
     faturamento,
     custo,
     lucro,
     pctSobreCusto,
-    ...cls,
-    frase: fraseTermometro({ ...cls, faturamento, custo, lucro, pctSobreCusto }),
-    fillPct: pctSobreCustoToFill(pctSobreCusto),
+    faixa: cls.faixa,
+    cor: cls.cor,
+    statusLabel: cls.statusLabel,
+    frase: fraseTermometro({
+      faixa: cls.faixa,
+      faturamento,
+      custo,
+      lucro,
+      pctSobreCusto,
+      metaSaudavel,
+    }),
+    fillPct: pctSobreCustoToFill(pctSobreCusto, metaSaudavel),
     dadoFaltante: null,
+    metaSaudavel,
+    faixas: cls.faixas,
   };
 }
 
@@ -1025,11 +1124,18 @@ export function buildMemoriaTermometro(input: GestorInput, termo: TermometroResu
   const pctLabel = termo.pctSobreCusto == null
     ? "n/d"
     : `${termo.pctSobreCusto >= 0 ? "+" : ""}${termo.pctSobreCusto.toFixed(2)}%`;
+  const meta = termo.metaSaudavel;
+  const mid = termo.faixas.margemBaixaMax;
+  const midLabel = mid.toFixed(2).replace(".", ",");
+  const metaLabel = String(meta).replace(".", ",");
+  const atencaoTop = (meta - 0.01).toFixed(2).replace(".", ",");
   return {
     indicator: "Faturamento vs Custo vs Lucro",
     formula:
       "Lucro = Fat oficial − Custo Total (DRE). % sobre o custo = ((Fat − Custo) ÷ Custo) × 100. " +
-      "Faixas: <0 PREJUÍZO · 0–19,99% MARGEM BAIXA · 20–34,99% ATENÇÃO · ≥35% SAUDÁVEL.",
+      `Meta SAUDÁVEL do período = ${metaLabel}% acima do custo ` +
+      `(diário 100% · semanal 50% · mensal 35%). ` +
+      `Faixas: <0 PREJUÍZO · 0–${midLabel}% MARGEM BAIXA · ${midLabel}–${atencaoTop}% ATENÇÃO · ≥${metaLabel}% SAUDÁVEL.`,
     modules: ["Balanço Gerencial", "DRE", "RH (CCT cadastro)", "Custos Fixos", "Operações", "Knowledge Graph"],
     tables: [
       "operational-grid (fat)",
@@ -1042,7 +1148,12 @@ export function buildMemoriaTermometro(input: GestorInput, termo: TermometroResu
       { reason: "OS recusada (fora do faturamento)", count: input.missions.filter(isRecusado).length },
       { reason: "Pagamento teórico da missão (mão de obra = RH)", count: 1 },
     ],
-    filters: [`Período: ${input.periodLabel}`, "Fuso: America/Sao_Paulo"],
+    filters: [
+      `Período: ${input.periodLabel}`,
+      input.period ? `Preset: ${input.period}` : "Preset: MONTH",
+      `Meta SAUDÁVEL: ≥${metaLabel}% acima do custo`,
+      "Fuso: America/Sao_Paulo",
+    ],
     updatedAt: input.updatedAt,
     lastUser: input.auditUser || null,
     notes: [
@@ -1058,6 +1169,7 @@ export function buildMemoriaTermometro(input: GestorInput, termo: TermometroResu
       `  · Manutenção: ${money(input.totals.desp_manutencao)}`,
       `(=) Lucro/prejuízo: ${money(termo.lucro)}`,
       `Percentual acima do custo: ${pctLabel}`,
+      `Meta SAUDÁVEL do período: ≥${metaLabel}%`,
       `Faixa: ${termo.statusLabel} (${termo.cor.toUpperCase()})`,
       termo.frase,
     ],

@@ -215,7 +215,7 @@ function FatList({
 
 export function GestorFinanceiroPanel(props: Props) {
   const {
-    periodLabel, daysInPeriod, costDays, totals, missions, vehicles, agents, rhSummary, allEmployees,
+    periodLabel, daysInPeriod, costDays, period, totals, missions, vehicles, agents, rhSummary, allEmployees,
     eficiencia, metaPeriodo, impostoPct, custoVarPct, dataReady, updatedAt, onSync, syncing, dailyChart,
     onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter, rangeStart, rangeEnd, auditUser,
   } = props;
@@ -273,6 +273,8 @@ export function GestorFinanceiroPanel(props: Props) {
       mediaKmL: eficiencia.mediaKmL,
       dataReady,
       periodLabel,
+      period,
+      daysInPeriod,
       updatedAt: updatedAt ? updatedAt.toISOString() : null,
       impostoPct,
       custoVarPct,
@@ -282,7 +284,7 @@ export function GestorFinanceiroPanel(props: Props) {
       dailyChart,
       auditUser: auditUser || null,
     }),
-    [totals, missions, rhSummary, eficiencia.abaixo.length, eficiencia.mediaKmL, dataReady, periodLabel, updatedAt, impostoPct, custoVarPct, agents, vehicles, folhaAgents, dailyChart, auditUser],
+    [totals, missions, rhSummary, eficiencia.abaixo.length, eficiencia.mediaKmL, dataReady, periodLabel, period, daysInPeriod, updatedAt, impostoPct, custoVarPct, agents, vehicles, folhaAgents, dailyChart, auditUser],
   );
 
   const gates = useMemo(() => buildModuleGates(gestorInput), [gestorInput]);
@@ -312,8 +314,10 @@ export function GestorFinanceiroPanel(props: Props) {
         faturamento: totals.fat,
         custoTotal: totals.custoTotal,
         lucro: totals.lucro,
+        period,
+        daysInPeriod,
       }),
-    [totals.fat, totals.custoTotal, totals.lucro],
+    [totals.fat, totals.custoTotal, totals.lucro, period, daysInPeriod],
   );
 
   const seloTermometro: TermometroSelo = useMemo(() => {
@@ -486,9 +490,15 @@ export function GestorFinanceiroPanel(props: Props) {
           data-testid="kpi-termometro-fat-custo-lucro"
         >
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">
-              Faturamento vs Custo vs Lucro
-            </span>
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">
+                Faturamento vs Custo vs Lucro
+              </span>
+              <p className="text-[9px] text-slate-500 font-bold mt-0.5" data-testid="termo-meta-periodo">
+                Meta SAUDÁVEL deste período: ≥{String(termometro.metaSaudavel).replace(".", ",")}% acima do custo
+                {period === "DAY" ? " (diário)" : period === "WEEK" ? " (semanal)" : period === "MONTH" ? " (mensal)" : ""}
+              </p>
+            </div>
             <SeloTermometro selo={seloTermometro} />
           </div>
 
