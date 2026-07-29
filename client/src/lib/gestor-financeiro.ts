@@ -566,7 +566,7 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
   return {
     indicator: "Custos Totais",
     formula:
-      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH operacional rateado + Fixos rateados (÷30 × dias). VRP do boletim NÃO entra quando há folha RH (evita dobrar custo do vigilante). Sem provisões 13º/férias.",
+      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH (soma dos salários cadastrados, rateada) + Fixos rateados (÷30 × dias). VRP do boletim NÃO entra quando há folha RH. Sem HE/benefícios/encargos no RH do Balanço.",
     modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento"],
     tables: ["financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
     recordsConsidered: input.missions.length,
@@ -587,7 +587,7 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
       `Combustível (abastecimento): ${money(input.totals.desp_combustivel)}`,
       `Pedágio: ${money(input.totals.desp_pedagio)}`,
       `Manutenção: ${money(input.totals.desp_manutencao)}`,
-      `RH (folha rateada) — custo real do vigilante: ${money(input.totals.provisaoRH)}`,
+      `RH (folha rateada) — salário de cada funcionário: ${money(input.totals.provisaoRH)}`,
       `Fixos rateados: ${money(input.totals.custosFixosRateados)}`,
       `TOTAL na DRE: ${money(input.totals.custoTotal)}`,
     ],

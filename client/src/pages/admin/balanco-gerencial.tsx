@@ -22,24 +22,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
 import { GestorFinanceiroPanel } from "@/components/admin/gestor-financeiro-panel";
+import { fmtBRL as fmt, fmtHoras } from "@/lib/format-br";
 
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
 // ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
 const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
 
-const fmt = (val: number) =>
-  val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
 const fmtPct = (val: number) => `${val.toFixed(1)}%`;
-
-const fmtHoras = (val: number) => {
-  if (!val || !isFinite(val)) return "0h00";
-  const totalMin = Math.round(val * 60);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h${m.toString().padStart(2, "0")}`;
-};
 
 const META_DIARIA_VIATURA = 2000;
 const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
@@ -259,7 +249,8 @@ export default function BalancoGerencialPage() {
     refetchInterval: 600_000,
   });
 
-  // Custos de RH (folha real, mesmo cálculo da tela "Custos Fixos") — engine calcularFolha
+  // Custos de RH: monthlyOperacional = soma dos salários cadastrados (Balanço);
+  // monthly = custo real completo (Custos Fixos / Ponto).
   const { data: rhSummary, isFetching: rhFetching } = useQuery<{
     monthly: number;
     monthlyOperacional?: number;
@@ -308,9 +299,7 @@ export default function BalancoGerencialPage() {
 
   // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
   const [metaCfg] = useMetaConfig();
-  // Balanço Gerencial = fluxo de caixa operacional. Usa folha SEM provisões (13º, férias, 1/3,
-  // FGTS/INSS s/ prov.) — esses só viram desembolso lá no fim do ano. Fallback p/ `monthly`
-  // se o backend antigo ainda não devolver `monthlyOperacional`.
+  // Balanço: RH = soma dos salários cadastrados (monthlyOperacional).
   const folhaOperacionalMensal = rhSummary?.monthlyOperacional ?? rhSummary?.monthly ?? 0;
   const custoFixoTotalMensal = (fixedCostsSummary?.monthly || 0) + folhaOperacionalMensal;
   const viaturasAtivasGlobal = useMemo(() => (allVehicles || []).filter(isActiveVehicle).length, [allVehicles]);
@@ -1117,69 +1106,12 @@ export default function BalancoGerencialPage() {
                 .filter((a) => a._opTotal > 0)
                 .sort((a, b) => b._opTotal - a._opTotal);
 
-              // ── COMPOSIÇÃO AGREGADA — mesma fórmula da tela Ponto Eletrônico ("Custo Real")
-              // Total do card = Vencimentos (salário ratado + periculosidade 30% + HE com adicional
-              // 60% CCT + adicional noturno) + Benefícios (VR por dias úteis + cesta básica ratada +
-              // diárias). Recolhimentos empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são
-              // só informativos, NÃO entram no total. SEM provisões, SEM DSR.
-              const bk = rhSummary?.breakdown;
-              const agg = porAgente.length > 0
-                ? porAgente.reduce(
-                    (acc, a) => ({
-                      base: acc.base + Number(a.salarioProporcional || 0),
-                      peric: acc.peric + Number(a.periculosidade || 0),
-                      he: acc.he + Number(a.horaExtra || 0),
-                      noturno: acc.noturno + Number(a.adicionalNoturno || 0),
-                      vr: acc.vr + Number(a.vrTotal || 0),
-                      cesta: acc.cesta + Number(a.cesta || 0),
-                      diarias: acc.diarias + Number(a.diarias || 0),
-                      fgts: acc.fgts + Number(a.fgts || 0),
-                      inssPatronal: acc.inssPatronal + Number(a.inssPatronal || 0),
-                      seguroVida: acc.seguroVida + Number(a.seguroVida || 0),
-                    }),
-                    { base: 0, peric: 0, he: 0, noturno: 0, vr: 0, cesta: 0, diarias: 0, fgts: 0, inssPatronal: 0, seguroVida: 0 }
-                  )
-                : {
-                    base: Number(bk?.salarioProporcional || 0),
-                    peric: Number(bk?.periculosidade || 0),
-                    he: Number(bk?.horaExtra || 0),
-                    noturno: Number(bk?.adicionalNoturno || 0),
-                    vr: Number(bk?.vr || 0),
-                    cesta: Number(bk?.cesta || 0),
-                    diarias: Number(bk?.diarias || 0),
-                    fgts: Number(bk?.fgts || 0),
-                    inssPatronal: Number((bk as any)?.inssPatronal || 0),
-                    seguroVida: Number((bk as any)?.seguroVida || 0),
-                  };
-              // Vencimentos inclui o adicional noturno (ele ENTRA no total do card — custoTotalEstimado).
-              const vencimentos = agg.base + agg.peric + agg.he + agg.noturno;
-              const beneficios = agg.vr + agg.cesta + agg.diarias;
-              const recolhimentos = agg.fgts + agg.inssPatronal + agg.seguroVida;
-              const hasBreakdown = vencimentos + beneficios + recolhimentos > 0;
-
-              if (hasBreakdown) {
-                rhRows.push({ label: "── Vencimentos ──", value: vencimentos * fatorPeriodo });
-                rhRows.push({ label: "  Salário base (ratado)", value: agg.base * fatorPeriodo });
-                rhRows.push({ label: "  Periculosidade (30%)", value: agg.peric * fatorPeriodo });
-                if (agg.he > 0) rhRows.push({ label: "  Hora extra (60% CCT)", value: agg.he * fatorPeriodo });
-                if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno", value: agg.noturno * fatorPeriodo });
-                rhRows.push({ label: "── Benefícios + Diárias ──", value: beneficios * fatorPeriodo });
-                if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
-                if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });
-                if (agg.diarias > 0) rhRows.push({ label: "  Diárias de missão", value: agg.diarias * fatorPeriodo });
-                // Vencimentos + Benefícios = total do card (fecha 100%). Recolhimentos NÃO entram no
-                // total (Balanço é fluxo de caixa do mês) — mostrados só como informativo.
-                if (recolhimentos > 0) {
-                  rhRows.push({ label: "── Recolhimentos (informativo — fora do total) ──", value: recolhimentos * fatorPeriodo });
-                  rhRows.push({ label: "  FGTS (8%)", value: agg.fgts * fatorPeriodo });
-                  rhRows.push({ label: "  INSS Patronal (20%)", value: agg.inssPatronal * fatorPeriodo });
-                  if (agg.seguroVida > 0) rhRows.push({ label: "  Seguro de Vida (CCT)", value: agg.seguroVida * fatorPeriodo });
-                }
-              }
-
+              // RH no Balanço = soma do salário cadastrado (base_salary) de cada
+              // funcionário — o mesmo valor da coluna "Salário" em Funcionários.
+              // Rateado pelo período (÷30 × dias). Demais itens da folha não somam.
               if (porAgente.length > 0) {
                 rhRows.push({
-                  label: `── Por agente (${porAgente.length}) — mesmo total, detalhado ──`,
+                  label: `── Salários cadastrados (${porAgente.length} funcionários) ──`,
                   value: monthlyFolha * fatorPeriodo,
                 });
                 for (const a of porAgente) {
@@ -1188,7 +1120,7 @@ export default function BalancoGerencialPage() {
                     value: a._opTotal * fatorPeriodo,
                   });
                 }
-              } else if (!hasBreakdown) {
+              } else {
                 rhRows.push({
                   label: `${PERIOD_FOLHA_LABEL[period]} (${rhSummary?.agentCount ?? activeAgentCount} ag.)`,
                   value: baseFolha,
@@ -1199,10 +1131,10 @@ export default function BalancoGerencialPage() {
               }
               rhRows.push({ label: "Folha por dia (÷30)", value: monthlyFolha / 30 });
               cats.push({
-                key: "rh", label: "RH · Folha Real", value: totals.provisaoRH, color: "amber",
+                key: "rh", label: "RH · Salários", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
-                tipTitle: "RH — Folha Real Rateada",
-                tipDesc: `Vem 100% da folha de ponto (Control iD). Total = Vencimentos (salário base ratado + periculosidade 30% + HE com adicional 60% CCT + adicional noturno) + Benefícios (Vale Refeição × dias úteis + Cesta Básica ratada + Diárias). Cada item entra UMA vez. Os Recolhimentos da empresa (FGTS 8% + INSS Patronal 20% + Seguro de Vida CCT) são exibidos só como informativo e NÃO entram no total. Sem provisões (13º/férias/1/3) e sem DSR — Balanço Gerencial é fluxo de caixa do mês. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
+                tipTitle: "RH — Salário de cada funcionário",
+                tipDesc: `Soma do salário cadastrado (base_salary) de cada funcionário ativo — o mesmo valor da coluna "Salário" em Funcionários. Sem periculosidade, HE, VR, cesta, diárias nem encargos neste total. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30, mês comercial).`,
                 rows: rhRows,
               });
             }
@@ -1391,8 +1323,8 @@ export default function BalancoGerencialPage() {
             const custoPorKm = kmParaCusto > 0 ? combTotal / kmParaCusto : 0;
             const usaHodometro = kmHodometro > 0;
             const fmtKm = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-            const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-            const fmtBRL2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const fmtBRL = fmt;
+            const fmtBRL2 = fmt;
             return (
               <Card className="p-4 border-slate-700/80 bg-slate-950/70 text-slate-100" data-testid="card-km">
                 <div className="flex items-center gap-2 mb-2">
@@ -2703,7 +2635,7 @@ function EstatisticasTab({ missions, vehicles, agents, daysInPeriod, period, ran
 function MissoesTab({ missions }: { missions: any[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const canceladas = missions.filter(m => m.status === "CANCELADO");
-  const fmtH = (v: number) => { const h = Math.floor(v); const m = Math.round((v - h) * 60); return `${h}h${m.toString().padStart(2, "0")}`; };
+  const fmtH = fmtHoras;
   return (
     <div className="space-y-4" data-testid="panel-missoes">
       {canceladas.length > 0 && (

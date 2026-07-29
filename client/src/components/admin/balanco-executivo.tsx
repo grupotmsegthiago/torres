@@ -13,18 +13,12 @@ import {
 } from "recharts";
 import { Calendar, Car, Users, Trophy } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-
-const fmt = (val: number) =>
-  val.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+import { fmtBRL as fmt, fmtHoras } from "@/lib/format-br";
 
 const fmtPct = (val: number) => `${val.toFixed(1)}%`;
 
-const fmtCompact = (val: number) => {
-  const abs = Math.abs(val);
-  if (abs >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(val / 1_000).toFixed(1)}k`;
-  return val.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-};
+/** Eixo de gráfico: mantém R$ com 2 casas, sem abreviação k/M. */
+const fmtAxis = (val: number) => fmt(val);
 
 export function GaugeRing({
   pct,
@@ -363,12 +357,12 @@ export function BalancoExecutivoPanel({
                             onClick={() => setDrill({ key: line.key, label: line.label, date, amount: v })}
                             data-testid={`dre-cell-${line.key}-${date}`}
                           >
-                            {line.kind === "pct" ? fmtPct(v) : fmtCompact(v)}
+                            {line.kind === "pct" ? fmtPct(v) : fmt(v)}
                           </button>
                         </td>
                       ) : (
                         <td key={`${line.key}-${i}`} className={cellCls}>
-                          {line.kind === "pct" ? fmtPct(v) : fmtCompact(v)}
+                          {line.kind === "pct" ? fmtPct(v) : fmt(v)}
                         </td>
                       );
                     })}
@@ -438,7 +432,7 @@ export function BalancoExecutivoPanel({
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtCompact(Number(v))} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 9 }} axisLine={false} tickLine={false} width={72} tickFormatter={(v) => fmtAxis(Number(v))} />
                   <Tooltip
                     contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12, fontSize: 12 }}
                     labelStyle={{ color: "#e2e8f0", fontWeight: 700 }}
@@ -550,7 +544,10 @@ export function BalancoExecutivoPanel({
                           {a.name}
                           {ok && <Trophy size={12} className="text-emerald-400 shrink-0" />}
                         </p>
-                        <p className="text-[10px] font-bold text-slate-500">{a.missions} missões</p>
+                        <p className="text-[10px] font-bold text-slate-500">
+                          {a.missions} missões
+                          {a.horas_trabalhadas != null ? ` · ${fmtHoras(a.horas_trabalhadas)}` : ""}
+                        </p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className={`text-xs font-black font-mono ${ok ? "text-emerald-400" : "text-amber-300"}`}>{fmtPct(metaPct)}</p>
