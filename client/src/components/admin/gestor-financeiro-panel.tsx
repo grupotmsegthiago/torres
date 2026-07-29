@@ -519,7 +519,7 @@ export function GestorFinanceiroPanel(props: Props) {
               </div>
             </div>
           ))}
-          <p className="text-[9px] text-slate-500">Centro de custos = mesmo rateio da DRE (VRP + var + RH + fixos). Impostos são referência da Meta ({impostoPct}%), sem dupla contagem no total.</p>
+          <p className="text-[9px] text-slate-500">Combustível e pedágio entram só pelas FTs oficiais — nunca somados de novo no pagamento do agente/OS. Impostos ({impostoPct}%) são só referência da Meta.</p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo
           </Button>
