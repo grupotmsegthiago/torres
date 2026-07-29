@@ -501,11 +501,13 @@ export function GestorFinanceiroPanel(props: Props) {
           </div>
           <p className="text-lg font-black font-mono text-rose-300">{fmt(totals.custoTotal)}</p>
           {[
-            ["Operacionais (VRP)", operacional, "bg-rose-400"],
+            ["Mão de obra (sem comb/pedágio)", operacional, "bg-rose-400"],
             ["RH", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
-            ["Variáveis", variaveis, "bg-orange-400"],
-            ["Impostos (ref. meta)", impostosRef, "bg-yellow-400"],
+            ["Combustível (só abastecimento)", totals.desp_combustivel, "bg-orange-400"],
+            ["Pedágio (só mission_cost)", totals.desp_pedagio, "bg-yellow-400"],
+            ["Manutenção", totals.desp_manutencao, "bg-pink-400"],
+            ["Impostos (ref. meta — fora do total)", impostosRef, "bg-slate-500"],
           ].map(([label, val, bar]) => (
             <div key={String(label)} className="space-y-0.5">
               <div className="flex justify-between text-[10px]">

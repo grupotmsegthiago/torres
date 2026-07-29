@@ -568,20 +568,25 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
   return {
     indicator: "Custos Totais",
     formula:
-      "VRP (pag_total) + Combustível + Pedágio + Manutenção + RH operacional rateado + Custos Fixos rateados (÷30 × dias). Impostos = referência Meta (fat × imposto%). Sem provisões 13º/férias no fluxo operacional.",
+      "Mão de obra (VRP + adicionais, SEM reembolso de combustível/pedágio) + Combustível (só vehicle_fueling/FT fueling) + Pedágio (só mission_cost/FT) + Manutenção + RH rateado + Fixos rateados (÷30 × dias). Impostos = referência Meta (fora do total). Sem provisões 13º/férias.",
     modules: ["Financeiro", "RH (folha)", "Custos Fixos", "Abastecimento", "Meta / DRE"],
-    tables: ["escort_billings.pag", "vehicle_fueling", "mission_costs", "rh-summary", "fixed_costs", "meta-config"],
+    tables: ["escort_billings.pag_labor", "financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs"],
     recordsConsidered: input.missions.length,
-    recordsExcluded: [{ reason: "Provisões 13º/férias (fora do fluxo de caixa operacional)", count: 0 }],
-    filters: [`Período: ${input.periodLabel}`, `Imposto ref. ${input.impostoPct}%`, `Var. meta ${input.custoVarPct}%`],
+    recordsExcluded: [
+      { reason: "Provisões 13º/férias (fora do fluxo de caixa operacional)", count: 0 },
+      { reason: "Combustível/pedágio retirados do pag_total (evita duplicar com FT oficial)", count: 0 },
+    ],
+    filters: [`Período: ${input.periodLabel}`, `Imposto ref. ${input.impostoPct}% (não soma no custo)`, `Var. meta ${input.custoVarPct}% (só meta)`],
     updatedAt: input.updatedAt,
     lastUser: input.auditUser || null,
     notes: [
-      `Operacionais (VRP): ${money(input.totals.pag)}`,
-      `Variáveis (comb+pedágio+manut): ${money(variaveis)}`,
+      `Mão de obra (sem comb/pedágio): ${money(input.totals.pag)}`,
+      `Combustível (só relatório abastecimento / FT fueling): ${money(input.totals.desp_combustivel)}`,
+      `Pedágio (só FT mission_cost): ${money(input.totals.desp_pedagio)}`,
+      `Manutenção: ${money(input.totals.desp_manutencao)}`,
       `RH: ${money(input.totals.provisaoRH)}`,
       `Fixos: ${money(input.totals.custosFixosRateados)}`,
-      `Impostos (ref. meta, não somados 2x no custoTotal): ${money(impostosRef)}`,
+      `Impostos (ref. meta — NÃO entra no custoTotal): ${money(impostosRef)}`,
       `Total motor DRE: ${money(input.totals.custoTotal)}`,
     ],
   };

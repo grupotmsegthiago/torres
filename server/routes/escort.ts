@@ -2831,6 +2831,15 @@ import type { Express } from "express";
         if (b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id))) return 0;
         return Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
       };
+      // Pagamento do agente SEM combustível/pedágio. Esses custos entram só pelas fontes
+      // oficiais (vehicle_fueling → FT fueling; mission_costs pedágio → FT mission_cost).
+      // Se ficarem dentro de pag_total (pag_reembolsos) E nas FTs, o Balanço dobra o valor.
+      const calcPagLabor = (b: any) => {
+        const pag = Number(b.pag_total || 0);
+        const fuelToll =
+          Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0);
+        return Math.max(0, Math.round((pag - fuelToll) * 100) / 100);
+      };
       const isCancelledBilling = (b: any) =>
         b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id));
 
@@ -2917,11 +2926,14 @@ import type { Express } from "express";
           byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
         }
         byVehicle[plate].fat_total += calcFat(b);
-        // Pagamento ao vigilante e contagem de missão acontecem mesmo em cancelada (tem que pagar o cara que foi)
-        byVehicle[plate].pag_total += Number(b.pag_total || 0);
+        // Só mão de obra (VRP + adicionais + outras). Combustível/pedágio NÃO entram aqui —
+        // ficam em financial_transactions (fueling / mission_cost) para não duplicar.
+        byVehicle[plate].pag_total += calcPagLabor(b);
         byVehicle[plate].missions += 1;
-        // Mas despesa atribuída à OS zera quando cancelada (FIX #5)
-        byVehicle[plate].despesas += calcDesp(b);
+        // Outras despesas do boletim (não-combustível/não-pedágio). Pedágio e combustível
+        // oficiais vêm das FTs no Balanço; aqui só "outras" para não somar 2× com FT.
+        const outras = isCancelledBilling(b) ? 0 : Number(b.despesas_outras || 0);
+        byVehicle[plate].despesas += outras;
       });
 
       const timesheetHoursByEmployee: Record<number, number> = {};
@@ -2949,14 +2961,15 @@ import type { Express } from "express";
         const key = String(id || name);
         if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
         byAgent[key].fat_total += calcFat(b);
-        byAgent[key].pag_total += Number(b.pag_total || 0);
+        // Custo por agente = pagamento laboral, sem reembolso de combustível/pedágio
+        byAgent[key].pag_total += calcPagLabor(b);
         byAgent[key].missions += 1;
 
         if (b.vigilante2_id && b.vigilante2_name) {
           const key2 = String(b.vigilante2_id);
           if (!byAgent[key2]) byAgent[key2] = { id: b.vigilante2_id, name: b.vigilante2_name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
           byAgent[key2].fat_total += calcFat(b);
-          byAgent[key2].pag_total += Number(b.pag_total || 0);
+          byAgent[key2].pag_total += calcPagLabor(b);
           byAgent[key2].missions += 1;
         }
       });
@@ -2970,7 +2983,10 @@ import type { Express } from "express";
         // FIX #5: missão cancelada zera receita E despesas (lucro=0 em vez de prejuízo artificial)
         const desp = calcDesp(b);
         const pag = Number(b.pag_total || 0);
-        const lucro = fat - pag - desp;
+        const pagLabor = calcPagLabor(b);
+        // Lucro da missão: fat − labor − despesas (uma vez). Antes usava pag_total (já com
+        // pedágio/combustível em reembolso) + desp de novo → dobrava combustível/pedágio.
+        const lucro = fat - pagLabor - desp;
         const so = osLookup.get(b.service_order_id);
 
         const soCreatedAt = so?.createdAt || b.created_at;
@@ -3027,6 +3043,8 @@ import type { Express } from "express";
         fat_pernoite: Number(b.fat_pernoite || 0),
         receitas_os: Number(b.receitas_os || 0),
         pag_total: pag,
+        // Pagamento laboral (VRP + peric. + ad. noturno + outras). Sem comb/pedágio.
+        pag_labor: pagLabor,
         pag_vrp: Number(b.pag_vrp || 0),
         despesas: desp,
         despesas_pedagio: Number(b.despesas_pedagio || 0),
@@ -3114,7 +3132,7 @@ import type { Express } from "express";
         if (schedKey) {
           if (!custoOperacionalByDay[schedKey]) custoOperacionalByDay[schedKey] = { count: 0, pag_total: 0 };
           custoOperacionalByDay[schedKey].count += 1;
-          custoOperacionalByDay[schedKey].pag_total += m.pag_total;
+          custoOperacionalByDay[schedKey].pag_total += Number(m.pag_labor ?? m.pag_total) || 0;
         }
 
         if (m.is_concluded && m.completed_date_brt) {

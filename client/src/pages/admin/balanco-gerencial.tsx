@@ -408,7 +408,14 @@ export default function BalancoGerencialPage() {
         const fat = useBoletim ? (Number(bill.fat_total_boletim) || 0) : liveFat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
         const pag = bill ? Number(bill.pag_total || 0) : 0;
+        const despPedagio = bill ? Number(bill.despesas_pedagio || 0) : 0;
+        const despCombustivel = bill ? Number(bill.despesas_combustivel || 0) : 0;
         const desp = bill ? Number(bill.despesas || 0) : 0;
+        // Labor-only: remove fuel/toll reimbursements from agent/OS payment.
+        // Fuel and toll enter company totals ONLY via official FTs (fueling / mission_cost).
+        const pagLabor = bill?.pag_labor != null
+          ? Number(bill.pag_labor)
+          : Math.max(0, Math.round((pag - despPedagio - despCombustivel) * 100) / 100);
         const startIso = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt || null;
         return {
           id: bill?.id ?? sid,
@@ -439,10 +446,17 @@ export default function BalancoGerencialPage() {
           km_franquia: Number(useBoletim ? bill.km_franquia : lcCanon?.km_franquia) || 0,
           km_excedente: Number(useBoletim ? bill.km_excedente : lcCanon?.km_excedente) || 0,
           horas_missao: Number(useBoletim ? bill.horas_trabalhadas : lcCanon?.horas_trabalhadas) || Number(lc.horas_missao) || 0,
-          pag_total: pag,
+          // pag_total bruto (com reembolsos) só para auditoria; motor usa pag_labor
+          pag_total: pagLabor,
+          pag_total_bruto: pag,
+          pag_vrp: Number(bill?.pag_vrp || 0),
+          pag_labor: pagLabor,
           despesas: desp,
-          lucro: fat - pag - desp,
-          margem: fat > 0 ? ((fat - pag - desp) / fat) * 100 : 0,
+          despesas_pedagio: despPedagio,
+          despesas_combustivel: despCombustivel,
+          // Uma vez: labor + despesas (pedágio/comb/outras). Não usa pag_bruto + desp.
+          lucro: fat - pagLabor - desp,
+          margem: fat > 0 ? ((fat - pagLabor - desp) / fat) * 100 : 0,
           km_total: km,
           horas_trabalhadas: bill?.horas_trabalhadas || 0,
           boletim: bill?.boletim || "",
@@ -583,7 +597,9 @@ export default function BalancoGerencialPage() {
 
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
-    const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
+    // pag = só mão de obra (VRP/adicionais). Combustível e pedágio NÃO vêm do boletim:
+    // entram exclusivamente por financial_transactions (fueling / mission_cost).
+    const pag = filtered.missions.reduce((a, m) => a + (m.pag_labor ?? m.pag_total), 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
     // Lançamentos com categoria de RH (folha automática + manuais "Folha de Pagamento",
@@ -597,6 +613,7 @@ export default function BalancoGerencialPage() {
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * costDays;
+    // Fonte única: labor + FT oficiais (comb/pedágio/manut) + RH + fixos — sem reembolso duplicado
     const custoTotal = pag + despReaisOperacional + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
@@ -2680,7 +2697,8 @@ function MissoesTab({ missions }: { missions: any[] }) {
         ) : (
           <div className="divide-y divide-neutral-100">
             {missions.map(m => {
-              const custoTotal = m.pag_total + m.despesas;
+              // labor + despesas uma vez (pag_total já é pag_labor após o fix anti-duplicidade)
+              const custoTotal = (m.pag_labor ?? m.pag_total) + (m.despesas || 0);
               const isCancelada = m.status === "CANCELADO";
               const isExpanded = expandedId === m.id;
               return (
