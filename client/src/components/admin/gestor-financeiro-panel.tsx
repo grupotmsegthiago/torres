@@ -57,8 +57,8 @@ import {
   type ValidationFinding,
 } from "@/lib/gestor-financeiro";
 import { computeProjection } from "@/lib/balanco-projection";
+import { fmtBRL as fmt, fmtHoras } from "@/lib/format-br";
 
-const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 const fmtN = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
@@ -289,8 +289,9 @@ export function GestorFinanceiroPanel(props: Props) {
           pctFolha: (custoTotal / folhaTotal) * 100,
           pctEmpresa: (custoTotal / custoEmpresa) * 100,
           missoes,
+          horasTrabalhadas: horas,
           custoMissao: missoes > 0 ? custoTotal / missoes : 0,
-          custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
+          custoHora: horas > 0 ? custoTotal / horas : Number(a.custoHora ?? 0) * scale,
           receita: Number(ops?.fat || 0),
           status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
           // O que entra no custo empresa (vencimentos + benefícios) vs só informativo
@@ -1117,7 +1118,9 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
       ]} />
       <Section title="Indicadores operacionais" rows={[
         ["Missões no período", agent.missoes, true],
+        ["Horas trabalhadas", fmtHoras(agent.horasTrabalhadas || agent.horas || 0), true],
         ["Receita gerada (OS)", agent.receita],
+        ["Custo / hora", agent.custoHora],
         ["Custo / dia", agent.custoDiario],
         ["Custo / missão", agent.custoMissao],
         ["Lucro operacional (receita − custo)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],

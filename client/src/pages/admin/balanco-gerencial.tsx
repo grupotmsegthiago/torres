@@ -22,24 +22,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { BalancoExecutivoPanel, GaugeRing } from "@/components/admin/balanco-executivo";
 import { GestorFinanceiroPanel } from "@/components/admin/gestor-financeiro-panel";
+import { fmtBRL as fmt, fmtHoras } from "@/lib/format-br";
 
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
 // ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
 const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
 
-const fmt = (val: number) =>
-  val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
 const fmtPct = (val: number) => `${val.toFixed(1)}%`;
-
-const fmtHoras = (val: number) => {
-  if (!val || !isFinite(val)) return "0h00";
-  const totalMin = Math.round(val * 60);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h${m.toString().padStart(2, "0")}`;
-};
 
 const META_DIARIA_VIATURA = 2000;
 const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
@@ -1391,8 +1381,8 @@ export default function BalancoGerencialPage() {
             const custoPorKm = kmParaCusto > 0 ? combTotal / kmParaCusto : 0;
             const usaHodometro = kmHodometro > 0;
             const fmtKm = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-            const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-            const fmtBRL2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const fmtBRL = fmt;
+            const fmtBRL2 = fmt;
             return (
               <Card className="p-4 border-slate-700/80 bg-slate-950/70 text-slate-100" data-testid="card-km">
                 <div className="flex items-center gap-2 mb-2">
@@ -2703,7 +2693,7 @@ function EstatisticasTab({ missions, vehicles, agents, daysInPeriod, period, ran
 function MissoesTab({ missions }: { missions: any[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const canceladas = missions.filter(m => m.status === "CANCELADO");
-  const fmtH = (v: number) => { const h = Math.floor(v); const m = Math.round((v - h) * 60); return `${h}h${m.toString().padStart(2, "0")}`; };
+  const fmtH = fmtHoras;
   return (
     <div className="space-y-4" data-testid="panel-missoes">
       {canceladas.length > 0 && (
