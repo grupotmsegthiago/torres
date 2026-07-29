@@ -180,9 +180,12 @@ export function BalancoExecutivoPanel({
   const lines: DreLine[] = useMemo(() => {
     const fat = cols.map((c) => c.fat);
     const pag = cols.map((c) => c.pag ?? 0);
-    // RH e Fixos: rateio IGUAL por dia do período (não sobe/desce com o faturamento do dia)
-    const rhDia = totals.provisaoRH / Math.max(daysInPeriod, 1);
-    const fixoDia = totals.custosFixosRateados / Math.max(daysInPeriod, 1);
+    // RH e Fixos: rateio IGUAL (não proporcional ao faturamento do dia).
+    // No mês: ÷ dias do período. Em visão agregada (trimestre/ano): ÷ nº de colunas.
+    const aggregated = period === "YEAR" || period === "SEMESTER" || period === "QUARTER";
+    const denom = Math.max(aggregated ? cols.length : daysInPeriod, 1);
+    const rhDia = totals.provisaoRH / denom;
+    const fixoDia = totals.custosFixosRateados / denom;
     const rh = cols.map(() => rhDia);
     const fixos = cols.map(() => fixoDia);
     const combVals = cols.map((c) => c.combustivel || 0);
@@ -206,7 +209,7 @@ export function BalancoExecutivoPanel({
       { key: "lucro", label: "Lucro Líquido", color: "#60a5fa", values: lucro, total: sum(lucro) || totals.lucro, kind: "money", emphasize: true },
       { key: "margem", label: "Margem %", color: "#22d3ee", values: margem, total: totals.margem, kind: "pct", emphasize: true },
     ];
-  }, [cols, totals, daysInPeriod]);
+  }, [cols, totals, daysInPeriod, period]);
 
   const drillRows = useMemo(() => {
     if (!drill) return [] as Array<{ label: string; detail?: string; amount: number }>;
