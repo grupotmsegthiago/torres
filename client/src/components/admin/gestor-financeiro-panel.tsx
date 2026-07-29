@@ -803,8 +803,11 @@ export function GestorFinanceiroPanel(props: Props) {
               <BarChart data={dailyChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" vertical={false} />
                 <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12, fontSize: 11 }} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 9 }} axisLine={false} tickLine={false} width={72} tickFormatter={(v) => fmt(Number(v))} />
+                <Tooltip
+                  contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12, fontSize: 11 }}
+                  formatter={(value: number) => fmt(Number(value))}
+                />
                 <Bar dataKey="fat" name="Faturamento" fill="#34d399" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
                 <Bar dataKey="custo" name="Custos" fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
                 <Bar dataKey="lucro" name="Lucro" fill="#60a5fa" radius={[3, 3, 0, 0]} maxBarSize={22} cursor="pointer" />
