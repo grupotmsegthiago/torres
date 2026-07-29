@@ -9,8 +9,9 @@ import type { Express } from "express";
   import { haversineDist } from "./_helpers";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
+  import { BALANCO_FRESH_TTL_MS, BALANCO_HARD_TTL_MS } from "@shared/cache-keys";
 
-  const SWR_TTL_3H = 3 * 60 * 60 * 1000;
+  const SWR_TTL_3H = BALANCO_HARD_TTL_MS;
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
   export const lastRecordedPos: Map<number, { lat: number; lng: number; time: number; osId?: number }> = new Map();
@@ -29,6 +30,7 @@ import type { Express } from "express";
   app.get("/api/operational-grid", requireAuth, requireAdminRole, withSwrCache({
     baseKey: "operational-grid",
     ttlMs: SWR_TTL_3H,
+    freshTtlMs: BALANCO_FRESH_TTL_MS,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],
   }, async (_req, res) => {

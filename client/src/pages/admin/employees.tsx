@@ -2731,9 +2731,12 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   const _periodoFolha = (() => {
     try { return getPayrollPeriod(selYear, selMonth); } catch { return null; }
   })();
+  // Folha / Resumo RH / HE: revalidar ao abrir a tela e no F5 (sem cache silencioso).
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery<any>({
     queryKey: [`/api/employees/${employee.id}/salary-summary?month=${selMonth}&year=${selYear}`],
     queryFn: getQueryFn({ on401: "throw" }),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const [showDiscountForm, setShowDiscountForm] = useState(false);
   const [discountCategory, setDiscountCategory] = useState<"falta" | "multa" | "abastecimento" | null>(null);

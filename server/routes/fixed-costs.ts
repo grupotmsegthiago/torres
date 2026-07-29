@@ -16,7 +16,13 @@ import { resolveHorasExtrasNoturnasBulk } from "../lib/employee-monthly-cost";
 import { isCltContrato, normalizeTipoContratacao } from "@shared/contratacao";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
-const SWR_TTL_3H = 3 * 60 * 60 * 1000;
+import {
+  RH_SUMMARY_FRESH_TTL_MS,
+  RH_SUMMARY_HARD_TTL_MS,
+  RH_SUMMARY_SCHEMA,
+  rhSummarySwrBaseKey,
+} from "@shared/cache-keys";
+
 import { createLimit } from "../lib/create-limit";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
@@ -499,10 +505,13 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v9 (29/07/2026): HE canônico = batidas banco mensal (não ponto/jornada).
+  // baseKey/schema: shared/cache-keys.ts (única fonte — sem vN espalhado).
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v9",
-    ttlMs: SWR_TTL_3H,
+    baseKey: rhSummarySwrBaseKey(),
+    ttlMs: RH_SUMMARY_HARD_TTL_MS,
+    freshTtlMs: RH_SUMMARY_FRESH_TTL_MS,
+    attachCacheMeta: true,
+    schema: RH_SUMMARY_SCHEMA,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],
   }, async (req, res) => {

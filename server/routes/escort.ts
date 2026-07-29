@@ -4,7 +4,8 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
   import { logSystemAudit } from "../audit";
   import { withSwrCache, bustSwrCache } from "../lib/swr-cache";
-  const SWR_TTL_3H = 3 * 60 * 60 * 1000;
+  import { BALANCO_FRESH_TTL_MS, BALANCO_HARD_TTL_MS } from "@shared/cache-keys";
+  const SWR_TTL_3H = BALANCO_HARD_TTL_MS;
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
@@ -2537,6 +2538,7 @@ import type { Express } from "express";
   app.get("/api/financial/dashboard", requireAuth, requireAdminRole, withSwrCache({
     baseKey: "financial-dashboard",
     ttlMs: SWR_TTL_3H,
+    freshTtlMs: BALANCO_FRESH_TTL_MS,
     // Warm-up: o dashboard não tem parâmetros — uma chave só.
     warmQueries: () => [{}],
   }, async (req, res) => {

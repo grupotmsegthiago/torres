@@ -74,8 +74,68 @@ test("force=1 recalcula na hora", async () => {
   });
   await wrapped(fakeReq({ cached: "1" }), fakeRes(), null); // MISS value 1
   const forced = fakeRes(); await wrapped(fakeReq({ cached: "1", force: "1" }), forced, null);
-  assert.equal(forced._headers["x-cache"], "MISS");
+  assert.equal(forced._headers["x-cache"], "FORCE");
   assert.deepEqual(forced._json, { value: 2 });
+});
+
+test("validate=1 serve HIT se ainda fresco; aguarda recálculo se age >= freshTtl", async () => {
+  bustSwrCache("val");
+  let calls = 0;
+  const wrapped = withSwrCache(
+    { baseKey: "val", ttlMs: 60_000, freshTtlMs: 80 },
+    async (_req, res) => {
+      calls++;
+      res.status(200).json({ value: calls });
+    },
+  );
+  await wrapped(fakeReq({ cached: "1" }), fakeRes(), null);
+  const fresh = fakeRes();
+  await wrapped(fakeReq({ cached: "1", validate: "1" }), fresh, null);
+  assert.equal(fresh._headers["x-cache"], "HIT");
+  assert.equal(calls, 1);
+
+  await new Promise((r) => setTimeout(r, 100));
+  const revalidated = fakeRes();
+  await wrapped(fakeReq({ cached: "1", validate: "1" }), revalidated, null);
+  assert.equal(revalidated._headers["x-cache"], "VALIDATE");
+  assert.deepEqual(revalidated._json, { value: 2 });
+  assert.equal(calls, 2);
+});
+
+test("validate=1 em falha devolve STALE explícito (não silencioso)", async () => {
+  bustSwrCache("valfail");
+  let calls = 0;
+  const wrapped = withSwrCache(
+    { baseKey: "valfail", ttlMs: 60_000, freshTtlMs: 30, attachCacheMeta: true },
+    async (_req, res) => {
+      calls++;
+      if (calls === 1) return res.status(200).json({ value: 1 });
+      return res.status(500).json({ message: "boom" });
+    },
+  );
+  await wrapped(fakeReq({ cached: "1" }), fakeRes(), null);
+  await new Promise((r) => setTimeout(r, 40));
+  const stale = fakeRes();
+  await wrapped(fakeReq({ cached: "1", validate: "1" }), stale, null);
+  assert.equal(stale._headers["x-cache"], "STALE");
+  assert.equal(stale._headers["x-cache-fresh"], "0");
+  assert.equal(stale._json.value, 1);
+  assert.equal(stale._json._cacheMeta?.fresh, false);
+});
+
+test("chave ignora cached/force/validate", async () => {
+  bustSwrCache("key2");
+  let calls = 0;
+  const wrapped = withSwrCache({ baseKey: "key2", ttlMs: 10000 }, async (_req, res) => {
+    calls++;
+    res.status(200).json({ value: calls });
+  });
+  await wrapped(fakeReq({ cached: "1", from: "A", validate: "1" }), fakeRes(), null);
+  const hit = fakeRes();
+  await wrapped(fakeReq({ cached: "1", from: "A", force: "1" }), hit, null);
+  // force recalcula (não HIT), mas a chave é a mesma
+  assert.equal(hit._headers["x-cache"], "FORCE");
+  assert.equal(calls, 2);
 });
 
 test("resposta não-200 não é cacheada", async () => {
