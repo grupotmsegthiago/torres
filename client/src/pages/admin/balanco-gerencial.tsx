@@ -1943,6 +1943,7 @@ export default function BalancoGerencialPage() {
             expenses={filtered.expenses}
             periodExpenses={filtered.periodExpenses}
             daysInPeriod={daysInPeriod}
+            costDays={costDays}
             allVehicles={allVehicles || []}
             provisaoDiaria={provisaoDiaria}
             rhSummary={rhSummary}
@@ -1977,7 +1978,7 @@ export default function BalancoGerencialPage() {
 }
 
 function BalancoTab({
-  missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria,
+  missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, costDays, allVehicles, provisaoDiaria,
   rhSummary, allEmployees, eficiencia, metaPeriodo, impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter,
 }: {
   missions: any[]; vehicles: any[]; agents: any[];
@@ -1990,7 +1991,7 @@ function BalancoTab({
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
-  daysInPeriod: number; allVehicles: any[]; provisaoDiaria: number;
+  daysInPeriod: number; costDays: number; allVehicles: any[]; provisaoDiaria: number;
   rhSummary: any; allEmployees: any[];
   eficiencia: { mediaKmL: number; totalKm: number; totalLiters: number; abaixo: any[] };
   metaPeriodo: number;
@@ -2088,6 +2089,7 @@ function BalancoTab({
       <GestorFinanceiroPanel
         periodLabel={range.label}
         daysInPeriod={daysInPeriod}
+        costDays={costDays}
         period={period}
         rangeStart={range.start}
         rangeEnd={range.end}

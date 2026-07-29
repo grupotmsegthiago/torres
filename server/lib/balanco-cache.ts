@@ -7,4 +7,10 @@ import { bustSwrCache } from "./swr-cache";
 export function bustBalancoCaches() {
   bustSwrCache("operational-grid");
   bustSwrCache("financial-dashboard");
+  bustSwrCache("rh-summary");
+}
+
+/** Invalida só o cache de RH (salário/custo empresa) — chamar após write em employee_salaries. */
+export function bustRhSummaryCache() {
+  bustSwrCache("rh-summary");
 }

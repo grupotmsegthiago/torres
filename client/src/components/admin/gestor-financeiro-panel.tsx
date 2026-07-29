@@ -42,7 +42,9 @@ import {
   buildAuditLog,
   buildCertificationChecks,
   buildFatBreakdown,
+  buildFolhaAgentsView,
   buildKnowledgeGraph,
+  buildMemoriaCustoFuncionario,
   buildMemoriaCustos,
   buildMemoriaEficiencia,
   buildMemoriaFaturamento,
@@ -53,6 +55,7 @@ import {
   buildModuleGates,
   computeIntegrityScore,
   computeTermometroFinanceiro,
+  findAgentByEmployeeId,
   gatesReady,
   lucroTendencia,
   runGestorValidation,
@@ -70,6 +73,8 @@ const fmtN = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0
 type Props = {
   periodLabel: string;
   daysInPeriod: number;
+  /** Dias do mês comercial para rateio RH (MONTH=30). NÃO usar dias de calendário. */
+  costDays: number;
   period: string;
   rangeStart: Date;
   rangeEnd: Date;
@@ -210,15 +215,16 @@ function FatList({
 
 export function GestorFinanceiroPanel(props: Props) {
   const {
-    periodLabel, daysInPeriod, totals, missions, vehicles, agents, rhSummary, allEmployees,
+    periodLabel, daysInPeriod, costDays, totals, missions, vehicles, agents, rhSummary, allEmployees,
     eficiencia, metaPeriodo, impostoPct, custoVarPct, dataReady, updatedAt, onSync, syncing, dailyChart,
     onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter, rangeStart, rangeEnd, auditUser,
   } = props;
 
   const [memoria, setMemoria] = useState<MemoriaCalculo | null>(null);
   const [finding, setFinding] = useState<ValidationFinding | null>(null);
-  const [hoverAgentId, setHoverAgentId] = useState<number | null>(null);
-  const [overlayHoverId, setOverlayHoverId] = useState<number | null>(null);
+  /** ID imutável do funcionário selecionado (hover/click). Nunca índice/nome. */
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [overlayEmployeeId, setOverlayEmployeeId] = useState<number | null>(null);
   const [showFolhaOverlay, setShowFolhaOverlay] = useState(false);
   const [showAiFull, setShowAiFull] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
@@ -243,69 +249,18 @@ export function GestorFinanceiroPanel(props: Props) {
   const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
   const projPct = metaPeriodo > 0 ? (projection / metaPeriodo) * 100 : 0;
 
-  const folhaAgents = useMemo(() => {
-    const scale = daysInPeriod / 30;
-    const list = (rhSummary?.porAgente || []) as any[];
-    const agentFat = new Map<number, { missions: number; fat: number }>();
-    for (const a of agents) {
-      if (a.id != null) agentFat.set(Number(a.id), { missions: a.missions || 0, fat: a.fat_total || 0 });
-    }
-    const byName = new Map(agents.map((a: any) => [String(a.name || "").toLowerCase(), a]));
-    const folhaTotal = list.reduce((s, a) => s + Number(a.totalOperacional ?? a.total ?? 0) * scale, 0) || 1;
-    const custoEmpresa = totals.custoTotal || 1;
-
-    const s = (v: any) => Number(v || 0) * scale;
-    return list
-      .map((a) => {
-        const emp = (allEmployees || []).find((e: any) => e.id === a.id);
-        const ops = agentFat.get(Number(a.id)) || byName.get(String(a.name || "").toLowerCase());
-        const custoTotal = Number(a.totalOperacional ?? a.total ?? 0) * scale;
-        const missoes = Number(ops?.missions || 0);
-        const horas = Number(a.horasTrabalhadas || a.horas || 0);
-        return {
-          ...a,
-          // Valores do PERÍODO (mensal × dias/30) — o que entra no Balanço
-          salarioProporcional: s(a.salarioProporcional),
-          periculosidade: s(a.periculosidade),
-          horaExtra: s(a.horaExtra),
-          adicionalNoturno: s(a.adicionalNoturno),
-          dsr: s(a.dsr),
-          fgts: s(a.fgts),
-          inss: s(a.inss),
-          inssPatronal: s(a.inssPatronal),
-          seguroVida: s(a.seguroVida),
-          irrf: s(a.irrf),
-          vrTotal: s(a.vrTotal),
-          vt: s(a.vt),
-          cesta: s(a.cesta),
-          diarias: s(a.diarias),
-          ajudaCusto: s(a.ajudaCusto),
-          outros: s(a.outros),
-          ferias: s(a.ferias),
-          decimoTerceiro: s(a.decimoTerceiro),
-          provisaoTercoFerias: s(a.provisaoTercoFerias),
-          totalProvisoes: s(a.totalProvisoes),
-          totalBruto: s(a.totalBruto),
-          liquidoFuncionario: s(a.liquidoFuncionario),
-          encargos: s(a.encargos),
-          photoUrl: emp?.photoUrl || null,
-          role: emp?.role || "Agente",
-          custoTotal,
-          custoDiario: custoTotal / Math.max(daysInPeriod, 1),
-          pctFolha: (custoTotal / folhaTotal) * 100,
-          pctEmpresa: (custoTotal / custoEmpresa) * 100,
-          missoes,
-          custoMissao: missoes > 0 ? custoTotal / missoes : 0,
-          custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
-          receita: Number(ops?.fat || 0),
-          status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
-          // Custo Empresa CCT completo (já inclui FGTS + provisões)
-          entraNoCusto: custoTotal,
-          informativoEncargos: 0,
-        };
-      })
-      .sort((a, b) => b.custoTotal - a.custoTotal);
-  }, [rhSummary, allEmployees, agents, daysInPeriod, totals.custoTotal]);
+  // Rateio RH com costDays (mês comercial), NÃO daysInPeriod (calendário 31d → inflava 3,3%).
+  const folhaAgents = useMemo(
+    () =>
+      buildFolhaAgentsView({
+        porAgente: (rhSummary?.porAgente || []) as any[],
+        costDays,
+        allEmployees: allEmployees || [],
+        opsAgents: agents || [],
+        custoEmpresaTotal: totals.custoTotal || 1,
+      }),
+    [rhSummary, allEmployees, agents, costDays, totals.custoTotal],
+  );
 
   const gestorInput = useMemo(
     () => ({
@@ -380,8 +335,9 @@ export function GestorFinanceiroPanel(props: Props) {
   const lucroAcumulado = dailyChart.reduce((s, d) => s + d.lucro, 0);
   const tend = lucroTendencia(dailyChart);
 
-  const hoverAgent = folhaAgents.find((a) => a.id === hoverAgentId) || null;
-  const overlayAgent = folhaAgents.find((a) => a.id === overlayHoverId) || folhaAgents[0] || null;
+  const selectedAgent = findAgentByEmployeeId(folhaAgents, selectedEmployeeId);
+  // Overlay: só o ID explicitamente escolhido — sem fallback silencioso para o 1º da lista.
+  const overlayAgent = findAgentByEmployeeId(folhaAgents, overlayEmployeeId);
 
   const rankingVehicles = useMemo(() => {
     return [...(vehicles || [])]
@@ -888,7 +844,12 @@ export function GestorFinanceiroPanel(props: Props) {
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-200">Custos dos Funcionários</h4>
             <button
               type="button"
-              onClick={() => { setOverlayHoverId(folhaAgents[0]?.id ?? null); setShowFolhaOverlay(true); }}
+              onClick={() => {
+                const id = selectedEmployeeId ?? folhaAgents[0]?.id ?? null;
+                setOverlayEmployeeId(id != null ? Number(id) : null);
+                if (id != null) setSelectedEmployeeId(Number(id));
+                setShowFolhaOverlay(true);
+              }}
               className="text-[10px] font-black uppercase text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
               data-testid="link-abrir-overlay-folha"
             >
@@ -915,13 +876,22 @@ export function GestorFinanceiroPanel(props: Props) {
                 {folhaAgents.length === 0 ? (
                   <tr><td colSpan={9} className="text-center text-slate-500 py-10">Sem dados de RH no período</td></tr>
                 ) : (
-                  folhaAgents.map((a) => (
+                  folhaAgents.map((a) => {
+                    const isSelected = selectedEmployeeId != null && Number(a.id) === Number(selectedEmployeeId);
+                    return (
                     <tr
                       key={a.id}
-                      className="border-t border-slate-800/80 hover:bg-slate-800/50 cursor-pointer"
-                      onMouseEnter={() => setHoverAgentId(a.id)}
-                      onFocus={() => setHoverAgentId(a.id)}
+                      className={`border-t border-slate-800/80 cursor-pointer ${
+                        isSelected ? "bg-amber-500/15 ring-1 ring-inset ring-amber-400/40" : "hover:bg-slate-800/50"
+                      }`}
+                      onMouseEnter={() => setSelectedEmployeeId(Number(a.id))}
+                      onFocus={() => setSelectedEmployeeId(Number(a.id))}
+                      onClick={() => {
+                        setSelectedEmployeeId(Number(a.id));
+                        setMemoria(buildMemoriaCustoFuncionario(a, periodLabel, updatedAt?.toISOString?.() || null));
+                      }}
                       data-testid={`row-funcionario-${a.id}`}
+                      data-employee-id={a.id}
                     >
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -936,7 +906,9 @@ export function GestorFinanceiroPanel(props: Props) {
                         </div>
                       </td>
                       <td className="px-2 py-2 text-slate-400">{a.role}</td>
-                      <td className="px-2 py-2 text-right font-mono text-slate-200">{fmt(Number(a.salarioProporcional || 0))}</td>
+                      <td className="px-2 py-2 text-right font-mono text-slate-200" data-testid={`salario-base-${a.id}`}>
+                        {fmt(Number(a.salarioBaseCheio || 0))}
+                      </td>
                       <td className="px-2 py-2 text-right font-mono font-black text-amber-300">{fmt(a.custoTotal)}</td>
                       <td className="px-2 py-2 text-right font-mono text-slate-300">{fmt(a.custoDiario)}</td>
                       <td className="px-2 py-2 text-right font-mono text-slate-300">{fmtPct(a.pctFolha)}</td>
@@ -944,22 +916,28 @@ export function GestorFinanceiroPanel(props: Props) {
                       <td className="px-2 py-2 text-right font-mono text-slate-300">{a.missoes ? fmt(a.custoMissao) : "—"}</td>
                       <td className="px-2 py-2"><Badge className="bg-slate-800 text-slate-300 border-slate-600 text-[9px]">{a.status}</Badge></td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-4 min-h-[320px]" data-testid="hover-inteligente">
-          {!hoverAgent ? (
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-4 min-h-[320px]" data-testid="hover-inteligente" data-selected-employee-id={selectedEmployeeId ?? ""}>
+          {!selectedAgent ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center px-4">
               <Users size={28} className="mb-2 opacity-40" />
-              <p className="text-xs font-bold uppercase">Hover Inteligente</p>
-              <p className="text-[11px] mt-1">Passe o mouse sobre um colaborador para ver remuneração, encargos, benefícios e indicadores.</p>
+              <p className="text-xs font-bold uppercase">Detalhe do colaborador</p>
+              <p className="text-[11px] mt-1">Passe o mouse ou clique em um colaborador para ver remuneração, encargos, benefícios e indicadores.</p>
             </div>
           ) : (
-            <AgentDetailPanel agent={hoverAgent} periodLabel={periodLabel} />
+            <AgentDetailPanel
+              key={selectedAgent.id}
+              agent={selectedAgent}
+              periodLabel={periodLabel}
+              onOpenMemoria={() => setMemoria(buildMemoriaCustoFuncionario(selectedAgent, periodLabel, updatedAt?.toISOString?.() || null))}
+            />
           )}
         </div>
       </div>
@@ -1164,7 +1142,7 @@ export function GestorFinanceiroPanel(props: Props) {
               ) : (
                 <ul className="divide-y divide-slate-800/80" data-testid="lista-folha-overlay">
                   {folhaAgents.map((a, idx) => {
-                    const active = (overlayHoverId ?? folhaAgents[0]?.id) === a.id;
+                    const active = overlayEmployeeId != null && Number(a.id) === Number(overlayEmployeeId);
                     return (
                       <li key={a.id}>
                         <button
@@ -1172,10 +1150,20 @@ export function GestorFinanceiroPanel(props: Props) {
                           className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
                             active ? "bg-amber-500/15 border-l-2 border-amber-400" : "hover:bg-slate-800/60 border-l-2 border-transparent"
                           }`}
-                          onMouseEnter={() => setOverlayHoverId(a.id)}
-                          onFocus={() => setOverlayHoverId(a.id)}
-                          onClick={() => setOverlayHoverId(a.id)}
+                          onMouseEnter={() => {
+                            setOverlayEmployeeId(Number(a.id));
+                            setSelectedEmployeeId(Number(a.id));
+                          }}
+                          onFocus={() => {
+                            setOverlayEmployeeId(Number(a.id));
+                            setSelectedEmployeeId(Number(a.id));
+                          }}
+                          onClick={() => {
+                            setOverlayEmployeeId(Number(a.id));
+                            setSelectedEmployeeId(Number(a.id));
+                          }}
                           data-testid={`overlay-func-${a.id}`}
+                          data-employee-id={a.id}
                         >
                           {a.photoUrl ? (
                             <img src={a.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover border border-slate-600" />
@@ -1202,15 +1190,20 @@ export function GestorFinanceiroPanel(props: Props) {
                 </ul>
               )}
             </div>
-            <div className="md:col-span-3 overflow-y-auto p-4 bg-slate-900/40" data-testid="painel-detalhe-overlay">
+            <div className="md:col-span-3 overflow-y-auto p-4 bg-slate-900/40" data-testid="painel-detalhe-overlay" data-selected-employee-id={overlayEmployeeId ?? ""}>
               {!overlayAgent ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 text-center px-6">
                   <Users size={32} className="mb-2 opacity-40" />
-                  <p className="text-xs font-bold uppercase">Passe o mouse sobre um funcionário</p>
-                  <p className="text-[11px] mt-1">O detalhe de cada valor aparece aqui.</p>
+                  <p className="text-xs font-bold uppercase">Selecione um funcionário</p>
+                  <p className="text-[11px] mt-1">O detalhe usa o employee_id selecionado — sem fallback para outro colaborador.</p>
                 </div>
               ) : (
-                <AgentDetailPanel agent={overlayAgent} periodLabel={periodLabel} />
+                <AgentDetailPanel
+                  key={overlayAgent.id}
+                  agent={overlayAgent}
+                  periodLabel={periodLabel}
+                  onOpenMemoria={() => setMemoria(buildMemoriaCustoFuncionario(overlayAgent, periodLabel, updatedAt?.toISOString?.() || null))}
+                />
               )}
             </div>
           </div>
@@ -1220,9 +1213,17 @@ export function GestorFinanceiroPanel(props: Props) {
   );
 }
 
-function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: string }) {
+function AgentDetailPanel({
+  agent,
+  periodLabel,
+  onOpenMemoria,
+}: {
+  agent: any;
+  periodLabel: string;
+  onOpenMemoria?: () => void;
+}) {
   return (
-    <div className="space-y-3 text-[11px]" data-testid={`detalhe-agente-${agent.id}`}>
+    <div className="space-y-3 text-[11px]" data-testid={`detalhe-agente-${agent.id}`} data-employee-id={agent.id}>
       <div className="flex items-center gap-3">
         {agent.photoUrl ? (
           <img src={agent.photoUrl} alt="" className="w-12 h-12 rounded-full object-cover border border-slate-600" />
@@ -1234,18 +1235,33 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         <div>
           <p className="font-black text-slate-50 text-base">{agent.name}</p>
           <p className="text-slate-400">{agent.role} · {agent.status}</p>
+          {agent.matricula ? <p className="text-[10px] text-slate-500 font-mono">{agent.matricula}</p> : null}
           <p className="text-[10px] text-slate-500">Valores do período: {periodLabel}</p>
+          {agent.effectiveDate ? (
+            <p className="text-[10px] text-emerald-400/80">Vigência salarial: {agent.effectiveDate}</p>
+          ) : null}
         </div>
       </div>
 
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
         <p className="font-black uppercase text-emerald-300 text-[10px]">Custo Empresa CCT (cadastro)</p>
+        <Row label="Salário base vigente" value={fmt(Number(agent.salarioBaseCheio ?? agent.salarioProporcional ?? 0))} />
         <Row label="Custo total no período" value={fmt(agent.custoTotal)} />
-        <p className="text-[9px] text-slate-500 pt-1">Mesmo valor da tela de cadastro do funcionário.</p>
+        <p className="text-[9px] text-slate-500 pt-1">Mesmo registro de employee_salaries + engine calcularFolha do cadastro.</p>
+        {onOpenMemoria ? (
+          <button
+            type="button"
+            onClick={onOpenMemoria}
+            className="mt-1 text-[10px] font-black uppercase text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+            data-testid={`button-memoria-func-${agent.id}`}
+          >
+            Ver memória de cálculo
+          </button>
+        ) : null}
       </div>
 
       <Section title="Remuneração" rows={[
-        ["Salário base", agent.salarioProporcional],
+        ["Salário base", agent.salarioBaseCheio ?? agent.salarioProporcional],
         ["Horas Extras", agent.horaExtra],
         ["Adic. Noturno", agent.adicionalNoturno],
         ["Periculosidade", agent.periculosidade],
@@ -1275,8 +1291,8 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
       <Section title="Indicadores operacionais" rows={[
         ["Missões no período", agent.missoes, true],
         ["Receita gerada (OS)", agent.receita],
-        ["Custo / dia", agent.custoDiario],
-        ["Custo / missão", agent.custoMissao],
+        ["Custo / dia (mês comercial)", agent.custoDiario],
+        ["Custo / missão", agent.missoes > 0 ? agent.custoMissao : null],
         ["Lucro operacional (receita − custo)", Number(agent.receita || 0) - Number(agent.custoTotal || 0)],
       ]} />
       <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-2 space-y-1">
@@ -1286,7 +1302,7 @@ function AgentDetailPanel({ agent, periodLabel }: { agent: any; periodLabel: str
         <Row label="% dos custos da empresa" value={fmtPct(agent.pctEmpresa)} />
       </div>
       <p className="text-[9px] text-slate-500">
-        Fonte: Kit CCT / salário do cadastro do funcionário (engine calcularFolha).
+        Fonte: employee_salaries (vigente) → calcularFolha → rh-summary. employee_id={agent.id}.
       </p>
     </div>
   );
@@ -1298,7 +1314,17 @@ function Section({ title, rows }: { title: string; rows: Array<[string, any, boo
       <p className="font-black uppercase text-slate-500 text-[10px] mb-1">{title}</p>
       <div className="space-y-0.5">
         {rows.map(([label, value, isCount]) => (
-          <Row key={label} label={label} value={isCount ? String(value ?? 0) : fmt(Number(value || 0))} />
+          <Row
+            key={label}
+            label={label}
+            value={
+              isCount
+                ? String(value ?? 0)
+                : value == null || Number.isNaN(Number(value))
+                  ? "—"
+                  : fmt(Number(value || 0))
+            }
+          />
         ))}
       </div>
     </div>

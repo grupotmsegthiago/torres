@@ -5,7 +5,7 @@ import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
 import { sumDailyAllowancesForPeriod } from "./daily-allowances";
-import { calcularFolha, type PayrollBreakdown } from "../lib/payroll";
+import { calcularFolha, selectSalaryVigenteFromHistory, type PayrollBreakdown } from "../lib/payroll";
 import { withSwrCache } from "../lib/swr-cache";
 import { currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 const SWR_TTL_3H = 3 * 60 * 60 * 1000;
@@ -121,13 +121,15 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
 /**
  * Custo total mensal de UM agente (salário + encargos + VR diário + VT + cesta + outros
  * + provisões de férias, 13º e rescisão).
- * Usa o registro mais recente de employee_salaries.
+ * Usa o salário vigente em `opts.referenceDate` (effective_date <= referência).
+ * Mesma regra do cadastro (salary-summary) e do Ponto (buildFolhaStats).
  *
  * `opts.businessDays` — quando informado, usa esse número de dias úteis para o VR.
  *                       Senão, calcula com base nos dias úteis do mês corrente
  *                       (descontando feriados informados em opts.holidaySet).
  * `opts.diariasManuais` — soma de diárias de lançamento manual no período (apenas no breakdown).
  * `opts.rescisaoPct`   — percentual de rescisão sobre a folha bruta (default 8%).
+ * `opts.referenceDate` — YYYY-MM-DD; vigência salarial (default = hoje BRT aproximado).
  */
 export async function calculateAgentMonthlyCost(
   employeeId: number,
@@ -145,6 +147,8 @@ export async function calculateAgentMonthlyCost(
     role?: string | null;
     /** tipo_contratacao já carregado (evita re-query). */
     tipoContratacao?: string | null;
+    /** Data de referência da vigência salarial (YYYY-MM-DD). */
+    referenceDate?: string;
   }
 ): Promise<{
   total: number;
@@ -169,6 +173,10 @@ export async function calculateAgentMonthlyCost(
     adicionalNoturno: number;
     // === Folha 2025 (engine completa) ===
     salarioProporcional: number;
+    /** Salário base contratual vigente (não rateado por calendário). */
+    salarioBaseCheio: number;
+    effectiveDate: string | null;
+    salaryRecordId: number | null;
     periculosidade: number;
     dsr: number;
     ajudaCusto: number;
@@ -185,19 +193,27 @@ export async function calculateAgentMonthlyCost(
     semSalario: boolean;
   };
 }> {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const referenceDate =
+    (opts?.referenceDate && String(opts.referenceDate).slice(0, 10)) ||
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  // Busca candidatos com vigência <= referência (evita salário futuro).
+  // Determinístico: ordenação + selectSalaryVigenteFromHistory.
   const { data, error } = await supabaseAdmin
     .from("employee_salaries")
     .select("*")
     .eq("employee_id", employeeId)
+    .lte("effective_date", referenceDate)
     .order("effective_date", { ascending: false })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(1);
+    .limit(20);
 
   // Dias úteis padrão: mês corrente
   let vrDias = opts?.businessDays;
   if (vrDias === undefined) {
-    const now = new Date();
     const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
     const set = opts?.holidaySet ?? (await loadHolidaySet(from, to));
     vrDias = countBusinessDays(from, to, set);
@@ -209,7 +225,6 @@ export async function calculateAgentMonthlyCost(
   let horasExtrasMedia = opts?.horasExtras;
   let horasNoturnasMedia = opts?.horasNoturnas;
   if (horasExtrasMedia === undefined || horasNoturnasMedia === undefined) {
-    const now = new Date();
     const meses: string[] = [];
     for (let i = 1; i <= 3; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -238,9 +253,10 @@ export async function calculateAgentMonthlyCost(
     if (horasNoturnasMedia === undefined) horasNoturnasMedia = 0;
   }
 
-  // Sem salário cadastrado: usa Kit CCT do cargo (mesma regra do cadastro / salary-summary).
-  const semSalario = !!(error || !data || data.length === 0);
-  let s: any = data?.[0] || null;
+  // Sem salário cadastrado na vigência: Kit CCT do cargo (mesma regra do cadastro).
+  const vigente = selectSalaryVigenteFromHistory(data || [], referenceDate);
+  const semSalario = !!(error || !vigente);
+  let s: any = vigente || null;
   if (semSalario) {
     const { getCctConfigByCargo } = await import("../lib/cct-config");
     const cct = await getCctConfigByCargo(opts?.role || null);
@@ -325,6 +341,11 @@ export async function calculateAgentMonthlyCost(
   const decimoTerceiro = folha.provisaoDecimoTerceiro;
   const rescisao = folha.provisaoFGTSsobreFerias13 + folha.provisaoINSSsobreFerias13;
 
+  const effectiveDate = s?.effective_date
+    ? String(s.effective_date).slice(0, 10)
+    : null;
+  const salaryRecordId = s?.id != null && !semSalario ? Number(s.id) : null;
+
   return {
     total,
     breakdown: {
@@ -337,6 +358,9 @@ export async function calculateAgentMonthlyCost(
       adicionalNoturno: folha.adicionalNoturnoValor,
       // === Folha 2025 ===
       salarioProporcional: folha.salarioProporcional,
+      salarioBaseCheio: base,
+      effectiveDate,
+      salaryRecordId,
       periculosidade: folha.periculosidade,
       dsr: folha.dsr,
       ajudaCusto: folha.ajudaCusto,
@@ -529,6 +553,8 @@ export function registerFixedCostsRoutes(app: Express) {
             horasNoturnas: Math.round((notByEmp.get(emp.id) || 0) * 100) / 100,
             role: (emp as any).role,
             tipoContratacao: (emp as any).tipo_contratacao,
+            // Vigência: último salário com effective_date <= fim do período filtrado.
+            referenceDate: to,
           });
         } catch (err: any) {
           console.warn(`[rh-summary] calculateAgentMonthlyCost(${emp.id}) falhou:`, err?.message || err);
@@ -587,7 +613,10 @@ export function registerFixedCostsRoutes(app: Express) {
         totalProvisoes,
         horasNormaisMes: 0,
         horasExtrasMes: Number(heByEmp.get(emp.id) || 0),
-        // Vencimentos
+        // Vencimentos — salário base contratual ≠ proporcional (não ratear por calendário)
+        salarioBaseCheio: Number(b.salarioBaseCheio || base),
+        effectiveDate: b.effectiveDate || null,
+        salaryRecordId: b.salaryRecordId ?? null,
         salarioProporcional: base,
         periculosidade: peric,
         horaExtra: heVal,

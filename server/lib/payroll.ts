@@ -326,3 +326,43 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     liquidoFuncionario,
   };
 }
+
+/**
+ * Seleciona o salário vigente na data de referência:
+ * último registro com effective_date <= referenceDate (YYYY-MM-DD).
+ * Desempate: effective_date DESC, created_at DESC, id DESC.
+ * Fonte canônica compartilhada entre cadastro (salary-summary) e Balanço (rh-summary).
+ */
+export function selectSalaryVigenteFromHistory<T extends {
+  id?: number | string;
+  effective_date?: string | null;
+  effectiveDate?: string | null;
+  created_at?: string | null;
+  createdAt?: string | null;
+}>(rows: T[], referenceDate: string): T | null {
+  const ref = String(referenceDate || "").slice(0, 10);
+  if (!ref || !/^\d{4}-\d{2}-\d{2}$/.test(ref)) return null;
+  const eligible = (rows || []).filter((r) => {
+    const d = String(r.effective_date || r.effectiveDate || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= ref;
+  });
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) => {
+    const da = String(a.effective_date || a.effectiveDate || "").slice(0, 10);
+    const db = String(b.effective_date || b.effectiveDate || "").slice(0, 10);
+    if (da !== db) return db.localeCompare(da);
+    const ca = String(a.created_at || a.createdAt || "");
+    const cb = String(b.created_at || b.createdAt || "");
+    if (ca !== cb) return cb.localeCompare(ca);
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+  return eligible[0];
+}
+
+/** Último dia do mês civil (YYYY-MM-DD) a partir de year/month 1–12. */
+export function endOfMonthYmd(year: number, month: number): string {
+  const y = Number(year);
+  const m = Number(month);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}

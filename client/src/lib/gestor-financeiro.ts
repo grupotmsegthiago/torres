@@ -191,12 +191,16 @@ export function buildKnowledgeGraph(input: GestorInput): KnowledgeNode[] {
     { id: "boletim", label: "Boletim", ready, valueLabel: `${input.totals.countCongelado} cong.` },
     { id: "fatura", label: "Fatura", ready, valueLabel: money(input.totals.fatCongelado) },
     { id: "custo_op", label: "Custo operacional", ready: input.dataReady.dashboard, valueLabel: money(input.totals.desp_combustivel + input.totals.desp_pedagio + input.totals.desp_manutencao) },
+    { id: "salario_hist", label: "Histórico salarial", ready: input.dataReady.rh, valueLabel: "employee_salaries" },
+    { id: "vigencia", label: "Vigência ≤ competência", ready: input.dataReady.rh, valueLabel: "effective_date" },
+    { id: "folha_engine", label: "Motor calcularFolha", ready: input.dataReady.rh, valueLabel: "CCT cadastro" },
     { id: "custo_rh", label: "Custo RH CCT", ready: input.dataReady.rh, valueLabel: money(input.totals.provisaoRH) },
     { id: "custo_fixo", label: "Custos fixos", ready: input.dataReady.fixedCosts, valueLabel: money(input.totals.custosFixosRateados) },
     { id: "custo_total", label: "Custo total", ready: custoReady, valueLabel: money(input.totals.custoTotal) },
     { id: "lucro", label: "Lucro/prejuízo", ready: custoReady, valueLabel: money(input.totals.lucro) },
     { id: "pct_custo", label: "% sobre custo", ready: custoReady && termo.faixa !== "insuficiente", valueLabel: pctLabel },
     { id: "termometro", label: "Termômetro", ready: custoReady, valueLabel: termo.statusLabel },
+    { id: "painel_func", label: "Painel por employee_id", ready: input.dataReady.rh, valueLabel: "selectedEmployeeId" },
     { id: "dashboard", label: "Balanço", ready: gatesReady(buildModuleGates(input)) },
   ];
 }
@@ -814,6 +818,206 @@ export function computeTermometroFinanceiro(input: {
     frase: fraseTermometro({ ...cls, faturamento, custo, lucro, pctSobreCusto }),
     fillPct: pctSobreCustoToFill(pctSobreCusto),
     dadoFaltante: null,
+  };
+}
+
+/** Mês comercial Torres — rateio oficial de RH e custos fixos (não usar dias de calendário 28/31). */
+export const DIAS_MES_COMERCIAL = 30;
+
+/** Fator de rateio do período: costDays ÷ 30. MONTH → 1.0 (não inflar 31/30). */
+export function rhPeriodScale(costDays: number): number {
+  const d = Number(costDays);
+  if (!Number.isFinite(d) || d < 0) return 0;
+  return d / DIAS_MES_COMERCIAL;
+}
+
+/**
+ * Seleciona salário vigente (espelho client-side da regra do backend).
+ * Último registro com effective_date ≤ referenceDate.
+ */
+export function selectSalaryVigenteFromHistory<T extends {
+  id?: number | string;
+  effective_date?: string | null;
+  effectiveDate?: string | null;
+  created_at?: string | null;
+  createdAt?: string | null;
+  base_salary?: number | string | null;
+  baseSalary?: number | string | null;
+}>(rows: T[], referenceDate: string): T | null {
+  const ref = String(referenceDate || "").slice(0, 10);
+  if (!ref || !/^\d{4}-\d{2}-\d{2}$/.test(ref)) return null;
+  const eligible = (rows || []).filter((r) => {
+    const d = String(r.effective_date || r.effectiveDate || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= ref;
+  });
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) => {
+    const da = String(a.effective_date || a.effectiveDate || "").slice(0, 10);
+    const db = String(b.effective_date || b.effectiveDate || "").slice(0, 10);
+    if (da !== db) return db.localeCompare(da);
+    const ca = String(a.created_at || a.createdAt || "");
+    const cb = String(b.created_at || b.createdAt || "");
+    if (ca !== cb) return cb.localeCompare(ca);
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+  return eligible[0];
+}
+
+/** Resolve agente exclusivamente por employee_id imutável (nunca índice/nome). */
+export function findAgentByEmployeeId<T extends { id: number | string }>(
+  agents: T[],
+  employeeId: number | null | undefined,
+): T | null {
+  if (employeeId == null) return null;
+  const id = Number(employeeId);
+  if (!Number.isFinite(id)) return null;
+  return agents.find((a) => Number(a.id) === id) || null;
+}
+
+export type FolhaAgentView = {
+  id: number;
+  name: string;
+  salarioBaseCheio: number;
+  salarioProporcional: number;
+  effectiveDate: string | null;
+  salaryRecordId: number | null;
+  custoTotal: number;
+  custoDiario: number;
+  missoes: number;
+  custoMissao: number;
+  pctFolha: number;
+  pctEmpresa: number;
+  photoUrl: string | null;
+  role: string;
+  status: string;
+  [key: string]: any;
+};
+
+/**
+ * Monta a visão da tabela CUSTOS DOS FUNCIONÁRIOS.
+ * Rateia pelo mês comercial (costDays), NÃO pelos dias de calendário do filtro.
+ * Salário base contratual (salarioBaseCheio) NÃO é reescalado.
+ */
+export function buildFolhaAgentsView(opts: {
+  porAgente: any[];
+  costDays: number;
+  allEmployees?: any[];
+  opsAgents?: any[];
+  custoEmpresaTotal?: number;
+}): FolhaAgentView[] {
+  const scale = rhPeriodScale(opts.costDays);
+  const list = opts.porAgente || [];
+  const agentFat = new Map<number, { missions: number; fat: number }>();
+  for (const a of opts.opsAgents || []) {
+    if (a?.id != null) agentFat.set(Number(a.id), { missions: a.missions || 0, fat: a.fat_total || 0 });
+  }
+  const folhaTotal =
+    list.reduce((s, a) => s + Number(a.totalOperacional ?? a.total ?? 0) * scale, 0) || 1;
+  const custoEmpresa = opts.custoEmpresaTotal || 1;
+  const s = (v: any) => Number(v || 0) * scale;
+  const denomDias = Math.max(opts.costDays, 1);
+
+  return list
+    .map((a) => {
+      const empId = Number(a.id);
+      const emp = (opts.allEmployees || []).find((e: any) => Number(e.id) === empId);
+      // Missões só por employee_id — sem fallback por nome.
+      const ops = agentFat.get(empId);
+      const custoTotal = Math.round(Number(a.totalOperacional ?? a.total ?? 0) * scale * 100) / 100;
+      const missoes = Number(ops?.missions || 0);
+      const horas = Number(a.horasTrabalhadas || a.horas || 0);
+      const salarioBaseCheio = Number(
+        a.salarioBaseCheio ?? a.salario_base_cheio ?? a.salarioProporcional ?? a.base ?? 0,
+      );
+      return {
+        ...a,
+        id: empId,
+        name: a.name,
+        salarioBaseCheio,
+        // Proporcional do motor (já com diasTrabalhados/30) rateado pelo período comercial
+        salarioProporcional: s(a.salarioProporcional),
+        effectiveDate: a.effectiveDate || a.effective_date || null,
+        salaryRecordId: a.salaryRecordId ?? a.salary_record_id ?? null,
+        periculosidade: s(a.periculosidade),
+        horaExtra: s(a.horaExtra),
+        adicionalNoturno: s(a.adicionalNoturno),
+        dsr: s(a.dsr),
+        fgts: s(a.fgts),
+        inss: s(a.inss),
+        inssPatronal: s(a.inssPatronal),
+        seguroVida: s(a.seguroVida),
+        irrf: s(a.irrf),
+        vrTotal: s(a.vrTotal),
+        vt: s(a.vt),
+        cesta: s(a.cesta),
+        diarias: s(a.diarias),
+        ajudaCusto: s(a.ajudaCusto),
+        outros: s(a.outros),
+        ferias: s(a.ferias),
+        decimoTerceiro: s(a.decimoTerceiro),
+        provisaoTercoFerias: s(a.provisaoTercoFerias),
+        totalProvisoes: s(a.totalProvisoes),
+        totalBruto: s(a.totalBruto),
+        liquidoFuncionario: s(a.liquidoFuncionario),
+        encargos: s(a.encargos),
+        photoUrl: emp?.photoUrl || null,
+        role: emp?.role || a.role || "Agente",
+        matricula: emp?.matricula || a.matricula || null,
+        custoTotal,
+        custoDiario: custoTotal / denomDias,
+        pctFolha: (custoTotal / folhaTotal) * 100,
+        pctEmpresa: (custoTotal / custoEmpresa) * 100,
+        missoes,
+        custoMissao: missoes > 0 ? custoTotal / missoes : 0,
+        custoHora: horas > 0 ? custoTotal / horas : (a.custoHora ?? 0),
+        receita: Number(ops?.fat || 0),
+        status: emp?.status || (a.semSalario ? "Sem salário" : "Ativo"),
+        entraNoCusto: custoTotal,
+        informativoEncargos: 0,
+      } as FolhaAgentView;
+    })
+    .sort((a, b) => b.custoTotal - a.custoTotal);
+}
+
+export function buildMemoriaCustoFuncionario(agent: FolhaAgentView | any, periodLabel: string, updatedAt?: string | null): MemoriaCalculo {
+  const base = Number(agent?.salarioBaseCheio ?? agent?.salarioProporcional ?? 0);
+  const custo = Number(agent?.custoTotal ?? 0);
+  return {
+    indicator: `Custo Empresa — ${agent?.name || "Funcionário"}`,
+    formula:
+      "Salário base vigente (employee_salaries.effective_date ≤ fim competência) → calcularFolha → " +
+      "Custo Empresa = vencimentos + FGTS + provisões + benefícios. " +
+      "Rateio período = custo mensal × (costDays ÷ 30). Custo/dia = custo período ÷ costDays (mês comercial).",
+    modules: ["Cadastro RH (Salários)", "Engine calcularFolha", "rh-summary", "Balanço Gerencial", "Knowledge Graph"],
+    tables: ["employees", "employee_salaries", "employee_dependents", "ponto_operacional", "jornada_calculos"],
+    recordsConsidered: 1,
+    recordsExcluded: [
+      { reason: "Missões canceladas/fora do período (não entram no custo/missão)", count: 0 },
+    ],
+    filters: [
+      `employee_id=${agent?.id ?? "?"}`,
+      `Competência/período: ${periodLabel}`,
+      agent?.effectiveDate ? `Vigência salarial: ${agent.effectiveDate}` : "Sem vigência cadastrada",
+      agent?.salaryRecordId ? `Registro salário id=${agent.salaryRecordId}` : "Kit CCT / sem histórico",
+    ],
+    updatedAt: updatedAt || null,
+    notes: [
+      `FUNCIONÁRIO: ${agent?.name || "—"}`,
+      `Matrícula: ${agent?.matricula || "—"}`,
+      `COMPETÊNCIA: ${periodLabel}`,
+      `SALÁRIO BASE VIGENTE: ${money(base)}`,
+      `DATA DE VIGÊNCIA: ${agent?.effectiveDate || "—"}`,
+      `VENCIMENTOS (bruto motor): ${money(Number(agent?.totalBruto || 0))}`,
+      `DESCONTOS (INSS+IRRF): ${money(Number(agent?.inss || 0) + Number(agent?.irrf || 0))}`,
+      `ENCARGOS EMPRESA (FGTS): ${money(Number(agent?.fgts || 0))}`,
+      `PROVISÕES: ${money(Number(agent?.totalProvisoes || 0))}`,
+      `BENEFÍCIOS (VR+VT+cesta+outros): ${money(Number(agent?.vrTotal || 0) + Number(agent?.vt || 0) + Number(agent?.cesta || 0) + Number(agent?.outros || 0))}`,
+      `CUSTO TOTAL DA EMPRESA: ${money(custo)}`,
+      `Custo/dia (mês comercial): ${money(Number(agent?.custoDiario || 0))}`,
+      `Missões no período: ${Number(agent?.missoes || 0)}`,
+      `Custo/missão: ${Number(agent?.missoes || 0) > 0 ? money(Number(agent?.custoMissao || 0)) : "—"}`,
+      "Fonte: employee_salaries → calcularFolha (mesma do cadastro). Sem cópia manual no Balanço.",
+    ],
   };
 }
 

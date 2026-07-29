@@ -6,10 +6,11 @@ import type { Express } from "express";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
-  import { calcularFolha } from "../lib/payroll";
+  import { calcularFolha, endOfMonthYmd, selectSalaryVigenteFromHistory } from "../lib/payroll";
 import { autoCreateProbationContract, isVigilante } from "./probation-contracts";
 import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
+  import { bustRhSummaryCache } from "../lib/balanco-cache";
 
   // TODAS as colunas do tipo `date` da tabela employees (nomes camelCase do
   // schema). Inputs vazios ("") precisam virar null antes de gravar no Supabase,
@@ -301,6 +302,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     if (valeAlimentacaoMensal !== undefined && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = String(valeAlimentacaoMensal);
     if (assiduidadeMensal !== undefined && assiduidadeMensal !== "") payload.assiduidadeMensal = String(assiduidadeMensal);
     const salary = await storage.createEmployeeSalary(payload);
+    bustRhSummaryCache();
     res.status(201).json(salary);
   });
 
@@ -347,6 +349,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
   app.delete("/api/employee-salaries/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeSalary(Number(req.params.id));
+    bustRhSummaryCache();
     res.json({ message: "Registro salarial removido" });
   });
 
@@ -388,14 +391,17 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      // Salário vigente — preferimos o registro real (mesmo que controladoria usa)
+      // Salário vigente na competência: effective_date <= último dia do mês selecionado.
+      // Mesma regra do Balanço (rh-summary / calculateAgentMonthlyCost) e do Ponto.
+      const referenceDate = endOfMonthYmd(year, month);
       const { data: salRows } = await supabaseAdmin
         .from("employee_salaries").select("*").eq("employee_id", empId)
+        .lte("effective_date", referenceDate)
         .order("effective_date", { ascending: false })
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
-        .limit(1);
-      const sal: any = salRows?.[0] || {};
+        .limit(20);
+      const sal: any = selectSalaryVigenteFromHistory(salRows || [], referenceDate) || {};
 
       // Resolve CCT pelo cargo (vigilante→vigilancia, limpeza→siemaco).
       // Antes usava getCctConfig() fixo → Auxiliar de Limpeza herdava
@@ -530,6 +536,11 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
         month, year, proporcional, diasTrabalhados, fatorProporcional, diasUteis,
+        // Fonte canônica da vigência (mesma do Balanço)
+        salarioBaseCheio: baseSalary,
+        effectiveDate: sal.effective_date ? String(sal.effective_date).slice(0, 10) : null,
+        salaryRecordId: sal.id != null ? Number(sal.id) : null,
+        referenceDate,
         // ► Mantém compat com UI atual + enriquece com engine
         vencimentos: {
           salarioBase: folha.salarioProporcional,
