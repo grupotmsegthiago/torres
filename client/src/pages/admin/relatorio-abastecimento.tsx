@@ -1486,10 +1486,10 @@ function EditFuelingModal({
             />
           </div>
 
-          <div className="bg-neutral-50 rounded-lg p-2.5 text-xs text-neutral-600 flex items-center justify-between">
-            <span>Antes:</span>
-            <span className="font-mono">
-              R$ {Number(fueling.totalCost || 0).toFixed(2)} · {Number(fueling.liters || 0).toFixed(2)}L · KM {fueling.km ?? "—"}
+          <div className="bg-neutral-50 rounded-lg p-2.5 text-xs text-neutral-600 flex items-center justify-between gap-2">
+            <span className="flex-shrink-0">Antes:</span>
+            <span className="font-mono text-right">
+              {vehicle?.plate || "—"} · R$ {Number(fueling.totalCost || 0).toFixed(2)} · {Number(fueling.liters || 0).toFixed(2)}L · KM {fueling.km ?? "—"}
             </span>
           </div>
         </div>
@@ -1500,7 +1500,7 @@ function EditFuelingModal({
           </Button>
           <Button
             onClick={() => save.mutate()}
-            disabled={save.isPending || litersNum <= 0 || totalCostNum <= 0}
+            disabled={save.isPending || !vehicleId || litersNum <= 0 || totalCostNum <= 0}
             className="bg-amber-600 hover:bg-amber-700 text-white"
             data-testid="button-edit-save"
           >
