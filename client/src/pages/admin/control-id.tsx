@@ -61,9 +61,19 @@ type FolhaDay = {
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
   punches?: FolhaPunch[];
   extraMin?: number; jornadaDiariaMin?: number; noturnoMin?: number; workedMin?: number; normaisMin?: number;
+  status?: string;
+  needsManualReview?: boolean;
+  confirmedMin?: number;
+  provisionalMin?: number;
+  orphanIds?: number[];
+  orphans?: Array<{ id: number | null; time: string; source?: string | null }>;
+  issues?: string[];
 };
 type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
+  hoursConfirmadas?: number; hoursPendentes?: number; heConfirmada?: number;
+  daysPendingReview?: number; orphanPunchIds?: number[];
+  pendingDays?: Array<{ date: string; status: string; provisionalMin: number; orphanIds: number[]; issues: string[] }>;
   daysWorked: number; baseSalary: number; valorHora: number; valorHoraExtra: number;
   custoBase: number; custoExtra: number; custoTotalEstimado: number; encargosPct: number; custoComEncargos: number;
   periculosidade: number; periculosidadePct: number;
@@ -1723,15 +1733,29 @@ function FolhaTab() {
 
       {employeeId && stats && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 no-print">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 no-print">
             <StatCard
-              title="Horas trabalhadas"
+              title="Horas (pares)"
               value={hhmmH(stats.hoursWorked)}
-              sub={`de ${hhmmH(stats.hoursLimit)} · ${stats.percentUsed.toFixed(0)}%`}
+              sub={`de ${hhmmH(stats.hoursLimit)} · motor canônico`}
               Icon={Clock}
               color="blue"
               progress={Math.min(100, stats.percentUsed)}
               barColor={stats.percentUsed >= 100 ? "bg-red-600" : stats.percentUsed >= 90 ? "bg-orange-500" : stats.percentUsed >= 70 ? "bg-amber-400" : "bg-emerald-500"}
+            />
+            <StatCard
+              title="Confirmadas (auto)"
+              value={hhmmH(stats.hoursConfirmadas ?? 0)}
+              sub="Dias sem órfã/cluster ambíguo"
+              Icon={Clock}
+              color="emerald"
+            />
+            <StatCard
+              title="Pendentes RH"
+              value={hhmmH(stats.hoursPendentes ?? 0)}
+              sub={`${stats.daysPendingReview ?? 0} dia(s) · ${(stats.orphanPunchIds || []).length} órfã(s)`}
+              Icon={Hourglass}
+              color={(stats.daysPendingReview ?? 0) > 0 ? "amber" : "neutral"}
             />
             <StatCard
               title="Hora Extra"
@@ -1748,6 +1772,26 @@ function FolhaTab() {
               color={stats.horasRestantes <= 0 ? "red" : stats.horasRestantes < 22 ? "amber" : "emerald"}
             />
           </div>
+          {(stats.daysPendingReview ?? 0) > 0 && (
+            <Card className="p-3 border-amber-300 bg-amber-50/60 no-print" data-testid="card-folha-pendencias">
+              <div className="text-sm font-bold text-amber-900 mb-1">Pendências de ponto (RH)</div>
+              <p className="text-xs text-amber-800 mb-2">
+                Órfãs não inventam horas. Pares válidos nesses dias ficam como provisórios até revisão.
+              </p>
+              <ul className="text-xs space-y-1 max-h-40 overflow-auto">
+                {(stats.pendingDays || []).map((pd) => (
+                  <li key={pd.date} data-testid={`pending-day-${pd.date}`}>
+                    <span className="font-mono font-semibold">{pd.date}</span>
+                    {" · "}
+                    <span className="uppercase">{pd.status}</span>
+                    {" · provisório "}
+                    {hhmm(pd.provisionalMin)}
+                    {pd.orphanIds?.length ? ` · órfãs #${pd.orphanIds.join(", #")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           <Card className="p-4 no-print" data-testid="card-custo-estimado">
             <div className="flex items-center justify-between mb-3">
@@ -1975,12 +2019,13 @@ function FolhaTab() {
                   <th className="p-2 text-right font-medium text-neutral-600">Noturno</th>
                   <th className="p-2 text-right font-medium text-neutral-600">H. Extra</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Status</th>
                   <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {folha.map(d => (
-                  <tr key={d.date} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-folha-${d.date}`}>
+                  <tr key={d.date} className={`border-b border-neutral-100 hover:bg-neutral-50/60 ${d.needsManualReview ? "bg-amber-50/40" : ""}`} data-testid={`row-folha-${d.date}`}>
                     <td className="p-2 font-medium">{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.clockIn || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.lunchOut || "—"}</td>
@@ -1997,6 +2042,15 @@ function FolhaTab() {
                       )}
                     </td>
                     <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
+                    <td className="p-2 text-center" data-testid={`text-status-${d.date}`}>
+                      {d.needsManualReview ? (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800" title={(d.issues || []).join(" · ")}>
+                          {(d.status || "pendente").replace("pendente_", "").toUpperCase()}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>
+                      )}
+                    </td>
                     <td className="p-2 text-right no-print">
                       <div className="inline-flex gap-1">
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-neutral-600 hover:text-blue-600" title="Ver detalhes (espelho RHID)" onClick={() => setViewingDay(d)} data-testid={`button-view-day-${d.date}`}>

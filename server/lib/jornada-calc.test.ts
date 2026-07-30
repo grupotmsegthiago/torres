@@ -195,5 +195,56 @@ test("15) não regressão — dia simples 8h sem cluster indevido", () => {
   ]);
   assert.equal(d.clusters.length, 4);
   assert.equal(d.workedMin, 8 * 60 - 3); // 4h + 3h57
-  assert.equal(d.safeClusters?.length ?? d.clusters.filter((c) => c.clustered && !c.ambiguous).length, 0);
+  assert.equal(d.status, "confirmado");
+  assert.equal(d.confirmedMin, d.workedMin);
+  assert.equal(d.provisionalMin, 0);
+});
+
+test("16) órfã não inventa horas e dia fica pendente", () => {
+  const d = computeDayJornada([
+    p("2026-07-20T05:53:00-03:00"),
+    p("2026-07-20T07:00:00-03:00"),
+    p("2026-07-20T12:11:00-03:00"),
+    p("2026-07-20T13:20:00-03:00"),
+    p("2026-07-20T23:59:00-03:00", 99),
+  ]);
+  assert.equal(d.workedMin, 2 * 60 + 16);
+  assert.equal(d.status, "pendente_orfao");
+  assert.equal(d.confirmedMin, 0);
+  assert.equal(d.provisionalMin, 2 * 60 + 16);
+  assert.equal(d.orphans[0].id, 99);
+});
+
+test("17) cluster ambíguo → pendente_cluster; pares ainda calculam", () => {
+  const d = computeDayJornada([
+    p("2026-07-04T00:00:00-03:00"),
+    p("2026-07-04T00:01:00-03:00"),
+    p("2026-07-04T00:02:00-03:00"),
+    p("2026-07-04T03:39:00-03:00"),
+    p("2026-07-04T03:40:00-03:00"),
+  ]);
+  assert.equal(d.workedMin, 3 * 60 + 40);
+  assert.equal(d.status, "pendente_cluster");
+  assert.equal(d.confirmedMin, 0);
+  assert.equal(d.provisionalMin, 220);
+});
+
+test("18) período separa confirmado vs pendente", () => {
+  const r = computePeriodJornada(
+    [
+      p("2026-07-14T05:00:00-03:00"),
+      p("2026-07-14T14:16:00-03:00"),
+      p("2026-07-20T05:53:00-03:00"),
+      p("2026-07-20T07:00:00-03:00"),
+      p("2026-07-20T12:11:00-03:00"),
+      p("2026-07-20T13:20:00-03:00"),
+      p("2026-07-20T23:59:00-03:00"),
+    ],
+    { baseMin: 0 },
+  );
+  assert.equal(r.totalConfirmadoMin, 9 * 60 + 16);
+  assert.equal(r.totalPendenteMin, 2 * 60 + 16);
+  assert.equal(r.totalWorkedMin, r.totalConfirmadoMin + r.totalPendenteMin);
+  assert.equal(r.pendingDays.length, 1);
+  assert.equal(r.confirmedDays.length, 1);
 });

@@ -1460,8 +1460,27 @@ export async function buildFolhaStats(
   // Soma em MINUTOS (workedMin já capado a 19:59/dia) e converte no fim, evitando
   // o erro de ~3min do acúmulo de toFixed(2) por dia — assim "Horas Trabalhadas"
   // bate exatamente com a soma das Normais (ex.: FERNANDO jun/2026 = 447:27).
+  // hoursWorked = pares canônicos (inclui dias pendentes de revisão).
+  // hoursConfirmadas = só dias sem órfã/cluster ambíguo (fechamento automático).
+  // hoursPendentes = pares em dias que exigem revisão RH (não inventa órfã).
   const hoursWorked = dias.reduce((s, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
+  const hoursConfirmadas = dias.reduce((s, d: any) => s + (Number(d.confirmedMin) || 0), 0) / 60;
+  const hoursPendentes = dias.reduce((s, d: any) => s + (Number(d.provisionalMin) || 0), 0) / 60;
   const daysWorked = dias.filter((d: any) => Number(d.hoursWorked) > 0).length;
+  const daysPendingReview = dias.filter((d: any) => d.needsManualReview).length;
+  const orphanPunchIds = dias.flatMap((d: any) => d.orphanIds || []);
+  const pendingDays = dias
+    .filter((d: any) => d.needsManualReview)
+    .map((d: any) => ({
+      date: d.date,
+      status: d.status,
+      workedMin: d.workedMin,
+      provisionalMin: d.provisionalMin,
+      orphanIds: d.orphanIds || [],
+      orphans: d.orphans || [],
+      ambiguousClusters: (d.clusters || []).filter((c: any) => c.ambiguous),
+      issues: d.issues || [],
+    }));
   // Horas noturnas (22h–05h BRT) trabalhadas no mês, convertidas pela HORA
   // NOTURNA REDUZIDA da CLT (52min30s = 1h ⇒ ÷0,875) — confirmação do dono
   // 28/07/2026 (planilha: Edivando 58,43h relógio → ~66,8h pagas).
@@ -1754,6 +1773,12 @@ export async function buildFolhaStats(
     employeeId,
     monthYear,
     hoursWorked: +hoursWorked.toFixed(2),
+    hoursConfirmadas: +hoursConfirmadas.toFixed(2),
+    hoursPendentes: +hoursPendentes.toFixed(2),
+    heConfirmada: +Math.max(0, hoursConfirmadas - hoursLimit).toFixed(2),
+    daysPendingReview,
+    orphanPunchIds,
+    pendingDays,
     hoursLimit,
     horasNormais: +horasNormais.toFixed(2),
     horaExtra: +horaExtra.toFixed(2),
@@ -2284,7 +2309,13 @@ export async function buildFolhaPonto(
         min: pr.durationMin,
         hhmm: minutesToHHMM(pr.durationMin),
       })),
-      orphans: jornada.orphans.map((o) => o.hhmm),
+      orphans: jornada.orphans.map((o) => ({
+        id: o.id,
+        time: o.hhmm,
+        source: o.source,
+        external_id: o.external_id,
+      })),
+      orphanIds: jornada.orphans.map((o) => o.id).filter((x): x is number => x != null),
       clusters: jornada.clusters.map((c) => ({
         role: c.role,
         times: c.punches.map((x) => x.hhmm),
@@ -2293,6 +2324,10 @@ export async function buildFolhaPonto(
         ambiguous: c.ambiguous,
       })),
       issues: jornada.issues,
+      status: jornada.status,
+      needsManualReview: jornada.needsManualReview,
+      confirmedMin: jornada.confirmedMin,
+      provisionalMin: jornada.provisionalMin,
     };
     const workedMin = jornada.workedMin;
     entry.hoursWorked = (workedMin / 60).toFixed(2);

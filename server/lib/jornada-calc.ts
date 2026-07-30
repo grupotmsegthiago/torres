@@ -64,6 +64,21 @@ export interface JornadaPair {
   saidaClusterIds: number[];
 }
 
+/**
+ * Status de homologação do dia:
+ * - confirmado: pares válidos, sem órfã nem cluster ambíguo → fecha automaticamente
+ * - pendente_orfao: há batida sem par (não inventa horas)
+ * - pendente_cluster: cluster ≥3 batidas ≤2min — regra aplicada, mas RH deve validar
+ * - pendente_misto: órfã + cluster ambíguo
+ * - incompleto: batidas sem nenhum par válido
+ */
+export type DayHomologStatus =
+  | "confirmado"
+  | "pendente_orfao"
+  | "pendente_cluster"
+  | "pendente_misto"
+  | "incompleto";
+
 export interface DayJornadaResult {
   day: string;
   rawCount: number;
@@ -72,23 +87,52 @@ export interface DayJornadaResult {
   pairs: JornadaPair[];
   orphans: NormalizedPunch[];
   workedMinRaw: number;
-  workedMin: number; // após cap 19:59
+  workedMin: number; // pares válidos após cap 19:59 (nunca inventa órfã)
+  /** Minutos que entram no total automático (só status confirmado). */
+  confirmedMin: number;
+  /** Minutos de pares em dia pendente (visíveis, não homologados). */
+  provisionalMin: number;
+  status: DayHomologStatus;
   capped: boolean;
   issues: string[];
+  needsManualReview: boolean;
 }
 
 export interface PeriodJornadaResult {
   days: DayJornadaResult[];
+  /** Soma de todos os pares válidos (cap diário). Inclui dias pendentes. */
   totalWorkedMin: number;
   totalWorkedHHMM: string;
+  /** Soma só dos dias `confirmado` — base para fechamento automático. */
+  totalConfirmadoMin: number;
+  totalConfirmadoHHMM: string;
+  /** Soma dos pares em dias pendentes/incompletos — exige revisão RH. */
+  totalPendenteMin: number;
+  totalPendenteHHMM: string;
   heMin: number;
   heHHMM: string;
+  heConfirmadoMin: number;
+  heConfirmadoHHMM: string;
   baseMin: number;
   clusters: PunchCluster[];
   ambiguousClusters: PunchCluster[];
   safeClusters: PunchCluster[];
   orphans: Array<{ day: string; punch: NormalizedPunch }>;
   pairs: JornadaPair[];
+  pendingDays: DayJornadaResult[];
+  confirmedDays: DayJornadaResult[];
+}
+
+export function classifyDayStatus(
+  hasOrphan: boolean,
+  hasAmbiguousCluster: boolean,
+  pairCount: number,
+): DayHomologStatus {
+  if (hasOrphan && hasAmbiguousCluster) return "pendente_misto";
+  if (hasOrphan) return pairCount > 0 ? "pendente_orfao" : "incompleto";
+  if (hasAmbiguousCluster) return "pendente_cluster";
+  if (pairCount === 0) return "incompleto";
+  return "confirmado";
 }
 
 export function ymdBRT(iso: string | Date): string {
@@ -274,6 +318,12 @@ export function computeDayJornada(
     issues.push(`Cap diário 19:59 aplicado (bruto ${minutesToHHMM(workedMinRaw)})`);
   }
 
+  const hasAmbiguous = clusters.some((c) => c.ambiguous);
+  const status = classifyDayStatus(orphans.length > 0, hasAmbiguous, pairs.length);
+  const needsManualReview = status !== "confirmado";
+  const confirmedMin = status === "confirmado" ? workedMin : 0;
+  const provisionalMin = needsManualReview ? workedMin : 0;
+
   return {
     day: day || normalized[0]?.day || "",
     rawCount: dayPunches.length,
@@ -283,8 +333,12 @@ export function computeDayJornada(
     orphans,
     workedMinRaw,
     workedMin,
+    confirmedMin,
+    provisionalMin,
+    status,
     capped,
     issues,
+    needsManualReview,
   };
 }
 
@@ -310,25 +364,38 @@ export function computePeriodJornada(
   }
 
   const totalWorkedMin = days.reduce((s, d) => s + d.workedMin, 0);
+  const totalConfirmadoMin = days.reduce((s, d) => s + d.confirmedMin, 0);
+  const totalPendenteMin = days.reduce((s, d) => s + d.provisionalMin, 0);
   const heMin = Math.max(0, totalWorkedMin - baseMin);
+  const heConfirmadoMin = Math.max(0, totalConfirmadoMin - baseMin);
   const clusters = days.flatMap((d) => d.clusters);
   const ambiguousClusters = clusters.filter((c) => c.ambiguous);
   const safeClusters = clusters.filter((c) => c.clustered && !c.ambiguous);
   const orphans = days.flatMap((d) => d.orphans.map((punch) => ({ day: d.day, punch })));
   const pairs = days.flatMap((d) => d.pairs);
+  const confirmedDays = days.filter((d) => d.status === "confirmado");
+  const pendingDays = days.filter((d) => d.needsManualReview);
 
   return {
     days,
     totalWorkedMin,
     totalWorkedHHMM: minutesToHHMM(totalWorkedMin),
+    totalConfirmadoMin,
+    totalConfirmadoHHMM: minutesToHHMM(totalConfirmadoMin),
+    totalPendenteMin,
+    totalPendenteHHMM: minutesToHHMM(totalPendenteMin),
     heMin,
     heHHMM: minutesToHHMM(heMin),
+    heConfirmadoMin,
+    heConfirmadoHHMM: minutesToHHMM(heConfirmadoMin),
     baseMin,
     clusters,
     ambiguousClusters,
     safeClusters,
     orphans,
     pairs,
+    pendingDays,
+    confirmedDays,
   };
 }
 
