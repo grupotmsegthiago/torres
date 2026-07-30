@@ -698,6 +698,7 @@ export default function RelatorioAbastecimentoPage() {
       {editFueling && (
         <EditFuelingModal
           fueling={editFueling}
+          vehicles={vehicles}
           vehicle={vMap.get(editFueling.vehicleId)}
           driverName={editFueling.driverId ? eMap.get(editFueling.driverId)?.name : null}
           onClose={() => setEditId(null)}
@@ -1307,15 +1308,17 @@ function AddFuelingModal({
 }
 
 function EditFuelingModal({
-  fueling, vehicle, driverName, onClose,
+  fueling, vehicles, vehicle, driverName, onClose,
 }: {
   fueling: VehicleFueling;
+  vehicles: Vehicle[];
   vehicle?: Vehicle;
   driverName?: string | null;
   onClose: () => void;
 }) {
   const { toast } = useToast();
   // Mantém os campos como string pra permitir digitação livre (vírgula/ponto, vazio temporário)
+  const [vehicleId, setVehicleId] = useState<number>(fueling.vehicleId);
   const [totalCost, setTotalCost] = useState(String(fueling.totalCost ?? ""));
   const [liters, setLiters] = useState(String(fueling.liters ?? ""));
   const [km, setKm] = useState(String(fueling.km ?? ""));
@@ -1331,13 +1334,20 @@ function EditFuelingModal({
   const litersNum = parseNum(liters) ?? 0;
   const kmNum = parseNum(km);
   const cplCalc = litersNum > 0 ? totalCostNum / litersNum : 0;
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId) || vehicle;
+  const vehiclesSorted = useMemo(
+    () => [...vehicles].sort((a, b) => (a.plate || "").localeCompare(b.plate || "", "pt-BR")),
+    [vehicles],
+  );
 
   const save = useMutation({
     mutationFn: async () => {
+      if (!vehicleId) throw new Error("Selecione a placa do veículo");
       if (totalCostNum < 0 || litersNum < 0) throw new Error("Valor e litros não podem ser negativos");
       // Colunas decimal no Postgres são strings no Drizzle/Zod — enviar string
       // pra não bater 400 "Expected string, received number". KM é integer.
       const payload: Record<string, any> = {
+        vehicleId,
         totalCost: totalCostNum.toFixed(2),
         liters: litersNum.toFixed(2),
         costPerLiter: cplCalc.toFixed(3),
@@ -1358,6 +1368,7 @@ function EditFuelingModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
       toast({ title: "Abastecimento atualizado", description: "Os novos valores foram salvos." });
       onClose();
     },
@@ -1373,7 +1384,7 @@ function EditFuelingModal({
             <div>
               <h2 className="text-lg font-bold text-neutral-900">Editar abastecimento #{fueling.id}</h2>
               <p className="text-xs text-neutral-500">
-                {vehicle?.plate || "-"} · {driverName || "—"} · {fueling.date}
+                {selectedVehicle?.plate || "-"} · {driverName || "—"} · {fueling.date}
               </p>
             </div>
           </div>
@@ -1384,7 +1395,29 @@ function EditFuelingModal({
 
         <div className="p-4 space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
-            Use esse formulário pra corrigir valor lançado errado pelo agente. A alteração é auditada e atualiza o lançamento financeiro automaticamente.
+            Use esse formulário pra corrigir valor ou placa lançados errados pelo agente. A alteração é auditada e atualiza o lançamento financeiro automaticamente.
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Placa (veículo cadastrado) *</label>
+            <select
+              value={vehicleId || ""}
+              onChange={(e) => setVehicleId(Number(e.target.value) || 0)}
+              className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm bg-white"
+              data-testid="select-edit-vehicle"
+            >
+              <option value="">Selecione a placa...</option>
+              {vehiclesSorted.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.plate} — {v.model}
+                </option>
+              ))}
+            </select>
+            {selectedVehicle && selectedVehicle.km > 0 && (
+              <p className="text-[11px] text-neutral-500 mt-1">
+                KM atual cadastrado: <strong>{selectedVehicle.km.toLocaleString("pt-BR")}</strong>
+              </p>
+            )}
           </div>
 
           <div>

@@ -501,14 +501,20 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     if (!data) return res.status(404).json({ message: "Abastecimento não encontrado" });
     if (oldFueling) {
       const auditChanges: { field: string; old: any; new_val: any }[] = [];
-      for (const f of ["km", "liters", "totalCost", "costPerLiter", "fuelType", "station"]) {
+      for (const f of ["vehicleId", "km", "liters", "totalCost", "costPerLiter", "fuelType", "station"]) {
         const ov = (oldFueling as any)[f]; const nv = (data as any)[f];
         if (nv !== undefined && String(ov) !== String(nv)) auditChanges.push({ field: f, old: ov, new_val: nv });
       }
       if (auditChanges.length > 0) await logFinancialAudit("vehicle_fueling", String(data.id), "UPDATE", auditChanges, req.user?.name || "unknown", req.user?.id);
     }
-    if (data.vehicleId) {
-      await syncVehicleKmFromFuelings(data.vehicleId);
+    // Se a placa/veículo mudou, recalcula KM do veículo antigo e do novo.
+    const oldVehicleId = oldFueling?.vehicleId ?? null;
+    const newVehicleId = data.vehicleId ?? null;
+    if (oldVehicleId && oldVehicleId !== newVehicleId) {
+      await syncVehicleKmFromFuelings(oldVehicleId);
+    }
+    if (newVehicleId) {
+      await syncVehicleKmFromFuelings(newVehicleId);
     }
 
     const newCost = Number(data.totalCost || 0);
