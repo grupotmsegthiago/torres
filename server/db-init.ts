@@ -1552,6 +1552,12 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_client_id ON service_orders (client_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
+    // Trava: no máximo 1 lançamento automático por origem (fueling/payroll/maintenance/…).
+    // Previne race do sync de boot + POST mobile e do cron de provisão diária rodando em 2 instâncias.
+    // NULLs em UNIQUE são distintos no Postgres → lançamentos manuais sem origin continuam OK.
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_ft_origin ON financial_transactions (origin_type, origin_id)`).catch((e: any) => {
+      console.warn(`[db-init] uniq_ft_origin falhou (provavelmente ainda há duplicatas): ${e?.message || e}`);
+    });
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
     // Trava de duplicação: uma OS só pode ter UM billing. Previne race condition em UPSERTs concorrentes
     // e INSERTs cegos (mission.ts cancelamento, escort.ts manual). Veja replit.md §"Regras INTOCÁVEIS".

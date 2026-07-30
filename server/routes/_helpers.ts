@@ -216,8 +216,35 @@ export async function createAutoTransaction(params: {
   category_name?: string;
   entity_name?: string;
   created_by?: string;
+  status?: string;
 }) {
   try {
+    const payload = {
+      description: params.description,
+      amount: params.amount,
+      type: params.type,
+      due_date: params.due_date,
+      category_name: params.category_name || null,
+      entity_name: params.entity_name || null,
+    };
+
+    const updateExisting = async (row: { id: string; conciliado_em?: string | null }) => {
+      // Se já foi conciliada com fatura externa (TicketLog/etc), NÃO altera:
+      // qualquer mudança de valor após conciliação pode descasar o batimento manual.
+      if (row.conciliado_em) {
+        console.log(`[AutoTransaction] Pulando atualização — transação ${row.id} já conciliada em ${row.conciliado_em}`);
+        return row;
+      }
+      const { data: updated, error: upErr } = await supabaseAdmin
+        .from("financial_transactions")
+        .update(payload)
+        .eq("id", row.id)
+        .select()
+        .single();
+      if (upErr) console.error("[AutoTransaction] update error:", upErr.message);
+      return updated;
+    };
+
     if (params.origin_type && params.origin_id) {
       const { data: existing } = await supabaseAdmin
         .from("financial_transactions")
@@ -226,41 +253,33 @@ export async function createAutoTransaction(params: {
         .eq("origin_id", params.origin_id)
         .limit(1);
       if (existing && existing.length > 0) {
-        // Se já foi conciliada com fatura externa (TicketLog/etc), NÃO altera:
-        // qualquer mudança de valor após conciliação pode descasar o batimento manual.
-        if (existing[0].conciliado_em) {
-          console.log(`[AutoTransaction] Pulando atualização — transação ${existing[0].id} já conciliada em ${existing[0].conciliado_em}`);
-          return existing[0];
-        }
-        const { data: updated, error: upErr } = await supabaseAdmin
-          .from("financial_transactions")
-          .update({
-            description: params.description,
-            amount: params.amount,
-            type: params.type,
-            due_date: params.due_date,
-            category_name: params.category_name || null,
-            entity_name: params.entity_name || null,
-          })
-          .eq("id", existing[0].id)
-          .select()
-          .single();
-        if (upErr) console.error("[AutoTransaction] update error:", upErr.message);
-        return updated;
+        return await updateExisting(existing[0]);
       }
     }
+
     const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
-      description: params.description,
-      amount: params.amount,
-      type: params.type,
-      status: "PENDING",
-      due_date: params.due_date,
+      ...payload,
+      status: params.status || "PENDING",
       origin_type: params.origin_type,
       origin_id: params.origin_id,
-      category_name: params.category_name || null,
-      entity_name: params.entity_name || null,
       created_by: params.created_by || "SISTEMA",
     }).select().single();
+
+    // Race: outro processo inseriu o mesmo origin entre o SELECT e o INSERT.
+    // Índice único uniq_ft_origin garante no máximo 1 linha — recuperamos e atualizamos.
+    if (error && (error as any).code === "23505" && params.origin_type && params.origin_id) {
+      const { data: raced } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("id, conciliado_em")
+        .eq("origin_type", params.origin_type)
+        .eq("origin_id", params.origin_id)
+        .limit(1);
+      if (raced && raced.length > 0) {
+        console.log(`[AutoTransaction] Conflito único em ${params.origin_type}:${params.origin_id} — atualizando existente`);
+        return await updateExisting(raced[0]);
+      }
+    }
+
     if (error) console.error("[AutoTransaction] create error:", error.message);
     return data;
   } catch (e: any) {

@@ -513,7 +513,9 @@ async function syncMissingAutoTransactions() {
       const driver = f.driverId ? employeeById.get(f.driverId) : null;
       const plateStr = vehicle?.plate || "";
       const agentStr = driver?.name ? ` - Agente: ${driver.name}` : "";
-      await supabaseAdmin.from("financial_transactions").insert({
+      // Usa createAutoTransaction (respeita uniq_ft_origin) — insert direto gerava
+      // duplicata em race com o POST de abastecimento.
+      await createAutoTransaction({
         description: `ABASTECIMENTO ${plateStr}${agentStr} - ${f.fuelType || "diesel"} ${f.liters}L`.toUpperCase().trim(),
         amount: Number(f.totalCost),
         type: "EXPENSE",
@@ -525,6 +527,7 @@ async function syncMissingAutoTransactions() {
         entity_name: [plateStr, driver?.name, f.station].filter(Boolean).join(" | ") || null,
         created_by: "SISTEMA",
       });
+      txSet.add(`fueling:${f.id}`);
       console.log(`[Sync] Created missing fueling transaction for fueling #${f.id} (R$ ${f.totalCost})`);
     }
 
@@ -532,7 +535,7 @@ async function syncMissingAutoTransactions() {
       if (txSet.has(`maintenance:${m.id}`)) continue;
       if (!m.cost || Number(m.cost) <= 0) continue;
       const vehicle = m.vehicleId ? vehicleById.get(m.vehicleId) : null;
-      await supabaseAdmin.from("financial_transactions").insert({
+      await createAutoTransaction({
         description: `MANUTENÇÃO ${vehicle?.plate || ""} - ${m.type} ${m.description || ""}`.toUpperCase().trim(),
         amount: Number(m.cost),
         type: "EXPENSE",
@@ -544,6 +547,7 @@ async function syncMissingAutoTransactions() {
         entity_name: m.provider || null,
         created_by: "SISTEMA",
       });
+      txSet.add(`maintenance:${m.id}`);
       console.log(`[Sync] Created missing maintenance transaction for maintenance #${m.id} (R$ ${m.cost})`);
     }
   } catch (err: any) {

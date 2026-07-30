@@ -13,6 +13,7 @@ import { runDailyReconciliation } from "./rhid-reconciliation";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { ymdBRT } from "./lib/hours-calc";
 import { snapshotFolhaMes, snapshotFolhaMesIfMissing, prevMonthRef } from "./lib/folha-historico";
+import { createAutoTransaction } from "./routes/_helpers";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -680,18 +681,19 @@ export function initCronJobs() {
       for (const emp of activeEmployees) {
         const originId = `payroll-diario-${emp.id}-${brDate}`;
 
-        const { data: existing } = await supabaseAdmin.from("financial_transactions")
-          .select("id").eq("origin_type", "payroll").eq("origin_id", originId).limit(1);
-        if (existing && existing.length > 0) { skipped++; continue; }
-
-        let fator = 1;
         if (emp.hireDate) {
           const hire = new Date(emp.hireDate);
           if (hire > now) { skipped++; continue; }
           if (hire.getFullYear() === year && hire.getMonth() + 1 === month && hire.getDate() > day) { skipped++; continue; }
         }
 
-        const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
+        // createAutoTransaction + uniq_ft_origin: se já existe (ou outro processo
+        // criou na mesma janela), atualiza/ignora em vez de duplicar.
+        const before = await supabaseAdmin.from("financial_transactions")
+          .select("id").eq("origin_type", "payroll").eq("origin_id", originId).limit(1);
+        if (before.data && before.data.length > 0) { skipped++; continue; }
+
+        const tx = await createAutoTransaction({
           description: `PROVISÃO DIÁRIA ${dayStr}/${monthStr} - ${emp.name?.toUpperCase()}`,
           amount: custoDiario,
           type: "EXPENSE",
@@ -702,13 +704,10 @@ export function initCronJobs() {
           category_name: "Recursos Humanos",
           entity_name: emp.name || "",
           created_by: "CRON",
-        }).select().single();
+        });
 
-        if (error) {
-          log(`CRON Provisão: Erro ao criar provisão para ${emp.name}: ${error.message}`, "cron");
-        } else {
-          created++;
-        }
+        if (tx) created++;
+        else log(`CRON Provisão: Falha ao criar provisão para ${emp.name}`, "cron");
       }
 
       log(`CRON Provisão: ${brDate} — ${created} provisão(ões) criada(s), ${skipped} ignorada(s) (${activeEmployees.length} agentes ativos)`, "cron");
