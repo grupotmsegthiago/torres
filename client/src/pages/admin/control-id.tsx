@@ -662,10 +662,12 @@ function PunchesTab() {
   const [editingPunch, setEditingPunch] = useState<Punch | null>(null);
   const [editPunchAt, setEditPunchAt] = useState("");
   const [editDirection, setEditDirection] = useState("");
+  const [editReason, setEditReason] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualEmpId, setManualEmpId] = useState("");
   const [manualWhen, setManualWhen] = useState(new Date().toISOString().slice(0, 16));
   const [manualDir, setManualDir] = useState("in");
+  const [manualReason, setManualReason] = useState("");
 
   function startEdit(p: Punch) {
     setEditingPunch(p);
@@ -673,20 +675,29 @@ function PunchesTab() {
     const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setEditPunchAt(local);
     setEditDirection(p.direction || "unknown");
+    setEditReason("");
   }
 
   async function saveEdit() {
     if (!editingPunch) return;
+    if (editReason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", description: "Informe o motivo (mín. 5 caracteres). Esta ação altera folha/pagamento.", variant: "destructive" });
+      return;
+    }
+    const before = formatDateTime(editingPunch.punch_at);
+    const after = formatDateTime(new Date(editPunchAt).toISOString());
+    if (!confirm(`Confirmar alteração de batida?\n\nAntes: ${before}\nDepois: ${after}\nMotivo: ${editReason}\n\nIsto altera folha/pagamento.`)) return;
     try {
       const r = await authFetch(`/api/control-id/punches/${editingPunch.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ punchAt: new Date(editPunchAt).toISOString(), direction: editDirection }),
+        body: JSON.stringify({ punchAt: new Date(editPunchAt).toISOString(), direction: editDirection, reason: editReason.trim() }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       toast({ title: "Batida atualizada", description: d.rhidSynced ? "Sincronizado com o RHID." : (d.rhidError || "Salvo apenas localmente.") });
       setEditingPunch(null);
+      setEditReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
     } catch (e: any) {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
@@ -694,9 +705,19 @@ function PunchesTab() {
   }
 
   async function deletePunch(p: Punch) {
-    if (!confirm(`Excluir esta batida (${formatDateTime(p.punch_at)})? Será removida do nosso sistema (no RHID continua).`)) return;
+    const reason = prompt(`Excluir batida ${formatDateTime(p.punch_at)}?\n\nEsta ação altera folha/pagamento.\nInforme o MOTIVO obrigatório:`);
+    if (reason == null) return;
+    if (reason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", description: "Exclusão cancelada — motivo muito curto.", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Confirmar exclusão?\nAntes: ${formatDateTime(p.punch_at)}\nMotivo: ${reason}`)) return;
     try {
-      const r = await authFetch(`/api/control-id/punches/${p.id}`, { method: "DELETE" });
+      const r = await authFetch(`/api/control-id/punches/${p.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
       if (!r.ok) throw new Error((await r.json()).message);
       toast({ title: "Batida excluída" });
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
@@ -707,17 +728,22 @@ function PunchesTab() {
 
   async function createManual() {
     if (!manualEmpId || !manualWhen) { toast({ title: "Preencha funcionário e data/hora", variant: "destructive" }); return; }
+    if (manualReason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", description: "Informe o motivo da batida manual (impacta folha/pagamento).", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Criar batida manual?\nHorário: ${manualWhen}\nMotivo: ${manualReason}\n\nIsto altera folha/pagamento.`)) return;
     try {
       const r = await authFetch("/api/control-id/manual-punch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: Number(manualEmpId), punchAt: new Date(manualWhen).toISOString(), direction: manualDir }),
+        body: JSON.stringify({ employeeId: Number(manualEmpId), punchAt: new Date(manualWhen).toISOString(), direction: manualDir, reason: manualReason.trim() }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID com sucesso." : `Salva localmente. RHID: ${d.rhidError}` });
       setManualOpen(false);
-      setManualEmpId(""); setManualWhen(new Date().toISOString().slice(0, 16));
+      setManualEmpId(""); setManualWhen(new Date().toISOString().slice(0, 16)); setManualReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/punches"] });
     } catch (e: any) {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
@@ -791,9 +817,18 @@ function PunchesTab() {
                     <td className="p-2 text-center text-xs text-neutral-500">{p.source || "-"}</td>
                     <td className="p-2 text-right">
                       {isEditing ? (
-                        <div className="flex gap-1 justify-end">
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={saveEdit} data-testid={`button-save-${p.id}`}><Save className="w-3.5 h-3.5" /></Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingPunch(null)} data-testid={`button-cancel-${p.id}`}><X className="w-3.5 h-3.5" /></Button>
+                        <div className="flex flex-col gap-1 items-end">
+                          <Input
+                            value={editReason}
+                            onChange={e => setEditReason(e.target.value)}
+                            placeholder="Motivo obrigatório…"
+                            className="h-7 text-xs w-56"
+                            data-testid={`input-edit-reason-${p.id}`}
+                          />
+                          <div className="flex gap-1 justify-end">
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={saveEdit} data-testid={`button-save-${p.id}`}><Save className="w-3.5 h-3.5" /></Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingPunch(null)} data-testid={`button-cancel-${p.id}`}><X className="w-3.5 h-3.5" /></Button>
+                          </div>
                         </div>
                       ) : (
                         <div className="flex gap-1 justify-end">
@@ -838,7 +873,11 @@ function PunchesTab() {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-neutral-500">A batida será criada no nosso sistema e enviada automaticamente ao RHID Cloud (se o funcionário estiver mapeado a um aparelho).</p>
+            <div>
+              <label className="text-xs font-bold text-neutral-600 mb-1 block">Motivo * (altera folha/pagamento)</label>
+              <Input value={manualReason} onChange={e => setManualReason(e.target.value)} placeholder="Descreva o motivo da batida manual" data-testid="input-manual-reason" />
+            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Esta ação altera folha/pagamento e será registrada em auditoria com antes/depois, usuário e motivo.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManualOpen(false)} data-testid="button-manual-cancel">Cancelar</Button>
@@ -2518,9 +2557,11 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTime, setEditTime] = useState("");
   const [editDir, setEditDir] = useState<string>("unknown");
+  const [editReason, setEditReason] = useState("");
   const [adding, setAdding] = useState(false);
   const [newTime, setNewTime] = useState(`${day.date}T08:00`);
   const [newDir, setNewDir] = useState("unknown");
+  const [newReason, setNewReason] = useState("");
   const [forcePunch, setForcePunch] = useState(false);
   const [addingDay, setAddingDay] = useState(false);
   const [dayEntrada, setDayEntrada] = useState(`${day.date}T08:00`);
@@ -2553,7 +2594,12 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
         // Num "dia completo" os horários são digitados de propósito e há batidas
         // intermediárias reais — então 00:00/23:59 nas pontas são legítimos
         // (jornada contínua que vira a meia-noite), não placeholder. Auto-confirma.
-        const body: any = { employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction };
+        const body: any = {
+          employeeId,
+          punchAt: new Date(s.time).toISOString(),
+          direction: s.direction,
+          reason: `Inclusão de dia completo na folha (${day.date})`,
+        };
         if (isBoundaryPunchTime(s.time)) body.force = true;
         const r = await authFetch("/api/control-id/manual-punch", {
           method: "POST",
@@ -2585,20 +2631,27 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
     const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setEditTime(local);
     setEditDir(p.direction || "unknown");
+    setEditReason("");
   }
 
   async function saveEdit(p: FolhaPunch) {
+    if (editReason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", description: "Informe o motivo. Esta ação altera folha/pagamento.", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Confirmar alteração?\nAntes: ${p.time}\nDepois: ${editTime.slice(11)}\nMotivo: ${editReason}\n\nIsto altera folha/pagamento.`)) return;
     try {
       const r = await authFetch(`/api/control-id/punches/${p.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ punchAt: new Date(editTime).toISOString(), direction: editDir }),
+        body: JSON.stringify({ punchAt: new Date(editTime).toISOString(), direction: editDir, reason: editReason.trim() }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       toast({ title: "Batida atualizada", description: d.rhidSynced ? "Sincronizado com o RHID." : (d.rhidError || "Salvo apenas localmente.") });
       setPunches(arr => arr.map(x => x.id === p.id ? { ...x, punchAt: new Date(editTime).toISOString(), direction: editDir, time: new Date(editTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) } : x));
       setEditingId(null);
+      setEditReason("");
       onChanged();
     } catch (e: any) {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
@@ -2606,9 +2659,19 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   }
 
   async function delPunch(p: FolhaPunch) {
-    if (!confirm(`Excluir batida ${p.time}?`)) return;
+    const reason = prompt(`Excluir batida ${p.time}?\nEsta ação altera folha/pagamento.\nInforme o MOTIVO:`);
+    if (reason == null) return;
+    if (reason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Confirmar exclusão de ${p.time}?\nMotivo: ${reason}`)) return;
     try {
-      const r = await authFetch(`/api/control-id/punches/${p.id}`, { method: "DELETE" });
+      const r = await authFetch(`/api/control-id/punches/${p.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
       if (!r.ok) throw new Error((await r.json()).message);
       toast({ title: "Batida excluída" });
       setPunches(arr => arr.filter(x => x.id !== p.id));
@@ -2632,7 +2695,12 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
         });
         return;
       }
-      const body: any = { employeeId, punchAt: new Date(newTime).toISOString(), direction: newDir };
+      if (newReason.trim().length < 5) {
+        toast({ title: "Motivo obrigatório", description: "Informe o motivo da batida manual.", variant: "destructive" });
+        return;
+      }
+      if (!confirm(`Criar batida ${hhmm}?\nMotivo: ${newReason}\n\nIsto altera folha/pagamento.`)) return;
+      const body: any = { employeeId, punchAt: new Date(newTime).toISOString(), direction: newDir, reason: newReason.trim() };
       if (isSensitive && forcePunch) body.force = true;
       const r = await authFetch("/api/control-id/manual-punch", {
         method: "POST",
@@ -2644,6 +2712,7 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
       toast({ title: "Batida criada", description: d.rhidSynced ? "Enviada ao RHID." : (d.rhidError || "Salva localmente.") });
       setAdding(false);
       setForcePunch(false);
+      setNewReason("");
       onChanged();
       onClose();
     } catch (e: any) {
@@ -2707,9 +2776,18 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                     <td className="p-2 text-center text-xs text-neutral-500">{p.source || "—"}</td>
                     <td className="p-2 text-right">
                       {editingId === p.id ? (
-                        <div className="inline-flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={() => saveEdit(p)}><Save className="w-3.5 h-3.5" /></Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}><X className="w-3.5 h-3.5" /></Button>
+                        <div className="inline-flex flex-col gap-1 items-end">
+                          <Input
+                            value={editReason}
+                            onChange={e => setEditReason(e.target.value)}
+                            placeholder="Motivo obrigatório…"
+                            className="h-7 text-xs w-48"
+                            data-testid={`input-edit-reason-day-${p.id}`}
+                          />
+                          <div className="inline-flex gap-1">
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={() => saveEdit(p)}><Save className="w-3.5 h-3.5" /></Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}><X className="w-3.5 h-3.5" /></Button>
+                          </div>
                         </div>
                       ) : (
                         <div className="inline-flex gap-1">
@@ -2746,6 +2824,10 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
                     <SelectItem value="unknown">—</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex-1 min-w-[12rem]">
+                <label className="text-[11px] font-medium text-neutral-600">Motivo * (altera folha)</label>
+                <Input value={newReason} onChange={e => setNewReason(e.target.value)} className="h-8 text-xs" placeholder="Motivo obrigatório" data-testid="input-new-punch-reason" />
               </div>
               <Button size="sm" onClick={addPunch} className="h-8"><Save className="w-3.5 h-3.5 mr-1" /> Adicionar</Button>
               <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setForcePunch(false); }} className="h-8">Cancelar</Button>
@@ -2921,7 +3003,12 @@ function AddDayDialog({ employeeId, defaultDate, onClose, onChanged }: { employe
       try {
         // Dia completo: horários digitados de propósito com batidas intermediárias
         // reais — 00:00/23:59 nas pontas são jornada contínua, não placeholder.
-        const body: any = { employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction };
+        const body: any = {
+          employeeId,
+          punchAt: new Date(s.time).toISOString(),
+          direction: s.direction,
+          reason: `Inclusão de dia completo na folha (${date})`,
+        };
         if (isBoundaryPunchTime(s.time)) body.force = true;
         const r = await authFetch("/api/control-id/manual-punch", {
           method: "POST",

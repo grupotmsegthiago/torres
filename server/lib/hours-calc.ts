@@ -1,66 +1,57 @@
 /**
  * Cálculo canônico de horas trabalhadas a partir de batidas do Control iD.
  *
- * Esta é a ÚNICA fonte de verdade do cálculo de jornada do sistema.
- * Todas as telas/relatórios que mostram horas trabalhadas devem usar
- * `computeWorkedHours` para garantir resultados consistentes.
- *
- * Algoritmo:
- *  1) Ordena globalmente as batidas por timestamp (ascendente).
- *  2) Deduplica por minuto BRT (mesma minuto = batida duplicada do equipamento).
- *  3) Pareia em (entrada, saída): (0,1), (2,3), (4,5)...
- *     - Funciona para 2 batidas (entrada/saída direta).
- *     - Funciona para 4 batidas (entrada / saída-almoço / volta / saída).
- *     - Funciona para qualquer número par.
- *  4) Atribui a duração do par ao dia BRT da batida de ENTRADA.
- *     Isso garante que turnos cruzando meia-noite (vigilância 12x36, 24h)
- *     sejam contados no dia em que começaram, sem partir nem perder horas.
- *  5) Se sobrar uma batida ímpar no fim, é "ponto em aberto" e não é contado.
- *
- * Convenções:
- *  - BRT = America/Sao_Paulo (UTC-3, sem horário de verão).
- *  - punch_at é armazenado como timestamptz; a função aceita ISO string ou Date.
+ * Delega ao motor `jornada-calc` (pares diários + cluster ≤2min + cap 19:59).
+ * Mantém a API `computeWorkedHours` para Painel, relatórios e jobs.
  */
+
+import {
+  computePeriodJornada,
+  NORMAL_DAILY_CAP_MIN,
+  type JornadaPunchInput,
+} from "./jornada-calc.js";
 
 export interface PunchInput {
   punch_at: string | Date;
+  id?: number | null;
+  source?: string | null;
+  is_manual?: boolean | null;
+  external_id?: string | null;
+  direction?: string | null;
 }
 
 export interface WorkedHoursResult {
-  /** Total em minutos (todos os dias somados, JÁ COM CLAMP de 16h por par). */
+  /** Total em minutos (soma dos dias, cada um já com cap 19:59). */
   totalMinutes: number;
   /** Total em horas (totalMinutes / 60). */
   totalHours: number;
-  /** Minutos trabalhados por dia BRT (yyyy-mm-dd) — JÁ COM CLAMP de 16h por par. */
+  /** Minutos trabalhados por dia BRT (yyyy-mm-dd). */
   perDayMinutes: Map<string, number>;
   /** Quantos dias distintos têm jornada > 0. */
   daysWorked: number;
-  /** True se a última batida ficou ímpar (turno em aberto). */
+  /** True se há batida órfã (ímpar após clusterização) em algum dia. */
   hasOpenShift: boolean;
-  /** Timestamp da última batida ímpar (entrada sem saída), ou null. */
+  /** Timestamp da órfã mais recente, ou null. */
   openShiftSince: Date | null;
-  /** Pares (entrada, saida) — duração REAL, sem clamp (job de diárias usa). */
+  /** Pares (entrada, saida) — duração REAL do par (sem cap diário). */
   pairs: Array<{ entrada: Date; saida: Date }>;
-  /** Minutos descartados por exceder o teto de 16h por par. */
+  /**
+   * Minutos descartados pelo cap diário 19:59 (soma workedMinRaw - workedMin).
+   * Nome legado `cappedMinutes` preservado para compatibilidade.
+   */
   cappedMinutes: number;
-  /** Quantos pares tiveram a duração truncada (>16h). */
+  /** Quantos dias tiveram teto 19:59 aplicado. */
   pairsTruncated: number;
 }
 
-/** Teto por par (regra Thiago): par >16h só conta 16h no total de horas;
- *  o excesso vira diária automática (ver server/jobs/diarias-jornada-longa.ts). */
+/** @deprecated Prefer NORMAL_DAILY_CAP_MIN. Mantido p/ jobs de diária (>16h). */
 export const MAX_PAIR_MINUTES = 16 * 60;
 
-/** Converte um timestamp para a data BRT yyyy-mm-dd. */
-export function ymdBRT(iso: string | Date): string {
-  const d = typeof iso === "string" ? new Date(iso) : iso;
-  // BRT = UTC-3 (sem horário de verão). Subtraindo 3h e pegando a data UTC,
-  // obtemos o dia BRT correto.
-  return new Date(d.getTime() - 3 * 3600000).toISOString().slice(0, 10);
-}
+export { ymdBRT } from "./jornada-calc.js";
+export { NORMAL_DAILY_CAP_MIN };
 
 /** Cria a chave de minuto BRT para deduplicação (yyyy-mm-ddTHH:MM). */
-function minuteKeyBRT(iso: string | Date): string {
+export function minuteKeyBRT(iso: string | Date): string {
   const d = typeof iso === "string" ? new Date(iso) : iso;
   return new Date(d.getTime() - 3 * 3600000).toISOString().slice(0, 16);
 }
@@ -70,66 +61,44 @@ function minuteKeyBRT(iso: string | Date): string {
  * intervalo e devolve total + breakdown diário.
  */
 export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
-  // 1) Ordena ascendente.
-  const sorted = punches
+  const input: JornadaPunchInput[] = punches
     .filter((p) => p && p.punch_at != null)
-    .map((p) => (typeof p.punch_at === "string" ? new Date(p.punch_at) : p.punch_at))
-    .sort((a, b) => a.getTime() - b.getTime());
+    .map((p) => ({
+      punch_at: p.punch_at,
+      id: p.id ?? null,
+      source: p.source ?? null,
+      is_manual: p.is_manual ?? null,
+      external_id: p.external_id ?? null,
+      direction: p.direction ?? null,
+    }));
 
-  // 2) Dedup por minuto BRT.
-  const seen = new Set<string>();
-  const clean: Date[] = [];
-  for (const d of sorted) {
-    const key = minuteKeyBRT(d);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    clean.push(d);
+  const r = computePeriodJornada(input);
+  const perDayMinutes = new Map<string, number>();
+  for (const d of r.days) {
+    if (d.workedMin > 0) perDayMinutes.set(d.day, d.workedMin);
   }
 
-  const perDayMinutes = new Map<string, number>();
-  const pairs: Array<{ entrada: Date; saida: Date }> = [];
-  let totalMinutes = 0;
   let cappedMinutes = 0;
   let pairsTruncated = 0;
-
-  // 3) Itera em pares (entrada, saída).
-  let i = 0;
-  for (; i + 1 < clean.length; i += 2) {
-    const entrada = clean[i];
-    const saida = clean[i + 1];
-    const diffMin = (saida.getTime() - entrada.getTime()) / 60000;
-    if (diffMin <= 0) continue;
-    pairs.push({ entrada, saida }); // pair real, sem clamp (diárias usam isso)
-    // Aplica teto de 16h pro acúmulo de horas trabalhadas.
-    let countedMin = diffMin;
-    if (diffMin > MAX_PAIR_MINUTES) {
-      cappedMinutes += diffMin - MAX_PAIR_MINUTES;
-      countedMin = MAX_PAIR_MINUTES;
+  for (const d of r.days) {
+    if (d.capped) {
+      cappedMinutes += d.workedMinRaw - d.workedMin;
       pairsTruncated++;
     }
-    // 4) Atribui ao dia BRT da entrada.
-    const dayKey = ymdBRT(entrada);
-    perDayMinutes.set(dayKey, (perDayMinutes.get(dayKey) || 0) + countedMin);
-    totalMinutes += countedMin;
   }
 
-  // 5) Sobrou uma batida ímpar = ponto em aberto.
-  const hasOpenShift = i < clean.length;
-  const openShiftSince = hasOpenShift ? clean[clean.length - 1] : null;
-
-  let daysWorked = 0;
-  for (const min of Array.from(perDayMinutes.values())) {
-    if (min > 0) daysWorked++;
-  }
+  const lastOrphan = r.orphans.length
+    ? r.orphans[r.orphans.length - 1].punch.at
+    : null;
 
   return {
-    totalMinutes: Math.round(totalMinutes),
-    totalHours: Math.round((totalMinutes / 60) * 100) / 100,
+    totalMinutes: r.totalWorkedMin,
+    totalHours: Math.round((r.totalWorkedMin / 60) * 100) / 100,
     perDayMinutes,
-    daysWorked,
-    hasOpenShift,
-    openShiftSince,
-    pairs,
+    daysWorked: perDayMinutes.size,
+    hasOpenShift: r.orphans.length > 0,
+    openShiftSince: lastOrphan,
+    pairs: r.pairs.map((p) => ({ entrada: p.entrada.at, saida: p.saida.at })),
     cappedMinutes: Math.round(cappedMinutes),
     pairsTruncated,
   };

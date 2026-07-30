@@ -247,7 +247,7 @@ export function registerControlIdRoutes(app: Express) {
   // Bater ponto manualmente: cria local + envia ao RHID
   app.post("/api/control-id/manual-punch", requireAuth, async (req: any, res) => {
     try {
-      const { employeeId, punchAt, direction, deviceId } = req.body;
+      const { employeeId, punchAt, direction, deviceId, reason, forceLockedOverride } = req.body;
       // Funcionário comum só pode bater pra si mesmo
       const isAdmin = ["diretoria", "admin", "rh"].includes(req.user?.role);
       const targetEmployeeId = isAdmin && employeeId ? Number(employeeId) : Number(req.user?.employeeId);
@@ -266,12 +266,19 @@ export function registerControlIdRoutes(app: Express) {
         }
       }
 
+      const isAdminManual = isAdmin && employeeId !== req.user?.employeeId;
+      const { actorFromRequest } = await import("../lib/punch-audit");
       const r = await ctrl.createManualPunch({
         employeeId: targetEmployeeId,
         punchAt: new Date(punchAt),
         direction: direction || "unknown",
-        source: isAdmin && employeeId !== req.user?.employeeId ? "admin_manual" : "self_manual",
+        source: isAdminManual ? "admin_manual" : "self_manual",
         deviceId: deviceId ? Number(deviceId) : undefined,
+        reason: isAdminManual
+          ? reason
+          : (reason || "Marcação pelo próprio colaborador (self_manual)"),
+        forceLockedOverride: !!forceLockedOverride,
+        actor: actorFromRequest(req),
       });
       res.status(201).json(r);
     } catch (err: any) {
@@ -280,14 +287,25 @@ export function registerControlIdRoutes(app: Express) {
   });
 
   // Editar batida local (sincroniza com RHID se tem external_id)
-  app.patch("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.patch("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
-      const { punchAt, direction } = req.body;
+      const { punchAt, direction, reason, forceLockedOverride, documentRef } = req.body;
+      if (!reason || String(reason).trim().length < 5) {
+        return res.status(400).json({
+          message: "Motivo obrigatório — esta ação altera folha/pagamento. Informe o motivo antes de salvar.",
+        });
+      }
       const fields: any = {};
       if (punchAt) fields.punchAt = new Date(punchAt);
       if (direction !== undefined) fields.direction = direction;
-      const r = await ctrl.updateLocalPunch(id, fields);
+      const { actorFromRequest } = await import("../lib/punch-audit");
+      const r = await ctrl.updateLocalPunch(id, fields, {
+        reason: String(reason),
+        forceLockedOverride: !!forceLockedOverride,
+        actor: actorFromRequest(req),
+        documentRef: documentRef || null,
+      });
       res.json(r);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -370,9 +388,20 @@ export function registerControlIdRoutes(app: Express) {
   });
 
   // Deletar batida local (mantém no RHID por segurança)
-  app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
-      const r = await ctrl.deleteLocalPunch(Number(req.params.id));
+      const reason = req.body?.reason || req.query?.reason;
+      if (!reason || String(reason).trim().length < 5) {
+        return res.status(400).json({
+          message: "Motivo obrigatório — exclusão altera folha/pagamento. Informe o motivo.",
+        });
+      }
+      const { actorFromRequest } = await import("../lib/punch-audit");
+      const r = await ctrl.deleteLocalPunch(Number(req.params.id), {
+        reason: String(reason),
+        forceLockedOverride: !!(req.body?.forceLockedOverride || req.query?.forceLockedOverride),
+        actor: actorFromRequest(req),
+      });
       res.json(r);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

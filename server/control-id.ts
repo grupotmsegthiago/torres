@@ -13,6 +13,12 @@ import { supabaseAdmin } from "./supabase";
 import { computeWorkedHours, ymdBRT as ymdBRTcanon } from "./lib/hours-calc";
 import { buildEspelhoPonto } from "./lib/espelho-ponto";
 import {
+  computeDayJornada,
+  nightMinutesFromPairs,
+  NORMAL_DAILY_CAP_MIN,
+  minutesToHHMM,
+} from "./lib/jornada-calc";
+import {
   encryptSecret,
   decryptSecret,
   parseRhidDate,
@@ -1013,8 +1019,18 @@ export async function createManualPunch(params: {
   direction?: string;
   source?: string;
   deviceId?: number;
-}): Promise<{ punchId: number; rhidSynced: boolean; rhidError?: string }> {
+  reason?: string;
+  forceLockedOverride?: boolean;
+  actor?: import("./lib/punch-audit").PunchAuditActor;
+}): Promise<{ punchId: number; rhidSynced: boolean; rhidError?: string; auditRequestId?: string }> {
   const { employeeId, punchAt, direction = "unknown", source = "manual" } = params;
+  const { assertPunchMutable, writePunchAudit, assertReason } = await import("./lib/punch-audit");
+  const reason = assertReason(params.reason);
+  await assertPunchMutable(punchAt, {
+    forceLockedOverride: params.forceLockedOverride,
+    role: params.actor?.role,
+    reason,
+  });
 
   // Acha mapping ativo do employee
   let mapping: any = null;
@@ -1029,7 +1045,7 @@ export async function createManualPunch(params: {
   }
 
   // 1) Salva local PRIMEIRO (fonte da verdade do ERP, nunca perde o registro)
-  const { data: punch, error } = await supabaseAdmin.from("control_id_punches").insert({
+  const insertRow = {
     device_id: mapping?.device_id || null,
     control_id_user_id: mapping?.control_id_user_id || null,
     employee_id: employeeId,
@@ -1040,9 +1056,29 @@ export async function createManualPunch(params: {
     external_id: null,
     rhid_synced_at: null,
     rhid_sync_error: mapping ? null : "Funcionário não mapeado a nenhum aparelho",
-    raw_event: { manual: true, createdBy: "system" },
-  }).select("id").single();
+    raw_event: { manual: true, createdBy: params.actor?.email || params.actor?.name || "system" },
+  };
+  const { data: punch, error } = await supabaseAdmin.from("control_id_punches").insert(insertRow).select("*").single();
   if (error) throw new Error(`Erro ao salvar batida local: ${error.message}`);
+
+  let auditRequestId: string | undefined;
+  try {
+    const aud = await writePunchAudit({
+      punchId: punch.id,
+      employeeId,
+      action: "create",
+      beforeRow: null,
+      afterRow: punch,
+      reason,
+      actor: params.actor || {},
+      meta: { forceLockedOverride: !!params.forceLockedOverride },
+    });
+    auditRequestId = aud.requestId;
+  } catch (e: any) {
+    // Compensa: sem auditoria a mutação não pode ficar
+    await supabaseAdmin.from("control_id_punches").delete().eq("id", punch.id);
+    throw e;
+  }
 
   // 2) Enfileira push pro RHID (tenta agora; se falhar, cron retenta com backoff)
   let rhidSynced = false;
@@ -1065,22 +1101,74 @@ export async function createManualPunch(params: {
   } else {
     rhidError = "Funcionário não mapeado a nenhum aparelho";
   }
-  return { punchId: punch.id, rhidSynced, rhidError };
+  return { punchId: punch.id, rhidSynced, rhidError, auditRequestId };
 }
 
 /**
  * Atualiza batida local + tenta sincronizar com RHID se já estava sincronizada.
  */
-export async function updateLocalPunch(punchId: number, fields: { punchAt?: Date; direction?: string }): Promise<{ ok: boolean; rhidSynced: boolean; rhidError?: string }> {
+export async function updateLocalPunch(
+  punchId: number,
+  fields: { punchAt?: Date; direction?: string },
+  audit?: {
+    reason: string;
+    forceLockedOverride?: boolean;
+    actor?: import("./lib/punch-audit").PunchAuditActor;
+    documentRef?: string | null;
+    action?: "update" | "repair";
+  },
+): Promise<{ ok: boolean; rhidSynced: boolean; rhidError?: string; auditRequestId?: string }> {
   const { data: punch } = await supabaseAdmin.from("control_id_punches").select("*").eq("id", punchId).maybeSingle();
   if (!punch) throw new Error("Batida não encontrada");
+
+  const { assertPunchMutable, writePunchAudit, assertReason } = await import("./lib/punch-audit");
+  const reason = assertReason(audit?.reason);
+  const newAt = fields.punchAt || new Date(punch.punch_at);
+  await assertPunchMutable(punch.punch_at, {
+    forceLockedOverride: audit?.forceLockedOverride,
+    role: audit?.actor?.role,
+    reason,
+  });
+  await assertPunchMutable(newAt, {
+    forceLockedOverride: audit?.forceLockedOverride,
+    role: audit?.actor?.role,
+    reason,
+  });
 
   const upd: any = {};
   if (fields.punchAt) upd.punch_at = fields.punchAt.toISOString();
   if (fields.direction !== undefined) upd.direction = fields.direction;
 
-  const { error } = await supabaseAdmin.from("control_id_punches").update(upd).eq("id", punchId);
+  const { data: after, error } = await supabaseAdmin
+    .from("control_id_punches")
+    .update(upd)
+    .eq("id", punchId)
+    .select("*")
+    .single();
   if (error) throw new Error(error.message);
+
+  let auditRequestId: string | undefined;
+  try {
+    const aud = await writePunchAudit({
+      punchId,
+      employeeId: punch.employee_id,
+      action: audit?.action || "update",
+      beforeRow: punch,
+      afterRow: after,
+      reason,
+      actor: audit?.actor || {},
+      documentRef: audit?.documentRef ?? null,
+      meta: { forceLockedOverride: !!audit?.forceLockedOverride },
+    });
+    auditRequestId = aud.requestId;
+  } catch (e: any) {
+    // Rollback da alteração se a auditoria falhar
+    await supabaseAdmin
+      .from("control_id_punches")
+      .update({ punch_at: punch.punch_at, direction: punch.direction })
+      .eq("id", punchId);
+    throw e;
+  }
 
   // Enfileira sync se tem external_id (já está no RHID)
   let rhidSynced = false;
@@ -1100,14 +1188,43 @@ export async function updateLocalPunch(punchId: number, fields: { punchAt?: Date
     rhidSynced = r.pushedNow;
     rhidError = r.pushError;
   }
-  return { ok: true, rhidSynced, rhidError };
+  return { ok: true, rhidSynced, rhidError, auditRequestId };
 }
 
 /**
  * Deleta batida local. Se tem external_id no RHID, também enfileira o DELETE pro RHID.
  */
-export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean; rhidQueued: boolean }> {
+export async function deleteLocalPunch(
+  punchId: number,
+  audit?: {
+    reason: string;
+    forceLockedOverride?: boolean;
+    actor?: import("./lib/punch-audit").PunchAuditActor;
+  },
+): Promise<{ ok: boolean; rhidQueued: boolean; auditRequestId?: string }> {
   const { data: punch } = await supabaseAdmin.from("control_id_punches").select("*").eq("id", punchId).maybeSingle();
+  if (!punch) throw new Error("Batida não encontrada");
+
+  const { assertPunchMutable, writePunchAudit, assertReason } = await import("./lib/punch-audit");
+  const reason = assertReason(audit?.reason);
+  await assertPunchMutable(punch.punch_at, {
+    forceLockedOverride: audit?.forceLockedOverride,
+    role: audit?.actor?.role,
+    reason,
+  });
+
+  // Auditoria ANTES do delete (before completo). Se falhar, não apaga.
+  const aud = await writePunchAudit({
+    punchId,
+    employeeId: punch.employee_id,
+    action: "delete",
+    beforeRow: punch,
+    afterRow: null,
+    reason,
+    actor: audit?.actor || {},
+    meta: { forceLockedOverride: !!audit?.forceLockedOverride },
+  });
+
   let rhidQueued = false;
   // Enfileira PRIMEIRO (com tryNow:false pra não atrasar a resposta).
   // Se o enqueue falhar (Supabase fora), abortamos antes de deletar local —
@@ -1129,7 +1246,7 @@ export async function deleteLocalPunch(punchId: number): Promise<{ ok: boolean; 
   }
   const { error } = await supabaseAdmin.from("control_id_punches").delete().eq("id", punchId);
   if (error) throw new Error(error.message);
-  return { ok: true, rhidQueued };
+  return { ok: true, rhidQueued, auditRequestId: aud.requestId };
 }
 
 // ============================ WRITE BACK PARA RHID ============================
@@ -2073,21 +2190,6 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   return result;
 }
 
-/**
- * Conta os MINUTOS dentro da faixa noturna (22h–05h BRT) entre dois instantes.
- * Varre minuto a minuto verificando a hora em America/Sao_Paulo — cobre turnos
- * que atravessam a meia-noite. Mesma lógica usada em `jornada_calculos` (hr.ts).
- */
-function nightMinutesBRT(startMs: number, endMs: number): number {
-  if (!(endMs > startMs)) return 0;
-  let count = 0;
-  for (let t = startMs; t < endMs; t += 60000) {
-    const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
-    if (h >= 22 || h < 5) count++;
-  }
-  return count;
-}
-
 export async function buildFolhaPonto(
   employeeId: number,
   monthYear: string,
@@ -2133,11 +2235,6 @@ export async function buildFolhaPonto(
     horasMensais = salRows && salRows[0] && salRows[0].horas_mensais ? Number(salRows[0].horas_mensais) : 220;
   }
   const jornadaDiariaMin = (horasMensais * 60) / 25;
-  // NORMAIS no estilo do cartão Control iD: jornada prevista do dia 04:00–23:59
-  // = 19h59 (1199 min). É o teto das horas "normais"; o que passar disso o cartão
-  // mostra como extra. Só EXIBIÇÃO — não altera custo de folha (a H. Extra de
-  // pagamento continua sobre jornadaDiariaMin = horas_mensais ÷ 25).
-  const NORMAL_DAILY_CAP_MIN = 1199;
 
   // Agrupa por dia (BRT)
   const dayMap = new Map<string, any[]>();
@@ -2152,12 +2249,25 @@ export async function buildFolhaPonto(
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    const jornada = computeDayJornada(
+      sorted.map((p: any) => ({
+        id: p.id,
+        punch_at: p.punch_at,
+        source: p.source,
+        direction: p.direction,
+        external_id: p.external_id,
+      })),
+      day,
+    );
+    const pairSlots = jornada.pairs;
     const entry: any = {
       date: day,
-      clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
-      lunchOut: sorted.length >= 4 ? fmt(sorted[1].punch_at) : null,
-      lunchIn: sorted.length >= 4 ? fmt(sorted[2].punch_at) : null,
-      clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
+      clockIn: pairSlots[0] ? pairSlots[0].entrada.hhmm : (jornada.normalized[0]?.hhmm ?? null),
+      lunchOut: pairSlots[0] ? pairSlots[0].saida.hhmm : null,
+      lunchIn: pairSlots[1] ? pairSlots[1].entrada.hhmm : null,
+      clockOut: pairSlots.length
+        ? pairSlots[pairSlots.length - 1].saida.hhmm
+        : null,
       totalPunches: sorted.length,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
       punches: sorted.map((p: any) => ({
@@ -2167,46 +2277,30 @@ export async function buildFolhaPonto(
         direction: p.direction,
         source: p.source,
       })),
+      engine: "jornada-pares-cluster",
+      pairs: pairSlots.map((pr) => ({
+        in: pr.entrada.hhmm,
+        out: pr.saida.hhmm,
+        min: pr.durationMin,
+        hhmm: minutesToHHMM(pr.durationMin),
+      })),
+      orphans: jornada.orphans.map((o) => o.hhmm),
+      clusters: jornada.clusters.map((c) => ({
+        role: c.role,
+        times: c.punches.map((x) => x.hhmm),
+        ids: c.punches.map((x) => x.id),
+        representative: c.representative.hhmm,
+        ambiguous: c.ambiguous,
+      })),
+      issues: jornada.issues,
     };
-    // calcula horas trabalhadas
-    if (entry.clockIn && entry.clockOut) {
-      const inMs = new Date(sorted[0].punch_at).getTime();
-      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
-      let workedMin = (outMs - inMs) / 60000;
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
-        workedMin -= lunchMin;
-      }
-      // Teto diário de jornada (NORMAL_DAILY_CAP_MIN = 19:59). Remove a
-      // duplicação da meia-noite criada pelos marcadores sintéticos 00:00/23:59
-      // do import (folha_pdf_import): ninguém trabalha >19:59 num dia, então o
-      // excedente é fantasma. Com o teto, "Horas Trabalhadas" passa a ser igual à
-      // soma das "Normais" e bate com o RHID oficial (ex.: FERNANDO jun/2026 =
-      // 447:27). Ordem explícita do dono (INTOCÁVEL §8).
-      workedMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
-      entry.hoursWorked = (workedMin / 60).toFixed(2);
-      entry.workedMin = Math.round(workedMin);
-      entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
-      const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
-      entry.extraMin = Math.round(extraMin);
-      entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      // Minutos noturnos (22h–05h BRT) dentro da jornada efetiva, descontando o
-      // intervalo de almoço se houver 4+ batidas.
-      let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        noturnoMin -= nightMinutesBRT(
-          new Date(sorted[1].punch_at).getTime(),
-          new Date(sorted[2].punch_at).getTime(),
-        );
-      }
-      entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
-    } else {
-      entry.workedMin = 0;
-      entry.normaisMin = 0;
-      entry.extraMin = 0;
-      entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      entry.noturnoMin = 0;
-    }
+    const workedMin = jornada.workedMin;
+    entry.hoursWorked = (workedMin / 60).toFixed(2);
+    entry.workedMin = workedMin;
+    entry.normaisMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
+    entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
+    entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+    entry.noturnoMin = Math.max(0, Math.round(nightMinutesFromPairs(pairSlots)));
     result.push(entry);
   }
   return result.sort((a, b) => a.date.localeCompare(b.date));
