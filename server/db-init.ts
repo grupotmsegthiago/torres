@@ -147,10 +147,13 @@ export async function ensureDbSchema() {
   // todo o DDL (boot instantâneo). FORCE_DB_INIT=true força a rodada completa.
   const fingerprint = computeSchemaFingerprint();
   const force = process.env.FORCE_DB_INIT === "true";
-  if (!force && fingerprint) {
+    if (!force && fingerprint) {
     const stored = await readStoredFingerprint();
     if (stored === fingerprint) {
       console.log(`[db-init] Schema já na versão atual (${fingerprint.slice(0, 12)}) — DDL pulado. FORCE_DB_INIT=true pra forçar.`);
+      // Mesmo com DDL pulado, re-aplica RLS em tabelas novas que ficaram sem
+      // hardening (ex.: create via boot anterior com ensureRlsHardening falho).
+      await ensureRlsHardening();
       // Auto-curas de DADOS (não-DDL) continuam rodando mesmo com DDL pulado:
       import("./lib/cct-config")
         .then(({ ensureDefaultPresets }) => ensureDefaultPresets())
@@ -587,6 +590,16 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_punch_audit_punch_id ON control_id_punch_audit (punch_id)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_punch_audit_employee_id ON control_id_punch_audit (employee_id)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_punch_audit_created_at ON control_id_punch_audit (created_at_utc DESC)`);
+    // RLS inline (espelha migration): não depender só de ensureRlsHardening —
+    // se o hardening falhar no 1º boot, a tabela não pode ficar exposta ao anon.
+    await execSql(`ALTER TABLE control_id_punch_audit ENABLE ROW LEVEL SECURITY`);
+    await execSql(`
+      DO $$ BEGIN
+        REVOKE UPDATE, DELETE ON control_id_punch_audit FROM PUBLIC;
+        REVOKE UPDATE, DELETE ON control_id_punch_audit FROM anon, authenticated;
+      EXCEPTION WHEN undefined_object THEN NULL;
+      END $$
+    `).catch((e: any) => console.warn("[db-init] punch_audit REVOKE:", e?.message));
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS employee_fines (
@@ -1777,7 +1790,7 @@ export async function ensureDbSchema() {
     )`).catch((e: any) => console.warn("[db-init] cct_presets:", e?.message));
 
     await ensureRealtimePublication();
-    await ensureRlsHardening();
+    const rlsOk = await ensureRlsHardening();
 
     // Seed dos presets canônicos (idempotente — só cria se não existe).
     try {
@@ -1789,9 +1802,12 @@ export async function ensureDbSchema() {
 
     console.log("[db-init] Schema verified OK");
 
-    // Só grava o fingerprint após uma rodada COMPLETA sem erro fatal — se o
-    // try acima explodir, nada é gravado e o próximo boot re-tenta o DDL.
-    if (fingerprint) await storeFingerprint(fingerprint);
+    // Só grava o fingerprint após rodada completa COM RLS ok — se hardening
+    // falhar, o próximo boot re-tenta (evita tabela audit sem RLS permanente).
+    if (fingerprint && rlsOk) await storeFingerprint(fingerprint);
+    else if (fingerprint && !rlsOk) {
+      console.error("[db-init] Fingerprint NÃO gravado — ensureRlsHardening falhou; próximo boot re-tenta DDL/RLS.");
+    }
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
   } catch (err: any) {
@@ -1841,7 +1857,8 @@ const RLS_FRONTEND_POLICY_TABLES = [
   "whatsapp_chats", "whatsapp_messages", "employee_signable_documents",
 ];
 
-async function ensureRlsHardening() {
+/** @returns true se hardening concluiu sem erro (ou não há SUPABASE_DATABASE_URL). */
+async function ensureRlsHardening(): Promise<boolean> {
   // Cliente pg próprio SEM statement_timeout: o pooler do Supabase
   // (transaction mode) rejeita esse startup parameter e derruba a conexão.
   // Sem fallback pro DATABASE_URL local: hardening só faz sentido no Supabase
@@ -1849,7 +1866,7 @@ async function ensureRlsHardening() {
   let client: pg.Client | null = null;
   try {
     const dbUrl = process.env.SUPABASE_DATABASE_URL;
-    if (!dbUrl) return;
+    if (!dbUrl) return true;
     client = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 10000 });
     await client.connect();
     const { rows } = await client.query(
@@ -1882,11 +1899,11 @@ async function ensureRlsHardening() {
     if (rows.length > 0) {
       await client.query(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     }
+    return true;
   } catch (e: any) {
-    // Fail-open deliberado: não derrubar o boot por falha transitória do Supabase
-    // (ex.: ondas de 521), mas gritar alto no log — tabela nova pode ficar sem RLS
-    // até o próximo boot bem-sucedido.
+    // Não derruba o boot, mas sinaliza falha pro caller (fingerprint não grava).
     console.error("[db-init] ⚠️ ensureRlsHardening FALHOU — tabelas novas podem estar sem RLS:", e?.message);
+    return false;
   } finally {
     if (client) await client.end().catch(() => {});
   }
