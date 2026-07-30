@@ -18,6 +18,7 @@ import {
   NORMAL_DAILY_CAP_MIN,
   minutesToHHMM,
 } from "./lib/jornada-calc";
+import { isCanonicalPairingEnabled } from "./lib/control-id-flags";
 import {
   encryptSecret,
   decryptSecret,
@@ -2270,10 +2271,79 @@ export async function buildFolhaPonto(
     dayMap.get(dayKey)!.push(p);
   }
 
+  const useCanonical = isCanonicalPairingEnabled();
   const result: any[] = [];
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+
+    if (!useCanonical) {
+      // LEGADO first_last — só enquanto CONTROL_ID_CANONICAL_PAIRING=false.
+      // NÃO deve alimentar pagamento após ativação da flag.
+      const entry: any = {
+        date: day,
+        clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
+        lunchOut: sorted.length >= 4 ? fmt(sorted[1].punch_at) : null,
+        lunchIn: sorted.length >= 4 ? fmt(sorted[2].punch_at) : null,
+        clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
+        totalPunches: sorted.length,
+        sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
+        punches: sorted.map((p: any) => ({
+          id: p.id,
+          punchAt: p.punch_at,
+          time: fmt(p.punch_at),
+          direction: p.direction,
+          source: p.source,
+        })),
+        engine: "first_last_legacy",
+        status: "legado",
+        needsManualReview: false,
+        confirmedMin: 0,
+        provisionalMin: 0,
+        orphanIds: [],
+        orphans: [],
+        clusters: [],
+        issues: ["Motor legado first_last (CONTROL_ID_CANONICAL_PAIRING=false)"],
+      };
+      if (entry.clockIn && entry.clockOut) {
+        const inMs = new Date(sorted[0].punch_at).getTime();
+        const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
+        let workedMin = (outMs - inMs) / 60000;
+        if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+          workedMin -= (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 60000;
+        }
+        workedMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
+        entry.hoursWorked = (workedMin / 60).toFixed(2);
+        entry.workedMin = workedMin;
+        entry.normaisMin = workedMin;
+        entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
+        entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+        let noturnoMin = 0;
+        for (let t = inMs; t < outMs; t += 60000) {
+          const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+          if (h >= 22 || h < 5) noturnoMin++;
+        }
+        if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+          const l0 = new Date(sorted[1].punch_at).getTime();
+          const l1 = new Date(sorted[2].punch_at).getTime();
+          for (let t = l0; t < l1; t += 60000) {
+            const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+            if (h >= 22 || h < 5) noturnoMin--;
+          }
+        }
+        entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
+        entry.confirmedMin = workedMin;
+      } else {
+        entry.workedMin = 0;
+        entry.normaisMin = 0;
+        entry.extraMin = 0;
+        entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
+        entry.noturnoMin = 0;
+      }
+      result.push(entry);
+      continue;
+    }
+
     const jornada = computeDayJornada(
       sorted.map((p: any) => ({
         id: p.id,

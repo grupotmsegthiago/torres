@@ -29,3 +29,11 @@ CREATE INDEX IF NOT EXISTS idx_punch_audit_created_at ON control_id_punch_audit 
 
 COMMENT ON TABLE control_id_punch_audit IS
   'Auditoria de autoria de batidas manuais. Imutável (somente INSERT).';
+
+-- Aditiva e segura: sem policies para anon/authenticated → API pública não lê/escreve.
+-- O backend usa service_role (bypassa RLS).
+ALTER TABLE control_id_punch_audit ENABLE ROW LEVEL SECURITY;
+
+-- Bloqueia UPDATE/DELETE via roles comuns (histórico imutável).
+REVOKE UPDATE, DELETE ON control_id_punch_audit FROM PUBLIC;
+REVOKE UPDATE, DELETE ON control_id_punch_audit FROM anon, authenticated;

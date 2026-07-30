@@ -291,7 +291,8 @@ export function registerControlIdRoutes(app: Express) {
     try {
       const id = Number(req.params.id);
       const { punchAt, direction, reason, forceLockedOverride, documentRef } = req.body;
-      if (!reason || String(reason).trim().length < 5) {
+      const { isPunchAuditEnforced } = await import("../lib/control-id-flags");
+      if (isPunchAuditEnforced() && (!reason || String(reason).trim().length < 5)) {
         return res.status(400).json({
           message: "Motivo obrigatório — esta ação altera folha/pagamento. Informe o motivo antes de salvar.",
         });
@@ -301,7 +302,7 @@ export function registerControlIdRoutes(app: Express) {
       if (direction !== undefined) fields.direction = direction;
       const { actorFromRequest } = await import("../lib/punch-audit");
       const r = await ctrl.updateLocalPunch(id, fields, {
-        reason: String(reason),
+        reason: String(reason || "edição sem motivo (flag pairing off)"),
         forceLockedOverride: !!forceLockedOverride,
         actor: actorFromRequest(req),
         documentRef: documentRef || null,
@@ -391,14 +392,15 @@ export function registerControlIdRoutes(app: Express) {
   app.delete("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req: any, res) => {
     try {
       const reason = req.body?.reason || req.query?.reason;
-      if (!reason || String(reason).trim().length < 5) {
+      const { isPunchAuditEnforced } = await import("../lib/control-id-flags");
+      if (isPunchAuditEnforced() && (!reason || String(reason).trim().length < 5)) {
         return res.status(400).json({
           message: "Motivo obrigatório — exclusão altera folha/pagamento. Informe o motivo.",
         });
       }
       const { actorFromRequest } = await import("../lib/punch-audit");
       const r = await ctrl.deleteLocalPunch(Number(req.params.id), {
-        reason: String(reason),
+        reason: String(reason || "exclusão sem motivo (flag pairing off)"),
         forceLockedOverride: !!(req.body?.forceLockedOverride || req.query?.forceLockedOverride),
         actor: actorFromRequest(req),
       });

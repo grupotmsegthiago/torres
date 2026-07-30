@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "../supabase";
 import { getLockedPeriods, isDateLocked } from "./locked-periods";
+import { isPunchAuditEnforced } from "./control-id-flags";
 
 export type PunchAuditAction = "create" | "update" | "delete" | "repair";
 
@@ -36,12 +37,21 @@ function brtNowLabel(d = new Date()): string {
   return d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T") + "-03:00";
 }
 
-export function assertReason(reason: unknown): string {
+export function assertReason(reason: unknown, opts?: { optional?: boolean }): string {
   const r = String(reason || "").trim();
-  if (r.length < 5) {
-    throw new Error("Motivo obrigatório (mín. 5 caracteres) — a alteração impacta folha/pagamento");
+  if (r.length >= 5) return r;
+  if (opts?.optional || !isPunchAuditEnforced()) {
+    return r || "Operação sem motivo informado (auditoria não enforced)";
   }
-  return r;
+  throw new Error("Motivo obrigatório (mín. 5 caracteres) — a alteração impacta folha/pagamento");
+}
+
+function isMissingAuditTableError(message: unknown): boolean {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("control_id_punch_audit") &&
+    (m.includes("does not exist") || m.includes("schema cache") || m.includes("could not find") || m.includes("42p01"))
+  );
 }
 
 /** Bloqueia mutação em período fechado, salvo override excepcional auditado. */
@@ -64,8 +74,10 @@ export async function assertPunchMutable(
   );
 }
 
-export async function writePunchAudit(input: PunchAuditInput): Promise<{ id: number | null; requestId: string }> {
-  const reason = assertReason(input.reason);
+export async function writePunchAudit(
+  input: PunchAuditInput,
+): Promise<{ id: number | null; requestId: string; skipped?: boolean }> {
+  const reason = assertReason(input.reason, { optional: !isPunchAuditEnforced() });
   const requestId = input.actor.requestId || randomUUID();
   const now = new Date();
   const row = {
@@ -95,7 +107,13 @@ export async function writePunchAudit(input: PunchAuditInput): Promise<{ id: num
     .maybeSingle();
 
   if (error) {
-    // Fail-closed: sem auditoria não muta. Chamador deve tratar.
+    if (isMissingAuditTableError(error.message) && !isPunchAuditEnforced()) {
+      console.warn(
+        `[punch-audit] tabela ausente — mutação permitida (audit não enforced): ${error.message}`,
+      );
+      return { id: null, requestId, skipped: true };
+    }
+    // Fail-closed quando enforced: sem auditoria não muta.
     throw new Error(`Falha ao gravar auditoria de batida: ${error.message}`);
   }
   return { id: data?.id != null ? Number(data.id) : null, requestId };

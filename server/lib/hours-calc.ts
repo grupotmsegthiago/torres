@@ -1,15 +1,20 @@
 /**
- * Cálculo canônico de horas trabalhadas a partir de batidas do Control iD.
+ * Cálculo de horas trabalhadas a partir de batidas do Control iD.
  *
- * Delega ao motor `jornada-calc` (pares diários + cluster ≤2min + cap 19:59).
- * Mantém a API `computeWorkedHours` para Painel, relatórios e jobs.
+ * Com CONTROL_ID_CANONICAL_PAIRING=true → motor canônico (jornada-calc).
+ * Com flag false (default no deploy controlado) → legado global pairs + teto 16h/par
+ *   (compatível com o comportamento pré-correção do Painel/relatórios).
+ *
+ * Folha (buildFolhaPonto) usa first_last legado quando a flag está off.
  */
 
 import {
   computePeriodJornada,
   NORMAL_DAILY_CAP_MIN,
+  ymdBRT,
   type JornadaPunchInput,
 } from "./jornada-calc.js";
+import { isCanonicalPairingEnabled } from "./control-id-flags.js";
 
 export interface PunchInput {
   punch_at: string | Date;
@@ -21,46 +26,88 @@ export interface PunchInput {
 }
 
 export interface WorkedHoursResult {
-  /** Total em minutos (soma dos dias, cada um já com cap 19:59). */
   totalMinutes: number;
-  /** Total em horas (totalMinutes / 60). */
   totalHours: number;
-  /** Minutos trabalhados por dia BRT (yyyy-mm-dd). */
   perDayMinutes: Map<string, number>;
-  /** Quantos dias distintos têm jornada > 0. */
   daysWorked: number;
-  /** True se há batida órfã (ímpar após clusterização) em algum dia. */
   hasOpenShift: boolean;
-  /** Timestamp da órfã mais recente, ou null. */
   openShiftSince: Date | null;
-  /** Pares (entrada, saida) — duração REAL do par (sem cap diário). */
   pairs: Array<{ entrada: Date; saida: Date }>;
-  /**
-   * Minutos descartados pelo cap diário 19:59 (soma workedMinRaw - workedMin).
-   * Nome legado `cappedMinutes` preservado para compatibilidade.
-   */
   cappedMinutes: number;
-  /** Quantos dias tiveram teto 19:59 aplicado. */
   pairsTruncated: number;
 }
 
-/** @deprecated Prefer NORMAL_DAILY_CAP_MIN. Mantido p/ jobs de diária (>16h). */
+/** Teto por par no motor legado (diárias / painel pré-flag). */
 export const MAX_PAIR_MINUTES = 16 * 60;
 
-export { ymdBRT } from "./jornada-calc.js";
-export { NORMAL_DAILY_CAP_MIN };
+export { ymdBRT, NORMAL_DAILY_CAP_MIN };
 
-/** Cria a chave de minuto BRT para deduplicação (yyyy-mm-ddTHH:MM). */
 export function minuteKeyBRT(iso: string | Date): string {
   const d = typeof iso === "string" ? new Date(iso) : iso;
   return new Date(d.getTime() - 3 * 3600000).toISOString().slice(0, 16);
 }
 
-/**
- * Cálculo canônico — recebe todas as batidas de UM funcionário em qualquer
- * intervalo e devolve total + breakdown diário.
- */
-export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
+/** Motor legado: pares globais + clamp 16h (pré-correção). */
+function computeWorkedHoursLegacy(punches: PunchInput[]): WorkedHoursResult {
+  const sorted = punches
+    .filter((p) => p && p.punch_at != null)
+    .map((p) => (typeof p.punch_at === "string" ? new Date(p.punch_at) : p.punch_at))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const seen = new Set<string>();
+  const clean: Date[] = [];
+  for (const d of sorted) {
+    const key = minuteKeyBRT(d);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clean.push(d);
+  }
+
+  const perDayMinutes = new Map<string, number>();
+  const pairs: Array<{ entrada: Date; saida: Date }> = [];
+  let totalMinutes = 0;
+  let cappedMinutes = 0;
+  let pairsTruncated = 0;
+
+  let i = 0;
+  for (; i + 1 < clean.length; i += 2) {
+    const entrada = clean[i];
+    const saida = clean[i + 1];
+    const diffMin = (saida.getTime() - entrada.getTime()) / 60000;
+    if (diffMin <= 0) continue;
+    pairs.push({ entrada, saida });
+    let countedMin = diffMin;
+    if (diffMin > MAX_PAIR_MINUTES) {
+      cappedMinutes += diffMin - MAX_PAIR_MINUTES;
+      countedMin = MAX_PAIR_MINUTES;
+      pairsTruncated++;
+    }
+    const dayKey = ymdBRT(entrada);
+    perDayMinutes.set(dayKey, (perDayMinutes.get(dayKey) || 0) + countedMin);
+    totalMinutes += countedMin;
+  }
+
+  const hasOpenShift = i < clean.length;
+  const openShiftSince = hasOpenShift ? clean[clean.length - 1] : null;
+  let daysWorked = 0;
+  for (const min of Array.from(perDayMinutes.values())) {
+    if (min > 0) daysWorked++;
+  }
+
+  return {
+    totalMinutes: Math.round(totalMinutes),
+    totalHours: Math.round((totalMinutes / 60) * 100) / 100,
+    perDayMinutes,
+    daysWorked,
+    hasOpenShift,
+    openShiftSince,
+    pairs,
+    cappedMinutes: Math.round(cappedMinutes),
+    pairsTruncated,
+  };
+}
+
+function computeWorkedHoursCanonical(punches: PunchInput[]): WorkedHoursResult {
   const input: JornadaPunchInput[] = punches
     .filter((p) => p && p.punch_at != null)
     .map((p) => ({
@@ -104,11 +151,11 @@ export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
   };
 }
 
-/**
- * Helper: separa total de horas em "normais" (até 220h/mês) e "extras"
- * (excedente). Usado por folha/custos fixos.
- * Limite mensal CLT padrão = 220h.
- */
+export function computeWorkedHours(punches: PunchInput[]): WorkedHoursResult {
+  if (isCanonicalPairingEnabled()) return computeWorkedHoursCanonical(punches);
+  return computeWorkedHoursLegacy(punches);
+}
+
 export function splitNormalAndOvertime(
   totalHours: number,
   monthlyLimit = 220,
