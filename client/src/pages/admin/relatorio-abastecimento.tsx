@@ -8,7 +8,7 @@ import {
   Fuel, Search, Download, RefreshCw, Eye, X, Camera, CheckCircle2,
   AlertTriangle, Loader2, ArrowUpDown, CalendarDays, MapPin,
   FileText, Gauge, DollarSign, Droplets, ChevronDown, ChevronUp,
-  ShieldCheck, XCircle, ExternalLink, Pencil, Save
+  ShieldCheck, XCircle, ExternalLink, Pencil, Save, Plus
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
@@ -106,6 +106,7 @@ export default function RelatorioAbastecimentoPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [onlyAlerts, setOnlyAlerts] = useState(false);
@@ -251,7 +252,15 @@ export default function RelatorioAbastecimentoPage() {
             <Fuel className="w-6 h-6 text-orange-500" />
             <h1 className="text-xl font-bold text-neutral-900" data-testid="text-page-title">Relatório de Abastecimentos</h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              size="sm"
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={() => setShowAdd(true)}
+              data-testid="button-add-fueling"
+            >
+              <Plus className="w-4 h-4 mr-1" /> Novo Abastecimento
+            </Button>
             <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/fueling"] })} data-testid="button-refresh">
               <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
             </Button>
@@ -640,8 +649,16 @@ export default function RelatorioAbastecimentoPage() {
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => setDetailId(f.id)} data-testid={`button-detail-${f.id}`} title="Ver detalhes">
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50" onClick={() => setEditId(f.id)} data-testid={`button-edit-${f.id}`} title="Editar valor / litros / KM">
-                            <Pencil className="w-4 h-4" />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-amber-700 hover:bg-amber-50 gap-1"
+                            onClick={() => setEditId(f.id)}
+                            data-testid={`button-edit-${f.id}`}
+                            title="Editar abastecimento"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium hidden sm:inline">Editar</span>
                           </Button>
                         </div>
                       </td>
@@ -661,8 +678,20 @@ export default function RelatorioAbastecimentoPage() {
           driverName={detailFueling.driverId ? eMap.get(detailFueling.driverId)?.name : null}
           fuelings={fuelings}
           onClose={() => setDetailId(null)}
+          onEdit={() => {
+            setEditId(detailFueling.id);
+            setDetailId(null);
+          }}
           zoomedPhoto={zoomedPhoto}
           setZoomedPhoto={setZoomedPhoto}
+        />
+      )}
+
+      {showAdd && (
+        <AddFuelingModal
+          vehicles={vehicles}
+          employees={employees}
+          onClose={() => setShowAdd(false)}
         />
       )}
 
@@ -684,12 +713,13 @@ export default function RelatorioAbastecimentoPage() {
   );
 }
 
-export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, zoomedPhoto, setZoomedPhoto }: {
+export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, onEdit, zoomedPhoto, setZoomedPhoto }: {
   fueling: VehicleFueling;
   vehicle?: Vehicle;
   driverName?: string | null;
   fuelings: VehicleFueling[];
   onClose: () => void;
+  onEdit?: () => void;
   zoomedPhoto: string | null;
   setZoomedPhoto: (url: string | null) => void;
 }) {
@@ -749,17 +779,30 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, z
 
       <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto pt-4 pb-4" onClick={onClose} data-testid="modal-fueling-detail">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-4 border-b border-neutral-100">
-            <div className="flex items-center gap-3">
-              <Fuel className="w-5 h-5 text-orange-500" />
-              <div>
+          <div className="flex items-center justify-between p-4 border-b border-neutral-100 gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <Fuel className="w-5 h-5 text-orange-500 flex-shrink-0" />
+              <div className="min-w-0">
                 <h2 className="text-lg font-bold text-neutral-900">Detalhes #{fueling.id}</h2>
                 <p className="text-sm text-neutral-500">{formatDateBR(fueling.date)} {fueling.createdAt ? formatTimeBR(fueling.createdAt as any) : ""}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg" data-testid="button-close-detail">
-              <X className="w-5 h-5 text-neutral-400" />
-            </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {onEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-300 text-amber-800 hover:bg-amber-50"
+                  onClick={onEdit}
+                  data-testid="button-detail-edit"
+                >
+                  <Pencil className="w-4 h-4 mr-1" /> Editar
+                </Button>
+              )}
+              <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg" data-testid="button-close-detail">
+                <X className="w-5 h-5 text-neutral-400" />
+              </button>
+            </div>
           </div>
 
           <div className="p-4 space-y-4">
@@ -978,6 +1021,287 @@ function InfoBox({ label, value, sub }: { label: string; value: string; sub?: st
       <p className="text-xs text-neutral-500 mb-0.5">{label}</p>
       <p className="font-bold text-neutral-900 text-sm">{value}</p>
       {sub && <p className="text-xs text-neutral-400">{sub}</p>}
+    </div>
+  );
+}
+
+function AddFuelingModal({
+  vehicles,
+  employees,
+  onClose,
+}: {
+  vehicles: Vehicle[];
+  employees: Employee[];
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const [vehicleId, setVehicleId] = useState<number>(0);
+  const [driverId, setDriverId] = useState<number | "">("");
+  const [date, setDate] = useState(todayBrt);
+  const [km, setKm] = useState("");
+  const [fuelType, setFuelType] = useState("gasolina");
+  const [totalCost, setTotalCost] = useState("");
+  const [liters, setLiters] = useState("");
+  const [station, setStation] = useState("");
+  const [fullTank, setFullTank] = useState(true);
+  const [allowKmOverride, setAllowKmOverride] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  const parseNum = (s: string): number | null => {
+    const n = Number(String(s).replace(",", ".").trim());
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const totalCostNum = parseNum(totalCost) ?? 0;
+  const litersNum = parseNum(liters) ?? 0;
+  const kmNum = parseNum(km);
+  const cplCalc = litersNum > 0 ? totalCostNum / litersNum : 0;
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+  const kmBelowCurrent =
+    selectedVehicle != null &&
+    kmNum != null &&
+    kmNum > 0 &&
+    selectedVehicle.km > 0 &&
+    kmNum < selectedVehicle.km;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!vehicleId) throw new Error("Selecione o veículo");
+      if (!date) throw new Error("Informe a data");
+      if (kmNum == null || kmNum <= 0) throw new Error("Informe o KM do hodômetro");
+      if (litersNum <= 0) throw new Error("Litros deve ser maior que zero");
+      if (totalCostNum <= 0) throw new Error("Valor total deve ser maior que zero");
+      const payload: Record<string, unknown> = {
+        vehicleId,
+        driverId: driverId === "" ? null : Number(driverId),
+        date,
+        km: Math.round(kmNum),
+        fuelType,
+        liters: litersNum.toFixed(2),
+        totalCost: totalCostNum.toFixed(2),
+        costPerLiter: cplCalc > 0 ? cplCalc.toFixed(3) : null,
+        station: station.trim() || null,
+        fullTank,
+        notes: notes.trim() || null,
+        allowKmOverride: allowKmOverride === true,
+      };
+      const r = await authFetch("/api/fueling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.message || `Erro ${r.status}`);
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
+      toast({ title: "Abastecimento registrado", description: "O novo lançamento foi salvo." });
+      onClose();
+    },
+    onError: (err: any) =>
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
+  });
+
+  const canSave =
+    vehicleId > 0 &&
+    !!date &&
+    kmNum != null &&
+    kmNum > 0 &&
+    litersNum > 0 &&
+    totalCostNum > 0 &&
+    (!kmBelowCurrent || allowKmOverride);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto pt-8 pb-8"
+      onClick={onClose}
+      data-testid="modal-fueling-add"
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-neutral-100">
+          <div className="flex items-center gap-3">
+            <Plus className="w-5 h-5 text-orange-600" />
+            <div>
+              <h2 className="text-lg font-bold text-neutral-900">Novo abastecimento</h2>
+              <p className="text-xs text-neutral-500">Lançamento manual no relatório</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg" data-testid="button-close-add">
+            <X className="w-5 h-5 text-neutral-400" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Veículo *</label>
+            <select
+              value={vehicleId || ""}
+              onChange={(e) => setVehicleId(Number(e.target.value) || 0)}
+              className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm bg-white"
+              data-testid="select-add-vehicle"
+            >
+              <option value="">Selecione...</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.plate} — {v.model}
+                </option>
+              ))}
+            </select>
+            {selectedVehicle && selectedVehicle.km > 0 && (
+              <p className="text-[11px] text-neutral-500 mt-1">
+                KM atual do veículo: <strong>{selectedVehicle.km.toLocaleString("pt-BR")}</strong>
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Motorista</label>
+              <select
+                value={driverId}
+                onChange={(e) => setDriverId(e.target.value ? Number(e.target.value) : "")}
+                className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm bg-white"
+                data-testid="select-add-driver"
+              >
+                <option value="">Selecione...</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Data *</label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">KM hodômetro *</label>
+              <Input
+                value={km}
+                onChange={(e) => setKm(e.target.value)}
+                placeholder="Hodômetro"
+                inputMode="numeric"
+                data-testid="input-add-km"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Combustível</label>
+              <select
+                value={fuelType}
+                onChange={(e) => setFuelType(e.target.value)}
+                className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm bg-white"
+                data-testid="select-add-fuelType"
+              >
+                <option value="gasolina">Gasolina</option>
+                <option value="etanol">Etanol</option>
+                <option value="diesel">Diesel</option>
+                <option value="diesel_s10">Diesel S10</option>
+                <option value="gnv">GNV</option>
+              </select>
+            </div>
+          </div>
+
+          {kmBelowCurrent && (
+            <label className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={allowKmOverride}
+                onChange={(e) => setAllowKmOverride(e.target.checked)}
+                data-testid="checkbox-add-km-override"
+              />
+              <span>
+                KM informado é menor que o atual. Autorizar <strong>lançamento retroativo</strong> (o KM do veículo não será rebaixado).
+              </span>
+            </label>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Valor total (R$) *</label>
+              <Input
+                value={totalCost}
+                onChange={(e) => setTotalCost(e.target.value)}
+                placeholder="0,00"
+                inputMode="decimal"
+                data-testid="input-add-totalCost"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Litros *</label>
+              <Input
+                value={liters}
+                onChange={(e) => setLiters(e.target.value)}
+                placeholder="0,00"
+                inputMode="decimal"
+                data-testid="input-add-liters"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-neutral-600 mb-1 block">Preço/L (calculado)</label>
+              <Input value={cplCalc > 0 ? `R$ ${cplCalc.toFixed(3)}` : "—"} disabled className="bg-neutral-50" />
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={fullTank}
+                  onChange={(e) => setFullTank(e.target.checked)}
+                  className="rounded border-neutral-300"
+                  data-testid="checkbox-add-full-tank"
+                />
+                Tanque cheio
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Posto</label>
+            <Input
+              value={station}
+              onChange={(e) => setStation(e.target.value)}
+              placeholder="Nome do posto"
+              data-testid="input-add-station"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Observações</label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Opcional"
+              data-testid="input-add-notes"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-neutral-100 bg-neutral-50/50 rounded-b-xl">
+          <Button variant="outline" onClick={onClose} disabled={save.isPending} data-testid="button-add-cancel">
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => save.mutate()}
+            disabled={save.isPending || !canSave}
+            className="bg-orange-600 hover:bg-orange-700 text-white"
+            data-testid="button-add-save"
+          >
+            {save.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+            Salvar abastecimento
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
