@@ -835,6 +835,13 @@ export async function ensureDbSchema() {
     // local mesmo sem mapping.
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN device_id DROP NOT NULL`).catch(() => {});
     await execSql(`ALTER TABLE control_id_punches ALTER COLUMN control_id_user_id DROP NOT NULL`).catch(() => {});
+    // Correção 1: classificação técnica de unknown sem mutar raw_event (aditivo / reversível).
+    await execSql(`ALTER TABLE control_id_punches ADD COLUMN IF NOT EXISTS direction_missing_reason TEXT`).catch(() => {});
+    await execSql(`
+      CREATE INDEX IF NOT EXISTS idx_control_id_punches_direction_unknown
+      ON control_id_punches (direction)
+      WHERE direction = 'unknown'
+    `).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS billing_alerts (

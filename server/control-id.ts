@@ -30,8 +30,19 @@ import {
   dedupPunchesByCore,
 } from "./lib/control-id-parsers";
 import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
+import {
+  parseRequiredManualDirection,
+  buildExternalIdAdoptionPatch,
+  adoptionPatchPreservesDirection,
+} from "./lib/punch-direction";
+import {
+  recordPunchDirectionIngest,
+  recordAvoidableUnknownGrowth,
+  maybeAlertDeviceLostDirection,
+} from "./lib/punch-direction-metrics";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
+export { buildExternalIdAdoptionPatch, adoptionPatchPreservesDirection, parseRequiredManualDirection };
 
 // ============================ TIPOS ============================
 
@@ -55,6 +66,8 @@ export interface ControlIdEvent {
   direction?: "in" | "out" | "unknown";
   source?: "facial" | "rfid" | "digital" | "senha";
   raw: any;
+  /** Classificação técnica separada — não muta `raw`. */
+  directionMissingReason?: string | null;
 }
 
 // ============================ HTTP CORE ============================
@@ -786,16 +799,25 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
       continue;
     }
     if (employeeId) mapped++;
+    const dir = (ev.direction || "unknown") as "in" | "out" | "unknown";
+    const missingReason = ev.directionMissingReason ?? null;
     toInsert.push({
       device_id: deviceId,
       control_id_user_id: ev.userId,
       employee_id: employeeId,
       punch_at: ev.time,
-      direction: ev.direction || "unknown",
+      direction: dir,
+      direction_missing_reason: dir === "unknown" ? missingReason : null,
       source: ev.source || null,
       raw_event: ev.raw,
       external_id: ev.id,
       processed: false,
+    });
+    recordPunchDirectionIngest({
+      direction: dir,
+      origin: "afd_sync",
+      deviceId,
+      missingReason: dir === "unknown" ? missingReason : null,
     });
     saved++;
   }
@@ -818,14 +840,34 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   // por external_id voltaria a falhar no próximo sync. Volume baixo (re-syncs).
   if (extIdAdoptions.length > 0) {
     for (const a of extIdAdoptions) {
+      // Correção 1: adoption NUNCA toca direction — preserva in/out manual confiável.
+      const patch = buildExternalIdAdoptionPatch(a.external_id);
+      if (!adoptionPatchPreservesDirection(patch)) {
+        throw new Error("BUG: adoption patch não pode alterar direction");
+      }
       const { error } = await supabaseAdmin
         .from("control_id_punches")
-        .update({ external_id: a.external_id })
+        .update(patch)
         .eq("id", a.id);
       if (error) console.warn(`[ControlID] Falha ao adotar external_id em punch #${a.id}: ${error.message}`);
     }
     console.log(`[ControlID] ${extIdAdoptions.length} batida(s) local(is) adotaram o external_id canônico do AFD.`);
   }
+
+  const unknownInBatch = toInsert.filter((r) => r.direction === "unknown").length;
+  const knownInBatch = toInsert.filter((r) => r.direction === "in" || r.direction === "out").length;
+  if (unknownInBatch > 0) {
+    recordAvoidableUnknownGrowth({
+      deviceId,
+      count: unknownInBatch,
+      reason: "afd_no_direction_field_or_unrecognized",
+    });
+  }
+  maybeAlertDeviceLostDirection({
+    deviceId,
+    knownInBatch,
+    unknownBatch: unknownInBatch,
+  });
 
   await supabaseAdmin.from("control_id_devices").update({
     last_sync_at: new Date().toISOString(),
@@ -1012,11 +1054,20 @@ export async function autoImportPersons(deviceId: number): Promise<{
 export async function createManualPunch(params: {
   employeeId: number;
   punchAt: Date;
-  direction?: string;
+  /** Obrigatório: somente "in" | "out". Sem fallback para unknown. */
+  direction: string;
   source?: string;
   deviceId?: number;
 }): Promise<{ punchId: number; rhidSynced: boolean; rhidError?: string }> {
-  const { employeeId, punchAt, direction = "unknown", source = "manual" } = params;
+  const parsed = parseRequiredManualDirection(params.direction);
+  if (!parsed.ok) {
+    const err = new Error(parsed.error) as Error & { statusCode?: number; code?: string };
+    err.statusCode = 400;
+    err.code = "INVALID_DIRECTION";
+    throw err;
+  }
+  const { employeeId, punchAt, source = "manual" } = params;
+  const direction = parsed.direction;
 
   // Acha mapping ativo do employee
   let mapping: any = null;
@@ -1037,6 +1088,7 @@ export async function createManualPunch(params: {
     employee_id: employeeId,
     punch_at: punchAt.toISOString(),
     direction,
+    direction_missing_reason: null,
     source,
     is_manual: true,
     external_id: null,
@@ -1045,6 +1097,14 @@ export async function createManualPunch(params: {
     raw_event: { manual: true, createdBy: "system" },
   }).select("id").single();
   if (error) throw new Error(`Erro ao salvar batida local: ${error.message}`);
+
+  const origin =
+    source === "admin_manual" ? "admin_manual" : source === "self_manual" ? "self_manual" : "manual";
+  recordPunchDirectionIngest({
+    direction,
+    origin,
+    deviceId: mapping?.device_id ?? null,
+  });
 
   // 2) Enfileira push pro RHID (tenta agora; se falhar, cron retenta com backoff)
   let rhidSynced = false;
@@ -1079,7 +1139,18 @@ export async function updateLocalPunch(punchId: number, fields: { punchAt?: Date
 
   const upd: any = {};
   if (fields.punchAt) upd.punch_at = fields.punchAt.toISOString();
-  if (fields.direction !== undefined) upd.direction = fields.direction;
+  if (fields.direction !== undefined) {
+    // Escrita: só in/out. Leitura de históricos unknown permanece intacta.
+    const parsed = parseRequiredManualDirection(fields.direction);
+    if (!parsed.ok) {
+      const err = new Error(parsed.error) as Error & { statusCode?: number; code?: string };
+      err.statusCode = 400;
+      err.code = "INVALID_DIRECTION";
+      throw err;
+    }
+    upd.direction = parsed.direction;
+    upd.direction_missing_reason = null;
+  }
 
   const { error } = await supabaseAdmin.from("control_id_punches").update(upd).eq("id", punchId);
   if (error) throw new Error(error.message);

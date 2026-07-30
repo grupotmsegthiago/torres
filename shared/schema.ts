@@ -489,8 +489,10 @@ export const controlIdPunches = pgTable("control_id_punches", {
   employeeId: integer("employee_id"),                    // null se não mapeado
   punchAt: timestamp("punch_at").notNull(),              // horário da batida (UTC)
   direction: text("direction"),                          // in | out | unknown
+  /** Motivo técnico quando direction=unknown (não altera raw_event). */
+  directionMissingReason: text("direction_missing_reason"),
   source: text("source"),                                // facial | rfid | digital | senha
-  rawEvent: jsonb("raw_event"),                          // payload bruto da API
+  rawEvent: jsonb("raw_event"),                          // payload bruto da API (imutável)
   externalId: text("external_id"),                       // ID do evento na Control iD (pra dedup). NULL para batidas manuais que ainda não sincronizaram com RHID.
   processed: boolean("processed").default(false),        // já consolidado em folha?
   createdAt: timestamp("created_at").defaultNow(),
