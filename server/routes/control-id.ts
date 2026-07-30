@@ -5,6 +5,18 @@ import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
 import { isAtivo } from "./fixed-costs";
 
+/**
+ * Seam testável da rota Folha — produção usa sempre `ctrl.buildFolhaPonto`.
+ * Testes HTTP podem substituir temporariamente `buildFolhaPonto`.
+ */
+export const folhaRouteDeps = {
+  buildFolhaPonto: (
+    employeeId: number,
+    monthYear: string,
+    opts?: Parameters<typeof ctrl.buildFolhaPonto>[2],
+  ) => ctrl.buildFolhaPonto(employeeId, monthYear, opts),
+};
+
 export function registerControlIdRoutes(app: Express) {
   // ─────── DEVICES (CRUD) ───────
   app.get("/api/control-id/devices", requireAuth, async (_req, res) => {
@@ -458,8 +470,43 @@ export function registerControlIdRoutes(app: Express) {
     try {
       const employeeId = Number(req.params.employeeId);
       const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
-      const folha = await ctrl.buildFolhaPonto(employeeId, monthYear);
+      // parseFolhaEngineQuery: em produção retorna undefined (ignora ?engine=pares).
+      // resolveFolhaEngine dentro de buildFolhaPonto também força first_last em prod.
+      const { parseFolhaEngineQuery } = await import("../lib/jornada-pares");
+      const engine = parseFolhaEngineQuery(req.query.engine);
+      const folha = await folhaRouteDeps.buildFolhaPonto(employeeId, monthYear, { engine });
       res.json(folha);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  /**
+   * Simulação somente leitura: first_last × pares.
+   * NÃO grava histórico, NÃO altera batidas, NÃO recalcula competências fechadas.
+   * Admin only.
+   */
+  app.get("/api/control-id/simular-folha-pares", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
+      const employeeId = req.query.employeeId != null ? Number(req.query.employeeId) : undefined;
+      const { simulateAllEmployeesMonth, simulateEmployeeMonth, formatSimReportText } = await import(
+        "../lib/simular-folha-pares"
+      );
+      if (employeeId && Number.isFinite(employeeId)) {
+        const row = await simulateEmployeeMonth({ employeeId, monthYear });
+        const { aggregateSimEmployees } = await import("../lib/simular-folha-pares");
+        const report = aggregateSimEmployees({
+          monthYear,
+          requested: [{ id: employeeId, name: row.employeeName }],
+          compared: [row],
+          failed: [],
+          ignored: [],
+        });
+        return res.json({ monthYear, employee: row, ...report, text: formatSimReportText(report) });
+      }
+      const report = await simulateAllEmployeesMonth({ monthYear });
+      res.json({ ...report, text: formatSimReportText(report) });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

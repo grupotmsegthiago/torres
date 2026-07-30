@@ -23,12 +23,15 @@ import {
   nameMatchScore,
   monthToFechamento,
   minuteKeyBRT,
-  truncateToMinuteMs,
-  workedMinutesBetween,
   decideImport,
   rhidNumericCore,
   dedupPunchesByCore,
 } from "./lib/control-id-parsers";
+import {
+  computeJornadaByEngine,
+  resolveFolhaEngine,
+  type FolhaEngine,
+} from "./lib/jornada-pares";
 import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
 
 export { encryptSecret, decryptSecret, monthToFechamento };
@@ -2061,28 +2064,10 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
   return result;
 }
 
-/**
- * Conta os MINUTOS dentro da faixa noturna (22h–05h BRT) entre dois instantes.
- * Varre minuto a minuto verificando a hora em America/Sao_Paulo — cobre turnos
- * que atravessam a meia-noite. Mesma lógica usada em `jornada_calculos` (hr.ts).
- */
-function nightMinutesBRT(startMs: number, endMs: number): number {
-  // Só HH:MM — mesmos limites que a jornada (sem segundos da batida).
-  const from = truncateToMinuteMs(startMs);
-  const to = truncateToMinuteMs(endMs);
-  if (!(to > from)) return 0;
-  let count = 0;
-  for (let t = from; t < to; t += 60000) {
-    const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
-    if (h >= 22 || h < 5) count++;
-  }
-  return count;
-}
-
 export async function buildFolhaPonto(
   employeeId: number,
   monthYear: string,
-  opts: { horasMensais?: number } = {},
+  opts: { horasMensais?: number; engine?: FolhaEngine } = {},
 ): Promise<any[]> {
   // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
   const { start, end } = monthToFechamento(monthYear);
@@ -2159,41 +2144,48 @@ export async function buildFolhaPonto(
         source: p.source,
       })),
     };
-    // Cartão Control iD / Folha de pagamento (INTOCÁVEL):
-    //   trabalhado = (última − primeira) − 1º intervalo de almoço (batidas 2–3),
-    //   teto 19:59 (remove fantasma 00:00/23:59 do import).
-    // NÃO usar pares gulosos aqui: descontar todas as pausas subcontava ~9h no
-    // Reis (93:05 vs 102:22 do cartão oficial) em 26/06→25/07/2026.
-    if (entry.clockIn && entry.clockOut) {
-      const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
-      const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
-      let workedMin = workedMinutesBetween(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        workedMin -= workedMinutesBetween(
-          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
-        );
-      }
-      workedMin = Math.min(Math.max(0, workedMin), NORMAL_DAILY_CAP_MIN);
+    // Motor de jornada (pagamento Folha):
+    //   - PRODUÇÃO: sempre first_last (resolveFolhaEngine ignora opts/env/query)
+    //   - DEV: FOLHA_ENGINE=pares ou opts.engine via parseFolhaEngineQuery
+    // Legado first_last = (última−primeira) − 1º almoço + teto 19:59, sem dedup/minuto.
+    const engine = resolveFolhaEngine(opts.engine);
+    const jornada = computeJornadaByEngine(
+      sorted.map((p: any) => ({
+        punchAt: p.punch_at,
+        id: p.id,
+        externalId: p.external_id,
+        source: p.source,
+        direction: p.direction,
+      })),
+      engine,
+      { dailyCapMin: NORMAL_DAILY_CAP_MIN },
+    );
+    entry.engine = engine;
+    entry.orphanPunches = jornada.orphanPunches;
+    entry.duplicateEvents = jornada.duplicateEvents;
+    entry.auditFlags = jornada.auditFlags;
+    entry.completePairs = jornada.completePairs.map((p) => ({
+      in: new Date(p.inMs).toISOString(),
+      out: new Date(p.outMs).toISOString(),
+      workedMin: p.workedMin,
+      nightMin: p.nightMin,
+    }));
+    entry.cappedMinutes = jornada.cappedMinutes;
+    if (jornada.workedMinutes > 0 || jornada.completePairs.length > 0 || sorted.length >= 2) {
+      const workedMin = jornada.workedMinutes;
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = Math.round(workedMin);
       entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
       entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        noturnoMin -= nightMinutesBRT(
-          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
-        );
-      }
-      entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));
+      entry.noturnoMin = Math.max(0, Math.min(jornada.nightMinutes, Math.round(workedMin)));
     } else {
       entry.workedMin = 0;
       entry.normaisMin = 0;
       entry.extraMin = 0;
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
       entry.noturnoMin = 0;
+      entry.hoursWorked = "0.00";
     }
     result.push(entry);
   }
