@@ -2930,38 +2930,42 @@ function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employee
             </div>
           )}
           <div>
-            <div className="text-xs font-semibold text-neutral-600 mb-1">Todas as batidas registradas no aparelho:</div>
+            <div className="text-xs font-semibold text-neutral-600 mb-1">Todas as batidas do dia (ficam registradas)</div>
+            <p className="text-[11px] text-neutral-500 mb-1.5 leading-snug">
+              O dia usa até 4 batidas no cálculo (entrada, almoço ida, almoço volta, saída). As demais continuam no histórico — só não somam horas. Reentrada com ponto já aberto aparece em vermelho.
+            </p>
             <div className="border rounded max-h-64 overflow-auto">
               <table className="w-full text-xs">
                 <thead className="bg-neutral-50 sticky top-0">
                   <tr>
                     <th className="p-1.5 text-left">#</th>
                     <th className="p-1.5 text-left">Hora</th>
-                    <th className="p-1.5 text-center">Direção</th>
+                    <th className="p-1.5 text-center">Tipo</th>
                     <th className="p-1.5 text-left">Origem</th>
-                    <th className="p-1.5 text-left">Folha</th>
+                    <th className="p-1.5 text-left">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(day.punches || []).map((p, idx) => {
                     const bad = p.ignoredReason === "illegal_reentry";
+                    const counts = p.usedInFolha !== false && !bad;
                     return (
-                    <tr key={p.id} className={`border-t ${bad ? "bg-red-50" : p.usedInFolha === false ? "bg-neutral-50 text-neutral-400" : ""}`}>
+                    <tr key={p.id} className={`border-t ${bad ? "bg-red-50" : ""}`}>
                       <td className="p-1.5 text-neutral-400">{idx + 1}</td>
                       <td className={`p-1.5 font-mono ${bad ? "line-through text-red-700" : ""}`}>{p.time}</td>
                       <td className="p-1.5 text-center">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
-                          {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
+                          {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "BATIDA"}
                         </span>
                       </td>
                       <td className="p-1.5 text-neutral-500">{p.source || "—"}</td>
                       <td className="p-1.5">
                         {bad ? (
-                          <span className="text-[10px] font-semibold text-red-700">Reentrada inválida</span>
-                        ) : p.usedInFolha === false ? (
-                          <span className="text-[10px] text-neutral-400">Ignorada</span>
+                          <span className="text-[10px] font-semibold text-red-700">Erro — reentrada (não conta)</span>
+                        ) : counts ? (
+                          <span className="text-[10px] font-semibold text-emerald-700">Conta nas horas</span>
                         ) : (
-                          <span className="text-[10px] text-emerald-700">Usada</span>
+                          <span className="text-[10px] text-neutral-600">Registrada (extra do dia)</span>
                         )}
                       </td>
                     </tr>
