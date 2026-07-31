@@ -31,7 +31,8 @@ description: Print Balanço 109h é first_last nas batidas atuais (329:00−220)
 
 - **00:27 em 30/06** existe no AFD (`rhid_15239_…`) e no PDF oficial — **não há** batida 12:18 no banco.
 - **21/07** ficou com almoço fantasma 02:24→12:00 (9h36) por batidas extras; o cartão oficial é 00:00 / 02:24 / 08:00 / 14:00.
-- Em **30/07** o sync AFD inseriu ruído (04/07 00:01·00:02·03:40, 20/07 07:00, 21/07 02:24). Remover só esses **sobe** a HE (pior), não volta a 103:45.
+- Em **30/07** o sync AFD inseriu ruído (04/07 00:01·00:02·03:40, 20/07 07:00, 21/07 02:24). Remover só esses **sobe** a HE sob `first_last` antigo (pior).
+- **Dono confirmou (31/07):** no 20/07 a sequência real é 05:53 entrada → almoço → 13:20 → 23:59; o **07:00 é erro** (reentrada com ponto aberto). Tratado por `stripIllegalDeviceReentries` (não inventar 12:18 no 30/06).
 
 ## Conflito de regra (dono)
 
