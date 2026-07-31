@@ -15,14 +15,22 @@ description: Processo operacional (dono 31/07/2026): parede = entrada prioritár
 
 ## Código
 
-- `selectCanonicalDayPunches` / `isControlIdDevicePunch` — `server/lib/control-id-parsers.ts`
+- `selectCanonicalDayPunches` / `isControlIdDevicePunch` / `stripIllegalDeviceReentries` — `server/lib/control-id-parsers.ts`
 - Folha usa os 4 slots canônicos — `buildFolhaPonto` em `server/control-id.ts`
 - Manual bloqueia 5ª batida — `createManualPunch` (override: `allowExtraPunches` / `forceExtra`)
 - UI “dia completo” não relança Entrada se já houver batida do aparelho
 - Cache Balanço: `rh-summary-v14`
+
+## Reentrada ilegal (ex. Reis 20/07/2026)
+
+- Entrada 05:53 (parede) → ponto aberto.
+- Batida 07:00 (AFD/parede) **não existe** para a folha: não se entra de novo com ponto aberto.
+- Sequência válida: 05:53 → almoço out → almoço in → 23:59 (fecha) → 00:00 no dia seguinte.
+- `stripIllegalDeviceReentries` descarta device extras até a operação lançar almoço/ajuste (marcador 00:00 não libera).
 
 ## O que NÃO fazer
 
 - Usar `sorted[0]` cego como entrada quando há facial mais tarde no dia.
 - Descontar almoço como `sorted[1]–sorted[2]` com 5+ batidas (almoço fantasma).
 - Strip global de `00:00`/`23:59` (quebra noturno).
+- Contar 07:00 (ou similar) como 2ª entrada no mesmo dia com ponto já aberto.

@@ -18,6 +18,7 @@ import {
   isControlIdDevicePunch,
   isManualOpsPunch,
   selectCanonicalDayPunches,
+  stripIllegalDeviceReentries,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -496,7 +497,25 @@ test("selectCanonicalDayPunches: marcador 00:00 + Control iD → entrada = pared
   assert.ok(c.flags.includes("capped_to_4"));
 });
 
-test("selectCanonicalDayPunches: 5 batidas — almoço manual tipico, ignora extra AFD", () => {
+test("stripIllegalDeviceReentries: 07:00 inválido com ponto aberto desde 05:53 (Reis 20/07)", () => {
+  const day = "2026-07-20";
+  const punches = [
+    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
+    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
+  ];
+  const { kept, discarded } = stripIllegalDeviceReentries(punches);
+  assert.equal(discarded.length, 1);
+  assert.equal(discarded[0].id, 2, "07:00 = reentrada ilegal");
+  assert.deepEqual(
+    kept.map((p) => p.id),
+    [1, 3, 4, 5],
+  );
+});
+
+test("selectCanonicalDayPunches: 20/07 sem reentrada — 05:53, almoço, 23:59", () => {
   const day = "2026-07-20";
   const punches = [
     { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
@@ -506,12 +525,58 @@ test("selectCanonicalDayPunches: 5 batidas — almoço manual tipico, ignora ext
     { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
   ];
   const c = selectCanonicalDayPunches(punches);
+  assert.ok(c.flags.some((f) => f.startsWith("discard_reentry")));
   assert.equal(c.entry?.id, 1);
-  assert.equal(c.lunchOut?.id, 3, "almoço = manuais");
+  assert.equal(c.lunchOut?.id, 3);
   assert.equal(c.lunchIn?.id, 4);
   assert.equal(c.exit?.id, 5);
-  assert.ok(c.flags.includes("lunch_from_manual"));
-  assert.ok(c.discarded.some((p) => p.id === 2), "07:00 AFD extra descartado");
+  assert.ok(c.discarded.some((p) => p.id === 2));
+  // (23:59−05:53) − (13:20−12:11) = 18:06 − 1:09 = 16:57
+  const inMs = new Date(c.entry!.punch_at).getTime();
+  const outMs = new Date(c.exit!.punch_at).getTime();
+  const lunch = (new Date(c.lunchIn!.punch_at).getTime() - new Date(c.lunchOut!.punch_at).getTime()) / 60000;
+  const worked = (outMs - inMs) / 60000 - lunch;
+  assert.equal(Math.round(worked), 16 * 60 + 57);
+});
+
+test("stripIllegalDeviceReentries: saída facial no fim do dia NÃO é descartada", () => {
+  const day = "2026-07-22";
+  const punches = [
+    { punch_at: brtIso(day, "05:47"), source: "facial", id: 1 },
+    { punch_at: brtIso(day, "12:32"), source: "admin_manual", id: 2 },
+    { punch_at: brtIso(day, "13:28"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "22:28"), source: "facial", id: 4 },
+  ];
+  const { kept, discarded } = stripIllegalDeviceReentries(punches);
+  assert.equal(discarded.length, 0);
+  assert.equal(kept.length, 4);
+});
+
+test("stripIllegalDeviceReentries: só facial entrada+saída (sem almoço) mantém saída", () => {
+  const day = "2026-07-23";
+  const punches = [
+    { punch_at: brtIso(day, "05:53"), source: "facial", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "22:28"), source: "facial", id: 3 },
+  ];
+  const { kept, discarded } = stripIllegalDeviceReentries(punches);
+  assert.deepEqual(discarded.map((p) => p.id), [2]);
+  assert.deepEqual(kept.map((p) => p.id), [1, 3]);
+});
+
+test("stripIllegalDeviceReentries: marcador 00:00 não libera reentrada 07:00", () => {
+  const day = "2026-07-20";
+  const punches = [
+    { punch_at: brtIso(day, "00:00"), source: "admin_manual", id: 0 },
+    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
+    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
+  ];
+  const { discarded } = stripIllegalDeviceReentries(punches);
+  assert.equal(discarded.length, 1);
+  assert.equal(discarded[0].id, 2);
 });
 
 test("selectCanonicalDayPunches: dia com 5 batidas escolhe almoço ~1h (não gap de 9h)", () => {

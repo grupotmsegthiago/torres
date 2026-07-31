@@ -441,6 +441,51 @@ function punchMs(p: FolhaPunchLike): number {
 }
 
 /**
+ * Remove "reentrada" inválida no Control iD enquanto o ponto já está aberto.
+ *
+ * Ex. (Reis 20/07/2026): entrou 05:53 (parede) e o AFD trouxe outra batida
+ * 07:00 — não pode "entrar de novo" com o ponto aberto. Só voltam a valer
+ * batidas da parede depois que a operação registra almoço/ajuste (não-marcador).
+ *
+ * Exceção: a última batida do dia (possível saída facial sem almoço) é mantida.
+ * Marcador 00:00/00:01 NÃO libera reentrada — não conta como operação.
+ */
+export function stripIllegalDeviceReentries<T extends FolhaPunchLike>(
+  punches: T[],
+): { kept: T[]; discarded: T[] } {
+  const sorted = [...punches]
+    .filter((p) => p && p.punch_at != null)
+    .sort((a, b) => punchMs(a) - punchMs(b));
+  if (sorted.length === 0) return { kept: [], discarded: [] };
+
+  const kept: T[] = [];
+  const discarded: T[] = [];
+  let openedByDevice = false;
+  let opsAfterDeviceOpen = false;
+  const last = sorted[sorted.length - 1];
+
+  for (const p of sorted) {
+    const isDevice = isControlIdDevicePunch(p) && !isManualOpsPunch(p);
+    const isRealOps =
+      isManualOpsPunch(p) && !isSyntheticMidnightMarker(new Date(p.punch_at));
+
+    if (isDevice) {
+      if (openedByDevice && !opsAfterDeviceOpen && p !== last) {
+        discarded.push(p);
+        continue;
+      }
+      openedByDevice = true;
+      kept.push(p);
+      continue;
+    }
+
+    if (isRealOps && openedByDevice) opsAfterDeviceOpen = true;
+    kept.push(p);
+  }
+  return { kept, discarded };
+}
+
+/**
  * Seleciona as até 4 batidas canônicas do dia para a Folha.
  *
  * Processo (dono 31/07/2026):
@@ -454,7 +499,11 @@ export function selectCanonicalDayPunches<T extends FolhaPunchLike>(
   punches: T[],
 ): CanonicalDayPunches<T> {
   const flags: string[] = [];
-  const sorted = [...punches]
+  const stripped = stripIllegalDeviceReentries(punches);
+  if (stripped.discarded.length > 0) {
+    flags.push(`discard_reentry_x${stripped.discarded.length}`);
+  }
+  const sorted = stripped.kept
     .filter((p) => p && p.punch_at != null)
     .sort((a, b) => punchMs(a) - punchMs(b));
 
@@ -578,7 +627,10 @@ export function selectCanonicalDayPunches<T extends FolhaPunchLike>(
 
   const selected = [entry, lunchOut, lunchIn, exit].filter(Boolean) as T[];
   const selectedSet = new Set(selected);
-  const discarded = unique.filter((p) => !selectedSet.has(p));
+  const discarded = [
+    ...stripped.discarded,
+    ...unique.filter((p) => !selectedSet.has(p)),
+  ];
   if (unique.length > 4) flags.push("capped_to_4");
 
   return { selected, entry, lunchOut, lunchIn, exit, discarded, flags };
