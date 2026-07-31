@@ -62,7 +62,8 @@
 - [Plantão: 00:00/23:59 em batida manual](plantao-boundary-punch.md) — backend bloqueia como placeholder; fluxo dia-completo auto-envia force (isBoundaryPunchTime), batida única exige checkbox; nunca baixar o guard.
 - [Recolhimentos fora do custo geral + histórico da folha](folha-recolhimentos-e-historico.md) — custo geral RH = só venc+benef (FGTS/INSS patronal/seguro vida são informativos); histórico mensal congelado via snapshot auto (cron dia 1 + catch-up dias 2-5).
 - [Folha: colunas estilo cartão Control iD](folha-normais-card-style.md) — NORMAIS=min(trab,1199=04:00-23:59), TRAB/NOTURNO batem c/ cartão, H.Extra fica base pagamento 8h48; só exibição (hhmm), nunca toca custo.
-- [Ponto canônico 4 batidas](ponto-4-batidas-canonical.md) — Entrada = 1ª do dia (parede ganha se prefixo for marcador 00:00); almoço = manuais tipicos; máx 4/dia; extras AFD ignorados; bloqueio 5ª manual; cache `rh-summary-v14`.
+- [Ponto canônico 4 batidas](ponto-4-batidas-canonical.md) — Entrada = 1ª do dia (parede ganha se prefixo for marcador 00:00); almoço = manuais tipicos; máx 4/dia; extras AFD ignorados; bloqueio 5ª manual; cache `rh-summary-v16`.
+- [Reis espelho oficial jul/2026](reis-espelho-oficial-jul2026.md) — batidas emp#22 = PDF Control iD; HE **102:22**; Folha por pares; período travado 26/06–25/07.
 
 - [Trava de onboarding (kill switch)](onboarding-gate-killswitch.md) — bloqueio de OS/missão por onboarding é 1 função (assertOnboardingComplete); liga/desliga via ONBOARDING_GATE_ENABLED; desligar não tira a exibição.
 - [Sandbox bash: testes longos](agent-sandbox-bash-quirks.md) — background é morto entre chamadas, grep bufferiza (use timeout+arquivo), notebook sem process.env; fatiar teste >120s por flag CLI.

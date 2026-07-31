@@ -441,14 +441,13 @@ function punchMs(p: FolhaPunchLike): number {
 }
 
 /**
- * Remove "reentrada" inválida no Control iD enquanto o ponto já está aberto.
+ * Remove só "dupla facial" (rebatida no aparelho em poucos minutos).
  *
- * Ex. (Reis 20/07/2026): entrou 05:53 (parede) e o AFD trouxe outra batida
- * 07:00 — não pode "entrar de novo" com o ponto aberto. Só voltam a valer
- * batidas da parede depois que a operação registra almoço/ajuste (não-marcador).
+ * O cartão Control iD trata batidas em PARES (05:53→07:00 é bloco válido).
+ * Não descartar a 2ª batida da parede só por "ponto aberto" — isso quebrava
+ * o espelho oficial (Reis 20/07 → NORMAIS 02:16).
  *
- * Exceção: a última batida do dia (possível saída facial sem almoço) é mantida.
- * Marcador 00:00/00:01 NÃO libera reentrada — não conta como operação.
+ * Descarta apenas device com gap < 5 min após outro device (eco do leitor).
  */
 export function stripIllegalDeviceReentries<T extends FolhaPunchLike>(
   punches: T[],
@@ -460,26 +459,19 @@ export function stripIllegalDeviceReentries<T extends FolhaPunchLike>(
 
   const kept: T[] = [];
   const discarded: T[] = [];
-  let openedByDevice = false;
-  let opsAfterDeviceOpen = false;
-  const last = sorted[sorted.length - 1];
+  const DUP_FACIAL_MIN = 5;
 
   for (const p of sorted) {
     const isDevice = isControlIdDevicePunch(p) && !isManualOpsPunch(p);
-    const isRealOps =
-      isManualOpsPunch(p) && !isSyntheticMidnightMarker(new Date(p.punch_at));
-
-    if (isDevice) {
-      if (openedByDevice && !opsAfterDeviceOpen && p !== last) {
+    if (isDevice && kept.length > 0) {
+      const prev = kept[kept.length - 1];
+      const prevDevice = isControlIdDevicePunch(prev) && !isManualOpsPunch(prev);
+      const gapMin = (punchMs(p) - punchMs(prev)) / 60000;
+      if (prevDevice && gapMin >= 0 && gapMin < DUP_FACIAL_MIN) {
         discarded.push(p);
         continue;
       }
-      openedByDevice = true;
-      kept.push(p);
-      continue;
     }
-
-    if (isRealOps && openedByDevice) opsAfterDeviceOpen = true;
     kept.push(p);
   }
   return { kept, discarded };
@@ -669,7 +661,7 @@ export function detectFolhaDayAnomalies<T extends FolhaPunchLike>(
     anomalies.push({
       code: "illegal_reentry",
       severity: "erro",
-      message: `Reentrada inválida às ${hhmmBRT(new Date(p.punch_at))} — ponto já estava aberto. Ajuste ou remova esta batida.`,
+      message: `Batida duplicada no aparelho às ${hhmmBRT(new Date(p.punch_at))} (< 5 min da anterior). Confira.`,
     });
   }
 

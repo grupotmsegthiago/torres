@@ -32,6 +32,7 @@ import {
   stripIllegalDeviceReentries,
   detectFolhaDayAnomalies,
   folhaObservation,
+  computeDayWorkedMinutesFromPunches,
 } from "./lib/control-id-parsers";
 import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
 
@@ -2169,73 +2170,90 @@ export async function buildFolhaPonto(
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-    // Modelo canônico (dono 31/07/2026): Entrada = Control iD parede (prioridade);
-    // almoço/saída = operação; no máximo 4 batidas para o cálculo.
+    // Cartão Control iD = pares guloso entrada→saída (órfã não conta), teto 19:59.
+    // Colunas da tela: até 2 pares → Ent / Sai almoço / Volta / Saída.
     const canon = selectCanonicalDayPunches(sorted);
-    const slot = canon.selected;
-    const entryPunch = canon.entry;
-    const lunchOutPunch = canon.lunchOut;
-    const lunchInPunch = canon.lunchIn;
-    const exitPunch = canon.exit;
+    const dayPairs = computeDayWorkedMinutesFromPunches(
+      sorted.map((p: any) => p.punch_at),
+      { dailyCapMin: NORMAL_DAILY_CAP_MIN },
+    );
+    const pairMs = new Set<number>();
+    for (const pr of dayPairs.pairs) {
+      pairMs.add(pr.inMs);
+      pairMs.add(pr.outMs);
+    }
+    const punchByMin = new Map<number, any>();
+    for (const p of sorted) {
+      punchByMin.set(truncateToMinuteMs(new Date(p.punch_at).getTime()), p);
+    }
+    const p0 = dayPairs.pairs[0];
+    const p1 = dayPairs.pairs[1];
+    const entryPunch = p0 ? punchByMin.get(p0.inMs) || null : canon.entry;
+    const lunchOutPunch = p0 ? punchByMin.get(p0.outMs) || null : canon.lunchOut;
+    // 2º par = retorno/saída; se só 1 par, lunch fica vazio e saída = fim do 1º.
+    const lunchInPunch = p1 ? punchByMin.get(p1.inMs) || null : null;
+    const exitPunch = p1
+      ? punchByMin.get(p1.outMs) || null
+      : p0
+        ? punchByMin.get(p0.outMs) || null
+        : canon.exit;
+    // Dia com 1 par só: Entrada + Saída (sem almoço nas colunas).
+    const clockInPunch = entryPunch;
+    const clockOutPunch = p1 ? exitPunch : p0 ? punchByMin.get(p0.outMs) : exitPunch;
+    const showLunchOut = p1 ? lunchOutPunch : null;
+    const showLunchIn = p1 ? lunchInPunch : null;
+
     const anomalies = detectFolhaDayAnomalies(sorted, canon);
     const observation = folhaObservation(anomalies);
     const hasAlert = anomalies.some((a) => a.severity === "erro");
     const hasWarning = anomalies.length > 0;
-    const reentryIds = new Set(
+    const dupIds = new Set(
       stripIllegalDeviceReentries(sorted).discarded.map((p: any) => p.id),
     );
     const entry: any = {
       date: day,
-      clockIn: entryPunch ? fmt(entryPunch.punch_at) : null,
-      lunchOut: lunchOutPunch ? fmt(lunchOutPunch.punch_at) : null,
-      lunchIn: lunchInPunch ? fmt(lunchInPunch.punch_at) : null,
-      clockOut: exitPunch ? fmt(exitPunch.punch_at) : null,
+      clockIn: clockInPunch ? fmt(clockInPunch.punch_at) : null,
+      lunchOut: showLunchOut ? fmt(showLunchOut.punch_at) : null,
+      lunchIn: showLunchIn ? fmt(showLunchIn.punch_at) : null,
+      clockOut: clockOutPunch ? fmt(clockOutPunch.punch_at) : null,
       totalPunches: sorted.length,
-      canonicalPunches: slot.length,
-      canonicalFlags: canon.flags,
+      canonicalPunches: dayPairs.pairs.length * 2,
+      canonicalFlags: [...canon.flags, "pairs_controlid"],
+      pairCount: dayPairs.pairs.length,
       anomalies,
       observation,
       hasAlert,
       hasWarning,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
-      punches: sorted.map((p: any) => ({
-        id: p.id,
-        punchAt: p.punch_at,
-        time: fmt(p.punch_at),
-        direction: p.direction,
-        source: p.source,
-        usedInFolha: slot.includes(p),
-        ignoredReason: reentryIds.has(p.id)
-          ? "illegal_reentry"
-          : slot.includes(p)
-            ? null
-            : "extra",
-      })),
+      punches: sorted.map((p: any) => {
+        const ms = truncateToMinuteMs(new Date(p.punch_at).getTime());
+        const inPair = pairMs.has(ms);
+        return {
+          id: p.id,
+          punchAt: p.punch_at,
+          time: fmt(p.punch_at),
+          direction: p.direction,
+          source: p.source,
+          usedInFolha: inPair,
+          ignoredReason: dupIds.has(p.id)
+            ? "illegal_reentry"
+            : inPair
+              ? null
+              : "extra",
+        };
+      }),
     };
-    // Folha: (saída − entrada) − almoço, teto 19:59. Virada de meia-noite OK
-    // (marcadores 00:00/23:59 podem ser entrada/saída do dia).
-    if (entry.clockIn && entry.clockOut && entryPunch && exitPunch) {
-      const inMs = truncateToMinuteMs(new Date(entryPunch.punch_at).getTime());
-      const outMs = truncateToMinuteMs(new Date(exitPunch.punch_at).getTime());
-      let workedMin = workedMinutesBetween(inMs, outMs);
-      if (lunchOutPunch && lunchInPunch) {
-        workedMin -= workedMinutesBetween(
-          truncateToMinuteMs(new Date(lunchOutPunch.punch_at).getTime()),
-          truncateToMinuteMs(new Date(lunchInPunch.punch_at).getTime()),
-        );
-      }
-      workedMin = Math.min(Math.max(0, workedMin), NORMAL_DAILY_CAP_MIN);
+    // Horas = soma dos pares (igual cartão Control iD / espelho oficial).
+    const workedMin = dayPairs.workedMin;
+    if (workedMin > 0 || dayPairs.pairs.length > 0) {
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = Math.round(workedMin);
       entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
       entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (lunchOutPunch && lunchInPunch) {
-        noturnoMin -= nightMinutesBRT(
-          truncateToMinuteMs(new Date(lunchOutPunch.punch_at).getTime()),
-          truncateToMinuteMs(new Date(lunchInPunch.punch_at).getTime()),
-        );
+      let noturnoMin = 0;
+      for (const pr of dayPairs.pairs) {
+        noturnoMin += nightMinutesBRT(pr.inMs, pr.outMs);
       }
       entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));
     } else {

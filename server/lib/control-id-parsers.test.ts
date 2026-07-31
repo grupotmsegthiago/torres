@@ -499,7 +499,7 @@ test("selectCanonicalDayPunches: marcador 00:00 + Control iD → entrada = pared
   assert.ok(c.flags.includes("capped_to_4"));
 });
 
-test("stripIllegalDeviceReentries: 07:00 inválido com ponto aberto desde 05:53 (Reis 20/07)", () => {
+test("stripIllegalDeviceReentries: 05:53→07:00 é bloco válido do cartão (não descarta)", () => {
   const day = "2026-07-20";
   const punches = [
     { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
@@ -509,36 +509,16 @@ test("stripIllegalDeviceReentries: 07:00 inválido com ponto aberto desde 05:53 
     { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
   ];
   const { kept, discarded } = stripIllegalDeviceReentries(punches);
-  assert.equal(discarded.length, 1);
-  assert.equal(discarded[0].id, 2, "07:00 = reentrada ilegal");
-  assert.deepEqual(
-    kept.map((p) => p.id),
-    [1, 3, 4, 5],
-  );
+  assert.equal(discarded.length, 0);
+  assert.equal(kept.length, 5);
 });
 
-test("selectCanonicalDayPunches: 20/07 sem reentrada — 05:53, almoço, 23:59", () => {
+test("computeDayWorkedMinutes: Reis 20/07 oficial = 02:16 (pares + órfã 23:59)", () => {
   const day = "2026-07-20";
-  const punches = [
-    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
-    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
-    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
-    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
-    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
-  ];
-  const c = selectCanonicalDayPunches(punches);
-  assert.ok(c.flags.some((f) => f.startsWith("discard_reentry")));
-  assert.equal(c.entry?.id, 1);
-  assert.equal(c.lunchOut?.id, 3);
-  assert.equal(c.lunchIn?.id, 4);
-  assert.equal(c.exit?.id, 5);
-  assert.ok(c.discarded.some((p) => p.id === 2));
-  // (23:59−05:53) − (13:20−12:11) = 18:06 − 1:09 = 16:57
-  const inMs = new Date(c.entry!.punch_at).getTime();
-  const outMs = new Date(c.exit!.punch_at).getTime();
-  const lunch = (new Date(c.lunchIn!.punch_at).getTime() - new Date(c.lunchOut!.punch_at).getTime()) / 60000;
-  const worked = (outMs - inMs) / 60000 - lunch;
-  assert.equal(Math.round(worked), 16 * 60 + 57);
+  const punches = ["05:53", "07:00", "12:11", "13:20", "23:59"].map((t) => brtIso(day, t));
+  const r = computeDayWorkedMinutesFromPunches(punches);
+  assert.equal(r.workedMin, 2 * 60 + 16);
+  assert.equal(r.pairs.length, 2);
 });
 
 test("stripIllegalDeviceReentries: saída facial no fim do dia NÃO é descartada", () => {
@@ -554,31 +534,16 @@ test("stripIllegalDeviceReentries: saída facial no fim do dia NÃO é descartad
   assert.equal(kept.length, 4);
 });
 
-test("stripIllegalDeviceReentries: só facial entrada+saída (sem almoço) mantém saída", () => {
+test("stripIllegalDeviceReentries: eco facial < 5 min é descartado", () => {
   const day = "2026-07-23";
   const punches = [
     { punch_at: brtIso(day, "05:53"), source: "facial", id: 1 },
-    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "05:55"), source: null, external_id: "rhid_1_2", id: 2 },
     { punch_at: brtIso(day, "22:28"), source: "facial", id: 3 },
   ];
   const { kept, discarded } = stripIllegalDeviceReentries(punches);
   assert.deepEqual(discarded.map((p) => p.id), [2]);
   assert.deepEqual(kept.map((p) => p.id), [1, 3]);
-});
-
-test("stripIllegalDeviceReentries: marcador 00:00 não libera reentrada 07:00", () => {
-  const day = "2026-07-20";
-  const punches = [
-    { punch_at: brtIso(day, "00:00"), source: "admin_manual", id: 0 },
-    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
-    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
-    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
-    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
-    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
-  ];
-  const { discarded } = stripIllegalDeviceReentries(punches);
-  assert.equal(discarded.length, 1);
-  assert.equal(discarded[0].id, 2);
 });
 
 test("selectCanonicalDayPunches: dia com 5 batidas escolhe almoço ~1h (não gap de 9h)", () => {
@@ -609,21 +574,18 @@ test("selectCanonicalDayPunches: virada meia-noite com 2 batidas (sem almoço)",
   assert.equal(c.exit?.id, 2);
 });
 
-test("detectFolhaDayAnomalies: Reis 20/07 — reentrada 07:00 em vermelho", () => {
+test("detectFolhaDayAnomalies: eco facial < 5 min em vermelho", () => {
   const day = "2026-07-20";
   const punches = [
-    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
-    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "05:53"), source: "facial", id: 1 },
+    { punch_at: brtIso(day, "05:55"), source: null, external_id: "rhid_1_2", id: 2 },
     { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
     { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
-    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
   ];
   const canon = selectCanonicalDayPunches(punches);
   const anomalies = detectFolhaDayAnomalies(punches, canon);
   assert.ok(anomalies.some((a) => a.code === "illegal_reentry" && a.severity === "erro"));
-  assert.ok(anomalies.some((a) => a.code === "too_many_punches"));
-  const obs = folhaObservation(anomalies);
-  assert.ok(obs && obs.includes("07:00"));
+  assert.ok(folhaObservation(anomalies)?.includes("05:55"));
 });
 
 test("detectFolhaDayAnomalies: almoço 07:00 após entrada 05:53 é erro", () => {

@@ -268,11 +268,11 @@ export default function BalancoGerencialPage() {
       ferias?: number; decimoTerceiro?: number;
     }>;
   }>({
-    // v15: HE/ponto = ciclo 26→25; VR/benefícios = mês civil do filtro.
+    // v16: HE = pares Control iD; ponto ciclo 26→25; VR = mês civil.
     // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
-    queryKey: ["/api/fixed-costs/rh-summary", "v15", "cached", gridRange.from, gridRange.to],
+    queryKey: ["/api/fixed-costs/rh-summary", "v16", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = `rh-summary-v15-forced:${gridRange.from}:${gridRange.to}`;
+      const bustKey = `rh-summary-v16-forced:${gridRange.from}:${gridRange.to}`;
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
