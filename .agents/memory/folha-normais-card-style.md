@@ -16,11 +16,13 @@ as colunas de tempo devem aparecer em **HH:MM** e seguir o cartão oficial do Co
 - **H. Extra (coluna diária da tabela)** = excedente vs 8h48/dia (`horas_mensais÷25`)
   — só transparência na Folha de Ponto.
 - **H. Extra de PAGAMENTO / card / Balanço** (29/07/2026, caso Reis) = banco mensal
-  `trabalhado − horas_mensais` (ex.: 323:45 − 220 = 103:45), igual ao card Control iD.
-  Ver `payroll-he-banco-mensal.md`.
+  `trabalhado − horas_mensais` (ex. Reis: 323:45 − 220 = **103:45**).
+  Dono 31/07/2026: **103:45 é o correto** (Folha Torres), não o PDF 102:22.
+  Ver `payroll-he-banco-mensal.md` e `reis-he-103-oficial.md`.
 
-**Why:** NORMAIS/TRAB/NOTURNO espelham o cartão. A coluna diária H.Extra pode
-diferir do card (~40h no Reis); o custo RH deve seguir o **card (mês)**, não a soma da coluna.
+**Why:** NORMAIS/TRAB/NOTURNO espelham o cartão quando possível. A coluna diária
+H.Extra pode diferir do card (~40h no Reis); o custo RH deve seguir o
+**banco mensal (mês)** da Folha Torres, não a soma da coluna.
 
 **How to apply:** isto é SÓ EXIBIÇÃO. Nunca alterar `buildFolhaStats`/`computeWorkedHours`/
 custo. O cálculo vem de `buildFolhaPonto` (server/control-id.ts): expõe `workedMin`,

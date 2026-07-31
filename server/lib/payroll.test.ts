@@ -200,8 +200,8 @@ test("resolveCestaAjudaTorres: kit 200 vira ajuda de custo", () => {
 });
 
 test("CCT Torres: HE diurna 16 e noturna 16,50 (taxas fixas)", () => {
-  // Reis alvo Control iD: HE 102:22 (= 102 + 22/60 h) × R$ 16.
-  const heMin = 102 * 60 + 22;
+  // Reis alvo Folha Torres (dono 31/07/2026): HE 103:45 × R$ 16.
+  const heMin = 103 * 60 + 45;
   const heHoras = heMin / 60;
   const f = calcularFolha({
     salarioBaseCheio: 2565.31,
@@ -213,7 +213,7 @@ test("CCT Torres: HE diurna 16 e noturna 16,50 (taxas fixas)", () => {
     valorHoraExtraFixo: 16,
     valorHoraNoturnaFixo: 16.5,
   });
-  assert.equal(f.horasExtrasValor, r2(heHoras * 16), "102:22 × 16");
+  assert.equal(f.horasExtrasValor, r2(heHoras * 16), "103:45 × 16");
   assert.equal(f.adicionalNoturnoValor, 1323.3, "80,2 × 16,50");
   // Sem taxa fixa, multiplicador do salário daria valor bem maior (~24,26/h).
   const semFixo = calcularFolha({
