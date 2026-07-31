@@ -55,12 +55,20 @@ type EspelhoRhidData = {
   horariosContratuais: Array<{ codigo: string; ent1: string; sai1: string; ent2: string; sai2: string }>;
   emitidoEm: string;
 };
-type FolhaPunch = { id: number; punchAt: string; time: string; direction: string | null; source: string | null };
+type FolhaPunch = {
+  id: number; punchAt: string; time: string; direction: string | null; source: string | null;
+  usedInFolha?: boolean; ignoredReason?: "illegal_reentry" | "extra" | null;
+};
+type FolhaDayAnomaly = { code: string; severity: "erro" | "aviso"; message: string };
 type FolhaDay = {
   date: string; clockIn: string | null; lunchOut: string | null; lunchIn: string | null;
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
   punches?: FolhaPunch[];
   extraMin?: number; jornadaDiariaMin?: number; noturnoMin?: number; workedMin?: number; normaisMin?: number;
+  anomalies?: FolhaDayAnomaly[];
+  observation?: string | null;
+  hasAlert?: boolean;
+  hasWarning?: boolean;
 };
 type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
@@ -1645,6 +1653,9 @@ function FolhaTab() {
 
   function openEspelho() { setEspelhoOpen(true); }
 
+  const alertDays = folha.filter((d) => d.hasAlert || d.hasWarning);
+  const erroDays = folha.filter((d) => d.hasAlert);
+
   return (
     <div className="space-y-3">
       <Card className="p-3 flex gap-2 items-center flex-wrap no-print">
@@ -1672,6 +1683,24 @@ function FolhaTab() {
           <FileText className="w-3.5 h-3.5 mr-1" /> Impressão em Lote
         </Button>
       </Card>
+
+      {employeeId && alertDays.length > 0 && (
+        <Card className={`p-3 no-print border ${erroDays.length > 0 ? "bg-red-50 border-red-300" : "bg-amber-50 border-amber-300"}`} data-testid="banner-folha-anomalies">
+          <div className={`flex items-start gap-2 text-sm ${erroDays.length > 0 ? "text-red-800" : "text-amber-900"}`}>
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">
+                {erroDays.length > 0
+                  ? `${erroDays.length} dia(s) com inconsistência grave (reentrada / horário estranho)`
+                  : `${alertDays.length} dia(s) com aviso na folha`}
+              </p>
+              <p className="text-xs mt-0.5 opacity-90">
+                Linhas em destaque — a operação deve conferir e ajustar as batidas. O cálculo já ignora reentrada ilegal, mas o registro precisa ser corrigido.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {employeeId && stats && (
         <>
@@ -1927,13 +1956,33 @@ function FolhaTab() {
                   <th className="p-2 text-right font-medium text-neutral-600">Noturno</th>
                   <th className="p-2 text-right font-medium text-neutral-600">H. Extra</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
+                  <th className="p-2 text-left font-medium text-neutral-600 min-w-[12rem]">Observação</th>
                   <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {folha.map(d => (
-                  <tr key={d.date} className="border-b border-neutral-100 hover:bg-neutral-50/60" data-testid={`row-folha-${d.date}`}>
-                    <td className="p-2 font-medium">{new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
+                {folha.map(d => {
+                  const rowAlert = !!d.hasAlert;
+                  const rowWarn = !rowAlert && !!d.hasWarning;
+                  return (
+                  <tr
+                    key={d.date}
+                    className={`border-b ${
+                      rowAlert
+                        ? "bg-red-50 border-red-200 text-red-950"
+                        : rowWarn
+                          ? "bg-amber-50/80 border-amber-200"
+                          : "border-neutral-100 hover:bg-neutral-50/60"
+                    }`}
+                    data-testid={`row-folha-${d.date}`}
+                    data-folha-alert={rowAlert ? "erro" : rowWarn ? "aviso" : undefined}
+                  >
+                    <td className="p-2 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        {(rowAlert || rowWarn) && <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${rowAlert ? "text-red-600" : "text-amber-600"}`} />}
+                        {new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}
+                      </span>
+                    </td>
                     <td className="p-2 text-center font-mono text-xs">{d.clockIn || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.lunchOut || "—"}</td>
                     <td className="p-2 text-center font-mono text-xs">{d.lunchIn || "—"}</td>
@@ -1949,6 +1998,9 @@ function FolhaTab() {
                       )}
                     </td>
                     <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
+                    <td className={`p-2 text-[11px] leading-snug max-w-xs ${rowAlert ? "text-red-800 font-medium" : rowWarn ? "text-amber-900" : "text-neutral-400"}`} data-testid={`text-obs-${d.date}`}>
+                      {d.observation || "—"}
+                    </td>
                     <td className="p-2 text-right no-print">
                       <div className="inline-flex gap-1">
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-neutral-600 hover:text-blue-600" title="Ver detalhes (espelho RHID)" onClick={() => setViewingDay(d)} data-testid={`button-view-day-${d.date}`}>
@@ -1960,7 +2012,8 @@ function FolhaTab() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {stats && (() => {
                   const totalNormaisMin = folha.reduce((s, d) => s + (Number(d.normaisMin) || 0), 0);
                   const totalWorkedMin = folha.reduce((s, d) => s + (Number(d.workedMin) || 0), 0);
@@ -1975,7 +2028,7 @@ function FolhaTab() {
                       <td className="p-2 text-right text-orange-600 tabular-nums" data-testid="text-total-extra-dia">
                         {totalExtraMin > 0 ? `+${hhmm(totalExtraMin)}` : "—"}
                       </td>
-                      <td className="p-2 text-center text-xs text-neutral-500" colSpan={2}>
+                      <td className="p-2 text-center text-xs text-neutral-500" colSpan={3}>
                         {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{hhmm(Math.round(stats.horaExtra * 60))}</span>}
                       </td>
                     </tr>
@@ -2866,6 +2919,16 @@ function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employee
             <span className="text-xs text-neutral-600">Total trabalhado:</span>
             <span className="font-bold text-blue-700">{day.workedMin != null ? hhmm(day.workedMin) : "—"}</span>
           </div>
+          {(day.anomalies || []).length > 0 && (
+            <div className={`rounded border p-2 space-y-1 ${day.hasAlert ? "bg-red-50 border-red-300" : "bg-amber-50 border-amber-300"}`} data-testid="view-day-anomalies">
+              {(day.anomalies || []).map((a, i) => (
+                <div key={i} className={`flex items-start gap-1.5 text-xs ${a.severity === "erro" ? "text-red-800" : "text-amber-900"}`}>
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{a.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div>
             <div className="text-xs font-semibold text-neutral-600 mb-1">Todas as batidas registradas no aparelho:</div>
             <div className="border rounded max-h-64 overflow-auto">
@@ -2876,23 +2939,36 @@ function ViewDayDialog({ day, employeeName, onClose }: { day: FolhaDay; employee
                     <th className="p-1.5 text-left">Hora</th>
                     <th className="p-1.5 text-center">Direção</th>
                     <th className="p-1.5 text-left">Origem</th>
+                    <th className="p-1.5 text-left">Folha</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(day.punches || []).map((p, idx) => (
-                    <tr key={p.id} className="border-t">
+                  {(day.punches || []).map((p, idx) => {
+                    const bad = p.ignoredReason === "illegal_reentry";
+                    return (
+                    <tr key={p.id} className={`border-t ${bad ? "bg-red-50" : p.usedInFolha === false ? "bg-neutral-50 text-neutral-400" : ""}`}>
                       <td className="p-1.5 text-neutral-400">{idx + 1}</td>
-                      <td className="p-1.5 font-mono">{p.time}</td>
+                      <td className={`p-1.5 font-mono ${bad ? "line-through text-red-700" : ""}`}>{p.time}</td>
                       <td className="p-1.5 text-center">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.direction === "in" ? "bg-emerald-100 text-emerald-700" : p.direction === "out" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
                           {p.direction === "in" ? "ENTRADA" : p.direction === "out" ? "SAÍDA" : "—"}
                         </span>
                       </td>
                       <td className="p-1.5 text-neutral-500">{p.source || "—"}</td>
+                      <td className="p-1.5">
+                        {bad ? (
+                          <span className="text-[10px] font-semibold text-red-700">Reentrada inválida</span>
+                        ) : p.usedInFolha === false ? (
+                          <span className="text-[10px] text-neutral-400">Ignorada</span>
+                        ) : (
+                          <span className="text-[10px] text-emerald-700">Usada</span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {(day.punches || []).length === 0 && (
-                    <tr><td colSpan={4} className="p-3 text-center text-neutral-400">Sem batidas</td></tr>
+                    <tr><td colSpan={5} className="p-3 text-center text-neutral-400">Sem batidas</td></tr>
                   )}
                 </tbody>
               </table>

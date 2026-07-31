@@ -19,6 +19,8 @@ import {
   isManualOpsPunch,
   selectCanonicalDayPunches,
   stripIllegalDeviceReentries,
+  detectFolhaDayAnomalies,
+  folhaObservation,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -605,4 +607,47 @@ test("selectCanonicalDayPunches: virada meia-noite com 2 batidas (sem almoço)",
   assert.equal(c.selected.length, 2);
   assert.equal(c.lunchOut, null);
   assert.equal(c.exit?.id, 2);
+});
+
+test("detectFolhaDayAnomalies: Reis 20/07 — reentrada 07:00 em vermelho", () => {
+  const day = "2026-07-20";
+  const punches = [
+    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
+    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
+  ];
+  const canon = selectCanonicalDayPunches(punches);
+  const anomalies = detectFolhaDayAnomalies(punches, canon);
+  assert.ok(anomalies.some((a) => a.code === "illegal_reentry" && a.severity === "erro"));
+  assert.ok(anomalies.some((a) => a.code === "too_many_punches"));
+  const obs = folhaObservation(anomalies);
+  assert.ok(obs && obs.includes("07:00"));
+});
+
+test("detectFolhaDayAnomalies: almoço 07:00 após entrada 05:53 é erro", () => {
+  const day = "2026-07-24";
+  const punches = [
+    { punch_at: brtIso(day, "05:53"), source: "facial", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: "admin_manual", id: 2 },
+    { punch_at: brtIso(day, "08:00"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 4 },
+  ];
+  const canon = selectCanonicalDayPunches(punches);
+  const anomalies = detectFolhaDayAnomalies(punches, canon);
+  assert.ok(anomalies.some((a) => a.code === "lunch_too_early" && a.severity === "erro"));
+});
+
+test("detectFolhaDayAnomalies: dia normal 4 batidas sem alerta grave", () => {
+  const day = "2026-07-25";
+  const punches = [
+    { punch_at: brtIso(day, "05:47"), source: "facial", id: 1 },
+    { punch_at: brtIso(day, "12:32"), source: "admin_manual", id: 2 },
+    { punch_at: brtIso(day, "13:28"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "22:28"), source: "facial", id: 4 },
+  ];
+  const canon = selectCanonicalDayPunches(punches);
+  const anomalies = detectFolhaDayAnomalies(punches, canon);
+  assert.equal(anomalies.filter((a) => a.severity === "erro").length, 0);
 });

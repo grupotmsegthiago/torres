@@ -27,6 +27,7 @@ description: Processo operacional (dono 31/07/2026): parede = entrada prioritár
 - Batida 07:00 (AFD/parede) **não existe** para a folha: não se entra de novo com ponto aberto.
 - Sequência válida: 05:53 → almoço out → almoço in → 23:59 (fecha) → 00:00 no dia seguinte.
 - `stripIllegalDeviceReentries` descarta device extras até a operação lançar almoço/ajuste (marcador 00:00 não libera).
+- `detectFolhaDayAnomalies` → Folha marca a **linha em vermelho** + coluna Observação (reentrada, almoço cedo demais após entrada, etc.) para a operação ajustar.
 
 ## O que NÃO fazer
 

@@ -635,3 +635,83 @@ export function selectCanonicalDayPunches<T extends FolhaPunchLike>(
 
   return { selected, entry, lunchOut, lunchIn, exit, discarded, flags };
 }
+
+/** Almoço < 3h após a entrada é teoricamente estranho (ex.: 05:53 → 07:00). */
+const LUNCH_TOO_EARLY_MIN = 180;
+
+export type FolhaDayAnomaly = {
+  code:
+    | "illegal_reentry"
+    | "lunch_too_early"
+    | "open_shift"
+    | "too_many_punches"
+    | "incomplete_lunch";
+  severity: "erro" | "aviso";
+  message: string;
+};
+
+/**
+ * Regras de inconsistência para a operação enxergar na Folha (linha vermelha).
+ * O cálculo já descarta reentrada ilegal; aqui o alerta continua visível para ajuste.
+ */
+export function detectFolhaDayAnomalies<T extends FolhaPunchLike>(
+  punches: T[],
+  canon: CanonicalDayPunches<T>,
+): FolhaDayAnomaly[] {
+  const anomalies: FolhaDayAnomaly[] = [];
+  const sorted = [...punches]
+    .filter((p) => p && p.punch_at != null)
+    .sort((a, b) => punchMs(a) - punchMs(b));
+  if (sorted.length === 0) return anomalies;
+
+  const { discarded: reentries } = stripIllegalDeviceReentries(sorted);
+  for (const p of reentries) {
+    anomalies.push({
+      code: "illegal_reentry",
+      severity: "erro",
+      message: `Reentrada inválida às ${hhmmBRT(new Date(p.punch_at))} — ponto já estava aberto. Ajuste ou remova esta batida.`,
+    });
+  }
+
+  if (canon.entry && canon.lunchOut) {
+    const gap = (punchMs(canon.lunchOut) - punchMs(canon.entry)) / 60000;
+    if (gap > 0 && gap < LUNCH_TOO_EARLY_MIN) {
+      anomalies.push({
+        code: "lunch_too_early",
+        severity: "erro",
+        message: `Almoço às ${hhmmBRT(new Date(canon.lunchOut.punch_at))} muito cedo após entrada ${hhmmBRT(new Date(canon.entry.punch_at))} (${Math.round(gap)} min). Não faz sentido — confira.`,
+      });
+    }
+  }
+
+  if (canon.flags.includes("open_shift")) {
+    anomalies.push({
+      code: "open_shift",
+      severity: "aviso",
+      message: "Ponto aberto — falta batida de saída.",
+    });
+  }
+
+  if (sorted.length > 4) {
+    anomalies.push({
+      code: "too_many_punches",
+      severity: "aviso",
+      message: `${sorted.length} batidas no dia (esperado até 4). Extras ignoradas no cálculo — revise.`,
+    });
+  }
+
+  if (canon.flags.includes("single_middle_no_lunch")) {
+    anomalies.push({
+      code: "incomplete_lunch",
+      severity: "aviso",
+      message: "Só uma batida no meio do dia — almoço incompleto.",
+    });
+  }
+
+  return anomalies;
+}
+
+export function folhaObservation(anomalies: FolhaDayAnomaly[]): string | null {
+  if (!anomalies.length) return null;
+  return anomalies.map((a) => a.message).join(" ");
+}

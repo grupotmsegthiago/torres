@@ -29,6 +29,9 @@ import {
   rhidNumericCore,
   dedupPunchesByCore,
   selectCanonicalDayPunches,
+  stripIllegalDeviceReentries,
+  detectFolhaDayAnomalies,
+  folhaObservation,
 } from "./lib/control-id-parsers";
 import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
 
@@ -2174,6 +2177,13 @@ export async function buildFolhaPonto(
     const lunchOutPunch = canon.lunchOut;
     const lunchInPunch = canon.lunchIn;
     const exitPunch = canon.exit;
+    const anomalies = detectFolhaDayAnomalies(sorted, canon);
+    const observation = folhaObservation(anomalies);
+    const hasAlert = anomalies.some((a) => a.severity === "erro");
+    const hasWarning = anomalies.length > 0;
+    const reentryIds = new Set(
+      stripIllegalDeviceReentries(sorted).discarded.map((p: any) => p.id),
+    );
     const entry: any = {
       date: day,
       clockIn: entryPunch ? fmt(entryPunch.punch_at) : null,
@@ -2183,6 +2193,10 @@ export async function buildFolhaPonto(
       totalPunches: sorted.length,
       canonicalPunches: slot.length,
       canonicalFlags: canon.flags,
+      anomalies,
+      observation,
+      hasAlert,
+      hasWarning,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
       punches: sorted.map((p: any) => ({
         id: p.id,
@@ -2191,6 +2205,11 @@ export async function buildFolhaPonto(
         direction: p.direction,
         source: p.source,
         usedInFolha: slot.includes(p),
+        ignoredReason: reentryIds.has(p.id)
+          ? "illegal_reentry"
+          : slot.includes(p)
+            ? null
+            : "extra",
       })),
     };
     // Folha: (saída − entrada) − almoço, teto 19:59. Virada de meia-noite OK
