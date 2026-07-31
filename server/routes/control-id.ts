@@ -272,10 +272,13 @@ export function registerControlIdRoutes(app: Express) {
         direction: direction || "unknown",
         source: isAdmin && employeeId !== req.user?.employeeId ? "admin_manual" : "self_manual",
         deviceId: deviceId ? Number(deviceId) : undefined,
+        allowExtraPunches: !!(req.body.allowExtraPunches || req.body.forceExtra),
       });
       res.status(201).json(r);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      const msg = String(err.message || err);
+      const status = /já tem \d+ batida/i.test(msg) ? 400 : 500;
+      res.status(status).json({ message: msg });
     }
   });
 

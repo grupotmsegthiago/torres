@@ -382,3 +382,204 @@ export function decideImport(params: {
   // Já existe batida local nesse minuto: nunca duplica.
   return params.localExternalIdAtMinute === params.eventExternalId ? "skip" : "adopt-external-id";
 }
+
+// ============================ MODELO CANÔNICO 4 BATIDAS ============================
+//
+// Processo operacional (dono 31/07/2026):
+//  1) Entrada = Control iD da parede (facial/device) — PRIORIDADE
+//  2) Sync diário Control iD → Torres
+//  3) Demais batidas = operação (manual): almoço saída, almoço retorno, fim
+//  4) No máximo 4 batidas por dia para cálculo de folha
+//  5) Virada de meia-noite é normal (turno pode terminar no dia seguinte)
+//
+// ============================================================================
+
+export type FolhaPunchLike = {
+  punch_at: string | Date;
+  source?: string | null;
+  external_id?: string | null;
+  direction?: string | null;
+  id?: number | string | null;
+};
+
+/** Batida vinda do aparelho / AFD (Control iD da parede). */
+export function isControlIdDevicePunch(p: FolhaPunchLike): boolean {
+  const src = String(p.source || "").toLowerCase().trim();
+  if (src === "facial" || src === "rfid" || src === "digital" || src === "senha") return true;
+  // AFD costuma chegar com source null + external_id rhid_{id}_{ts}
+  if (!src) {
+    const ext = String(p.external_id || "").trim();
+    if (/^rhid_\d+_\d+$/.test(ext)) return true;
+    // POST facial às vezes fica só com id numérico e source null — sem is_manual
+    // tratado como device só se não for manual explícito (já coberto acima).
+  }
+  return false;
+}
+
+/** Batida lançada pela operação / autoatendimento no Torres. */
+export function isManualOpsPunch(p: FolhaPunchLike): boolean {
+  const src = String(p.source || "").toLowerCase().trim();
+  return src === "admin_manual" || src === "self_manual" || src === "manual";
+}
+
+export type CanonicalDayPunches<T extends FolhaPunchLike> = {
+  /** Até 4 batidas na ordem: entrada, almoço-out, almoço-in, saída. */
+  selected: T[];
+  entry: T | null;
+  lunchOut: T | null;
+  lunchIn: T | null;
+  exit: T | null;
+  discarded: T[];
+  flags: string[];
+};
+
+const LUNCH_MIN_GAP_MIN = 20;
+const LUNCH_MAX_GAP_MIN = 4 * 60;
+
+function punchMs(p: FolhaPunchLike): number {
+  return new Date(p.punch_at).getTime();
+}
+
+/**
+ * Seleciona as até 4 batidas canônicas do dia para a Folha.
+ *
+ * Processo (dono 31/07/2026):
+ *  - Entrada: 1ª batida do dia. Se a 1ª for só marcador 00:00/00:01 e existir
+ *    batida do Control iD (parede) em seguida, a parede vira Entrada (prioridade).
+ *  - Saída: última batida do dia (virada de meia-noite OK).
+ *  - Almoço: 2 batidas no meio — prioriza manuais da operação com intervalo
+ *    típico (20min–4h). Extras (5ª/6ª) são ignoradas no cálculo.
+ */
+export function selectCanonicalDayPunches<T extends FolhaPunchLike>(
+  punches: T[],
+): CanonicalDayPunches<T> {
+  const flags: string[] = [];
+  const sorted = [...punches]
+    .filter((p) => p && p.punch_at != null)
+    .sort((a, b) => punchMs(a) - punchMs(b));
+
+  // Dedup por minuto BRT — no empate, Control iD (parede) tem prioridade
+  const byMinute = new Map<string, T>();
+  for (const p of sorted) {
+    const k = minuteKeyBRT(new Date(p.punch_at));
+    const prev = byMinute.get(k);
+    if (!prev) {
+      byMinute.set(k, p);
+      continue;
+    }
+    if (!isControlIdDevicePunch(prev) && isControlIdDevicePunch(p)) {
+      byMinute.set(k, p);
+      flags.push("dedup_prefer_device");
+    }
+  }
+  const unique = [...byMinute.values()].sort((a, b) => punchMs(a) - punchMs(b));
+
+  if (unique.length === 0) {
+    return {
+      selected: [],
+      entry: null,
+      lunchOut: null,
+      lunchIn: null,
+      exit: null,
+      discarded: [],
+      flags,
+    };
+  }
+
+  // Entrada: 1ª cronológica. Se o prefixo for só marcador 00:00/00:01 e houver
+  // batida da parede depois (que NÃO seja a última do dia = saída), a parede
+  // assume a Entrada. Nunca promover a última batida a entrada (vira "open_shift").
+  let entry = unique[0];
+  const lastPunch = unique[unique.length - 1];
+  const firstDevice = unique.find(isControlIdDevicePunch);
+  if (
+    firstDevice &&
+    firstDevice !== entry &&
+    firstDevice !== lastPunch &&
+    isSyntheticMidnightMarker(new Date(entry.punch_at)) &&
+    !isControlIdDevicePunch(entry)
+  ) {
+    entry = firstDevice;
+    flags.push("entry_device_priority");
+  } else if (isControlIdDevicePunch(entry)) {
+    flags.push("entry_from_device");
+  } else {
+    flags.push("entry_chrono_first");
+  }
+
+  const afterEntry = unique.filter((p) => punchMs(p) > punchMs(entry));
+  if (afterEntry.length === 0) {
+    return {
+      selected: [entry],
+      entry,
+      lunchOut: null,
+      lunchIn: null,
+      exit: null,
+      discarded: unique.filter((p) => p !== entry),
+      flags: [...flags, "open_shift"],
+    };
+  }
+
+  const exit = afterEntry[afterEntry.length - 1];
+  const middle = afterEntry.filter((p) => p !== exit);
+
+  let lunchOut: T | null = null;
+  let lunchIn: T | null = null;
+
+  if (middle.length >= 2) {
+    const manuals = middle.filter(isManualOpsPunch);
+    // 1) Par manual com intervalo de almoço típico (~1h)
+    let bestA: T | null = null;
+    let bestB: T | null = null;
+    let bestScore = -Infinity;
+    const consider = (a: T, b: T, bonus: number) => {
+      const gap = (punchMs(b) - punchMs(a)) / 60000;
+      if (gap < LUNCH_MIN_GAP_MIN || gap > LUNCH_MAX_GAP_MIN) return;
+      const score = bonus - Math.abs(gap - 60);
+      if (score > bestScore) {
+        bestScore = score;
+        bestA = a;
+        bestB = b;
+      }
+    };
+    for (let i = 0; i < manuals.length; i++) {
+      for (let j = i + 1; j < manuals.length; j++) consider(manuals[i], manuals[j], 100);
+    }
+    if (bestA && bestB) {
+      lunchOut = bestA;
+      lunchIn = bestB;
+      flags.push("lunch_from_manual");
+    } else if (manuals.length >= 2) {
+      lunchOut = manuals[0];
+      lunchIn = manuals[1];
+      flags.push("lunch_from_manual_chrono");
+    } else {
+      // 2) Sem 2 manuais: melhor par do meio com gap típico, senão [0][1]
+      bestA = null;
+      bestB = null;
+      bestScore = -Infinity;
+      for (let i = 0; i < middle.length; i++) {
+        for (let j = i + 1; j < middle.length; j++) consider(middle[i], middle[j], 0);
+      }
+      if (bestA && bestB) {
+        lunchOut = bestA;
+        lunchIn = bestB;
+        flags.push("lunch_best_gap");
+      } else {
+        lunchOut = middle[0];
+        lunchIn = middle[1];
+        flags.push("lunch_from_middle_chrono");
+      }
+    }
+    if (middle.length > 2) flags.push("extra_punches_ignored");
+  } else if (middle.length === 1) {
+    flags.push("single_middle_no_lunch");
+  }
+
+  const selected = [entry, lunchOut, lunchIn, exit].filter(Boolean) as T[];
+  const selectedSet = new Set(selected);
+  const discarded = unique.filter((p) => !selectedSet.has(p));
+  if (unique.length > 4) flags.push("capped_to_4");
+
+  return { selected, entry, lunchOut, lunchIn, exit, discarded, flags };
+}

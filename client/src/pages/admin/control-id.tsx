@@ -2521,29 +2521,46 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
   const [savingDay, setSavingDay] = useState(false);
 
   async function addFullDay() {
-    // Proteção contra empilhamento: se o dia já tem batidas, força confirmação
-    if (punches.length > 0) {
+    // Modelo canônico: Entrada = Control iD da parede; operação lança as outras 3.
+    // Se já existe batida (ex.: facial sincronizada), NÃO relança Entrada — só completa.
+    const hasDeviceEntry = punches.some((p) => {
+      const src = String(p.source || "").toLowerCase();
+      return src === "facial" || src === "rfid" || src === "digital" || src === "senha" || !src;
+    });
+    if (punches.length >= 4) {
+      toast({
+        title: "Dia já completo",
+        description: "Este dia já tem 4 batidas. Apague as extras antes de adicionar.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (punches.length > 0 && !hasDeviceEntry) {
       const ok = confirm(
-        `Este dia já tem ${punches.length} batida(s). "Adicionar dia (4 batidas)" vai SOMAR mais 4 (não substitui).\n\n` +
-        `Se quer recomeçar o dia, primeiro apague as batidas atuais uma a uma e depois adicione o dia.\n\n` +
-        `Continuar adicionando 4 batidas mesmo assim?`
+        `Este dia já tem ${punches.length} batida(s) manuais. O ideal é: 1 Entrada do Control iD + 3 da operação.\n\n` +
+        `Continuar completando os horários que faltam?`,
       );
       if (!ok) return;
     }
-    const slots: { time: string; direction: "in" | "out"; label: string }[] = [
-      { time: dayEntrada, direction: "in", label: "Entrada" },
+    const allSlots: { time: string; direction: "in" | "out"; label: string; skipIfDeviceEntry?: boolean }[] = [
+      { time: dayEntrada, direction: "in", label: "Entrada", skipIfDeviceEntry: true },
       { time: dayLunchOut, direction: "out", label: "Início Almoço" },
       { time: dayLunchIn, direction: "in", label: "Retorno Almoço" },
       { time: daySaida, direction: "out", label: "Saída" },
     ];
+    const slots = allSlots.filter((s) => !(s.skipIfDeviceEntry && hasDeviceEntry && punches.length > 0));
+    const maxNew = Math.max(0, 4 - punches.length);
+    const toCreate = slots.slice(0, maxNew);
+    if (toCreate.length === 0) {
+      toast({ title: "Nada a adicionar", description: "O dia já está no limite de 4 batidas." });
+      return;
+    }
     setSavingDay(true);
     let okCount = 0;
     const errs: string[] = [];
-    for (const s of slots) {
+    for (const s of toCreate) {
       try {
-        // Num "dia completo" os horários são digitados de propósito e há batidas
-        // intermediárias reais — então 00:00/23:59 nas pontas são legítimos
-        // (jornada contínua que vira a meia-noite), não placeholder. Auto-confirma.
+        // 00:00/23:59 nas pontas são legítimos na virada de meia-noite (plantão).
         const body: any = { employeeId, punchAt: new Date(s.time).toISOString(), direction: s.direction };
         if (isBoundaryPunchTime(s.time)) body.force = true;
         const r = await authFetch("/api/control-id/manual-punch", {
@@ -2560,12 +2577,17 @@ function EditDayDialog({ day, employeeId, onClose, onChanged }: { day: FolhaDay;
     }
     setSavingDay(false);
     if (errs.length === 0) {
-      toast({ title: "Dia adicionado", description: `${okCount} batidas criadas (Entrada, Início/Retorno Almoço, Saída).` });
+      toast({
+        title: "Batidas registradas",
+        description: hasDeviceEntry && punches.length > 0
+          ? `${okCount} batida(s) da operação (Entrada Control iD já existia).`
+          : `${okCount} batidas criadas (máx. 4/dia).`,
+      });
       setAddingDay(false);
       onChanged();
       onClose();
     } else {
-      toast({ title: `${okCount} de 4 batidas criadas`, description: errs.join(" · "), variant: "destructive" });
+      toast({ title: `${okCount} batida(s) criadas`, description: errs.join(" · "), variant: "destructive" });
       onChanged();
     }
   }

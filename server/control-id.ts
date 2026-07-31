@@ -28,6 +28,7 @@ import {
   decideImport,
   rhidNumericCore,
   dedupPunchesByCore,
+  selectCanonicalDayPunches,
 } from "./lib/control-id-parsers";
 import { getLockedPeriods, isDateLocked, type LockedPeriod } from "./lib/locked-periods";
 
@@ -1015,8 +1016,30 @@ export async function createManualPunch(params: {
   direction?: string;
   source?: string;
   deviceId?: number;
+  /** Permite 5ª+ batida no dia (exceção). Default: bloqueia — modelo canônico = 4. */
+  allowExtraPunches?: boolean;
 }): Promise<{ punchId: number; rhidSynced: boolean; rhidError?: string }> {
   const { employeeId, punchAt, direction = "unknown", source = "manual" } = params;
+
+  // Modelo canônico: no máximo 4 batidas/dia (Entrada Control iD + 3 da operação).
+  // Conta batidas já existentes no mesmo dia BRT antes de inserir.
+  if (!params.allowExtraPunches) {
+    const dayKey = new Date(punchAt.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+    const dayStart = new Date(`${dayKey}T00:00:00-03:00`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 3600000);
+    const { count, error: countErr } = await supabaseAdmin
+      .from("control_id_punches")
+      .select("id", { count: "exact", head: true })
+      .eq("employee_id", employeeId)
+      .gte("punch_at", dayStart.toISOString())
+      .lt("punch_at", dayEnd.toISOString());
+    if (countErr) throw new Error(`Erro ao validar batidas do dia: ${countErr.message}`);
+    if ((count || 0) >= 4) {
+      throw new Error(
+        `Este dia já tem ${count} batida(s). O ponto canônico é 4 (Entrada Control iD, saída almoço, retorno almoço, fim). Apague uma batida extra ou envie allowExtraPunches/forceExtra se for exceção.`,
+      );
+    }
+  }
 
   // Acha mapping ativo do employee
   let mapping: any = null;
@@ -2143,13 +2166,23 @@ export async function buildFolhaPonto(
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = (dayPunches as any[]).sort((a: any, b: any) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    // Modelo canônico (dono 31/07/2026): Entrada = Control iD parede (prioridade);
+    // almoço/saída = operação; no máximo 4 batidas para o cálculo.
+    const canon = selectCanonicalDayPunches(sorted);
+    const slot = canon.selected;
+    const entryPunch = canon.entry;
+    const lunchOutPunch = canon.lunchOut;
+    const lunchInPunch = canon.lunchIn;
+    const exitPunch = canon.exit;
     const entry: any = {
       date: day,
-      clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
-      lunchOut: sorted.length >= 4 ? fmt(sorted[1].punch_at) : null,
-      lunchIn: sorted.length >= 4 ? fmt(sorted[2].punch_at) : null,
-      clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
+      clockIn: entryPunch ? fmt(entryPunch.punch_at) : null,
+      lunchOut: lunchOutPunch ? fmt(lunchOutPunch.punch_at) : null,
+      lunchIn: lunchInPunch ? fmt(lunchInPunch.punch_at) : null,
+      clockOut: exitPunch ? fmt(exitPunch.punch_at) : null,
       totalPunches: sorted.length,
+      canonicalPunches: slot.length,
+      canonicalFlags: canon.flags,
       sources: Array.from(new Set(sorted.map((p: any) => p.source).filter(Boolean))),
       punches: sorted.map((p: any) => ({
         id: p.id,
@@ -2157,21 +2190,19 @@ export async function buildFolhaPonto(
         time: fmt(p.punch_at),
         direction: p.direction,
         source: p.source,
+        usedInFolha: slot.includes(p),
       })),
     };
-    // Cartão Control iD / Folha de pagamento (INTOCÁVEL):
-    //   trabalhado = (última − primeira) − 1º intervalo de almoço (batidas 2–3),
-    //   teto 19:59 (remove fantasma 00:00/23:59 do import).
-    // NÃO usar pares gulosos aqui: descontar todas as pausas subcontava ~9h no
-    // Reis (93:05 vs 102:22 do cartão oficial) em 26/06→25/07/2026.
-    if (entry.clockIn && entry.clockOut) {
-      const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
-      const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
+    // Folha: (saída − entrada) − almoço, teto 19:59. Virada de meia-noite OK
+    // (marcadores 00:00/23:59 podem ser entrada/saída do dia).
+    if (entry.clockIn && entry.clockOut && entryPunch && exitPunch) {
+      const inMs = truncateToMinuteMs(new Date(entryPunch.punch_at).getTime());
+      const outMs = truncateToMinuteMs(new Date(exitPunch.punch_at).getTime());
       let workedMin = workedMinutesBetween(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+      if (lunchOutPunch && lunchInPunch) {
         workedMin -= workedMinutesBetween(
-          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
+          truncateToMinuteMs(new Date(lunchOutPunch.punch_at).getTime()),
+          truncateToMinuteMs(new Date(lunchInPunch.punch_at).getTime()),
         );
       }
       workedMin = Math.min(Math.max(0, workedMin), NORMAL_DAILY_CAP_MIN);
@@ -2181,10 +2212,10 @@ export async function buildFolhaPonto(
       entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
       let noturnoMin = nightMinutesBRT(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
+      if (lunchOutPunch && lunchInPunch) {
         noturnoMin -= nightMinutesBRT(
-          truncateToMinuteMs(new Date(sorted[1].punch_at).getTime()),
-          truncateToMinuteMs(new Date(sorted[2].punch_at).getTime()),
+          truncateToMinuteMs(new Date(lunchOutPunch.punch_at).getTime()),
+          truncateToMinuteMs(new Date(lunchInPunch.punch_at).getTime()),
         );
       }
       entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));

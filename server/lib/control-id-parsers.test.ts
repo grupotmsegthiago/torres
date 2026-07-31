@@ -15,6 +15,9 @@ import {
   workedMinutesBetween,
   computeDayWorkedMinutesFromPunches,
   isSyntheticMidnightMarker,
+  isControlIdDevicePunch,
+  isManualOpsPunch,
+  selectCanonicalDayPunches,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -438,4 +441,103 @@ test("minuteKeyBRT: batida do nosso sistema e do AFD no mesmo minuto casam (dedu
   const ours = minuteKeyBRT(new Date("2026-06-01T11:00:10.000Z"));
   const afd = minuteKeyBRT(new Date("2026-06-01T11:00:55.000Z"));
   assert.equal(ours, afd);
+});
+
+// ============================================================================
+// Modelo canônico 4 batidas (Entrada Control iD + 3 operação)
+// ============================================================================
+
+function brtIso(day: string, hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const [y, mo, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1, d, h + 3, m, 0, 0)).toISOString();
+}
+
+test("isControlIdDevicePunch: facial e AFD rhid_* contam como parede", () => {
+  assert.equal(isControlIdDevicePunch({ punch_at: "x", source: "facial" }), true);
+  assert.equal(isControlIdDevicePunch({ punch_at: "x", source: null, external_id: "rhid_1_2" }), true);
+  assert.equal(isControlIdDevicePunch({ punch_at: "x", source: "admin_manual" }), false);
+  assert.equal(isManualOpsPunch({ punch_at: "x", source: "admin_manual" }), true);
+});
+
+test("selectCanonicalDayPunches: dia normal 4 batidas (facial + 3 manuais)", () => {
+  const day = "2026-07-10";
+  const punches = [
+    { punch_at: brtIso(day, "08:00"), source: "facial", external_id: "rhid_1_1", id: 1 },
+    { punch_at: brtIso(day, "12:00"), source: "admin_manual", id: 2 },
+    { punch_at: brtIso(day, "13:00"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "18:00"), source: "admin_manual", id: 4 },
+  ];
+  const c = selectCanonicalDayPunches(punches);
+  assert.equal(c.selected.length, 4);
+  assert.equal(c.entry?.id, 1);
+  assert.equal(c.lunchOut?.id, 2);
+  assert.equal(c.lunchIn?.id, 3);
+  assert.equal(c.exit?.id, 4);
+  assert.equal(c.discarded.length, 0);
+});
+
+test("selectCanonicalDayPunches: marcador 00:00 + Control iD → entrada = parede", () => {
+  const day = "2026-07-21";
+  // 00:00 marcador manual + facial 02:24 → entrada prioriza parede
+  const punches = [
+    { punch_at: brtIso(day, "00:00"), source: "admin_manual", id: 10 },
+    { punch_at: brtIso(day, "02:24"), source: null, external_id: "rhid_9_1", id: 11 },
+    { punch_at: brtIso(day, "12:00"), source: "admin_manual", id: 12 },
+    { punch_at: brtIso(day, "13:00"), source: "admin_manual", id: 13 },
+    { punch_at: brtIso(day, "14:00"), source: "admin_manual", id: 14 },
+  ];
+  const c = selectCanonicalDayPunches(punches);
+  assert.ok(c.flags.includes("entry_device_priority"));
+  assert.equal(c.entry?.id, 11, "entrada = Control iD após marcador 00:00");
+  assert.equal(c.lunchOut?.id, 12);
+  assert.equal(c.lunchIn?.id, 13);
+  assert.equal(c.exit?.id, 14);
+  assert.ok(c.flags.includes("capped_to_4"));
+});
+
+test("selectCanonicalDayPunches: 5 batidas — almoço manual tipico, ignora extra AFD", () => {
+  const day = "2026-07-20";
+  const punches = [
+    { punch_at: brtIso(day, "05:53"), source: null, external_id: "rhid_1_1", id: 1 },
+    { punch_at: brtIso(day, "07:00"), source: null, external_id: "rhid_1_2", id: 2 },
+    { punch_at: brtIso(day, "12:11"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "13:20"), source: "admin_manual", id: 4 },
+    { punch_at: brtIso(day, "23:59"), source: "admin_manual", id: 5 },
+  ];
+  const c = selectCanonicalDayPunches(punches);
+  assert.equal(c.entry?.id, 1);
+  assert.equal(c.lunchOut?.id, 3, "almoço = manuais");
+  assert.equal(c.lunchIn?.id, 4);
+  assert.equal(c.exit?.id, 5);
+  assert.ok(c.flags.includes("lunch_from_manual"));
+  assert.ok(c.discarded.some((p) => p.id === 2), "07:00 AFD extra descartado");
+});
+
+test("selectCanonicalDayPunches: dia com 5 batidas escolhe almoço ~1h (não gap de 9h)", () => {
+  const day = "2026-07-21";
+  const punches = [
+    { punch_at: brtIso(day, "00:00"), source: "admin_manual", id: 1 },
+    { punch_at: brtIso(day, "02:24"), source: null, external_id: "rhid_1_1", id: 2 },
+    { punch_at: brtIso(day, "12:00"), source: "admin_manual", id: 3 },
+    { punch_at: brtIso(day, "13:00"), source: "admin_manual", id: 4 },
+    { punch_at: brtIso(day, "14:00"), source: null, external_id: "rhid_1_2", id: 5 },
+  ];
+  // Sem swap de entrada (00:00 não é o único prefixo antes do device se... 00:00 É marker → entry=02:24)
+  // Com entry=02:24, middle manuais 12:00/13:00, exit=14:00 → almoço 1h
+  const c = selectCanonicalDayPunches(punches);
+  assert.equal(c.lunchOut?.id, 3);
+  assert.equal(c.lunchIn?.id, 4);
+});
+
+test("selectCanonicalDayPunches: virada meia-noite com 2 batidas (sem almoço)", () => {
+  const day = "2026-07-18";
+  const punches = [
+    { punch_at: brtIso(day, "00:00"), source: "admin_manual", id: 1 },
+    { punch_at: brtIso(day, "05:12"), source: "admin_manual", id: 2 },
+  ];
+  const c = selectCanonicalDayPunches(punches);
+  assert.equal(c.selected.length, 2);
+  assert.equal(c.lunchOut, null);
+  assert.equal(c.exit?.id, 2);
 });
