@@ -2159,11 +2159,12 @@ export async function buildFolhaPonto(
         source: p.source,
       })),
     };
-    // Cartão Control iD / Folha de pagamento (INTOCÁVEL):
+    // Folha de pagamento (INTOCÁVEL) — motor first_last:
     //   trabalhado = (última − primeira) − 1º intervalo de almoço (batidas 2–3),
     //   teto 19:59 (remove fantasma 00:00/23:59 do import).
-    // NÃO usar pares gulosos aqui: descontar todas as pausas subcontava ~9h no
-    // Reis (93:05 vs 102:22 do cartão oficial) em 26/06→25/07/2026.
+    // NÃO usar pares gulosos: descontar todas as pausas subcontava ~9h no Reis
+    // (93:05). Alvo dono 31/07/2026: Reis 26/06→25/07 = HE 103:45 (323:45−220),
+    // NÃO forçar o PDF Control iD 102:22.
     if (entry.clockIn && entry.clockOut) {
       const inMs = truncateToMinuteMs(new Date(sorted[0].punch_at).getTime());
       const outMs = truncateToMinuteMs(new Date(sorted[sorted.length - 1].punch_at).getTime());
