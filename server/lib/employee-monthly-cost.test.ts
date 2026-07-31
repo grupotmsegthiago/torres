@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calcularFolha } from "./payroll";
-import { composeCustoEmpresaDetalhado } from "./employee-monthly-cost";
+import { composeCustoEmpresaDetalhado, payrollWindowFromMesRef } from "./employee-monthly-cost";
+
+test("payrollWindowFromMesRef: julho/2026 = 26/06 → 25/07", () => {
+  const w = payrollWindowFromMesRef("2026-07");
+  assert.equal(w.from, "2026-06-26");
+  assert.equal(w.to, "2026-07-25");
+  assert.ok(w.labelShort.includes("26") && w.labelShort.includes("25"));
+});
 
 test("Fernando HE=0: custo fecha ~5452,83 sem encargos CCT extras", () => {
   // Base vigilante 2565.31 × 1.3 = 3334.90; VR 43×23; cesta 200; VT/outros/VA/assid = 86

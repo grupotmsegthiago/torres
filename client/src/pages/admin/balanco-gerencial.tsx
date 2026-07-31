@@ -236,6 +236,8 @@ export default function BalancoGerencialPage() {
     daily: number;
     dailyOperacional?: number;
     agentCount: number;
+    period?: { from: string; to: string };
+    payrollPeriod?: { from: string; to: string; mesRef: string; label: string; labelShort: string };
     breakdown?: {
       salarioProporcional?: number;
       periculosidade?: number;
@@ -252,6 +254,7 @@ export default function BalancoGerencialPage() {
       adicionalNoturno?: number;
       dsr?: number;
       beneficios?: number;
+      vr?: number;
     };
     porAgente?: Array<{
       id: number; name: string; total: number;
@@ -261,13 +264,15 @@ export default function BalancoGerencialPage() {
       inss?: number; irrf?: number; fgts?: number;
       totalProvisoes?: number;
       horaExtra?: number; adicionalNoturno?: number; dsr?: number;
+      vrTotal?: number; cesta?: number; vt?: number; diarias?: number; ajudaCusto?: number;
+      ferias?: number; decimoTerceiro?: number;
     }>;
   }>({
-    // v13: HE Folha = first→last − 1º almoço + teto 19:59; CCT R$ 16 / 16,50 fixas.
+    // v15: HE/ponto = ciclo 26→25; VR/benefícios = mês civil do filtro.
     // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
-    queryKey: ["/api/fixed-costs/rh-summary", "v13", "cached", gridRange.from, gridRange.to],
+    queryKey: ["/api/fixed-costs/rh-summary", "v15", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = `rh-summary-v13-forced:${gridRange.from}:${gridRange.to}`;
+      const bustKey = `rh-summary-v15-forced:${gridRange.from}:${gridRange.to}`;
       let force = "";
       try {
         if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
@@ -930,7 +935,7 @@ export default function BalancoGerencialPage() {
                 <Calendar size={16} className="text-cyan-400" /> Selecionar período
               </DialogTitle>
               <DialogDescription className="text-slate-400">
-                Escolha a data inicial e a data final para filtrar o Balanço Gerencial.
+                Escolha a data inicial e a data final. No bloco RH, ponto/HE usa sempre o ciclo 26→25 da competência; VR e demais itens seguem o mês civil (1→fim).
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 pt-1">
@@ -954,6 +959,25 @@ export default function BalancoGerencialPage() {
                   data-testid="input-dialog-period-to"
                 />
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full border-amber-600/50 text-amber-200 hover:bg-amber-950/40"
+                data-testid="button-preset-ciclo-rh"
+                onClick={() => {
+                  // Competência do mês de referência atual (ex.: jul → 26/jun → 25/jul).
+                  const y = refDate.getFullYear();
+                  const m = refDate.getMonth() + 1;
+                  const prev = new Date(y, m - 2, 26);
+                  const end = new Date(y, m - 1, 25);
+                  const pad = (n: number) => String(n).padStart(2, "0");
+                  setDraftFrom(`${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(prev.getDate())}`);
+                  setDraftTo(`${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`);
+                }}
+              >
+                Preencher ciclo ponto RH (26 → 25)
+              </Button>
               <div className="flex gap-2 pt-1">
                 <Button
                   variant="outline"
@@ -1248,13 +1272,19 @@ export default function BalancoGerencialPage() {
               const beneficios = agg.vr + agg.cesta + agg.vt + agg.diarias + agg.ajuda;
               const hasBreakdown = vencimentos + beneficios + agg.fgts + agg.provisoes > 0;
 
+              const pontoLabel = rhSummary?.payrollPeriod?.labelShort
+                || "26 → 25 (ciclo ponto)";
               if (hasBreakdown) {
-                rhRows.push({ label: "── Vencimentos (CCT) ──", value: vencimentos * fatorPeriodo });
-                rhRows.push({ label: "  Salário base", value: agg.base * fatorPeriodo });
-                rhRows.push({ label: "  Periculosidade", value: agg.peric * fatorPeriodo });
+                rhRows.push({
+                  label: `── Ponto / HE (${pontoLabel}) ──`,
+                  value: (agg.he + agg.noturno) * fatorPeriodo,
+                });
                 if (agg.he > 0) rhRows.push({ label: "  Hora extra", value: agg.he * fatorPeriodo });
                 if (agg.noturno > 0) rhRows.push({ label: "  Adicional noturno", value: agg.noturno * fatorPeriodo });
-                rhRows.push({ label: "── Benefícios ──", value: beneficios * fatorPeriodo });
+                rhRows.push({ label: "── Vencimentos (CCT · mês civil) ──", value: (agg.base + agg.peric) * fatorPeriodo });
+                rhRows.push({ label: "  Salário base", value: agg.base * fatorPeriodo });
+                rhRows.push({ label: "  Periculosidade", value: agg.peric * fatorPeriodo });
+                rhRows.push({ label: "── Benefícios (mês civil 1→fim) ──", value: beneficios * fatorPeriodo });
                 if (agg.vr > 0) rhRows.push({ label: "  Vale Refeição", value: agg.vr * fatorPeriodo });
                 if (agg.cesta > 0) rhRows.push({ label: "  Cesta Básica", value: agg.cesta * fatorPeriodo });
                 if (agg.vt > 0) rhRows.push({ label: "  Vale Transporte", value: agg.vt * fatorPeriodo });
@@ -1296,7 +1326,7 @@ export default function BalancoGerencialPage() {
                 key: "rh", label: "RH · Custo Empresa CCT", value: totals.provisaoRH, color: "amber",
                 icon: UserCog, bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500",
                 tipTitle: "RH — Custo Empresa (cadastro CCT)",
-                tipDesc: `Mesmo cálculo da tela de cadastro do funcionário (Custo Empresa). Soma bruto + FGTS + provisões (13º/férias/1/3) + benefícios (VR, cesta, VT etc.) de cada ativo. Rateado pro período (${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30).`,
+                tipDesc: `Ponto/HE fecha no ciclo ${pontoLabel} (abre dia 26, fecha dia 25). Vale refeição e demais benefícios usam o mês civil (1→último dia). Rateio do filtro: ${PERIOD_ADJ[period]} = ${costDays} dia(s) ÷ 30.`,
                 rows: rhRows,
               });
             }

@@ -499,9 +499,9 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
   // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
-  // baseKey v14: folha canônica — Entrada Control iD (prioridade) + até 4 batidas/dia.
+  // baseKey v15: HE/ponto sempre ciclo 26→25; VR/benefícios no mês civil do filtro.
   app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary-v14",
+    baseKey: "rh-summary-v15",
     ttlMs: SWR_TTL_3H,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()],
@@ -529,8 +529,11 @@ export function registerFixedCostsRoutes(app: Express) {
     const mesRef = (fromDay === 26 ? String(to).slice(0, 7) : String(from).slice(0, 7));
     const yearRef = Number(mesRef.slice(0, 4));
     const monthRef = Number(mesRef.slice(5, 7));
+    // Ponto/HE fecha 26→25; VR/refeição/salário fixo seguem competência civil do filtro.
+    const { getPayrollPeriod } = await import("@shared/payroll-period");
+    const payrollPeriod = getPayrollPeriod(yearRef, monthRef);
 
-    // HE / noturno: ponto_operacional → jornada_calculos → batidas Control iD.
+    // HE / noturno: batidas Control iD (26→25) → ponto_operacional (26→25) → jornada.
     // Não trava em ponto com HE=0 (vigilantes batem no Control iD, não no app).
     const heByEmp = new Map<number, number>();
     const notByEmp = new Map<number, number>();
@@ -538,8 +541,8 @@ export function registerFixedCostsRoutes(app: Express) {
     try {
       const horasMap = await resolveHorasExtrasNoturnasBulk({
         employeeIds: ativos.map((e) => Number(e.id)),
-        from,
-        to,
+        from: payrollPeriod.startDate,
+        to: payrollPeriod.endDate,
         mesRef,
       });
       for (const [id, h] of horasMap) {
@@ -708,6 +711,14 @@ export function registerFixedCostsRoutes(app: Express) {
       yearly: totalMensal * 12,
       agentCount: ativos.length,
       period: { from, to, businessDays, holidaysCount: holidaySet.size },
+      // Exclusivo ponto/HE/folha — VR e demais benefícios usam o `period` civil acima.
+      payrollPeriod: {
+        from: payrollPeriod.startDate,
+        to: payrollPeriod.endDate,
+        mesRef,
+        label: payrollPeriod.label,
+        labelShort: payrollPeriod.labelShort,
+      },
       fonte: "cct-cadastro",
       breakdown: {
         base: acc.base,

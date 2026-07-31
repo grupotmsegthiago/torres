@@ -7,8 +7,17 @@
  *  - Encargos CCT: FGTS (folha) + INSS patronal + seguro de vida
  *  - Separação: realizado / provisionado / descontos empregado / encargos
  */
+import { getPayrollPeriod } from "@shared/payroll-period";
 import { supabaseAdmin } from "../supabase";
 import { r2, type PayrollBreakdown } from "./payroll";
+
+/** Janela inclusiva 26→25 da competência `mesRef` (YYYY-MM) — só ponto/HE. */
+export function payrollWindowFromMesRef(mesRef: string): { from: string; to: string; labelShort: string } {
+  const y = Number(String(mesRef).slice(0, 4));
+  const m = Number(String(mesRef).slice(5, 7));
+  const p = getPayrollPeriod(y, m);
+  return { from: p.startDate, to: p.endDate, labelShort: p.labelShort };
+}
 
 export type HorasFonte =
   | "ponto_operacional"
@@ -78,9 +87,12 @@ export async function resolveHorasExtrasNoturnas(opts: {
    */
   allowBatidasFallback?: boolean;
 }): Promise<HorasPeriodoResult> {
-  const { employeeId, from, to, mesRef } = opts;
-  const inicio = `${from}T00:00:00-03:00`;
-  const fim = `${to}T23:59:59-03:00`;
+  const { employeeId, mesRef } = opts;
+  // Ponto/HE: SEMPRE ciclo 26→25 da competência. VR/refeição/outros no Balanço
+  // continuam no mês civil do filtro — não misturar.
+  const payroll = payrollWindowFromMesRef(mesRef);
+  const inicio = `${payroll.from}T00:00:00-03:00`;
+  const fim = `${payroll.to}T23:59:59-03:00`;
   const allowBatidas = opts.allowBatidasFallback !== false;
 
   // 1) Canônico: batidas Control iD (banco mensal + noturno da mesma folha).
@@ -177,7 +189,7 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
   mesRef: string;
   horasMensaisByEmp?: Map<number, number>;
 }): Promise<Map<number, HorasPeriodoResult>> {
-  const { employeeIds, from, to, mesRef } = opts;
+  const { employeeIds, mesRef } = opts;
   const out = new Map<number, HorasPeriodoResult>();
   for (const id of employeeIds) {
     out.set(id, { horasExtras: 0, horasNoturnas: 0, fonte: "nenhuma", registros: 0 });
@@ -208,8 +220,10 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
   });
   if (faltantes.length === 0) return out;
 
-  const inicio = `${from}T00:00:00-03:00`;
-  const fim = `${to}T23:59:59-03:00`;
+  // Fallback ponto_operacional: mesma janela 26→25 das batidas (não mês civil do filtro).
+  const payroll = payrollWindowFromMesRef(mesRef);
+  const inicio = `${payroll.from}T00:00:00-03:00`;
+  const fim = `${payroll.to}T23:59:59-03:00`;
   const comPontoValor = new Set<number>();
 
   // 2) Fallback em lote: ponto do app

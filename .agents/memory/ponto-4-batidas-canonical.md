@@ -19,7 +19,7 @@ description: Processo operacional (dono 31/07/2026): parede = entrada prioritár
 - Folha usa os 4 slots canônicos — `buildFolhaPonto` em `server/control-id.ts`
 - Manual bloqueia 5ª batida — `createManualPunch` (override: `allowExtraPunches` / `forceExtra`)
 - UI “dia completo” não relança Entrada se já houver batida do aparelho
-- Cache Balanço: `rh-summary-v14`
+- Cache Balanço: `rh-summary-v15` (HE/ponto 26→25; VR mês civil)
 
 ## Reentrada ilegal (ex. Reis 20/07/2026)
 
