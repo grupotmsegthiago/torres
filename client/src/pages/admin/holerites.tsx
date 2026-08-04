@@ -15,7 +15,7 @@ import {
 import {
   Receipt, Plus, Loader2, DollarSign, Calendar, User, FileText,
   Upload, Download, Trash2, CheckCircle2, Clock, AlertTriangle,
-  ChevronDown, ChevronUp, BarChart3, Eye, ScanLine, ShieldCheck, ShieldAlert
+  ChevronDown, ChevronUp, BarChart3, Eye, ShieldCheck, ShieldAlert
 } from "lucide-react";
 
 import { getPayrollPeriod } from "@shared/payroll-period";
@@ -446,78 +446,6 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
-  const [ocrProcessing, setOcrProcessing] = useState(false);
-  const [ocrResult, setOcrResult] = useState<any>(null);
-
-  const handleOcrImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setOcrProcessing(true);
-    setOcrResult(null);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
-      setDocumentUrl(base64);
-      try {
-        const r = await apiRequest("POST", "/api/payslips/ocr", { imageData: base64 });
-        const data = await r.json();
-        setOcrResult(data);
-
-        const filled = {
-          employeeId: data.matchedEmployeeId ? String(data.matchedEmployeeId) : "",
-          month: data.month ? String(data.month) : "",
-          year: data.year ? String(data.year) : "",
-          salarioBase: data.salarioBase ? String(data.salarioBase) : "0",
-          periculosidade: data.periculosidade ? String(data.periculosidade) : "0",
-          horasExtras: data.horasExtras ? String(data.horasExtras) : "0",
-          adicionalNoturno: data.adicionalNoturno ? String(data.adicionalNoturno) : "0",
-          dsr: data.dsr ? String(data.dsr) : "0",
-          valeRefeicao: data.valeRefeicao ? String(data.valeRefeicao) : "0",
-          ajudaCusto: data.ajudaCusto ? String(data.ajudaCusto) : "0",
-          beneficios: data.beneficios ? String(data.beneficios) : "0",
-          descontos: data.descontos ? String(data.descontos) : "0",
-        };
-        setForm(f => ({ ...f, ...filled }));
-
-        // Auto-save quando OCR identificou funcionário + competência
-        if (filled.employeeId && filled.month && filled.year) {
-          try {
-            const sb = Number(filled.salarioBase) || 0;
-            const he = Number(filled.horasExtras) || 0;
-            const an = Number(filled.adicionalNoturno) || 0;
-            const pe = Number(filled.periculosidade) || 0;
-            const ds = Number(filled.dsr) || 0;
-            const vr = Number(filled.valeRefeicao) || 0;
-            const ac = Number(filled.ajudaCusto) || 0;
-            const be = Number(filled.beneficios) || 0;
-            const de = Number(filled.descontos) || 0;
-            await apiRequest("POST", `/api/employees/${filled.employeeId}/payslips`, {
-              employeeId: filled.employeeId,
-              month: Number(filled.month),
-              year: Number(filled.year),
-              salarioBase: sb, horasExtras: he, adicionalNoturno: an, periculosidade: pe,
-              dsr: ds, valeRefeicao: vr, ajudaCusto: ac, beneficios: be, descontos: de,
-              documentUrl: base64,
-              status: "pendente",
-            });
-            queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
-            toast({ title: "Holerite importado e salvo!", description: `${data.employeeName || ""} · ${data.competencia || ""}` });
-            onClose();
-            setOcrProcessing(false);
-            return;
-          } catch (saveErr: any) {
-            toast({ title: "OCR OK, mas falhou ao salvar", description: saveErr.message + ". Revise os dados e clique em Salvar.", variant: "destructive" });
-          }
-        } else {
-          toast({ title: "Holerite lido com sucesso!", description: `Revise${!filled.employeeId ? " e selecione o funcionário" : ""} antes de salvar.` });
-        }
-      } catch (err: any) {
-        toast({ title: "Erro no OCR", description: err.message || "Não foi possível ler o documento", variant: "destructive" });
-      }
-      setOcrProcessing(false);
-    };
-    reader.readAsDataURL(file);
-  };
 
   const fetchSuggestion = async () => {
     if (!form.employeeId || !form.month || !form.year) return;
@@ -596,28 +524,27 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="relative">
-            <input type="file" accept="image/*,application/pdf" onChange={handleOcrImport} className="hidden" id="ocr-upload" data-testid="input-ocr-upload" />
-            <label htmlFor="ocr-upload" className={`flex items-center justify-center gap-2 w-full border-2 border-dashed rounded-lg p-4 cursor-pointer transition-all ${ocrProcessing ? "border-indigo-400 bg-indigo-50" : ocrResult ? "border-emerald-400 bg-emerald-50" : "border-neutral-300 bg-neutral-50 hover:border-indigo-400 hover:bg-indigo-50"}`}>
-              {ocrProcessing ? (
-                <>
-                  <Loader2 size={18} className="animate-spin text-indigo-600" />
-                  <span className="text-sm font-bold text-indigo-700">Lendo holerite com OCR...</span>
-                </>
-              ) : ocrResult ? (
-                <>
-                  <CheckCircle2 size={18} className="text-emerald-600" />
-                  <span className="text-sm font-bold text-emerald-700">
-                    Importado: {ocrResult.employeeName || "Doc lido"} {ocrResult.competencia ? `· ${ocrResult.competencia}` : ""}
-                  </span>
-                </>
+          <div>
+            <label className="text-sm font-bold text-neutral-700 mb-1 block">Anexar holerite (PDF/Imagem)</label>
+            <label
+              className={`flex items-center justify-center gap-2 w-full border-2 border-dashed rounded-lg p-4 cursor-pointer transition-all ${
+                documentUrl
+                  ? "border-emerald-400 bg-emerald-50"
+                  : "border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+              }`}
+              data-testid="button-upload-holerite"
+            >
+              {uploading ? (
+                <Loader2 size={18} className="animate-spin text-neutral-500" />
+              ) : documentUrl ? (
+                <CheckCircle2 size={18} className="text-emerald-600" />
               ) : (
-                <>
-                  <ScanLine size={18} className="text-indigo-600" />
-                  <span className="text-sm font-bold text-neutral-700">Importar Holerite (OCR)</span>
-                  <span className="text-xs text-neutral-400 ml-1">PDF ou foto</span>
-                </>
+                <Upload size={18} className="text-neutral-500" />
               )}
+              <span className={`text-sm font-bold ${documentUrl ? "text-emerald-700" : "text-neutral-700"}`}>
+                {uploading ? "Anexando..." : documentUrl ? "Holerite anexado" : "Clique para anexar PDF ou foto"}
+              </span>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" className="hidden" onChange={handleUpload} />
             </label>
           </div>
 
@@ -726,15 +653,6 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
               <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Data de Pagamento</label>
               <Input type="date" value={form.dataPagamento} onChange={e => setForm({ ...form, dataPagamento: e.target.value })} data-testid="input-data-pagamento" />
             </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Comprovante (PDF/Imagem)</label>
-            <label className="flex items-center gap-2 border border-dashed border-neutral-300 rounded-lg p-3 cursor-pointer hover:bg-neutral-50 transition-colors" data-testid="button-upload-comprovante">
-              {uploading ? <Loader2 size={16} className="animate-spin text-neutral-400" /> : documentUrl ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Upload size={16} className="text-neutral-400" />}
-              <span className="text-sm text-neutral-600">{documentUrl ? "Comprovante anexado" : "Clique para anexar"}</span>
-              <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleUpload} />
-            </label>
           </div>
 
           <div>
