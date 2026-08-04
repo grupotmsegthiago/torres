@@ -457,17 +457,34 @@ export function matchEmployeeFromHolerite(
   return null;
 }
 
+function isUsableOpenAIKey(key: string | undefined): key is string {
+  const k = String(key || "").trim();
+  if (!k) return false;
+  if (k.startsWith("_DUMMY_")) return false;
+  if (/^(dummy|changeme|your[-_]?key|xxx+)$/i.test(k)) return false;
+  return true;
+}
+
+function sanitizeOpenAIBaseURL(url: string | undefined): string | undefined {
+  const u = String(url || "").trim();
+  if (!u) return undefined;
+  // Gateway interno do Replit não existe na Vercel/Cursor.
+  if (/localhost:1106|127\.0\.0\.1:1106|modelfarm|replit/i.test(u)) return undefined;
+  return u;
+}
+
 /** Monta client OpenAI com fallback legado (Vercel usa OPENAI_API_KEY; Replit usa AI_INTEGRATIONS_*). */
 export function resolveOpenAIConfig(): { apiKey: string; baseURL?: string } | null {
   const integrationsKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  const integrationsBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const integrationsBase = sanitizeOpenAIBaseURL(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL);
   const legacyKey = process.env.OPENAI_API_KEY;
 
-  if (integrationsKey) {
-    return { apiKey: integrationsKey, baseURL: integrationsBase || undefined };
+  if (isUsableOpenAIKey(integrationsKey)) {
+    return { apiKey: integrationsKey.trim(), baseURL: integrationsBase };
   }
-  if (legacyKey) {
-    return { apiKey: legacyKey, baseURL: undefined };
+  if (isUsableOpenAIKey(legacyKey)) {
+    // Sem baseURL → SDK usa https://api.openai.com/v1
+    return { apiKey: legacyKey.trim(), baseURL: undefined };
   }
   return null;
 }
