@@ -1794,12 +1794,10 @@ Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.`
 
       if (isPdf) {
         try {
-          const { PDFParse: PDFParseClass } = await import("pdf-parse");
           const base64Data = imageData.split(",")[1] || "";
-          const uint8 = new Uint8Array(Buffer.from(base64Data, "base64"));
-          const parser = new PDFParseClass(uint8, { verbosity: 0 });
-          const pdfResult = await parser.getText();
-          const pdfText = typeof pdfResult === "string" ? pdfResult : (pdfResult?.text || "");
+          const buf = Buffer.from(base64Data, "base64");
+          const { extractPdfText } = await import("./lib/pdf-text");
+          const pdfText = await extractPdfText(buf);
 
           const crafResult = parseCrafText(pdfText);
           if (crafResult && crafResult.weapons.length > 0) {

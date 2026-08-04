@@ -826,10 +826,10 @@ import type { Express } from "express";
         try {
           const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
           const buf = Buffer.from(b64, "base64");
-          const { PDFParse } = await import("pdf-parse");
-          const parser = new PDFParse({ data: buf });
-          const parsed = await parser.getText();
-          pdfText = (parsed.text || "").trim();
+          // extractPdfText: polyfill DOMMatrix via @napi-rs/canvas + CanvasFactory
+          // (sem isso, no Vercel explode: "DOMMatrix is not defined")
+          const { extractPdfText } = await import("../lib/pdf-text");
+          pdfText = await extractPdfText(buf);
           console.log(`[ocr-holerite] PDF text extracted: ${pdfText.length} chars`);
         } catch (pdfErr: any) {
           console.error("[ocr-holerite] pdf-parse falhou:", pdfErr.message);
