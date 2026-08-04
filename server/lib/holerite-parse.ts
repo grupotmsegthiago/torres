@@ -1,6 +1,9 @@
 /**
- * Parser determinístico de holerites (layout TORRES Vigilância) + identidade.
- * Usado pelo OCR de PDF para NÃO depender de OpenAI quando o texto é legível.
+ * Parser determinístico de holerites TORRES — sem OpenAI quando o PDF tem texto.
+ *
+ * Layouts suportados:
+ *  1) Folha Mensal (software atual): DIAS NORMAIS / PERICULOSIDADE / HORAS EXTRAS…
+ *  2) Layout numerado legado: "1 24,00 2.432,50" + labels "Dias trabalhados"…
  */
 
 export type HoleriteParsed = {
@@ -37,8 +40,32 @@ const MONTHS_PT: Record<string, number> = {
   dez: 12, dezembro: 12,
 };
 
+const MONEY_RE = /^\d{1,3}(?:\.\d{3})*,\d{2}$/;
+const TIME_RE = /^\d{1,3}:\d{2}$/;
+
 export function toHoleriteNumber(s: string): number {
   return Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+function emptyParsed(): HoleriteParsed {
+  return {
+    employeeName: "",
+    employeeCpf: "",
+    month: 0,
+    year: 0,
+    competencia: "",
+    salarioBase: 0,
+    periculosidade: 0,
+    horasExtras: 0,
+    adicionalNoturno: 0,
+    dsr: 0,
+    valeRefeicao: 0,
+    ajudaCusto: 0,
+    beneficios: 0,
+    descontos: 0,
+    totalBruto: 0,
+    totalLiquido: 0,
+  };
 }
 
 /** Extrai nome, CPF e competência do texto do holerite. */
@@ -56,17 +83,29 @@ export function extractHoleriteIdentity(text: string): Pick<
   }
 
   let employeeName = "";
-  const namePatterns = [
-    /(?:Nome\s*(?:do\s*)?(?:Funcion[aá]rio|Colaborador)?|Funcion[aá]rio|Colaborador)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
-    /(?:Empregado)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
-  ];
-  for (const re of namePatterns) {
-    const m = text.match(re);
-    if (m?.[1]) {
-      employeeName = m[1].replace(/\s+/g, " ").trim();
-      // corta se pegou lixo após o nome
-      employeeName = employeeName.split(/\s{2,}|\t|CPF|PIS|Cargo|Função/i)[0].trim();
-      break;
+  // Folha Mensal: nome na linha ACIMA de "Nome do Funcionário"
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    if (/^Nome do Funcion[aá]rio/i.test(lines[i]) && i > 0) {
+      const prev = lines[i - 1].replace(/\s+/g, " ").trim();
+      if (prev && /[A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{3,}/.test(prev) && !/TORRES|CNPJ|Código|Filial/i.test(prev)) {
+        employeeName = prev;
+        break;
+      }
+    }
+  }
+  if (!employeeName) {
+    const namePatterns = [
+      /(?:Nome\s*(?:do\s*)?(?:Funcion[aá]rio|Colaborador)?|Funcion[aá]rio|Colaborador)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
+      /(?:Empregado)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
+    ];
+    for (const re of namePatterns) {
+      const m = text.match(re);
+      if (m?.[1]) {
+        employeeName = m[1].replace(/\s+/g, " ").trim();
+        employeeName = employeeName.split(/\s{2,}|\t|CPF|PIS|Cargo|Função/i)[0].trim();
+        break;
+      }
     }
   }
 
@@ -74,30 +113,40 @@ export function extractHoleriteIdentity(text: string): Pick<
   let year = 0;
   let competencia = "";
 
-  // Preferência: rótulo "Competência: ..."
-  const labeled =
-    text.match(/Compet[eê]ncia\s*[:\-]?\s*([A-Za-zçÇ]{3,9})\s*\/\s*(\d{4})/i) ||
-    text.match(/Compet[eê]ncia\s*[:\-]?\s*(\d{1,2})\s*\/\s*(\d{4})/i);
-  const bare =
-    text.match(/\b((?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*)\s*\/\s*(\d{4})\b/i) ||
-    text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
-  const compM = labeled || bare;
+  // Folha Mensal: "Junho de 2026"
+  const mesDe = text.match(
+    /\b(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+(\d{4})\b/i,
+  );
+  if (mesDe) {
+    const norm = mesDe[1].toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    month = MONTHS_PT[norm] || 0;
+    year = Number(mesDe[2]) || 0;
+    competencia = `${mesDe[1].slice(0, 3).toUpperCase()}/${year}`;
+  }
 
-  if (compM) {
-    const part1 = (compM[1] || "").trim();
-    const part2 = Number(compM[2] || 0);
-    year = part2 || 0;
-    if (/^\d{1,2}$/.test(part1)) {
-      month = Number(part1);
-      competencia = `${String(month).padStart(2, "0")}/${year}`;
-    } else {
-      const norm = part1.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
-      month = MONTHS_PT[norm] || MONTHS_PT[norm.slice(0, 3)] || 0;
-      competencia = `${part1.toUpperCase().slice(0, 3)}/${year}`;
+  if (!month) {
+    const labeled =
+      text.match(/Compet[eê]ncia\s*[:\-]?\s*([A-Za-zçÇ]{3,9})\s*\/\s*(\d{4})/i) ||
+      text.match(/Compet[eê]ncia\s*[:\-]?\s*(\d{1,2})\s*\/\s*(\d{4})/i);
+    const bare =
+      text.match(/\b((?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*)\s*\/\s*(\d{4})\b/i) ||
+      text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
+    const compM = labeled || bare;
+    if (compM) {
+      const part1 = (compM[1] || "").trim();
+      const part2 = Number(compM[2] || 0);
+      year = part2 || 0;
+      if (/^\d{1,2}$/.test(part1)) {
+        month = Number(part1);
+        competencia = `${String(month).padStart(2, "0")}/${year}`;
+      } else {
+        const norm = part1.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+        month = MONTHS_PT[norm] || MONTHS_PT[norm.slice(0, 3)] || 0;
+        competencia = `${part1.toUpperCase().slice(0, 3)}/${year}`;
+      }
     }
   }
 
-  // Descontos: total de descontos quando presente
   let descontos = 0;
   const descM =
     text.match(/Total\s+(?:de\s+)?Descontos[^\d]*([\d.]+,\d{2})/i) ||
@@ -107,8 +156,164 @@ export function extractHoleriteIdentity(text: string): Pick<
   return { employeeName, employeeCpf, month, year, competencia, descontos };
 }
 
+function classifyFolhaDesc(desc: string): keyof HoleriteParsed | "ignore" | "descontoItem" {
+  const d = desc.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "");
+  if (/DIAS\s+NORMAIS|SALARIO\s+BASE|SALARIO\s+DO\s+MES/.test(d)) return "salarioBase";
+  if (/PERICULOSIDADE/.test(d)) return "periculosidade";
+  if (/HORAS?\s+EXTRAS?/.test(d) && !/DSR|REFLEXO/.test(d)) return "horasExtras";
+  if (/ADICIONAL\s+NOTURNO/.test(d) && !/DSR|REFLEXO/.test(d)) return "adicionalNoturno";
+  if (/\bDSR\b|REFLEXO.*DSR|DESCANSO\s+SEMANAL/.test(d)) return "dsr";
+  if (/AJUDA\s+DE\s+CUSTO/.test(d)) return "ajudaCusto";
+  if (/SALARIO\s+FAMILIA|GRATIFICACAO|PREMIO|COMISSAO/.test(d)) return "beneficios";
+  // DESC VALE REFEICAO / VALE TRANSPORTE / INSS / IR = descontos (VR fica no campo valeRefeicao p/ espelho histórico)
+  if (/DESC\s+VALE\s+REFEIC|VALE\s+REFEIC|VALE\s+ALIMENT/.test(d)) return "valeRefeicao";
+  if (/I\.?N\.?S\.?S|IMPOSTO\s+DE\s+RENDA|VALE\s+TRANSPORTE|DESC\b/.test(d)) return "descontoItem";
+  return "ignore";
+}
+
 /**
- * Parser determinístico para holerites do layout TORRES Vigilância.
+ * Parser do layout Folha Mensal (PDF atual da TORRES).
+ * Texto extraído vem "embaralhado"; usamos bloco descrição→valores + rótulos fixos.
+ */
+export function parseHoleriteFolhaMensal(text: string): HoleriteParsed | null {
+  if (!/Folha\s+Mensal|DIAS\s+NORMAIS|Nome do Funcion[aá]rio/i.test(text)) return null;
+
+  const out = emptyParsed();
+  const identity = extractHoleriteIdentity(text);
+  Object.assign(out, identity);
+
+  // Salário Base rotulado: "2.565,31\nSalário Base"
+  const sbLabel = text.match(/([\d.]+,\d{2})\s*\n\s*Sal[aá]rio Base/i);
+  if (sbLabel) out.salarioBase = toHoleriteNumber(sbLabel[1]);
+
+  // Periculosidade: "PERICULOSIDADE 30,00 769,59" ou "PERICULOSIDADE 769,59"
+  const periM = text.match(/PERICULOSIDADE[^\n]*?([\d.]+,\d{2})(?:\s+([\d.]+,\d{2}))?/i);
+  if (periM) {
+    out.periculosidade = toHoleriteNumber(periM[2] || periM[1]);
+  }
+
+  // Totais: após "Declaro ter recebido..." costuma vir Vencimentos / Descontos / Líquido
+  // Também no topo: Descontos + Líquido antes de "Código Descrição"
+  const aposDeclaro = text.match(
+    /Declaro ter recebido[\s\S]{0,40}?([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})/i,
+  );
+  if (aposDeclaro) {
+    out.totalBruto = toHoleriteNumber(aposDeclaro[1]);
+    out.descontos = toHoleriteNumber(aposDeclaro[2]);
+    out.totalLiquido = toHoleriteNumber(aposDeclaro[3]);
+  } else {
+    const topo = text.match(
+      /Assinatura do Funcion[aá]rio\s*\n\s*([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})\s*\n\s*C[oó]digo Descri/i,
+    );
+    if (topo) {
+      out.descontos = toHoleriteNumber(topo[1]);
+      out.totalLiquido = toHoleriteNumber(topo[2]);
+    }
+    const tv = text.match(/Total de Vencimentos/i);
+    if (tv) {
+      // valor logo após "Declaro..." sozinho
+      const only = text.match(/Declaro ter recebido[^\n]*\n\s*([\d.]+,\d{2})/i);
+      if (only) out.totalBruto = toHoleriteNumber(only[1]);
+    }
+  }
+
+  // Bloco descrição + valores (preferir cópia sem códigos 998/999 — mais limpa)
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  type Pair = { descs: string[]; values: number[] };
+  const candidates: Pair[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^DIAS\s+NORMAIS$/i.test(lines[i])) continue;
+    const descs: string[] = [];
+    let j = i;
+    while (j < lines.length) {
+      const ln = lines[j];
+      if (MONEY_RE.test(ln) || TIME_RE.test(ln)) break;
+      if (/^PERICULOSIDADE|^TORRES|^C[oó]digo Descri|^____/i.test(ln)) break;
+      if (/^[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9. %/]+$/i.test(ln) && !/^\d+$/.test(ln) && ln.length > 2) {
+        descs.push(ln);
+      }
+      j++;
+      if (descs.length > 20) break;
+    }
+    // Após descrições vem: referências (dias/horas) + vencimentos/descontos.
+    // Coleta moneys até quebrar; se sobrar referência+valor, usa os ÚLTIMOS N valores.
+    const moneys: number[] = [];
+    while (j < lines.length && moneys.length < descs.length * 3) {
+      const ln = lines[j];
+      if (MONEY_RE.test(ln)) {
+        moneys.push(toHoleriteNumber(ln));
+        j++;
+        continue;
+      }
+      if (TIME_RE.test(ln)) {
+        j++;
+        continue;
+      }
+      break;
+    }
+    if (descs.length >= 1 && moneys.length >= 1) {
+      const values =
+        moneys.length >= descs.length ? moneys.slice(moneys.length - descs.length) : moneys;
+      candidates.push({ descs, values });
+    }
+  }
+
+  // Escolhe o candidato com mais pares descrição↔valor
+  candidates.sort((a, b) => Math.min(b.descs.length, b.values.length) - Math.min(a.descs.length, a.values.length));
+  const best = candidates[0];
+  if (best) {
+    const n = Math.min(best.descs.length, best.values.length);
+    let dsrSum = 0;
+    let descontoSum = 0;
+    for (let i = 0; i < n; i++) {
+      const key = classifyFolhaDesc(best.descs[i]);
+      const val = best.values[i];
+      if (key === "ignore") continue;
+      if (key === "descontoItem") {
+        descontoSum += val;
+        continue;
+      }
+      if (key === "dsr") {
+        dsrSum += val;
+        continue;
+      }
+      if (key === "valeRefeicao") {
+        out.valeRefeicao = val;
+        descontoSum += val; // é desconto no holerite
+        continue;
+      }
+      if (key === "salarioBase" && out.salarioBase > 0) continue; // rótulo tem prioridade
+      if (key === "beneficios") {
+        out.beneficios = +(out.beneficios + val).toFixed(2);
+        continue;
+      }
+      if ((out as any)[key] === 0) (out as any)[key] = val;
+    }
+    if (dsrSum > 0) out.dsr = +dsrSum.toFixed(2);
+    if (descontoSum > 0 && out.descontos === 0) out.descontos = +descontoSum.toFixed(2);
+  }
+
+  // Total bruto fallback: soma proventos se ainda zero
+  if (!out.totalBruto) {
+    const sum =
+      out.salarioBase +
+      out.periculosidade +
+      out.horasExtras +
+      out.adicionalNoturno +
+      out.dsr +
+      out.ajudaCusto +
+      out.beneficios;
+    // valeRefeicao neste layout é desconto — não entra no bruto
+    if (sum > 0) out.totalBruto = +sum.toFixed(2);
+  }
+
+  if (!isUsableHoleriteParse(out)) return null;
+  return out;
+}
+
+/**
+ * Parser determinístico para holerites do layout numerado legado.
  * Estrutura: bloco "N [referência] valor" + bloco de labels separado.
  */
 export function parseHoleriteTorres(text: string): HoleriteParsed | null {
@@ -201,6 +406,11 @@ export function parseHoleriteTorres(text: string): HoleriteParsed | null {
     totalBruto,
     totalLiquido,
   };
+}
+
+/** Tenta Folha Mensal (atual) e depois layout numerado legado. */
+export function parseHoleritePdf(text: string): HoleriteParsed | null {
+  return parseHoleriteFolhaMensal(text) || parseHoleriteTorres(text);
 }
 
 /** Parser determinístico tem dados úteis o bastante para dispensar a IA. */

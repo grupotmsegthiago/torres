@@ -4132,7 +4132,10 @@ var init_cct_config = __esm({
       jornada: z2.string().default(""),
       diasUteisMes: z2.number().int().positive().default(22),
       encargosSociaisPct: z2.number().nonnegative().default(80),
-      horaExtraValor: z2.number().nonnegative().default(22.99),
+      /** HE diurna fixa (R$/h) — modelo Torres vigilância: R$ 16,00. */
+      horaExtraValor: z2.number().nonnegative().default(16),
+      /** HE/adicional noturno fixo (R$/h) — modelo Torres: R$ 16,50. */
+      horaExtraNoturnaValor: z2.number().nonnegative().default(16.5),
       pagamentoDiaUtil: z2.number().int().positive().default(5),
       fgtsPct: z2.number().nonnegative().default(8),
       inssPatronalPct: z2.number().nonnegative().default(20),
@@ -4168,6 +4171,7 @@ var init_cct_config = __esm({
         diasUteisMes: 22,
         encargosSociaisPct: 80,
         horaExtraValor: 0,
+        horaExtraNoturnaValor: 0,
         pagamentoDiaUtil: 5,
         fgtsPct: 8,
         inssPatronalPct: 20,
@@ -4194,18 +4198,36 @@ __export(cct_config_exports, {
   getCctPresetByCargo: () => getCctPresetByCargo,
   invalidateCctConfigCache: () => invalidateCctConfigCache,
   listCctPresets: () => listCctPresets,
+  normalizeVigilanciaHeRates: () => normalizeVigilanciaHeRates,
   saveCctConfig: () => saveCctConfig,
   savePreset: () => savePreset
 });
+function normalizeVigilanciaHeRates(cfg) {
+  const horaExtraValor = 16;
+  const horaExtraNoturnaValor = 16.5;
+  void LEGACY_HE_DIURNA_DEFAULT;
+  if (cfg.horaExtraValor === horaExtraValor && cfg.horaExtraNoturnaValor === horaExtraNoturnaValor) {
+    return cfg;
+  }
+  return { ...cfg, horaExtraValor, horaExtraNoturnaValor };
+}
+function parseCctConfig(raw, presetKey) {
+  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...raw || {} });
+  if (presetKey === CCT_PRESET_VIGILANCIA || !presetKey) {
+    return normalizeVigilanciaHeRates(cfg);
+  }
+  return cfg;
+}
 async function loadAllPresetsRaw() {
   const out = {};
   try {
     const { data } = await supabaseAdmin.from("cct_presets").select("key, label, sindicato, cargos, config");
     for (const row of data || []) {
       try {
-        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...row.config || {} });
-        out[row.key] = {
-          key: row.key,
+        const key = row.key;
+        const cfg = parseCctConfig(row.config || {}, key);
+        out[key] = {
+          key,
           label: row.label || cfg.label,
           sindicato: row.sindicato || cfg.sindicato || "",
           cargos: row.cargos || [],
@@ -4223,7 +4245,7 @@ async function loadAllPresetsRaw() {
       const { data } = await supabaseAdmin.from("system_settings").select("value").eq("key", CCT_CONFIG_SETTING_KEY).limit(1);
       if (data && data.length > 0) {
         const parsed = JSON.parse(data[0].value);
-        const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
+        const cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
         out[CCT_PRESET_VIGILANCIA] = {
           ...DEFAULT_VIGILANCIA_PRESET,
           config: cfg
@@ -4264,7 +4286,7 @@ async function getCctConfigByCargo(cargo) {
   return p.config;
 }
 async function savePreset(input) {
-  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...input.config || {} });
+  const cfg = parseCctConfig(input.config || {}, input.key);
   const payload = {
     key: input.key,
     label: input.label || cfg.label,
@@ -4296,7 +4318,7 @@ async function syncLegacyCctSettings(cfg) {
   }
 }
 async function saveCctConfig(input) {
-  const cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...input });
+  const cfg = parseCctConfig(input, CCT_PRESET_VIGILANCIA);
   const preset = await savePreset({
     key: CCT_PRESET_VIGILANCIA,
     label: cfg.label,
@@ -4326,7 +4348,7 @@ async function ensureDefaultPresets() {
         const { data: legacy } = await supabaseAdmin.from("system_settings").select("value").eq("key", CCT_CONFIG_SETTING_KEY).limit(1);
         if (legacy && legacy.length > 0) {
           const parsed = JSON.parse(legacy[0].value);
-          cfg = cctConfigSchema.parse({ ...DEFAULT_CCT_CONFIG, ...parsed });
+          cfg = parseCctConfig(parsed, CCT_PRESET_VIGILANCIA);
         }
       } catch {
       }
@@ -4338,6 +4360,26 @@ async function ensureDefaultPresets() {
         config: cfg
       });
       console.log("[cct-config] preset Vigil\xE2ncia criado (herdado do system_settings ou default)");
+    } else {
+      try {
+        const { data: vig } = await supabaseAdmin.from("cct_presets").select("key, label, sindicato, cargos, config").eq("key", CCT_PRESET_VIGILANCIA).limit(1);
+        if (vig && vig.length > 0) {
+          const raw = vig[0].config || {};
+          const before = Number(raw.horaExtraValor);
+          const beforeN = Number(raw.horaExtraNoturnaValor);
+          const needsHe = !Number.isFinite(before) || before <= 0 || Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 || !Number.isFinite(beforeN) || beforeN <= 0;
+          if (needsHe) {
+            const cfg = parseCctConfig(raw, CCT_PRESET_VIGILANCIA);
+            await supabaseAdmin.from("cct_presets").update({ config: cfg, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("key", CCT_PRESET_VIGILANCIA);
+            await syncLegacyCctSettings(cfg).catch(() => {
+            });
+            invalidateCctConfigCache();
+            console.log("[cct-config] HE vigil\xE2ncia migrada para 16 / 16,50");
+          }
+        }
+      } catch (e) {
+        console.error("[cct-config] migra\xE7\xE3o HE vigil\xE2ncia falhou:", e);
+      }
     }
   } catch (e) {
     console.error("[cct-config] ensureDefaultPresets falhou:", e);
@@ -4346,7 +4388,7 @@ async function ensureDefaultPresets() {
 function invalidateCctConfigCache() {
   cache = null;
 }
-var cache, TTL_MS;
+var cache, TTL_MS, LEGACY_HE_DIURNA_DEFAULT;
 var init_cct_config2 = __esm({
   "server/lib/cct-config.ts"() {
     "use strict";
@@ -4354,6 +4396,7 @@ var init_cct_config2 = __esm({
     init_cct_config();
     cache = null;
     TTL_MS = 3e4;
+    LEGACY_HE_DIURNA_DEFAULT = 22.99;
   }
 });
 
@@ -6317,10 +6360,10 @@ async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS encargos_pct NUMERIC(5,2) DEFAULT 80.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS horas_mensais NUMERIC(6,2) DEFAULT 220.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_refeicao_diario NUMERIC(10,2) DEFAULT 43.00`);
-    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 200.00`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS periculosidade_pct NUMERIC(5,2) DEFAULT 30.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS dependentes_ir INTEGER DEFAULT 0`);
-    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS ajuda_custo_mensal NUMERIC(10,2) DEFAULT 200.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_alimentacao_mensal NUMERIC(10,2) DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS assiduidade_mensal NUMERIC(10,2) DEFAULT 0`);
     await execSql(`UPDATE employee_salaries SET periculosidade_pct = 30.00 WHERE periculosidade_pct IS NULL`);
@@ -6328,8 +6371,23 @@ async function ensureCalcMissionRPC() {
     await execSql(`UPDATE employee_salaries SET ajuda_custo_mensal = 0 WHERE ajuda_custo_mensal IS NULL`);
     await execSql(`UPDATE employee_salaries SET vale_alimentacao_mensal = 0 WHERE vale_alimentacao_mensal IS NULL`);
     await execSql(`UPDATE employee_salaries SET assiduidade_mensal = 0 WHERE assiduidade_mensal IS NULL`);
+    await execSql(`
+      UPDATE employee_salaries es
+      SET ajuda_custo_mensal = es.cesta_basica,
+          cesta_basica = 0
+      FROM employees e
+      WHERE es.employee_id = e.id
+        AND (
+          lower(coalesce(e.role, '')) LIKE '%vigilante%'
+          OR lower(coalesce(e.role, '')) LIKE '%escolta%'
+          OR lower(coalesce(e.role, '')) LIKE '%operador%'
+          OR lower(coalesce(e.role, '')) LIKE '%operacional%'
+        )
+        AND coalesce(es.ajuda_custo_mensal, 0) = 0
+        AND round(coalesce(es.cesta_basica, 0)::numeric, 2) IN (200.00, 208.45)
+    `);
     await execSql(`NOTIFY pgrst, 'reload schema'`);
-    console.log("[db-init] employee_salaries benefit columns ensured (VR di\xE1rio + cesta + folha 2025 + VA/assiduidade)");
+    console.log("[db-init] employee_salaries benefit columns ensured (VR di\xE1rio + ajuda de custo + folha 2025)");
   } catch (e) {
     console.error("[db-init] employee_salaries alter error:", e.message);
   }
@@ -6563,6 +6621,23 @@ async function ensureCalcMissionRPC() {
       )
     `);
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {
+    });
+    await execSql(`
+      DELETE FROM swr_cache_snapshots
+      WHERE key = 'rh-summary'
+         OR key LIKE 'rh-summary?%'
+         OR key LIKE 'rh-summary-v2%'
+         OR key LIKE 'rh-summary-v3%'
+         OR key LIKE 'rh-summary-v4%'
+         OR key LIKE 'rh-summary-v5%'
+         OR key LIKE 'rh-summary-v6%'
+         OR key LIKE 'rh-summary-v7%'
+         OR key LIKE 'rh-summary-v8%'
+         OR key LIKE 'rh-summary-v9%'
+         OR key LIKE 'rh-summary-v10%'
+         OR key LIKE 'rh-summary-v11%'
+         OR key LIKE 'rh-summary-v12%'
+    `).catch(() => {
     });
     console.log("[db-init] swr_cache_snapshots table ensured");
   } catch (e) {
@@ -8258,6 +8333,262 @@ var init_agent_central_mention = __esm({
   }
 });
 
+// server/lib/payroll.ts
+var payroll_exports = {};
+__export(payroll_exports, {
+  FGTS_ALIQUOTA: () => FGTS_ALIQUOTA,
+  INSS_2025: () => INSS_2025,
+  INSS_PROVISAO_FERIAS_13: () => INSS_PROVISAO_FERIAS_13,
+  IRRF_2024: () => IRRF_2024,
+  IRRF_ISENTO_ATE: () => IRRF_ISENTO_ATE,
+  PERICULOSIDADE_PADRAO: () => PERICULOSIDADE_PADRAO,
+  VR_DIAS_UTEIS_CCT: () => VR_DIAS_UTEIS_CCT,
+  calcularFolha: () => calcularFolha,
+  calcularINSS: () => calcularINSS,
+  calcularIRRF: () => calcularIRRF,
+  endOfMonthYmd: () => endOfMonthYmd,
+  hhmmToDecimal: () => hhmmToDecimal,
+  r2: () => r2,
+  resolveCestaAjudaTorres: () => resolveCestaAjudaTorres,
+  selectSalaryVigenteFromHistory: () => selectSalaryVigenteFromHistory
+});
+function resolveCestaAjudaTorres(cestaBasica, ajudaCustoMensal) {
+  const cesta = Number(cestaBasica) || 0;
+  const ajuda = Number(ajudaCustoMensal) || 0;
+  if (ajuda === 0 && CESTA_KIT_LEGADO.has(r2(cesta))) {
+    return { cesta: 0, ajudaCusto: r2(cesta) };
+  }
+  return { cesta: r2(cesta), ajudaCusto: r2(ajuda) };
+}
+function r2(n2) {
+  return Math.round(n2 * 100) / 100;
+}
+function hhmmToDecimal(hhmm2) {
+  const [h, m] = hhmm2.split(":").map(Number);
+  if (isNaN(h)) return 0;
+  return Math.round((h + (m || 0) / 60) * 1e4) / 1e4;
+}
+function calcularINSS(baseTributavel, tabela = INSS_2025) {
+  const base = Math.min(baseTributavel, tabela.teto);
+  let inss = 0;
+  let anterior = 0;
+  for (const f of tabela.faixas) {
+    if (base <= anterior) break;
+    const faixaTopo = Math.min(base, f.ate);
+    inss += (faixaTopo - anterior) * f.aliquota;
+    anterior = f.ate;
+    if (base <= f.ate) break;
+  }
+  return r2(inss);
+}
+function calcularIRRF(baseTributavelBruta, inssDescontado, numeroDependentes = 0, tabela = IRRF_2024) {
+  const baseIRRF = baseTributavelBruta - inssDescontado - numeroDependentes * tabela.deducaoDependente;
+  if (baseIRRF <= 0) return 0;
+  for (const f of tabela.faixas) {
+    if (baseIRRF <= f.ate) {
+      return r2(Math.max(0, baseIRRF * f.aliquota - f.deducao));
+    }
+  }
+  return 0;
+}
+function calcularFolha(input) {
+  const {
+    salarioBaseCheio,
+    diasTrabalhados = 30,
+    horasMensais = 220,
+    periculosidadePct = PERICULOSIDADE_PADRAO,
+    multiplicadorHE = 1.6,
+    multiplicadorAdicNot = 1.8,
+    valorHoraExtraFixo = 0,
+    valorHoraNoturnaFixo = 0,
+    aplicarPericulosidade = true,
+    aplicarDsr = false,
+    inssModo = "flat",
+    inssFlatPct = 12,
+    irrfModo = "flat",
+    irrfFlatPct = 22,
+    irrfIsentoAte = IRRF_ISENTO_ATE,
+    fgtsNoLiquido = false,
+    diasUteisDSR = 25,
+    ajudaCustoMensal = 0,
+    dependentesIR = 0,
+    isClt = true
+  } = input;
+  const horasExtras = isClt ? input.horasExtras ?? 0 : 0;
+  const horasNoturnas = isClt ? input.horasNoturnas ?? 0 : 0;
+  const diasUteis = isClt ? input.diasUteis ?? 0 : 0;
+  const refeicaoDiaria = isClt ? input.refeicaoDiaria ?? 0 : 0;
+  const vtDesconto = isClt ? input.vtDesconto ?? 0 : 0;
+  const aplicarDsrEfetivo = isClt && aplicarDsr;
+  const aplicarPericulosidadeEfetivo = isClt && aplicarPericulosidade;
+  const pericPctEfetivo = aplicarPericulosidadeEfetivo ? periculosidadePct : 0;
+  const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
+  const salarioProporcional = r2(salarioBaseCheio / 30 * diasTrabalhados);
+  const periculosidade = aplicarPericulosidadeEfetivo ? r2(salarioProporcional * pericPctEfetivo) : 0;
+  const fatorPeric = aplicarPericulosidadeEfetivo ? 1 + pericPctEfetivo : 1;
+  const valorHoraNormal = horasMensais > 0 ? salarioBaseCheio * fatorPeric / horasMensais : 0;
+  const heFixo = Number(valorHoraExtraFixo) || 0;
+  const notFixo = Number(valorHoraNoturnaFixo) || 0;
+  const horasExtrasValor = heFixo > 0 ? r2(heFixo * horasExtras) : r2(valorHoraNormal * multiplicadorHE * horasExtras);
+  const adicionalNoturnoValor = notFixo > 0 ? r2(notFixo * horasNoturnas) : r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
+  const dsr = aplicarDsrEfetivo && diasUteisDSR > 0 ? r2((horasExtrasValor + adicionalNoturnoValor) * (diasDescanso / diasUteisDSR)) : 0;
+  const refeicao = r2(refeicaoDiaria * diasUteis);
+  const ajudaCusto = r2(ajudaCustoMensal);
+  const baseTributavel = r2(
+    salarioProporcional + periculosidade + horasExtrasValor + adicionalNoturnoValor + dsr
+  );
+  const totalBruto = baseTributavel;
+  const baseIrrfMensal = r2(salarioProporcional + periculosidade);
+  const inss = isClt ? inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel) : 0;
+  const irrf = isClt ? irrfModo === "flat" ? baseIrrfMensal <= irrfIsentoAte ? 0 : r2(baseIrrfMensal * (irrfFlatPct / 100)) : calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
+  const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
+  const totalDeducoes = r2(inss + irrf);
+  const provisaoDecimoTerceiro = isClt ? r2(salarioBaseCheio / 12) : 0;
+  const provisaoFerias = isClt ? r2(salarioBaseCheio / 12) : 0;
+  const provisaoTercoFerias = isClt ? r2(provisaoFerias / 3) : 0;
+  const baseProvisoes = provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias;
+  const provisaoFGTSsobreFerias13 = isClt ? r2(baseProvisoes * FGTS_ALIQUOTA) : 0;
+  const provisaoINSSsobreFerias13 = isClt ? r2(baseProvisoes * INSS_PROVISAO_FERIAS_13) : 0;
+  const totalProvisoes = r2(
+    provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias + provisaoFGTSsobreFerias13 + provisaoINSSsobreFerias13
+  );
+  const custoTotalEmpresa = r2(totalBruto + refeicao + ajudaCusto + fgts);
+  const liquidoFuncionario = r2(
+    baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
+  );
+  return {
+    salarioProporcional,
+    periculosidade,
+    horasExtrasValor,
+    adicionalNoturnoValor,
+    dsr,
+    refeicao,
+    ajudaCusto,
+    totalBruto,
+    baseTributavel,
+    baseIrrfMensal,
+    inss,
+    irrf,
+    fgts,
+    totalDeducoes,
+    provisaoDecimoTerceiro,
+    provisaoFerias,
+    provisaoTercoFerias,
+    provisaoFGTSsobreFerias13,
+    provisaoINSSsobreFerias13,
+    totalProvisoes,
+    custoTotalEmpresa,
+    liquidoFuncionario
+  };
+}
+function selectSalaryVigenteFromHistory(rows, referenceDate) {
+  const ref = String(referenceDate || "").slice(0, 10);
+  if (!ref || !/^\d{4}-\d{2}-\d{2}$/.test(ref)) return null;
+  const eligible = (rows || []).filter((r) => {
+    const d = String(r.effective_date || r.effectiveDate || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= ref;
+  });
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) => {
+    const da = String(a.effective_date || a.effectiveDate || "").slice(0, 10);
+    const db = String(b.effective_date || b.effectiveDate || "").slice(0, 10);
+    if (da !== db) return db.localeCompare(da);
+    const ca = String(a.created_at || a.createdAt || "");
+    const cb = String(b.created_at || b.createdAt || "");
+    if (ca !== cb) return cb.localeCompare(ca);
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+  return eligible[0];
+}
+function endOfMonthYmd(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+var INSS_2025, IRRF_2024, FGTS_ALIQUOTA, PERICULOSIDADE_PADRAO, INSS_PROVISAO_FERIAS_13, IRRF_ISENTO_ATE, VR_DIAS_UTEIS_CCT, CESTA_KIT_LEGADO;
+var init_payroll = __esm({
+  "server/lib/payroll.ts"() {
+    "use strict";
+    INSS_2025 = {
+      faixas: [
+        { ate: 1518, aliquota: 0.075 },
+        { ate: 2793.88, aliquota: 0.09 },
+        { ate: 4190.83, aliquota: 0.12 },
+        { ate: 8157.41, aliquota: 0.14 }
+        // teto
+      ],
+      teto: 8157.41
+    };
+    IRRF_2024 = {
+      faixas: [
+        { ate: 2259.2, aliquota: 0, deducao: 0 },
+        { ate: 2826.65, aliquota: 0.075, deducao: 169.44 },
+        { ate: 3751.05, aliquota: 0.15, deducao: 381.44 },
+        { ate: 4664.68, aliquota: 0.225, deducao: 662.77 },
+        { ate: Infinity, aliquota: 0.275, deducao: 896 }
+      ],
+      deducaoDependente: 189.59
+    };
+    FGTS_ALIQUOTA = 0.08;
+    PERICULOSIDADE_PADRAO = 0.3;
+    INSS_PROVISAO_FERIAS_13 = 0.075;
+    IRRF_ISENTO_ATE = 5e3;
+    VR_DIAS_UTEIS_CCT = 22;
+    CESTA_KIT_LEGADO = /* @__PURE__ */ new Set([200, 208.45]);
+  }
+});
+
+// shared/payroll-period.ts
+var payroll_period_exports = {};
+__export(payroll_period_exports, {
+  formatPayrollPeriodWithMonthName: () => formatPayrollPeriodWithMonthName,
+  getPayrollPeriod: () => getPayrollPeriod,
+  getPayrollPeriodForDate: () => getPayrollPeriodForDate
+});
+function pad2(n2) {
+  return String(n2).padStart(2, "0");
+}
+function ymdUtc(d) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+function getPayrollPeriod(year, month) {
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error(`getPayrollPeriod: par\xE2metros inv\xE1lidos (year=${year}, month=${month})`);
+  }
+  const start = new Date(Date.UTC(year, month - 2, 26));
+  const end = new Date(Date.UTC(year, month - 1, 26));
+  const lastInclusive = new Date(Date.UTC(year, month - 1, 25));
+  const startDate = ymdUtc(start);
+  const endDate = ymdUtc(lastInclusive);
+  const sMon = MESES_PT_SHORT[start.getUTCMonth()];
+  const eMon = MESES_PT_SHORT[lastInclusive.getUTCMonth()];
+  const labelShort = `26/${sMon} \u2192 25/${eMon}`;
+  const label = `${labelShort}/${year}`;
+  return { month, year, start, end, startDate, endDate, label, labelShort };
+}
+function getPayrollPeriodForDate(date2) {
+  const brt = new Date(date2.getTime() - 3 * 36e5);
+  const day = brt.getUTCDate();
+  const y = brt.getUTCFullYear();
+  const m = brt.getUTCMonth() + 1;
+  if (day <= 25) return getPayrollPeriod(y, m);
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextY = m === 12 ? y + 1 : y;
+  return getPayrollPeriod(nextY, nextM);
+}
+function formatPayrollPeriodWithMonthName(p) {
+  return `${MESES_PT_LONG[p.month - 1]}/${p.year} (${p.labelShort})`;
+}
+var MESES_PT_SHORT, MESES_PT_LONG;
+var init_payroll_period = __esm({
+  "shared/payroll-period.ts"() {
+    "use strict";
+    MESES_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    MESES_PT_LONG = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  }
+});
+
 // server/lib/hours-calc.ts
 function ymdBRT(iso) {
   const d = typeof iso === "string" ? new Date(iso) : iso;
@@ -8435,6 +8766,55 @@ function minuteKeyBRT2(d) {
   });
   return `${date2} ${time}`;
 }
+function truncateToMinuteMs(ms) {
+  if (!Number.isFinite(ms)) return 0;
+  return Math.floor(ms / 6e4) * 6e4;
+}
+function hhmmBRT(d) {
+  return minuteKeyBRT2(d).slice(11);
+}
+function isSyntheticMidnightMarker(d) {
+  const t = hhmmBRT(d);
+  return t === "00:00" || t === "00:01" || t === "23:59";
+}
+function computeDayWorkedMinutesFromPunches(punchAts, opts) {
+  const dailyCapMin = opts?.dailyCapMin ?? 1199;
+  const hardMaxGapMin = opts?.hardMaxGapMin ?? 18 * 60;
+  const stripMarkers = opts?.stripSyntheticMarkers === true;
+  const raw = punchAts.map((p) => typeof p === "number" ? new Date(p) : new Date(p)).filter((d) => d.getTime() > 0).sort((a, b) => a.getTime() - b.getTime());
+  let ignoredMarkers = 0;
+  const filtered = [];
+  for (const d of raw) {
+    if (stripMarkers && isSyntheticMidnightMarker(d)) {
+      ignoredMarkers++;
+      continue;
+    }
+    filtered.push(d);
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const cleanMs = [];
+  for (const d of filtered) {
+    const k = minuteKeyBRT2(d);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    cleanMs.push(truncateToMinuteMs(d.getTime()));
+  }
+  const pairs = [];
+  for (let i = 0; i < cleanMs.length; ) {
+    const inMs = cleanMs[i];
+    const outMs = cleanMs[i + 1];
+    if (outMs != null && outMs - inMs <= hardMaxGapMin * 6e4 && outMs > inMs) {
+      const workedMin2 = (outMs - inMs) / 6e4;
+      pairs.push({ inMs, outMs, workedMin: workedMin2 });
+      i += 2;
+    } else {
+      i += 1;
+    }
+  }
+  let workedMin = pairs.reduce((s, p) => s + p.workedMin, 0);
+  if (dailyCapMin > 0) workedMin = Math.min(workedMin, dailyCapMin);
+  return { workedMin: Math.round(workedMin), pairs, ignoredMarkers };
+}
 function normalizeName(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -8491,9 +8871,214 @@ function decideImport(params) {
   if (params.localExternalIdAtMinute === void 0) return "insert";
   return params.localExternalIdAtMinute === params.eventExternalId ? "skip" : "adopt-external-id";
 }
+function isControlIdDevicePunch(p) {
+  const src = String(p.source || "").toLowerCase().trim();
+  if (src === "facial" || src === "rfid" || src === "digital" || src === "senha") return true;
+  if (!src) {
+    const ext = String(p.external_id || "").trim();
+    if (/^rhid_\d+_\d+$/.test(ext)) return true;
+  }
+  return false;
+}
+function isManualOpsPunch(p) {
+  const src = String(p.source || "").toLowerCase().trim();
+  return src === "admin_manual" || src === "self_manual" || src === "manual";
+}
+function punchMs(p) {
+  return new Date(p.punch_at).getTime();
+}
+function stripIllegalDeviceReentries(punches) {
+  const sorted = [...punches].filter((p) => p && p.punch_at != null).sort((a, b) => punchMs(a) - punchMs(b));
+  if (sorted.length === 0) return { kept: [], discarded: [] };
+  const kept = [];
+  const discarded = [];
+  const DUP_FACIAL_MIN = 5;
+  for (const p of sorted) {
+    const isDevice = isControlIdDevicePunch(p) && !isManualOpsPunch(p);
+    if (isDevice && kept.length > 0) {
+      const prev = kept[kept.length - 1];
+      const prevDevice = isControlIdDevicePunch(prev) && !isManualOpsPunch(prev);
+      const gapMin = (punchMs(p) - punchMs(prev)) / 6e4;
+      if (prevDevice && gapMin >= 0 && gapMin < DUP_FACIAL_MIN) {
+        discarded.push(p);
+        continue;
+      }
+    }
+    kept.push(p);
+  }
+  return { kept, discarded };
+}
+function selectCanonicalDayPunches(punches) {
+  const flags = [];
+  const stripped = stripIllegalDeviceReentries(punches);
+  if (stripped.discarded.length > 0) {
+    flags.push(`discard_reentry_x${stripped.discarded.length}`);
+  }
+  const sorted = stripped.kept.filter((p) => p && p.punch_at != null).sort((a, b) => punchMs(a) - punchMs(b));
+  const byMinute = /* @__PURE__ */ new Map();
+  for (const p of sorted) {
+    const k = minuteKeyBRT2(new Date(p.punch_at));
+    const prev = byMinute.get(k);
+    if (!prev) {
+      byMinute.set(k, p);
+      continue;
+    }
+    if (!isControlIdDevicePunch(prev) && isControlIdDevicePunch(p)) {
+      byMinute.set(k, p);
+      flags.push("dedup_prefer_device");
+    }
+  }
+  const unique = [...byMinute.values()].sort((a, b) => punchMs(a) - punchMs(b));
+  if (unique.length === 0) {
+    return {
+      selected: [],
+      entry: null,
+      lunchOut: null,
+      lunchIn: null,
+      exit: null,
+      discarded: [],
+      flags
+    };
+  }
+  let entry = unique[0];
+  const lastPunch = unique[unique.length - 1];
+  const firstDevice = unique.find(isControlIdDevicePunch);
+  if (firstDevice && firstDevice !== entry && firstDevice !== lastPunch && isSyntheticMidnightMarker(new Date(entry.punch_at)) && !isControlIdDevicePunch(entry)) {
+    entry = firstDevice;
+    flags.push("entry_device_priority");
+  } else if (isControlIdDevicePunch(entry)) {
+    flags.push("entry_from_device");
+  } else {
+    flags.push("entry_chrono_first");
+  }
+  const afterEntry = unique.filter((p) => punchMs(p) > punchMs(entry));
+  if (afterEntry.length === 0) {
+    return {
+      selected: [entry],
+      entry,
+      lunchOut: null,
+      lunchIn: null,
+      exit: null,
+      discarded: unique.filter((p) => p !== entry),
+      flags: [...flags, "open_shift"]
+    };
+  }
+  const exit = afterEntry[afterEntry.length - 1];
+  const middle = afterEntry.filter((p) => p !== exit);
+  let lunchOut = null;
+  let lunchIn = null;
+  if (middle.length >= 2) {
+    const manuals = middle.filter(isManualOpsPunch);
+    let bestA = null;
+    let bestB = null;
+    let bestScore = -Infinity;
+    const consider = (a, b, bonus) => {
+      const gap = (punchMs(b) - punchMs(a)) / 6e4;
+      if (gap < LUNCH_MIN_GAP_MIN || gap > LUNCH_MAX_GAP_MIN) return;
+      const score = bonus - Math.abs(gap - 60);
+      if (score > bestScore) {
+        bestScore = score;
+        bestA = a;
+        bestB = b;
+      }
+    };
+    for (let i = 0; i < manuals.length; i++) {
+      for (let j = i + 1; j < manuals.length; j++) consider(manuals[i], manuals[j], 100);
+    }
+    if (bestA && bestB) {
+      lunchOut = bestA;
+      lunchIn = bestB;
+      flags.push("lunch_from_manual");
+    } else if (manuals.length >= 2) {
+      lunchOut = manuals[0];
+      lunchIn = manuals[1];
+      flags.push("lunch_from_manual_chrono");
+    } else {
+      bestA = null;
+      bestB = null;
+      bestScore = -Infinity;
+      for (let i = 0; i < middle.length; i++) {
+        for (let j = i + 1; j < middle.length; j++) consider(middle[i], middle[j], 0);
+      }
+      if (bestA && bestB) {
+        lunchOut = bestA;
+        lunchIn = bestB;
+        flags.push("lunch_best_gap");
+      } else {
+        lunchOut = middle[0];
+        lunchIn = middle[1];
+        flags.push("lunch_from_middle_chrono");
+      }
+    }
+    if (middle.length > 2) flags.push("extra_punches_ignored");
+  } else if (middle.length === 1) {
+    flags.push("single_middle_no_lunch");
+  }
+  const selected = [entry, lunchOut, lunchIn, exit].filter(Boolean);
+  const selectedSet = new Set(selected);
+  const discarded = [
+    ...stripped.discarded,
+    ...unique.filter((p) => !selectedSet.has(p))
+  ];
+  if (unique.length > 4) flags.push("capped_to_4");
+  return { selected, entry, lunchOut, lunchIn, exit, discarded, flags };
+}
+function detectFolhaDayAnomalies(punches, canon) {
+  const anomalies = [];
+  const sorted = [...punches].filter((p) => p && p.punch_at != null).sort((a, b) => punchMs(a) - punchMs(b));
+  if (sorted.length === 0) return anomalies;
+  const { discarded: reentries } = stripIllegalDeviceReentries(sorted);
+  for (const p of reentries) {
+    anomalies.push({
+      code: "illegal_reentry",
+      severity: "erro",
+      message: `Batida duplicada no aparelho \xE0s ${hhmmBRT(new Date(p.punch_at))} (< 5 min da anterior). Confira.`
+    });
+  }
+  if (canon.entry && canon.lunchOut) {
+    const gap = (punchMs(canon.lunchOut) - punchMs(canon.entry)) / 6e4;
+    if (gap > 0 && gap < LUNCH_TOO_EARLY_MIN) {
+      anomalies.push({
+        code: "lunch_too_early",
+        severity: "erro",
+        message: `Almo\xE7o \xE0s ${hhmmBRT(new Date(canon.lunchOut.punch_at))} muito cedo ap\xF3s entrada ${hhmmBRT(new Date(canon.entry.punch_at))} (${Math.round(gap)} min). N\xE3o faz sentido \u2014 confira.`
+      });
+    }
+  }
+  if (canon.flags.includes("open_shift")) {
+    anomalies.push({
+      code: "open_shift",
+      severity: "aviso",
+      message: "Ponto aberto \u2014 falta batida de sa\xEDda."
+    });
+  }
+  if (sorted.length > 4) {
+    anomalies.push({
+      code: "too_many_punches",
+      severity: "aviso",
+      message: `${sorted.length} batidas no dia (esperado at\xE9 4). Extras ignoradas no c\xE1lculo \u2014 revise.`
+    });
+  }
+  if (canon.flags.includes("single_middle_no_lunch")) {
+    anomalies.push({
+      code: "incomplete_lunch",
+      severity: "aviso",
+      message: "S\xF3 uma batida no meio do dia \u2014 almo\xE7o incompleto."
+    });
+  }
+  return anomalies;
+}
+function folhaObservation(anomalies) {
+  if (!anomalies.length) return null;
+  return anomalies.map((a) => a.message).join(" ");
+}
+var LUNCH_MIN_GAP_MIN, LUNCH_MAX_GAP_MIN, LUNCH_TOO_EARLY_MIN;
 var init_control_id_parsers = __esm({
   "server/lib/control-id-parsers.ts"() {
     "use strict";
+    LUNCH_MIN_GAP_MIN = 20;
+    LUNCH_MAX_GAP_MIN = 4 * 60;
+    LUNCH_TOO_EARLY_MIN = 180;
   }
 });
 
@@ -8729,53 +9314,27 @@ var init_locked_periods = __esm({
   }
 });
 
-// shared/payroll-period.ts
-var payroll_period_exports = {};
-__export(payroll_period_exports, {
-  formatPayrollPeriodWithMonthName: () => formatPayrollPeriodWithMonthName,
-  getPayrollPeriod: () => getPayrollPeriod,
-  getPayrollPeriodForDate: () => getPayrollPeriodForDate
+// shared/contratacao.ts
+var contratacao_exports = {};
+__export(contratacao_exports, {
+  isCltContrato: () => isCltContrato,
+  labelTipoContratacao: () => labelTipoContratacao,
+  normalizeTipoContratacao: () => normalizeTipoContratacao
 });
-function pad2(n2) {
-  return String(n2).padStart(2, "0");
+function normalizeTipoContratacao(tipo) {
+  const t = String(tipo || "clt").toLowerCase().trim();
+  if (t === "pj" || t === "fixo") return "pj";
+  return "clt";
 }
-function ymdUtc(d) {
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+function isCltContrato(tipo) {
+  return normalizeTipoContratacao(tipo) === "clt";
 }
-function getPayrollPeriod(year, month) {
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    throw new Error(`getPayrollPeriod: par\xE2metros inv\xE1lidos (year=${year}, month=${month})`);
-  }
-  const start = new Date(Date.UTC(year, month - 2, 26));
-  const end = new Date(Date.UTC(year, month - 1, 26));
-  const lastInclusive = new Date(Date.UTC(year, month - 1, 25));
-  const startDate = ymdUtc(start);
-  const endDate = ymdUtc(lastInclusive);
-  const sMon = MESES_PT_SHORT[start.getUTCMonth()];
-  const eMon = MESES_PT_SHORT[lastInclusive.getUTCMonth()];
-  const labelShort = `26/${sMon} \u2192 25/${eMon}`;
-  const label = `${labelShort}/${year}`;
-  return { month, year, start, end, startDate, endDate, label, labelShort };
+function labelTipoContratacao(tipo) {
+  return normalizeTipoContratacao(tipo) === "pj" ? "PJ" : "CLT";
 }
-function getPayrollPeriodForDate(date2) {
-  const brt = new Date(date2.getTime() - 3 * 36e5);
-  const day = brt.getUTCDate();
-  const y = brt.getUTCFullYear();
-  const m = brt.getUTCMonth() + 1;
-  if (day <= 25) return getPayrollPeriod(y, m);
-  const nextM = m === 12 ? 1 : m + 1;
-  const nextY = m === 12 ? y + 1 : y;
-  return getPayrollPeriod(nextY, nextM);
-}
-function formatPayrollPeriodWithMonthName(p) {
-  return `${MESES_PT_LONG[p.month - 1]}/${p.year} (${p.labelShort})`;
-}
-var MESES_PT_SHORT, MESES_PT_LONG;
-var init_payroll_period = __esm({
-  "shared/payroll-period.ts"() {
+var init_contratacao = __esm({
+  "shared/contratacao.ts"() {
     "use strict";
-    MESES_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-    MESES_PT_LONG = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   }
 });
 
@@ -9590,6 +10149,18 @@ async function autoImportPersons(deviceId) {
 }
 async function createManualPunch(params) {
   const { employeeId, punchAt, direction = "unknown", source = "manual" } = params;
+  if (!params.allowExtraPunches) {
+    const dayKey = new Date(punchAt.getTime() - 3 * 36e5).toISOString().slice(0, 10);
+    const dayStart = /* @__PURE__ */ new Date(`${dayKey}T00:00:00-03:00`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 36e5);
+    const { count, error: countErr } = await supabaseAdmin.from("control_id_punches").select("id", { count: "exact", head: true }).eq("employee_id", employeeId).gte("punch_at", dayStart.toISOString()).lt("punch_at", dayEnd.toISOString());
+    if (countErr) throw new Error(`Erro ao validar batidas do dia: ${countErr.message}`);
+    if ((count || 0) >= 4) {
+      throw new Error(
+        `Este dia j\xE1 tem ${count} batida(s). O ponto can\xF4nico \xE9 4 (Entrada Control iD, sa\xEDda almo\xE7o, retorno almo\xE7o, fim). Apague uma batida extra ou envie allowExtraPunches/forceExtra se for exce\xE7\xE3o.`
+      );
+    }
+  }
   let mapping = null;
   if (params.deviceId) {
     const { data } = await supabaseAdmin.from("control_id_users_map").select("*").eq("employee_id", employeeId).eq("device_id", params.deviceId).eq("ativo", true).maybeSingle();
@@ -9807,7 +10378,7 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const multiplicadorHE = opts.multiplicadorHE ?? 1.6;
   const [yyyy, mm] = monthYear.split("-").map(Number);
   const monthEndStr = new Date(Date.UTC(yyyy, mm, 0)).toISOString().slice(0, 10);
-  const { data: salaryRows } = await supabaseAdmin.from("employee_salaries").select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, effective_date").eq("employee_id", employeeId).lte("effective_date", monthEndStr).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
+  const { data: salaryRows } = await supabaseAdmin.from("employee_salaries").select("base_salary, horas_mensais, encargos_pct, periculosidade_pct, vale_refeicao_diario, cesta_basica, ajuda_custo_mensal, effective_date").eq("employee_id", employeeId).lte("effective_date", monthEndStr).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
   const horasMensaisPonto = salaryRows && salaryRows[0] && salaryRows[0].horas_mensais ? Number(salaryRows[0].horas_mensais) : 220;
   const dias = await buildFolhaPonto(employeeId, monthYear, { horasMensais: horasMensaisPonto });
   const hoursWorked = dias.reduce((s, d) => s + (Number(d.workedMin) || 0), 0) / 60;
@@ -9815,7 +10386,8 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const horasNoturnas = dias.reduce((s, d) => s + (Number(d.noturnoMin) || 0), 0) / 60;
   const empRow = opts.employee ? [{ role: opts.employee.role, tipo_contratacao: opts.employee.tipo_contratacao }] : (await supabaseAdmin.from("employees").select("role, tipo_contratacao").eq("id", employeeId).limit(1)).data;
   const empRole = empRow && empRow[0] && empRow[0].role || "";
-  const isClt = !empRow || !empRow[0] || empRow[0].tipo_contratacao !== "fixo";
+  const { isCltContrato: isCltContrato2 } = await Promise.resolve().then(() => (init_contratacao(), contratacao_exports));
+  const isClt = !empRow || !empRow[0] ? true : isCltContrato2(empRow[0].tipo_contratacao);
   const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
   const CCT = await getCctConfigByCargo2(empRole);
   const sal = salaryRows && salaryRows[0];
@@ -9825,6 +10397,7 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   const periculosidadePct = sal && sal.periculosidade_pct != null ? Number(sal.periculosidade_pct) : CCT.periculosidadePct;
   const vrDiario = sal && sal.vale_refeicao_diario != null ? Number(sal.vale_refeicao_diario) : CCT.valeRefeicaoDia;
   let cestaBasica = sal && sal.cesta_basica != null ? Number(sal.cesta_basica) : CCT.cestaBasica;
+  let ajudaCustoMensal = sal && sal.ajuda_custo_mensal != null ? Number(sal.ajuda_custo_mensal) : 0;
   let cestaBasicaIIAtestados = 0;
   let cestaBasicaIIFaixa = null;
   const faixas = CCT.cestaBasicaIIFaixas;
@@ -9854,6 +10427,11 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     } catch (e) {
       console.error("[calcularFolha] erro ao calcular Cesta B\xE1sica II:", e?.message);
     }
+  } else {
+    const { resolveCestaAjudaTorres: resolveCestaAjudaTorres2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
+    const ben = resolveCestaAjudaTorres2(cestaBasica, ajudaCustoMensal);
+    cestaBasica = ben.cesta;
+    ajudaCustoMensal = ben.ajudaCusto;
   }
   const { countBusinessDays: countBusinessDays2, loadHolidaySet: loadHolidaySet2, payrollPeriodRange: payrollPeriodRange2 } = await Promise.resolve().then(() => (init_holidays(), holidays_exports));
   const { from, to } = payrollPeriodRange2(yyyy, mm);
@@ -9886,33 +10464,42 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     diasCorridosElapsed = totalDiasMes;
     cutoffIso = to;
   }
-  const diasUteisTotal = countBusinessDays2(from, to, holidaySet);
-  const diasUteis = isMesCorrente ? countBusinessDays2(from, cutoffIso, holidaySet) : isMesFuturo ? 0 : diasUteisTotal;
+  const { VR_DIAS_UTEIS_CCT: VR_DIAS_UTEIS_CCT2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
+  const diasUteisTotal = VR_DIAS_UTEIS_CCT2;
+  const diasUteis = isMesCorrente ? Math.min(VR_DIAS_UTEIS_CCT2, countBusinessDays2(from, cutoffIso, holidaySet)) : isMesFuturo ? 0 : diasUteisTotal;
   const fatorRateio = totalDiasMes > 0 ? diasCorridosElapsed / totalDiasMes : 0;
   const horasNormais = Math.min(hoursWorked, hoursLimit);
-  const horaExtra = Math.max(0, hoursWorked - hoursLimit);
+  const horaExtraRaw = Math.max(0, hoursWorked - hoursLimit);
+  const horaExtra = isClt ? horaExtraRaw : 0;
+  const horasNoturnasCusto = isClt ? horasNoturnas : 0;
   const fatorPericVH = 1 + (periculosidadePct || 0) / 100;
   const valorHora = hoursLimit > 0 ? baseSalary * fatorPericVH / hoursLimit : 0;
-  const valorHoraExtra = Math.round(valorHora * 100) / 100 * multiplicadorHE;
+  const heDiurnaCct = Number(CCT.horaExtraValor || 0);
+  const heNoturnaCct = Number(CCT.horaExtraNoturnaValor || 0);
+  const valorHoraExtra = heDiurnaCct > 0 ? heDiurnaCct : Math.round(valorHora * 100) / 100 * multiplicadorHE;
   const multiplicadorAdicNot = CCT.multiplicadorAdicNot ?? 1.8;
-  const adicionalNoturno = +(valorHora * multiplicadorAdicNot * horasNoturnas).toFixed(2);
+  const valorHoraNoturna = heNoturnaCct > 0 ? heNoturnaCct : valorHora * multiplicadorAdicNot;
+  const adicionalNoturno = +(valorHoraNoturna * horasNoturnasCusto).toFixed(2);
   const baseSalaryReal = +(baseSalary * fatorRateio).toFixed(2);
-  const periculosidade = +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2);
+  const periculosidade = isClt ? +(baseSalaryReal * (periculosidadePct / 100)).toFixed(2) : 0;
   const custoExtra = +(valorHoraExtra * horaExtra).toFixed(2);
-  const valeRefeicao = +(vrDiario * diasUteis).toFixed(2);
-  const cestaBasicaReal = +(cestaBasica * fatorRateio).toFixed(2);
+  const valeRefeicao = isClt ? +(vrDiario * diasUteis).toFixed(2) : 0;
+  const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
+  const ajudaCustoReal = isClt ? +(ajudaCustoMensal * fatorRateio).toFixed(2) : 0;
   let diarias = 0;
-  try {
-    const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
-    const { data: diariaRows } = await supabaseAdmin.from("operational_payments").select("amount").eq("employee_id", employeeId).eq("type", "diaria").gte("payment_date", from).lte("payment_date", cutoffStr);
-    if (Array.isArray(diariaRows)) {
-      diarias = diariaRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  if (isClt) {
+    try {
+      const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
+      const { data: diariaRows } = await supabaseAdmin.from("operational_payments").select("amount").eq("employee_id", employeeId).eq("type", "diaria").gte("payment_date", from).lte("payment_date", cutoffStr);
+      if (Array.isArray(diariaRows)) {
+        diarias = diariaRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+      }
+    } catch {
     }
-  } catch {
   }
   diarias = +diarias.toFixed(2);
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
-  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal).toFixed(2);
+  const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal + ajudaCustoReal).toFixed(2);
   const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra + adicionalNoturno;
   const fgtsPct = isClt ? CCT.fgtsPct ?? 8 : 0;
   const inssPatronalPct = isClt ? CCT.inssPatronalPct ?? 20 : 0;
@@ -9957,9 +10544,11 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
   faturamentoBruto = +faturamentoBruto.toFixed(2);
   faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
   faturamentoMargem = +faturamentoMargem.toFixed(2);
+  const { IRRF_ISENTO_ATE: IRRF_ISENTO_ATE2 } = await Promise.resolve().then(() => (init_payroll(), payroll_exports));
   const baseTributavelFunc = vencimentosTotal;
+  const baseIrrfMensalFunc = +(baseSalaryReal + periculosidade).toFixed(2);
   const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
-  const irrfFuncionario = isClt ? +(baseTributavelFunc * 0.22).toFixed(2) : 0;
+  const irrfFuncionario = isClt ? baseIrrfMensalFunc <= IRRF_ISENTO_ATE2 ? 0 : +(baseIrrfMensalFunc * 0.22).toFixed(2) : 0;
   const fgtsFuncionario = fgts;
   const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
   return {
@@ -9996,6 +10585,8 @@ async function buildFolhaStats(employeeId, monthYear, opts = {}) {
     diarias,
     cestaBasica: cestaBasicaReal,
     cestaBasicaMensal: cestaBasica,
+    ajudaCusto: ajudaCustoReal,
+    ajudaCustoMensal,
     cestaBasicaIIAtestados,
     cestaBasicaIIFaixa,
     cestaBasicaIIAplicada: !!faixas,
@@ -10283,9 +10874,11 @@ async function buildPainelMes(monthYear) {
   return result;
 }
 function nightMinutesBRT2(startMs, endMs) {
-  if (!(endMs > startMs)) return 0;
+  const from = truncateToMinuteMs(startMs);
+  const to = truncateToMinuteMs(endMs);
+  if (!(to > from)) return 0;
   let count = 0;
-  for (let t = startMs; t < endMs; t += 6e4) {
+  for (let t = from; t < to; t += 6e4) {
     const h = Number(new Date(t).toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
     if (h >= 22 || h < 5) count++;
   }
@@ -10318,45 +10911,78 @@ async function buildFolhaPonto(employeeId, monthYear, opts = {}) {
   for (const [day, dayPunches] of Array.from(dayMap.entries())) {
     const sorted = dayPunches.sort((a, b) => new Date(a.punch_at).getTime() - new Date(b.punch_at).getTime());
     const fmt = (iso) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    const canon = selectCanonicalDayPunches(sorted);
+    const dayPairs = computeDayWorkedMinutesFromPunches(
+      sorted.map((p) => p.punch_at),
+      { dailyCapMin: NORMAL_DAILY_CAP_MIN }
+    );
+    const pairMs = /* @__PURE__ */ new Set();
+    for (const pr of dayPairs.pairs) {
+      pairMs.add(pr.inMs);
+      pairMs.add(pr.outMs);
+    }
+    const punchByMin = /* @__PURE__ */ new Map();
+    for (const p of sorted) {
+      punchByMin.set(truncateToMinuteMs(new Date(p.punch_at).getTime()), p);
+    }
+    const p0 = dayPairs.pairs[0];
+    const p1 = dayPairs.pairs[1];
+    const entryPunch = p0 ? punchByMin.get(p0.inMs) || null : canon.entry;
+    const lunchOutPunch = p0 ? punchByMin.get(p0.outMs) || null : canon.lunchOut;
+    const lunchInPunch = p1 ? punchByMin.get(p1.inMs) || null : null;
+    const exitPunch = p1 ? punchByMin.get(p1.outMs) || null : p0 ? punchByMin.get(p0.outMs) || null : canon.exit;
+    const clockInPunch = entryPunch;
+    const clockOutPunch = p1 ? exitPunch : p0 ? punchByMin.get(p0.outMs) : exitPunch;
+    const showLunchOut = p1 ? lunchOutPunch : null;
+    const showLunchIn = p1 ? lunchInPunch : null;
+    const anomalies = detectFolhaDayAnomalies(sorted, canon);
+    const observation = folhaObservation(anomalies);
+    const hasAlert = anomalies.some((a) => a.severity === "erro");
+    const hasWarning = anomalies.length > 0;
+    const dupIds = new Set(
+      stripIllegalDeviceReentries(sorted).discarded.map((p) => p.id)
+    );
     const entry = {
       date: day,
-      clockIn: sorted[0] ? fmt(sorted[0].punch_at) : null,
-      lunchOut: sorted.length >= 4 ? fmt(sorted[1].punch_at) : null,
-      lunchIn: sorted.length >= 4 ? fmt(sorted[2].punch_at) : null,
-      clockOut: sorted.length >= 2 ? fmt(sorted[sorted.length - 1].punch_at) : null,
+      clockIn: clockInPunch ? fmt(clockInPunch.punch_at) : null,
+      lunchOut: showLunchOut ? fmt(showLunchOut.punch_at) : null,
+      lunchIn: showLunchIn ? fmt(showLunchIn.punch_at) : null,
+      clockOut: clockOutPunch ? fmt(clockOutPunch.punch_at) : null,
       totalPunches: sorted.length,
+      canonicalPunches: dayPairs.pairs.length * 2,
+      canonicalFlags: [...canon.flags, "pairs_controlid"],
+      pairCount: dayPairs.pairs.length,
+      anomalies,
+      observation,
+      hasAlert,
+      hasWarning,
       sources: Array.from(new Set(sorted.map((p) => p.source).filter(Boolean))),
-      punches: sorted.map((p) => ({
-        id: p.id,
-        punchAt: p.punch_at,
-        time: fmt(p.punch_at),
-        direction: p.direction,
-        source: p.source
-      }))
+      punches: sorted.map((p) => {
+        const ms = truncateToMinuteMs(new Date(p.punch_at).getTime());
+        const inPair = pairMs.has(ms);
+        return {
+          id: p.id,
+          punchAt: p.punch_at,
+          time: fmt(p.punch_at),
+          direction: p.direction,
+          source: p.source,
+          usedInFolha: inPair,
+          ignoredReason: dupIds.has(p.id) ? "illegal_reentry" : inPair ? null : "extra"
+        };
+      })
     };
-    if (entry.clockIn && entry.clockOut) {
-      const inMs = new Date(sorted[0].punch_at).getTime();
-      const outMs = new Date(sorted[sorted.length - 1].punch_at).getTime();
-      let workedMin = (outMs - inMs) / 6e4;
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        const lunchMin = (new Date(sorted[2].punch_at).getTime() - new Date(sorted[1].punch_at).getTime()) / 6e4;
-        workedMin -= lunchMin;
-      }
-      workedMin = Math.min(workedMin, NORMAL_DAILY_CAP_MIN);
+    const workedMin = dayPairs.workedMin;
+    if (workedMin > 0 || dayPairs.pairs.length > 0) {
       entry.hoursWorked = (workedMin / 60).toFixed(2);
       entry.workedMin = Math.round(workedMin);
       entry.normaisMin = Math.min(Math.round(workedMin), NORMAL_DAILY_CAP_MIN);
-      const extraMin = Math.max(0, workedMin - jornadaDiariaMin);
-      entry.extraMin = Math.round(extraMin);
+      entry.extraMin = Math.round(Math.max(0, workedMin - jornadaDiariaMin));
       entry.jornadaDiariaMin = Math.round(jornadaDiariaMin);
-      let noturnoMin = nightMinutesBRT2(inMs, outMs);
-      if (entry.lunchOut && entry.lunchIn && sorted.length >= 4) {
-        noturnoMin -= nightMinutesBRT2(
-          new Date(sorted[1].punch_at).getTime(),
-          new Date(sorted[2].punch_at).getTime()
-        );
+      let noturnoMin = 0;
+      for (const pr of dayPairs.pairs) {
+        noturnoMin += nightMinutesBRT2(pr.inMs, pr.outMs);
       }
-      entry.noturnoMin = Math.max(0, Math.round(noturnoMin));
+      entry.noturnoMin = Math.max(0, Math.min(Math.round(noturnoMin), Math.round(workedMin)));
     } else {
       entry.workedMin = 0;
       entry.normaisMin = 0;
@@ -10559,6 +11185,363 @@ var init_control_id = __esm({
         this.name = "RhidUnsupportedError";
       }
     };
+  }
+});
+
+// server/lib/create-limit.ts
+var create_limit_exports = {};
+__export(create_limit_exports, {
+  createLimit: () => createLimit
+});
+function createLimit(concurrency) {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(`createLimit: concurrency deve ser inteiro >= 1 (recebido: ${concurrency})`);
+  }
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= concurrency) return;
+    const run = queue.shift();
+    if (run) {
+      active++;
+      run();
+    }
+  };
+  return (fn) => new Promise((resolve, reject) => {
+    queue.push(() => {
+      fn().then(resolve, reject).finally(() => {
+        active--;
+        next();
+      });
+    });
+    next();
+  });
+}
+var init_create_limit = __esm({
+  "server/lib/create-limit.ts"() {
+    "use strict";
+  }
+});
+
+// server/lib/swr-cache.ts
+var swr_cache_exports = {};
+__export(swr_cache_exports, {
+  bustSwrCache: () => bustSwrCache,
+  startSwrWarmup: () => startSwrWarmup,
+  withSwrCache: () => withSwrCache
+});
+function persistEntry(key, entry) {
+  if (PERSIST_DISABLED) return;
+  try {
+    const raw = JSON.stringify(entry.data);
+    if (!raw || raw.length > MAX_PERSIST_BYTES) return;
+    void supabaseAdmin.from(PERSIST_TABLE).upsert(
+      { key, payload: entry.data, at: new Date(entry.at).toISOString() },
+      { onConflict: "key" }
+    ).then(({ error }) => {
+      if (error && !/42P01|relation .* does not exist/i.test(error.message || "")) {
+        console.warn(`[swr-cache] persist ${key} falhou: ${error.message}`);
+      }
+    });
+  } catch {
+  }
+}
+async function loadPersistedEntry(key) {
+  persistChecked.add(key);
+  if (PERSIST_DISABLED) return null;
+  try {
+    const { data, error } = await supabaseAdmin.from(PERSIST_TABLE).select("payload, at").eq("key", key).maybeSingle();
+    if (error || !data || data.payload === void 0 || data.payload === null) return null;
+    const at = new Date(data.at || 0).getTime();
+    if (!at || isNaN(at)) return null;
+    if (Date.now() - at > MAX_PERSIST_AGE_MS) return null;
+    return { at, data: data.payload };
+  } catch {
+    return null;
+  }
+}
+async function getEntryWithPersistFallback(key) {
+  let entry = store.get(key);
+  if (!entry && !persistChecked.has(key)) {
+    const persisted = await loadPersistedEntry(key);
+    if (persisted) {
+      setEntry(key, persisted, false);
+      entry = persisted;
+    }
+  }
+  return entry;
+}
+function setEntry(key, entry, persist = true) {
+  store.delete(key);
+  store.set(key, entry);
+  while (store.size > MAX_ENTRIES) {
+    const oldest = store.keys().next().value;
+    if (oldest === void 0) break;
+    store.delete(oldest);
+  }
+  if (persist) persistEntry(key, entry);
+}
+function buildKey(baseKey, req) {
+  const q = req?.query || {};
+  const parts = Object.keys(q).filter((k) => k !== "cached" && k !== "force").sort().map((k) => `${k}=${String(q[k])}`);
+  return parts.length ? `${baseKey}?${parts.join("&")}` : baseKey;
+}
+function makeCaptureRes() {
+  const captured = {
+    statusCode: 200,
+    payload: void 0,
+    has: false
+  };
+  const res = {
+    statusCode: 200,
+    set() {
+      return res;
+    },
+    setHeader() {
+      return res;
+    },
+    header() {
+      return res;
+    },
+    status(code) {
+      res.statusCode = code;
+      captured.statusCode = code;
+      return res;
+    },
+    json(payload) {
+      captured.payload = payload;
+      captured.statusCode = res.statusCode;
+      captured.has = true;
+      return res;
+    },
+    send(payload) {
+      captured.payload = payload;
+      captured.statusCode = res.statusCode;
+      captured.has = true;
+      return res;
+    },
+    end() {
+      return res;
+    }
+  };
+  return { res, captured };
+}
+function startSwrWarmup(opts) {
+  if (warmupStarted) return;
+  warmupStarted = true;
+  const initialDelayMs = opts?.initialDelayMs ?? 9e4;
+  const intervalMs = opts?.intervalMs ?? 15 * 6e4;
+  const gapMs = opts?.gapMs ?? 5e3;
+  let passRunning = false;
+  const runPass = async () => {
+    if (passRunning) return;
+    passRunning = true;
+    try {
+      for (const spec of warmups) {
+        for (const q of spec.queries()) {
+          const req = { query: { ...q, cached: "1" } };
+          const key = buildKey(spec.baseKey, req);
+          try {
+            const entry = await getEntryWithPersistFallback(key);
+            const refreshAt = spec.ttlMs * 0.75;
+            if (entry && Date.now() - entry.at < refreshAt) continue;
+            const t0 = Date.now();
+            await refreshKeyNow(key, spec.handler, req);
+            console.log(`[swr-warmup] ${key} recalculado em ${Date.now() - t0}ms`);
+          } catch (e) {
+            console.warn(`[swr-warmup] ${key} falhou: ${e?.message || e}`);
+          }
+          await sleep3(gapMs);
+        }
+      }
+    } finally {
+      passRunning = false;
+    }
+  };
+  setTimeout(() => {
+    runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
+    setInterval(() => {
+      runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
+    }, intervalMs);
+  }, initialDelayMs);
+}
+async function refreshKeyNow(key, handler, req) {
+  if (refreshing.has(key)) return;
+  refreshing.add(key);
+  try {
+    const { res, captured } = makeCaptureRes();
+    await handler(req, res);
+    if (captured.has && captured.statusCode === 200 && captured.payload !== void 0) {
+      setEntry(key, { at: Date.now(), data: captured.payload });
+    }
+  } catch {
+  } finally {
+    refreshing.delete(key);
+  }
+}
+function triggerBackgroundRefresh(key, handler, req) {
+  void refreshKeyNow(key, handler, req);
+}
+function withSwrCache(opts, handler) {
+  if (opts.warmQueries) {
+    warmups.push({ baseKey: opts.baseKey, ttlMs: opts.ttlMs, handler, queries: opts.warmQueries });
+  }
+  return async (req, res, next) => {
+    if (req?.query?.cached !== "1") return handler(req, res, next);
+    const key = buildKey(opts.baseKey, req);
+    const now = Date.now();
+    if (req.query.force === "1") {
+      store.delete(key);
+      if (!PERSIST_DISABLED) {
+        void supabaseAdmin.from(PERSIST_TABLE).delete().eq("key", key).then(() => {
+        });
+      }
+      persistChecked.delete(key);
+    }
+    const entry = req.query.force === "1" ? store.get(key) : await getEntryWithPersistFallback(key);
+    res.set("Cache-Control", "no-store");
+    if (entry && now - entry.at < opts.ttlMs) {
+      res.set("X-Cache", "HIT");
+      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1e3)));
+      return res.json(entry.data);
+    }
+    if (entry) {
+      res.set("X-Cache", "STALE");
+      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1e3)));
+      res.json(entry.data);
+      triggerBackgroundRefresh(key, handler, req);
+      return;
+    }
+    const pending = inflight.get(key);
+    if (pending) {
+      try {
+        const payload = await pending;
+        res.set("X-Cache", "HIT");
+        res.set("X-Cache-Age", "0");
+        return res.json(payload);
+      } catch {
+      }
+    }
+    res.set("X-Cache", "MISS");
+    res.set("X-Cache-Age", "0");
+    let resolveInflight = () => {
+    };
+    let rejectInflight = () => {
+    };
+    const promise = new Promise((resolve, reject) => {
+      resolveInflight = resolve;
+      rejectInflight = reject;
+    });
+    promise.catch(() => {
+    });
+    inflight.set(key, promise);
+    const origJson = res.json.bind(res);
+    let settled = false;
+    res.json = (payload) => {
+      if ((res.statusCode || 200) === 200 && payload !== void 0) {
+        setEntry(key, { at: Date.now(), data: payload });
+        if (!settled) {
+          settled = true;
+          resolveInflight(payload);
+          inflight.delete(key);
+        }
+      } else if (!settled) {
+        settled = true;
+        rejectInflight(new Error("non-200"));
+        inflight.delete(key);
+      }
+      return origJson(payload);
+    };
+    try {
+      return await handler(req, res, next);
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        rejectInflight(err);
+        inflight.delete(key);
+      }
+      throw err;
+    }
+  };
+}
+function bustSwrCache(prefix) {
+  if (!prefix) {
+    store.clear();
+    inflight.clear();
+    persistChecked.clear();
+    if (!PERSIST_DISABLED) {
+      void supabaseAdmin.from(PERSIST_TABLE).delete().neq("key", "").then(() => {
+      });
+    }
+    return;
+  }
+  for (const k of Array.from(store.keys())) {
+    if (k === prefix || k.startsWith(prefix)) store.delete(k);
+  }
+  for (const k of Array.from(inflight.keys())) {
+    if (k === prefix || k.startsWith(prefix)) inflight.delete(k);
+  }
+  for (const k of Array.from(persistChecked)) {
+    if (k === prefix || k.startsWith(prefix)) persistChecked.delete(k);
+  }
+  if (!PERSIST_DISABLED) {
+    void supabaseAdmin.from(PERSIST_TABLE).delete().like("key", `${prefix}%`).then(() => {
+    });
+  }
+}
+var store, refreshing, inflight, MAX_ENTRIES, PERSIST_TABLE, PERSIST_DISABLED, MAX_PERSIST_BYTES, persistChecked, MAX_PERSIST_AGE_MS, warmups, sleep3, warmupStarted;
+var init_swr_cache = __esm({
+  "server/lib/swr-cache.ts"() {
+    "use strict";
+    init_supabase();
+    store = /* @__PURE__ */ new Map();
+    refreshing = /* @__PURE__ */ new Set();
+    inflight = /* @__PURE__ */ new Map();
+    MAX_ENTRIES = 200;
+    PERSIST_TABLE = "swr_cache_snapshots";
+    PERSIST_DISABLED = !!process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === "test";
+    MAX_PERSIST_BYTES = 8e6;
+    persistChecked = /* @__PURE__ */ new Set();
+    MAX_PERSIST_AGE_MS = 24 * 60 * 60 * 1e3;
+    warmups = [];
+    sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
+    warmupStarted = false;
+  }
+});
+
+// server/lib/balanco-cache.ts
+function bustBalancoCaches() {
+  bustSwrCache("operational-grid");
+  bustSwrCache("financial-dashboard");
+  bustSwrCache("rh-summary");
+  bustSwrCache("rh-summary-v4");
+  bustSwrCache("rh-summary-v5");
+  bustSwrCache("rh-summary-v6");
+  bustSwrCache("rh-summary-v7");
+  bustSwrCache("rh-summary-v8");
+  bustSwrCache("rh-summary-v9");
+  bustSwrCache("rh-summary-v10");
+  bustSwrCache("rh-summary-v11");
+  bustSwrCache("rh-summary-v12");
+  bustSwrCache("rh-summary-v13");
+}
+function bustRhSummaryCache() {
+  bustSwrCache("rh-summary");
+  bustSwrCache("rh-summary-v4");
+  bustSwrCache("rh-summary-v5");
+  bustSwrCache("rh-summary-v6");
+  bustSwrCache("rh-summary-v7");
+  bustSwrCache("rh-summary-v8");
+  bustSwrCache("rh-summary-v9");
+  bustSwrCache("rh-summary-v10");
+  bustSwrCache("rh-summary-v11");
+  bustSwrCache("rh-summary-v12");
+  bustSwrCache("rh-summary-v13");
+}
+var init_balanco_cache = __esm({
+  "server/lib/balanco-cache.ts"() {
+    "use strict";
+    init_swr_cache();
   }
 });
 
@@ -11673,297 +12656,6 @@ var init_truckscontrol = __esm({
   }
 });
 
-// server/lib/swr-cache.ts
-var swr_cache_exports = {};
-__export(swr_cache_exports, {
-  bustSwrCache: () => bustSwrCache,
-  startSwrWarmup: () => startSwrWarmup,
-  withSwrCache: () => withSwrCache
-});
-function persistEntry(key, entry) {
-  if (PERSIST_DISABLED) return;
-  try {
-    const raw = JSON.stringify(entry.data);
-    if (!raw || raw.length > MAX_PERSIST_BYTES) return;
-    void supabaseAdmin.from(PERSIST_TABLE).upsert(
-      { key, payload: entry.data, at: new Date(entry.at).toISOString() },
-      { onConflict: "key" }
-    ).then(({ error }) => {
-      if (error && !/42P01|relation .* does not exist/i.test(error.message || "")) {
-        console.warn(`[swr-cache] persist ${key} falhou: ${error.message}`);
-      }
-    });
-  } catch {
-  }
-}
-async function loadPersistedEntry(key) {
-  persistChecked.add(key);
-  if (PERSIST_DISABLED) return null;
-  try {
-    const { data, error } = await supabaseAdmin.from(PERSIST_TABLE).select("payload, at").eq("key", key).maybeSingle();
-    if (error || !data || data.payload === void 0 || data.payload === null) return null;
-    const at = new Date(data.at || 0).getTime();
-    if (!at || isNaN(at)) return null;
-    if (Date.now() - at > MAX_PERSIST_AGE_MS) return null;
-    return { at, data: data.payload };
-  } catch {
-    return null;
-  }
-}
-async function getEntryWithPersistFallback(key) {
-  let entry = store.get(key);
-  if (!entry && !persistChecked.has(key)) {
-    const persisted = await loadPersistedEntry(key);
-    if (persisted) {
-      setEntry(key, persisted, false);
-      entry = persisted;
-    }
-  }
-  return entry;
-}
-function setEntry(key, entry, persist = true) {
-  store.delete(key);
-  store.set(key, entry);
-  while (store.size > MAX_ENTRIES) {
-    const oldest = store.keys().next().value;
-    if (oldest === void 0) break;
-    store.delete(oldest);
-  }
-  if (persist) persistEntry(key, entry);
-}
-function buildKey(baseKey, req) {
-  const q = req?.query || {};
-  const parts = Object.keys(q).filter((k) => k !== "cached" && k !== "force").sort().map((k) => `${k}=${String(q[k])}`);
-  return parts.length ? `${baseKey}?${parts.join("&")}` : baseKey;
-}
-function makeCaptureRes() {
-  const captured = {
-    statusCode: 200,
-    payload: void 0,
-    has: false
-  };
-  const res = {
-    statusCode: 200,
-    set() {
-      return res;
-    },
-    setHeader() {
-      return res;
-    },
-    header() {
-      return res;
-    },
-    status(code) {
-      res.statusCode = code;
-      captured.statusCode = code;
-      return res;
-    },
-    json(payload) {
-      captured.payload = payload;
-      captured.statusCode = res.statusCode;
-      captured.has = true;
-      return res;
-    },
-    send(payload) {
-      captured.payload = payload;
-      captured.statusCode = res.statusCode;
-      captured.has = true;
-      return res;
-    },
-    end() {
-      return res;
-    }
-  };
-  return { res, captured };
-}
-function startSwrWarmup(opts) {
-  if (warmupStarted) return;
-  warmupStarted = true;
-  const initialDelayMs = opts?.initialDelayMs ?? 9e4;
-  const intervalMs = opts?.intervalMs ?? 15 * 6e4;
-  const gapMs = opts?.gapMs ?? 5e3;
-  let passRunning = false;
-  const runPass = async () => {
-    if (passRunning) return;
-    passRunning = true;
-    try {
-      for (const spec of warmups) {
-        for (const q of spec.queries()) {
-          const req = { query: { ...q, cached: "1" } };
-          const key = buildKey(spec.baseKey, req);
-          try {
-            const entry = await getEntryWithPersistFallback(key);
-            const refreshAt = spec.ttlMs * 0.75;
-            if (entry && Date.now() - entry.at < refreshAt) continue;
-            const t0 = Date.now();
-            await refreshKeyNow(key, spec.handler, req);
-            console.log(`[swr-warmup] ${key} recalculado em ${Date.now() - t0}ms`);
-          } catch (e) {
-            console.warn(`[swr-warmup] ${key} falhou: ${e?.message || e}`);
-          }
-          await sleep3(gapMs);
-        }
-      }
-    } finally {
-      passRunning = false;
-    }
-  };
-  setTimeout(() => {
-    runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
-    setInterval(() => {
-      runPass().catch((e) => console.warn("[swr-warmup] passada falhou:", e?.message || e));
-    }, intervalMs);
-  }, initialDelayMs);
-}
-async function refreshKeyNow(key, handler, req) {
-  if (refreshing.has(key)) return;
-  refreshing.add(key);
-  try {
-    const { res, captured } = makeCaptureRes();
-    await handler(req, res);
-    if (captured.has && captured.statusCode === 200 && captured.payload !== void 0) {
-      setEntry(key, { at: Date.now(), data: captured.payload });
-    }
-  } catch {
-  } finally {
-    refreshing.delete(key);
-  }
-}
-function triggerBackgroundRefresh(key, handler, req) {
-  void refreshKeyNow(key, handler, req);
-}
-function withSwrCache(opts, handler) {
-  if (opts.warmQueries) {
-    warmups.push({ baseKey: opts.baseKey, ttlMs: opts.ttlMs, handler, queries: opts.warmQueries });
-  }
-  return async (req, res, next) => {
-    if (req?.query?.cached !== "1") return handler(req, res, next);
-    const key = buildKey(opts.baseKey, req);
-    const now = Date.now();
-    if (req.query.force === "1") store.delete(key);
-    const entry = req.query.force === "1" ? store.get(key) : await getEntryWithPersistFallback(key);
-    res.set("Cache-Control", "no-store");
-    if (entry && now - entry.at < opts.ttlMs) {
-      res.set("X-Cache", "HIT");
-      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1e3)));
-      return res.json(entry.data);
-    }
-    if (entry) {
-      res.set("X-Cache", "STALE");
-      res.set("X-Cache-Age", String(Math.floor((now - entry.at) / 1e3)));
-      res.json(entry.data);
-      triggerBackgroundRefresh(key, handler, req);
-      return;
-    }
-    const pending = inflight.get(key);
-    if (pending) {
-      try {
-        const payload = await pending;
-        res.set("X-Cache", "HIT");
-        res.set("X-Cache-Age", "0");
-        return res.json(payload);
-      } catch {
-      }
-    }
-    res.set("X-Cache", "MISS");
-    res.set("X-Cache-Age", "0");
-    let resolveInflight = () => {
-    };
-    let rejectInflight = () => {
-    };
-    const promise = new Promise((resolve, reject) => {
-      resolveInflight = resolve;
-      rejectInflight = reject;
-    });
-    promise.catch(() => {
-    });
-    inflight.set(key, promise);
-    const origJson = res.json.bind(res);
-    let settled = false;
-    res.json = (payload) => {
-      if ((res.statusCode || 200) === 200 && payload !== void 0) {
-        setEntry(key, { at: Date.now(), data: payload });
-        if (!settled) {
-          settled = true;
-          resolveInflight(payload);
-          inflight.delete(key);
-        }
-      } else if (!settled) {
-        settled = true;
-        rejectInflight(new Error("non-200"));
-        inflight.delete(key);
-      }
-      return origJson(payload);
-    };
-    try {
-      return await handler(req, res, next);
-    } catch (err) {
-      if (!settled) {
-        settled = true;
-        rejectInflight(err);
-        inflight.delete(key);
-      }
-      throw err;
-    }
-  };
-}
-function bustSwrCache(prefix) {
-  if (!prefix) {
-    store.clear();
-    inflight.clear();
-    persistChecked.clear();
-    if (!PERSIST_DISABLED) {
-      void supabaseAdmin.from(PERSIST_TABLE).delete().neq("key", "").then(() => {
-      });
-    }
-    return;
-  }
-  for (const k of Array.from(store.keys())) {
-    if (k === prefix || k.startsWith(prefix)) store.delete(k);
-  }
-  for (const k of Array.from(inflight.keys())) {
-    if (k === prefix || k.startsWith(prefix)) inflight.delete(k);
-  }
-  for (const k of Array.from(persistChecked)) {
-    if (k === prefix || k.startsWith(prefix)) persistChecked.delete(k);
-  }
-  if (!PERSIST_DISABLED) {
-    void supabaseAdmin.from(PERSIST_TABLE).delete().like("key", `${prefix}%`).then(() => {
-    });
-  }
-}
-var store, refreshing, inflight, MAX_ENTRIES, PERSIST_TABLE, PERSIST_DISABLED, MAX_PERSIST_BYTES, persistChecked, MAX_PERSIST_AGE_MS, warmups, sleep3, warmupStarted;
-var init_swr_cache = __esm({
-  "server/lib/swr-cache.ts"() {
-    "use strict";
-    init_supabase();
-    store = /* @__PURE__ */ new Map();
-    refreshing = /* @__PURE__ */ new Set();
-    inflight = /* @__PURE__ */ new Map();
-    MAX_ENTRIES = 200;
-    PERSIST_TABLE = "swr_cache_snapshots";
-    PERSIST_DISABLED = !!process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === "test";
-    MAX_PERSIST_BYTES = 8e6;
-    persistChecked = /* @__PURE__ */ new Set();
-    MAX_PERSIST_AGE_MS = 24 * 60 * 60 * 1e3;
-    warmups = [];
-    sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
-    warmupStarted = false;
-  }
-});
-
-// server/lib/balanco-cache.ts
-function bustBalancoCaches() {
-  bustSwrCache("operational-grid");
-  bustSwrCache("financial-dashboard");
-}
-var init_balanco_cache = __esm({
-  "server/lib/balanco-cache.ts"() {
-    "use strict";
-    init_swr_cache();
-  }
-});
-
 // shared/documents-catalog.ts
 function profileFromRole(role) {
   const r = (role || "").toLowerCase();
@@ -12457,6 +13149,53 @@ REGRAS:
 6. Mantenha n\xFAmeros, placas, nomes pr\xF3prios e hor\xE1rios exatamente como est\xE3o.
 7. Se a mensagem j\xE1 estiver correta, devolva ela igual.
 8. Resposta: S\xD3 o texto corrigido, sem aspas, sem coment\xE1rio, sem prefixo.`;
+  }
+});
+
+// server/lib/pdf-text.ts
+var pdf_text_exports = {};
+__export(pdf_text_exports, {
+  extractPdfText: () => extractPdfText
+});
+async function ensurePdfDomPolyfill() {
+  if (polyfillReady) return polyfillReady;
+  polyfillReady = (async () => {
+    const g = globalThis;
+    if (g.DOMMatrix && g.ImageData && g.Path2D) return;
+    try {
+      const canvas = await import("@napi-rs/canvas");
+      if (!g.DOMMatrix && canvas.DOMMatrix) g.DOMMatrix = canvas.DOMMatrix;
+      if (!g.ImageData && canvas.ImageData) g.ImageData = canvas.ImageData;
+      if (!g.Path2D && canvas.Path2D) g.Path2D = canvas.Path2D;
+      if (!g.Image && canvas.Image) g.Image = canvas.Image;
+    } catch (err) {
+      console.warn("[pdf-text] falha ao carregar @napi-rs/canvas:", err?.message || err);
+    }
+  })();
+  return polyfillReady;
+}
+async function extractPdfText(buf) {
+  await ensurePdfDomPolyfill();
+  const { CanvasFactory } = await import("pdf-parse/worker");
+  const { PDFParse } = await import("pdf-parse");
+  const data = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const parser = new PDFParse({ data, CanvasFactory });
+  try {
+    const parsed = await parser.getText();
+    const text2 = typeof parsed === "string" ? parsed : parsed?.text || "";
+    return String(text2).trim();
+  } finally {
+    try {
+      await parser.destroy?.();
+    } catch {
+    }
+  }
+}
+var polyfillReady;
+var init_pdf_text = __esm({
+  "server/lib/pdf-text.ts"() {
+    "use strict";
+    polyfillReady = null;
   }
 });
 
@@ -19188,7 +19927,7 @@ async function runProvisaoCron() {
       valeRefeicaoDia: 40,
       cestaBasica: 208.45,
       diasUteisMes: 22,
-      horaExtraValor: 22.99
+      horaExtraValor: 16
     };
     const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
     const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
@@ -19822,7 +20561,7 @@ async function sendPayslipReminderToDiretoria(year, month) {
     else if (ps.assinatura_status !== "assinado") naoAssinados.push({ ...e, payslipId: ps.id });
   }
   if (semHolerite.length === 0 && naoAssinados.length === 0) {
-    log(`CRON LembreteHolerite: Tudo em dia para ${MONTHS_PT[refMonth - 1]}/${refYear}`, "cron");
+    log(`CRON LembreteHolerite: Tudo em dia para ${MONTHS_PT2[refMonth - 1]}/${refYear}`, "cron");
     return;
   }
   const transporter = getCronMailTransporter();
@@ -19835,7 +20574,7 @@ async function sendPayslipReminderToDiretoria(year, month) {
     log(`CRON LembreteHolerite: Sem destinat\xE1rios da Diretoria configurados`, "cron");
     return;
   }
-  const monthLabel = `${MONTHS_PT[refMonth - 1]}/${refYear}`;
+  const monthLabel = `${MONTHS_PT2[refMonth - 1]}/${refYear}`;
   const row = (e) => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">${e.matricula || "\u2014"}</td><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">${e.name}</td><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#64748b;">${e.role || "\u2014"}</td></tr>`;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:20px;">
@@ -20361,7 +21100,7 @@ async function executeBillingCron() {
   const elapsed = ((Date.now() - cronStart) / 1e3).toFixed(1);
   log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
 }
-var RODIZIO_MAP, META_DIARIA_VIATURA2, isActiveVehicle2, MONTHS_PT, DIRETORIA_EMAIL_DEFAULT;
+var RODIZIO_MAP, META_DIARIA_VIATURA2, isActiveVehicle2, MONTHS_PT2, DIRETORIA_EMAIL_DEFAULT;
 var init_cron = __esm({
   "server/cron.ts"() {
     "use strict";
@@ -20382,7 +21121,7 @@ var init_cron = __esm({
     };
     META_DIARIA_VIATURA2 = 1800;
     isActiveVehicle2 = (v) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
-    MONTHS_PT = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    MONTHS_PT2 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     DIRETORIA_EMAIL_DEFAULT = "diretoria@torresseguranca.com.br";
   }
 });
@@ -20392,7 +21131,7 @@ var APP_VERSION, APP_BUILD_AT, _diskLimitEnv, DB_DISK_LIMIT_MB;
 var init_constants = __esm({
   "server/constants.ts"() {
     "use strict";
-    APP_VERSION = "3.7.1";
+    APP_VERSION = "3.7.2";
     APP_BUILD_AT = (/* @__PURE__ */ new Date()).toISOString();
     _diskLimitEnv = Number(process.env.DB_DISK_LIMIT_MB);
     DB_DISK_LIMIT_MB = Number.isFinite(_diskLimitEnv) && _diskLimitEnv > 0 ? _diskLimitEnv : 8192;
@@ -21059,9 +21798,8 @@ var employees = pgTable("employees", {
   pis: text("pis"),
   role: text("role").notNull(),
   category: text("category").default("mensalista"),
-  // Regime de contratação: "clt" (com encargos/descontos legais) ou "fixo"
-  // (valor fixo bruto = líquido, sem INSS/IRRF/FGTS/provisões — PJ, autônomo,
-  // freelancer pago como prestador, estagiário, etc).
+  // Regime de contratação: "clt" | "pj" (legado: "fixo" = alias de "pj").
+  // PJ = valor fixo mensal, sem impostos, variáveis nem hora extra.
   tipoContratacao: text("tipo_contratacao").default("clt"),
   phone: text("phone"),
   email: text("email"),
@@ -21121,13 +21859,13 @@ var employeeSalaries = pgTable("employee_salaries", {
   beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
   encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
   horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
-  // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
+  // CCT: VR por dia útil (R$ 43 × 22 = 946). Kit R$ 200 = ajuda de custo (não cesta).
   valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
-  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
+  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("0"),
   // Folha 2025: Periculosidade (30% padrão para vigilantes), Dependentes IR, Ajuda de Custo fixa
   periculosidadePct: decimal("periculosidade_pct", { precision: 5, scale: 2 }).default("30.00"),
   dependentesIr: integer("dependentes_ir").default(0),
-  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("0"),
+  ajudaCustoMensal: decimal("ajuda_custo_mensal", { precision: 10, scale: 2 }).default("200.00"),
   // Modelo Torres (planilha do dono): Vale Alimentação mensal + Assiduidade mensal (benefícios à parte)
   valeAlimentacaoMensal: decimal("vale_alimentacao_mensal", { precision: 10, scale: 2 }).default("0"),
   assiduidadeMensal: decimal("assiduidade_mensal", { precision: 10, scale: 2 }).default("0"),
@@ -22822,138 +23560,206 @@ init_supabase();
 init_auth();
 init_apibrasil();
 init_normalize_contact();
+init_payroll();
 import OpenAI3 from "openai";
 
-// server/lib/payroll.ts
-var INSS_2025 = {
-  faixas: [
-    { ate: 1518, aliquota: 0.075 },
-    { ate: 2793.88, aliquota: 0.09 },
-    { ate: 4190.83, aliquota: 0.12 },
-    { ate: 8157.41, aliquota: 0.14 }
-    // teto
-  ],
-  teto: 8157.41
-};
-var IRRF_2024 = {
-  faixas: [
-    { ate: 2259.2, aliquota: 0, deducao: 0 },
-    { ate: 2826.65, aliquota: 0.075, deducao: 169.44 },
-    { ate: 3751.05, aliquota: 0.15, deducao: 381.44 },
-    { ate: 4664.68, aliquota: 0.225, deducao: 662.77 },
-    { ate: Infinity, aliquota: 0.275, deducao: 896 }
-  ],
-  deducaoDependente: 189.59
-};
-var FGTS_ALIQUOTA = 0.08;
-var PERICULOSIDADE_PADRAO = 0.3;
-var INSS_PROVISAO_FERIAS_13 = 0.075;
-function r2(n2) {
-  return Math.round(n2 * 100) / 100;
+// server/lib/employee-monthly-cost.ts
+init_payroll_period();
+init_supabase();
+init_payroll();
+function payrollWindowFromMesRef(mesRef) {
+  const y = Number(String(mesRef).slice(0, 4));
+  const m = Number(String(mesRef).slice(5, 7));
+  const p = getPayrollPeriod(y, m);
+  return { from: p.startDate, to: p.endDate, labelShort: p.labelShort };
 }
-function calcularINSS(baseTributavel, tabela = INSS_2025) {
-  const base = Math.min(baseTributavel, tabela.teto);
-  let inss = 0;
-  let anterior = 0;
-  for (const f of tabela.faixas) {
-    if (base <= anterior) break;
-    const faixaTopo = Math.min(base, f.ate);
-    inss += (faixaTopo - anterior) * f.aliquota;
-    anterior = f.ate;
-    if (base <= f.ate) break;
+async function heFromBatidas(opts) {
+  try {
+    const { buildFolhaPonto: buildFolhaPonto2 } = await Promise.resolve().then(() => (init_control_id(), control_id_exports));
+    const dias = await buildFolhaPonto2(opts.employeeId, opts.mesRef, {
+      horasMensais: opts.horasMensais
+    });
+    if (!dias || dias.length === 0) return null;
+    const noturnoMin = dias.reduce(
+      (s, d) => s + (Number(d.noturnoMin) || 0),
+      0
+    );
+    const hoursWorked = dias.reduce((s, d) => s + (Number(d.workedMin) || 0), 0) / 60;
+    const limit = opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
+    const horasExtras = Math.max(0, hoursWorked - limit);
+    const horasNoturnas = noturnoMin / 60;
+    if (horasExtras <= 0 && horasNoturnas <= 0) {
+      return { horasExtras: 0, horasNoturnas: 0, fonte: "batidas", registros: dias.length };
+    }
+    return {
+      horasExtras: r2(horasExtras),
+      horasNoturnas: r2(horasNoturnas),
+      fonte: "batidas",
+      registros: dias.length
+    };
+  } catch (e) {
+    console.warn("[resolveHoras] batidas:", e?.message || e);
+    return null;
   }
-  return r2(inss);
 }
-function calcularIRRF(baseTributavelBruta, inssDescontado, numeroDependentes = 0, tabela = IRRF_2024) {
-  const baseIRRF = baseTributavelBruta - inssDescontado - numeroDependentes * tabela.deducaoDependente;
-  if (baseIRRF <= 0) return 0;
-  for (const f of tabela.faixas) {
-    if (baseIRRF <= f.ate) {
-      return r2(Math.max(0, baseIRRF * f.aliquota - f.deducao));
+async function resolveHorasExtrasNoturnas(opts) {
+  const { employeeId, mesRef } = opts;
+  const payroll = payrollWindowFromMesRef(mesRef);
+  const inicio = `${payroll.from}T00:00:00-03:00`;
+  const fim = `${payroll.to}T23:59:59-03:00`;
+  const allowBatidas = opts.allowBatidasFallback !== false;
+  if (allowBatidas) {
+    const fromBatidas = await heFromBatidas({
+      employeeId,
+      mesRef,
+      horasMensais: opts.horasMensais
+    });
+    if (fromBatidas && (fromBatidas.horasExtras > 0 || fromBatidas.horasNoturnas > 0)) {
+      return fromBatidas;
     }
   }
-  return 0;
-}
-function calcularFolha(input) {
-  const {
-    salarioBaseCheio,
-    diasTrabalhados = 30,
-    horasMensais = 220,
-    periculosidadePct = PERICULOSIDADE_PADRAO,
-    horasExtras = 0,
-    horasNoturnas = 0,
-    multiplicadorHE = 1.6,
-    multiplicadorAdicNot = 1.8,
-    aplicarPericulosidade = true,
-    aplicarDsr = false,
-    inssModo = "flat",
-    inssFlatPct = 12,
-    irrfModo = "flat",
-    irrfFlatPct = 22,
-    fgtsNoLiquido = false,
-    vtDesconto = 0,
-    diasUteis = 0,
-    diasUteisDSR = 25,
-    refeicaoDiaria = 0,
-    ajudaCustoMensal = 0,
-    dependentesIR = 0,
-    isClt = true
-  } = input;
-  const diasDescanso = input.diasDescanso ?? Math.max(0, 30 - diasUteisDSR);
-  const salarioProporcional = r2(salarioBaseCheio / 30 * diasTrabalhados);
-  const periculosidade = aplicarPericulosidade ? r2(salarioProporcional * periculosidadePct) : 0;
-  const fatorPeric = aplicarPericulosidade ? 1 + periculosidadePct : 1;
-  const valorHoraNormal = horasMensais > 0 ? salarioBaseCheio * fatorPeric / horasMensais : 0;
-  const horasExtrasValor = r2(valorHoraNormal * multiplicadorHE * horasExtras);
-  const adicionalNoturnoValor = r2(valorHoraNormal * multiplicadorAdicNot * horasNoturnas);
-  const dsr = aplicarDsr && diasUteisDSR > 0 ? r2((horasExtrasValor + adicionalNoturnoValor) * (diasDescanso / diasUteisDSR)) : 0;
-  const refeicao = r2(refeicaoDiaria * diasUteis);
-  const ajudaCusto = r2(ajudaCustoMensal);
-  const baseTributavel = r2(
-    salarioProporcional + periculosidade + horasExtrasValor + adicionalNoturnoValor + dsr
-  );
-  const totalBruto = r2(baseTributavel + refeicao + ajudaCusto);
-  const inss = isClt ? inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel) : 0;
-  const irrf = isClt ? irrfModo === "flat" ? r2(baseTributavel * (irrfFlatPct / 100)) : calcularIRRF(baseTributavel, inss, dependentesIR) : 0;
-  const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
-  const totalDeducoes = r2(inss + irrf);
-  const provisaoDecimoTerceiro = isClt ? r2(salarioBaseCheio / 12) : 0;
-  const provisaoFerias = isClt ? r2(salarioBaseCheio / 12) : 0;
-  const provisaoTercoFerias = isClt ? r2(provisaoFerias / 3) : 0;
-  const baseProvisoes = provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias;
-  const provisaoFGTSsobreFerias13 = isClt ? r2(baseProvisoes * FGTS_ALIQUOTA) : 0;
-  const provisaoINSSsobreFerias13 = isClt ? r2(baseProvisoes * INSS_PROVISAO_FERIAS_13) : 0;
-  const totalProvisoes = r2(
-    provisaoDecimoTerceiro + provisaoFerias + provisaoTercoFerias + provisaoFGTSsobreFerias13 + provisaoINSSsobreFerias13
-  );
-  const custoTotalEmpresa = r2(totalBruto + fgts + totalProvisoes);
-  const liquidoFuncionario = r2(
-    baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
-  );
+  let horasExtras = 0;
+  let horasNoturnas = 0;
+  let fonte = "nenhuma";
+  let registros = 0;
+  try {
+    const { data: pontos } = await supabaseAdmin.from("ponto_operacional").select("horas_extras, horas_noturno").eq("employee_id", employeeId).gte("entrada", inicio).lte("entrada", fim);
+    if (pontos && pontos.length > 0) {
+      for (const p of pontos) {
+        horasExtras += Number(p.horas_extras || 0);
+        horasNoturnas += Number(p.horas_noturno || 0);
+      }
+      registros = pontos.length;
+      if (horasExtras > 0 || horasNoturnas > 0) {
+        return {
+          horasExtras: r2(horasExtras),
+          horasNoturnas: r2(horasNoturnas),
+          fonte: "ponto_operacional",
+          registros
+        };
+      }
+      fonte = "ponto_operacional";
+    }
+  } catch (e) {
+    console.warn("[resolveHoras] ponto_operacional:", e?.message || e);
+  }
+  try {
+    const { data: jorn } = await supabaseAdmin.from("jornada_calculos").select("horas_extras, horas_noturnas").eq("employee_id", employeeId).eq("mes_referencia", mesRef);
+    if (jorn && jorn.length > 0) {
+      horasExtras = 0;
+      horasNoturnas = 0;
+      for (const j of jorn) {
+        horasExtras += Number(j.horas_extras || 0);
+        horasNoturnas += Number(j.horas_noturnas || 0);
+      }
+      registros = jorn.length;
+      if (horasExtras > 0 || horasNoturnas > 0) {
+        return {
+          horasExtras: r2(horasExtras),
+          horasNoturnas: r2(horasNoturnas),
+          fonte: "jornada_calculos",
+          registros
+        };
+      }
+      fonte = "jornada_calculos";
+    }
+  } catch (e) {
+    console.warn("[resolveHoras] jornada_calculos:", e?.message || e);
+  }
   return {
-    salarioProporcional,
-    periculosidade,
-    horasExtrasValor,
-    adicionalNoturnoValor,
-    dsr,
-    refeicao,
-    ajudaCusto,
-    totalBruto,
-    baseTributavel,
-    inss,
-    irrf,
-    fgts,
-    totalDeducoes,
-    provisaoDecimoTerceiro,
-    provisaoFerias,
-    provisaoTercoFerias,
-    provisaoFGTSsobreFerias13,
-    provisaoINSSsobreFerias13,
-    totalProvisoes,
-    custoTotalEmpresa,
-    liquidoFuncionario
+    horasExtras: r2(horasExtras),
+    horasNoturnas: r2(horasNoturnas),
+    fonte,
+    registros
   };
 }
+async function resolveHorasExtrasNoturnasBulk(opts) {
+  const { employeeIds, mesRef } = opts;
+  const out = /* @__PURE__ */ new Map();
+  for (const id of employeeIds) {
+    out.set(id, { horasExtras: 0, horasNoturnas: 0, fonte: "nenhuma", registros: 0 });
+  }
+  if (employeeIds.length === 0) return out;
+  const { createLimit: createLimit2 } = await Promise.resolve().then(() => (init_create_limit(), create_limit_exports));
+  const limitBat = createLimit2(4);
+  await Promise.all(
+    employeeIds.map(
+      (id) => limitBat(async () => {
+        const fromBatidas = await heFromBatidas({
+          employeeId: id,
+          mesRef,
+          horasMensais: opts.horasMensaisByEmp?.get(id)
+        });
+        if (fromBatidas && (fromBatidas.horasExtras > 0 || fromBatidas.horasNoturnas > 0)) {
+          out.set(id, fromBatidas);
+        }
+      })
+    )
+  );
+  const faltantes = employeeIds.filter((id) => {
+    const cur = out.get(id);
+    return cur.horasExtras <= 0 && cur.horasNoturnas <= 0;
+  });
+  if (faltantes.length === 0) return out;
+  const payroll = payrollWindowFromMesRef(mesRef);
+  const inicio = `${payroll.from}T00:00:00-03:00`;
+  const fim = `${payroll.to}T23:59:59-03:00`;
+  const comPontoValor = /* @__PURE__ */ new Set();
+  try {
+    const { data: pontos } = await supabaseAdmin.from("ponto_operacional").select("employee_id, horas_extras, horas_noturno").gte("entrada", inicio).lte("entrada", fim).in("employee_id", faltantes);
+    const regCount = /* @__PURE__ */ new Map();
+    for (const p of pontos || []) {
+      const id = Number(p.employee_id);
+      if (!id || !out.has(id)) continue;
+      const cur = out.get(id);
+      cur.horasExtras += Number(p.horas_extras || 0);
+      cur.horasNoturnas += Number(p.horas_noturno || 0);
+      cur.fonte = "ponto_operacional";
+      regCount.set(id, (regCount.get(id) || 0) + 1);
+    }
+    for (const [id, n2] of regCount) {
+      const cur = out.get(id);
+      cur.registros = n2;
+      cur.horasExtras = r2(cur.horasExtras);
+      cur.horasNoturnas = r2(cur.horasNoturnas);
+      if (cur.horasExtras > 0 || cur.horasNoturnas > 0) comPontoValor.add(id);
+    }
+  } catch (e) {
+    console.warn("[resolveHorasBulk] ponto:", e?.message || e);
+  }
+  const aindaFaltam = faltantes.filter((id) => !comPontoValor.has(id));
+  if (aindaFaltam.length === 0) return out;
+  try {
+    const { data: jorn } = await supabaseAdmin.from("jornada_calculos").select("employee_id, horas_extras, horas_noturnas").eq("mes_referencia", mesRef).in("employee_id", aindaFaltam);
+    const regCount = /* @__PURE__ */ new Map();
+    for (const r of jorn || []) {
+      const id = Number(r.employee_id);
+      if (!id || !out.has(id)) continue;
+      const cur = out.get(id);
+      if (cur.fonte !== "jornada_calculos") {
+        cur.horasExtras = 0;
+        cur.horasNoturnas = 0;
+        cur.registros = 0;
+      }
+      cur.horasExtras += Number(r.horas_extras || 0);
+      cur.horasNoturnas += Number(r.horas_noturnas || 0);
+      cur.fonte = "jornada_calculos";
+      regCount.set(id, (regCount.get(id) || 0) + 1);
+    }
+    for (const [id, n2] of regCount) {
+      const cur = out.get(id);
+      cur.registros = n2;
+      cur.horasExtras = r2(cur.horasExtras);
+      cur.horasNoturnas = r2(cur.horasNoturnas);
+    }
+  } catch (e) {
+    console.warn("[resolveHorasBulk] jornada:", e?.message || e);
+  }
+  return out;
+}
+
+// server/routes/employees.ts
+init_contratacao();
 
 // server/routes/probation-contracts.ts
 init_supabase();
@@ -23452,6 +24258,36 @@ function registerProbationContractRoutes(app2) {
 // server/routes/employees.ts
 init_control_id();
 init_holidays();
+init_balanco_cache();
+
+// server/lib/parse-money.ts
+function parseMoney(value) {
+  if (value == null || value === "") return NaN;
+  if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
+  const s = String(value).replace(/[R$\s]/g, "").trim();
+  if (!s) return NaN;
+  if (s.includes(",") && s.includes(".")) {
+    const lastComma = s.lastIndexOf(",");
+    const lastDot = s.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      return parseFloat(s.replace(/\./g, "").replace(",", "."));
+    }
+    return parseFloat(s.replace(/,/g, ""));
+  }
+  if (s.includes(",")) {
+    return parseFloat(s.replace(",", "."));
+  }
+  return parseFloat(s);
+}
+function toDecimalString(value, opts) {
+  const n2 = parseMoney(value);
+  if (!Number.isFinite(n2)) return null;
+  if (!opts?.allowZero && n2 <= 0) return null;
+  if (opts?.allowZero && n2 < 0) return null;
+  return n2.toFixed(2);
+}
+
+// server/routes/employees.ts
 var EMPLOYEE_DATE_FIELDS = [
   "birthDate",
   "hireDate",
@@ -23466,7 +24302,7 @@ function registerEmployeeRoutes(app2) {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
     const offset = (page - 1) * limit;
-    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,created_at";
+    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,tipo_contratacao,category,created_at";
     let data;
     try {
       const { data: rows, error } = await supabaseAdmin.from("employees").select(EMP_LIST_COLS).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
@@ -23699,46 +24535,87 @@ function registerEmployeeRoutes(app2) {
   });
   app2.post("/api/employees/:id/salaries", requireAuth, async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
-    const emp = await storage.getEmployee(Number(req.params.id));
-    if (!emp) return res.status(404).json({ message: "Funcion\xE1rio n\xE3o encontrado" });
-    const {
-      baseSalary,
-      effectiveDate,
-      reason,
-      notes,
-      valeRefeicaoDiario,
-      cestaBasica,
-      valeTransporteMensal,
-      beneficiosOutros,
-      encargosPct,
-      horasMensais,
-      periculosidadePct,
-      dependentesIr,
-      ajudaCustoMensal,
-      valeAlimentacaoMensal,
-      assiduidadeMensal
-    } = req.body;
-    if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Sal\xE1rio e data s\xE3o obrigat\xF3rios" });
-    const payload = {
-      employeeId: emp.id,
-      baseSalary: String(baseSalary),
-      effectiveDate,
-      reason: reason || null,
-      notes: notes || null
-    };
-    if (valeRefeicaoDiario !== void 0 && valeRefeicaoDiario !== "") payload.valeRefeicaoDiario = String(valeRefeicaoDiario);
-    if (cestaBasica !== void 0 && cestaBasica !== "") payload.cestaBasica = String(cestaBasica);
-    if (valeTransporteMensal !== void 0 && valeTransporteMensal !== "") payload.valeTransporteMensal = String(valeTransporteMensal);
-    if (beneficiosOutros !== void 0 && beneficiosOutros !== "") payload.beneficiosOutros = String(beneficiosOutros);
-    if (encargosPct !== void 0 && encargosPct !== "") payload.encargosPct = String(encargosPct);
-    if (horasMensais !== void 0 && horasMensais !== "") payload.horasMensais = String(horasMensais);
-    if (periculosidadePct !== void 0 && periculosidadePct !== "") payload.periculosidadePct = String(periculosidadePct);
-    if (dependentesIr !== void 0 && dependentesIr !== "") payload.dependentesIr = Number(dependentesIr);
-    if (ajudaCustoMensal !== void 0 && ajudaCustoMensal !== "") payload.ajudaCustoMensal = String(ajudaCustoMensal);
-    if (valeAlimentacaoMensal !== void 0 && valeAlimentacaoMensal !== "") payload.valeAlimentacaoMensal = String(valeAlimentacaoMensal);
-    if (assiduidadeMensal !== void 0 && assiduidadeMensal !== "") payload.assiduidadeMensal = String(assiduidadeMensal);
-    const salary = await storage.createEmployeeSalary(payload);
-    res.status(201).json(salary);
+    try {
+      const emp = await storage.getEmployee(Number(req.params.id));
+      if (!emp) return res.status(404).json({ message: "Funcion\xE1rio n\xE3o encontrado" });
+      const {
+        baseSalary,
+        effectiveDate,
+        reason,
+        notes,
+        valeRefeicaoDiario,
+        cestaBasica,
+        valeTransporteMensal,
+        beneficiosOutros,
+        encargosPct,
+        horasMensais,
+        periculosidadePct,
+        dependentesIr,
+        ajudaCustoMensal,
+        valeAlimentacaoMensal,
+        assiduidadeMensal
+      } = req.body;
+      if (baseSalary == null || baseSalary === "" || !effectiveDate) {
+        return res.status(400).json({ message: "Sal\xE1rio e data s\xE3o obrigat\xF3rios" });
+      }
+      const baseNorm = toDecimalString(baseSalary);
+      if (!baseNorm) {
+        return res.status(400).json({ message: "Sal\xE1rio base inv\xE1lido. Use um valor num\xE9rico (ex.: 4000 ou 4.000,00)." });
+      }
+      const eff = String(effectiveDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eff)) {
+        return res.status(400).json({ message: "Data de vig\xEAncia inv\xE1lida" });
+      }
+      const optDec = (v) => v === void 0 || v === "" || v == null ? null : toDecimalString(v, { allowZero: true });
+      const empIsClt = isCltContrato(emp.tipoContratacao ?? emp.tipo_contratacao);
+      const payload = {
+        employeeId: emp.id,
+        baseSalary: baseNorm,
+        effectiveDate: eff,
+        reason: reason || null,
+        notes: notes || null
+      };
+      if (!empIsClt) {
+        payload.periculosidadePct = optDec(periculosidadePct) ?? "0";
+        payload.valeRefeicaoDiario = optDec(valeRefeicaoDiario) ?? "0";
+        payload.cestaBasica = optDec(cestaBasica) ?? "0";
+        payload.valeTransporteMensal = optDec(valeTransporteMensal) ?? "0";
+        payload.beneficiosOutros = optDec(beneficiosOutros) ?? "0";
+        payload.encargosPct = optDec(encargosPct) ?? "0";
+        payload.valeAlimentacaoMensal = optDec(valeAlimentacaoMensal) ?? "0";
+        payload.assiduidadeMensal = optDec(assiduidadeMensal) ?? "0";
+      }
+      const vr = optDec(valeRefeicaoDiario);
+      if (vr != null) payload.valeRefeicaoDiario = vr;
+      const cesta = optDec(cestaBasica);
+      if (cesta != null) payload.cestaBasica = cesta;
+      const vt = optDec(valeTransporteMensal);
+      if (vt != null) payload.valeTransporteMensal = vt;
+      const outros = optDec(beneficiosOutros);
+      if (outros != null) payload.beneficiosOutros = outros;
+      const enc = optDec(encargosPct);
+      if (enc != null) payload.encargosPct = enc;
+      const horas = optDec(horasMensais);
+      if (horas != null) payload.horasMensais = horas;
+      const peric = optDec(periculosidadePct);
+      if (peric != null) payload.periculosidadePct = peric;
+      if (dependentesIr !== void 0 && dependentesIr !== "") {
+        const deps = Number(dependentesIr);
+        if (!Number.isNaN(deps)) payload.dependentesIr = deps;
+      }
+      const ajuda = optDec(ajudaCustoMensal);
+      if (ajuda != null) payload.ajudaCustoMensal = ajuda;
+      const va = optDec(valeAlimentacaoMensal);
+      if (va != null) payload.valeAlimentacaoMensal = va;
+      const assid = optDec(assiduidadeMensal);
+      if (assid != null) payload.assiduidadeMensal = assid;
+      const salary = await storage.createEmployeeSalary(payload);
+      bustRhSummaryCache();
+      res.status(201).json(salary);
+    } catch (err) {
+      console.error("[employees/salaries POST]", err?.message || err);
+      res.status(500).json({ message: err?.message || "Erro ao salvar sal\xE1rio" });
+    }
   });
   app2.get("/api/employees/:id/dependents", requireAuth, async (req, res) => {
     const empId = Number(req.params.id);
@@ -23778,6 +24655,7 @@ function registerEmployeeRoutes(app2) {
   });
   app2.delete("/api/employee-salaries/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeSalary(Number(req.params.id));
+    bustRhSummaryCache();
     res.json({ message: "Registro salarial removido" });
   });
   app2.get("/api/employees/:id/salary-discounts", requireAdminRole, async (req, res) => {
@@ -23817,21 +24695,33 @@ function registerEmployeeRoutes(app2) {
       const year = req.query.year ? Number(req.query.year) : (/* @__PURE__ */ new Date()).getFullYear();
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(404).json({ message: "Funcion\xE1rio n\xE3o encontrado" });
-      const { data: salRows } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", empId).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
-      const sal = salRows?.[0] || {};
+      const referenceDate = endOfMonthYmd(year, month);
+      const { data: salRows } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", empId).lte("effective_date", referenceDate).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(20);
+      const sal = selectSalaryVigenteFromHistory(salRows || [], referenceDate) || {};
       const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
       const CCT_FALLBACK = await getCctConfigByCargo2(emp.role);
-      const baseSalary = Number(sal.base_salary || CCT_FALLBACK.salarioBase);
-      const periculosidadePct = Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100;
-      const vrDiario = Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia);
-      const cestaMensal = Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica);
-      const vt = Number(sal.vale_transporte_mensal || 0);
-      const outros = Number(sal.beneficios_outros || 0);
+      const tipoContratacaoEarly = normalizeTipoContratacao(
+        emp.tipoContratacao ?? emp.tipo_contratacao
+      );
+      const isCltEarly = isCltContrato(tipoContratacaoEarly);
+      const temSalario = sal.base_salary != null && sal.base_salary !== "";
+      const baseSalary = temSalario ? Number(sal.base_salary) : isCltEarly ? Number(CCT_FALLBACK.salarioBase) : 0;
+      const periculosidadePct = isCltEarly ? Number(sal.periculosidade_pct ?? CCT_FALLBACK.periculosidadePct) / 100 : 0;
+      const vrDiario = isCltEarly ? Number(sal.vale_refeicao_diario ?? CCT_FALLBACK.valeRefeicaoDia) : 0;
+      const ben = resolveCestaAjudaTorres(
+        isCltEarly ? Number(sal.cesta_basica ?? CCT_FALLBACK.cestaBasica) : 0,
+        Number(sal.ajuda_custo_mensal || 0)
+      );
+      const cestaMensal = isCltEarly ? ben.cesta : 0;
+      const ajudaCustoMensal = ben.ajudaCusto;
+      const vt = isCltEarly ? Number(sal.vale_transporte_mensal || 0) : 0;
+      const outros = isCltEarly ? Number(sal.beneficios_outros || 0) : 0;
       const horasMensais = Number(sal.horas_mensais || 220);
-      const ajudaCustoMensal = Number(sal.ajuda_custo_mensal || 0);
+      const semSalarioPj = !isCltEarly && !temSalario;
       const { from, to } = payrollPeriodRange(year, month);
       const holidaySet = await loadHolidaySet(from, to);
-      const diasUteis = countBusinessDays(from, to, holidaySet);
+      const diasUteisPeriodo = countBusinessDays(from, to, holidaySet);
+      const diasUteis = VR_DIAS_UTEIS_CCT;
       let proporcional = false;
       let diasTrabalhados = 30;
       let fatorProporcional = 1;
@@ -23852,60 +24742,53 @@ function registerEmployeeRoutes(app2) {
       } catch {
       }
       const mesRef = `${year}-${String(month).padStart(2, "0")}`;
-      const inicioMes = `${from}T00:00:00-03:00`;
-      const fimMes = `${to}T23:59:59-03:00`;
-      let horasExtras = 0;
-      let horasNoturnas = 0;
-      let horasFonte = "nenhuma";
-      let registrosPonto = 0;
-      const { data: pontos } = await supabaseAdmin.from("ponto_operacional").select("horas_extras, horas_noturno").eq("employee_id", empId).gte("entrada", inicioMes).lte("entrada", fimMes);
-      if (pontos && pontos.length > 0) {
-        for (const p of pontos) {
-          horasExtras += Number(p.horas_extras || 0);
-          horasNoturnas += Number(p.horas_noturno || 0);
-        }
-        horasFonte = "ponto_operacional";
-        registrosPonto = pontos.length;
-      } else {
-        const { data: jorn } = await supabaseAdmin.from("jornada_calculos").select("horas_extras, horas_noturnas").eq("employee_id", empId).eq("mes_referencia", mesRef);
-        if (jorn && jorn.length > 0) {
-          for (const j of jorn) {
-            horasExtras += Number(j.horas_extras || 0);
-            horasNoturnas += Number(j.horas_noturnas || 0);
-          }
-          horasFonte = "jornada_calculos";
-          registrosPonto = jorn.length;
-        }
-      }
-      horasExtras = Math.round(horasExtras * 100) / 100;
-      horasNoturnas = Math.round(horasNoturnas * 100) / 100;
-      const isClt = emp.tipoContratacao !== "fixo" && emp.tipo_contratacao !== "fixo";
+      const horasRes = await resolveHorasExtrasNoturnas({
+        employeeId: empId,
+        from,
+        to,
+        mesRef,
+        horasMensais,
+        allowBatidasFallback: true
+      });
+      const horasExtras = horasRes.horasExtras;
+      const horasNoturnas = horasRes.horasNoturnas;
+      const horasFonte = horasRes.fonte;
+      const registrosPonto = horasRes.registros;
+      const tipoContratacao = tipoContratacaoEarly;
+      const isClt = isCltEarly;
       const salarioComPericProp = baseSalary * (diasTrabalhados / 30) * (1 + periculosidadePct);
-      const vtDesconto = vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
+      const vtDesconto = isClt && vt > 0 ? +(salarioComPericProp * 0.06).toFixed(2) : 0;
+      const heDiurnaFixo = isClt ? Number(CCT_FALLBACK.horaExtraValor || 0) : 0;
+      const heNoturnaFixo = isClt ? Number(CCT_FALLBACK.horaExtraNoturnaValor || 0) : 0;
       const folha = calcularFolha({
         salarioBaseCheio: baseSalary,
         diasTrabalhados,
         horasMensais,
         periculosidadePct,
-        horasExtras,
-        horasNoturnas,
-        diasUteis,
-        refeicaoDiaria: vrDiario,
+        horasExtras: isClt ? horasExtras : 0,
+        horasNoturnas: isClt ? horasNoturnas : 0,
+        diasUteis: isClt ? diasUteis : 0,
+        refeicaoDiaria: isClt ? vrDiario : 0,
         ajudaCustoMensal,
         dependentesIR,
         isClt,
-        vtDesconto
+        vtDesconto,
+        valorHoraExtraFixo: heDiurnaFixo,
+        valorHoraNoturnaFixo: heNoturnaFixo
       });
-      const totalVencimentos = +(folha.totalBruto + cestaMensal + vt + outros).toFixed(2);
-      const valeAlimentacao = Number(sal.vale_alimentacao_mensal || 0);
-      const assiduidade = Number(sal.assiduidade_mensal || 0);
-      const totalBeneficios = +(folha.refeicao + folha.ajudaCusto + cestaMensal + valeAlimentacao + assiduidade + outros).toFixed(2);
+      const valeAlimentacao = isClt ? Number(sal.vale_alimentacao_mensal || 0) : 0;
+      const assiduidade = isClt ? Number(sal.assiduidade_mensal || 0) : 0;
+      const cestaCusto = isClt ? cestaMensal : 0;
+      const vtCusto = isClt ? vt : 0;
+      const outrosCusto = isClt ? outros : 0;
+      const totalVencimentos = +folha.totalBruto.toFixed(2);
+      const totalBeneficios = isClt ? +(folha.refeicao + folha.ajudaCusto + cestaCusto + valeAlimentacao + assiduidade + outrosCusto).toFixed(2) : +folha.ajudaCusto.toFixed(2);
       const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*").eq("employee_id", empId).eq("month", month).eq("year", year);
       const totalDescontosManuais = (discounts || []).reduce((sum, d) => sum + Number(d.amount), 0);
       const totalDeducoesLegais = +(folha.inss + folha.irrf + vtDesconto).toFixed(2);
       const liquido = +(folha.liquidoFuncionario - totalDescontosManuais).toFixed(2);
       const totalReceber = +(liquido + totalBeneficios).toFixed(2);
-      const custoTotalEmpresa = +(folha.custoTotalEmpresa + cestaMensal + vt + outros + valeAlimentacao + assiduidade).toFixed(2);
+      const custoTotalEmpresa = isClt ? +(folha.custoTotalEmpresa + cestaCusto + vtCusto + outrosCusto + valeAlimentacao + assiduidade).toFixed(2) : +folha.custoTotalEmpresa.toFixed(2);
       res.json({
         employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
         month,
@@ -23913,7 +24796,17 @@ function registerEmployeeRoutes(app2) {
         proporcional,
         diasTrabalhados,
         fatorProporcional,
-        diasUteis,
+        diasUteis: isClt ? diasUteis : 0,
+        diasUteisPeriodo: isClt ? diasUteisPeriodo : 0,
+        tipoContratacao,
+        isClt,
+        semSalario: !temSalario,
+        semSalarioPj,
+        // Fonte canônica da vigência (mesma do Balanço)
+        salarioBaseCheio: baseSalary,
+        effectiveDate: sal.effective_date ? String(sal.effective_date).slice(0, 10) : null,
+        salaryRecordId: sal.id != null ? Number(sal.id) : null,
+        referenceDate,
         // ► Mantém compat com UI atual + enriquece com engine
         vencimentos: {
           salarioBase: folha.salarioProporcional,
@@ -23922,23 +24815,24 @@ function registerEmployeeRoutes(app2) {
           adicionalNoturnoValor: folha.adicionalNoturnoValor,
           dsr: folha.dsr,
           valeRefeicao: folha.refeicao,
-          cestaBasica: cestaMensal,
-          valeTransporte: vt,
+          cestaBasica: cestaCusto,
+          valeTransporte: vtCusto,
           ajudaCusto: folha.ajudaCusto,
-          outros,
+          outros: outrosCusto,
           total: totalVencimentos,
           baseTributavel: folha.baseTributavel,
           totalBruto: folha.totalBruto
         },
-        // ► Horas extras auto via Ponto iD
+        // ► Horas extras — PJ não contabiliza (zeradas no custo)
         horasExtras: {
-          horas: horasExtras,
-          noturnas: horasNoturnas,
+          horas: isClt ? horasExtras : 0,
+          noturnas: isClt ? horasNoturnas : 0,
           valor: folha.horasExtrasValor,
           dsrValor: folha.dsr,
-          fonte: horasFonte,
-          registros: registrosPonto,
-          mesRef
+          fonte: isClt ? horasFonte : "nenhuma",
+          registros: isClt ? registrosPonto : 0,
+          mesRef,
+          ignoradasPj: !isClt && (horasExtras > 0 || horasNoturnas > 0)
         },
         // ► Deduções legais (INSS / IRRF / VT). FGTS é depósito do empregador (informativo,
         // NÃO entra no total nem desconta do líquido — decisão do dono 26/06/2026).
@@ -23954,13 +24848,13 @@ function registerEmployeeRoutes(app2) {
         beneficios: {
           valeRefeicao: folha.refeicao,
           valeAlimentacao,
-          cestaBasica: cestaMensal,
+          cestaBasica: cestaCusto,
           assiduidade,
           ajudaCusto: folha.ajudaCusto,
-          outros,
+          outros: outrosCusto,
           total: totalBeneficios
         },
-        // ► Provisões mensais (custo da empresa)
+        // ► Provisões mensais (custo da empresa) — zeradas em PJ
         provisoes: {
           decimoTerceiro: folha.provisaoDecimoTerceiro,
           ferias: folha.provisaoFerias,
@@ -24044,13 +24938,15 @@ function registerEmployeeRoutes(app2) {
       const CCT = preset.config;
       const effectiveDate = req.body?.effectiveDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       const periculosidade = Number(CCT.salarioBase) * Number(CCT.periculosidadePct) / 100;
-      const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
-      const notes = `Pgto ${CCT.pagamentoDiaUtil}\xBA dia \xFAtil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/m\xEAs | Cesta: R$${CCT.cestaBasica}`;
+      const benKit = resolveCestaAjudaTorres(Number(CCT.cestaBasica || 0), Number(CCT.ajudaCustoMensal || 0));
+      const reason = `Kit ${CCT.label} (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${periculosidade.toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Ajuda R$${benKit.ajudaCusto})`;
+      const notes = `Pgto ${CCT.pagamentoDiaUtil}\xBA dia \xFAtil | Periculosidade: R$${periculosidade.toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/m\xEAs | Ajuda de custo: R$${benKit.ajudaCusto}`;
       const sal = await storage.createEmployeeSalary({
         employeeId: empId,
         baseSalary: String(CCT.salarioBase),
         valeRefeicaoDiario: String(CCT.valeRefeicaoDia),
-        cestaBasica: String(CCT.cestaBasica),
+        cestaBasica: String(benKit.cesta),
+        ajudaCustoMensal: String(benKit.ajudaCusto),
         periculosidadePct: String(CCT.periculosidadePct),
         horasMensais: "220",
         effectiveDate,
@@ -24069,15 +24965,21 @@ function registerEmployeeRoutes(app2) {
       const allEmployees = await storage.getEmployees();
       const vigilantes = allEmployees.filter((e) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
       const effectiveDate = req.body.effectiveDate || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      const reason = `Kit CCT SP 2025/2026 (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
+      const benKit = resolveCestaAjudaTorres(Number(CCT.cestaBasica || 0), Number(CCT.ajudaCustoMensal || 0));
+      const reason = `Kit CCT SP 2025/2026 (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Ajuda R$${benKit.ajudaCusto})`;
       let count = 0;
       for (const emp of vigilantes) {
         await storage.createEmployeeSalary({
           employeeId: emp.id,
           baseSalary: String(CCT.salarioBase),
+          valeRefeicaoDiario: String(CCT.valeRefeicaoDia),
+          cestaBasica: String(benKit.cesta),
+          ajudaCustoMensal: String(benKit.ajudaCusto),
+          periculosidadePct: String(CCT.periculosidadePct),
+          horasMensais: "220",
           effectiveDate,
           reason,
-          notes: `Pgto 5\xBA dia \xFAtil | Periculosidade: R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/m\xEAs | Cesta: R$${CCT.cestaBasica}`
+          notes: `Pgto 5\xBA dia \xFAtil | Periculosidade: R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/m\xEAs | Ajuda de custo: R$${benKit.ajudaCusto}`
         });
         count++;
       }
@@ -24093,7 +24995,7 @@ function registerEmployeeRoutes(app2) {
     cestaBasica: 208.45,
     diasUteisMes: 22,
     encargosSociaisPct: 80,
-    horaExtraValor: 22.99
+    horaExtraValor: 16
   };
   app2.get("/api/employees/monthly-hours", requireAuth, requireAdminRole, async (req, res) => {
     try {
@@ -29073,15 +29975,20 @@ function registerFleetRoutes(app2) {
     if (!data) return res.status(404).json({ message: "Abastecimento n\xE3o encontrado" });
     if (oldFueling) {
       const auditChanges = [];
-      for (const f of ["km", "liters", "totalCost", "costPerLiter", "fuelType", "station"]) {
+      for (const f of ["vehicleId", "km", "liters", "totalCost", "costPerLiter", "fuelType", "station"]) {
         const ov = oldFueling[f];
         const nv = data[f];
         if (nv !== void 0 && String(ov) !== String(nv)) auditChanges.push({ field: f, old: ov, new_val: nv });
       }
       if (auditChanges.length > 0) await logFinancialAudit("vehicle_fueling", String(data.id), "UPDATE", auditChanges, req.user?.name || "unknown", req.user?.id);
     }
-    if (data.vehicleId) {
-      await syncVehicleKmFromFuelings(data.vehicleId);
+    const oldVehicleId = oldFueling?.vehicleId ?? null;
+    const newVehicleId = data.vehicleId ?? null;
+    if (oldVehicleId && oldVehicleId !== newVehicleId) {
+      await syncVehicleKmFromFuelings(oldVehicleId);
+    }
+    if (newVehicleId) {
+      await syncVehicleKmFromFuelings(newVehicleId);
     }
     const newCost = Number(data.totalCost || 0);
     if (newCost > 0) {
@@ -33790,8 +34697,251 @@ import { randomBytes } from "crypto";
 init_apibrasil();
 init_helpers();
 import OpenAI5 from "openai";
+
+// server/lib/holerite-parse.ts
+var MONTHS_PT = {
+  jan: 1,
+  janeiro: 1,
+  fev: 2,
+  fevereiro: 2,
+  mar: 3,
+  marco: 3,
+  mar\u00E7o: 3,
+  abr: 4,
+  abril: 4,
+  mai: 5,
+  maio: 5,
+  jun: 6,
+  junho: 6,
+  jul: 7,
+  julho: 7,
+  ago: 8,
+  agosto: 8,
+  set: 9,
+  setembro: 9,
+  out: 10,
+  outubro: 10,
+  nov: 11,
+  novembro: 11,
+  dez: 12,
+  dezembro: 12
+};
+var MONEY_RE = /^\d{1,3}(?:\.\d{3})*,\d{2}$/;
+var TIME_RE = /^\d{1,3}:\d{2}$/;
+function toHoleriteNumber(s) {
+  return Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+}
+function emptyParsed() {
+  return {
+    employeeName: "",
+    employeeCpf: "",
+    month: 0,
+    year: 0,
+    competencia: "",
+    salarioBase: 0,
+    periculosidade: 0,
+    horasExtras: 0,
+    adicionalNoturno: 0,
+    dsr: 0,
+    valeRefeicao: 0,
+    ajudaCusto: 0,
+    beneficios: 0,
+    descontos: 0,
+    totalBruto: 0,
+    totalLiquido: 0
+  };
+}
+function extractHoleriteIdentity(text2) {
+  let employeeCpf = "";
+  const cpfM = text2.match(/\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/);
+  if (cpfM) {
+    const digits = cpfM[1].replace(/\D/g, "");
+    if (digits.length === 11) {
+      employeeCpf = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+    }
+  }
+  let employeeName = "";
+  const lines = text2.split(/\r?\n/).map((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    if (/^Nome do Funcion[aá]rio/i.test(lines[i]) && i > 0) {
+      const prev = lines[i - 1].replace(/\s+/g, " ").trim();
+      if (prev && /[A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{3,}/.test(prev) && !/TORRES|CNPJ|Código|Filial/i.test(prev)) {
+        employeeName = prev;
+        break;
+      }
+    }
+  }
+  if (!employeeName) {
+    const namePatterns = [
+      /(?:Nome\s*(?:do\s*)?(?:Funcion[aá]rio|Colaborador)?|Funcion[aá]rio|Colaborador)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
+      /(?:Empregado)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i
+    ];
+    for (const re of namePatterns) {
+      const m = text2.match(re);
+      if (m?.[1]) {
+        employeeName = m[1].replace(/\s+/g, " ").trim();
+        employeeName = employeeName.split(/\s{2,}|\t|CPF|PIS|Cargo|Função/i)[0].trim();
+        break;
+      }
+    }
+  }
+  let month = 0;
+  let year = 0;
+  let competencia = "";
+  const mesDe = text2.match(
+    /\b(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+(\d{4})\b/i
+  );
+  if (mesDe) {
+    const norm = mesDe[1].toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    month = MONTHS_PT[norm] || 0;
+    year = Number(mesDe[2]) || 0;
+    competencia = `${mesDe[1].slice(0, 3).toUpperCase()}/${year}`;
+  }
+  if (!month) {
+    const labeled = text2.match(/Compet[eê]ncia\s*[:\-]?\s*([A-Za-zçÇ]{3,9})\s*\/\s*(\d{4})/i) || text2.match(/Compet[eê]ncia\s*[:\-]?\s*(\d{1,2})\s*\/\s*(\d{4})/i);
+    const bare = text2.match(/\b((?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*)\s*\/\s*(\d{4})\b/i) || text2.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
+    const compM = labeled || bare;
+    if (compM) {
+      const part1 = (compM[1] || "").trim();
+      const part2 = Number(compM[2] || 0);
+      year = part2 || 0;
+      if (/^\d{1,2}$/.test(part1)) {
+        month = Number(part1);
+        competencia = `${String(month).padStart(2, "0")}/${year}`;
+      } else {
+        const norm = part1.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+        month = MONTHS_PT[norm] || MONTHS_PT[norm.slice(0, 3)] || 0;
+        competencia = `${part1.toUpperCase().slice(0, 3)}/${year}`;
+      }
+    }
+  }
+  let descontos = 0;
+  const descM = text2.match(/Total\s+(?:de\s+)?Descontos[^\d]*([\d.]+,\d{2})/i) || text2.match(/Descontos\s+Totais[^\d]*([\d.]+,\d{2})/i);
+  if (descM) descontos = toHoleriteNumber(descM[1]);
+  return { employeeName, employeeCpf, month, year, competencia, descontos };
+}
+function classifyFolhaDesc(desc) {
+  const d = desc.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "");
+  if (/DIAS\s+NORMAIS|SALARIO\s+BASE|SALARIO\s+DO\s+MES/.test(d)) return "salarioBase";
+  if (/PERICULOSIDADE/.test(d)) return "periculosidade";
+  if (/HORAS?\s+EXTRAS?/.test(d) && !/DSR|REFLEXO/.test(d)) return "horasExtras";
+  if (/ADICIONAL\s+NOTURNO/.test(d) && !/DSR|REFLEXO/.test(d)) return "adicionalNoturno";
+  if (/\bDSR\b|REFLEXO.*DSR|DESCANSO\s+SEMANAL/.test(d)) return "dsr";
+  if (/AJUDA\s+DE\s+CUSTO/.test(d)) return "ajudaCusto";
+  if (/SALARIO\s+FAMILIA|GRATIFICACAO|PREMIO|COMISSAO/.test(d)) return "beneficios";
+  if (/DESC\s+VALE\s+REFEIC|VALE\s+REFEIC|VALE\s+ALIMENT/.test(d)) return "valeRefeicao";
+  if (/I\.?N\.?S\.?S|IMPOSTO\s+DE\s+RENDA|VALE\s+TRANSPORTE|DESC\b/.test(d)) return "descontoItem";
+  return "ignore";
+}
+function parseHoleriteFolhaMensal(text2) {
+  if (!/Folha\s+Mensal|DIAS\s+NORMAIS|Nome do Funcion[aá]rio/i.test(text2)) return null;
+  const out = emptyParsed();
+  const identity = extractHoleriteIdentity(text2);
+  Object.assign(out, identity);
+  const sbLabel = text2.match(/([\d.]+,\d{2})\s*\n\s*Sal[aá]rio Base/i);
+  if (sbLabel) out.salarioBase = toHoleriteNumber(sbLabel[1]);
+  const periM = text2.match(/PERICULOSIDADE[^\n]*?([\d.]+,\d{2})(?:\s+([\d.]+,\d{2}))?/i);
+  if (periM) {
+    out.periculosidade = toHoleriteNumber(periM[2] || periM[1]);
+  }
+  const aposDeclaro = text2.match(
+    /Declaro ter recebido[\s\S]{0,40}?([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})/i
+  );
+  if (aposDeclaro) {
+    out.totalBruto = toHoleriteNumber(aposDeclaro[1]);
+    out.descontos = toHoleriteNumber(aposDeclaro[2]);
+    out.totalLiquido = toHoleriteNumber(aposDeclaro[3]);
+  } else {
+    const topo = text2.match(
+      /Assinatura do Funcion[aá]rio\s*\n\s*([\d.]+,\d{2})\s*\n\s*([\d.]+,\d{2})\s*\n\s*C[oó]digo Descri/i
+    );
+    if (topo) {
+      out.descontos = toHoleriteNumber(topo[1]);
+      out.totalLiquido = toHoleriteNumber(topo[2]);
+    }
+    const tv = text2.match(/Total de Vencimentos/i);
+    if (tv) {
+      const only = text2.match(/Declaro ter recebido[^\n]*\n\s*([\d.]+,\d{2})/i);
+      if (only) out.totalBruto = toHoleriteNumber(only[1]);
+    }
+  }
+  const lines = text2.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const candidates = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^DIAS\s+NORMAIS$/i.test(lines[i])) continue;
+    const descs = [];
+    let j = i;
+    while (j < lines.length) {
+      const ln = lines[j];
+      if (MONEY_RE.test(ln) || TIME_RE.test(ln)) break;
+      if (/^PERICULOSIDADE|^TORRES|^C[oó]digo Descri|^____/i.test(ln)) break;
+      if (/^[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9. %/]+$/i.test(ln) && !/^\d+$/.test(ln) && ln.length > 2) {
+        descs.push(ln);
+      }
+      j++;
+      if (descs.length > 20) break;
+    }
+    const moneys = [];
+    while (j < lines.length && moneys.length < descs.length * 3) {
+      const ln = lines[j];
+      if (MONEY_RE.test(ln)) {
+        moneys.push(toHoleriteNumber(ln));
+        j++;
+        continue;
+      }
+      if (TIME_RE.test(ln)) {
+        j++;
+        continue;
+      }
+      break;
+    }
+    if (descs.length >= 1 && moneys.length >= 1) {
+      const values = moneys.length >= descs.length ? moneys.slice(moneys.length - descs.length) : moneys;
+      candidates.push({ descs, values });
+    }
+  }
+  candidates.sort((a, b) => Math.min(b.descs.length, b.values.length) - Math.min(a.descs.length, a.values.length));
+  const best = candidates[0];
+  if (best) {
+    const n2 = Math.min(best.descs.length, best.values.length);
+    let dsrSum = 0;
+    let descontoSum = 0;
+    for (let i = 0; i < n2; i++) {
+      const key = classifyFolhaDesc(best.descs[i]);
+      const val = best.values[i];
+      if (key === "ignore") continue;
+      if (key === "descontoItem") {
+        descontoSum += val;
+        continue;
+      }
+      if (key === "dsr") {
+        dsrSum += val;
+        continue;
+      }
+      if (key === "valeRefeicao") {
+        out.valeRefeicao = val;
+        descontoSum += val;
+        continue;
+      }
+      if (key === "salarioBase" && out.salarioBase > 0) continue;
+      if (key === "beneficios") {
+        out.beneficios = +(out.beneficios + val).toFixed(2);
+        continue;
+      }
+      if (out[key] === 0) out[key] = val;
+    }
+    if (dsrSum > 0) out.dsr = +dsrSum.toFixed(2);
+    if (descontoSum > 0 && out.descontos === 0) out.descontos = +descontoSum.toFixed(2);
+  }
+  if (!out.totalBruto) {
+    const sum = out.salarioBase + out.periculosidade + out.horasExtras + out.adicionalNoturno + out.dsr + out.ajudaCusto + out.beneficios;
+    if (sum > 0) out.totalBruto = +sum.toFixed(2);
+  }
+  if (!isUsableHoleriteParse(out)) return null;
+  return out;
+}
 function parseHoleriteTorres(text2) {
-  const toNum = (s) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+  const identity = extractHoleriteIdentity(text2);
   const lines = text2.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const itemValues = {};
   for (const ln of lines) {
@@ -33800,7 +34950,7 @@ function parseHoleriteTorres(text2) {
       const idx = Number(m[1]);
       if (idx >= 1 && idx <= 20) {
         const valStr = m[3] || m[2];
-        itemValues[idx] = toNum(valStr);
+        itemValues[idx] = toHoleriteNumber(valStr);
       }
     }
   }
@@ -33840,16 +34990,82 @@ function parseHoleriteTorres(text2) {
     if (v != null && out[uniqKeys[i]] === 0) out[uniqKeys[i]] = v;
   }
   const totMatch = text2.match(/Total\s+dos\s+Vencimentos[\s\S]{0,80}?([\d.]+,\d{2})/i);
-  const totalBruto = totMatch ? toNum(totMatch[1]) : 0;
+  const totalBruto = totMatch ? toHoleriteNumber(totMatch[1]) : 0;
   const liqMatch = text2.match(/L[ií]quido\s+a\s+Receber[^\d]*([\d.]+,\d{2})/i);
-  const totalLiquido = liqMatch ? toNum(liqMatch[1]) : 0;
+  const totalLiquido = liqMatch ? toHoleriteNumber(liqMatch[1]) : 0;
   const sum = out.salarioBase + out.periculosidade + out.horasExtras + out.adicionalNoturno + out.dsr + out.valeRefeicao + out.ajudaCusto;
   if (totalBruto > 0 && Math.abs(sum - totalBruto) > 0.5) {
     const diff = totalBruto - sum;
     if (diff > 0) out.beneficios = +diff.toFixed(2);
   }
-  return { ...out, totalBruto, totalLiquido };
+  return {
+    employeeName: identity.employeeName,
+    employeeCpf: identity.employeeCpf,
+    month: identity.month,
+    year: identity.year,
+    competencia: identity.competencia,
+    salarioBase: out.salarioBase,
+    periculosidade: out.periculosidade,
+    horasExtras: out.horasExtras,
+    adicionalNoturno: out.adicionalNoturno,
+    dsr: out.dsr,
+    valeRefeicao: out.valeRefeicao,
+    ajudaCusto: out.ajudaCusto,
+    beneficios: out.beneficios,
+    descontos: identity.descontos,
+    totalBruto,
+    totalLiquido
+  };
 }
+function parseHoleritePdf(text2) {
+  return parseHoleriteFolhaMensal(text2) || parseHoleriteTorres(text2);
+}
+function isUsableHoleriteParse(p) {
+  if (!p) return false;
+  return (Number(p.salarioBase) || 0) > 0 || (Number(p.totalBruto) || 0) > 0;
+}
+function matchEmployeeFromHolerite(parsed, employees2) {
+  const cpfClean = (parsed.employeeCpf || "").replace(/\D/g, "");
+  const nameLower = (parsed.employeeName || "").toLowerCase().trim();
+  if (cpfClean) {
+    for (const emp of employees2) {
+      const empCpf = (emp.cpf || "").replace(/\D/g, "");
+      if (empCpf && empCpf === cpfClean) return emp.id;
+    }
+  }
+  if (nameLower) {
+    for (const emp of employees2) {
+      const empName = (emp.name || "").toLowerCase().trim();
+      if (empName && (empName === nameLower || empName.includes(nameLower) || nameLower.includes(empName))) {
+        return emp.id;
+      }
+    }
+    const nameParts = nameLower.split(/\s+/);
+    if (nameParts.length >= 2) {
+      for (const emp of employees2) {
+        const empParts = (emp.name || "").toLowerCase().split(/\s+/);
+        if (empParts.length >= 2 && empParts[0] === nameParts[0] && empParts[empParts.length - 1] === nameParts[nameParts.length - 1]) {
+          return emp.id;
+        }
+      }
+    }
+  }
+  return null;
+}
+function resolveOpenAIConfig() {
+  const integrationsKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const integrationsBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const legacyKey = process.env.OPENAI_API_KEY;
+  if (integrationsKey) {
+    return { apiKey: integrationsKey, baseURL: integrationsBase || void 0 };
+  }
+  if (legacyKey) {
+    return { apiKey: legacyKey, baseURL: void 0 };
+  }
+  return null;
+}
+
+// server/routes/hr.ts
 function registerHRRoutes(app2) {
   app2.post("/api/audit-log", requireAuth, async (req, res) => {
     const user = req.user;
@@ -34092,7 +35308,7 @@ function registerHRRoutes(app2) {
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         tsMap.set(key, ts);
       }
-      const MONTHS_PT2 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      const MONTHS_PT3 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
       const DAYS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "s\xE1b"];
       const wb = XLSX2.utils.book_new();
       const rows = [];
@@ -34206,9 +35422,9 @@ function registerHRRoutes(app2) {
         { s: { r: 0, c: 6 }, e: { r: 0, c: 10 } },
         { s: { r: 4, c: 6 }, e: { r: 4, c: 10 } }
       ];
-      XLSX2.utils.book_append_sheet(wb, ws, `PONTO ${MONTHS_PT2[month - 1].toUpperCase()}`);
+      XLSX2.utils.book_append_sheet(wb, ws, `PONTO ${MONTHS_PT3[month - 1].toUpperCase()}`);
       const buf = XLSX2.write(wb, { type: "buffer", bookType: "xlsx" });
-      const filename = `Folha_Ponto_${employee.name.replace(/\s+/g, "_")}_${MONTHS_PT2[month - 1]}_${year}.xlsx`;
+      const filename = `Folha_Ponto_${employee.name.replace(/\s+/g, "_")}_${MONTHS_PT3[month - 1]}_${year}.xlsx`;
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(Buffer.from(buf));
@@ -34512,12 +35728,7 @@ function registerHRRoutes(app2) {
       if (!imageData || typeof imageData !== "string") {
         return res.status(400).json({ message: "Envie imageData (base64 data URL)" });
       }
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-      if (!apiKey) return res.status(500).json({ message: "Chave de API de IA n\xE3o configurada" });
-      const openai = new OpenAI5({ apiKey, baseURL });
       const allEmps = await storage.getEmployees();
-      const empNames = allEmps.filter((e) => e.status === "ativo").map((e) => `${e.name} (CPF: ${e.cpf || "N/A"})`).join("\n");
       const isPdf = /^data:application\/pdf/i.test(imageData);
       let pdfText = "";
       let preParsed = null;
@@ -34525,31 +35736,58 @@ function registerHRRoutes(app2) {
         try {
           const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
           const buf = Buffer.from(b64, "base64");
-          const { PDFParse } = await import("pdf-parse");
-          const parser = new PDFParse({ data: buf });
-          const parsed2 = await parser.getText();
-          pdfText = (parsed2.text || "").trim();
+          const { extractPdfText: extractPdfText2 } = await Promise.resolve().then(() => (init_pdf_text(), pdf_text_exports));
+          pdfText = await extractPdfText2(buf);
           console.log(`[ocr-holerite] PDF text extracted: ${pdfText.length} chars`);
         } catch (pdfErr) {
           console.error("[ocr-holerite] pdf-parse falhou:", pdfErr.message);
           return res.status(400).json({ message: "N\xE3o foi poss\xEDvel ler o PDF: " + pdfErr.message });
         }
-        if (!pdfText) return res.status(400).json({ message: "PDF sem texto leg\xEDvel. Envie uma imagem (foto/scan) do holerite." });
+        if (!pdfText) {
+          return res.status(400).json({
+            message: "PDF sem texto leg\xEDvel. Envie uma imagem (foto/scan) do holerite."
+          });
+        }
         try {
-          preParsed = parseHoleriteTorres(pdfText);
+          preParsed = parseHoleritePdf(pdfText);
           if (preParsed) console.log("[ocr-holerite] Parser determin\xEDstico:", JSON.stringify(preParsed));
         } catch (e) {
           console.warn("[ocr-holerite] parser determin\xEDstico falhou:", e.message);
         }
+        if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId2 = matchEmployeeFromHolerite(preParsed, allEmps);
+          console.log(
+            `[ocr-holerite] OK sem IA. Employee match: ${matchedEmployeeId2}, name: ${preParsed.employeeName}`
+          );
+          return res.json({ ...preParsed, matchedEmployeeId: matchedEmployeeId2, source: "deterministic" });
+        }
       }
-      console.log("[ocr-holerite] Enviando para OpenAI...");
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        reasoning_effort: "minimal",
-        messages: [
-          {
-            role: "system",
-            content: `Voc\xEA \xE9 um sistema especializado em extrair dados de holerites/contracheques brasileiros (CLT).
+      const aiCfg = resolveOpenAIConfig();
+      if (!aiCfg) {
+        if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId2 = matchEmployeeFromHolerite(preParsed, allEmps);
+          return res.json({ ...preParsed, matchedEmployeeId: matchedEmployeeId2, source: "deterministic" });
+        }
+        return res.status(500).json({
+          message: "Chave de API de IA n\xE3o configurada (defina OPENAI_API_KEY na Vercel). Para PDF do layout Torres o parser local basta \u2014 reenvie o PDF."
+        });
+      }
+      const empNames = allEmps.filter((e) => e.status === "ativo").map((e) => `${e.name} (CPF: ${e.cpf || "N/A"})`).join("\n");
+      const runOpenAI = async (cfg) => {
+        const openai = new OpenAI5({
+          apiKey: cfg.apiKey,
+          baseURL: cfg.baseURL,
+          timeout: 45e3,
+          maxRetries: 1
+        });
+        console.log(`[ocr-holerite] Enviando para OpenAI (base=${cfg.baseURL || "default"})...`);
+        return openai.chat.completions.create({
+          model: "gpt-5-mini",
+          reasoning_effort: "minimal",
+          messages: [
+            {
+              role: "system",
+              content: `Voc\xEA \xE9 um sistema especializado em extrair dados de holerites/contracheques brasileiros (CLT).
 Retorne APENAS um JSON v\xE1lido (sem markdown, sem texto extra):
 {
   "employeeName": "nome completo do funcion\xE1rio",
@@ -34579,68 +35817,81 @@ REGRAS CR\xCDTICAS:
 
 FUNCION\xC1RIOS CADASTRADOS NO SISTEMA (use para identificar o funcion\xE1rio correto):
 ${empNames}`
-          },
-          {
-            role: "user",
-            content: isPdf ? `Extraia os dados deste holerite/contracheque (texto extra\xEDdo do PDF):
+            },
+            {
+              role: "user",
+              content: isPdf ? `Extraia os dados deste holerite/contracheque (texto extra\xEDdo do PDF):
 
 ${pdfText}` : [
-              { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
-              { type: "image_url", image_url: { url: imageData } }
-            ]
+                { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
+                { type: "image_url", image_url: { url: imageData } }
+              ]
+            }
+          ]
+        });
+      };
+      let response;
+      try {
+        response = await runOpenAI(aiCfg);
+      } catch (aiErr) {
+        const msg = String(aiErr?.message || aiErr || "");
+        console.error("[ocr-holerite] OpenAI falhou:", msg);
+        const legacy = process.env.OPENAI_API_KEY;
+        if (aiCfg.baseURL && legacy && /connection|ENOTFOUND|ECONN|timeout|fetch failed/i.test(msg)) {
+          try {
+            response = await runOpenAI({ apiKey: legacy, baseURL: void 0 });
+          } catch (retryErr) {
+            console.error("[ocr-holerite] retry OpenAI falhou:", retryErr?.message);
+            if (isUsableHoleriteParse(preParsed)) {
+              const matchedEmployeeId2 = matchEmployeeFromHolerite(preParsed, allEmps);
+              return res.json({ ...preParsed, matchedEmployeeId: matchedEmployeeId2, source: "deterministic-fallback" });
+            }
+            throw retryErr;
           }
-        ]
-      });
+        } else if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId2 = matchEmployeeFromHolerite(preParsed, allEmps);
+          return res.json({ ...preParsed, matchedEmployeeId: matchedEmployeeId2, source: "deterministic-fallback" });
+        } else {
+          throw aiErr;
+        }
+      }
       const text2 = response.choices?.[0]?.message?.content || "";
       console.log("[ocr-holerite] OpenAI raw:", text2.substring(0, 500));
       const cleaned = text2.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleaned);
-      let matchedEmployeeId = null;
-      if (parsed.employeeName || parsed.employeeCpf) {
-        const cpfClean = (parsed.employeeCpf || "").replace(/\D/g, "");
-        const nameLower = (parsed.employeeName || "").toLowerCase().trim();
-        for (const emp of allEmps) {
-          const empCpf = (emp.cpf || "").replace(/\D/g, "");
-          if (cpfClean && empCpf && cpfClean === empCpf) {
-            matchedEmployeeId = emp.id;
-            break;
-          }
-        }
-        if (!matchedEmployeeId && nameLower) {
-          for (const emp of allEmps) {
-            const empName = (emp.name || "").toLowerCase().trim();
-            if (empName === nameLower || empName.includes(nameLower) || nameLower.includes(empName)) {
-              matchedEmployeeId = emp.id;
-              break;
-            }
-          }
-        }
-        if (!matchedEmployeeId && nameLower) {
-          const nameParts = nameLower.split(/\s+/);
-          if (nameParts.length >= 2) {
-            for (const emp of allEmps) {
-              const empParts = (emp.name || "").toLowerCase().split(/\s+/);
-              if (empParts[0] === nameParts[0] && empParts[empParts.length - 1] === nameParts[nameParts.length - 1]) {
-                matchedEmployeeId = emp.id;
-                break;
-              }
-            }
-          }
-        }
-      }
       const finalData = { ...parsed };
       if (preParsed) {
-        const fields = ["salarioBase", "periculosidade", "horasExtras", "adicionalNoturno", "dsr", "valeRefeicao", "ajudaCusto", "beneficios", "totalBruto", "totalLiquido"];
+        const fields = [
+          "salarioBase",
+          "periculosidade",
+          "horasExtras",
+          "adicionalNoturno",
+          "dsr",
+          "valeRefeicao",
+          "ajudaCusto",
+          "beneficios",
+          "descontos",
+          "totalBruto",
+          "totalLiquido",
+          "employeeName",
+          "employeeCpf",
+          "month",
+          "year",
+          "competencia"
+        ];
         for (const f of fields) {
-          if (preParsed[f] && preParsed[f] > 0) finalData[f] = preParsed[f];
+          const v = preParsed[f];
+          if (typeof v === "number" ? v > 0 : !!v) finalData[f] = v;
         }
-        console.log("[ocr-holerite] Merge final:", JSON.stringify({ salarioBase: finalData.salarioBase, periculosidade: finalData.periculosidade, horasExtras: finalData.horasExtras, adicionalNoturno: finalData.adicionalNoturno, dsr: finalData.dsr, valeRefeicao: finalData.valeRefeicao, ajudaCusto: finalData.ajudaCusto, totalBruto: finalData.totalBruto }));
       }
-      console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${parsed.employeeName}`);
-      res.json({ ...finalData, matchedEmployeeId });
+      const matchedEmployeeId = matchEmployeeFromHolerite(finalData, allEmps);
+      console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${finalData.employeeName}`);
+      res.json({ ...finalData, matchedEmployeeId, source: "openai" });
     } catch (err) {
-      console.error("[ocr-holerite] Error:", err.message);
-      res.status(500).json({ message: "Erro ao processar holerite: " + (err.message || "Erro desconhecido") });
+      const raw = String(err?.message || "Erro desconhecido");
+      console.error("[ocr-holerite] Error:", raw);
+      const friendly = /connection|ENOTFOUND|ECONN|fetch failed|timeout/i.test(raw) ? "Falha ao conectar na IA de OCR. Envie o PDF (n\xE3o foto) do holerite Folha Mensal \u2014 o sistema l\xEA o texto sem IA. Se persistir, configure OPENAI_API_KEY na Vercel." : raw;
+      res.status(500).json({ message: "Erro ao processar holerite: " + friendly });
     }
   });
   app2.get("/api/mobile/my-payslips", requireAuth, async (req, res) => {
@@ -37735,8 +38986,8 @@ function registerEscortRoutes(app2) {
         return false;
       });
       const todayOsIds = new Set(todayEscoltaOs.map((so) => so.id));
-      const recusadaOsIds = new Set(allOrders.filter((so) => so.status === "recusada" || so.status === "cancelada").map((so) => so.id));
-      const FROZEN_BILL_STATUSES = /* @__PURE__ */ new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+      const recusadaOsIds = new Set(allOrders.filter((so) => so.status === "recusada").map((so) => so.id));
+      const FROZEN_BILL_STATUSES = /* @__PURE__ */ new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA"]);
       const frozenBillOsIds = new Set(
         (billings || []).filter((b) => FROZEN_BILL_STATUSES.has(String(b.status || "").toUpperCase())).map((b) => b.service_order_id)
       );
@@ -37928,6 +39179,11 @@ function registerEscortRoutes(app2) {
         if (b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id))) return 0;
         return Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
       };
+      const calcPagLabor = (b) => {
+        const pag = Number(b.pag_total || 0);
+        const fuelToll = Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0);
+        return Math.max(0, Math.round((pag - fuelToll) * 100) / 100);
+      };
       const isCancelledBilling = (b) => b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id));
       const osLookup = new Map(allOrders.map((so) => [so.id, so]));
       const needsMC = (b) => Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id;
@@ -37998,9 +39254,10 @@ function registerEscortRoutes(app2) {
           byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
         }
         byVehicle[plate].fat_total += calcFat(b);
-        byVehicle[plate].pag_total += Number(b.pag_total || 0);
+        byVehicle[plate].pag_total += calcPagLabor(b);
         byVehicle[plate].missions += 1;
-        byVehicle[plate].despesas += calcDesp(b);
+        const outras = isCancelledBilling(b) ? 0 : Number(b.despesas_outras || 0);
+        byVehicle[plate].despesas += outras;
       });
       const timesheetHoursByEmployee = {};
       allTimesheets.forEach((ts) => {
@@ -38029,13 +39286,13 @@ function registerEscortRoutes(app2) {
         const key = String(id || name);
         if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
         byAgent[key].fat_total += calcFat(b);
-        byAgent[key].pag_total += Number(b.pag_total || 0);
+        byAgent[key].pag_total += calcPagLabor(b);
         byAgent[key].missions += 1;
         if (b.vigilante2_id && b.vigilante2_name) {
           const key2 = String(b.vigilante2_id);
           if (!byAgent[key2]) byAgent[key2] = { id: b.vigilante2_id, name: b.vigilante2_name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
           byAgent[key2].fat_total += calcFat(b);
-          byAgent[key2].pag_total += Number(b.pag_total || 0);
+          byAgent[key2].pag_total += calcPagLabor(b);
           byAgent[key2].missions += 1;
         }
       });
@@ -38046,7 +39303,8 @@ function registerEscortRoutes(app2) {
         const fat = calcFat(b);
         const desp = calcDesp(b);
         const pag = Number(b.pag_total || 0);
-        const lucro = fat - pag - desp;
+        const pagLabor = calcPagLabor(b);
+        const lucro = fat - pagLabor - desp;
         const so = osLookup.get(b.service_order_id);
         const soCreatedAt = so?.createdAt || b.created_at;
         const soScheduledDate = so?.scheduledDate || b.scheduled_date;
@@ -38095,6 +39353,8 @@ function registerEscortRoutes(app2) {
           fat_pernoite: Number(b.fat_pernoite || 0),
           receitas_os: Number(b.receitas_os || 0),
           pag_total: pag,
+          // Pagamento laboral (base + peric. + ad. noturno + outras). Sem comb/pedágio.
+          pag_labor: pagLabor,
           pag_vrp: Number(b.pag_vrp || 0),
           despesas: desp,
           despesas_pedagio: Number(b.despesas_pedagio || 0),
@@ -38177,7 +39437,7 @@ function registerEscortRoutes(app2) {
         if (schedKey) {
           if (!custoOperacionalByDay[schedKey]) custoOperacionalByDay[schedKey] = { count: 0, pag_total: 0 };
           custoOperacionalByDay[schedKey].count += 1;
-          custoOperacionalByDay[schedKey].pag_total += m.pag_total;
+          custoOperacionalByDay[schedKey].pag_total += Number(m.pag_labor ?? m.pag_total) || 0;
         }
         if (m.is_concluded && m.completed_date_brt) {
           if (!lucroRealizadoByDay[m.completed_date_brt]) lucroRealizadoByDay[m.completed_date_brt] = { count: 0, lucro: 0 };
@@ -43874,37 +45134,11 @@ function registerDailyAllowancesRoutes(app2) {
 }
 
 // server/routes/fixed-costs.ts
+init_payroll();
+init_contratacao();
 init_swr_cache();
 init_brt_date();
-init_hours_calc();
-
-// server/lib/create-limit.ts
-function createLimit(concurrency) {
-  if (!Number.isInteger(concurrency) || concurrency < 1) {
-    throw new Error(`createLimit: concurrency deve ser inteiro >= 1 (recebido: ${concurrency})`);
-  }
-  let active = 0;
-  const queue = [];
-  const next = () => {
-    if (active >= concurrency) return;
-    const run = queue.shift();
-    if (run) {
-      active++;
-      run();
-    }
-  };
-  return (fn) => new Promise((resolve, reject) => {
-    queue.push(() => {
-      fn().then(resolve, reject).finally(() => {
-        active--;
-        next();
-      });
-    });
-    next();
-  });
-}
-
-// server/routes/fixed-costs.ts
+init_create_limit();
 var SWR_TTL_3H3 = 3 * 60 * 60 * 1e3;
 var fixedCostInputSchema = insertFixedCostSchema.extend({
   monthlyValue: z6.union([z6.string(), z6.number()]).transform((v) => String(v)),
@@ -43965,18 +45199,14 @@ async function getFixedCostsForPeriod(fromISO, toISO) {
   return daily * days;
 }
 async function calculateAgentMonthlyCost(employeeId, opts) {
-  const { data, error } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", employeeId).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
-  let vrDias = opts?.businessDays;
-  if (vrDias === void 0) {
-    const now = /* @__PURE__ */ new Date();
-    const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
-    const set = opts?.holidaySet ?? await loadHolidaySet(from, to);
-    vrDias = countBusinessDays(from, to, set);
-  }
+  const now = /* @__PURE__ */ new Date();
+  const pad = (n2) => String(n2).padStart(2, "0");
+  const referenceDate = opts?.referenceDate && String(opts.referenceDate).slice(0, 10) || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const { data, error } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", employeeId).lte("effective_date", referenceDate).order("effective_date", { ascending: false }).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(20);
+  const vrDias = VR_DIAS_UTEIS_CCT;
   let horasExtrasMedia = opts?.horasExtras;
   let horasNoturnasMedia = opts?.horasNoturnas;
   if (horasExtrasMedia === void 0 || horasNoturnasMedia === void 0) {
-    const now = /* @__PURE__ */ new Date();
     const meses = [];
     for (let i = 1; i <= 3; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -44003,55 +45233,66 @@ async function calculateAgentMonthlyCost(employeeId, opts) {
     if (horasExtrasMedia === void 0) horasExtrasMedia = 0;
     if (horasNoturnasMedia === void 0) horasNoturnasMedia = 0;
   }
-  if (error || !data || data.length === 0) {
-    return {
-      total: 0,
-      breakdown: {
-        base: 0,
-        encargos: 0,
-        vrDiario: 43,
-        vrDias,
-        vrTotal: 0,
-        vt: 0,
-        cesta: 0,
-        outros: 0,
-        diarias: opts?.diariasManuais ?? 0,
-        horasMensais: 220,
-        custoHora: 0,
-        ferias: 0,
-        decimoTerceiro: 0,
-        rescisao: 0,
-        horaExtra: 0,
-        adicionalNoturno: 0,
-        salarioProporcional: 0,
-        periculosidade: 0,
-        dsr: 0,
-        ajudaCusto: 0,
-        inss: 0,
-        irrf: 0,
-        fgts: 0,
-        provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0,
-        provisaoINSSsobreFerias13: 0,
-        totalBruto: 0,
-        totalDeducoes: 0,
-        totalProvisoes: 0,
-        liquidoFuncionario: 0
-      }
-    };
+  let tipoContratacao = opts?.tipoContratacao;
+  if (tipoContratacao === void 0) {
+    const { data: empRowTipo } = await supabaseAdmin.from("employees").select("tipo_contratacao").eq("id", employeeId).limit(1);
+    tipoContratacao = empRowTipo?.[0] ? empRowTipo[0].tipo_contratacao : null;
   }
-  const s = data[0];
+  const isClt = isCltContrato(tipoContratacao);
+  const vigente = selectSalaryVigenteFromHistory(data || [], referenceDate);
+  const semSalario = !!(error || !vigente);
+  let s = vigente || null;
+  if (semSalario) {
+    if (isClt) {
+      const { getCctConfigByCargo: getCctConfigByCargo3 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+      const cct = await getCctConfigByCargo3(opts?.role || null);
+      const benKit = resolveCestaAjudaTorres(Number(cct.cestaBasica || 0), Number(cct.ajudaCustoMensal || 0));
+      s = {
+        base_salary: cct.salarioBase,
+        periculosidade_pct: cct.periculosidadePct,
+        vale_refeicao_diario: cct.valeRefeicaoDia,
+        cesta_basica: benKit.cesta,
+        vale_transporte_mensal: 0,
+        beneficios_outros: 0,
+        horas_mensais: 220,
+        ajuda_custo_mensal: benKit.ajudaCusto,
+        vale_alimentacao_mensal: 0,
+        assiduidade_mensal: 0,
+        dependentes_ir: 0
+      };
+    } else {
+      s = {
+        base_salary: 0,
+        periculosidade_pct: 0,
+        vale_refeicao_diario: 0,
+        cesta_basica: 0,
+        vale_transporte_mensal: 0,
+        beneficios_outros: 0,
+        horas_mensais: 220,
+        ajuda_custo_mensal: 0,
+        vale_alimentacao_mensal: 0,
+        assiduidade_mensal: 0,
+        dependentes_ir: 0
+      };
+    }
+  }
   const base = Number(s.base_salary || 0);
-  const vrDiario = Number(s.vale_refeicao_diario ?? 43);
-  const vrLegacy = Number(s.vale_refeicao_mensal || 0);
+  const vrDiario = isClt ? Number(s.vale_refeicao_diario ?? 43) : 0;
+  const vrLegacy = isClt ? Number(s.vale_refeicao_mensal || 0) : 0;
   const vrTotal = vrLegacy > 0 ? vrLegacy : vrDiario * vrDias;
-  const vt = Number(s.vale_transporte_mensal || 0);
-  const cesta = Number(s.cesta_basica ?? 200);
-  const outros = Number(s.beneficios_outros || 0);
-  const diarias = opts?.diariasManuais ?? 0;
+  const vt = isClt ? Number(s.vale_transporte_mensal || 0) : 0;
+  const ben = resolveCestaAjudaTorres(
+    isClt ? Number(s.cesta_basica ?? 0) : 0,
+    Number(s.ajuda_custo_mensal || 0)
+  );
+  const cesta = isClt ? ben.cesta : 0;
+  const ajudaCustoMensal = ben.ajudaCusto;
+  const outros = isClt ? Number(s.beneficios_outros || 0) : 0;
+  const valeAlimentacao = isClt ? Number(s.vale_alimentacao_mensal || 0) : 0;
+  const assiduidade = isClt ? Number(s.assiduidade_mensal || 0) : 0;
+  const diarias = isClt ? opts?.diariasManuais ?? 0 : 0;
   const horasMensais = Number(s.horas_mensais || 220);
-  const periculosidadePct = Number(s.periculosidade_pct ?? 30) / 100;
-  const ajudaCustoMensal = Number(s.ajuda_custo_mensal || 0);
+  const periculosidadePct = isClt ? Number(s.periculosidade_pct ?? 30) / 100 : 0;
   const diasTrabalhados = opts?.diasTrabalhados ?? 30;
   let dependentesIR = Number(s.dependentes_ir || 0);
   try {
@@ -44059,39 +45300,47 @@ async function calculateAgentMonthlyCost(employeeId, opts) {
     if (typeof count === "number" && count > 0) dependentesIR = count;
   } catch {
   }
-  const { data: empRowTipo } = await supabaseAdmin.from("employees").select("tipo_contratacao").eq("id", employeeId).limit(1);
-  const isClt = !empRowTipo || !empRowTipo[0] || empRowTipo[0].tipo_contratacao !== "fixo";
+  const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+  const cctRates = await getCctConfigByCargo2(opts?.role || null);
+  const heDiurnaFixo = isClt ? Number(cctRates.horaExtraValor || 0) : 0;
+  const heNoturnaFixo = isClt ? Number(cctRates.horaExtraNoturnaValor || 0) : 0;
   const folha = calcularFolha({
     salarioBaseCheio: base,
     diasTrabalhados,
     horasMensais,
     periculosidadePct,
-    horasExtras: horasExtrasMedia,
-    horasNoturnas: horasNoturnasMedia,
-    diasUteis: vrDias,
-    refeicaoDiaria: vrDiario,
+    horasExtras: isClt ? horasExtrasMedia : 0,
+    horasNoturnas: isClt ? horasNoturnasMedia : 0,
+    diasUteis: isClt ? vrDias : 0,
+    refeicaoDiaria: isClt ? vrDiario : 0,
     ajudaCustoMensal,
     dependentesIR,
-    isClt
+    isClt,
+    valorHoraExtraFixo: heDiurnaFixo,
+    valorHoraNoturnaFixo: heNoturnaFixo
   });
-  const total = folha.custoTotalEmpresa + cesta + vt + outros + diarias;
+  const total = isClt ? +(folha.custoTotalEmpresa + cesta + vt + outros + valeAlimentacao + assiduidade + diarias).toFixed(2) : +folha.custoTotalEmpresa.toFixed(2);
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
   const encargos = folha.inss + folha.irrf + folha.fgts;
   const ferias = folha.provisaoFerias + folha.provisaoTercoFerias;
   const decimoTerceiro = folha.provisaoDecimoTerceiro;
   const rescisao = folha.provisaoFGTSsobreFerias13 + folha.provisaoINSSsobreFerias13;
+  const effectiveDate = s?.effective_date ? String(s.effective_date).slice(0, 10) : null;
+  const salaryRecordId = s?.id != null && !semSalario ? Number(s.id) : null;
   return {
     total,
     breakdown: {
       base: folha.salarioProporcional,
       encargos,
-      vrDiario,
-      vrDias,
-      vrTotal,
-      vt,
-      cesta,
-      outros,
-      diarias,
+      vrDiario: isClt ? vrDiario : 0,
+      vrDias: isClt ? vrDias : 0,
+      vrTotal: isClt ? vrTotal : 0,
+      vt: isClt ? vt : 0,
+      cesta: isClt ? cesta : 0,
+      outros: isClt ? outros : 0,
+      diarias: isClt ? diarias : 0,
+      valeAlimentacao: isClt ? valeAlimentacao : 0,
+      assiduidade: isClt ? assiduidade : 0,
       horasMensais,
       custoHora,
       ferias,
@@ -44101,6 +45350,9 @@ async function calculateAgentMonthlyCost(employeeId, opts) {
       adicionalNoturno: folha.adicionalNoturnoValor,
       // === Folha 2025 ===
       salarioProporcional: folha.salarioProporcional,
+      salarioBaseCheio: base,
+      effectiveDate,
+      salaryRecordId,
       periculosidade: folha.periculosidade,
       dsr: folha.dsr,
       ajudaCusto: folha.ajudaCusto,
@@ -44113,7 +45365,8 @@ async function calculateAgentMonthlyCost(employeeId, opts) {
       totalBruto: folha.totalBruto,
       totalDeducoes: folha.totalDeducoes,
       totalProvisoes: folha.totalProvisoes,
-      liquidoFuncionario: folha.liquidoFuncionario
+      liquidoFuncionario: folha.liquidoFuncionario,
+      semSalario
     }
   };
 }
@@ -44152,12 +45405,12 @@ function registerFixedCostsRoutes(app2) {
     res.json((data || []).map(toCamelFixedCost));
   });
   app2.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "rh-summary",
+    baseKey: "rh-summary-v16",
     ttlMs: SWR_TTL_3H3,
     // Warm-up: dia (filtro Diário), semana (filtro padrão do Balanço) e mês correntes em BRT.
     warmQueries: () => [currentBrtDayRange(), currentBrtWeekRange(), currentBrtMonthRange()]
   }, async (req, res) => {
-    const { data: employees2, error } = await supabaseAdmin.from("employees").select("id, name, status, role, tipo_contratacao");
+    const { data: employees2, error } = await supabaseAdmin.from("employees").select("id, name, status, role, tipo_contratacao, hire_date");
     if (error) return res.status(500).json({ message: error.message });
     const ativos = (employees2 || []).filter(isAtivo);
     const now = /* @__PURE__ */ new Date();
@@ -44167,46 +45420,29 @@ function registerFixedCostsRoutes(app2) {
     const holidaySet = await loadHolidaySet(from, to);
     const businessDays = countBusinessDays(from, to, holidaySet);
     const diarias = await sumDailyAllowancesForPeriod(from, to);
-    const horasMes = /* @__PURE__ */ new Map();
+    const fromDay = Number(String(from).slice(8, 10));
+    const mesRef = fromDay === 26 ? String(to).slice(0, 7) : String(from).slice(0, 7);
+    const yearRef = Number(mesRef.slice(0, 4));
+    const monthRef = Number(mesRef.slice(5, 7));
+    const { getPayrollPeriod: getPayrollPeriod2 } = await Promise.resolve().then(() => (init_payroll_period(), payroll_period_exports));
+    const payrollPeriod = getPayrollPeriod2(yearRef, monthRef);
+    const heByEmp = /* @__PURE__ */ new Map();
+    const notByEmp = /* @__PURE__ */ new Map();
+    const heFonteByEmp = /* @__PURE__ */ new Map();
     try {
-      const fromIso = (/* @__PURE__ */ new Date(from + "T00:00:00-03:00")).toISOString();
-      const toIso = (/* @__PURE__ */ new Date(to + "T23:59:59-03:00")).toISOString();
-      const { data: punches } = await supabaseAdmin.from("control_id_punches").select("employee_id, punch_at").gte("punch_at", fromIso).lte("punch_at", toIso).order("punch_at", { ascending: true });
-      const punchesByEmp = /* @__PURE__ */ new Map();
-      for (const p of punches || []) {
-        const empId = p.employee_id;
-        if (empId == null) continue;
-        if (!punchesByEmp.has(empId)) punchesByEmp.set(empId, []);
-        punchesByEmp.get(empId).push(p);
-      }
-      for (const [empId, pl] of Array.from(punchesByEmp.entries())) {
-        const calc = computeWorkedHours(pl);
-        if (!horasMes.has(empId)) horasMes.set(empId, { normais: 0, extras: 0 });
-        horasMes.get(empId).normais += calc.totalHours;
-      }
-      const { data: ts } = await supabaseAdmin.from("timesheets").select("employee_id, hours_worked, overtime").gte("date", from).lte("date", to);
-      for (const r of ts || []) {
-        const id = Number(r.employee_id);
-        if (horasMes.has(id)) continue;
-        if (!horasMes.has(id)) horasMes.set(id, { normais: 0, extras: 0 });
-        const slot = horasMes.get(id);
-        slot.normais += Number(r.hours_worked || 0);
-        slot.extras += Number(r.overtime || 0);
+      const horasMap = await resolveHorasExtrasNoturnasBulk({
+        employeeIds: ativos.map((e) => Number(e.id)),
+        from: payrollPeriod.startDate,
+        to: payrollPeriod.endDate,
+        mesRef
+      });
+      for (const [id, h] of horasMap) {
+        heByEmp.set(id, h.horasExtras);
+        notByEmp.set(id, h.horasNoturnas);
+        heFonteByEmp.set(id, h.fonte);
       }
     } catch (e) {
-      console.warn("[rh-summary] horasMes fallback:", e?.message || e);
-    }
-    const noturnasMes = /* @__PURE__ */ new Map();
-    try {
-      const mesRef2 = String(from).slice(0, 7);
-      const { data: jornMes } = await supabaseAdmin.from("jornada_calculos").select("employee_id, horas_noturnas").eq("mes_referencia", mesRef2);
-      for (const r of jornMes || []) {
-        const id = Number(r.employee_id);
-        if (!noturnasMes.has(id)) noturnasMes.set(id, 0);
-        noturnasMes.set(id, noturnasMes.get(id) + Number(r.horas_noturnas || 0));
-      }
-    } catch (e) {
-      console.warn("[rh-summary] noturnasMes:", e?.message || e);
+      console.warn("[rh-summary] horas ponto/jornada/batidas:", e?.message || e);
     }
     const porAgente = [];
     let totalMensal = 0;
@@ -44217,122 +45453,164 @@ function registerFixedCostsRoutes(app2) {
       noturno: 0,
       refeicao: 0,
       fgts: 0,
-      inssPatronal: 0,
-      seguroVida: 0,
+      vt: 0,
       cesta: 0,
+      outros: 0,
       diarias: 0,
+      ajudaCusto: 0,
+      valeAlimentacao: 0,
+      assiduidade: 0,
       inssFunc: 0,
       irrfFunc: 0,
-      liquidoFunc: 0
+      liquidoFunc: 0,
+      ferias: 0,
+      decimoTerceiro: 0,
+      provisaoTerco: 0,
+      provisaoFgts: 0,
+      provisaoInss: 0,
+      totalProvisoes: 0
     };
-    const mesRef = String(from).slice(0, 7);
-    const { buildFolhaStats: buildFolhaStats2 } = await Promise.resolve().then(() => (init_control_id(), control_id_exports));
     const limit = createLimit(6);
     const statsByIdx = await Promise.all(
       ativos.map((emp) => limit(async () => {
         try {
-          return await buildFolhaStats2(emp.id, mesRef, {
-            multiplicadorHE: 1.6,
-            employee: { role: emp.role, tipo_contratacao: emp.tipo_contratacao }
+          let diasTrabalhados = 30;
+          const hireRaw = emp.hire_date || emp.hireDate;
+          if (hireRaw) {
+            const hire = new Date(hireRaw);
+            if (hire.getFullYear() === yearRef && hire.getMonth() + 1 === monthRef) {
+              const daysInMonth2 = new Date(yearRef, monthRef, 0).getDate();
+              diasTrabalhados = Math.max(1, daysInMonth2 - hire.getDate() + 1);
+            }
+          }
+          return await calculateAgentMonthlyCost(emp.id, {
+            businessDays,
+            holidaySet,
+            diariasManuais: Number(diarias.porAgente[emp.id] || 0),
+            diasTrabalhados,
+            horasExtras: Math.round((heByEmp.get(emp.id) || 0) * 100) / 100,
+            horasNoturnas: Math.round((notByEmp.get(emp.id) || 0) * 100) / 100,
+            role: emp.role,
+            tipoContratacao: emp.tipo_contratacao,
+            // Vigência: último salário com effective_date <= fim do período filtrado.
+            referenceDate: to
           });
         } catch (err) {
-          console.warn(`[rh-summary] buildFolhaStats(${emp.id}) falhou:`, err?.message || err);
+          console.warn(`[rh-summary] calculateAgentMonthlyCost(${emp.id}) falhou:`, err?.message || err);
           return null;
         }
       }))
     );
     for (let i = 0; i < ativos.length; i++) {
       const emp = ativos[i];
-      const s = statsByIdx[i];
-      if (!s) continue;
-      const total = Number(s.custoTotalEstimado || 0);
+      const r = statsByIdx[i];
+      if (!r) continue;
+      const b = r.breakdown;
+      const total = Number(r.total || 0);
       totalMensal += total;
-      const base = Number(s.baseSalary || 0);
-      const peric = Number(s.periculosidade || 0);
-      const heVal = Number(s.custoExtra || 0);
-      const noturnoVal = Number(s.adicionalNoturno || 0);
-      const inssFuncVal = Number(s.inssFuncionario || 0);
-      const irrfFuncVal = Number(s.irrfFuncionario || 0);
-      const liquidoFuncVal = Number(s.liquidoFuncionario || 0);
-      const vrTotal = Number(s.valeRefeicao || 0);
-      const cesta = Number(s.cestaBasica || 0);
-      const diariasEmp = Number(s.diarias || 0) > 0 ? Number(s.diarias) : Number(diarias.porAgente[emp.id] || 0);
-      const fgts = Number(s.fgts || 0);
-      const inssPatronal = Number(s.inssPatronal || 0);
-      const seguroVida = Number(s.seguroVida || 0);
+      const base = Number(b.salarioProporcional || 0);
+      const peric = Number(b.periculosidade || 0);
+      const heVal = Number(b.horaExtra || 0);
+      const noturnoVal = Number(b.adicionalNoturno || 0);
+      const inssFuncVal = Number(b.inss || 0);
+      const irrfFuncVal = Number(b.irrf || 0);
+      const liquidoFuncVal = Number(b.liquidoFuncionario || 0);
+      const vrTotal = Number(b.vrTotal || 0);
+      const cesta = Number(b.cesta || 0);
+      const vt = Number(b.vt || 0);
+      const outros = Number(b.outros || 0);
+      const diariasEmp = Number(b.diarias || 0);
+      const ajudaCusto = Number(b.ajudaCusto || 0);
+      const valeAlimentacao = Number(b.valeAlimentacao || 0);
+      const assiduidade = Number(b.assiduidade || 0);
+      const fgts = Number(b.fgts || 0);
+      const totalProvisoes = Number(b.totalProvisoes || 0);
+      const ferias = Number(b.ferias || 0);
+      const decimoTerceiro = Number(b.decimoTerceiro || 0);
       acc.base += base;
       acc.peric += peric;
       acc.he += heVal;
       acc.noturno += noturnoVal;
       acc.refeicao += vrTotal;
       acc.cesta += cesta;
+      acc.vt += vt;
+      acc.outros += outros;
       acc.diarias += diariasEmp;
+      acc.ajudaCusto += ajudaCusto;
+      acc.valeAlimentacao += valeAlimentacao;
+      acc.assiduidade += assiduidade;
       acc.fgts += fgts;
-      acc.inssPatronal += inssPatronal;
-      acc.seguroVida += seguroVida;
       acc.inssFunc += inssFuncVal;
       acc.irrfFunc += irrfFuncVal;
       acc.liquidoFunc += liquidoFuncVal;
-      const hm = horasMes.get(emp.id) || { normais: 0, extras: 0 };
-      const horasNormaisMes = Math.min(220, hm.normais);
-      const horasExtrasMes = Number(s.horaExtra || 0);
+      acc.ferias += ferias;
+      acc.decimoTerceiro += decimoTerceiro;
+      acc.provisaoTerco += Number(b.provisaoTercoFerias || 0);
+      acc.provisaoFgts += Number(b.provisaoFGTSsobreFerias13 || 0);
+      acc.provisaoInss += Number(b.provisaoINSSsobreFerias13 || 0);
+      acc.totalProvisoes += totalProvisoes;
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
-        // Total cheio e operacional são iguais — não há provisões no novo cálculo.
+        // Custo Empresa CCT (cadastro) — inclui FGTS + provisões
         total,
         totalOperacional: total,
-        totalProvisoes: 0,
-        horasNormaisMes,
-        horasExtrasMes,
-        // Vencimentos
+        totalProvisoes,
+        horasNormaisMes: 0,
+        horasExtrasMes: Number(heByEmp.get(emp.id) || 0),
+        horasNoturnasMes: Number(notByEmp.get(emp.id) || 0),
+        horasExtrasFonte: heFonteByEmp.get(emp.id) || "nenhuma",
+        // Vencimentos — salário base contratual ≠ proporcional (não ratear por calendário)
+        salarioBaseCheio: Number(b.salarioBaseCheio || base),
+        effectiveDate: b.effectiveDate || null,
+        salaryRecordId: b.salaryRecordId ?? null,
         salarioProporcional: base,
         periculosidade: peric,
         horaExtra: heVal,
         adicionalNoturno: noturnoVal,
-        dsr: 0,
-        valorHoraExtra: Number(s.valorHoraExtra || 0),
+        dsr: Number(b.dsr || 0),
+        // CCT vigilância (UI: "103,75×16 = R$ …")
+        valorHoraExtra: 16,
+        valorHoraNoturna: 16.5,
         // Benefícios
-        vrDiario: Number(s.vrDiario || 0),
-        vrDias: Number(s.diasUteis || 0),
+        vrDiario: Number(b.vrDiario || 0),
+        vrDias: Number(b.vrDias || 0),
         vrTotal,
-        ajudaCusto: 0,
-        vt: 0,
+        ajudaCusto,
+        vt,
         cesta,
-        outros: 0,
+        outros,
         diarias: diariasEmp,
-        // Recolhimentos (encargos empresa)
+        valeAlimentacao,
+        assiduidade,
+        // Encargos empresa (entram no Custo Empresa do cadastro)
         fgts,
-        fgtsPct: Number(s.fgtsPct || 8),
-        inssPatronal,
-        inssPatronalPct: Number(s.inssPatronalPct || 20),
-        seguroVida,
-        // Compat com UI antiga
+        fgtsPct: 8,
+        inssPatronal: 0,
+        inssPatronalPct: 0,
+        seguroVida: 0,
+        // Compat com UI
         base,
-        encargos: fgts + inssPatronal + seguroVida,
+        encargos: Number(b.encargos || 0),
         inss: inssFuncVal,
         irrf: irrfFuncVal,
-        totalBruto: base + peric + heVal + noturnoVal,
-        totalDeducoes: +(inssFuncVal + irrfFuncVal).toFixed(2),
+        totalBruto: Number(b.totalBruto || 0),
+        totalDeducoes: Number(b.totalDeducoes || 0),
         liquidoFuncionario: liquidoFuncVal,
-        decimoTerceiro: 0,
-        ferias: 0,
-        provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0,
-        provisaoINSSsobreFerias13: 0,
-        rescisao: 0,
-        horasMensais: 220,
-        custoHora: Number(s.valorHora || 0),
-        semSalario: !s.hasSalary,
-        // Diagnóstico (mês corrente)
-        isMesCorrente: !!s.isMesCorrente,
-        diasCorridosElapsed: Number(s.diasCorridosElapsed || 0),
-        totalDiasMes: Number(s.totalDiasMes || 0)
+        decimoTerceiro,
+        ferias,
+        provisaoTercoFerias: Number(b.provisaoTercoFerias || 0),
+        provisaoFGTSsobreFerias13: Number(b.provisaoFGTSsobreFerias13 || 0),
+        provisaoINSSsobreFerias13: Number(b.provisaoINSSsobreFerias13 || 0),
+        rescisao: Number(b.rescisao || 0),
+        horasMensais: Number(b.horasMensais || 220),
+        custoHora: Number(b.custoHora || 0),
+        semSalario: !!b.semSalario,
+        fonte: "cct-cadastro"
       });
     }
     porAgente.sort((a, b) => b.total - a.total);
     const totalOperacional = totalMensal;
-    const encargosTot = acc.fgts + acc.inssPatronal + acc.seguroVida;
     res.json({
       monthly: totalMensal,
       monthlyOperacional: totalOperacional,
@@ -44342,40 +45620,47 @@ function registerFixedCostsRoutes(app2) {
       yearly: totalMensal * 12,
       agentCount: ativos.length,
       period: { from, to, businessDays, holidaysCount: holidaySet.size },
+      // Exclusivo ponto/HE/folha — VR e demais benefícios usam o `period` civil acima.
+      payrollPeriod: {
+        from: payrollPeriod.startDate,
+        to: payrollPeriod.endDate,
+        mesRef,
+        label: payrollPeriod.label,
+        labelShort: payrollPeriod.labelShort
+      },
+      fonte: "cct-cadastro",
       breakdown: {
-        // Compat (UI antiga)
         base: acc.base,
-        encargos: encargosTot,
-        // FGTS + INSS Patronal + Seguro de Vida
+        // Encargos no custo = FGTS (provisões 13º/férias são só informativas)
+        encargos: acc.fgts,
         vr: acc.refeicao,
-        vt: 0,
+        vt: acc.vt,
         cesta: acc.cesta,
-        outros: 0,
+        outros: acc.outros + acc.valeAlimentacao + acc.assiduidade,
         diarias: acc.diarias,
-        ferias: 0,
-        decimoTerceiro: 0,
-        rescisao: 0,
+        ferias: acc.ferias,
+        decimoTerceiro: acc.decimoTerceiro,
+        rescisao: acc.provisaoFgts + acc.provisaoInss,
         horaExtra: acc.he,
         adicionalNoturno: acc.noturno,
-        beneficios: acc.refeicao + acc.cesta + acc.diarias,
-        // Folha (Ponto Eletrônico)
+        beneficios: acc.refeicao + acc.cesta + acc.vt + acc.outros + acc.diarias + acc.valeAlimentacao + acc.assiduidade + acc.ajudaCusto,
         salarioProporcional: acc.base,
         periculosidade: acc.peric,
         dsr: 0,
-        ajudaCusto: 0,
+        ajudaCusto: acc.ajudaCusto,
+        // Remuneração apenas (VR/ajuda ficam em benefícios) — alinhado a calcularFolha.totalBruto
         totalBruto: acc.base + acc.peric + acc.he + acc.noturno,
         inss: +acc.inssFunc.toFixed(2),
         irrf: +acc.irrfFunc.toFixed(2),
         fgts: acc.fgts,
-        // Novos campos (encargos empresa)
-        inssPatronal: acc.inssPatronal,
-        seguroVida: acc.seguroVida,
+        inssPatronal: 0,
+        seguroVida: 0,
         totalDeducoes: +(acc.inssFunc + acc.irrfFunc).toFixed(2),
         liquidoFuncionario: +acc.liquidoFunc.toFixed(2),
-        provisaoTercoFerias: 0,
-        provisaoFGTSsobreFerias13: 0,
-        provisaoINSSsobreFerias13: 0,
-        totalProvisoes: 0
+        provisaoTercoFerias: acc.provisaoTerco,
+        provisaoFGTSsobreFerias13: acc.provisaoFgts,
+        provisaoINSSsobreFerias13: acc.provisaoInss,
+        totalProvisoes: acc.totalProvisoes
       },
       porAgente
     });
@@ -45326,11 +46611,14 @@ function registerControlIdRoutes(app2) {
         punchAt: new Date(punchAt),
         direction: direction || "unknown",
         source: isAdmin && employeeId !== req.user?.employeeId ? "admin_manual" : "self_manual",
-        deviceId: deviceId ? Number(deviceId) : void 0
+        deviceId: deviceId ? Number(deviceId) : void 0,
+        allowExtraPunches: !!(req.body.allowExtraPunches || req.body.forceExtra)
       });
       res.status(201).json(r);
     } catch (err) {
-      res.status(500).json({ message: err.message });
+      const msg = String(err.message || err);
+      const status = /já tem \d+ batida/i.test(msg) ? 400 : 500;
+      res.status(status).json({ message: msg });
     }
   });
   app2.patch("/api/control-id/punches/:id", requireAuth, requireAdminRole, async (req, res) => {
@@ -49327,12 +50615,10 @@ Se um campo n\xE3o for encontrado, retorne string vazia "". Nunca invente dados.
       }
       if (isPdf) {
         try {
-          const { PDFParse: PDFParseClass } = await import("pdf-parse");
           const base64Data = imageData.split(",")[1] || "";
-          const uint8 = new Uint8Array(Buffer.from(base64Data, "base64"));
-          const parser = new PDFParseClass(uint8, { verbosity: 0 });
-          const pdfResult = await parser.getText();
-          const pdfText = typeof pdfResult === "string" ? pdfResult : pdfResult?.text || "";
+          const buf = Buffer.from(base64Data, "base64");
+          const { extractPdfText: extractPdfText2 } = await Promise.resolve().then(() => (init_pdf_text(), pdf_text_exports));
+          const pdfText = await extractPdfText2(buf);
           const crafResult = parseCrafText(pdfText);
           if (crafResult && crafResult.weapons.length > 0) {
             console.log(`[CRAF Parser] Extra\xEDdas ${crafResult.weapons.length} arma(s) do PDF via parser de texto`);
@@ -50705,7 +51991,9 @@ async function createApp(options = {}) {
     "/api/mission/photo-inspections-batch",
     "/api/mission/update",
     "/api/employee-documents",
-    /^\/api\/employees\/\d+\/dependents$/
+    /^\/api\/employees\/\d+\/dependents$/,
+    // PATCH/POST de funcionário pode levar foto em data-URL
+    /^\/api\/employees(\/\d+)?$/
   ];
   const rawBodyVerify = (req, _res, buf) => {
     req.rawBody = buf;

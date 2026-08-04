@@ -11,7 +11,7 @@ import type { Express } from "express";
   import {
     isUsableHoleriteParse,
     matchEmployeeFromHolerite,
-    parseHoleriteTorres,
+    parseHoleritePdf,
     resolveOpenAIConfig,
     type HoleriteParsed,
   } from "../lib/holerite-parse";
@@ -767,7 +767,7 @@ import type { Express } from "express";
         }
 
         try {
-          preParsed = parseHoleriteTorres(pdfText);
+          preParsed = parseHoleritePdf(pdfText);
           if (preParsed) console.log("[ocr-holerite] Parser determinístico:", JSON.stringify(preParsed));
         } catch (e: any) {
           console.warn("[ocr-holerite] parser determinístico falhou:", e.message);
@@ -905,8 +905,12 @@ ${empNames}`,
       console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${finalData.employeeName}`);
       res.json({ ...finalData, matchedEmployeeId, source: "openai" });
     } catch (err: any) {
-      console.error("[ocr-holerite] Error:", err.message);
-      res.status(500).json({ message: "Erro ao processar holerite: " + (err.message || "Erro desconhecido") });
+      const raw = String(err?.message || "Erro desconhecido");
+      console.error("[ocr-holerite] Error:", raw);
+      const friendly = /connection|ENOTFOUND|ECONN|fetch failed|timeout/i.test(raw)
+        ? "Falha ao conectar na IA de OCR. Envie o PDF (não foto) do holerite Folha Mensal — o sistema lê o texto sem IA. Se persistir, configure OPENAI_API_KEY na Vercel."
+        : raw;
+      res.status(500).json({ message: "Erro ao processar holerite: " + friendly });
     }
   });
 

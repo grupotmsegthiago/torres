@@ -4,7 +4,7 @@ import { extractPdfText } from "./pdf-text.ts";
 import {
   isUsableHoleriteParse,
   matchEmployeeFromHolerite,
-  parseHoleriteTorres,
+  parseHoleritePdf,
 } from "./holerite-parse.ts";
 
 /** PDF mínimo com texto (Type1 Helvetica). Uma linha por Tj + Td relativo. */
@@ -69,7 +69,7 @@ test("fluxo OCR PDF: extractPdfText + parser determinístico (sem OpenAI)", asyn
     const text = await extractPdfText(buf);
     assert.ok(text.length > 20, "texto extraído do PDF");
 
-    const parsed = parseHoleriteTorres(text);
+    const parsed = parseHoleritePdf(text);
     assert.ok(isUsableHoleriteParse(parsed), "parser usável sem IA");
     assert.equal(parsed!.salarioBase, 2432.5);
     assert.equal(parsed!.periculosidade, 729.75);
@@ -89,7 +89,7 @@ test("fluxo OCR PDF: extractPdfText + parser determinístico (sem OpenAI)", asyn
 
 test("fluxo OCR: Connection error da IA não é necessário quando parser OK", () => {
   // Garante o contrato: se isUsable, a rota NÃO chama OpenAI.
-  const parsed = parseHoleriteTorres(`
+  const parsed = parseHoleritePdf(`
 Funcionário: TESTE
 CPF: 999.888.777-66
 Competência: JUL/2026
