@@ -20,8 +20,11 @@ processo do workflow. O que existe e funciona é o par injetado pela integraçã
 `OPENAI_API_KEY` e por isso cai no "ausente"/skip; as rotas de OCR/IA em `routes.ts` já
 usam o par `AI_INTEGRATIONS_*` corretamente.
 
-**How to apply:** Sempre preferir `AI_INTEGRATIONS_OPENAI_*` (com fallback pro legado). As envs
-`AI_INTEGRATIONS_*` só existem dentro do processo do workflow/prod — scripts `.local/test_*.mts`
-rodados via `npx tsx` no shell NÃO as enxergam, então a geração via OpenAI só dá pra testar de
-ponta a ponta dentro do workflow (esperar o timer ou bater na rota), não por script avulso. Leitura
-de tabela via `supabaseAdmin` funciona no shell (SUPABASE_* estão presentes).
+**How to apply:** Sempre preferir `AI_INTEGRATIONS_OPENAI_*` (com fallback pro legado via
+`resolveOpenAIConfig()` em `server/lib/holerite-parse.ts`). Na **Vercel**, o gateway
+`AI_INTEGRATIONS_OPENAI_BASE_URL` (Replit) costuma falhar com `Connection error` — configure
+`OPENAI_API_KEY` (API OpenAI direta) conforme `DEPLOY.md`. O OCR de holerite PDF layout Torres
+usa parser determinístico e **não chama OpenAI** quando o texto é legível.
+
+As envs `AI_INTEGRATIONS_*` só existem dentro do processo do workflow — scripts `.local/test_*.mts`
+no shell NÃO as enxergam. Leitura via `supabaseAdmin` funciona no shell (SUPABASE_* presentes).

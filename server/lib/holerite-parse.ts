@@ -1,0 +1,263 @@
+/**
+ * Parser determinístico de holerites (layout TORRES Vigilância) + identidade.
+ * Usado pelo OCR de PDF para NÃO depender de OpenAI quando o texto é legível.
+ */
+
+export type HoleriteParsed = {
+  employeeName: string;
+  employeeCpf: string;
+  month: number;
+  year: number;
+  competencia: string;
+  salarioBase: number;
+  periculosidade: number;
+  horasExtras: number;
+  adicionalNoturno: number;
+  dsr: number;
+  valeRefeicao: number;
+  ajudaCusto: number;
+  beneficios: number;
+  descontos: number;
+  totalBruto: number;
+  totalLiquido: number;
+};
+
+const MONTHS_PT: Record<string, number> = {
+  jan: 1, janeiro: 1,
+  fev: 2, fevereiro: 2,
+  mar: 3, marco: 3, março: 3,
+  abr: 4, abril: 4,
+  mai: 5, maio: 5,
+  jun: 6, junho: 6,
+  jul: 7, julho: 7,
+  ago: 8, agosto: 8,
+  set: 9, setembro: 9,
+  out: 10, outubro: 10,
+  nov: 11, novembro: 11,
+  dez: 12, dezembro: 12,
+};
+
+export function toHoleriteNumber(s: string): number {
+  return Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+/** Extrai nome, CPF e competência do texto do holerite. */
+export function extractHoleriteIdentity(text: string): Pick<
+  HoleriteParsed,
+  "employeeName" | "employeeCpf" | "month" | "year" | "competencia" | "descontos"
+> {
+  let employeeCpf = "";
+  const cpfM = text.match(/\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/);
+  if (cpfM) {
+    const digits = cpfM[1].replace(/\D/g, "");
+    if (digits.length === 11) {
+      employeeCpf = `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+    }
+  }
+
+  let employeeName = "";
+  const namePatterns = [
+    /(?:Nome\s*(?:do\s*)?(?:Funcion[aá]rio|Colaborador)?|Funcion[aá]rio|Colaborador)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
+    /(?:Empregado)\s*[:\-]?\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç\s.'-]{4,80})/i,
+  ];
+  for (const re of namePatterns) {
+    const m = text.match(re);
+    if (m?.[1]) {
+      employeeName = m[1].replace(/\s+/g, " ").trim();
+      // corta se pegou lixo após o nome
+      employeeName = employeeName.split(/\s{2,}|\t|CPF|PIS|Cargo|Função/i)[0].trim();
+      break;
+    }
+  }
+
+  let month = 0;
+  let year = 0;
+  let competencia = "";
+
+  // Preferência: rótulo "Competência: ..."
+  const labeled =
+    text.match(/Compet[eê]ncia\s*[:\-]?\s*([A-Za-zçÇ]{3,9})\s*\/\s*(\d{4})/i) ||
+    text.match(/Compet[eê]ncia\s*[:\-]?\s*(\d{1,2})\s*\/\s*(\d{4})/i);
+  const bare =
+    text.match(/\b((?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*)\s*\/\s*(\d{4})\b/i) ||
+    text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
+  const compM = labeled || bare;
+
+  if (compM) {
+    const part1 = (compM[1] || "").trim();
+    const part2 = Number(compM[2] || 0);
+    year = part2 || 0;
+    if (/^\d{1,2}$/.test(part1)) {
+      month = Number(part1);
+      competencia = `${String(month).padStart(2, "0")}/${year}`;
+    } else {
+      const norm = part1.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+      month = MONTHS_PT[norm] || MONTHS_PT[norm.slice(0, 3)] || 0;
+      competencia = `${part1.toUpperCase().slice(0, 3)}/${year}`;
+    }
+  }
+
+  // Descontos: total de descontos quando presente
+  let descontos = 0;
+  const descM =
+    text.match(/Total\s+(?:de\s+)?Descontos[^\d]*([\d.]+,\d{2})/i) ||
+    text.match(/Descontos\s+Totais[^\d]*([\d.]+,\d{2})/i);
+  if (descM) descontos = toHoleriteNumber(descM[1]);
+
+  return { employeeName, employeeCpf, month, year, competencia, descontos };
+}
+
+/**
+ * Parser determinístico para holerites do layout TORRES Vigilância.
+ * Estrutura: bloco "N [referência] valor" + bloco de labels separado.
+ */
+export function parseHoleriteTorres(text: string): HoleriteParsed | null {
+  const identity = extractHoleriteIdentity(text);
+
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const itemValues: Record<number, number> = {};
+  for (const ln of lines) {
+    const m = ln.match(/^(\d{1,2})\s+([\d.,]+)(?:\s+([\d.,]+))?\s*$/);
+    if (m) {
+      const idx = Number(m[1]);
+      if (idx >= 1 && idx <= 20) {
+        const valStr = m[3] || m[2];
+        itemValues[idx] = toHoleriteNumber(valStr);
+      }
+    }
+  }
+  if (Object.keys(itemValues).length === 0) return null;
+
+  const has = {
+    diasTrabalhados: /Dias\s+trabalhados|Sal[áa]rio\s+(?:Base|do\s+M[êe]s)/i.test(text),
+    periculosidade: /Periculosidade/i.test(text),
+    horasExtras: /Horas?\s+extras?/i.test(text),
+    adicionalNoturno: /Adicional\s+noturno/i.test(text),
+    dsr: /\bDSR\b|Descanso\s+Semanal/i.test(text),
+    valeRefeicao: /Vale\s+(refei[çc][ãa]o|alimenta[çc][ãa]o)|^V[RA]\b/im.test(text),
+    ajudaCusto: /Ajuda\s+de\s+custo/i.test(text),
+  };
+
+  const canonicalOrder: { key: keyof HoleriteParsed; present: boolean }[] = [
+    { key: "salarioBase", present: has.diasTrabalhados },
+    { key: "periculosidade", present: has.periculosidade },
+    { key: "horasExtras", present: has.horasExtras },
+    { key: "adicionalNoturno", present: has.adicionalNoturno },
+    { key: "dsr", present: has.dsr },
+    { key: "valeRefeicao", present: has.valeRefeicao },
+    { key: "ajudaCusto", present: has.ajudaCusto },
+  ];
+  const uniqKeys = canonicalOrder.filter((x) => x.present).map((x) => x.key);
+  if (uniqKeys.length === 0) return null;
+
+  const out: Record<string, number> = {
+    salarioBase: 0,
+    periculosidade: 0,
+    horasExtras: 0,
+    adicionalNoturno: 0,
+    dsr: 0,
+    valeRefeicao: 0,
+    ajudaCusto: 0,
+    beneficios: 0,
+  };
+  for (let i = 0; i < uniqKeys.length; i++) {
+    const v = itemValues[i + 1];
+    if (v != null && out[uniqKeys[i]] === 0) out[uniqKeys[i]] = v;
+  }
+
+  const totMatch = text.match(/Total\s+dos\s+Vencimentos[\s\S]{0,80}?([\d.]+,\d{2})/i);
+  const totalBruto = totMatch ? toHoleriteNumber(totMatch[1]) : 0;
+  const liqMatch = text.match(/L[ií]quido\s+a\s+Receber[^\d]*([\d.]+,\d{2})/i);
+  const totalLiquido = liqMatch ? toHoleriteNumber(liqMatch[1]) : 0;
+
+  const sum =
+    out.salarioBase +
+    out.periculosidade +
+    out.horasExtras +
+    out.adicionalNoturno +
+    out.dsr +
+    out.valeRefeicao +
+    out.ajudaCusto;
+  if (totalBruto > 0 && Math.abs(sum - totalBruto) > 0.5) {
+    const diff = totalBruto - sum;
+    if (diff > 0) out.beneficios = +diff.toFixed(2);
+  }
+
+  return {
+    employeeName: identity.employeeName,
+    employeeCpf: identity.employeeCpf,
+    month: identity.month,
+    year: identity.year,
+    competencia: identity.competencia,
+    salarioBase: out.salarioBase,
+    periculosidade: out.periculosidade,
+    horasExtras: out.horasExtras,
+    adicionalNoturno: out.adicionalNoturno,
+    dsr: out.dsr,
+    valeRefeicao: out.valeRefeicao,
+    ajudaCusto: out.ajudaCusto,
+    beneficios: out.beneficios,
+    descontos: identity.descontos,
+    totalBruto,
+    totalLiquido,
+  };
+}
+
+/** Parser determinístico tem dados úteis o bastante para dispensar a IA. */
+export function isUsableHoleriteParse(p: HoleriteParsed | null | undefined): p is HoleriteParsed {
+  if (!p) return false;
+  return (Number(p.salarioBase) || 0) > 0 || (Number(p.totalBruto) || 0) > 0;
+}
+
+export function matchEmployeeFromHolerite(
+  parsed: { employeeName?: string; employeeCpf?: string },
+  employees: Array<{ id: number; name?: string | null; cpf?: string | null; status?: string | null }>,
+): number | null {
+  const cpfClean = (parsed.employeeCpf || "").replace(/\D/g, "");
+  const nameLower = (parsed.employeeName || "").toLowerCase().trim();
+
+  if (cpfClean) {
+    for (const emp of employees) {
+      const empCpf = (emp.cpf || "").replace(/\D/g, "");
+      if (empCpf && empCpf === cpfClean) return emp.id;
+    }
+  }
+
+  if (nameLower) {
+    for (const emp of employees) {
+      const empName = (emp.name || "").toLowerCase().trim();
+      if (empName && (empName === nameLower || empName.includes(nameLower) || nameLower.includes(empName))) {
+        return emp.id;
+      }
+    }
+    const nameParts = nameLower.split(/\s+/);
+    if (nameParts.length >= 2) {
+      for (const emp of employees) {
+        const empParts = (emp.name || "").toLowerCase().split(/\s+/);
+        if (
+          empParts.length >= 2 &&
+          empParts[0] === nameParts[0] &&
+          empParts[empParts.length - 1] === nameParts[nameParts.length - 1]
+        ) {
+          return emp.id;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Monta client OpenAI com fallback legado (Vercel usa OPENAI_API_KEY; Replit usa AI_INTEGRATIONS_*). */
+export function resolveOpenAIConfig(): { apiKey: string; baseURL?: string } | null {
+  const integrationsKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const integrationsBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const legacyKey = process.env.OPENAI_API_KEY;
+
+  if (integrationsKey) {
+    return { apiKey: integrationsKey, baseURL: integrationsBase || undefined };
+  }
+  if (legacyKey) {
+    return { apiKey: legacyKey, baseURL: undefined };
+  }
+  return null;
+}

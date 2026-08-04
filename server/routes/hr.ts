@@ -8,80 +8,13 @@ import type { Express } from "express";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
-
-  // Parser determinístico para holerites do layout TORRES Vigilância
-  // Estrutura: bloco "N [referência] valor" + bloco de labels separado (Dias trabalhados, Periculosidade 30%, Horas extras 60%, Adicional noturno 20%, DSR horas extras, Vale refeição, Ajuda de custo)
-  function parseHoleriteTorres(text: string): any | null {
-    const toNum = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
-
-    // 1) Captura linhas numeradas com valor monetário (último número da linha)
-    // Ex: "1 24,00 2.052,24" / "2 615,67" / "3 134,13 2.504,55"
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const itemValues: Record<number, number> = {};
-    for (const ln of lines) {
-      const m = ln.match(/^(\d{1,2})\s+([\d.,]+)(?:\s+([\d.,]+))?\s*$/);
-      if (m) {
-        const idx = Number(m[1]);
-        if (idx >= 1 && idx <= 20) {
-          // valor é o ÚLTIMO número da linha (proventos), não a referência
-          const valStr = m[3] || m[2];
-          itemValues[idx] = toNum(valStr);
-        }
-      }
-    }
-    if (Object.keys(itemValues).length === 0) return null;
-
-    // 2) Detecta quais rubricas estão presentes no texto (independente de ordem)
-    const has = {
-      diasTrabalhados: /Dias\s+trabalhados|Sal[áa]rio\s+(?:Base|do\s+M[êe]s)/i.test(text),
-      periculosidade: /Periculosidade/i.test(text),
-      horasExtras: /Horas?\s+extras?/i.test(text),
-      adicionalNoturno: /Adicional\s+noturno/i.test(text),
-      dsr: /\bDSR\b|Descanso\s+Semanal/i.test(text),
-      valeRefeicao: /Vale\s+(refei[çc][ãa]o|alimenta[çc][ãa]o)|^V[RA]\b/im.test(text),
-      ajudaCusto: /Ajuda\s+de\s+custo/i.test(text),
-    };
-
-    // Ordem canônica do holerite TORRES Vigilância: Dias Trabalhados → Periculosidade → Horas Extras → Adicional Noturno → DSR → Vale Refeição → Ajuda de Custo
-    const canonicalOrder: { key: string; present: boolean }[] = [
-      { key: "salarioBase", present: has.diasTrabalhados },
-      { key: "periculosidade", present: has.periculosidade },
-      { key: "horasExtras", present: has.horasExtras },
-      { key: "adicionalNoturno", present: has.adicionalNoturno },
-      { key: "dsr", present: has.dsr },
-      { key: "valeRefeicao", present: has.valeRefeicao },
-      { key: "ajudaCusto", present: has.ajudaCusto },
-    ];
-    const uniqKeys = canonicalOrder.filter(x => x.present).map(x => x.key);
-
-    if (uniqKeys.length === 0) return null;
-
-    // 3) Mapeia posição→valor: labels[i] = itemValues[i+1]
-    const out: Record<string, number> = {
-      salarioBase: 0, periculosidade: 0, horasExtras: 0, adicionalNoturno: 0,
-      dsr: 0, valeRefeicao: 0, ajudaCusto: 0, beneficios: 0,
-    };
-    for (let i = 0; i < uniqKeys.length; i++) {
-      const v = itemValues[i + 1];
-      if (v != null && out[uniqKeys[i]] === 0) out[uniqKeys[i]] = v;
-    }
-
-    // 4) Total dos vencimentos (quando presente)
-    const totMatch = text.match(/Total\s+dos\s+Vencimentos[\s\S]{0,80}?([\d.]+,\d{2})/i);
-    const totalBruto = totMatch ? toNum(totMatch[1]) : 0;
-    const liqMatch = text.match(/L[ií]quido\s+a\s+Receber[^\d]*([\d.]+,\d{2})/i);
-    const totalLiquido = liqMatch ? toNum(liqMatch[1]) : 0;
-
-    // 5) Validação: se soma das rubricas + diferença ≈ totalBruto, joga resíduo em "beneficios"
-    const sum = out.salarioBase + out.periculosidade + out.horasExtras + out.adicionalNoturno + out.dsr + out.valeRefeicao + out.ajudaCusto;
-    if (totalBruto > 0 && Math.abs(sum - totalBruto) > 0.5) {
-      // tem item não mapeado — distribui no beneficios
-      const diff = totalBruto - sum;
-      if (diff > 0) out.beneficios = +diff.toFixed(2);
-    }
-
-    return { ...out, totalBruto, totalLiquido };
-  }
+  import {
+    isUsableHoleriteParse,
+    matchEmployeeFromHolerite,
+    parseHoleriteTorres,
+    resolveOpenAIConfig,
+    type HoleriteParsed,
+  } from "../lib/holerite-parse";
 
   export function registerHRRoutes(app: Express) {
     // ====================== AUDIT LOG ======================
@@ -809,25 +742,17 @@ import type { Express } from "express";
         return res.status(400).json({ message: "Envie imageData (base64 data URL)" });
       }
 
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-      if (!apiKey) return res.status(500).json({ message: "Chave de API de IA não configurada" });
-
-      const openai = new OpenAI({ apiKey, baseURL });
-
       const allEmps = await storage.getEmployees();
-      const empNames = allEmps.filter((e: any) => e.status === "ativo").map((e: any) => `${e.name} (CPF: ${e.cpf || "N/A"})`).join("\n");
 
-      // Se for PDF, extrai o texto e envia como texto (mais preciso e rápido que OCR de imagem)
+      // PDF layout TORRES → parser determinístico (sem OpenAI).
+      // Na Vercel o gateway AI_INTEGRATIONS_* frequentemente falha com "Connection error".
       const isPdf = /^data:application\/pdf/i.test(imageData);
       let pdfText = "";
-      let preParsed: any = null;
+      let preParsed: HoleriteParsed | null = null;
       if (isPdf) {
         try {
           const b64 = imageData.replace(/^data:application\/pdf;base64,/i, "");
           const buf = Buffer.from(b64, "base64");
-          // extractPdfText: polyfill DOMMatrix via @napi-rs/canvas + CanvasFactory
-          // (sem isso, no Vercel explode: "DOMMatrix is not defined")
           const { extractPdfText } = await import("../lib/pdf-text");
           pdfText = await extractPdfText(buf);
           console.log(`[ocr-holerite] PDF text extracted: ${pdfText.length} chars`);
@@ -835,25 +760,60 @@ import type { Express } from "express";
           console.error("[ocr-holerite] pdf-parse falhou:", pdfErr.message);
           return res.status(400).json({ message: "Não foi possível ler o PDF: " + pdfErr.message });
         }
-        if (!pdfText) return res.status(400).json({ message: "PDF sem texto legível. Envie uma imagem (foto/scan) do holerite." });
+        if (!pdfText) {
+          return res.status(400).json({
+            message: "PDF sem texto legível. Envie uma imagem (foto/scan) do holerite.",
+          });
+        }
 
-        // Parser determinístico para holerites do layout TORRES (valores numerados + labels separados)
         try {
           preParsed = parseHoleriteTorres(pdfText);
           if (preParsed) console.log("[ocr-holerite] Parser determinístico:", JSON.stringify(preParsed));
         } catch (e: any) {
           console.warn("[ocr-holerite] parser determinístico falhou:", e.message);
         }
+
+        if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId = matchEmployeeFromHolerite(preParsed, allEmps);
+          console.log(
+            `[ocr-holerite] OK sem IA. Employee match: ${matchedEmployeeId}, name: ${preParsed.employeeName}`,
+          );
+          return res.json({ ...preParsed, matchedEmployeeId, source: "deterministic" });
+        }
       }
 
-      console.log("[ocr-holerite] Enviando para OpenAI...");
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        reasoning_effort: "minimal",
-        messages: [
-          {
-            role: "system",
-            content: `Você é um sistema especializado em extrair dados de holerites/contracheques brasileiros (CLT).
+      const aiCfg = resolveOpenAIConfig();
+      if (!aiCfg) {
+        if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId = matchEmployeeFromHolerite(preParsed, allEmps);
+          return res.json({ ...preParsed, matchedEmployeeId, source: "deterministic" });
+        }
+        return res.status(500).json({
+          message:
+            "Chave de API de IA não configurada (defina OPENAI_API_KEY na Vercel). Para PDF do layout Torres o parser local basta — reenvie o PDF.",
+        });
+      }
+
+      const empNames = allEmps
+        .filter((e: any) => e.status === "ativo")
+        .map((e: any) => `${e.name} (CPF: ${e.cpf || "N/A"})`)
+        .join("\n");
+
+      const runOpenAI = async (cfg: { apiKey: string; baseURL?: string }) => {
+        const openai = new OpenAI({
+          apiKey: cfg.apiKey,
+          baseURL: cfg.baseURL,
+          timeout: 45000,
+          maxRetries: 1,
+        });
+        console.log(`[ocr-holerite] Enviando para OpenAI (base=${cfg.baseURL || "default"})...`);
+        return openai.chat.completions.create({
+          model: "gpt-5-mini",
+          reasoning_effort: "minimal",
+          messages: [
+            {
+              role: "system",
+              content: `Você é um sistema especializado em extrair dados de holerites/contracheques brasileiros (CLT).
 Retorne APENAS um JSON válido (sem markdown, sem texto extra):
 {
   "employeeName": "nome completo do funcionário",
@@ -882,74 +842,68 @@ REGRAS CRÍTICAS:
 5) VALIDE: salarioBase + periculosidade + horasExtras + adicionalNoturno + dsr + valeRefeicao + ajudaCusto + beneficios deve ser ≈ totalBruto. Se sobrar diferença significativa, coloque em "beneficios".
 
 FUNCIONÁRIOS CADASTRADOS NO SISTEMA (use para identificar o funcionário correto):
-${empNames}`
-          },
-          {
-            role: "user",
-            content: isPdf
-              ? `Extraia os dados deste holerite/contracheque (texto extraído do PDF):\n\n${pdfText}`
-              : ([
-                  { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
-                  { type: "image_url", image_url: { url: imageData } },
-                ] as any),
-          },
-        ],
-      });
+${empNames}`,
+            },
+            {
+              role: "user",
+              content: isPdf
+                ? `Extraia os dados deste holerite/contracheque (texto extraído do PDF):\n\n${pdfText}`
+                : ([
+                    { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
+                    { type: "image_url", image_url: { url: imageData } },
+                  ] as any),
+            },
+          ],
+        });
+      };
+
+      let response: Awaited<ReturnType<typeof runOpenAI>>;
+      try {
+        response = await runOpenAI(aiCfg);
+      } catch (aiErr: any) {
+        const msg = String(aiErr?.message || aiErr || "");
+        console.error("[ocr-holerite] OpenAI falhou:", msg);
+        const legacy = process.env.OPENAI_API_KEY;
+        if (aiCfg.baseURL && legacy && /connection|ENOTFOUND|ECONN|timeout|fetch failed/i.test(msg)) {
+          try {
+            response = await runOpenAI({ apiKey: legacy, baseURL: undefined });
+          } catch (retryErr: any) {
+            console.error("[ocr-holerite] retry OpenAI falhou:", retryErr?.message);
+            if (isUsableHoleriteParse(preParsed)) {
+              const matchedEmployeeId = matchEmployeeFromHolerite(preParsed, allEmps);
+              return res.json({ ...preParsed, matchedEmployeeId, source: "deterministic-fallback" });
+            }
+            throw retryErr;
+          }
+        } else if (isUsableHoleriteParse(preParsed)) {
+          const matchedEmployeeId = matchEmployeeFromHolerite(preParsed, allEmps);
+          return res.json({ ...preParsed, matchedEmployeeId, source: "deterministic-fallback" });
+        } else {
+          throw aiErr;
+        }
+      }
 
       const text = response.choices?.[0]?.message?.content || "";
       console.log("[ocr-holerite] OpenAI raw:", text.substring(0, 500));
       const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleaned);
 
-      let matchedEmployeeId: number | null = null;
-      if (parsed.employeeName || parsed.employeeCpf) {
-        const cpfClean = (parsed.employeeCpf || "").replace(/\D/g, "");
-        const nameLower = (parsed.employeeName || "").toLowerCase().trim();
-
-        for (const emp of allEmps) {
-          const empCpf = (emp.cpf || "").replace(/\D/g, "");
-          if (cpfClean && empCpf && cpfClean === empCpf) {
-            matchedEmployeeId = emp.id;
-            break;
-          }
-        }
-
-        if (!matchedEmployeeId && nameLower) {
-          for (const emp of allEmps) {
-            const empName = (emp.name || "").toLowerCase().trim();
-            if (empName === nameLower || empName.includes(nameLower) || nameLower.includes(empName)) {
-              matchedEmployeeId = emp.id;
-              break;
-            }
-          }
-        }
-
-        if (!matchedEmployeeId && nameLower) {
-          const nameParts = nameLower.split(/\s+/);
-          if (nameParts.length >= 2) {
-            for (const emp of allEmps) {
-              const empParts = (emp.name || "").toLowerCase().split(/\s+/);
-              if (empParts[0] === nameParts[0] && empParts[empParts.length - 1] === nameParts[nameParts.length - 1]) {
-                matchedEmployeeId = emp.id;
-                break;
-              }
-            }
-          }
-        }
-      }
-
-      // Merge: parser determinístico tem prioridade sobre OpenAI para rubricas (PDF layout disjunto)
-      const finalData = { ...parsed };
+      const finalData: any = { ...parsed };
       if (preParsed) {
-        const fields = ["salarioBase", "periculosidade", "horasExtras", "adicionalNoturno", "dsr", "valeRefeicao", "ajudaCusto", "beneficios", "totalBruto", "totalLiquido"];
+        const fields: (keyof HoleriteParsed)[] = [
+          "salarioBase", "periculosidade", "horasExtras", "adicionalNoturno", "dsr",
+          "valeRefeicao", "ajudaCusto", "beneficios", "descontos", "totalBruto", "totalLiquido",
+          "employeeName", "employeeCpf", "month", "year", "competencia",
+        ];
         for (const f of fields) {
-          if (preParsed[f] && preParsed[f] > 0) finalData[f] = preParsed[f];
+          const v = (preParsed as any)[f];
+          if (typeof v === "number" ? v > 0 : !!v) finalData[f] = v;
         }
-        console.log("[ocr-holerite] Merge final:", JSON.stringify({ salarioBase: finalData.salarioBase, periculosidade: finalData.periculosidade, horasExtras: finalData.horasExtras, adicionalNoturno: finalData.adicionalNoturno, dsr: finalData.dsr, valeRefeicao: finalData.valeRefeicao, ajudaCusto: finalData.ajudaCusto, totalBruto: finalData.totalBruto }));
       }
 
-      console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${parsed.employeeName}`);
-      res.json({ ...finalData, matchedEmployeeId });
+      const matchedEmployeeId = matchEmployeeFromHolerite(finalData, allEmps);
+      console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${finalData.employeeName}`);
+      res.json({ ...finalData, matchedEmployeeId, source: "openai" });
     } catch (err: any) {
       console.error("[ocr-holerite] Error:", err.message);
       res.status(500).json({ message: "Erro ao processar holerite: " + (err.message || "Erro desconhecido") });
