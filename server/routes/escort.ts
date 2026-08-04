@@ -2625,10 +2625,15 @@ import type { Express } from "express";
       });
       const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
-      const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada" || so.status === "cancelada").map((so: any) => so.id));
+      // RECUSADA (§8.1) zera e NÃO entra no byMission.
+      // CANCELADA (§8.1b) COBRA pela tabela de 100 km — o billing CANCELADO PRECISA
+      // permanecer no byMission, senão o Balanço cai no liveFat (contrato cheio) e
+      // mostra valores inflados (ex.: TOR-0560 R$ 4.361 em vez de R$ 767,83).
+      const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada").map((so: any) => so.id));
       // Boletim CONGELADO (aprovado/faturado/pago) é a verdade e vence a linha sintética "de hoje":
       // senão uma OS concluída hoje com boletim APROVADA volta a aparecer como A_VERIFICAR (caso TOR-0360).
-      const FROZEN_BILL_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+      // CANCELADO (§8.1b) também é "travado" — valor da tabela 100 km já foi calculado.
+      const FROZEN_BILL_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA"]);
       const frozenBillOsIds = new Set(
         (billings || [])
           .filter((b: any) => FROZEN_BILL_STATUSES.has(String(b.status || "").toUpperCase()))

@@ -38,7 +38,9 @@ import {
 // Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
 // O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
 // ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
-const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO"]);
+// APROVADA/FATURADO/PAGO = boletim conferido. CANCELADO/CANCELADA = §8.1b tabela 100 km
+// (valor já calculado no cancelamento — NÃO pode cair no liveFat do contrato cheio).
+const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA"]);
 
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -391,9 +393,13 @@ export default function BalancoGerencialPage() {
         //     não pode ser sobrescrito por recálculo ao vivo (que pode ler foto de km duplicada).
         const liveFat = Number(lcCanon?.faturamento ?? lc.faturamento_live ?? lc.faturamento) || 0;
         const isCancelada = (o.status || "").toLowerCase() === "cancelada";
-        const billFrozen = !!bill && FROZEN_BILLING_STATUSES.has(String(bill.status || "").toUpperCase());
-        const useBoletim = (isCancelada || billFrozen) && !!bill && Number(bill.fat_total_boletim) > 0;
-        const fat = useBoletim ? (Number(bill.fat_total_boletim) || 0) : liveFat;
+        const billStatus = String(bill?.status || "").toUpperCase();
+        const billFrozen = !!bill && FROZEN_BILLING_STATUSES.has(billStatus);
+        // Preferir fat_total_boletim; fallback fat_total (mesmo valor persistido no escort_billings).
+        const boletimFat = Number(bill?.fat_total_boletim ?? bill?.fat_total) || 0;
+        // Cancelada OU boletim congelado/CANCELADO → usa valor do boletim (§8.1b), nunca liveFat.
+        const useBoletim = (isCancelada || billFrozen) && !!bill && boletimFat > 0;
+        const fat = useBoletim ? boletimFat : liveFat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
         const pag = bill ? Number(bill.pag_total || 0) : 0;
         const despPedagio = bill ? Number(bill.despesas_pedagio || 0) : 0;
@@ -449,8 +455,8 @@ export default function BalancoGerencialPage() {
           horas_trabalhadas: bill?.horas_trabalhadas || 0,
           boletim: bill?.boletim || "",
           status: o.status,
-          // Origem do faturamento desta linha: `true` = valor TRAVADO num boletim conferido/congelado
-          // (APROVADA/FATURADO/PAGO) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
+          // Origem do faturamento desta linha: `true` = valor TRAVADO (APROVADA/FATURADO/PAGO
+          // ou CANCELADO §8.1b) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
           // — entra em "Em Aberto". Mesma flag que decide useBoletim acima.
           is_frozen: useBoletim,
           client_name: o.clientName || bill?.client_name || "",
