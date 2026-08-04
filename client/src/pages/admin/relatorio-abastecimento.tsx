@@ -13,6 +13,7 @@ import {
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { computeTicketlogStats } from "@/lib/fuel-ticketlog";
+import { formatDateOnlyBR, toDateKey } from "@/lib/utils";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
@@ -83,9 +84,9 @@ function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
 }
 
 function formatDateBR(d: string | null) {
-  if (!d) return "-";
-  const dt = new Date(d + "T12:00:00");
-  return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  // Coluna Postgres DATE: nunca usar new Date("YYYY-MM-DD") — em BRT vira D-1.
+  const formatted = formatDateOnlyBR(d);
+  return formatted === "—" ? "-" : formatted;
 }
 
 function formatTimeBR(d: string | null) {
@@ -140,8 +141,16 @@ export default function RelatorioAbastecimentoPage() {
   // esconder o aviso enquanto ainda há registros incompletos no escopo.
   const baseFiltered = useMemo(() => {
     let list = [...fuelings];
-    if (dateFrom) list = list.filter(f => f.date >= dateFrom);
-    if (dateTo) list = list.filter(f => f.date <= dateTo);
+    // Sempre comparar pelo YYYY-MM-DD (toDateKey) — se a API devolver ISO com hora,
+    // `f.date <= dateTo` falha (string com "T..." é lexicograficamente maior).
+    if (dateFrom) list = list.filter(f => {
+      const d = toDateKey(f.date);
+      return !!d && d >= dateFrom;
+    });
+    if (dateTo) list = list.filter(f => {
+      const d = toDateKey(f.date);
+      return !!d && d <= dateTo;
+    });
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(f => {
@@ -214,7 +223,8 @@ export default function RelatorioAbastecimentoPage() {
   // Ver client/src/lib/fuel-ticketlog.ts.
   const eficienciaGeral = useMemo(() => {
     const inPeriod = (f: typeof fuelings[number]) => {
-      const d = String(f.date || "").slice(0, 10);
+      const d = toDateKey(f.date);
+      if (!d) return false;
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
       return true;
@@ -404,8 +414,8 @@ export default function RelatorioAbastecimentoPage() {
                   type="button"
                   onClick={() => {
                     setPeriodMode("month");
-                    const today = new Date();
-                    const y = today.getFullYear(); const m = today.getMonth() + 1;
+                    const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                    const [y, m] = todayBrt.split("-").map(Number);
                     const v = `${y}-${String(m).padStart(2, "0")}`;
                     const lastDay = new Date(y, m, 0).getDate();
                     setCycleValue(v);
@@ -444,14 +454,19 @@ export default function RelatorioAbastecimentoPage() {
               >
                 <option value="">Personalizado / todo</option>
                 {periodMode === "cycle"
-                  ? listCyclesFromDates(fuelings.map(f => f.date).filter(Boolean) as string[]).map(c => (
+                  ? listCyclesFromDates(
+                      fuelings.map(f => toDateKey(f.date)).filter((d): d is string => !!d),
+                    ).map(c => (
                       <option key={c.value} value={c.value}>{c.label}</option>
                     ))
                   : (() => {
                       const set = new Set<string>();
-                      const today = new Date();
-                      set.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
-                      fuelings.forEach(f => { if (f.date) set.add(f.date.slice(0, 7)); });
+                      const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                      set.add(todayBrt.slice(0, 7));
+                      fuelings.forEach(f => {
+                        const key = toDateKey(f.date);
+                        if (key) set.add(key.slice(0, 7));
+                      });
                       return Array.from(set).sort().reverse().map(m => {
                         const [y, mo] = m.split("-").map(Number);
                         return <option key={m} value={m}>{new Date(y, mo - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>;
@@ -1384,7 +1399,7 @@ function EditFuelingModal({
             <div>
               <h2 className="text-lg font-bold text-neutral-900">Editar abastecimento #{fueling.id}</h2>
               <p className="text-xs text-neutral-500">
-                {selectedVehicle?.plate || "-"} · {driverName || "—"} · {fueling.date}
+                {selectedVehicle?.plate || "-"} · {driverName || "—"} · {formatDateBR(fueling.date)}
               </p>
             </div>
           </div>

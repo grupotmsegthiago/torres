@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
+import { parseBRL, maskBRL, formatDateOnlyBR, toDateKey } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { calcKmL } from "@/lib/fuel-kml";
 import { compressImageFile } from "@/lib/image-compress";
@@ -690,7 +690,12 @@ function FuelingDetail({ fueling: lightFueling, vehicle, driverName, onClose }: 
               </button>
               <div>
                 <h2 className="text-lg font-bold text-neutral-900">Detalhes do Abastecimento</h2>
-                <p className="text-sm text-neutral-500">{new Date(fueling.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</p>
+                <p className="text-sm text-neutral-500">{(() => {
+                  const key = toDateKey(fueling.date);
+                  if (!key) return "—";
+                  const [y, m, d] = key.split("-").map(Number);
+                  return new Date(y, m - 1, d, 12).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+                })()}</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors" data-testid="button-close-detail">
@@ -895,9 +900,15 @@ export default function FuelingPage() {
     if (filterMonth) {
       if (periodMode === "cycle") {
         const cyc = getCycleByValue(filterMonth);
-        if (cyc) list = list.filter(f => f.date && f.date >= cyc.startDate && f.date <= cyc.endDate);
+        if (cyc) list = list.filter(f => {
+          const d = toDateKey(f.date);
+          return !!d && d >= cyc.startDate && d <= cyc.endDate;
+        });
       } else {
-        list = list.filter(f => f.date?.startsWith(filterMonth));
+        list = list.filter(f => {
+          const d = toDateKey(f.date);
+          return !!d && d.startsWith(filterMonth);
+        });
       }
     }
     if (searchFueling.trim()) {
@@ -1037,14 +1048,17 @@ export default function FuelingPage() {
   };
 
   const cycles = useMemo(
-    () => listCyclesFromDates((fuelings || []).map(f => f.date).filter(Boolean) as string[]),
+    () => listCyclesFromDates((fuelings || []).map(f => toDateKey(f.date)).filter((d): d is string => !!d)),
     [fuelings]
   );
   const months = useMemo(() => {
     const set = new Set<string>();
-    const today = new Date();
-    set.add(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
-    (fuelings || []).forEach(f => { if (f.date) set.add(f.date.slice(0, 7)); });
+    const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    set.add(todayBrt.slice(0, 7));
+    (fuelings || []).forEach(f => {
+      const key = toDateKey(f.date);
+      if (key) set.add(key.slice(0, 7));
+    });
     return Array.from(set).sort().reverse();
   }, [fuelings]);
   const filterMonthTouched = useRef(false);
@@ -1054,8 +1068,8 @@ export default function FuelingPage() {
       if (periodMode === "cycle" && cycles.length > 0) {
         setFilterMonth(getCurrentCycle().value);
       } else if (periodMode === "month" && months.length > 0) {
-        const today = new Date();
-        setFilterMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+        const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        setFilterMonth(todayBrt.slice(0, 7));
       }
     }
   }, [cycles, months, filterMonth, periodMode]);
@@ -1360,7 +1374,7 @@ export default function FuelingPage() {
                                 const authUser = (orig as any).createdByUserId ? allUsers.find((u: any) => u.id === (orig as any).createdByUserId) : null;
                                 return (
                                   <tr key={h.id} className="border-b border-neutral-50 hover:bg-neutral-50">
-                                    <td className="px-4 py-2.5 text-neutral-900">{formatDateBRT(h.date + "T12:00:00")}</td>
+                                    <td className="px-4 py-2.5 text-neutral-900">{formatDateOnlyBR(h.date)}</td>
                                     <td className="px-4 py-2.5 text-neutral-900 font-medium">{h.km.toLocaleString("pt-BR")}</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{h.liters.toFixed(2)}L</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.totalCost ? `R$ ${Number(orig.totalCost).toFixed(2)}` : "-"}</td>
@@ -1464,7 +1478,7 @@ export default function FuelingPage() {
                     // Médias por veículo ficam na aba Dashboard.
                     return (
                       <tr key={f.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-fueling-${f.id}`}>
-                        <td className="px-4 py-3 text-neutral-900">{formatDateBRT(f.date + "T12:00:00")}</td>
+                        <td className="px-4 py-3 text-neutral-900">{formatDateOnlyBR(f.date)}</td>
                         <td className="px-4 py-3 font-medium text-neutral-900">{v?.plate || "-"}</td>
                         <td className="px-4 py-3 text-neutral-900 font-medium">{f.km.toLocaleString("pt-BR")}</td>
                         <td className="px-4 py-3 text-neutral-600">{Number(f.liters).toFixed(2)}L</td>

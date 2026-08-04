@@ -62,12 +62,20 @@ export function ensureUTC(ts: string | null | undefined): string | null {
   return s + "Z";
 }
 
+export { toDateKey, formatDateOnlyBR } from "@shared/date-key";
+import { toDateKey, formatDateOnlyBR } from "@shared/date-key";
+
 export function parseUTCDate(ts: string | Date | null | undefined): Date {
   if (!ts) return new Date(NaN);
   if (ts instanceof Date) return ts;
   const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
   if (normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized)) {
     return new Date(normalized);
+  }
+  // Date-only: ancora ao meio-dia UTC pra o dia calendário não escorregar
+  // ao formatar em America/Sao_Paulo (UTC midnight vira D-1 em BRT).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return new Date(normalized + "T12:00:00.000Z");
   }
   return new Date(normalized + "Z");
 }
@@ -91,6 +99,10 @@ export function formatBRT(date: string | Date | null | undefined): string {
 
 export function formatDateBRT(date: string | Date | null | undefined): string {
   if (!date) return '—';
+  // Coluna DATE pura: formata por string (imune a fuso).
+  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+    return formatDateOnlyBR(date);
+  }
   return parseUTCDate(date).toLocaleDateString('pt-BR', {
     timeZone: 'America/Sao_Paulo'
   });
@@ -116,10 +128,8 @@ export function diffMinutesBRT(dateStr: string | Date | null | undefined): numbe
 
 export function isTodayBRT(dateStr: string | Date | null | undefined): boolean {
   if (!dateStr) return false;
-  const d = parseUTCDate(dateStr);
   const todayStr = getNowBRT().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  const dateStrBRT = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  return todayStr === dateStrBRT;
+  return toDateKey(dateStr) === todayStr;
 }
 
 const LOWERCASE_WORDS = new Set(["de", "do", "da", "dos", "das", "e"]);

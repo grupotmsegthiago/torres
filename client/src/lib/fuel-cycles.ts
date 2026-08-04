@@ -32,23 +32,37 @@ export function buildCycle(closingYear: number, closingMonth: number): FuelCycle
   return { value: `${closingYear}-${pad(closingMonth)}`, startDate, endDate, label, rangeLabel };
 }
 
-/** Retorna o ciclo que contém a data informada (BRT). */
+/** Retorna o ciclo que contém a data-calendário YYYY-MM-DD (sem fuso). */
+export function getCycleForYmd(ymd: string): FuelCycle {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  if (!m) {
+    const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    return getCycleForYmd(todayBrt);
+  }
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // Se dia >= 16, o ciclo fecha no mês seguinte; se dia <= 15, fecha no mês corrente.
+  if (d >= 16) {
+    const closingMonth = mo === 12 ? 1 : mo + 1;
+    const closingYear = mo === 12 ? y + 1 : y;
+    return buildCycle(closingYear, closingMonth);
+  }
+  return buildCycle(y, mo);
+}
+
+/** Retorna o ciclo que contém a data informada (usa partes locais do Date). */
 export function getCycleForDate(date: Date): FuelCycle {
   const y = date.getFullYear();
   const m = date.getMonth() + 1; // 1-12
   const d = date.getDate();
-  // Se dia >= 16, o ciclo fecha no mês seguinte; se dia <= 15, fecha no mês corrente.
-  if (d >= 16) {
-    const closingMonth = m === 12 ? 1 : m + 1;
-    const closingYear = m === 12 ? y + 1 : y;
-    return buildCycle(closingYear, closingMonth);
-  }
-  return buildCycle(y, m);
+  return getCycleForYmd(`${y}-${pad(m)}-${pad(d)}`);
 }
 
-/** Ciclo atual (que contém o dia de hoje em BRT). */
+/** Ciclo atual (que contém o dia de hoje em BRT — não o dia UTC do processo). */
 export function getCurrentCycle(): FuelCycle {
-  return getCycleForDate(new Date());
+  const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  return getCycleForYmd(todayBrt);
 }
 
 /** Resolve um ciclo a partir do `value` (YYYY-MM do mês de fechamento). */
@@ -71,8 +85,7 @@ export function listCyclesFromDates(dates: string[]): FuelCycle[] {
     if (!ds) continue;
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ds);
     if (!m) continue;
-    const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    const c = getCycleForDate(dt);
+    const c = getCycleForYmd(m[0]);
     if (!seen.has(c.value)) seen.set(c.value, c);
   }
   return Array.from(seen.values()).sort((a, b) => b.value.localeCompare(a.value));
