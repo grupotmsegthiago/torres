@@ -135,6 +135,11 @@ test("resolveOpenAIConfig: prefer AI_INTEGRATIONS, fallback OPENAI_API_KEY", () 
       apiKey: "sk-int",
       baseURL: "https://example.invalid/v1",
     });
+
+    // Placeholder / gateway Replit → cai no OPENAI_API_KEY
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY = "_DUMMY_replit";
+    process.env.AI_INTEGRATIONS_OPENAI_BASE_URL = "http://localhost:1106/modelfarm/openai";
+    assert.deepEqual(resolveOpenAIConfig(), { apiKey: "sk-legacy", baseURL: undefined });
   } finally {
     if (prevA === undefined) delete process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
     else process.env.AI_INTEGRATIONS_OPENAI_API_KEY = prevA;
