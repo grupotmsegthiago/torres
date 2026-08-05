@@ -1,11 +1,20 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — docs(security): record plain password cleanup incident and outcome
+
+- PR3C: homologação pós-limpeza e documentação transparente do evento ad-hoc.
+- Estado: total=36, filled=0, null=36, Auth match=36/36, verify PASS, coluna ainda existe.
+- Migration versionada `20260805190500_null_legacy_plain_password` **não** consta no histórico Supabase; **não** se inseriu registro falso.
+- Incidente: `docs/security/INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md`.
+- D13 → **VALORES LEGADOS LIMPOS — HOMOLOGAÇÃO PÓS-LIMPEZA CONCLUÍDA; COLUNA AINDA PRESENTE — PR4 PENDENTE**.
+- Branch: `docs/plain-password-cleanup-applied`
+
 ## 2026-08-05 — security(users): prepare legacy plain password cleanup
 
 - PR3A: baseline somente leitura, verify pós-limpeza, migration versionada (não aplicada), rollback documental e runbook.
 - Artefatos: `scripts/security/baseline-plain-password-cleanup.sql`, `verify-plain-password-cleanup.sql`, `supabase/migrations/20260805190500_null_legacy_plain_password.sql`, `docs/security/RUNBOOK-PLAIN-PASSWORD-CLEANUP.md`.
-- Sem UPDATE executado; valores legados continuam 36/36; sem hash de senha; sem rollback com senhas.
-- D13 → **PR3A PREPARADO — LIMPEZA AINDA NÃO APLICADA** (PR3B aplicação, PR3C docs, PR4 DROP).
+- Sem UPDATE executado naquele PR; valores legados ainda 36/36 à época; sem hash de senha; sem rollback com senhas.
+- D13 (à época) → **PR3A PREPARADO — LIMPEZA AINDA NÃO APLICADA** (depois: limpeza ad-hoc + PR3C).
 - Branch: `security/prepare-plain-password-cleanup`
 
 ## 2026-08-05 — security(users): stop storing plain text passwords

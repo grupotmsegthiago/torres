@@ -1,11 +1,14 @@
 # Runbook — Limpeza de `public.users.plain_password` (D13 / PR3)
 
-**Status:** PR3A preparado — limpeza **ainda não aplicada**
+**Status:** **VALORES LEGADOS LIMPOS — HOMOLOGAÇÃO PÓS-LIMPEZA CONCLUÍDA**
+**Coluna:** ainda presente — **PR4 PENDENTE**
 
-**Migration (não aplicar no deploy):** `supabase/migrations/20260805190500_null_legacy_plain_password.sql`
+**Incidente / transparência:** `docs/security/INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md`
+
+**Migration versionada (intenção PR3A, não registrada no histórico remoto):**
+`supabase/migrations/20260805190500_null_legacy_plain_password.sql`
 
 **Baseline:** `scripts/security/baseline-plain-password-cleanup.sql`
-
 **Verify:** `scripts/security/verify-plain-password-cleanup.sql`
 
 ---
@@ -16,85 +19,66 @@
 |--------|--------|
 | PR1 | API/UI sem exposição (`toSafeUser`) |
 | PR2 | Writers de produção interrompidos |
-| PR3A | Artefatos de baseline/verify/migration/runbook |
-| PR3B | Aplicação controlada da migration (esta runbook) |
-| PR3C | Documentação pós-aplicação |
-| PR4 | DROP da coluna (fora deste runbook) |
+| PR3A | Artefatos baseline/verify/migration/runbook versionados |
+| Limpeza de valores | Efeito alcançado em 2026-08-05 via **SQL ad-hoc** (fora do histórico de migration) |
+| PR3C | Documentação e homologação pós-limpeza |
+| PR4 | DROP da coluna (fora deste runbook; **não iniciado**) |
 
-Baseline conhecido (2026-08-05): **36** users, **36** `plain_password` preenchidos, **36** com Auth match.
+Baseline pós-limpeza (2026-08-05): **36** users, **0** `plain_password` preenchidos, **36** NULL, **36** Auth match.
 
 Login **não** depende da coluna — usa Supabase Auth (`signInWithPassword` / Admin API).
 
 ---
 
-## Pré-condições
+## Histórico da migration (importante)
 
-Antes de aplicar a migration (PR3B):
-
-1. PR1 e PR2 integrados na `dev` (e, se aplicável, já em produção via fluxo oficial).
-2. Zero readers/writers operacionais de `plain_password` (código + RLS).
-3. **Backup nativo recente** confirmado no painel Supabase (Restaurar disponível). Não usar apenas o backup antigo de referência da RLS.
-4. Baseline executado **imediatamente antes** da janela.
-5. Contagens esperadas:
-   - `total_users = 36` (ou valor atual documentado se o total mudar antes do PR3B — ajustar verify/migration);
-   - `plain_password_filled = 36`;
-   - `without_supabase_uid = 0`;
-   - `public_users_without_auth_match = 0`.
-6. Migration, verify e este runbook abertos e revisados.
-7. Nenhuma outra migration/deploy/alteração de schema simultânea.
-8. Responsável técnico presente durante a janela.
+- O arquivo `20260805190500_null_legacy_plain_password.sql` permanece no repositório como artefato preparado.
+- Ele **não** deve ser reaplicado: guards fail-closed (`filled = 36`) abortariam, e a limpeza **já ocorreu**.
+- **Não** inserir registro falso dessa migration no histórico Supabase.
+- Qualquer reconciliação futura (asserts-only) exige PR dedicado e autorização explícita.
 
 ---
 
-## Execução futura (PR3B)
+## Pós-limpeza (operacional)
 
-1. Confirmar backup nativo recente no painel.
-2. Executar `baseline-plain-password-cleanup.sql` (somente leitura).
-3. Comparar contagens com o esperado; **interromper** se divergir.
-4. Aplicar **apenas** `20260805190500_null_legacy_plain_password.sql` (SQL Editor / `psql` controlado — **não** via Vercel).
-5. Executar `verify-plain-password-cleanup.sql` — todos os asserts PASS.
-6. Smoke:
-   - login admin;
-   - login funcionário;
-   - `GET /api/auth/me`;
-   - `GET /api/users` (admin);
-   - reset / change-password / create (homologação descartável se autorizado);
-   - chat e RH sem regressão.
-7. Observar logs por **24 horas**.
-
-A migration é **fail-closed**: se `filled <> 36` ou `total <> 36`, aborta sem limpar parcialmente. Reexecução após sucesso **não** é suportada (não idempotente).
+1. Executar baseline (somente leitura) e verify — esperado: filled=0, null=total.
+2. Não regravar senha em texto em `public.users`.
+3. Corrigir Auth apenas via Supabase Admin API.
+4. Observar logs (login, `/api/auth/me`, `/api/users`, chat, RH).
+5. DROP da coluna = **PR4**, com runbook e autorização próprios.
 
 ---
 
-## Critérios de interrupção
+## Critérios de interrupção (ainda válidos)
 
-Parar e **não** forçar limpeza se:
+Parar qualquer operação de schema/dados se:
 
-- baseline diferente do esperado;
-- usuário `public.users` sem Auth correspondente;
-- erro de login pós-aplicação;
-- erro em `/api/auth/me`;
-- erro em reset/change/create;
-- `service_role` falhar;
 - verify falhar;
-- qualquer evidência de dependência operacional da coluna.
+- Auth match degradar;
+- login/`/api/auth/me` falhar de forma sistêmica;
+- surgir evidência de dependência operacional da coluna;
+- alguém tentar restaurar valores de `plain_password` a partir de backup.
+
+Para aplicação controlada futura de qualquer mudança de schema relacionada: exigir **backup nativo recente** confirmado no painel Supabase.
 
 ---
 
 ## Incidente
 
-- **Não** regravar senha em texto em `public.users`.
+- **Não** regravar senha em texto.
 - **Não** copiar senha do backup.
-- Corrigir usuário pelo **Supabase Auth Admin API** (reset / update password).
-- Restore completo do banco = **último recurso**, apenas com autorização expressa do proprietário.
-- Restore completo pode reverter outras operações; não restaurar só para recuperar senhas em texto.
+- Corrigir usuário pelo **Supabase Auth Admin API**.
+- Restore completo do banco = **último recurso**, autorização expressa.
 - O arquivo em `supabase/migrations/rollback/` **não** restaura valores — aborta com mensagem de segurança.
+- Detalhes do evento ad-hoc: `INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md`.
 
 ---
 
 ## O que este runbook NÃO faz
 
 - Não recomenda envio de credenciais por canais externos.
-- Não rotaciona senhas Auth em massa (desnecessário para limpar a coluna).
+- Não recomenda envio de senha por e-mail, WhatsApp ou outros canais.
+- Não rotaciona senhas Auth em massa.
 - Não executa DROP (PR4).
-- Não liga a migration a startup, boot ou deploy Vercel.
+- Não liga limpeza a startup, boot ou deploy Vercel.
+- Não autoriza SQL traduzido/manual no lugar do artefato revisado.
