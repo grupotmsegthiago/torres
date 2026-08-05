@@ -6,6 +6,9 @@ import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation, RotateCw
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import { apiRequest } from "@/lib/queryClient";
 
+const CCT_SALARIO_BASE = 2565.31;
+const CCT_PERICULOSIDADE = +(CCT_SALARIO_BASE * 0.3).toFixed(2); // 769,59 — 30% CCT vigilância
+
 const DEFAULTS = {
   origem: "",
   destino: "",
@@ -13,8 +16,8 @@ const DEFAULTS = {
   valorLitro: 5.0,
   kmPercurso: 0,
   pedagios: 0,
-  salarioBase: 2565.31,
-  periculosidade: 729.75,
+  salarioBase: CCT_SALARIO_BASE,
+  periculosidade: CCT_PERICULOSIDADE,
   fgts: 8,
   provisao13: 8.33,
   provisaoFerias: 11.11,
@@ -45,9 +48,15 @@ export default function CotacaoGastoPage() {
   const set = (key: keyof typeof DEFAULTS, val: string) => {
     if (key === "origem" || key === "destino") {
       setParams(prev => ({ ...prev, [key]: val }));
-    } else {
-      setParams(prev => ({ ...prev, [key]: Number(val) || 0 }));
+      return;
     }
+    const num = Number(val) || 0;
+    setParams(prev => {
+      const next = { ...prev, [key]: num };
+      // Periculosidade acompanha o salário base (30% CCT).
+      if (key === "salarioBase") next.periculosidade = +(num * 0.3).toFixed(2);
+      return next;
+    });
   };
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

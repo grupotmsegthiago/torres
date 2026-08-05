@@ -456,11 +456,12 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
       setSuggestion(data);
       setForm(f => ({
         ...f,
-        salarioBase: String(data.salarioBase || ""),
-        periculosidade: String(data.periculosidade || ""),
-        horasExtras: String(data.horasExtras || ""),
-        adicionalNoturno: String(data.adicionalNoturno || ""),
-        descontos: String(data.descontos || ""),
+        salarioBase: data.salarioBase != null ? String(data.salarioBase) : f.salarioBase,
+        // Sempre 30% do salário CCT (ex.: 2565,31 → 769,59) — nunca legado 729,75.
+        periculosidade: data.periculosidade != null ? String(data.periculosidade) : f.periculosidade,
+        horasExtras: data.horasExtras != null ? String(data.horasExtras) : f.horasExtras,
+        adicionalNoturno: data.adicionalNoturno != null ? String(data.adicionalNoturno) : f.adicionalNoturno,
+        descontos: data.descontos != null ? String(data.descontos) : f.descontos,
       }));
     } catch { }
     setLoadingSuggestion(false);
@@ -596,7 +597,7 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
               </div>
               <div>
                 <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Periculosidade</label>
-                <Input type="number" step="0.01" value={form.periculosidade} onChange={e => setForm({ ...form, periculosidade: e.target.value })} placeholder="729.75" data-testid="input-periculosidade" />
+                <Input type="number" step="0.01" value={form.periculosidade} onChange={e => setForm({ ...form, periculosidade: e.target.value })} placeholder="769.59" data-testid="input-periculosidade" />
               </div>
               <div>
                 <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Horas Extras</label>

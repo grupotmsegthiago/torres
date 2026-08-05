@@ -473,11 +473,20 @@ import type { Express } from "express";
       const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      // Sempre lê o piso da CCT (cct_presets) pelo cargo — nunca hardcode legado 2432,50.
+      // Piso e % de periculosidade: salário do funcionário, senão CCT do cargo.
+      // Periculosidade = base × (pct/100) — ex. 2565,31 × 30% = 769,59 (nunca 729,75 legado).
       const { getCctConfigByCargo } = await import("../lib/cct-config");
       const CCT = await getCctConfigByCargo(emp.role);
-      const salarioBase = Number(CCT.salarioBase) || 0;
-      const periculosidade = +(salarioBase * (Number(CCT.periculosidadePct) / 100)).toFixed(2);
+      const { data: salRows } = await supabaseAdmin
+        .from("employee_salaries")
+        .select("base_salary, periculosidade_pct")
+        .eq("employee_id", employeeId)
+        .order("id", { ascending: false })
+        .limit(1);
+      const sal = salRows?.[0];
+      const salarioBase = Number(sal?.base_salary) || Number(CCT.salarioBase) || 0;
+      const pericPct = Number(sal?.periculosidade_pct ?? CCT.periculosidadePct) || 0;
+      const periculosidade = +(salarioBase * (pericPct / 100)).toFixed(2);
 
       // Janela = competência RH (26 → 25), não mês civil.
       const { payrollPeriodRange: _pr1 } = await import("./holidays");
