@@ -13,7 +13,7 @@ const DEFAULTS = {
   valorLitro: 5.0,
   kmPercurso: 0,
   pedagios: 0,
-  salarioBase: 2432.50,
+  salarioBase: 2565.31,
   periculosidade: 729.75,
   fgts: 8,
   provisao13: 8.33,

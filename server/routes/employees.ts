@@ -672,7 +672,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const allEmployees = await storage.getEmployees();
       const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
 
-      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00, cestaBasica: 208.45, diasUteisMes: 22 };
+      const { getCctConfig } = await import("../lib/cct-config");
+      const CCT = await getCctConfig();
       const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
       const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
       const totalBruto = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
@@ -790,12 +791,6 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     }
   });
 
-  const CCT_CONFIG = {
-    salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00,
-    cestaBasica: 208.45, diasUteisMes: 22, encargosSociaisPct: 80,
-    horaExtraValor: 16,
-  };
-
   app.get("/api/employees/monthly-hours", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const month = Number(req.query.month) || new Date().getMonth() + 1;
@@ -866,17 +861,19 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
         missionDetails.push({ osNumber: os.osNumber, date: b.data_missao, hours });
       }
 
-      const salarioBase = CCT_CONFIG.salarioBase;
-      const periculosidade = salarioBase * (CCT_CONFIG.periculosidadePct / 100);
+      const { getCctConfigByCargo } = await import("../lib/cct-config");
+      const CCT = await getCctConfigByCargo(emp.role);
+      const salarioBase = Number(CCT.salarioBase) || 0;
+      const periculosidade = salarioBase * (Number(CCT.periculosidadePct) / 100);
       const salarioComPeric = salarioBase + periculosidade;
       const horasContratuais = 220;
       const horasExtras = Math.max(0, totalHours - horasContratuais);
-      const custoHorasExtras = horasExtras * CCT_CONFIG.horaExtraValor;
+      const custoHorasExtras = horasExtras * Number(CCT.horaExtraValor);
       const dsrHorasExtras = horasExtras > 0 ? (custoHorasExtras / 6) : 0;
       const subtotalRemuneracao = salarioComPeric + custoHorasExtras + dsrHorasExtras;
-      const encargos = subtotalRemuneracao * (CCT_CONFIG.encargosSociaisPct / 100);
-      const valeRefeicao = CCT_CONFIG.valeRefeicaoDia * CCT_CONFIG.diasUteisMes;
-      const cestaBasica = CCT_CONFIG.cestaBasica;
+      const encargos = subtotalRemuneracao * (Number(CCT.encargosSociaisPct) / 100);
+      const valeRefeicao = Number(CCT.valeRefeicaoDia) * Number(CCT.diasUteisMes);
+      const cestaBasica = Number(CCT.cestaBasica);
       const totalBeneficios = valeRefeicao + cestaBasica;
       const custoTotal = subtotalRemuneracao + encargos + totalBeneficios;
 
@@ -892,7 +889,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           custoHorasExtras: Math.round(custoHorasExtras * 100) / 100,
           dsrHorasExtras: Math.round(dsrHorasExtras * 100) / 100,
           subtotalRemuneracao: Math.round(subtotalRemuneracao * 100) / 100,
-          encargosSociaisPct: CCT_CONFIG.encargosSociaisPct,
+          encargosSociaisPct: CCT.encargosSociaisPct,
           encargos: Math.round(encargos * 100) / 100,
           valeRefeicao, cestaBasica, totalBeneficios,
           custoTotal: Math.round(custoTotal * 100) / 100,
