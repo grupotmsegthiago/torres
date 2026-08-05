@@ -1,7 +1,7 @@
 # Governança do Sistema Torres
 
-**Status:** normativo e obrigatório  
-**Vigência:** a partir da implantação documental (Fase 1.0)  
+**Status:** normativo e obrigatório
+**Vigência:** a partir da implantação documental (Fase 1.0)
 **Escopo desta pasta:** regras de arquitetura, fontes da verdade, desenvolvimento, segurança, testes, deploy e entrega.
 
 Esta pasta **não descreve apenas como o sistema está hoje**. Ela define **como toda evolução futura DEVE acontecer**.
@@ -98,6 +98,6 @@ Uma tarefa só está concluída quando:
 
 ## Deploy
 
-Deploy **não** é automático em toda tarefa.  
-É etapa final e controlada, após testes e gates.  
+Deploy **não** é automático em toda tarefa.
+É etapa final e controlada, após testes e gates.
 Publicação em produção segue o pedido explícito do usuário e o fluxo do projeto (`publicar.ps1` / política vigente), sem force-push em `main`.

@@ -1,6 +1,6 @@
 # 10 — Template: Especificação Funcional
 
-**Uso obrigatório** antes de implementar mudança que toque financeiro, auth, webhooks, schema, ou regra de negócio.  
+**Uso obrigatório** antes de implementar mudança que toque financeiro, auth, webhooks, schema, ou regra de negócio.
 Para hotfixes triviais de UI/texto, uma versão resumida dos campos marcados com ★ basta.
 
 Copie este bloco para o PR / issue / chat e preencha.
@@ -10,9 +10,9 @@ Copie este bloco para o PR / issue / chat e preencha.
 ```markdown
 ## Especificação Funcional — [TÍTULO]
 
-**Data:**  
-**Autor:**  
-**Branch prevista:**  
+**Data:**
+**Autor:**
+**Branch prevista:**
 **Referências normativas lidas:** docs/governanca/README + 01 + 02 + 03 + 04
 
 ### ★ Problema

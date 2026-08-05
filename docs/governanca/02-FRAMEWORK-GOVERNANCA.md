@@ -1,7 +1,7 @@
 # 02 — Framework de Governança do Sistema Torres
 
-**Natureza:** normativo e obrigatório  
-**Origem:** Fase 0.4  
+**Natureza:** normativo e obrigatório
+**Origem:** Fase 0.4
 **Leitura prévia:** [`01-ARQUITETURA-OFICIAL.md`](./01-ARQUITETURA-OFICIAL.md)
 
 Nenhuma alteração futura pode ser considerada concluída se violar este Framework.
@@ -14,12 +14,12 @@ Operar, medir, faturar e governar a atividade da Torres com rastreabilidade pont
 
 ## Objetivos estratégicos
 
-1. Integridade financeira  
-2. Confiabilidade operacional  
-3. Clareza gerencial  
-4. Segurança fail-closed  
-5. Evolução controlada  
-6. Separação de responsabilidades  
+1. Integridade financeira
+2. Confiabilidade operacional
+3. Clareza gerencial
+4. Segurança fail-closed
+5. Evolução controlada
+6. Separação de responsabilidades
 7. Resiliência (deploy/rollback/monitoramento)
 
 ---

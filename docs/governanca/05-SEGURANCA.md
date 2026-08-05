@@ -1,7 +1,7 @@
 # 05 — Segurança (riscos conhecidos — NÃO CORRIGIDOS nesta fase)
 
-**Natureza:** normativo quanto à priorização e regras; descritivo quanto ao estado atual  
-**Fase 1.0:** apenas documenta. **Nenhuma correção foi aplicada.**  
+**Natureza:** normativo quanto à priorização e regras; descritivo quanto ao estado atual
+**Fase 1.0:** apenas documenta. **Nenhuma correção foi aplicada.**
 **Não inclui secrets nem valores reais de chaves.**
 
 Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAMEWORK-GOVERNANCA.md)).
@@ -117,5 +117,5 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 
 ## Nota
 
-Correções destes itens **não fazem parte da Fase 1.0**.  
+Correções destes itens **não fazem parte da Fase 1.0**.
 Qualquer correção futura deve seguir Especificação Funcional + gates G1–G16 + testes de [`06`](./06-TESTES-E-VALIDACAO.md).

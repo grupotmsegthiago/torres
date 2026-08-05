@@ -1,6 +1,6 @@
 # 06 — Testes e Validação
 
-**Natureza:** normativo  
+**Natureza:** normativo
 **Regras:** Framework T1–T8
 
 Mudança financeira/comercial **não** é aprovável sem a suíte mínima aplicável verde.

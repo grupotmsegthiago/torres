@@ -15,12 +15,12 @@ Antes de implementar qualquer tarefa neste repositório, leia nesta ordem:
 
 Em conflito com `AGENT_RULES.md`, `RULES.md`, `MAPA_SISTEMA_COMPLETO.md` ou docs antigas: **vence `docs/governanca/`**, na precedência:
 
-1. Segurança fail-closed  
-2. Integridade financeira  
-3. Arquitetura Oficial  
-4. Framework de Governança  
-5. Performance / UX  
-6. Conveniência  
+1. Segurança fail-closed
+2. Integridade financeira
+3. Arquitetura Oficial
+4. Framework de Governança
+5. Performance / UX
+6. Conveniência
 
 ## Comportamento obrigatório do agente
 

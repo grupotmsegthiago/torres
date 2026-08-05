@@ -1,7 +1,7 @@
 # 08 — Matriz RACI (responsabilidades)
 
-**Natureza:** normativo  
-**Origem:** Fase 0.3  
+**Natureza:** normativo
+**Origem:** Fase 0.3
 **Legenda:** **D** Dono · **C** Calcula · **O** Consome · **S** Sincroniza · **E** Apenas Exibe · **—** não atua
 
 | Domínio | Dono (dado/fórmula) | Calcula | Consome | Sincroniza | Apenas Exibe |
@@ -37,6 +37,6 @@
 
 ## Regra de ouro
 
-Quem **apenas exibe** não redefine fórmula.  
-Quem **sincroniza** não vira dono do valor comercial.  
+Quem **apenas exibe** não redefine fórmula.
+Quem **sincroniza** não vira dono do valor comercial.
 Quem **calcula** oficialmente está nomeado nesta matriz — qualquer outro cálculo é estimativa rotulada.

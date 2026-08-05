@@ -1,6 +1,6 @@
 # 11 — Template: Relatório de Entrega
 
-**Uso obrigatório** ao fechar uma entrega (antes de chamar de “concluído”).  
+**Uso obrigatório** ao fechar uma entrega (antes de chamar de “concluído”).
 Linguagem: simples e gerencial + anexos técnicos objetivos.
 
 ---
@@ -8,10 +8,10 @@ Linguagem: simples e gerencial + anexos técnicos objetivos.
 ```markdown
 ## Relatório de Entrega — [TÍTULO]
 
-**Data:**  
-**Branch:**  
-**Commit(s):**  
-**Ambiente validado:** [ ] local  [ ] preview  [ ] produção  
+**Data:**
+**Branch:**
+**Commit(s):**
+**Ambiente validado:** [ ] local  [ ] preview  [ ] produção
 **Publicou?** [ ] Não  [ ] Sim (quando/como)
 
 ### Reutilização (D11 / P13)
@@ -45,7 +45,7 @@ Linguagem: simples e gerencial + anexos técnicos objetivos.
 
 ### Segurança
 - Secrets no diff? [ ] Não
-- Webhook/auth/RLS tocados? [ ] Não  [ ] Sim — fail-closed? 
+- Webhook/auth/RLS tocados? [ ] Não  [ ] Sim — fail-closed?
 
 ### Backup / ponto de restauração
 -

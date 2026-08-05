@@ -1,7 +1,7 @@
 # 03 — Fontes da Verdade (SSOT)
 
-**Natureza:** normativo  
-**Origem:** Fases 0.2 e 0.3  
+**Natureza:** normativo
+**Origem:** Fases 0.2 e 0.3
 **Tipos de dado:** `FATO` · `RESULTADO` · `SNAPSHOT` · `PROJECAO` · `ESPELHO` · `CACHE` · `SATELITE`
 
 ---
@@ -55,8 +55,8 @@
 
 ## Regras de leitura
 
-1. Para **cobrar cliente** → boletim snapshot (se enviado/aprovado) senão billing canônico.  
-2. Para **KPI diretoria / margem** → `balanco-calc` + inputs oficiais.  
-3. Para **caixa** → `financial_transactions`.  
-4. Para **operar campo** → `service_orders` + `mission_*`.  
+1. Para **cobrar cliente** → boletim snapshot (se enviado/aprovado) senão billing canônico.
+2. Para **KPI diretoria / margem** → `balanco-calc` + inputs oficiais.
+3. Para **caixa** → `financial_transactions`.
+4. Para **operar campo** → `service_orders` + `mission_*`.
 5. Nunca usar `calcularFaturamentoLive` ou `fat_calculado` da OS como valor comercial oficial.

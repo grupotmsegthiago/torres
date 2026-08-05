@@ -1,6 +1,6 @@
 # 04 — Regras de Negócio Críticas
 
-**Natureza:** normativo  
+**Natureza:** normativo
 **Evidência de implementação:** `server/billing-calc.ts`, `server/lib/cancelada-billing.ts`, `server/lib/boletim-totals.ts`, `server/lib/boletim-resync.ts`, `client/src/lib/balanco-calc.ts`
 
 ---
@@ -83,7 +83,7 @@ Edição manual excepcional, se existir, exige autorização de role adequada e 
 | Caixa / lançamentos | `financial_transactions` |
 | Margem gerencial | `balanco-calc.ts` |
 
-**Proibido:** `calcularFaturamentoLive` alimentar boletim, invoice ou Balanço oficial.  
+**Proibido:** `calcularFaturamentoLive` alimentar boletim, invoice ou Balanço oficial.
 **Proibido:** tratar `service_orders.fat_calculado` como valor comercial oficial.
 
 ---

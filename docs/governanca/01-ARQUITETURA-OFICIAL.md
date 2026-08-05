@@ -1,7 +1,7 @@
 # 01 — Arquitetura Oficial do Sistema Torres
 
-**Natureza:** Constituição do projeto (normativa)  
-**Origem:** Fase 0.3  
+**Natureza:** Constituição do projeto (normativa)
+**Origem:** Fase 0.3
 **Precedência:** ver [`README.md`](./README.md)
 
 Este documento define **como o sistema DEVE funcionar**, não apenas como está hoje.
@@ -66,7 +66,7 @@ Este documento define **como o sistema DEVE funcionar**, não apenas como está 
     React · Excel · e-mail · WhatsApp UI
 ```
 
-**Lei:** camadas 9–11 não escrevem fatos/snapshots comerciais (1–8), exceto invalidação de cache.  
+**Lei:** camadas 9–11 não escrevem fatos/snapshots comerciais (1–8), exceto invalidação de cache.
 Camada 7–8 não reabre componentes do boletim aprovado.
 
 ---
@@ -172,9 +172,9 @@ Só entram completos (lib + registro + UI ou contrato interno).
 Mudança cita dono, tipo de dado, e atualiza esta Constituição se mudar a regra.
 
 ### Artigo XIII — Intocável sem processo formal
-- `calcularEscolta` e testes de pedágio/HE  
-- `billingTotalForBoletim` (recusada = 0)  
-- `computeCanceladaBilling`  
-- Congelamento de boletim aprovado  
-- Cadeia Boletim → Invoice → FT  
+- `calcularEscolta` e testes de pedágio/HE
+- `billingTotalForBoletim` (recusada = 0)
+- `computeCanceladaBilling`
+- Congelamento de boletim aprovado
+- Cadeia Boletim → Invoice → FT
 - Separação service_role (backend) vs anon (frontend)

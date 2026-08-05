@@ -1,7 +1,7 @@
 # 07 — Deploy e Rollback
 
-**Natureza:** normativo  
-**Regras:** Framework P1–P8, L1–L6  
+**Natureza:** normativo
+**Regras:** Framework P1–P8, L1–L6
 **Deploy não é automático em toda tarefa** — só após gates e pedido/autorização de publicação.
 
 ---
@@ -43,25 +43,25 @@
 | Webhook comprometido | Desabilitar rota/flag; rotacionar secret; reprocessar eventos auditados |
 | Migration ruim | Restore a partir de backup; forward-fix só com plano |
 
-Tags de segurança existentes no repositório (exemplos históricos): `safety/dev-af455b6b`, `safety/origin-main-0019ef7c`.  
+Tags de segurança existentes no repositório (exemplos históricos): `safety/dev-af455b6b`, `safety/origin-main-0019ef7c`.
 Tag criada na Fase 1.0 documental: `safety/pre-framework-governanca-6ccdfac0`.
 
 ---
 
 ## Checklist pré-publicação
 
-- [ ] Diff só do que deveria ir  
-- [ ] Testes aplicáveis OK  
-- [ ] Sem secrets  
-- [ ] Ponto de restauração conhecido  
-- [ ] Relatório de entrega preenchido  
-- [ ] Dono ciente do risco  
-- [ ] Plano de rollback em uma frase  
+- [ ] Diff só do que deveria ir
+- [ ] Testes aplicáveis OK
+- [ ] Sem secrets
+- [ ] Ponto de restauração conhecido
+- [ ] Relatório de entrega preenchido
+- [ ] Dono ciente do risco
+- [ ] Plano de rollback em uma frase
 
 ## Checklist pós-publicação
 
-- [ ] `/healthz` OK  
-- [ ] `/api/version` esperado  
-- [ ] Fluxo crítico validado  
-- [ ] Crons/webhooks OK se afetados  
-- [ ] Sem erro novo evidente em logs  
+- [ ] `/healthz` OK
+- [ ] `/api/version` esperado
+- [ ] Fluxo crítico validado
+- [ ] Crons/webhooks OK se afetados
+- [ ] Sem erro novo evidente em logs

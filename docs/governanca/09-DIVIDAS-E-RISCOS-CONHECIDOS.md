@@ -1,7 +1,7 @@
 # 09 — Dívidas e Riscos Conhecidos
 
-**Natureza:** normativo quanto à restrição **não ampliar**; descritivo quanto ao estado  
-**Origem:** Fases 0 / 0.2 / auditoria  
+**Natureza:** normativo quanto à restrição **não ampliar**; descritivo quanto ao estado
+**Origem:** Fases 0 / 0.2 / auditoria
 **Status geral na Fase 1.0:** documentado — **não corrigido**
 
 ---
@@ -10,8 +10,8 @@
 
 Enquanto a dívida existir:
 
-1. **Não ampliar** o padrão endividado em código novo.  
-2. Código novo na região deve incluir passo de conformidade **ou** ADR justificando o desvio temporário.  
+1. **Não ampliar** o padrão endividado em código novo.
+2. Código novo na região deve incluir passo de conformidade **ou** ADR justificando o desvio temporário.
 3. Correção futura segue Especificação Funcional + gates G1–G16.
 
 ---
