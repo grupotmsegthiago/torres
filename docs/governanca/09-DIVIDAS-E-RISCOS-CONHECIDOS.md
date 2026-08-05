@@ -135,20 +135,20 @@ Enquanto a dívida existir:
 | Prioridade | P0 |
 | Módulos | Supabase RLS |
 | Restrição | Não criar policies abertas semelhantes; admin só via API+service_role |
-| Correção futura | Migration `20260805164000_harden_users_rls.sql` + runbook |
-| Status | **Mitigação versionada — aplicação DB pendente** |
+| Correção | Migration `20260805164000_harden_users_rls.sql` aplicada e homologada em 2026-08-05 |
+| Status | **Encerrada** (exposição RLS PostgREST corrigida) |
 
 ### D13 — Coluna `users.plain_password` legada
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto com senha; **36/36** registros preenchidos (baseline 2026-08-05). Exposição PostgREST bloqueada pela migration RLS/grants (quando aplicada). |
-| Consequência | Risco residual se grants/policies regredirem; dívida de higiene de credenciais |
+| Descrição | Coluna texto com senha; **36/36** registros preenchidos (baseline 2026-08-05). Exposição PostgREST bloqueada pela RLS/grants aplicada. |
+| Consequência | Risco residual se grants/policies regredirem; dívida de higiene de credenciais; API pode ainda serializar o campo via `service_role` se `toSafeUser` não omitir |
 | Prioridade | **Alta (P1)** |
 | Módulos | `public.users`, Auth/RH |
 | Restrição | **Não criar dependência nova** sobre esta coluna; não logar valores; não exibir em API |
-| Correção futura | Plano separado: remover uso, rotacionar credenciais, DROP coluna após migração Auth-only |
-| Status | Aberta (exposição mitigada por RLS; remoção definitiva pendente) |
+| Correção futura | Plano separado: omitir em `toSafeUser`, remover uso, rotacionar credenciais, DROP coluna após migração Auth-only |
+| Status | **Aberta** (exposição PostgREST mitigada; remoção definitiva pendente) |
 
 ### D11 — Caches longos
 
