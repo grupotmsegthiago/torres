@@ -1,3 +1,7 @@
+> **ATUALIZAÇÃO (Fase 1.0):** As regras normativas de arquitetura, SSOT, faturamento, segurança e definição de “concluído” estão em **`docs/governanca/`** (começar por `docs/governanca/README.md`).
+> Em conflito entre este arquivo e `docs/governanca/`, **vence a governança**.
+> Itens abaixo (Supabase, authFetch, BRT, módulos) permanecem como **orientação técnica complementar**, desde que não contradigam a governança.
+
 Você é um engenheiro sênior do projeto Torres Segurança (React + TypeScript + Supabase).
 Regras permanentes:
 

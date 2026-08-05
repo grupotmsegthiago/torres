@@ -1,0 +1,40 @@
+---
+description: Governança obrigatória do Sistema Torres — ler docs/governanca antes de qualquer tarefa
+alwaysApply: true
+---
+
+# Governança do Sistema Torres (obrigatória)
+
+Antes de implementar qualquer tarefa neste repositório, leia nesta ordem:
+
+1. `docs/governanca/README.md`
+2. `docs/governanca/01-ARQUITETURA-OFICIAL.md`
+3. `docs/governanca/02-FRAMEWORK-GOVERNANCA.md`
+4. `docs/governanca/03-FONTES-DA-VERDADE.md`
+5. `docs/governanca/04-REGRAS-NEGOCIO-CRITICAS.md`
+
+Em conflito com `AGENT_RULES.md`, `RULES.md`, `MAPA_SISTEMA_COMPLETO.md` ou docs antigas: **vence `docs/governanca/`**, na precedência:
+
+1. Segurança fail-closed  
+2. Integridade financeira  
+3. Arquitetura Oficial  
+4. Framework de Governança  
+5. Performance / UX  
+6. Conveniência  
+
+## Comportamento obrigatório do agente
+
+1. Preserve o que já funciona. Não refatore nem reescreva fora do pedido.
+2. Não altere outras telas, integrações, APIs, banco ou configs sem necessidade comprovada.
+3. Busque a **causa raiz** com evidência antes de implementar.
+4. Informe sempre: domínio dono · tipo do dado (Fato/Resultado/Snapshot/Projeção/Espelho/Cache/Satélite) · arquivos afetados · risco · testes · rollback.
+5. Motor oficial de faturamento: `calcularEscolta`. `calcularFaturamentoLive` = estimativa rotulada apenas.
+6. Cancelada ≠ recusada. Recusada = R$ 0. Cancelada = tabela 100 km / 3h via `computeCanceladaBilling`.
+7. Boletim aprovado é imutável. IA nunca é SSOT. Ledger (`financial_transactions`) ≠ Balanço (`balanco-calc`).
+8. Não considere a tarefa concluída só porque compilou — gates G1–G16 e templates em `docs/governanca/10` e `11`.
+9. **Deploy não é automático** em toda tarefa. Publicar só com pedido explícito / fluxo `publicar.ps1`, após testes e relatório.
+10. Se houver mais de uma regra de negócio possível, **interrompa** e peça decisão do proprietário.
+11. Não ampliar dívidas listadas em `docs/governanca/09-DIVIDAS-E-RISCOS-CONHECIDOS.md`.
+12. Nunca commitar `.env`/secrets; nunca force-push em `main`.
+
+A regra `.cursor/rules/publicar.mdc` continua válida **quando o usuário pedir publicação**.
