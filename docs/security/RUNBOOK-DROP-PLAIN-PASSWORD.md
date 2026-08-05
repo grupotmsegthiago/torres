@@ -5,8 +5,8 @@
 **Migration (versionada, não aplicar nesta fase):**
 `supabase/migrations/20260805210000_drop_users_plain_password.sql`
 
-**Baseline pré-DROP:** `scripts/security/baseline-drop-plain-password.sql`  
-**Verify pós-DROP:** `scripts/security/verify-drop-plain-password.sql`  
+**Baseline pré-DROP:** `scripts/security/baseline-drop-plain-password.sql`
+**Verify pós-DROP:** `scripts/security/verify-drop-plain-password.sql`
 **Rollback estrutural:** `supabase/migrations/rollback/20260805210000_rollback_drop_users_plain_password.sql`
 
 **Pré-requisito de código:** PR4A integrado (`shared/schema.ts` sem `plainPassword`; readers/writers operacionais = 0).
