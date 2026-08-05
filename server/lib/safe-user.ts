@@ -74,7 +74,7 @@ export function toSafeUser(user: unknown): SafeUser {
   };
 }
 
-/** Colunas explícitas para leituras que alimentam API (sem plain_password). */
+/** Colunas explícitas para leituras que alimentam API (nunca inclui plain_password). */
 export const USER_SAFE_SELECT =
   "id, email, username, name, role, employee_id, must_change_password, supabase_uid, avatar_url, terms_accepted_at, terms_ip_address, terms_user_agent, created_at";
 

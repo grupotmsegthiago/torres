@@ -45,7 +45,7 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 | Aplicação DB | **APLICADA** em 2026-08-05 ~17:36 UTC no Supabase compartilhado (Preview=Prod); backup nativo 2026-08-05 07:59:48 UTC; verify + smoke OK (`docs/security/RUNBOOK-USERS-RLS.md`) |
 | Status | **CORRIGIDO E HOMOLOGADO** |
 
-**Camada adicional (D13):** PR1 — API/UI (`toSafeUser`). PR2 — writers interrompidos. PR3A — artefatos preparados. **Limpeza dos valores legados concluída em 2026-08-05** (efeito via SQL ad-hoc; migration versionada **não** registrada no histórico — ver `docs/security/INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md`). Status: **VALORES LEGADOS LIMPOS — HOMOLOGAÇÃO PÓS-LIMPEZA CONCLUÍDA; COLUNA AINDA PRESENTE — PR4 PENDENTE**.
+**Camada adicional (D13):** PR1–PR3C concluídos (valores limpos; incidente documentado). **PR4A:** `plainPassword` removido de `shared/schema.ts` e tipos de aplicação; `sanitizeUserWrite`/`toSafeUser`/`USER_SAFE_SELECT` permanecem. Coluna física ainda no banco. Status: **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE**. Backup nativo recente obrigatório antes do DROP (PR4B).
 
 ---
 

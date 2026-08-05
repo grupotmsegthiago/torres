@@ -12,7 +12,7 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("funcionario"),
   employeeId: integer("employee_id"),
   mustChangePassword: integer("must_change_password").default(0),
-  plainPassword: text("plain_password"),
+  // plain_password removido do schema TS (PR4A). Coluna física permanece até PR4B DROP.
   termsAcceptedAt: timestamp("terms_accepted_at"),
   termsIpAddress: text("terms_ip_address"),
   termsUserAgent: text("terms_user_agent"),

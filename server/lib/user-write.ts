@@ -1,7 +1,7 @@
 import type { InsertUser } from "@shared/schema";
 
-/** Campos graváveis em public.users — sem senha em texto. */
-export type UserWriteInput = Omit<InsertUser, "plainPassword">;
+/** Campos graváveis em public.users — sem senha em texto (schema já sem plainPassword). */
+export type UserWriteInput = InsertUser;
 export type UserUpdateInput = Partial<UserWriteInput>;
 
 const USER_WRITE_KEYS = [

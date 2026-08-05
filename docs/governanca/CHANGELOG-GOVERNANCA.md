@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): remove plain password from application schema
+
+- PR4A: remove `plainPassword` de `shared/schema.ts` e tipos derivados (`User` / `InsertUser`).
+- `sanitizeUserWrite` / `toSafeUser` / `USER_SAFE_SELECT` preservados como bloqueios.
+- Zero alteração no banco; coluna física permanece; sem DROP; sem migration nova.
+- D13 → **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE**.
+- Branch: `security/remove-plain-password-from-code`
+
 ## 2026-08-05 — docs(security): record plain password cleanup incident and outcome
 
 - PR3C: homologação pós-limpeza e documentação transparente do evento ad-hoc.

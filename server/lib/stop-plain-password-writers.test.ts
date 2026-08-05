@@ -115,9 +115,24 @@ describe("writers de produção sem plainPassword", () => {
     assert.match(ui, /Senha protegida/);
   });
 
-  it("schema legado mantém coluna (sem DROP)", () => {
+  it("schema TypeScript não declara plainPassword (PR4A)", () => {
     const schema = readFileSync(path.join(root, "shared/schema.ts"), "utf8");
-    assert.match(schema, /plainPassword:\s*text\("plain_password"\)/);
+    assert.doesNotMatch(schema, /plainPassword\s*:/);
+    assert.doesNotMatch(schema, /text\("plain_password"\)/);
+    assert.match(schema, /PR4B/);
+  });
+
+  it("coluna física ainda documentada até PR4B (sem DROP no SQL histórico)", () => {
+    const migration = readFileSync(
+      path.join(root, "supabase/migrations/20260805190500_null_legacy_plain_password.sql"),
+      "utf8",
+    );
+    assert.doesNotMatch(migration, /\bDROP\s+COLUMN\b/i);
+    const verify = readFileSync(
+      path.join(root, "scripts/security/verify-plain-password-cleanup.sql"),
+      "utf8",
+    );
+    assert.match(verify, /plain_password_column_exists|column_name = 'plain_password'/);
   });
 
   it("artefatos presentes", () => {
