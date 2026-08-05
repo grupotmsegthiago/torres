@@ -76,9 +76,9 @@ Se existir implementação semelhante, ela deve ser **estendida, corrigida ou in
 
 Evidência mínima no relatório/especificação:
 
-1. O que foi buscado (termos / símbolos / arquivos).  
-2. O que foi encontrado (caminhos).  
-3. Decisão: reutilizar / estender / criar novo.  
+1. O que foi buscado (termos / símbolos / arquivos).
+2. O que foi encontrado (caminhos).
+3. Decisão: reutilizar / estender / criar novo.
 4. Se criar novo: por que reutilizar é inviável (não “preferência”).
 
 ---
