@@ -42,8 +42,8 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 | Prioridade | P0 |
 | Framework | S3, S4 |
 | Mitigação (código) | Migration `supabase/migrations/20260805164000_harden_users_rls.sql`: drop USING(true); revoke anon; authenticated possui SELECT somente nas colunas seguras + RLS own; `plain_password` nunca concedida; admin permanece via API+service_role |
-| Aplicação DB | **PENDENTE** — Preview e Production compartilham o mesmo Supabase; exige janela autorizada (`docs/security/RUNBOOK-USERS-RLS.md`) |
-| Status | **MITIGADO PENDENTE DE HOMOLOGAÇÃO** |
+| Aplicação DB | **APLICADA** em 2026-08-05 ~17:36 UTC no Supabase compartilhado (Preview=Prod); backup nativo 2026-08-05 07:59:48 UTC; verify + smoke OK (`docs/security/RUNBOOK-USERS-RLS.md`) |
+| Status | **CORRIGIDO E HOMOLOGADO** |
 
 ---
 

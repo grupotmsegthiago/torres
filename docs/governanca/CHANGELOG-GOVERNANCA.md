@@ -1,5 +1,14 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): RLS applied and homologated on shared Supabase
+
+- Migration `harden_users_rls` aplicada no projeto TORRES (~17:36 UTC).
+- Verify `scripts/security/verify-users-rls.sql` OK; policies finais: só `users_select_own`.
+- Smoke: anon negado; funcionário REST só própria linha e sem `plain_password`; admin `/api/auth/me` e `/api/users` OK; funcionário `/api/users` 403.
+- C3 → **CORRIGIDO E HOMOLOGADO**; D10 encerrada; **D13 permanece aberta**.
+- Backup nativo usado como rede: 2026-08-05 07:59:48 UTC.
+- Sem publish Vercel; `main` intacta.
+
 ## 2026-08-05 — security(users): restrict authenticated select to safe columns
 
 - Corrige modelo de grants: sem `GRANT SELECT ON TABLE`; authenticated possui SELECT somente nas colunas seguras + RLS own.
