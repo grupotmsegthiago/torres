@@ -142,14 +142,14 @@ Enquanto a dívida existir:
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto com senha; **36/36** registros preenchidos (baseline 2026-08-05). Exposição PostgREST bloqueada pela RLS; API/UI bloqueadas por allowlist `toSafeUser` (PR1); writers interrompidos (PR2); artefatos de limpeza preparados (PR3A). |
-| Consequência | Valores legados em texto permanecem até aplicação controlada (PR3B); risco residual se grants/policies regredirem |
-| Prioridade | **Alta (P1)** |
+| Descrição | Coluna texto legada; valores em texto **já limpos** (36/36 NULL em 2026-08-05). Exposição PostgREST bloqueada pela RLS; API/UI por `toSafeUser` (PR1); writers interrompidos (PR2); artefatos PR3A versionados. Efeito da limpeza ocorreu **fora** da migration registrada — ver incidente. |
+| Consequência | Coluna ainda existe (DROP = PR4); risco residual se grants/policies regredirem ou se alguém regravar texto |
+| Prioridade | **Média (P2)** para DROP; valores sensíveis na coluna já nulos |
 | Módulos | `public.users`, Auth/RH |
-| Restrição | **Não criar dependência nova** sobre esta coluna; não logar valores; não exibir em API; não reintroduzir writers; não aplicar limpeza sem runbook |
-| Correção | **PR1:** allowlist + UI. **PR2:** writers. **PR3A feito:** baseline/verify/migration/runbook. **PR3B:** aplicar `NULL`. **PR3C:** docs pós. **PR4:** DROP coluna |
-| Status | **PR3A PREPARADO — LIMPEZA AINDA NÃO APLICADA** |
-| Camadas | RLS + PR1 + PR2 ativos; PR3A só artefatos; valores 36/36 ainda presentes; migration **não aplicada** |
+| Restrição | **Não criar dependência nova**; não logar valores; não exibir; não reintroduzir writers; **não** reaplicar UPDATE de limpeza; não inserir histórico falso de migration |
+| Correção | **PR1–PR2 feitos.** **PR3A feito.** **Limpeza de valores: efeito alcançado (ad-hoc) + PR3C docs.** **PR4:** DROP coluna |
+| Status | **VALORES LEGADOS LIMPOS — HOMOLOGAÇÃO PÓS-LIMPEZA CONCLUÍDA; COLUNA AINDA PRESENTE — PR4 PENDENTE** |
+| Camadas | RLS + PR1 + PR2 ativos; filled=0 / null=36; migration `20260805190500` **não** no histórico remoto; incidente documentado |
 
 ### D11 — Caches longos
 
