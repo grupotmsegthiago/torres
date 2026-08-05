@@ -715,51 +715,23 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
     billingType: "BOLETO",
     notes: "",
     sendToAsaas: true,
-    gateway: (typeof window !== "undefined" && localStorage.getItem("invoice_gateway")) || "asaas",
+    // Banco Inter desativado — novas cobranças apenas via Asaas.
+    gateway: "asaas",
   });
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      // Persiste preferência de gateway
-      try { localStorage.setItem("invoice_gateway", form.gateway); } catch (_) {}
-
       if (form.gateway === "inter") {
-        // Cria cobrança direto no Banco Inter
-        const cliente = clients.find((c: any) => String(c.id) === form.clientId);
-        const cpfCnpjLimpo = (form.clientCpfCnpj || "").replace(/\D/g, "");
-        const tipoPessoa = cpfCnpjLimpo.length === 14 ? "JURIDICA" : "FISICA";
-        const seuNumero = `INV-${Date.now()}`;
-        const r = await authFetch("/api/inter/cobranca", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            seuNumero,
-            valorNominal: Number(form.value),
-            dataVencimento: form.dueDate,
-            numDiasAgenda: 30,
-            pagador: {
-              cpfCnpj: cpfCnpjLimpo,
-              tipoPessoa,
-              nome: form.clientName,
-              endereco: cliente?.endereco || cliente?.address || "Não informado",
-              cidade: cliente?.cidade || cliente?.city || "São Paulo",
-              uf: cliente?.uf || cliente?.state || "SP",
-              cep: ((cliente?.cep || cliente?.zipCode || "01001000") + "").replace(/\D/g, ""),
-              email: cliente?.email || undefined,
-            },
-            mensagem: { linha1: form.description?.slice(0, 80) || undefined },
-          }),
-        });
-        if (!r.ok) { const e = await r.json(); throw new Error(e.message || "Falha ao criar cobrança Inter"); }
-        return r.json();
+        throw new Error("Integração Banco Inter desativada. Use Asaas.");
       }
+      try { localStorage.setItem("invoice_gateway", "asaas"); } catch (_) {}
 
-      // Fluxo padrão Asaas
       const r = await authFetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          gateway: "asaas",
           clientId: form.clientId ? parseInt(form.clientId) : null,
           sendToAsaas: true,
         }),
@@ -769,7 +741,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
     },
     onSuccess: () => {
       invalidateRelatedQueries("invoice");
-      toast({ title: form.gateway === "inter" ? "Cobrança Inter criada" : "Fatura criada com sucesso" });
+      toast({ title: "Fatura criada com sucesso" });
       onClose();
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -887,28 +859,12 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
             />
           </div>
 
-          <div>
-            <Label className="text-xs font-bold">Gateway de Cobrança</Label>
-            <Select value={form.gateway} onValueChange={v => setForm(prev => ({ ...prev, gateway: v }))}>
-              <SelectTrigger data-testid="select-gateway"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asaas">Asaas (com NFS-e automática)</SelectItem>
-                <SelectItem value="inter">Banco Inter (boleto + PIX, sem NFS-e)</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <p className="text-[11px] text-emerald-700 font-medium">
+              Cobrança via Asaas com NFS-e (CNAE 7870). Integração Banco Inter desativada — invoices históricas Inter continuam visíveis.
+            </p>
           </div>
-
-          {form.gateway === "asaas" ? (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <p className="text-[11px] text-emerald-700 font-medium">Cobrança gerada via Asaas com NFS-e (CNAE 7870). Baixa automática ao confirmar pagamento.</p>
-            </div>
-          ) : (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-orange-600 flex-shrink-0" />
-              <p className="text-[11px] text-orange-700 font-medium">Cobrança gerada via Banco Inter (boleto + PIX nativos). NFS-e deve ser emitida separadamente pelo Asaas.</p>
-            </div>
-          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} data-testid="button-cancel-create">Cancelar</Button>

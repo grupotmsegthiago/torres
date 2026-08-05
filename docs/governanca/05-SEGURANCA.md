@@ -1,7 +1,7 @@
-# 05 — Segurança (riscos conhecidos — NÃO CORRIGIDOS nesta fase)
+# 05 — Segurança (riscos conhecidos)
 
 **Natureza:** normativo quanto à priorização e regras; descritivo quanto ao estado atual
-**Fase 1.0:** apenas documenta. **Nenhuma correção foi aplicada.**
+**Atualização:** C1 (Inter) mitigado na PR1 de desativação; C2/C3 e demais ainda abertos.
 **Não inclui secrets nem valores reais de chaves.**
 
 Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAMEWORK-GOVERNANCA.md)).
@@ -14,12 +14,13 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 
 | Campo | Conteúdo |
 |-------|----------|
-| Evidência | `server/routes/inter.ts` — `POST /api/inter/webhook/cobranca` processa eventos e atualiza invoices/FT sem validação de token/assinatura no fluxo auditado |
-| Impacto | Atacante pode forjar confirmação de pagamento / criar lançamentos financeiros |
+| Evidência | `server/routes/inter.ts` — `POST /api/inter/webhook/cobranca` processava eventos e atualizava invoices/FT sem validação de token/assinatura |
+| Impacto | Atacante poderia forjar confirmação de pagamento / criar lançamentos financeiros |
 | Prioridade | P0 |
 | Framework | S2, P9, Y1 |
-| Orientação futura | Exigir segredo/assinatura do Inter; rejeitar se ausente (fail-closed); manter idempotência |
-| Status | **NÃO CORRIGIDO** |
+| Mitigação PR1 | Integração **desativada por padrão** (`INTER_INTEGRATION_ENABLED`); webhook responde **410 Gone** sem mutar invoice/FT/eventos; escritas e crons bloqueados. Dados históricos `inter_*` e colunas invoice preservados. |
+| Limpeza definitiva | Pendente PR2 (UI/código), PR3 (banco histórico), PR4 (envs) |
+| Status | **MITIGADO (fail-closed / desativação)** — remoção completa ainda pendente |
 
 ### C2 — Webhook Z-API com token opcional
 
