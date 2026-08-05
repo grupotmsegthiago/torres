@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): prepare legacy plain password cleanup
+
+- PR3A: baseline somente leitura, verify pós-limpeza, migration versionada (não aplicada), rollback documental e runbook.
+- Artefatos: `scripts/security/baseline-plain-password-cleanup.sql`, `verify-plain-password-cleanup.sql`, `supabase/migrations/20260805190500_null_legacy_plain_password.sql`, `docs/security/RUNBOOK-PLAIN-PASSWORD-CLEANUP.md`.
+- Sem UPDATE executado; valores legados continuam 36/36; sem hash de senha; sem rollback com senhas.
+- D13 → **PR3A PREPARADO — LIMPEZA AINDA NÃO APLICADA** (PR3B aplicação, PR3C docs, PR4 DROP).
+- Branch: `security/prepare-plain-password-cleanup`
+
 ## 2026-08-05 — security(users): stop storing plain text passwords
 
 - Writers de produção não gravam mais `plain_password` (create, reset, change-password, register-by-cpf, auto-login de funcionário).
