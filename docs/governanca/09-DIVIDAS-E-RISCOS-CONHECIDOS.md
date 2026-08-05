@@ -124,7 +124,7 @@ Enquanto a dívida existir:
 | Módulos | inter, whatsapp, asaas |
 | Restrição | Não adicionar webhook novo sem auth obrigatória |
 | Correção futura | Ver [`05-SEGURANCA.md`](./05-SEGURANCA.md) |
-| Status | Aberta |
+| Status | **Parcial** — Inter mitigado (desativado + webhook 410); Z-API e Asaas ainda abertos |
 
 ### D10 — RLS permissiva em `users`
 

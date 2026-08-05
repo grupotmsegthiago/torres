@@ -1,5 +1,15 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — PR1: desativação Banco Inter (fail-closed)
+
+- Integração Inter **desativada por padrão** via `INTER_INTEGRATION_ENABLED` (`server/lib/inter-integration.ts`).
+- Webhook `POST /api/inter/webhook/cobranca` → **410** sem mutações quando desativado; **503** se flag on sem config.
+- Escritas Inter (cobrança, PIX, boleto, webhook setup) e crons reconcile bloqueados.
+- UI: gateway Inter removido de Faturas; Contas a Pagar sem pagamento Inter.
+- Histórico / tabelas `inter_*` / colunas invoice / APIs `/api/financeiro/*` preservados.
+- C1 em `05-SEGURANCA.md` marcado **MITIGADO**; limpeza definitiva = PR2–PR4.
+- Branch: `security/disable-banco-inter`
+
 ## 2026-08-05 — Emenda: reutilização obrigatória (P13 / D11 / G17)
 
 - Incluído princípio **P13** e regra de desenvolvimento **D11**: pesquisar o existente antes de implementar; proibido duplicar lógica, segundo motor, nova tabela/API/componente sem evidência de inviabilidade.

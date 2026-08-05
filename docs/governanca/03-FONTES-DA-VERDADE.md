@@ -46,7 +46,7 @@
 | Holerite | `employee_payslips` | FATO documental | payslips | routes/hr | FT se pago | OCR transitório | — | Baixo |
 | WhatsApp | `whatsapp_messages` / `whatsapp_chats` | FATO de produto | tabelas locais | webhook + send | UI, Agent Central | caches Z-API identity | Z-API parcial | Médio |
 | Asaas | API Asaas → `invoices` | SATELITE → FATO interno | `server/asaas.ts` | emit/reconcile/webhook | faturas, NF | customer/payment ids | Inter no mesmo invoice | Médio |
-| Inter | API Inter → `invoices` + `inter_*` | SATELITE → espelhos | `routes/inter.ts` | cobrança/webhook | extrato, FT | `inter_extrato_*`, `inter_pagamentos`, `inter_webhook_events` | Asaas | Médio |
+| Inter | API Inter → `invoices` + `inter_*` | SATELITE → espelhos (**DESATIVADO** por padrão) | `routes/inter.ts` + `lib/inter-integration.ts` | legado / leitura histórica | labels, tabelas `inter_*` | `inter_extrato_*`, `inter_pagamentos`, `inter_webhook_events` | Asaas | Baixo (off) |
 | IA / OpenAI | nenhum (assistente) | PROJECAO auxiliar | `openai` SDK, campos `ai_*` | endpoints OCR/agent | UI/WhatsApp | — | uso como SSOT (proibido) | Médio |
 | Operational Grid | — | PROJECAO | `/api/operational-grid` | side-effects GPS/freeze | UI ops, balanço (canônico) | SWR 3h / `swr_cache_snapshots` | dual live+canônico | **Alto** |
 | Dashboard financeiro | — | PROJECAO | várias APIs | — | UI | SWR | resumo-diretoria ≠ financial/dashboard | **Alto** |

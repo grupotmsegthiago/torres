@@ -27,6 +27,11 @@ export async function withCronLock(name: string, fn: () => Promise<void>): Promi
 }
 
 async function runInterReconcile(diasJanela: number, contexto: string): Promise<void> {
+  const { isInterIntegrationEnabled } = await import("./lib/inter-integration");
+  if (!isInterIntegrationEnabled()) {
+    log(`CRON Inter-Reconcile[${contexto}]: integração desativada — skip`, "cron");
+    return;
+  }
   const { isInterConfigured } = await import("./services/inter/client");
   if (!isInterConfigured()) return;
   const { consultarExtrato } = await import("./services/inter/banking");
@@ -197,6 +202,11 @@ export async function runFolhaCatchupCron(): Promise<void> {
 }
 
 export async function runInterReconcileFastCron(): Promise<void> {
+  const { isInterIntegrationEnabled } = await import("./lib/inter-integration");
+  if (!isInterIntegrationEnabled()) {
+    log("CRON Inter-Reconcile[5min/2d]: integração desativada — skip", "cron");
+    return;
+  }
   await withCronLock("inter-reconcile", async () => {
     if (!isSupabaseHealthy()) return;
     try {
@@ -208,6 +218,11 @@ export async function runInterReconcileFastCron(): Promise<void> {
 }
 
 export async function runInterReconcileBackfillCron(): Promise<void> {
+  const { isInterIntegrationEnabled } = await import("./lib/inter-integration");
+  if (!isInterIntegrationEnabled()) {
+    log("CRON Inter-Reconcile[backfill/30d]: integração desativada — skip", "cron");
+    return;
+  }
   await withCronLock("inter-reconcile", async () => {
     if (!isSupabaseHealthy()) return;
     try {
