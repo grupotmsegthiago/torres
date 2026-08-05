@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, Mail, LogIn, Lock } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -20,7 +20,14 @@ type SafeUser = {
   username: string | null;
 };
 
-type CreatedUser = SafeUser & { tempPassword: string };
+/** Resposta one-shot de create/reset — senha só neste momento. */
+type OneShotCredentials = {
+  user: SafeUser;
+  tempPassword?: string;
+  newPassword?: string;
+  oneShot?: boolean;
+  message?: string;
+};
 
 const ALL_ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
@@ -45,8 +52,6 @@ function getLoginFromEmail(email: string): string {
   }
   return email;
 }
-
-const FALLBACK_PASSWORD = "torres@123";
 
 function UserListSection({
   title,
@@ -137,9 +142,9 @@ function UserListSection({
                     <span className="font-mono text-xs truncate">{getLoginFromEmail(u.email)}</span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-sm text-neutral-600" data-testid={`text-user-password-${u.id}`}>
+                  <div className="flex items-center gap-1.5 text-sm text-neutral-500" data-testid={`text-user-password-${u.id}`}>
                     <Lock className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
-                    <span className="font-mono text-xs">{(u as any).plainPassword || FALLBACK_PASSWORD}</span>
+                    <span className="text-xs">Senha protegida — use Redefinir senha</span>
                   </div>
 
                   <div className="flex items-center justify-end gap-0.5">
@@ -149,7 +154,7 @@ function UserListSection({
                         size="icon"
                         onClick={() => onResetPassword(u.id)}
                         className="h-8 w-8 text-neutral-400 hover:text-amber-600"
-                        title="Resetar senha"
+                        title="Redefinir senha"
                         data-testid={`button-reset-password-${u.id}`}
                       >
                         <KeyRound className="w-3.5 h-3.5" />
@@ -188,23 +193,30 @@ function UserListSection({
   );
 }
 
-function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => void }) {
+function CredentialCard({
+  credentials,
+  onClose,
+}: {
+  credentials: OneShotCredentials;
+  onClose: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const user = credentials.user;
+  const oneShotPassword = credentials.tempPassword || credentials.newPassword || "";
 
   const message = `🔐 *Torres Vigilância Patrimonial* — Acesso ao Sistema
 
 Olá *${user.name}*,
 
-Seu acesso ao sistema foi criado com sucesso.
+Seu acesso ao sistema foi criado/atualizado com sucesso.
 
 📧 *E-mail:* ${user.email}
-🔑 *Senha:* ${user.tempPassword}
+🔑 *Senha temporária:* ${oneShotPassword}
 🌐 *Link:* www.torresseguranca.com.br na Área Restrita
 
-⚠️ No primeiro acesso, recomendamos trocar sua senha por segurança.
-
-Em caso de dúvidas, entre em contato com o suporte.
+⚠️ Copie agora. Esta senha não será exibida novamente.
+No primeiro acesso, troque a senha por segurança.
 
 _Torres Vigilância Patrimonial — Gestão Operacional_`;
 
@@ -220,14 +232,18 @@ _Torres Vigilância Patrimonial — Gestão Operacional_`;
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-md" data-testid="dialog-credentials">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-green-600" />
-            Acesso Criado com Sucesso
+            Senha temporária (exibição única)
           </DialogTitle>
         </DialogHeader>
+
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="text-oneshot-warning">
+          Copie agora. Esta senha não será exibida novamente.
+        </p>
 
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 text-sm font-mono whitespace-pre-wrap leading-relaxed" data-testid="text-credential-message">
           {message}
@@ -258,7 +274,7 @@ export default function UsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SafeUser | null>(null);
-  const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
+  const [oneShotCredentials, setOneShotCredentials] = useState<OneShotCredentials | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
@@ -279,11 +295,11 @@ export default function UsersPage() {
   const createMutation = useMutation({
     mutationFn: async (data: { email: string; name: string; role: string }) => {
       const res = await apiRequest("POST", "/api/users", data);
-      return res.json() as Promise<CreatedUser>;
+      return res.json() as Promise<OneShotCredentials>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setCreatedUser(data);
+      setOneShotCredentials(data);
       closeDialog();
     },
     onError: (err: any) => {
@@ -322,11 +338,11 @@ export default function UsersPage() {
   const resetPasswordMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiRequest("PATCH", `/api/users/${id}/reset-password`);
-      return res.json() as Promise<CreatedUser>;
+      return res.json() as Promise<OneShotCredentials>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setCreatedUser(data);
+      setOneShotCredentials(data);
     },
     onError: (err: any) => {
       toast({ title: "Erro ao resetar senha", description: err.message, variant: "destructive" });
@@ -352,6 +368,10 @@ export default function UsersPage() {
   function closeDialog() {
     setDialogOpen(false);
     setEditingUser(null);
+  }
+
+  function clearOneShot() {
+    setOneShotCredentials(null);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -429,8 +449,8 @@ export default function UsersPage() {
         )}
       </div>
 
-      {createdUser && (
-        <CredentialCard user={createdUser} onClose={() => setCreatedUser(null)} />
+      {oneShotCredentials && (
+        <CredentialCard credentials={oneShotCredentials} onClose={clearOneShot} />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -463,7 +483,7 @@ export default function UsersPage() {
               {editingUser ? (
                 <p className="text-xs text-neutral-400 mt-1">O e-mail não pode ser alterado</p>
               ) : (
-                <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada automaticamente</p>
+                <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada e exibida uma única vez</p>
               )}
             </div>
             {editingUser && (
@@ -481,12 +501,12 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium text-neutral-700 mb-1.5 block flex items-center gap-1">
-                    <Lock className="w-3.5 h-3.5" /> Senha Atual
+                    <Lock className="w-3.5 h-3.5" /> Senha
                   </label>
                   <Input
-                    value={FALLBACK_PASSWORD}
+                    value="Senha protegida"
                     disabled
-                    className="font-mono bg-neutral-50"
+                    className="bg-neutral-50"
                     data-testid="input-user-password"
                   />
                 </div>

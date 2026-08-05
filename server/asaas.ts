@@ -1193,7 +1193,20 @@ export function registerAsaasRoutes(app: Express) {
 
   app.post("/api/invoices", requireAdminRole, async (req: Request, res: Response) => {
     try {
-      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas, clientEmail: bodyClientEmail } = req.body;
+      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas, clientEmail: bodyClientEmail, gateway } = req.body;
+
+      // Banco Inter desativado por padrão — rejeita novas cobranças com gateway=inter.
+      if (String(gateway || "").toLowerCase() === "inter") {
+        const { evaluateInterWriteGate } = await import("./lib/inter-integration");
+        const { isInterConfigured } = await import("./services/inter/client");
+        const gate = evaluateInterWriteGate({ configured: isInterConfigured() });
+        if (!gate.allow) {
+          return res.status(gate.status).json({
+            message: gate.body?.message || "Integração Banco Inter desativada.",
+            code: gate.body?.code,
+          });
+        }
+      }
 
       if (!clientName || !value || !dueDate || !description) {
         return res.status(400).json({ message: "Campos obrigatórios: clientName, value, dueDate, description" });

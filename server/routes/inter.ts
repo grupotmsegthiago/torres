@@ -1,6 +1,10 @@
 /**
  * Rotas do Banco Inter (Cobrança + Banking + Webhooks).
  *
+ * Decisão de negócio: integração DESATIVADA por padrão (INTER_INTEGRATION_ENABLED).
+ * Mutações / webhook / chamadas externas exigem flag explícita + config operacional.
+ * Leituras históricas locais (pagamentos, eventos) e APIs /api/financeiro/* permanecem.
+ *
  * Endpoints expostos:
  *  GET    /api/inter/status              — saúde da integração + saldo
  *  GET    /api/inter/saldo               — saldo detalhado
@@ -19,7 +23,7 @@
  *  POST   /api/inter/webhook/cobranca    — endpoint público recebido pelo Inter
  *  GET    /api/inter/webhook/eventos     — histórico de eventos recebidos
  */
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { requireAuth, requireDiretoria, requireDiretoriaStrict, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import { isInterConfigured, getInterClient } from "../services/inter/client";
@@ -32,11 +36,30 @@ import {
   isInterPaymentConfirmation,
   classifyInterPayment,
 } from "../lib/inter-webhook-parser";
+import {
+  evaluateInterWriteGate,
+  interStatusWhenDisabled,
+  isInterIntegrationEnabled,
+} from "../lib/inter-integration";
+
+/** Bloqueia mutação / chamada externa Inter. Retorna true se já respondeu. */
+function rejectInterIfClosed(res: Response): boolean {
+  const gate = evaluateInterWriteGate({ configured: isInterConfigured() });
+  if (gate.allow) return false;
+  console.warn(`[inter] operação rejeitada (${gate.reason})`);
+  res.status(gate.status).json(gate.body);
+  return true;
+}
 
 export function registerInterRoutes(app: Express) {
-  console.log("[inter] Rotas Banco Inter registradas (cobrança + extrato + saldo + pagamentos + webhook)");
+  console.log(
+    `[inter] Rotas registradas (integração ${isInterIntegrationEnabled() ? "HABILITADA" : "DESATIVADA por padrão"})`,
+  );
   // === STATUS / SAÚDE ===
   app.get("/api/inter/status", requireAuth, async (_req, res) => {
+    if (!isInterIntegrationEnabled()) {
+      return res.json(interStatusWhenDisabled());
+    }
     if (!isInterConfigured()) {
       return res.json({
         connected: false,
@@ -62,6 +85,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.get("/api/inter/saldo", requireAuth, requireDiretoriaStrict, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await banking.consultarSaldo());
     } catch (e: any) {
@@ -71,6 +95,7 @@ export function registerInterRoutes(app: Express) {
 
   // === EXTRATO ===
   app.get("/api/inter/extrato", requireAuth, requireDiretoriaStrict, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const dataInicio = String(req.query.from || "");
       const dataFim = String(req.query.to || "");
@@ -90,6 +115,7 @@ export function registerInterRoutes(app: Express) {
 
   // === COBRANÇAS ===
   app.post("/api/inter/cobranca", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const { invoiceId, ...input } = req.body || {};
       if (!input.seuNumero || !input.valorNominal || !input.dataVencimento || !input.pagador) {
@@ -121,6 +147,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.get("/api/inter/cobranca/:cod", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await cobranca.consultarCobranca(req.params.cod));
     } catch (e: any) {
@@ -129,6 +156,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.post("/api/inter/cobranca/:cod/cancelar", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const motivo = String(req.body?.motivo || "ACEITEI_O_RISCO");
       await cobranca.cancelarCobranca(req.params.cod, motivo);
@@ -149,6 +177,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.get("/api/inter/cobranca/:cod/pdf", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const out = await cobranca.obterPdfBoleto(req.params.cod);
       const buf = Buffer.from((out as any).pdf, "base64");
@@ -161,6 +190,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.get("/api/inter/cobrancas", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const query: any = {
         dataInicial: String(req.query.dataInicial || ""),
@@ -201,6 +231,7 @@ export function registerInterRoutes(app: Express) {
   }
 
   app.post("/api/inter/pagamento/boleto", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const user = (req as any).user;
       const txId = String(req.body?.transactionId || "");
@@ -241,6 +272,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.post("/api/inter/pix", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const user = (req as any).user;
       const txId = String(req.body?.transactionId || "");
@@ -500,6 +532,7 @@ export function registerInterRoutes(app: Express) {
 
   // === WEBHOOK SETUP (admin) ===
   app.post("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const url =
         String(req.body?.url || "") ||
@@ -513,6 +546,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.get("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await cobranca.consultarWebhook());
     } catch (e: any) {
@@ -521,6 +555,7 @@ export function registerInterRoutes(app: Express) {
   });
 
   app.delete("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       await cobranca.excluirWebhook();
       res.json({ ok: true });
@@ -529,6 +564,7 @@ export function registerInterRoutes(app: Express) {
     }
   });
 
+  // Leitura histórica local — permanece mesmo com integração desativada.
   app.get("/api/inter/webhook/eventos", requireAuth, requireDiretoria, async (_req, res) => {
     const { data, error } = await supabaseAdmin
       .from("inter_webhook_events")
@@ -540,9 +576,15 @@ export function registerInterRoutes(app: Express) {
   });
 
   // === WEBHOOK PÚBLICO (recebe do Inter) ===
-  // Inter retenta em 4xx/5xx; respondemos 200 só após processar com sucesso.
+  // Fail-closed: desativado (410) ou sem config (503) — sem mutações / sem persistir payload.
+  // Quando operacional: Inter retenta em 4xx/5xx; 200 só após processar com sucesso.
   // Idempotência: não duplica receita se mesmo codigoSolicitacao chegar 2x.
   app.post("/api/inter/webhook/cobranca", async (req, res) => {
+    const gate = evaluateInterWriteGate({ configured: isInterConfigured() });
+    if (!gate.allow) {
+      console.warn(`[Inter Webhook] rejeitado (${gate.reason}) — sem mutação`);
+      return res.status(gate.status).json(gate.body);
+    }
     try {
       const events = Array.isArray(req.body) ? req.body : [req.body];
       for (const ev of events) {

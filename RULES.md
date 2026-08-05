@@ -1,6 +1,10 @@
 # RULES.md — DIRETRIZES IMUTÁVEIS DO SISTEMA TORRES SEGURANÇA
 
-Este arquivo deve ser consultado ANTES de qualquer tarefa no projeto.
+> **ATUALIZAÇÃO (Fase 1.0):** Consulte primeiro **`docs/governanca/README.md`**.
+> Timezone BRT e proibições técnicas deste arquivo **permanecem válidas**.
+> Em conflito sobre SSOT, faturamento, segurança sistêmica ou processo de entrega, **vence `docs/governanca/`**.
+
+Este arquivo deve ser consultado ANTES de qualquer tarefa no projeto (após a pasta de governança).
 
 ---
 

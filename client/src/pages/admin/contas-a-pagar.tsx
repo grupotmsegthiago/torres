@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { queryClient, authFetch } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
@@ -17,11 +16,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Loader2, RefreshCw, CreditCard, Send, FileText, Calendar,
-  AlertCircle, CheckCircle2, History, Banknote, Zap, Paperclip, Check, Ban, Hourglass,
+  Loader2, CreditCard, FileText,
+  AlertCircle, CheckCircle2, History, Banknote, Zap, Check, Ban, Hourglass,
 } from "lucide-react";
 
 interface FinTx {
@@ -60,7 +56,6 @@ export default function ContasAPagarPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const [tab, setTab] = useState<"pendentes" | "historico">("pendentes");
-  const [payDialog, setPayDialog] = useState<{ open: boolean; tx?: FinTx }>({ open: false });
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; tx?: FinTx; reason: string }>({ open: false, reason: "" });
 
   const approveMutation = useMutation({
@@ -118,31 +113,27 @@ export default function ContasAPagarPage() {
               <Banknote className="w-6 h-6 text-emerald-500" />
               Contas a Pagar
             </h1>
-            <p className="text-sm text-neutral-500">Pague boletos e PIX direto pelo Banco Inter, com baixa automática</p>
+            <p className="text-sm text-neutral-500">
+              Despesas pendentes — aprovação e consulta. Pagamentos via Banco Inter desativados.
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-xs text-neutral-500">Saldo Inter</div>
-              <div className="text-lg font-bold text-emerald-600" data-testid="text-saldo">{fmtBRL(status?.saldo)}</div>
-            </div>
-            {status?.connected ?
-              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                <CheckCircle2 className="w-3 h-3 mr-1" /> {status.ambiente}
-              </Badge> :
-              <Badge variant="destructive">Offline</Badge>}
+            <Badge variant="outline" className="text-neutral-600" data-testid="badge-inter-disabled">
+              Inter desativado
+            </Badge>
           </div>
         </div>
 
-        {!status?.connected && (
-          <Card className="p-4 border-amber-200 bg-amber-50">
-            <div className="flex gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-900">
-                <strong>Inter offline:</strong> {status?.message || "configure credenciais para liberar pagamentos."}
-              </div>
+        <Card className="p-4 border-neutral-200 bg-neutral-50">
+          <div className="flex gap-3">
+            <AlertCircle className="w-5 h-5 text-neutral-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-neutral-700">
+              <strong>Banco Inter desativado:</strong> PIX/boleto pela integração não estão disponíveis.
+              Use baixa manual no Financeiro. Histórico Inter local, se existir, permanece na aba Histórico.
+              {status?.message ? ` (${status.message})` : ""}
             </div>
-          </Card>
-        )}
+          </div>
+        </Card>
 
         {/* Tabs */}
         <div className="flex gap-1 border-b">
@@ -249,15 +240,9 @@ export default function ContasAPagarPage() {
                               )}
                             </div>
                           ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!status?.connected}
-                              onClick={() => setPayDialog({ open: true, tx })}
-                              data-testid={`button-pay-${tx.id}`}
-                            >
-                              <Send className="w-3 h-3 mr-1" /> Pagar via Inter
-                            </Button>
+                            <span className="text-xs text-neutral-500 italic" data-testid={`text-pay-disabled-${tx.id}`}>
+                              Pagamento Inter indisponível — baixe no Financeiro
+                            </span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -314,20 +299,6 @@ export default function ContasAPagarPage() {
         )}
       </div>
 
-      {payDialog.open && payDialog.tx && (
-        <PayDialog
-          tx={payDialog.tx}
-          onClose={() => setPayDialog({ open: false })}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["/api/inter/pagamentos"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/financeiro/contas-a-pagar"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/inter/status"] });
-            toast({ title: "Pagamento enviado!", description: "Acompanhe o status na aba Histórico." });
-            setPayDialog({ open: false });
-          }}
-        />
-      )}
-
       <Dialog
         open={rejectDialog.open}
         onOpenChange={(o) => !o && setRejectDialog({ open: false, reason: "" })}
@@ -380,176 +351,5 @@ export default function ContasAPagarPage() {
         </DialogContent>
       </Dialog>
     </AdminLayout>
-  );
-}
-
-function PayDialog({ tx, onClose, onSuccess }: { tx: FinTx; onClose: () => void; onSuccess: () => void }) {
-  const { toast } = useToast();
-  const [metodo, setMetodo] = useState<"pix" | "boleto">("pix");
-  const [pixChave, setPixChave] = useState("");
-  const [pixNome, setPixNome] = useState("");
-  const [pixCpfCnpj, setPixCpfCnpj] = useState("");
-  const [codBarras, setCodBarras] = useState("");
-  const [boletoCpfCnpj, setBoletoCpfCnpj] = useState("");
-  const [vencBoleto, setVencBoleto] = useState(new Date().toISOString().slice(0, 10));
-  const [descricao, setDescricao] = useState(tx.description || "");
-
-  // Comprovante obrigatório antes de confirmar pagamento
-  const [comprovanteFile, setComprovanteFile] = useState<File | null>(null);
-  const [comprovantePayload, setComprovantePayload] = useState<{ b64: string; name: string; type: string } | null>(null);
-
-  const onPickComprovante = async (file: File) => {
-    const allowed = ["application/pdf", "image/jpeg", "image/png"];
-    if (!allowed.includes(file.type) && !/\.(pdf|jpe?g|png)$/i.test(file.name)) {
-      toast({ title: "Formato inválido", description: "Apenas PDF, JPG ou PNG", variant: "destructive" });
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Arquivo muito grande", description: "Máximo 5 MB", variant: "destructive" });
-      return;
-    }
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    setComprovantePayload({ b64: btoa(bin), name: file.name, type: file.type || "application/octet-stream" });
-    setComprovanteFile(file);
-  };
-
-  const comprovantePayloadFor = () => ({
-    transactionId: tx.id,
-    comprovanteBase64: comprovantePayload!.b64,
-    comprovanteFileName: comprovantePayload!.name,
-    comprovanteContentType: comprovantePayload!.type,
-  });
-
-  const mPix = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/inter/pix", {
-      ...comprovantePayloadFor(),
-      valor: Number(tx.amount),
-      descricao,
-      destinatario: { tipo: "CHAVE", chave: pixChave, nome: pixNome, cpfCnpj: pixCpfCnpj },
-    }),
-    onSuccess,
-    onError: (e: Error) => toast({ title: "Erro no PIX", description: e.message, variant: "destructive" }),
-  });
-
-  const mBoleto = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/inter/pagamento/boleto", {
-      ...comprovantePayloadFor(),
-      codBarraLinhaDigitavel: codBarras.replace(/\D/g, ""),
-      valorPagar: Number(tx.amount),
-      dataPagamento: new Date().toISOString().slice(0, 10),
-      dataVencimento: vencBoleto,
-      cpfCnpjBeneficiario: boletoCpfCnpj.replace(/\D/g, ""),
-    }),
-    onSuccess,
-    onError: (e: Error) => toast({ title: "Erro no boleto", description: e.message, variant: "destructive" }),
-  });
-
-  const isLoading = mPix.isPending || mBoleto.isPending;
-  const canSubmit = !!comprovantePayload && (metodo === "pix" ? !!pixChave : !!codBarras);
-
-  const onConfirm = () => {
-    if (!comprovantePayload) {
-      toast({ title: "Comprovante obrigatório", description: "Anexe o comprovante (PDF/JPG/PNG) antes de confirmar.", variant: "destructive" });
-      return;
-    }
-    metodo === "pix" ? mPix.mutate() : mBoleto.mutate();
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Pagar via Banco Inter</DialogTitle>
-          <DialogDescription>
-            <span className="font-mono font-bold text-red-600">{fmtBRL(tx.amount)}</span>{" — "}
-            {tx.description}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Método</Label>
-            <Select value={metodo} onValueChange={(v: any) => setMetodo(v)}>
-              <SelectTrigger data-testid="select-metodo"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pix">PIX (instantâneo)</SelectItem>
-                <SelectItem value="boleto">Boleto bancário</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {metodo === "pix" ? (
-            <>
-              <div>
-                <Label className="text-xs">Chave PIX</Label>
-                <Input value={pixChave} onChange={e => setPixChave(e.target.value)} placeholder="CPF/CNPJ/email/telefone/aleatória" data-testid="input-pix-chave" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Nome destinatário</Label>
-                  <Input value={pixNome} onChange={e => setPixNome(e.target.value)} data-testid="input-pix-nome" />
-                </div>
-                <div>
-                  <Label className="text-xs">CPF/CNPJ destinatário</Label>
-                  <Input value={pixCpfCnpj} onChange={e => setPixCpfCnpj(e.target.value)} data-testid="input-pix-cpfcnpj" />
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <Label className="text-xs">Linha digitável (47 dígitos)</Label>
-                <Input value={codBarras} onChange={e => setCodBarras(e.target.value)} placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000" data-testid="input-cod-barras" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">CNPJ beneficiário</Label>
-                  <Input value={boletoCpfCnpj} onChange={e => setBoletoCpfCnpj(e.target.value)} data-testid="input-boleto-cnpj" />
-                </div>
-                <div>
-                  <Label className="text-xs">Vencimento</Label>
-                  <Input type="date" value={vencBoleto} onChange={e => setVencBoleto(e.target.value)} data-testid="input-venc" />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div>
-            <Label className="text-xs">Descrição</Label>
-            <Textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={2} data-testid="input-descricao" />
-          </div>
-
-          <div className="border-t pt-3">
-            <Label className="text-xs flex items-center gap-1"><Paperclip className="w-3 h-3" /> Comprovante (obrigatório — PDF/JPG/PNG, &lt;=5MB)</Label>
-            <Input
-              type="file"
-              accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
-              onChange={e => { const f = e.target.files?.[0]; if (f) onPickComprovante(f); }}
-              data-testid="input-comprovante"
-            />
-            {comprovanteFile && (
-              <p className="text-[11px] mt-1 text-emerald-700 font-medium" data-testid="text-comprovante-name">
-                Anexado: {comprovanteFile.name} ({(comprovanteFile.size / 1024).toFixed(0)} KB)
-              </p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading} data-testid="button-cancel">Cancelar</Button>
-          <Button
-            onClick={onConfirm}
-            disabled={isLoading || !canSubmit}
-            data-testid="button-confirm-pay"
-          >
-            {isLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
-            Confirmar pagamento
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
