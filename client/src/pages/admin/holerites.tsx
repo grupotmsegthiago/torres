@@ -592,7 +592,7 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Salário Base</label>
-                <Input type="number" step="0.01" value={form.salarioBase} onChange={e => setForm({ ...form, salarioBase: e.target.value })} placeholder="2432.50" data-testid="input-salario-base" />
+                <Input type="number" step="0.01" value={form.salarioBase} onChange={e => setForm({ ...form, salarioBase: e.target.value })} placeholder="2565.31" data-testid="input-salario-base" />
               </div>
               <div>
                 <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Periculosidade</label>
