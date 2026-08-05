@@ -24,14 +24,15 @@ Em conflito com `AGENT_RULES.md`, `RULES.md`, `MAPA_SISTEMA_COMPLETO.md` ou docs
 
 ## Comportamento obrigatório do agente
 
+0. **Reutilização obrigatória (antes de qualquer implementação):** pesquisar se já existe solução, componente, função, regra de negócio, API, serviço ou tela que resolva parcial ou totalmente o pedido. É **proibido** duplicar lógica, criar segundo motor de cálculo, nova tabela, nova API ou novo componente sem demonstrar, com evidências (arquivos/símbolos encontrados e por que não bastam), que a reutilização é inviável. Se existir implementação semelhante, **estender, corrigir ou integrar**, preservando a arquitetura.
 1. Preserve o que já funciona. Não refatore nem reescreva fora do pedido.
 2. Não altere outras telas, integrações, APIs, banco ou configs sem necessidade comprovada.
 3. Busque a **causa raiz** com evidência antes de implementar.
-4. Informe sempre: domínio dono · tipo do dado (Fato/Resultado/Snapshot/Projeção/Espelho/Cache/Satélite) · arquivos afetados · risco · testes · rollback.
+4. Informe sempre: domínio dono · tipo do dado (Fato/Resultado/Snapshot/Projeção/Espelho/Cache/Satélite) · reutilização avaliada · arquivos afetados · risco · testes · rollback.
 5. Motor oficial de faturamento: `calcularEscolta`. `calcularFaturamentoLive` = estimativa rotulada apenas.
 6. Cancelada ≠ recusada. Recusada = R$ 0. Cancelada = tabela 100 km / 3h via `computeCanceladaBilling`.
 7. Boletim aprovado é imutável. IA nunca é SSOT. Ledger (`financial_transactions`) ≠ Balanço (`balanco-calc`).
-8. Não considere a tarefa concluída só porque compilou — gates G1–G16 e templates em `docs/governanca/10` e `11`.
+8. Não considere a tarefa concluída só porque compilou — gates G1–G17 e templates em `docs/governanca/10` e `11`.
 9. **Deploy não é automático** em toda tarefa. Publicar só com pedido explícito / fluxo `publicar.ps1`, após testes e relatório.
 10. Se houver mais de uma regra de negócio possível, **interrompa** e peça decisão do proprietário.
 11. Não ampliar dívidas listadas em `docs/governanca/09-DIVIDAS-E-RISCOS-CONHECIDOS.md`.

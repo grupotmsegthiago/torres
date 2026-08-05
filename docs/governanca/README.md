@@ -67,13 +67,14 @@ Timezone BRT (`America/Sao_Paulo`) e proibições técnicas de `RULES.md` / `AGE
 ## Como uma nova tarefa deve começar
 
 1. Ler a ordem obrigatória acima.
-2. Preencher a [Especificação Funcional](./10-ESPECIFICACAO-FUNCIONAL-TEMPLATE.md) (mesmo que resumida).
-3. Declarar: **domínio dono**, **tipo do dado** (Fato / Resultado / Snapshot / Projeção / Espelho / Cache / Satélite), **camada da hierarquia**.
-4. Procurar a **causa raiz** com evidência (arquivo, tabela, API).
-5. Implementar **somente o escopo** — sem refatorar vizinhos.
-6. Rodar testes da suíte mínima aplicável ([`06`](./06-TESTES-E-VALIDACAO.md)).
-7. Preencher o [Relatório de Entrega](./11-RELATORIO-DE-ENTREGA-TEMPLATE.md).
-8. Deploy **somente** se o usuário pedir publicação / após gates — ver [`07`](./07-DEPLOY-E-ROLLBACK.md).
+2. **Pesquisar reutilização** (D11/P13): solução, componente, função, regra, API, serviço ou tela já existente — com evidências.
+3. Preencher a [Especificação Funcional](./10-ESPECIFICACAO-FUNCIONAL-TEMPLATE.md) (mesmo que resumida), incluindo a decisão de reutilizar/estender/criar.
+4. Declarar: **domínio dono**, **tipo do dado** (Fato / Resultado / Snapshot / Projeção / Espelho / Cache / Satélite), **camada da hierarquia**.
+5. Procurar a **causa raiz** com evidência (arquivo, tabela, API).
+6. Implementar **somente o escopo** — estendendo o existente quando possível; sem refatorar vizinhos.
+7. Rodar testes da suíte mínima aplicável ([`06`](./06-TESTES-E-VALIDACAO.md)).
+8. Preencher o [Relatório de Entrega](./11-RELATORIO-DE-ENTREGA-TEMPLATE.md).
+9. Deploy **somente** se o usuário pedir publicação / após gates — ver [`07`](./07-DEPLOY-E-ROLLBACK.md).
 
 ---
 
@@ -82,6 +83,7 @@ Timezone BRT (`America/Sao_Paulo`) e proibições técnicas de `RULES.md` / `AGE
 Uma tarefa só está concluída quando:
 
 - [ ] Escopo pedido atendido (nada a mais, nada a menos material)
+- [ ] Reutilização pesquisada e documentada (ou inviabilidade evidenciada)
 - [ ] Domínio dono e tipo de dado respeitados
 - [ ] Hierarquia oficial não violada
 - [ ] Testes aplicáveis executados e verdes

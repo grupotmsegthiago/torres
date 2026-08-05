@@ -14,6 +14,11 @@ Linguagem: simples e gerencial + anexos técnicos objetivos.
 **Ambiente validado:** [ ] local  [ ] preview  [ ] produção  
 **Publicou?** [ ] Não  [ ] Sim (quando/como)
 
+### Reutilização (D11 / P13)
+- Busca realizada:
+- Existente aproveitado:
+- Algo novo criado? [ ] Não  [ ] Sim — inviabilidade:
+
 ### O que foi alterado
 -
 

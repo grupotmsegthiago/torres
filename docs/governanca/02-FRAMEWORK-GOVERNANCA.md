@@ -40,10 +40,11 @@ Operar, medir, faturar e governar a atividade da Torres com rastreabilidade pont
 | P10 | Estimativa deve ser rotulada; nunca vira valor oficial silenciosamente |
 | P11 | Escrita crítica é auditável; financeiro é idempotente |
 | P12 | Sem migrate/deploy no escuro: teste → revisão → aprovação → publicação |
+| P13 | Reutilizar antes de criar: pesquisar o existente; proibido duplicar sem evidência de inviabilidade |
 
 ---
 
-## 4. Desenvolvimento (D1–D10)
+## 4. Desenvolvimento (D1–D11)
 
 | ID | Regra |
 |----|-------|
@@ -57,6 +58,28 @@ Operar, medir, faturar e governar a atividade da Torres com rastreabilidade pont
 | D8 | Secrets nunca no client, commits, CI hardcoded ou assets |
 | D9 | Mudança financeira exige testes determinísticos no mesmo PR |
 | D10 | Refactor sem mudança de regra não altera números oficiais (golden tests) |
+| D11 | **Pesquisa de reutilização obrigatória** antes de implementar (ver caixa abaixo) |
+
+### D11 — Reutilização obrigatória (detalhe)
+
+Antes de implementar qualquer alteração, o agente/desenvolvedor **deve pesquisar** se já existe solução, componente, função, regra de negócio, API, serviço ou tela que resolva **parcial ou totalmente** o problema.
+
+É **proibido**, sem evidência escrita de inviabilidade:
+
+- duplicar lógica;
+- criar um segundo motor de cálculo;
+- criar nova tabela;
+- criar nova API;
+- criar novo componente.
+
+Se existir implementação semelhante, ela deve ser **estendida, corrigida ou integrada**, preservando a arquitetura existente.
+
+Evidência mínima no relatório/especificação:
+
+1. O que foi buscado (termos / símbolos / arquivos).  
+2. O que foi encontrado (caminhos).  
+3. Decisão: reutilizar / estender / criar novo.  
+4. Se criar novo: por que reutilizar é inviável (não “preferência”).
 
 ---
 
@@ -311,6 +334,7 @@ Detalhe: [`07-DEPLOY-E-ROLLBACK.md`](./07-DEPLOY-E-ROLLBACK.md).
 | G14 | Sem secrets no diff |
 | G15 | Módulo novo completo (lib + rota + UI ou contrato interno) |
 | G16 | Revisão humana para billing, boletim, invoice, FT, balanço, auth, webhooks |
+| G17 | Pesquisa de reutilização documentada; criação nova só com inviabilidade evidenciada (D11/P13) |
 
 ### Conflito de normas
 

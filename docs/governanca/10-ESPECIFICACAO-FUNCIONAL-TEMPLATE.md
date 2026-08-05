@@ -21,6 +21,12 @@ Copie este bloco para o PR / issue / chat e preencha.
 ### ★ Causa raiz
 (Evidência: arquivo, função, tabela, API — não sintoma.)
 
+### ★ Pesquisa de reutilização (D11 / P13) — obrigatória
+- Termos / símbolos buscados:
+- O que já existe (arquivos / funções / APIs / telas):
+- Decisão: [ ] Reutilizar  [ ] Estender/corrigir  [ ] Integrar  [ ] Criar novo
+- Se criar novo: por que a reutilização é inviável (evidência, não preferência):
+
 ### Evidência
 - Arquivo / linha:
 - Tabela / campo:
