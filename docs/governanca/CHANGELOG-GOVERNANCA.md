@@ -1,5 +1,14 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): prepare plain password column removal
+
+- PR4B: artefatos versionados para DROP de `public.users.plain_password` — **não aplicados**.
+- Baseline `scripts/security/baseline-drop-plain-password.sql`, verify `verify-drop-plain-password.sql`, migration `20260805210000_drop_users_plain_password`, rollback estrutural (coluna NULL sem valores), runbook `RUNBOOK-DROP-PLAIN-PASSWORD.md`.
+- Fail-closed: total=36, filled=0, null=total, coluna existe, deps=0; sem CASCADE; sem alteração de Auth/RLS.
+- PR4A já desacoplou código/tipos; coluna física ainda presente; backup obrigatório antes da aplicação; PR4C documentará o pós-DROP.
+- D13 → **PR4B PREPARADO — DROP AINDA NÃO APLICADO**.
+- Branch: `security/prepare-drop-plain-password-column`
+
 ## 2026-08-05 — security(users): remove plain password from application schema
 
 - PR4A: remove `plainPassword` de `shared/schema.ts` e tipos derivados (`User` / `InsertUser`).

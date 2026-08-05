@@ -45,7 +45,7 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 | Aplicação DB | **APLICADA** em 2026-08-05 ~17:36 UTC no Supabase compartilhado (Preview=Prod); backup nativo 2026-08-05 07:59:48 UTC; verify + smoke OK (`docs/security/RUNBOOK-USERS-RLS.md`) |
 | Status | **CORRIGIDO E HOMOLOGADO** |
 
-**Camada adicional (D13):** PR1–PR3C concluídos (valores limpos; incidente documentado). **PR4A:** `plainPassword` removido de `shared/schema.ts` e tipos de aplicação; `sanitizeUserWrite`/`toSafeUser`/`USER_SAFE_SELECT` permanecem. Coluna física ainda no banco. Status: **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE**. Backup nativo recente obrigatório antes do DROP (PR4B).
+**Camada adicional (D13):** PR1–PR3C concluídos (valores limpos; incidente documentado). **PR4A:** `plainPassword` removido de `shared/schema.ts` e tipos de aplicação; `sanitizeUserWrite`/`toSafeUser`/`USER_SAFE_SELECT` permanecem. **PR4B preparado:** migration `20260805210000_drop_users_plain_password` versionada — **ainda não aplicada**. Coluna física ainda no banco. Status: **PR4B PREPARADO — DROP AINDA NÃO APLICADO**. Backup nativo recente obrigatório antes da aplicação. PR4C fará documentação final (D13 permanece aberta).
 
 ---
 

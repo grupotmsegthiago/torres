@@ -2,7 +2,7 @@
 
 **Classificação:** evento operacional fora do fluxo controlado (não é restore, não é DROP).
 **Severidade residual:** baixa para disponibilidade; média para governança (histórico de migration desalinhado).
-**Status D13 após PR3C:** valores legados limpos; coluna ainda presente (PR4 pendente).
+**Status D13 após PR4B preparado:** valores legados limpos; código/tipos desacoplados (PR4A); artefatos de DROP versionados — **ainda não aplicados**; coluna ainda presente (aplicação controlada pendente; PR4C docs finais).
 
 ---
 
