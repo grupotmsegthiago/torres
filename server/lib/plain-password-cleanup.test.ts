@@ -91,8 +91,18 @@ describe("verify-plain-password-cleanup.sql", () => {
     assert.match(sql, /plain_password/);
   });
 
-  it("exige coluna ainda existente (sem DROP)", () => {
+  it("exige coluna ainda existente até PR4B (sem DROP nesta fase)", () => {
+    // Verify pós-limpeza ainda exige a coluna física; DROP = PR4B.
     assert.match(sql, /plain_password_column_exists|column_name = 'plain_password'/);
+    assert.match(sql, /DROP é PR4|PR4/);
+  });
+});
+
+describe("schema TypeScript desacoplado (PR4A)", () => {
+  it("shared/schema.ts não mapeia plainPassword", () => {
+    const schema = read(path.join(root, "shared/schema.ts"));
+    assert.doesNotMatch(schema, /plainPassword\s*:/);
+    assert.doesNotMatch(schema, /text\("plain_password"\)/);
   });
 });
 

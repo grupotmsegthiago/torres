@@ -142,14 +142,14 @@ Enquanto a dívida existir:
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto legada; valores em texto **já limpos** (36/36 NULL em 2026-08-05). Exposição PostgREST bloqueada pela RLS; API/UI por `toSafeUser` (PR1); writers interrompidos (PR2); artefatos PR3A versionados. Efeito da limpeza ocorreu **fora** da migration registrada — ver incidente. |
-| Consequência | Coluna ainda existe (DROP = PR4); risco residual se grants/policies regredirem ou se alguém regravar texto |
-| Prioridade | **Média (P2)** para DROP; valores sensíveis na coluna já nulos |
+| Descrição | Coluna texto legada; valores **já limpos** (36/36 NULL). Código/tipos **desacoplados** (PR4A: sem `plainPassword` no schema TS). RLS + `toSafeUser` + `sanitizeUserWrite` ativos. |
+| Consequência | Coluna física ainda existe (DROP = PR4B); risco residual se grants/policies regredirem ou alguém regravar texto |
+| Prioridade | **Média (P2)** para DROP; valores sensíveis já nulos; app não depende do campo |
 | Módulos | `public.users`, Auth/RH |
-| Restrição | **Não criar dependência nova**; não logar valores; não exibir; não reintroduzir writers; **não** reaplicar UPDATE de limpeza; não inserir histórico falso de migration |
-| Correção | **PR1–PR2 feitos.** **PR3A feito.** **Limpeza de valores: efeito alcançado (ad-hoc) + PR3C docs.** **PR4:** DROP coluna |
-| Status | **VALORES LEGADOS LIMPOS — HOMOLOGAÇÃO PÓS-LIMPEZA CONCLUÍDA; COLUNA AINDA PRESENTE — PR4 PENDENTE** |
-| Camadas | RLS + PR1 + PR2 ativos; filled=0 / null=36; migration `20260805190500` **não** no histórico remoto; incidente documentado |
+| Restrição | **Não criar dependência nova**; não logar; não exibir; não reintroduzir writers; **não** DROP sem backup; não inserir histórico falso de migration |
+| Correção | **PR1–PR3C feitos.** **PR4A feito** (tipos/código). **PR4B:** DROP COLUMN. **PR4C:** docs pós-DROP |
+| Status | **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE** |
+| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; coluna física permanece |
 
 ### D11 — Caches longos
 

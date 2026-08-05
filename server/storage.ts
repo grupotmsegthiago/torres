@@ -413,7 +413,7 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
-    // USER_SAFE_SELECT: sem plain_password (coluna legada permanece — PR3/PR4)
+    // USER_SAFE_SELECT: sem plain_password (coluna física até PR4B)
     return resilientGet<User>("users", [{ column: "id", op: "eq", value: id }], () =>
       supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("id", id).single());
   }
@@ -434,7 +434,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: UserWriteInput): Promise<User> {
-    // sanitizeUserWrite: nunca grava plain_password
+    // sanitizeUserWrite: bloqueia campos de senha legados no payload
     return resilientInsert<User>("users", toSnakeObj(sanitizeUserWrite(user)));
   }
 
