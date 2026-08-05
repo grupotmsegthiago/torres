@@ -147,6 +147,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
     let autoUserCreated = false;
     let autoUserError: string | null = null;
+    let autoUserTempPassword: string | null = null;
     if (data.cpf) {
       const cleanCpf = data.cpf.replace(/\D/g, "");
       if (cleanCpf.length === 11) {
@@ -176,6 +177,8 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
                   plainPassword: defaultPassword,
                 });
                 autoUserCreated = true;
+                // one-shot na resposta imediata — não reler de public.users
+                autoUserTempPassword = defaultPassword;
               } catch (dbErr: any) {
                 await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
                 autoUserError = dbErr.message;
@@ -201,7 +204,20 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
     if (data.cpf) {
       enqueueRhidSync({ kind: "employee", op: "create", refId: data.id, employeeId: data.id }).catch(() => {});
     }
-    res.status(201).json({ ...data, autoUserCreated, autoUserError, probationContractId, probationContractError });
+    res.status(201).json({
+      ...data,
+      autoUserCreated,
+      autoUserError,
+      probationContractId,
+      probationContractError,
+      ...(autoUserTempPassword
+        ? {
+            tempPassword: autoUserTempPassword,
+            oneShot: true,
+            message: "Copie agora. Esta senha não será exibida novamente.",
+          }
+        : {}),
+    });
   });
 
   app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {

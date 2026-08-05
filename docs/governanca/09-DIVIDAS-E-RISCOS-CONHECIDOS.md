@@ -142,13 +142,14 @@ Enquanto a dívida existir:
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto com senha; **36/36** registros preenchidos (baseline 2026-08-05). Exposição PostgREST bloqueada pela RLS/grants aplicada. |
-| Consequência | Risco residual se grants/policies regredirem; dívida de higiene de credenciais; API pode ainda serializar o campo via `service_role` se `toSafeUser` não omitir |
+| Descrição | Coluna texto com senha; **36/36** registros preenchidos (baseline 2026-08-05). Exposição PostgREST bloqueada pela RLS; API/UI bloqueadas por allowlist `toSafeUser` (PR1). |
+| Consequência | Risco residual se grants/policies regredirem; writers ainda gravam a coluna; valores em texto permanecem no banco |
 | Prioridade | **Alta (P1)** |
 | Módulos | `public.users`, Auth/RH |
 | Restrição | **Não criar dependência nova** sobre esta coluna; não logar valores; não exibir em API |
-| Correção futura | Plano separado: omitir em `toSafeUser`, remover uso, rotacionar credenciais, DROP coluna após migração Auth-only |
-| Status | **Aberta** (exposição PostgREST mitigada; remoção definitiva pendente) |
+| Correção | **PR1 feito:** allowlist + UI sem senha persistida + one-shot create/reset. Leituras API usam `USER_SAFE_SELECT`. **Dívida PR2:** `createUser`/`updateUser`/`createFirstAdmin` ainda podem retornar `select(*)` interno via writers — fronteira `toSafeUser` bloqueia serialização. **PR2:** parar writers. **PR3:** limpeza/rotação. **PR4:** DROP coluna |
+| Status | **MITIGADA NA API/UI — DEPENDÊNCIA E COLUNA AINDA PENDENTES** |
+| Camadas | RLS protege PostgREST; este PR protege API/UI; writers e coluna ainda existem |
 
 ### D11 — Caches longos
 

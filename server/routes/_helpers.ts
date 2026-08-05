@@ -181,13 +181,7 @@ export const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   chegada_base: ["base_viatura_frente", "base_viatura_lateral_esq", "base_viatura_lateral_dir", "base_viatura_traseira", "base_hodometro"],
 };
 
-export function toSafeUser(user: any) {
-  const { password, ...safe } = user;
-  return {
-    ...safe,
-    mustChangePassword: user.mustChangePassword === 1 || user.mustChangePassword === true,
-  };
-}
+export { toSafeUser, type SafeUser, USER_SAFE_SELECT, assertNoPasswordFields } from "../lib/safe-user";
 
 export async function logFinancialAudit(targetTable: string, targetId: string, action: string, changes: { field: string; old: any; new_val: any }[], changedBy: string, changedById?: number, reason?: string) {
   try {

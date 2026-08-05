@@ -1072,19 +1072,13 @@ ${empNames}`,
     const filtered = req.user!.role === "diretoria"
       ? allUsers
       : allUsers.filter(u => u.role !== "diretoria");
-    const safeUsers = filtered.map(u => {
-      const safe = toSafeUser(u);
-      if (req.user!.role !== "diretoria") {
-        delete safe.plainPassword;
-      }
-      return safe;
-    });
-    res.json(safeUsers);
+    // Nenhuma role recebe senha — allowlist em toSafeUser
+    res.json(filtered.map((u) => toSafeUser(u)));
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
-    console.log(`[users] POST /api/users payload:`, JSON.stringify(req.body, null, 2));
     const { email, name, role, employeeId } = req.body;
+    console.log(`[users] POST /api/users op=create role=${role || "funcionario"} hasEmail=${!!email} hasName=${!!name}`);
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
@@ -1124,7 +1118,13 @@ ${empNames}`,
       return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
     }
 
-    res.status(201).json({ ...toSafeUser(user), tempPassword });
+    // tempPassword é one-shot — não reler de public.users
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha não será exibida novamente.",
+    });
   });
 
   app.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
@@ -1171,7 +1171,14 @@ ${empNames}`,
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
     await storage.updateUser(id, { mustChangePassword: 1, plainPassword: newPassword } as any);
     invalidateAuthCacheByUser(user.supabaseUid);
-    res.json({ ...toSafeUser(user), newPassword, mustChangePassword: true });
+    // newPassword é one-shot — não reler de public.users
+    res.json({
+      user: toSafeUser(user),
+      newPassword,
+      mustChangePassword: true,
+      oneShot: true,
+      message: "Copie agora. Esta senha não será exibida novamente.",
+    });
   });
 
   app.get("/api/users/by-employee/:employeeId", requireAuth, requireAdminRole, async (req, res) => {
@@ -1244,7 +1251,12 @@ ${empNames}`,
       return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
     }
 
-    res.status(201).json({ ...toSafeUser(user), tempPassword });
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha não será exibida novamente.",
+    });
   });
 
   app.post("/api/auth/register-by-cpf", requireAuth, requireAdminRole, async (req, res) => {
@@ -1289,7 +1301,13 @@ ${empNames}`,
       return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
     }
 
-    res.status(201).json({ ...toSafeUser(user) });
+    // tempPassword one-shot — não reler de public.users
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword: defaultPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha não será exibida novamente.",
+    });
   });
 
   // ===== EMPLOYEE DOCUMENTS =====

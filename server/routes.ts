@@ -1256,7 +1256,7 @@ async function ensureSystemSettingsTable() {
       const emp = await storage.getEmployee(req.user!.employeeId);
       if (emp) matricula = emp.matricula || null;
     }
-    res.json({ ...safe, matricula, termsAcceptedAt: req.user!.termsAcceptedAt || null });
+    res.json({ ...safe, matricula });
   });
 
   app.post("/api/auth/accept-terms", requireAuth, async (req, res) => {

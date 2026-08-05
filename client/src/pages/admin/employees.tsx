@@ -141,11 +141,17 @@ const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","P
 
 function CreateAccessModal({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
   const { toast } = useToast();
+  const [oneShotPassword, setOneShotPassword] = useState<string | null>(null);
 
   const cpfDigits = employee.cpf ? employee.cpf.replace(/\D/g, "") : "";
   const hasCpf = cpfDigits.length === 11;
 
-  const { data: existingUser, isLoading: checkingUser } = useQuery<{ id: number; email: string; role: string; mustChangePassword?: number } | null>({
+  const handleClose = () => {
+    setOneShotPassword(null);
+    onClose();
+  };
+
+  const { data: existingUser, isLoading: checkingUser } = useQuery<{ id: number; email: string; role: string; mustChangePassword?: boolean | number } | null>({
     queryKey: ["/api/users/by-employee", employee.id],
     queryFn: async () => {
       const { authFetch } = await import("@/lib/queryClient");
@@ -158,20 +164,25 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
   });
 
   const hasAccess = !!existingUser;
-  const currentPassword = hasAccess && existingUser.mustChangePassword ? "torres@123 (padrão)" : hasAccess ? "Alterada pelo funcionário" : null;
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/register-by-cpf", {
+      const res = await apiRequest("POST", "/api/auth/register-by-cpf", {
         cpf: cpfDigits,
         name: employee.name,
         employeeId: employee.id,
       });
+      return res.json() as Promise<{ tempPassword?: string; user?: { email?: string } }>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users/by-employee", employee.id] });
-      toast({ title: "Acesso criado", description: "Login: CPF. Senha padrão: torres@123" });
+      if (data?.tempPassword) {
+        setOneShotPassword(data.tempPassword);
+        toast({ title: "Acesso criado", description: "Copie agora. Esta senha não será exibida novamente." });
+      } else {
+        toast({ title: "Acesso criado", description: "Login: CPF. Use Redefinir senha se necessário." });
+      }
     },
     onError: (err: any) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -180,11 +191,17 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
 
   const resetMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PATCH", `/api/users/${existingUser!.id}/reset-password`, {});
+      const res = await apiRequest("PATCH", `/api/users/${existingUser!.id}/reset-password`, {});
+      return res.json() as Promise<{ newPassword?: string }>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users/by-employee", employee.id] });
-      toast({ title: "Senha resetada", description: "Nova senha: torres@123. O funcionário precisará alterá-la no próximo login." });
+      if (data?.newPassword) {
+        setOneShotPassword(data.newPassword);
+        toast({ title: "Senha redefinida", description: "Copie agora. Esta senha não será exibida novamente." });
+      } else {
+        toast({ title: "Senha redefinida", description: "O funcionário precisará alterá-la no próximo login." });
+      }
     },
     onError: (err: any) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -192,13 +209,41 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{hasAccess ? "Gerenciar Acesso" : "Criar Acesso"} - {titleCase(employee.name)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {checkingUser ? (
+          {oneShotPassword ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2" data-testid="oneshot-password-box">
+              <p className="text-sm font-semibold text-amber-900">Senha temporária (exibição única)</p>
+              <p className="text-xs text-amber-800">Copie agora. Esta senha não será exibida novamente.</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-neutral-500">Login:</span>
+                <span className="font-semibold text-neutral-800">CPF ({formatCpf(cpfDigits)})</span>
+              </div>
+              <div className="flex justify-between text-sm items-center gap-2">
+                <span className="text-neutral-500">Senha:</span>
+                <span className="font-mono font-semibold text-neutral-900" data-testid="text-oneshot-password">{oneShotPassword}</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(oneShotPassword);
+                    toast({ title: "Senha copiada" });
+                  } catch {
+                    toast({ title: "Erro ao copiar", variant: "destructive" });
+                  }
+                }}
+              >
+                Copiar senha
+              </Button>
+            </div>
+          ) : checkingUser ? (
             <div className="flex items-center justify-center py-6 text-neutral-400 text-sm gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
               Verificando...
@@ -220,8 +265,8 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
                   <span className="font-semibold text-neutral-800">CPF ({formatCpf(cpfDigits)})</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">Senha atual:</span>
-                  <span className="font-semibold text-neutral-800">{currentPassword}</span>
+                  <span className="text-neutral-500">Senha:</span>
+                  <span className="font-semibold text-neutral-800">Senha protegida — use Redefinir senha</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">Perfil:</span>
@@ -235,7 +280,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
                 disabled={resetMutation.isPending}
                 data-testid="button-reset-password"
               >
-                {resetMutation.isPending ? "Resetando..." : "Resetar Senha para torres@123"}
+                {resetMutation.isPending ? "Resetando..." : "Redefinir senha"}
               </Button>
             </>
           ) : (
@@ -246,8 +291,8 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
                   <span className="font-semibold text-neutral-800">CPF ({formatCpf(cpfDigits)})</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">Senha padrão:</span>
-                  <span className="font-semibold text-neutral-800">torres@123</span>
+                  <span className="text-neutral-500">Senha:</span>
+                  <span className="font-semibold text-neutral-800">Será gerada na criação (exibição única)</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">Perfil:</span>
@@ -260,7 +305,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
               </Button>
             </>
           )}
-          <Button type="button" variant="outline" onClick={onClose} className="w-full">Fechar</Button>
+          <Button type="button" variant="outline" onClick={handleClose} className="w-full">Fechar</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -1190,7 +1235,12 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         tipoContratacao: data.tipoContratacao === "pj" ? "pj" : "clt",
       };
       let employeeId: number;
-      let autoUserInfo: { autoUserCreated?: boolean; autoUserError?: string | null } = {};
+      let autoUserInfo: {
+        autoUserCreated?: boolean;
+        autoUserError?: string | null;
+        tempPassword?: string;
+        oneShot?: boolean;
+      } = {};
       if (employee) {
         const { matricula, ...updateData } = payload;
         const res = await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
@@ -1230,7 +1280,10 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
       const docMsg = !employee && attachedCount > 0 ? ` com ${attachedCount} documento(s)` : "";
       if (!employee && autoUserInfo?.autoUserCreated) {
-        toast({ title: `Funcionário cadastrado${docMsg}`, description: "Login criado automaticamente via CPF. Senha padrão: torres@123 (será alterada no primeiro acesso)." });
+        const oneshotHint = autoUserInfo.tempPassword
+          ? `Senha temporária (única): ${autoUserInfo.tempPassword}. Copie agora — não será exibida novamente.`
+          : "Login criado via CPF. Use Redefinir senha se precisar da senha temporária.";
+        toast({ title: `Funcionário cadastrado${docMsg}`, description: oneshotHint });
       } else if (!employee && autoUserInfo?.autoUserError) {
         toast({ title: `Funcionário cadastrado${docMsg}`, description: `Aviso: login não criado — ${autoUserInfo.autoUserError}` });
       } else {
