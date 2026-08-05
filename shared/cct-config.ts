@@ -16,11 +16,12 @@ export type CestaBasicaIIFaixas = z.infer<typeof cestaBasicaIIFaixasSchema>;
 export const cctConfigSchema = z.object({
   label: z.string().min(1).default("CCT SP 2025/2026"),
   sindicato: z.string().default(""),
-  salarioBase: z.number().nonnegative().default(2432.5),
+  // Piso CCT Vigilância SP vigente (cct_presets.vigilancia) — não usar 2432,50 legado.
+  salarioBase: z.number().nonnegative().default(2565.31),
   periculosidadePct: z.number().nonnegative().default(30),
   valeRefeicaoDia: z.number().nonnegative().default(43.0),
   valeAlimentacaoDia: z.number().nonnegative().default(0),
-  cestaBasica: z.number().nonnegative().default(208.45),
+  cestaBasica: z.number().nonnegative().default(200),
   cestaBasicaIIFaixas: cestaBasicaIIFaixasSchema.optional(),
   escala: z.string().default(""),
   jornada: z.string().default(""),

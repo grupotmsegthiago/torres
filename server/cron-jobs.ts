@@ -560,14 +560,8 @@ export async function runProvisaoCron(): Promise<void> {
     const month = Number(monthStr);
     const day = Number(dayStr);
 
-    const CCT = {
-      salarioBase: 2432.5,
-      periculosidadePct: 30,
-      valeRefeicaoDia: 40.0,
-      cestaBasica: 208.45,
-      diasUteisMes: 22,
-      horaExtraValor: 16,
-    };
+    const { getCctConfig } = await import("./lib/cct-config");
+    const CCT = await getCctConfig();
     const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
     const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
     const totalBrutoMensal = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;

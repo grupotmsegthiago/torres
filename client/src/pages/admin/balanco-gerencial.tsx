@@ -58,12 +58,13 @@ const fmtHoras = (val: number) => {
 const META_DIARIA_VIATURA = 2000;
 const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
 
+// Fallback estático alinhado à CCT Vigilância vigente (API /api/cct-config é a fonte).
 const CCT = {
-  salarioBase: 2432.50,
+  salarioBase: 2565.31,
   periculosidadePct: 30,
   get periculosidade() { return this.salarioBase * (this.periculosidadePct / 100); },
-  valeRefeicaoDia: 40.00,
-  cestaBasica: 208.45,
+  valeRefeicaoDia: 43.00,
+  cestaBasica: 200,
   diasUteisMes: 22,
   get valeRefeicaoMes() { return this.valeRefeicaoDia * this.diasUteisMes; },
   get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.cestaBasica; },

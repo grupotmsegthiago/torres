@@ -473,9 +473,11 @@ import type { Express } from "express";
       const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      const CCT = { salarioBase: 2432.50, periculosidadePct: 30 };
-      const salarioBase = CCT.salarioBase;
-      const periculosidade = +(salarioBase * (CCT.periculosidadePct / 100)).toFixed(2);
+      // Sempre lê o piso da CCT (cct_presets) pelo cargo — nunca hardcode legado 2432,50.
+      const { getCctConfigByCargo } = await import("../lib/cct-config");
+      const CCT = await getCctConfigByCargo(emp.role);
+      const salarioBase = Number(CCT.salarioBase) || 0;
+      const periculosidade = +(salarioBase * (Number(CCT.periculosidadePct) / 100)).toFixed(2);
 
       // Janela = competência RH (26 → 25), não mês civil.
       const { payrollPeriodRange: _pr1 } = await import("./holidays");

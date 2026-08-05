@@ -832,7 +832,9 @@ import type { Express } from "express";
       const allEmployees = await storage.getEmployees();
       const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
 
-      const SALARIO_BASE = 2432.50;
+      const { getCctConfig } = await import("../lib/cct-config");
+      const cct = await getCctConfig();
+      const SALARIO_BASE = Number(cct.salarioBase) || 2565.31;
       const LIMITE_HORAS = 220;
       const VALOR_HORA = +(SALARIO_BASE / LIMITE_HORAS).toFixed(2);
 

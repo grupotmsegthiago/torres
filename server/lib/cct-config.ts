@@ -254,15 +254,25 @@ export async function ensureDefaultPresets(): Promise<void> {
             Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 ||
             !Number.isFinite(beforeN) ||
             beforeN <= 0;
-          if (needsHe) {
-            const cfg = parseCctConfig(raw, CCT_PRESET_VIGILANCIA);
+          // Piso legado 2432,50 → CCT vigente 2565,31
+          const beforeSal = Number(raw.salarioBase);
+          const needsSalario =
+            Number.isFinite(beforeSal) && Math.abs(beforeSal - 2432.5) < 0.011;
+          if (needsHe || needsSalario) {
+            const cfg = parseCctConfig(
+              needsSalario
+                ? { ...raw, salarioBase: DEFAULT_CCT_CONFIG.salarioBase, cestaBasica: DEFAULT_CCT_CONFIG.cestaBasica }
+                : raw,
+              CCT_PRESET_VIGILANCIA,
+            );
             await supabaseAdmin
               .from("cct_presets")
               .update({ config: cfg, updated_at: new Date().toISOString() })
               .eq("key", CCT_PRESET_VIGILANCIA);
             await syncLegacyCctSettings(cfg).catch(() => {});
             invalidateCctConfigCache();
-            console.log("[cct-config] HE vigilância migrada para 16 / 16,50");
+            if (needsHe) console.log("[cct-config] HE vigilância migrada para 16 / 16,50");
+            if (needsSalario) console.log("[cct-config] salário vigilância migrado 2432,50 →", cfg.salarioBase);
           }
         }
       } catch (e) {
