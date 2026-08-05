@@ -1,5 +1,16 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): block plain password exposure in API and UI
+
+- `toSafeUser` virou allowlist explícita (`server/lib/safe-user.ts`); sem spread do user.
+- `/api/auth/me`, `/api/users`, perfil e listagens não retornam senha (nenhuma role).
+- Create/reset/`register-by-cpf` mantêm `tempPassword`/`newPassword` **one-shot** na resposta imediata.
+- UI admin (`users.tsx` + modal de acesso em `employees.tsx`): remove senha persistida e fallback `torres@123`.
+- Auth cache e leituras `storage` de users usam `USER_SAFE_SELECT` (sem `plain_password`).
+- RLS já protege PostgREST; este PR protege API/UI; writers e coluna ainda existem.
+- D13 → **MITIGADA NA API/UI — DEPENDÊNCIA E COLUNA AINDA PENDENTES** (PR2 writers, PR3 limpeza, PR4 DROP).
+- Branch: `security/block-plain-password-exposure`
+
 ## 2026-08-05 — security(users): RLS applied and homologated on shared Supabase
 
 - Migration `harden_users_rls` aplicada no projeto TORRES (~17:36 UTC).

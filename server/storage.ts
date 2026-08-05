@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase";
+import { USER_SAFE_SELECT } from "./lib/safe-user";
 import {
   type User, type InsertUser,
   type Client, type InsertClient,
@@ -411,23 +412,24 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
+    // USER_SAFE_SELECT: sem plain_password (writers ainda existem — dívida PR2)
     return resilientGet<User>("users", [{ column: "id", op: "eq", value: id }], () =>
-      supabaseAdmin.from("users").select("*").eq("id", id).single());
+      supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("id", id).single());
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     return resilientGet<User>("users", [{ column: "email", op: "ilike", value: email.toLowerCase() }], () =>
-      supabaseAdmin.from("users").select("*").ilike("email", email).single());
+      supabaseAdmin.from("users").select(USER_SAFE_SELECT).ilike("email", email).single());
   }
 
   async getUserBySupabaseUid(uid: string): Promise<User | undefined> {
     return resilientGet<User>("users", [{ column: "supabase_uid", op: "eq", value: uid }], () =>
-      supabaseAdmin.from("users").select("*").eq("supabase_uid", uid).single());
+      supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("supabase_uid", uid).single());
   }
 
   async getUsers(): Promise<User[]> {
     return resilientList<User>("users", () =>
-      supabaseAdmin.from("users").select("*").order("id"), "id", true);
+      supabaseAdmin.from("users").select(USER_SAFE_SELECT).order("id"), "id", true);
   }
 
   async createUser(user: InsertUser): Promise<User> {

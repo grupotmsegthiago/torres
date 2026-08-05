@@ -3,6 +3,12 @@ import { supabaseAdmin } from "./supabase";
 import { isSupabaseHealthy } from "./pg-fallback";
 import { storage } from "./storage";
 import type { User } from "@shared/schema";
+import { toSafeUser } from "./lib/safe-user";
+
+/** Remove senhas/tokens antes de colocar em req.user / cache. */
+function toAuthUser(user: User): User {
+  return toSafeUser(user) as unknown as User;
+}
 
 declare global {
   namespace Express {
@@ -133,9 +139,10 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
 
     const localUser = await storage.getUserBySupabaseUid(supaUser.id);
     if (localUser) {
-      req.user = localUser;
+      const authUser = toAuthUser(localUser);
+      req.user = authUser;
       req.supabaseUid = supaUser.id;
-      authCacheSet(token, localUser, supaUser.id);
+      authCacheSet(token, authUser, supaUser.id);
     } else {
       req.supabaseUid = supaUser.id;
     }

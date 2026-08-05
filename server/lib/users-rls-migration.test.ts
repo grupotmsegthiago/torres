@@ -190,10 +190,11 @@ describe("backend admin via service_role", () => {
     assert.match(storage, /supabaseAdmin\.from\("users"\)/);
   });
 
-  it("hr expõe /api/users com requireAdminRole", () => {
+  it("hr expõe /api/users com requireAdminRole e toSafeUser", () => {
     const hr = readFileSync(path.join(root, "server/routes/hr.ts"), "utf8");
     assert.match(hr, /app\.get\("\/api\/users"/);
     assert.match(hr, /requireAdminRole/);
-    assert.match(hr, /delete safe\.plainPassword/);
+    assert.match(hr, /toSafeUser/);
+    assert.doesNotMatch(hr, /delete safe\.plainPassword/);
   });
 });
