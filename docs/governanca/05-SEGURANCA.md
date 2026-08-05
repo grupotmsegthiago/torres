@@ -37,12 +37,13 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 
 | Campo | Conteúdo |
 |-------|----------|
-| Evidência | Policies com `USING (true)` (`Acesso Total Emergencial`, `Acesso público aos perfis`); `anon` com privilégio SELECT (advisor/consulta auditada) |
-| Impacto | Vazamento de perfis/dados de usuários via PostgREST com anon key |
+| Evidência | Policies com `USING (true)` (`Acesso Total Emergencial`, `Acesso público aos perfis`); `anon` com privilégios excessivos; authenticated listava todos (incl. `plain_password`) |
+| Impacto | Vazamento de perfis/roles/senhas via PostgREST com JWT autenticado |
 | Prioridade | P0 |
 | Framework | S3, S4 |
-| Orientação futura | Remover policies permissivas; restringir SELECT a próprio usuário / admin |
-| Status | **NÃO CORRIGIDO** |
+| Mitigação (código) | Migration `supabase/migrations/20260805164000_harden_users_rls.sql`: drop USING(true); revoke anon; authenticated só `users_select_own`; revoke SELECT `plain_password`; admin permanece via API+service_role |
+| Aplicação DB | **PENDENTE** — Preview e Production compartilham o mesmo Supabase; exige janela autorizada (`docs/security/RUNBOOK-USERS-RLS.md`) |
+| Status | **MITIGADO PENDENTE DE HOMOLOGAÇÃO** |
 
 ---
 

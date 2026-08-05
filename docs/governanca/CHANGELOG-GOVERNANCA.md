@@ -1,5 +1,15 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): harden RLS (migration pronta)
+
+- Migration versionada `supabase/migrations/20260805164000_harden_users_rls.sql`.
+- Remove policies `USING (true)` e admin JWT; authenticated só `users_select_own`.
+- `REVOKE ALL` de anon; authenticated sem INSERT/UPDATE/DELETE; `REVOKE SELECT (plain_password)`.
+- Verify: `scripts/security/verify-users-rls.sql`; runbook: `docs/security/RUNBOOK-USERS-RLS.md`.
+- C3 → **MITIGADO PENDENTE DE HOMOLOGAÇÃO** (DB compartilhado Preview/Prod — aplicação não executada neste PR).
+- Dívida **D13** registrada: `plain_password` preenchida; remoção em plano separado.
+- Branch: `security/harden-users-rls`
+
 ## 2026-08-05 — PR1: desativação Banco Inter (fail-closed)
 
 - Integração Inter **desativada por padrão** via `INTER_INTEGRATION_ENABLED` (`server/lib/inter-integration.ts`).
