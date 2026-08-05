@@ -1,0 +1,121 @@
+# 05 — Segurança (riscos conhecidos — NÃO CORRIGIDOS nesta fase)
+
+**Natureza:** normativo quanto à priorização e regras; descritivo quanto ao estado atual
+**Fase 1.0:** apenas documenta. **Nenhuma correção foi aplicada.**
+**Não inclui secrets nem valores reais de chaves.**
+
+Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAMEWORK-GOVERNANCA.md)).
+
+---
+
+## CRÍTICOS
+
+### C1 — Webhook Banco Inter sem autenticação adequada
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | `server/routes/inter.ts` — `POST /api/inter/webhook/cobranca` processa eventos e atualiza invoices/FT sem validação de token/assinatura no fluxo auditado |
+| Impacto | Atacante pode forjar confirmação de pagamento / criar lançamentos financeiros |
+| Prioridade | P0 |
+| Framework | S2, P9, Y1 |
+| Orientação futura | Exigir segredo/assinatura do Inter; rejeitar se ausente (fail-closed); manter idempotência |
+| Status | **NÃO CORRIGIDO** |
+
+### C2 — Webhook Z-API com token opcional
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | `server/routes/whatsapp.ts` — se `ZAPI_TOKEN` existe mas o request não envia token, a requisição é aceita |
+| Impacto | Injeção de mensagens, acionamento indevido de automações/IA |
+| Prioridade | P0 |
+| Framework | S2, P9 |
+| Orientação futura | Token obrigatório quando configurado; rejeitar ausência |
+| Status | **NÃO CORRIGIDO** |
+
+### C3 — Tabela `users` com acesso permissivo
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | Policies com `USING (true)` (`Acesso Total Emergencial`, `Acesso público aos perfis`); `anon` com privilégio SELECT (advisor/consulta auditada) |
+| Impacto | Vazamento de perfis/dados de usuários via PostgREST com anon key |
+| Prioridade | P0 |
+| Framework | S3, S4 |
+| Orientação futura | Remover policies permissivas; restringir SELECT a próprio usuário / admin |
+| Status | **NÃO CORRIGIDO** |
+
+---
+
+## ALTOS
+
+### A1 — Webhook Asaas fail-open
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | `server/asaas.ts` — webhook padrão pode aceitar se token e API key estiverem ausentes |
+| Impacto | Atualização indevida de status de pagamento/NF |
+| Prioridade | P1 |
+| Framework | S2, P9 |
+| Orientação futura | Fail-closed sem credencial; validar header sempre |
+| Status | **NÃO CORRIGIDO** |
+
+### A2 — View financeira SECURITY DEFINER
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | Advisor Supabase: `public.v_resumo_financeiro` SECURITY DEFINER |
+| Impacto | Bypass potencial de RLS do consultante |
+| Prioridade | P1 |
+| Framework | S5, B5 |
+| Orientação futura | `security_invoker` ou restringir grants |
+| Status | **NÃO CORRIGIDO** |
+
+### A3 — Chave criptográfica com fallback hardcoded
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | `server/lib/control-id-parsers.ts` — deriva AES de env ou literal conhecido |
+| Impacto | Debilidade de criptografia de credenciais Control iD |
+| Prioridade | P1 |
+| Framework | S9 |
+| Orientação futura | Exigir `CONTROLID_ENC_KEY` / secret forte; falhar boot se ausente |
+| Status | **NÃO CORRIGIDO** |
+
+### A4 — Ausência de proteção global adequada
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | Sem Helmet/CSP/CORS global/rate limit genérico evidentes em `create-app.ts` / `vercel.json` (apenas cache headers) |
+| Impacto | Superfície ampliada a XSS/clickjacking/abuso de API |
+| Prioridade | P1 |
+| Framework | S6, S7 |
+| Orientação futura | Headers de segurança + rate limit em públicos e IA |
+| Status | **NÃO CORRIGIDO** |
+
+### A5 — Módulos desconectados referenciados pela UI
+
+| Campo | Conteúdo |
+|-------|----------|
+| Evidência | UI/chamadas a `/api/gestor-medicao`, `/api/gestor-dados`, `/api/os-financeiro` sem `register*` em `routes.ts`; `/admin/consultas` linkado sem rota em `App.tsx` (estado auditado) |
+| Impacto | Funcionalidade quebrada; falsa sensação de controle; risco ao “religar” sem gates |
+| Prioridade | P1 |
+| Framework | D4, A10, Artigo XI |
+| Orientação futura | Registrar completo com testes **ou** remover links até admissão formal |
+| Status | **NÃO CORRIGIDO** |
+
+---
+
+## MÉDIOS (amostra)
+
+| ID | Tema | Framework | Status |
+|----|------|-----------|--------|
+| M1 | Busca interpolada em `.or()` (filter injection) | S8 | NÃO CORRIGIDO |
+| M2 | CI sem `npm audit` / anon key no workflow | S11, D8 | NÃO CORRIGIDO |
+| M3 | Auth cache stale em outagem Supabase | S1 | NÃO CORRIGIDO |
+| M4 | Leaked password protection desabilitada (Auth) | S12 | NÃO CORRIGIDO |
+
+---
+
+## Nota
+
+Correções destes itens **não fazem parte da Fase 1.0**.
+Qualquer correção futura deve seguir Especificação Funcional + gates G1–G16 + testes de [`06`](./06-TESTES-E-VALIDACAO.md).

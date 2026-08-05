@@ -1,6 +1,10 @@
 # MAPA DO SISTEMA — Torres Vigilância Patrimonial
 ## Visão 360° para Auditoria Externa
 
+> **OBSOLETO COMO NORMA (Fase 1.0):** snapshot histórico de 07/04/2026.
+> Fonte normativa vigente: [`docs/governanca/README.md`](./docs/governanca/README.md).
+> Não usar este mapa para decidir SSOT, faturamento ou deploy.
+
 **Empresa:** Torres Vigilância Patrimonial
 **CNPJ:** 36.982.392/0001-89
 **Data:** 07/04/2026
