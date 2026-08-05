@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase";
 import { USER_SAFE_SELECT } from "./lib/safe-user";
+import { sanitizeUserWrite, type UserUpdateInput, type UserWriteInput } from "./lib/user-write";
 import {
   type User, type InsertUser,
   type Client, type InsertClient,
@@ -286,8 +287,8 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserBySupabaseUid(uid: string): Promise<User | undefined>;
   getUsers(): Promise<User[]>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined>;
+  createUser(user: UserWriteInput): Promise<User>;
+  updateUser(id: number, data: UserUpdateInput): Promise<User | undefined>;
   deleteUser(id: number): Promise<void>;
   hasAnyUsers(): Promise<boolean>;
   createFirstAdmin(data: { supabaseUid: string; email: string; name: string }): Promise<User>;
@@ -412,7 +413,7 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
-    // USER_SAFE_SELECT: sem plain_password (writers ainda existem — dívida PR2)
+    // USER_SAFE_SELECT: sem plain_password (coluna legada permanece — PR3/PR4)
     return resilientGet<User>("users", [{ column: "id", op: "eq", value: id }], () =>
       supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("id", id).single());
   }
@@ -432,12 +433,13 @@ export class DatabaseStorage implements IStorage {
       supabaseAdmin.from("users").select(USER_SAFE_SELECT).order("id"), "id", true);
   }
 
-  async createUser(user: InsertUser): Promise<User> {
-    return resilientInsert<User>("users", toSnakeObj(user as any));
+  async createUser(user: UserWriteInput): Promise<User> {
+    // sanitizeUserWrite: nunca grava plain_password
+    return resilientInsert<User>("users", toSnakeObj(sanitizeUserWrite(user)));
   }
 
-  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
-    return resilientUpdate<User>("users", toSnakeObj(userData as any), { id });
+  async updateUser(id: number, userData: UserUpdateInput): Promise<User | undefined> {
+    return resilientUpdate<User>("users", toSnakeObj(sanitizeUserWrite(userData)), { id });
   }
 
   async deleteUser(id: number): Promise<void> {

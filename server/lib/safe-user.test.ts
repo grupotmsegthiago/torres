@@ -199,8 +199,9 @@ describe("API/UI contratos (fonte)", () => {
 
   it("register-by-cpf retorna SafeUser + tempPassword one-shot", () => {
     const hr = readFileSync(path.join(root, "server/routes/hr.ts"), "utf8");
-    assert.match(hr, /register-by-cpf[\s\S]*?tempPassword:\s*defaultPassword/);
+    assert.match(hr, /register-by-cpf[\s\S]*?tempPassword,/);
     assert.match(hr, /register-by-cpf[\s\S]*?oneShot:\s*true/);
+    assert.doesNotMatch(hr, /register-by-cpf[\s\S]*?plainPassword/);
   });
 });
 

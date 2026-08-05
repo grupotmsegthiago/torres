@@ -1,5 +1,4 @@
 import type { Express } from "express";
-  import { randomBytes } from "crypto";
   import { storage, toCamelObj, toCamelArray, toSnakeObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria, invalidateAuthCacheByUser } from "../auth";
@@ -8,6 +7,7 @@ import type { Express } from "express";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
+  import { generateTempPassword } from "../lib/temp-password";
   import {
     isUsableHoleriteParse,
     matchEmployeeFromHolerite,
@@ -1090,7 +1090,7 @@ ${empNames}`,
     const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "E-mail já cadastrado" });
 
-    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+    const tempPassword = generateTempPassword();
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
@@ -1111,14 +1111,13 @@ ${empNames}`,
         role: role || "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
-        plainPassword: tempPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
       return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
     }
 
-    // tempPassword é one-shot — não reler de public.users
+    // tempPassword one-shot em memória — não gravar em public.users
     res.status(201).json({
       user: toSafeUser(user),
       tempPassword,
@@ -1163,15 +1162,16 @@ ${empNames}`,
       return res.status(403).json({ message: "Sem permissão para resetar senha de Diretoria" });
     }
 
-    const newPassword = "torres@123";
+    const newPassword = generateTempPassword();
+    console.log(`[users] PATCH reset-password userId=${id} actorId=${req.user!.id}`);
     const { error } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseUid, {
       password: newPassword,
     });
 
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
-    await storage.updateUser(id, { mustChangePassword: 1, plainPassword: newPassword } as any);
+    await storage.updateUser(id, { mustChangePassword: 1 });
     invalidateAuthCacheByUser(user.supabaseUid);
-    // newPassword é one-shot — não reler de public.users
+    // newPassword one-shot em memória — não gravar em public.users
     res.json({
       user: toSafeUser(user),
       newPassword,
@@ -1210,7 +1210,7 @@ ${empNames}`,
   });
 
   app.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
-    const { email, username, name, role, employeeId, password: reqPassword } = req.body;
+    const { email, username, name, role, employeeId } = req.body;
     const emailToUse = email || username;
     if (!emailToUse || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
@@ -1223,7 +1223,7 @@ ${empNames}`,
     const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "Usuário já existe" });
 
-    const tempPassword = reqPassword || "torres@123";
+    const tempPassword = generateTempPassword();
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
@@ -1244,7 +1244,6 @@ ${empNames}`,
         role: role || "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
-        plainPassword: tempPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -1273,11 +1272,11 @@ ${empNames}`,
     const existing = await storage.getUserByEmail(syntheticEmail);
     if (existing) return res.status(409).json({ message: "Já existe um acesso para este CPF" });
 
-    const defaultPassword = "torres@123";
+    const tempPassword = generateTempPassword();
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: syntheticEmail,
-      password: defaultPassword,
+      password: tempPassword,
       email_confirm: true,
     });
 
@@ -1294,17 +1293,16 @@ ${empNames}`,
         role: "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
-        plainPassword: defaultPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
       return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
     }
 
-    // tempPassword one-shot — não reler de public.users
+    // tempPassword one-shot em memória — não gravar em public.users
     res.status(201).json({
       user: toSafeUser(user),
-      tempPassword: defaultPassword,
+      tempPassword,
       oneShot: true,
       message: "Copie agora. Esta senha não será exibida novamente.",
     });
