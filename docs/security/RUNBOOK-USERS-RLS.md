@@ -48,11 +48,11 @@ psql "$SUPABASE_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/rollback
 psql "$SUPABASE_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/security/verify-users-rls.sql
 ```
 
-O rollback **mantém** segurança mínima (sem anon, sem USING true, sem `plain_password` para authenticated).
+O rollback **mantém** segurança mínima (sem anon, sem USING true, sem SELECT de tabela, sem `plain_password` para authenticated).
 
 ## Modelo final
 
 - **anon:** sem privilégios
-- **authenticated:** SELECT próprio via `users_select_own`; sem INSERT/UPDATE/DELETE; sem `plain_password`
+- **authenticated:** possui SELECT somente nas colunas seguras + RLS own; sem INSERT/UPDATE/DELETE; sem `plain_password`
 - **service_role:** intacto (API backend)
 - **Helpers DEFINER:** `is_app_user`, `get_app_user_id`, `get_app_user_role` inalterados

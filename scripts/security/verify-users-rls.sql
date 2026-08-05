@@ -14,9 +14,12 @@ DECLARE
   v_select_policies int;
   v_anon_privs int;
   v_auth_bad_privs int;
+  v_auth_table_select int;
   v_plain_auth boolean;
   v_plain_anon boolean;
+  v_plain_col_grant int;
   v_sr_select boolean;
+  v_safe text;
   v_policies text;
 BEGIN
   SELECT c.relrowsecurity, c.relforcerowsecurity
@@ -65,6 +68,14 @@ BEGIN
     RAISE EXCEPTION 'FAIL: anon ainda tem % privilégios em public.users', v_anon_privs;
   END IF;
 
+  SELECT COUNT(*)::int INTO v_anon_privs
+  FROM information_schema.role_column_grants
+  WHERE table_schema = 'public' AND table_name = 'users' AND grantee = 'anon';
+
+  IF v_anon_privs > 0 THEN
+    RAISE EXCEPTION 'FAIL: anon ainda tem % privilégios de coluna em public.users', v_anon_privs;
+  END IF;
+
   SELECT COUNT(*)::int INTO v_auth_bad_privs
   FROM information_schema.role_table_grants
   WHERE table_schema = 'public'
@@ -74,6 +85,19 @@ BEGIN
 
   IF v_auth_bad_privs > 0 THEN
     RAISE EXCEPTION 'FAIL: authenticated ainda tem privilégios mutáveis/excessivos (%)', v_auth_bad_privs;
+  END IF;
+
+  -- SELECT de tabela (não confundir com has_table_privilege: este retorna true
+  -- se houver SELECT em qualquer coluna). Aqui exigimos ausência de grant de tabela.
+  SELECT COUNT(*)::int INTO v_auth_table_select
+  FROM information_schema.role_table_grants
+  WHERE table_schema = 'public'
+    AND table_name = 'users'
+    AND grantee = 'authenticated'
+    AND privilege_type = 'SELECT';
+
+  IF v_auth_table_select > 0 THEN
+    RAISE EXCEPTION 'FAIL: authenticated ainda tem SELECT de tabela em public.users (esperado só colunas seguras)';
   END IF;
 
   SELECT has_column_privilege('authenticated', 'public.users', 'plain_password', 'SELECT')
@@ -87,6 +111,39 @@ BEGIN
   IF COALESCE(v_plain_anon, false) THEN
     RAISE EXCEPTION 'FAIL: anon ainda pode SELECT plain_password';
   END IF;
+
+  SELECT COUNT(*)::int INTO v_plain_col_grant
+  FROM information_schema.role_column_grants
+  WHERE table_schema = 'public'
+    AND table_name = 'users'
+    AND grantee = 'authenticated'
+    AND column_name = 'plain_password'
+    AND privilege_type = 'SELECT';
+
+  IF v_plain_col_grant > 0 THEN
+    RAISE EXCEPTION 'FAIL: plain_password está nos grants por coluna de authenticated';
+  END IF;
+
+  FOREACH v_safe IN ARRAY ARRAY[
+    'id',
+    'supabase_uid',
+    'email',
+    'username',
+    'name',
+    'role',
+    'employee_id',
+    'must_change_password',
+    'avatar_url',
+    'terms_accepted_at',
+    'terms_ip_address',
+    'terms_user_agent',
+    'created_at'
+  ]
+  LOOP
+    IF NOT has_column_privilege('authenticated', 'public.users', v_safe, 'SELECT') THEN
+      RAISE EXCEPTION 'FAIL: authenticated sem SELECT na coluna segura %', v_safe;
+    END IF;
+  END LOOP;
 
   SELECT has_table_privilege('service_role', 'public.users', 'SELECT') INTO v_sr_select;
   IF NOT COALESCE(v_sr_select, false) THEN

@@ -4,11 +4,12 @@
 -- NÃO recria USING (true).
 -- NÃO restaura SELECT público / anon.
 -- NÃO devolve plain_password a authenticated.
+-- NÃO concede SELECT de tabela a authenticated.
 --
 -- Restaura apenas:
 --   - RLS enabled
 --   - users_select_own
---   - SELECT mínimo para authenticated (sem plain_password)
+--   - SELECT nas colunas seguras para authenticated (sem plain_password)
 --
 -- Admin JWT NÃO é restaurado — administração permanece via service_role/API.
 -- =============================================================================
@@ -29,8 +30,21 @@ CREATE POLICY "users_select_own" ON public.users
 
 REVOKE ALL ON TABLE public.users FROM anon;
 REVOKE ALL ON TABLE public.users FROM authenticated;
-GRANT SELECT ON TABLE public.users TO authenticated;
-REVOKE SELECT (plain_password) ON TABLE public.users FROM anon;
-REVOKE SELECT (plain_password) ON TABLE public.users FROM authenticated;
+
+GRANT SELECT (
+  id,
+  supabase_uid,
+  email,
+  username,
+  name,
+  role,
+  employee_id,
+  must_change_password,
+  avatar_url,
+  terms_accepted_at,
+  terms_ip_address,
+  terms_user_agent,
+  created_at
+) ON TABLE public.users TO authenticated;
 
 COMMIT;

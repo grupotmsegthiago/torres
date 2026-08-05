@@ -18,9 +18,44 @@ const ROLLBACK = path.join(
 );
 const VERIFY = path.join(root, "scripts/security/verify-users-rls.sql");
 
+const SAFE_COLUMNS = [
+  "id",
+  "supabase_uid",
+  "email",
+  "username",
+  "name",
+  "role",
+  "employee_id",
+  "must_change_password",
+  "avatar_url",
+  "terms_accepted_at",
+  "terms_ip_address",
+  "terms_user_agent",
+  "created_at",
+] as const;
+
+const COLUMN_GRANT_RE =
+  /GRANT SELECT\s*\(\s*id\s*,\s*supabase_uid\s*,\s*email\s*,\s*username\s*,\s*name\s*,\s*role\s*,\s*employee_id\s*,\s*must_change_password\s*,\s*avatar_url\s*,\s*terms_accepted_at\s*,\s*terms_ip_address\s*,\s*terms_user_agent\s*,\s*created_at\s*\)\s*ON TABLE public\.users TO authenticated/i;
+
 function read(p: string) {
   assert.ok(existsSync(p), `arquivo ausente: ${p}`);
   return readFileSync(p, "utf8");
+}
+
+function assertSafeColumnGrantModel(sql: string) {
+  assert.doesNotMatch(
+    sql,
+    /GRANT SELECT ON TABLE public\.users TO authenticated/i,
+  );
+  assert.match(sql, COLUMN_GRANT_RE);
+  const grantBlock = sql.match(
+    /GRANT SELECT\s*\([\s\S]*?\)\s*ON TABLE public\.users TO authenticated/i,
+  );
+  assert.ok(grantBlock, "GRANT SELECT(colunas) ausente");
+  assert.doesNotMatch(grantBlock[0], /plain_password/i);
+  for (const col of SAFE_COLUMNS) {
+    assert.match(grantBlock[0], new RegExp(`\\b${col}\\b`));
+  }
 }
 
 describe("migration harden_users_rls (contrato)", () => {
@@ -54,17 +89,29 @@ describe("migration harden_users_rls (contrato)", () => {
   });
 
   it("não recria USING \(true\)", () => {
-    // DROP é ok; CREATE com using true é proibido
     const creates = sql.split(/CREATE POLICY/i).slice(1).join("CREATE POLICY");
     assert.doesNotMatch(creates, /USING\s*\(\s*true\s*\)/i);
   });
 
-  it("revoga anon e mutações authenticated; revoga plain_password", () => {
+  it("revoga anon/authenticated e concede só colunas seguras", () => {
     assert.match(sql, /REVOKE ALL ON TABLE public\.users FROM anon/i);
     assert.match(sql, /REVOKE ALL ON TABLE public\.users FROM authenticated/i);
-    assert.match(sql, /GRANT SELECT ON TABLE public\.users TO authenticated/i);
-    assert.match(sql, /REVOKE SELECT \(plain_password\) ON TABLE public\.users FROM anon/i);
-    assert.match(sql, /REVOKE SELECT \(plain_password\) ON TABLE public\.users FROM authenticated/i);
+    assertSafeColumnGrantModel(sql);
+  });
+
+  it("não concede GRANT SELECT ON TABLE a authenticated", () => {
+    assert.doesNotMatch(
+      sql,
+      /GRANT SELECT ON TABLE public\.users TO authenticated/i,
+    );
+  });
+
+  it("plain_password não aparece na lista concedida", () => {
+    const grantBlock = sql.match(
+      /GRANT SELECT\s*\([\s\S]*?\)\s*ON TABLE public\.users TO authenticated/i,
+    );
+    assert.ok(grantBlock);
+    assert.doesNotMatch(grantBlock![0], /plain_password/i);
   });
 
   it("não apaga coluna nem dados", () => {
@@ -82,8 +129,11 @@ describe("rollback users RLS (contrato de segurança mínima)", () => {
     assert.doesNotMatch(creates, /USING\s*\(\s*true\s*\)/i);
     assert.doesNotMatch(sql, /GRANT [\s\S]+ TO anon/i);
     assert.match(sql, /REVOKE ALL ON TABLE public\.users FROM anon/i);
-    assert.match(sql, /REVOKE SELECT \(plain_password\)/i);
     assert.match(sql, /users_select_own/);
+  });
+
+  it("segue o mesmo modelo de colunas seguras (sem SELECT de tabela)", () => {
+    assertSafeColumnGrantModel(sql);
   });
 });
 
@@ -97,6 +147,20 @@ describe("verify-users-rls.sql", () => {
     assert.match(sql, /RAISE EXCEPTION/);
     assert.match(sql, /service_role/);
     assert.match(sql, /is_app_user/);
+  });
+
+  it("testa ausência de SELECT de tabela para authenticated", () => {
+    assert.match(sql, /role_table_grants/);
+    assert.match(sql, /privilege_type = 'SELECT'/);
+    assert.match(sql, /SELECT de tabela/);
+  });
+
+  it("testa ausência de acesso à plain_password", () => {
+    assert.match(
+      sql,
+      /has_column_privilege\('authenticated',\s*'public\.users',\s*'plain_password',\s*'SELECT'\)/,
+    );
+    assert.match(sql, /column_name = 'plain_password'/);
   });
 });
 

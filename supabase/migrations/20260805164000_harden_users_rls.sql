@@ -5,8 +5,8 @@
 -- Modelo final:
 --   - admin/diretoria usam API backend + service_role (nunca PostgREST amplo)
 --   - frontend NÃO deve listar users diretamente
---   - authenticated só pode ler a própria linha (users_select_own)
---   - plain_password é legado sensível: sem SELECT para anon/authenticated
+--   - authenticated: SELECT somente colunas seguras + RLS users_select_own
+--   - plain_password é legado sensível: nunca concedida a anon/authenticated
 --   - coluna plain_password NÃO é removida neste PR (compatibilidade)
 --
 -- Aplicação: NÃO rodar em produção compartilhada sem janela autorizada.
@@ -37,20 +37,31 @@ CREATE POLICY "users_select_own" ON public.users
   TO authenticated
   USING (supabase_uid = (SELECT auth.uid())::text);
 
--- 3) Grants: mínimo necessário
+-- 3) Grants: mínimo necessário (sem SELECT de tabela)
 REVOKE ALL ON TABLE public.users FROM anon;
 REVOKE ALL ON TABLE public.users FROM authenticated;
 
--- SELECT de tabela necessário para a policy own; linhas limitadas por RLS
-GRANT SELECT ON TABLE public.users TO authenticated;
-
--- Coluna legado: nunca exposta a anon/authenticated
-REVOKE SELECT (plain_password) ON TABLE public.users FROM anon;
-REVOKE SELECT (plain_password) ON TABLE public.users FROM authenticated;
+-- Colunas reais mapeadas (schema + DB); plain_password excluída deliberadamente.
+-- Não conceder colunas desconhecidas automaticamente.
+GRANT SELECT (
+  id,
+  supabase_uid,
+  email,
+  username,
+  name,
+  role,
+  employee_id,
+  must_change_password,
+  avatar_url,
+  terms_accepted_at,
+  terms_ip_address,
+  terms_user_agent,
+  created_at
+) ON TABLE public.users TO authenticated;
 
 -- service_role permanece com privilégios completos (não revogar aqui)
 
 COMMENT ON TABLE public.users IS
-  'Perfis da aplicação. Admin via API+service_role. authenticated: SELECT own only. plain_password legado — não expor.';
+  'Perfis da aplicação. Admin via API+service_role. authenticated: SELECT colunas seguras + own row. plain_password legado — não expor.';
 
 COMMIT;
