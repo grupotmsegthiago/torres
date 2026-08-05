@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): strengthen plain password dependency guards
+
+- PR4B / 4.5B: cobertura preventiva reforçada na migration de DROP (ainda **não** aplicada).
+- Diagnóstico 4.5A: zero dependências reais (`pg_depend`=0); lacuna era de governança, não bloqueio técnico.
+- Guards: `pg_depend` (deptype `n` + attnum), functions+procedures, rules/`pg_rewrite`; grants só diagnóstico.
+- PostgreSQL já era fail-closed sem CASCADE; baseline/verify/testes alinhados ao catálogo canônico.
+- Branch: `security/prepare-drop-plain-password-column` (PR #55)
+
 ## 2026-08-05 — security(users): prepare plain password column removal
 
 - PR4B: artefatos versionados para DROP de `public.users.plain_password` — **não aplicados**.

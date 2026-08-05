@@ -149,7 +149,7 @@ Enquanto a dívida existir:
 | Restrição | **Não criar dependência nova**; não logar; não exibir; não reintroduzir writers; **não** DROP sem backup; não inserir histórico falso de migration |
 | Correção | **PR1–PR4A feitos.** **PR4B preparado** (migration/verify/runbook). **Aplicação do DROP** = fase controlada seguinte. **PR4C:** docs pós-DROP |
 | Status | **PR4B PREPARADO — DROP AINDA NÃO APLICADO** |
-| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; migration DROP versionada sem aplicar; coluna física permanece |
+| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; migration DROP versionada sem aplicar (guards `pg_depend`/procedures/rules); coluna física permanece |
 
 ### D11 — Caches longos
 

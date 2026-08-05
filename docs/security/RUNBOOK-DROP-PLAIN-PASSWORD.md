@@ -22,7 +22,7 @@ Antes de qualquer aplicação:
 3. Banco com **36** users / **filled 0** / **null 36** / Auth match **36**.
 4. **Backup nativo recente** confirmado no painel Supabase.
 5. **Baseline imediato** (`baseline-drop-plain-password.sql`) com `dependency_total = 0`.
-6. **Zero dependências** (views, functions, triggers, indexes, constraints, policies, generated).
+6. **Zero dependências** (pg_depend externo, views, functions, procedures, rules, triggers, indexes, constraints, policies, generated). Grants da coluna são só diagnóstico (não bloqueiam DROP).
 7. Janela **sem deploy/migration** concorrente.
 8. Responsável presente durante a execução e o smoke.
 

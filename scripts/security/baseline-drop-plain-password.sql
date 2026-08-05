@@ -98,8 +98,21 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public' AND c.relname = 'users';
 
--- 3) Dependências da coluna (contagens — sem nomes de usuários)
+-- 3) Dependências da coluna (contagens — sem nomes de usuários / PII)
 SELECT
+  (
+    SELECT COUNT(*)::int
+    FROM pg_depend d
+    JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+    JOIN pg_class t ON t.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname = 'users'
+      AND a.attname = 'plain_password'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND d.deptype = 'n'
+  ) AS dep_pg_depend_external,
   (
     SELECT COUNT(*)::int
     FROM information_schema.view_column_usage
@@ -121,6 +134,14 @@ SELECT
       AND p.prokind = 'f'
       AND pg_get_functiondef(p.oid) ILIKE '%plain_password%'
   ) AS dep_functions,
+  (
+    SELECT COUNT(*)::int
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prokind = 'p'
+      AND pg_get_functiondef(p.oid) ILIKE '%plain_password%'
+  ) AS dep_procedures,
   (
     SELECT COUNT(*)::int
     FROM pg_trigger tr
@@ -171,12 +192,47 @@ SELECT
       AND NOT a.attisdropped
       AND a.attgenerated <> ''
   ) AS dep_generated_columns,
+  (
+    SELECT COUNT(*)::int
+    FROM pg_rewrite r
+    JOIN pg_class c ON c.oid = r.ev_class
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND r.rulename <> '_RETURN'
+      AND pg_get_ruledef(r.oid) ILIKE '%plain_password%'
+  ) AS dep_rules,
   NOW() AT TIME ZONE 'UTC' AS consulted_at_utc;
 
--- 4) Soma de dependências (deve ser 0 antes do DROP)
+-- 4) Grants da coluna (diagnóstico — NÃO bloqueiam DROP; somem com a coluna)
+SELECT
+  COUNT(*)::int AS plain_password_column_grants_total,
+  COUNT(*) FILTER (WHERE grantee = 'anon')::int AS grants_anon,
+  COUNT(*) FILTER (WHERE grantee = 'authenticated')::int AS grants_authenticated,
+  COUNT(*) FILTER (WHERE grantee = 'service_role')::int AS grants_service_role,
+  COUNT(*) FILTER (WHERE grantee = 'postgres')::int AS grants_postgres,
+  NOW() AT TIME ZONE 'UTC' AS consulted_at_utc
+FROM information_schema.role_column_grants
+WHERE table_schema = 'public'
+  AND table_name = 'users'
+  AND column_name = 'plain_password';
+
+-- 5) Soma de dependências bloqueantes (deve ser 0 antes do DROP; grants excluídos)
 SELECT
   (
     (
+      SELECT COUNT(*)::int
+      FROM pg_depend d
+      JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+      JOIN pg_class t ON t.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE n.nspname = 'public'
+        AND t.relname = 'users'
+        AND a.attname = 'plain_password'
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        AND d.deptype = 'n'
+    )
+    + (
       SELECT COUNT(*)::int
       FROM information_schema.view_column_usage
       WHERE table_schema = 'public'
@@ -194,7 +250,7 @@ SELECT
       FROM pg_proc p
       JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public'
-        AND p.prokind = 'f'
+        AND p.prokind IN ('f', 'p')
         AND pg_get_functiondef(p.oid) ILIKE '%plain_password%'
     )
     + (
@@ -246,6 +302,15 @@ SELECT
         AND a.attnum > 0
         AND NOT a.attisdropped
         AND a.attgenerated <> ''
+    )
+    + (
+      SELECT COUNT(*)::int
+      FROM pg_rewrite r
+      JOIN pg_class c ON c.oid = r.ev_class
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND r.rulename <> '_RETURN'
+        AND pg_get_ruledef(r.oid) ILIKE '%plain_password%'
     )
   )::int AS dependency_total,
   NOW() AT TIME ZONE 'UTC' AS consulted_at_utc;

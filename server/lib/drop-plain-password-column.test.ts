@@ -53,14 +53,19 @@ describe("baseline-drop-plain-password.sql", () => {
     assert.doesNotMatch(code, /torres@123/i);
   });
 
-  it("inclui contagens, Auth, RLS e dependências", () => {
+  it("inclui contagens, Auth, RLS e catálogos de dependência", () => {
     assert.match(sql, /total_users/);
     assert.match(sql, /plain_password_filled/);
     assert.match(sql, /plain_password_null/);
     assert.match(sql, /auth_match|without_supabase_uid/);
     assert.match(sql, /rls_enabled/);
     assert.match(sql, /policies_using_true/);
-    assert.match(sql, /dependency_total|dep_views/);
+    assert.match(sql, /dep_pg_depend_external|pg_depend/);
+    assert.match(sql, /dep_functions/);
+    assert.match(sql, /dep_procedures/);
+    assert.match(sql, /dep_rules|pg_rewrite/);
+    assert.match(sql, /plain_password_column_grants_total|grants_anon/);
+    assert.match(sql, /dependency_total/);
     assert.match(sql, /consulted_at_utc/);
   });
 });
@@ -90,9 +95,41 @@ describe("migration drop_users_plain_password", () => {
     assert.match(sql, /v_column_exists\s*<>\s*1/);
   });
 
-  it("valida dependências = 0", () => {
+  it("consulta pg_depend com refobjid/refobjsubid (attnum)", () => {
+    assert.match(sql, /pg_depend/);
+    assert.match(sql, /refobjid\s*=\s*v_relid/);
+    assert.match(sql, /refobjsubid\s*=\s*v_attnum/);
+    assert.match(sql, /attnum/);
+    assert.match(sql, /deptype\s*=\s*'n'/);
+  });
+
+  it("cobre functions e procedures", () => {
+    assert.match(sql, /prokind\s*=\s*'f'/);
+    assert.match(sql, /prokind\s*=\s*'p'/);
+    assert.match(sql, /v_dep_functions/);
+    assert.match(sql, /v_dep_procedures/);
+  });
+
+  it("cobre rules / pg_rewrite", () => {
+    assert.match(sql, /pg_rewrite/);
+    assert.match(sql, /rulename\s*<>\s*'_RETURN'/);
+    assert.match(sql, /v_dep_rules/);
+  });
+
+  it("audita grants sem usá-los como bloqueio", () => {
+    assert.match(sql, /v_col_grants|role_column_grants/);
+    assert.match(sql, /diagnostic|diagnóstico|not a DROP blocker|NÃO bloqueiam/i);
+    assert.doesNotMatch(sql, /v_col_grants\s*<>\s*0[\s\S]*?RAISE EXCEPTION/);
+    assert.doesNotMatch(
+      sql,
+      /IF\s+v_col_grants\s*<>\s*0\s+THEN\s+RAISE EXCEPTION/i,
+    );
+  });
+
+  it("valida dependências externas = 0 com RAISE EXCEPTION", () => {
     assert.match(sql, /v_dependencies\s*<>\s*0/);
-    assert.match(sql, /dep_views|v_dep_views/i);
+    assert.match(sql, /v_dep_catalog/);
+    assert.match(sql, /RAISE EXCEPTION[\s\S]*external dependencies|has external dependencies/i);
   });
 
   it("não usa CASCADE", () => {
@@ -106,15 +143,13 @@ describe("migration drop_users_plain_password", () => {
     assert.doesNotMatch(code, /DROP\s+TABLE\b/i);
   });
 
-  it("não altera auth.users", () => {
+  it("não altera auth.users e não tem DML", () => {
     assert.doesNotMatch(code, /UPDATE\s+auth\.users/i);
     assert.doesNotMatch(code, /ALTER\s+TABLE\s+auth\.users/i);
     assert.doesNotMatch(code, /DELETE\s+FROM\s+auth\.users/i);
-  });
-
-  it("não altera outras colunas via UPDATE/SET", () => {
     assert.doesNotMatch(code, /\bUPDATE\b/i);
-    assert.doesNotMatch(code, /\bSET\b/i);
+    assert.doesNotMatch(code, /\bINSERT\s+INTO\b/i);
+    assert.doesNotMatch(code, /\bDELETE\s+FROM\b/i);
   });
 
   it("não contém senha / torres@123", () => {
@@ -133,6 +168,17 @@ describe("verify-drop-plain-password.sql", () => {
   it("exige coluna ausente", () => {
     assert.match(sql, /plain_password_column_absent|v_col_exists/i);
     assert.match(sql, /IF\s+v_col_exists/i);
+  });
+
+  it("exige grants da coluna ausentes após DROP", () => {
+    assert.match(sql, /plain_password_column_grants_absent|v_col_grants/);
+    assert.match(sql, /v_col_grants\s*<>\s*0/);
+  });
+
+  it("confirma ausência de deps/rules/functions pós-DROP", () => {
+    assert.match(sql, /no_pg_depend_on_plain_password|v_dep_catalog/);
+    assert.match(sql, /no_rules_on_plain_password|v_dep_rules/);
+    assert.match(sql, /no_functions_procedures_on_plain_password|v_dep_procs/);
   });
 
   it("preserva RLS", () => {

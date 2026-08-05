@@ -24,6 +24,10 @@ DECLARE
   v_without_uid int;
   v_without_auth int;
   v_auth_match int;
+  v_col_grants int;
+  v_dep_catalog int;
+  v_dep_rules int;
+  v_dep_procs int;
 BEGIN
   SELECT COUNT(*)::int INTO v_total FROM public.users;
   IF v_total <> v_expected_total THEN
@@ -200,15 +204,33 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS assert=auth_match expected=% found=%', v_expected_total, v_auth_match;
 
-  -- Views públicas que referenciam users e ficaram inválidas
-  SELECT COUNT(*)::int INTO v_broken_views
-  FROM pg_class c
-  JOIN pg_namespace n ON n.oid = c.relnamespace
+  -- Grants da coluna devem ser 0 (coluna ausente)
+  SELECT COUNT(*)::int INTO v_col_grants
+  FROM information_schema.role_column_grants
+  WHERE table_schema = 'public'
+    AND table_name = 'users'
+    AND column_name = 'plain_password';
+  IF v_col_grants <> 0 THEN
+    RAISE EXCEPTION 'FAIL assert=plain_password_column_grants_absent expected=0 found=%', v_col_grants;
+  END IF;
+  RAISE NOTICE 'PASS assert=plain_password_column_grants_absent expected=0 found=%', v_col_grants;
+
+  -- Nenhuma dependência catalogada residual na coluna (inexistente)
+  SELECT COUNT(*)::int INTO v_dep_catalog
+  FROM pg_depend d
+  JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+  JOIN pg_class t ON t.oid = a.attrelid
+  JOIN pg_namespace n ON n.oid = t.relnamespace
   WHERE n.nspname = 'public'
-    AND c.relkind = 'v'
-    AND NOT has_table_privilege(c.oid, 'SELECT');
-  -- Contagem informativa: se houver view quebrada por DROP, pg_get_viewdef falha.
-  -- Validação estrita: nenhuma view em public referencia plain_password.
+    AND t.relname = 'users'
+    AND a.attname = 'plain_password'
+    AND NOT a.attisdropped
+    AND d.deptype = 'n';
+  IF v_dep_catalog <> 0 THEN
+    RAISE EXCEPTION 'FAIL assert=no_pg_depend_on_plain_password expected=0 found=%', v_dep_catalog;
+  END IF;
+  RAISE NOTICE 'PASS assert=no_pg_depend_on_plain_password expected=0 found=%', v_dep_catalog;
+
   IF EXISTS (
     SELECT 1
     FROM information_schema.view_column_usage
@@ -219,6 +241,29 @@ BEGIN
     RAISE EXCEPTION 'FAIL assert=no_view_deps_on_plain_password expected=0 found>0';
   END IF;
   RAISE NOTICE 'PASS assert=no_view_deps_on_plain_password expected=0 found=0';
+
+  SELECT COUNT(*)::int INTO v_dep_rules
+  FROM pg_rewrite r
+  JOIN pg_class c ON c.oid = r.ev_class
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND r.rulename <> '_RETURN'
+    AND pg_get_ruledef(r.oid) ILIKE '%plain_password%';
+  IF v_dep_rules <> 0 THEN
+    RAISE EXCEPTION 'FAIL assert=no_rules_on_plain_password expected=0 found=%', v_dep_rules;
+  END IF;
+  RAISE NOTICE 'PASS assert=no_rules_on_plain_password expected=0 found=%', v_dep_rules;
+
+  SELECT COUNT(*)::int INTO v_dep_procs
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.prokind IN ('f', 'p')
+    AND pg_get_functiondef(p.oid) ILIKE '%plain_password%';
+  IF v_dep_procs <> 0 THEN
+    RAISE EXCEPTION 'FAIL assert=no_functions_procedures_on_plain_password expected=0 found=%', v_dep_procs;
+  END IF;
+  RAISE NOTICE 'PASS assert=no_functions_procedures_on_plain_password expected=0 found=%', v_dep_procs;
 
   RAISE NOTICE 'PASS verify-drop-plain-password: all asserts OK (Auth-only login path)';
 END $$;
