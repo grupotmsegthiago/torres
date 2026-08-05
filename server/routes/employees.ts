@@ -20,6 +20,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { countBusinessDays, loadHolidaySet, monthRange, payrollPeriodRange } from "./holidays";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
   import { toDecimalString } from "../lib/parse-money";
+  import { generateTempPassword } from "../lib/temp-password";
 
   // TODAS as colunas do tipo `date` da tabela employees (nomes camelCase do
   // schema). Inputs vazios ("") precisam virar null antes de gravar no Supabase,
@@ -157,10 +158,10 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
           autoUserError = "Já existe um login para este CPF";
         } else {
           try {
-            const defaultPassword = "torres@123";
+            const tempPassword = generateTempPassword();
             const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
               email: syntheticEmail,
-              password: defaultPassword,
+              password: tempPassword,
               email_confirm: true,
             });
             if (authError) {
@@ -174,11 +175,10 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
                   role: "funcionario",
                   employeeId: data.id,
                   mustChangePassword: 1,
-                  plainPassword: defaultPassword,
                 });
                 autoUserCreated = true;
-                // one-shot na resposta imediata — não reler de public.users
-                autoUserTempPassword = defaultPassword;
+                // one-shot em memória — não gravar em public.users
+                autoUserTempPassword = tempPassword;
               } catch (dbErr: any) {
                 await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
                 autoUserError = dbErr.message;

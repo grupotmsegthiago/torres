@@ -45,7 +45,7 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 | Aplicação DB | **APLICADA** em 2026-08-05 ~17:36 UTC no Supabase compartilhado (Preview=Prod); backup nativo 2026-08-05 07:59:48 UTC; verify + smoke OK (`docs/security/RUNBOOK-USERS-RLS.md`) |
 | Status | **CORRIGIDO E HOMOLOGADO** |
 
-**Camada adicional (D13 / PR1):** API e UI bloqueiam serialização de `plainPassword` via allowlist `toSafeUser` (`server/lib/safe-user.ts`). A coluna e os writers no banco ainda existem — ver dívida D13 (PR2–PR4).
+**Camada adicional (D13):** PR1 — API/UI bloqueiam serialização via `toSafeUser`. PR2 — writers de produção não gravam mais `plain_password` (`sanitizeUserWrite` + `generateTempPassword`). Valores legados e a coluna permanecem até PR3/PR4.
 
 ---
 

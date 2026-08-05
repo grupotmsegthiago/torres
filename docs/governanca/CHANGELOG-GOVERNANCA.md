@@ -1,5 +1,14 @@
 # Changelog — Governança Torres
 
+## 2026-08-05 — security(users): stop storing plain text passwords
+
+- Writers de produção não gravam mais `plain_password` (create, reset, change-password, register-by-cpf, auto-login de funcionário).
+- `sanitizeUserWrite` / `UserWriteInput` bloqueiam o campo no storage.
+- `generateTempPassword` centraliza senha one-shot (sem `torres@123`).
+- Create/reset continuam retornando `tempPassword`/`newPassword` só na resposta imediata.
+- D13 → **WRITERS INTERROMPIDOS — VALORES LEGADOS AINDA PRESENTES** (PR3 limpeza, PR4 DROP).
+- Branch: `security/stop-plain-password-writers`
+
 ## 2026-08-05 — security(users): block plain password exposure in API and UI
 
 - `toSafeUser` virou allowlist explícita (`server/lib/safe-user.ts`); sem spread do user.
