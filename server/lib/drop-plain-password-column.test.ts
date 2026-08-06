@@ -8,6 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
 
 const BASELINE = path.join(root, "scripts/security/baseline-drop-plain-password.sql");
+const HOMOLOGATE = path.join(
+  root,
+  "scripts/security/homologate-drop-plain-password-baseline.sql",
+);
 const VERIFY = path.join(root, "scripts/security/verify-drop-plain-password.sql");
 const MIGRATION = path.join(
   root,
@@ -67,6 +71,50 @@ describe("baseline-drop-plain-password.sql", () => {
     assert.match(sql, /plain_password_column_grants_total|grants_anon/);
     assert.match(sql, /dependency_total/);
     assert.match(sql, /consulted_at_utc/);
+  });
+});
+
+describe("homologate-drop-plain-password-baseline.sql", () => {
+  const sql = read(HOMOLOGATE);
+  const code = executableSql(sql);
+
+  it("é somente leitura (sem DML/DDL de escrita / sem DROP)", () => {
+    assert.doesNotMatch(code, /\bUPDATE\s+[a-z_]+\./i);
+    assert.doesNotMatch(code, /\bUPDATE\s+SET\b/i);
+    assert.doesNotMatch(code, /\bDELETE\s+FROM\b/i);
+    assert.doesNotMatch(code, /\bINSERT\s+INTO\b/i);
+    assert.doesNotMatch(code, /\bDROP\s+(COLUMN|TABLE)\b/i);
+    assert.doesNotMatch(code, /\bALTER\s+TABLE\b/i);
+    assert.match(code, /\bSELECT\b/i);
+  });
+
+  it("não seleciona valores de PII/senha", () => {
+    assert.doesNotMatch(sql, /SELECT\s+plain_password\b/i);
+    assert.doesNotMatch(code, /\bemail\b/i);
+    assert.doesNotMatch(code, /\busername\b/i);
+    assert.doesNotMatch(code, /torres@123/i);
+  });
+
+  it("exige PASS/FAIL nos critérios pré-DROP", () => {
+    assert.match(sql, /PASS assert=total_users/);
+    assert.match(sql, /FAIL assert=plain_password_filled/);
+    assert.match(sql, /PASS assert=plain_password_column_exists/);
+    assert.match(sql, /PASS assert=auth_match/);
+    assert.match(sql, /PASS assert=dependency_total/);
+    assert.match(sql, /PASS assert=rls_enabled/);
+    assert.match(sql, /PASS assert=policies_using_true/);
+    assert.match(sql, /PASS assert=users_select_own_present/);
+    assert.match(sql, /PASS assert=authenticated_plain_password_grant_absent/);
+  });
+
+  it("alinha dependency_total à migration (grants só diagnóstico)", () => {
+    assert.match(sql, /deptype\s*=\s*'n'/);
+    assert.match(sql, /prokind\s*=\s*'f'/);
+    assert.match(sql, /prokind\s*=\s*'p'/);
+    assert.match(sql, /pg_rewrite|rulename\s*<>\s*'_RETURN'/);
+    assert.match(sql, /grants are diagnostic-only|grants_diag|diagnostic/i);
+    assert.match(sql, /HOMOLOGAÇÃO PR4B \/ 4\.5B BASELINE OK/);
+    assert.match(sql, /DROP AINDA NÃO APLICADO/);
   });
 });
 
@@ -236,6 +284,8 @@ describe("runbook DROP plain_password", () => {
   });
 
   it("status PR4B preparado sem aplicar", () => {
-    assert.match(md, /PR4B PREPARADO — DROP AINDA NÃO APLICADO/);
+    assert.match(md, /DROP AINDA NÃO APLICADO/);
+    assert.match(md, /homologate-drop-plain-password-baseline\.sql/);
+    assert.match(md, /4\.5B/);
   });
 });

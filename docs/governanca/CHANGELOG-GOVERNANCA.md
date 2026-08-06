@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-08-06 — security(users): continue PR4B / 4.5B homologation package
+
+- Continuidade da fase **4.5B**: script de homologação live PASS/FAIL (`scripts/security/homologate-drop-plain-password-baseline.sql`) alinhado aos guards da migration.
+- Runbook atualizado com matriz 4.5A/4.5B (estática OK; baseline DB pendente; DROP não aplicado).
+- Testes de contrato ampliados; **sem** execução de DROP; **sem** alteração de banco/produção.
+- D13 permanece: **PR4B / 4.5B HOMOLOGAÇÃO ESTÁTICA OK — BASELINE DB PENDENTE — DROP AINDA NÃO APLICADO**.
+- Branch: `cursor/pr4b-4-5b-homologacao-35ed` (continuidade da PR #55)
+
 ## 2026-08-05 — security(users): strengthen plain password dependency guards
 
 - PR4B / 4.5B: cobertura preventiva reforçada na migration de DROP (ainda **não** aplicada).
