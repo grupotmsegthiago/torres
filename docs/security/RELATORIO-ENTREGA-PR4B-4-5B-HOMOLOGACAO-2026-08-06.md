@@ -1,9 +1,9 @@
 ## Relatório de Entrega — PR4B / 4.5B continuidade (homologação)
 
-**Data:** 2026-08-06  
-**Branch:** `cursor/pr4b-4-5b-homologacao-35ed`  
-**Commit(s):** (após commit desta entrega)  
-**Ambiente validado:** [x] local  [ ] preview  [ ] produção  
+**Data:** 2026-08-06
+**Branch:** `cursor/pr4b-4-5b-homologacao-35ed`
+**Commit(s):** (após commit desta entrega)
+**Ambiente validado:** [x] local  [ ] preview  [ ] produção
 **Publicou?** [x] Não
 
 ### Declaração obrigatória
