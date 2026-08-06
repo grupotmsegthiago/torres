@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
-import { supabaseAdmin } from "./supabase";
+import { supabaseAdmin } from "./supabase.ts";
 import { executeBillingCron } from "./cron.ts";
 
 type Row = Record<string, any>;
@@ -131,10 +131,11 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
 }
 
 function installMock(state: ScenarioState) {
-  const origFrom = (supabaseAdmin as any).from;
-  const origRpc = (supabaseAdmin as any).rpc;
-  (supabaseAdmin as any).from = (table: string) => makeQueryBuilder(state, table);
-  (supabaseAdmin as any).rpc = async (_name: string, _args: any) => ({ data: 0, error: null });
+  const rest = (supabaseAdmin as any).rest;
+  const origFrom = rest.from;
+  const origRpc = rest.rpc;
+  rest.from = (table: string) => makeQueryBuilder(state, table);
+  rest.rpc = async (_name: string, _args: any) => ({ data: 0, error: null });
   // #region agent log
   agentLog("A,C", "server/cron.test.ts:installMock", "mock installed on imported client", {
     fromReplaced: (supabaseAdmin as any).from !== origFrom,
@@ -142,8 +143,8 @@ function installMock(state: ScenarioState) {
   });
   // #endregion
   return () => {
-    (supabaseAdmin as any).from = origFrom;
-    (supabaseAdmin as any).rpc = origRpc;
+    rest.from = origFrom;
+    rest.rpc = origRpc;
   };
 }
 
