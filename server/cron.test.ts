@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
-import { supabaseAdmin } from "./supabase.ts";
+import { supabaseAdmin } from "./supabase";
 import { executeBillingCron } from "./cron.ts";
 
 type Row = Record<string, any>;
