@@ -101,6 +101,15 @@ function stripComments(source: string): string {
     .replace(/\/\/[^\n\r]*/g, " ");
 }
 
+function sourceSection(file: string, start: string, end?: string): string {
+  const source = readFileSync(path.join(root, file), "utf8");
+  const startAt = source.indexOf(start);
+  assert.notEqual(startAt, -1, `marcador inicial ausente em ${file}: ${start}`);
+  const endAt = end ? source.indexOf(end, startAt + start.length) : source.length;
+  assert.notEqual(endAt, -1, `marcador final ausente em ${file}: ${end}`);
+  return source.slice(startAt, endAt);
+}
+
 function countProductionCalls(symbol: string): Record<string, number> {
   const found: Record<string, number> = {};
   const callPattern = new RegExp(`\\b${symbol}\\s*\\(`, "g");
@@ -261,10 +270,56 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       "o shadow deve registrar a divergência atual sem gravar dados",
     );
   });
+
+  test("reprocessamentos do escopo não escrevem snapshot comercial ou invoice", () => {
+    const reprocessingSources = [
+      sourceSection(
+        "server/cron.ts",
+        "export async function executeBillingCron()",
+      ),
+      sourceSection(
+        "server/routes/service-orders.ts",
+        'app.post("/api/boletim-medicao/calcular/:osId"',
+        'app.patch("/api/boletim-medicao/os/:id/diretoria-override"',
+      ),
+      sourceSection(
+        "server/routes/escort.ts",
+        'app.post("/api/escort/billings/submit-os"',
+        'app.post("/api/escort/billings/recalcular-lote"',
+      ),
+      sourceSection(
+        "server/routes/escort.ts",
+        'app.post("/api/escort/billings/recalcular-lote"',
+        'app.patch("/api/escort/billings/:id/salvar"',
+      ),
+      sourceSection(
+        "server/routes/escort.ts",
+        'app.patch("/api/escort/billings/:id/salvar"',
+        'app.post("/api/escort/billings/:id/revisar"',
+      ),
+      sourceSection(
+        "server/routes/escort.ts",
+        'app.post("/api/escort/billings/:id/revisar"',
+        'app.post("/api/escort/billings/:id/reabrir"',
+      ),
+      readFileSync(path.join(root, "server/routes/mission.ts"), "utf8"),
+      readFileSync(path.join(root, "server/routes/operational.ts"), "utf8"),
+      readFileSync(path.join(root, "server/lib/cancelada-billing.ts"), "utf8"),
+    ].join("\n");
+
+    assert.doesNotMatch(reprocessingSources, /\bbilling_snapshot\b/);
+    assert.doesNotMatch(
+      reprocessingSources,
+      /\.from\(\s*["']boletim_approvals["']\s*\)/,
+    );
+    assert.doesNotMatch(
+      reprocessingSources,
+      /\.from\(\s*["']invoices["']\s*\)/,
+    );
+  });
 });
 
 test.todo("IMPLEMENTAÇÃO: cron deve materializar apenas o resultado canônico");
 test.todo("IMPLEMENTAÇÃO: cálculo manual de cancelada deve usar computeCanceladaBilling");
 test.todo("IMPLEMENTAÇÃO: lote deve pular todos os frozen statuses");
 test.todo("IMPLEMENTAÇÃO: operational-grid não deve materializar Live em espelhos");
-test.todo("IMPLEMENTAÇÃO: reprocessamento não pode alterar billing_snapshot/invoice");
