@@ -1,5 +1,15 @@
 # Changelog — Governança Torres
 
+## 2026-08-06 — security(users): strengthen plain password dependency guards (4.5C)
+
+- Fase **4.5C**: finalização/validação dos ajustes preventivos no PR #55 (sem merge, sem DROP, sem alteração de banco).
+- Cobertura confirmada: `pg_depend` (relid+attnum), functions/procedures, rules/`pg_rewrite`, grants diagnóstico, fail-closed, sem CASCADE.
+- Validação: testes de contrato 104/104; `git diff --check` OK após correção de trailing whitespace no relatório 4.5B.
+- Typecheck: ~436 erros pré-existentes no repo; **0** nos arquivos desta PR.
+- Build: no agent falha sem `VITE_SUPABASE_*`; com placeholders → **build OK** (sem erros novos desta PR).
+- D13 / status: **PR4B PREPARADO — DROP AINDA NÃO APLICADO** (baseline live depende de SQL Editor/MCP autenticado).
+- Branch: `security/prepare-drop-plain-password-column` (PR #55)
+
 ## 2026-08-06 — security(users): continue PR4B / 4.5B homologation package
 
 - Continuidade da fase **4.5B**: script de homologação live PASS/FAIL (`scripts/security/homologate-drop-plain-password-baseline.sql`) alinhado aos guards da migration.
