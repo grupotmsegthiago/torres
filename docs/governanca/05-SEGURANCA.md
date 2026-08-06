@@ -45,7 +45,7 @@ Regras aplicáveis: Framework S1–S12 ([`02-FRAMEWORK-GOVERNANCA.md`](./02-FRAM
 | Aplicação DB | **APLICADA** em 2026-08-05 ~17:36 UTC no Supabase compartilhado (Preview=Prod); backup nativo 2026-08-05 07:59:48 UTC; verify + smoke OK (`docs/security/RUNBOOK-USERS-RLS.md`) |
 | Status | **CORRIGIDO E HOMOLOGADO** |
 
-**Camada adicional (D13):** PR1–PR3C concluídos (valores limpos; incidente documentado). **PR4A:** `plainPassword` removido de `shared/schema.ts` e tipos de aplicação; `sanitizeUserWrite`/`toSafeUser`/`USER_SAFE_SELECT` permanecem. **PR4B / 4.5B:** migration `20260805210000_drop_users_plain_password` + homologação PASS/FAIL versionadas — **ainda não aplicadas**; guards com `pg_depend`/procedures/rules (diagnóstico 4.5A: zero deps reais; cobertura reforçada; homologação estática OK). Coluna física ainda no banco. Status: **PR4B / 4.5B HOMOLOGAÇÃO ESTÁTICA OK — BASELINE DB PENDENTE — DROP AINDA NÃO APLICADO**. Backup nativo + SQL `homologate-drop-plain-password-baseline.sql` obrigatórios antes da aplicação. PR4C fará documentação final (D13 permanece aberta).
+**Camada adicional (D13): ENCERRADA.** PR1–PR3C removeram exposição/writers e limparam os valores; PR4A removeu `plainPassword` do schema/tipos; PR4B aplicou a migration versionada `20260805210000_drop_users_plain_password` após backup e baseline aprovados. O verify pós-DROP terminou sem exceções, a coluna está ausente e o sistema foi acessado normalmente sem regressão observada. Rollback não executado. `sanitizeUserWrite`/`toSafeUser`/`USER_SAFE_SELECT` permanecem como defesa em profundidade. Ver `docs/security/RUNBOOK-DROP-PLAIN-PASSWORD.md` e o incidente histórico.
 
 ---
 

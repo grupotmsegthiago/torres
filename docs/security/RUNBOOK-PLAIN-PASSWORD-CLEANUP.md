@@ -1,7 +1,7 @@
 # Runbook — Limpeza de `public.users.plain_password` (D13 / PR3–PR4)
 
-**Status:** **PR4B PREPARADO — DROP AINDA NÃO APLICADO**
-**Coluna física:** ainda presente — migration de DROP **apenas versionada**
+**Status:** **PR4C CONCLUÍDO — D13 ENCERRADA**
+**Coluna física:** removida por migration versionada; verify pós-DROP aprovado
 
 **Incidente / transparência:** `docs/security/INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md`
 **Runbook DROP (PR4B):** `docs/security/RUNBOOK-DROP-PLAIN-PASSWORD.md`
@@ -9,7 +9,7 @@
 **Migration histórica NULL (PR3A, não registrada no histórico remoto; não reaplicar):**
 `supabase/migrations/20260805190500_null_legacy_plain_password.sql`
 
-**Migration DROP (PR4B, ainda não aplicada):**
+**Migration DROP (PR4B, aplicada):**
 `supabase/migrations/20260805210000_drop_users_plain_password.sql`
 
 **Baseline limpeza:** `scripts/security/baseline-plain-password-cleanup.sql`
@@ -27,8 +27,8 @@
 | PR2 | Writers de produção interrompidos (`sanitizeUserWrite`) |
 | PR3A–PR3C | Artefatos + limpeza de valores (ad-hoc) + docs |
 | PR4A | Schema TypeScript / tipos sem `plainPassword` |
-| PR4B | DROP COLUMN **preparado** (não aplicado) |
-| PR4C | Documentação pós-DROP (pendente) |
+| PR4B | DROP COLUMN aplicado; verify aprovado |
+| PR4C | Documentação pós-DROP concluída; D13 encerrada |
 
 Baseline pós-limpeza (2026-08-05): **36** users, **0** preenchidos, **36** NULL, Auth match **36**.
 
@@ -46,13 +46,15 @@ Login **não** depende da coluna — usa Supabase Auth (`signInWithPassword` / A
 
 ---
 
-## PR4B (DROP) — preparado, não aplicado
+## PR4B (DROP) — aplicado e verificado
 
-1. Confirmar **backup nativo recente** no painel Supabase.
-2. Baseline DROP: filled=0, null=total, coluna existe, deps=0.
-3. Aplicar migration `20260805210000_drop_users_plain_password` em janela controlada (não via Vercel/CI/startup).
-4. Verify DROP + smoke (login, `/api/auth/me`, `/api/users`, create/reset/change, chat, RH).
-5. Detalhes: `RUNBOOK-DROP-PLAIN-PASSWORD.md`.
+1. Backup físico recente confirmado, com restore disponível.
+2. Baseline DROP aprovado: 36 users, filled=0, null=36, Auth match=36, deps=0.
+3. Migration `20260805210000_drop_users_plain_password` aplicada.
+4. `verify-drop-plain-password.sql` executado sem exceções.
+5. Sistema acessado normalmente após o APPLY; nenhuma regressão observada.
+6. Rollback não executado.
+7. Detalhes: `RUNBOOK-DROP-PLAIN-PASSWORD.md`.
 
 ---
 
