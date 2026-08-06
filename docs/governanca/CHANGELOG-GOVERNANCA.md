@@ -1,5 +1,40 @@
 # Changelog — Governança Torres
 
+## 2026-08-06 — security(users): strengthen plain password dependency guards (4.5C)
+
+- Fase **4.5C**: finalização/validação dos ajustes preventivos no PR #55 (sem merge, sem DROP, sem alteração de banco).
+- Cobertura confirmada: `pg_depend` (relid+attnum), functions/procedures, rules/`pg_rewrite`, grants diagnóstico, fail-closed, sem CASCADE.
+- Validação: testes de contrato 104/104; `git diff --check` OK após correção de trailing whitespace no relatório 4.5B.
+- Typecheck: ~436 erros pré-existentes no repo; **0** nos arquivos desta PR.
+- Build: no agent falha sem `VITE_SUPABASE_*`; com placeholders → **build OK** (sem erros novos desta PR).
+- D13 / status: **PR4B PREPARADO — DROP AINDA NÃO APLICADO** (baseline live depende de SQL Editor/MCP autenticado).
+- Branch: `security/prepare-drop-plain-password-column` (PR #55)
+
+## 2026-08-06 — security(users): continue PR4B / 4.5B homologation package
+
+- Continuidade da fase **4.5B**: script de homologação live PASS/FAIL (`scripts/security/homologate-drop-plain-password-baseline.sql`) alinhado aos guards da migration.
+- Runbook atualizado com matriz 4.5A/4.5B (estática OK; baseline DB pendente; DROP não aplicado).
+- Testes de contrato ampliados; **sem** execução de DROP; **sem** alteração de banco/produção.
+- D13 permanece: **PR4B / 4.5B HOMOLOGAÇÃO ESTÁTICA OK — BASELINE DB PENDENTE — DROP AINDA NÃO APLICADO**.
+- Branch: `cursor/pr4b-4-5b-homologacao-35ed` (continuidade da PR #55)
+
+## 2026-08-05 — security(users): strengthen plain password dependency guards
+
+- PR4B / 4.5B: cobertura preventiva reforçada na migration de DROP (ainda **não** aplicada).
+- Diagnóstico 4.5A: zero dependências reais (`pg_depend`=0); lacuna era de governança, não bloqueio técnico.
+- Guards: `pg_depend` (deptype `n` + attnum), functions+procedures, rules/`pg_rewrite`; grants só diagnóstico.
+- PostgreSQL já era fail-closed sem CASCADE; baseline/verify/testes alinhados ao catálogo canônico.
+- Branch: `security/prepare-drop-plain-password-column` (PR #55)
+
+## 2026-08-05 — security(users): prepare plain password column removal
+
+- PR4B: artefatos versionados para DROP de `public.users.plain_password` — **não aplicados**.
+- Baseline `scripts/security/baseline-drop-plain-password.sql`, verify `verify-drop-plain-password.sql`, migration `20260805210000_drop_users_plain_password`, rollback estrutural (coluna NULL sem valores), runbook `RUNBOOK-DROP-PLAIN-PASSWORD.md`.
+- Fail-closed: total=36, filled=0, null=total, coluna existe, deps=0; sem CASCADE; sem alteração de Auth/RLS.
+- PR4A já desacoplou código/tipos; coluna física ainda presente; backup obrigatório antes da aplicação; PR4C documentará o pós-DROP.
+- D13 → **PR4B PREPARADO — DROP AINDA NÃO APLICADO**.
+- Branch: `security/prepare-drop-plain-password-column`
+
 ## 2026-08-05 — security(users): remove plain password from application schema
 
 - PR4A: remove `plainPassword` de `shared/schema.ts` e tipos derivados (`User` / `InsertUser`).

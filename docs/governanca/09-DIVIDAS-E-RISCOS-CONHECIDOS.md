@@ -142,14 +142,14 @@ Enquanto a dívida existir:
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto legada; valores **já limpos** (36/36 NULL). Código/tipos **desacoplados** (PR4A: sem `plainPassword` no schema TS). RLS + `toSafeUser` + `sanitizeUserWrite` ativos. |
-| Consequência | Coluna física ainda existe (DROP = PR4B); risco residual se grants/policies regredirem ou alguém regravar texto |
+| Descrição | Coluna texto legada; valores **já limpos** (36/36 NULL). Código/tipos **desacoplados** (PR4A). Artefatos de DROP + guards 4.5B + homologação PASS/FAIL versionados — **não aplicados**. RLS + `toSafeUser` + `sanitizeUserWrite` ativos. |
+| Consequência | Coluna física ainda existe; risco residual se grants/policies regredirem ou alguém regravar texto |
 | Prioridade | **Média (P2)** para DROP; valores sensíveis já nulos; app não depende do campo |
 | Módulos | `public.users`, Auth/RH |
-| Restrição | **Não criar dependência nova**; não logar; não exibir; não reintroduzir writers; **não** DROP sem backup; não inserir histórico falso de migration |
-| Correção | **PR1–PR3C feitos.** **PR4A feito** (tipos/código). **PR4B:** DROP COLUMN. **PR4C:** docs pós-DROP |
-| Status | **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE** |
-| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; coluna física permanece |
+| Restrição | **Não criar dependência nova**; não logar; não exibir; não reintroduzir writers; **não** DROP sem backup + homologação live PASS; não inserir histórico falso de migration |
+| Correção | **PR1–PR4A feitos.** **PR4B/4.5B:** migration/verify/runbook/homologate. **Baseline DB live** pendente. **Aplicação do DROP** = fase controlada seguinte. **PR4C:** docs pós-DROP |
+| Status | **PR4B / 4.5B HOMOLOGAÇÃO ESTÁTICA OK — BASELINE DB PENDENTE — DROP AINDA NÃO APLICADO** |
+| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; migration DROP versionada sem aplicar (guards `pg_depend`/procedures/rules); coluna física permanece |
 
 ### D11 — Caches longos
 
