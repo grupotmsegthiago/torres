@@ -135,6 +135,12 @@ function installMock(state: ScenarioState) {
   const origRpc = (supabaseAdmin as any).rpc;
   (supabaseAdmin as any).from = (table: string) => makeQueryBuilder(state, table);
   (supabaseAdmin as any).rpc = async (_name: string, _args: any) => ({ data: 0, error: null });
+  // #region agent log
+  agentLog("A,C", "server/cron.test.ts:installMock", "mock installed on imported client", {
+    fromReplaced: (supabaseAdmin as any).from !== origFrom,
+    rpcReplaced: (supabaseAdmin as any).rpc !== origRpc,
+  });
+  // #endregion
   return () => {
     (supabaseAdmin as any).from = origFrom;
     (supabaseAdmin as any).rpc = origRpc;
