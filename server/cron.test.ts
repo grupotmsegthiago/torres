@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { appendFileSync } from "node:fs";
 import { supabaseAdmin } from "./supabase.ts";
 import { executeBillingCron } from "./cron.ts";
 
@@ -12,8 +13,15 @@ interface ScenarioState {
   inserts: Array<{ table: string; values: Row | Row[] }>;
 }
 
+function agentLog(hypothesisId: string, location: string, message: string, data: Row) {
+  appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() }) + "\n");
+}
+
 function makeQueryBuilder(state: ScenarioState, table: string) {
   let rows: Row[] = (state.tables[table] || []).slice();
+  // #region agent log
+  agentLog("A,B,C", "server/cron.test.ts:makeQueryBuilder", "builder created", { table, rowCount: rows.length });
+  // #endregion
   let mode: "select" | "update" | "insert" | "delete" | "upsert" = "select";
   let pendingUpdate: Row | null = null;
   let pendingInsert: Row | Row[] | null = null;
@@ -30,19 +38,45 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
   };
 
   const builder: any = {
-    select(_cols?: string) { mode = "select"; return builder; },
+    select(_cols?: string) {
+      mode = "select";
+      // #region agent log
+      agentLog("A,B", "server/cron.test.ts:select", "select configured", { table, columns: _cols || null });
+      // #endregion
+      return builder;
+    },
     update(values: Row) { mode = "update"; pendingUpdate = values; return builder; },
     insert(values: Row | Row[]) { mode = "insert"; pendingInsert = values; return builder; },
     upsert(values: Row | Row[], opts?: { onConflict?: string }) {
       mode = "upsert";
       pendingUpsert = { values, onConflict: opts?.onConflict || "id" };
+      // #region agent log
+      agentLog("A,D", "server/cron.test.ts:upsert", "upsert configured", {
+        table,
+        onConflict: pendingUpsert.onConflict,
+        rowCount: Array.isArray(values) ? values.length : 1,
+        serviceOrderIds: (Array.isArray(values) ? values : [values]).map((row) => row.service_order_id),
+        statuses: (Array.isArray(values) ? values : [values]).map((row) => row.status),
+      });
+      // #endregion
       return builder;
     },
     delete() { mode = "delete"; return builder; },
     eq(col: string, val: any) { filters.push([col, val]); return builder; },
-    in(col: string, vals: any[]) { filters.push([col, vals]); return builder; },
+    in(col: string, vals: any[]) {
+      filters.push([col, vals]);
+      // #region agent log
+      agentLog("B", "server/cron.test.ts:in", "in filter configured", { table, column: col, valueCount: vals.length, values: vals });
+      // #endregion
+      return builder;
+    },
     order(_col: string, _opts?: any) { return builder; },
-    range(_from: number, _to: number) { return builder; },
+    range(_from: number, _to: number) {
+      // #region agent log
+      agentLog("B", "server/cron.test.ts:range", "range configured", { table, from: _from, to: _to });
+      // #endregion
+      return builder;
+    },
     limit(_n: number) { return builder; },
     single() {
       const filtered = applyFilters(rows);
@@ -50,6 +84,9 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
     },
     then(resolve: any, reject: any) {
       try {
+        // #region agent log
+        agentLog("A,C,D", "server/cron.test.ts:then", "thenable assimilated", { table, mode, filters, hasPendingUpsert: pendingUpsert !== null });
+        // #endregion
         if (mode === "select") {
           return Promise.resolve({ data: applyFilters(rows), error: null }).then(resolve, reject);
         }
@@ -75,6 +112,13 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
               state.inserts.push({ table, values: row });
             }
           }
+          // #region agent log
+          agentLog("A,D", "server/cron.test.ts:then:upsert", "upsert recorded", {
+            table,
+            insertCount: state.inserts.filter((item) => item.table === table).length,
+            updateCount: state.updates.filter((item) => item.table === table).length,
+          });
+          // #endregion
           return Promise.resolve({ data: null, error: null }).then(resolve, reject);
         }
         return Promise.resolve({ data: null, error: null }).then(resolve, reject);
