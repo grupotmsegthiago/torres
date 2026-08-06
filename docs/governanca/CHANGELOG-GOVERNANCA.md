@@ -1,5 +1,15 @@
 # Changelog — Governança Torres
 
+## 2026-08-06 — security(users): close plain password removal (PR4C / Fase 4.9)
+
+- PR4B confirmado pelo proprietário como aplicado no projeto Torres (`erjhxwbutjyylxdthuuz`) via migration versionada `20260805210000_drop_users_plain_password`.
+- Pré-voo: backup físico de 2026-08-06 07:56:45 UTC disponível para restore; baseline 36 users / filled 0 / null 36 / Auth match 36 / dependências 0.
+- Pós-DROP: `verify-drop-plain-password.sql` executado sem exceções; coluna ausente, demais colunas/Auth/RLS/policies/grants preservados.
+- Sistema acessado normalmente após o APPLY, sem regressão observada, conforme confirmação humana; rollback não executado.
+- PR4C é exclusivamente documental: sem código, banco, migration ou publicação.
+- D13 (`users.plain_password`) → **ENCERRADA — COLUNA REMOVIDA E VERIFY APROVADO**.
+- Branch: `cursor/pr4b-4-5b-homologacao-35ed` (PR existente #56; nenhum PR novo).
+
 ## 2026-08-06 — security(users): strengthen plain password dependency guards (4.5C)
 
 - Fase **4.5C**: finalização/validação dos ajustes preventivos no PR #55 (sem merge, sem DROP, sem alteração de banco).

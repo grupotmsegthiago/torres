@@ -1,8 +1,8 @@
 # Runbook — DROP de `public.users.plain_password` (D13 / PR4B / 4.5B)
 
-**Status:** **PR4B / 4.5B HOMOLOGAÇÃO ESTÁTICA OK — BASELINE DB PENDENTE — DROP AINDA NÃO APLICADO**
+**Status:** **PR4C CONCLUÍDO — DROP APLICADO E VERIFICADO — D13 ENCERRADA**
 
-**Migration (versionada, não aplicar nesta fase):**
+**Migration aplicada (versionada):**
 `supabase/migrations/20260805210000_drop_users_plain_password.sql`
 
 **Baseline pré-DROP (SELECT diagnóstico):** `scripts/security/baseline-drop-plain-password.sql`
@@ -14,6 +14,24 @@
 
 ---
 
+## Resultado da execução
+
+| Evidência | Resultado |
+|-----------|-----------|
+| Projeto | Torres (`erjhxwbutjyylxdthuuz`) |
+| Backup pré-APPLY | Físico, 2026-08-06 07:56:45 UTC, restore disponível |
+| Baseline | 36 users; filled 0; null 36; Auth match 36; dependências 0 |
+| Migration | Aplicada com sucesso, conforme confirmação humana |
+| Verify pós-DROP | Executado sem exceções; todos os asserts passaram |
+| Coluna | `public.users.plain_password` ausente |
+| Sistema pós-APPLY | Acesso normal; nenhuma regressão observada |
+| Rollback | Não executado |
+
+O horário exato do APPLY não foi fornecido ao agente documental. O encerramento usa a
+evidência manual confirmada pelo proprietário; não cria registro retroativo de execução.
+
+---
+
 ## Homologação 4.5B (estado)
 
 | Etapa | Estado |
@@ -21,10 +39,11 @@
 | 4.5A diagnóstico deps | Feito (zero deps reais; lacuna era de governança) |
 | 4.5B guards na migration | Feito (`pg_depend`/procedures/rules) |
 | Homologação estática (artefatos + testes de contrato) | Feito |
-| Homologação live no banco (`homologate-…-baseline.sql`) | **Pendente** — executar no SQL Editor |
-| Backup nativo recente | **Pendente** (obrigatório antes do DROP) |
-| Aplicação do DROP | **Não iniciada** — exige autorização explícita |
-| PR4C docs pós-DROP | Não iniciado |
+| Homologação live no banco | Feita; baseline aprovado |
+| Backup nativo recente | Confirmado |
+| Aplicação do DROP | Concluída |
+| Verify pós-DROP | Aprovado |
+| PR4C docs pós-DROP | Concluído |
 
 ---
 
@@ -44,23 +63,15 @@ Antes de qualquer aplicação:
 **Critérios de interrupção:** filled ≠ 0; deps ≠ 0; backup não confirmado; Auth match degradado; login/`/api/auth/me` falhando de forma sistêmica; qualquer FAIL na homologação live.
 ---
 
-## Execução futura (controlada)
+## Execução realizada (controlada)
 
-1. Confirmar **backup nativo recente**.
-2. Executar **homologate-drop-plain-password-baseline.sql** (PASS/FAIL) — opcionalmente também o baseline SELECT diagnóstico.
-3. Validar: total=36, filled=0, null=36, coluna existe, deps=0, Auth/RLS OK — **todos PASS**.
-4. Aplicar a migration **completa** (`20260805210000_drop_users_plain_password.sql`) via canal autorizado (SQL Editor / `apply_migration` controlado) — **não** via Vercel/CI/startup.
-5. Executar **verify-drop-plain-password.sql** — todos os asserts PASS.
-6. Smoke:
-   - login admin;
-   - login funcionário;
-   - `/api/auth/me`;
-   - `/api/users`;
-   - create / reset / change-password;
-   - register-by-cpf;
-   - chat;
-   - RH.
-7. Observar logs por **24h**.
+1. Backup nativo recente confirmado.
+2. Baseline read-only executado e aprovado.
+3. Total=36, filled=0, null=36, coluna existente, deps=0, Auth/RLS OK.
+4. Migration versionada completa aplicada, sem CASCADE.
+5. `verify-drop-plain-password.sql` executado sem exceções.
+6. Validação pós-APPLY: proprietário confirmou acesso normal ao sistema e ausência de regressão observada. O agente documental não recebeu evidência individual dos fluxos mutáveis.
+7. Rollback não executado.
 
 Login e rotas dependem **apenas** de Supabase Auth — não da coluna removida.
 
@@ -91,13 +102,13 @@ Login e rotas dependem **apenas** de Supabase Auth — não da coluna removida.
 |----------|--------|
 | `RUNBOOK-PLAIN-PASSWORD-CLEANUP.md` | Histórico PR3 / limpeza de valores |
 | `INCIDENT-PLAIN-PASSWORD-CLEANUP-2026-08-05.md` | Evento ad-hoc da limpeza |
-| Este runbook | DROP da coluna (PR4B) |
-| PR4C | Documentação final / encerramento D13 (ainda não iniciado) |
+| Este runbook | DROP da coluna (PR4B) e resultado final |
+| PR4C | Documentação final / encerramento D13 concluído |
 
 ---
 
 ## Após sucesso
 
-1. Confirmar verify PASS e smoke OK.
-2. Atualizar governança (PR4C).
+1. Verify PASS e acesso normal confirmados.
+2. Governança atualizada (PR4C).
 3. Manter `sanitizeUserWrite` / `toSafeUser` como defesa em profundidade.
