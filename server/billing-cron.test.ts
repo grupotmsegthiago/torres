@@ -224,11 +224,13 @@ test("computeBillingPayloadForOs: mission_costs com múltiplas categorias e rece
   assert.equal(p.km_excedente, 0);
   assert.equal(p.fat_acionamento, 200);
   assert.equal(p.fat_km, 0);
-  assert.equal(p.fat_hora_extra, 0);
-  // fat_total base = 200; + despesas_pedagio (35.5) + receitas_os (40) = 275.5
-  // combustível e outras NÃO entram no fat_total
-  assert.equal(p.fat_total, 275.5);
-  assert.equal(p.resultado_bruto, 125.5);
+  // O canônico usa os timestamps reais da OS (12:00→17:00 = 5h), portanto
+  // cobra 1h extra mesmo que o argumento legado horasMissao informe 4h.
+  assert.equal(p.fat_hora_extra, 80);
+  // Canônico: acionamento 200 + HE 80 + pedágio 35,5 + outras 30 + receita 40.
+  assert.equal(p.fat_total, 385.5);
+  assert.equal(p.pag_total, 335.5);
+  assert.equal(p.resultado_bruto, 50);
 });
 
 test("computeBillingPayloadForOs: múltiplas km_chegada usa a primeira (ordem de chegada)", () => {
@@ -371,15 +373,24 @@ test("computeBillingPayloadForOs: snapshot completo do payload de uma missão t�
     is_noturno: false,
     fat_acionamento: 200,
     fat_km: 90,
+    fat_km_carregado: 90,
+    fat_km_vazio: 0,
     fat_hora_extra: 80,
+    fat_adicional_noturno: 0,
+    fat_estadia: 0,
+    fat_pernoite: 0,
+    fat_diaria: 0,
     fat_total: 395, // 370 base + 25 pedágio
     valor_franquia: 200,
     valor_km_extra: 90,
     pag_vrp: 150,
-    pag_total: 150,
-    resultado_bruto: 245,
-    resultado_liquido: 245,
-    margem_percentual: 62.03,
+    pag_periculosidade: 0,
+    pag_adicional_noturno: 0,
+    pag_reembolsos: 125,
+    pag_total: 275,
+    resultado_bruto: 120,
+    resultado_liquido: -5,
+    margem_percentual: -1.27,
     vigilante_id: 1,
     vigilante_name: "Agente 1",
     vigilante2_id: null,

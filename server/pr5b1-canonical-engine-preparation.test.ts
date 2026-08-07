@@ -146,6 +146,7 @@ export const PR5B1_TRANSVERSAL_EVIDENCE = {
 
 const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   calcularEscolta: {
+    "server/billing-calc.ts": 1,
     "server/lib/cancelada-billing.ts": 1,
     "server/routes/escort.ts": 6,
     "server/routes/mission.ts": 1,
@@ -153,12 +154,12 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
     "server/routes/service-orders.ts": 6,
   },
   calcularFaturamentoLive: {
-    "server/billing-calc.ts": 1,
     "server/financial-snapshot.ts": 1,
     "server/routes/escort.ts": 2,
     "server/routes/operational.ts": 1,
   },
   computeCanceladaBilling: {
+    "server/cron.ts": 1,
     "server/routes/mission.ts": 1,
     "server/routes/service-orders.ts": 1,
   },
@@ -213,12 +214,12 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=15, live=5, cancelada=2", () => {
+  test("totais de call-sites: canônico=16, live=4, cancelada=3", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
-    assert.equal(total(countProductionCalls("calcularEscolta")), 15);
-    assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 5);
-    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 2);
+    assert.equal(total(countProductionCalls("calcularEscolta")), 16);
+    assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
+    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 3);
   });
 });
 
@@ -380,11 +381,15 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       contrato: shadowContract,
     });
 
-    assert.equal(currentPayload.fat_total, live.fat_total);
-    assert.notEqual(
+    assert.equal(
       currentPayload.fat_total,
       canonical.fat_total,
-      "o shadow deve registrar a divergência atual sem gravar dados",
+      "o payload do cron deve usar o motor canônico",
+    );
+    assert.notEqual(
+      live.fat_total,
+      canonical.fat_total,
+      "Live permanece projeção e não precisa coincidir com o canônico",
     );
   });
 
@@ -436,7 +441,6 @@ describe("PR5B.1 — contratos puros já normativos", () => {
   });
 });
 
-test.todo("IMPLEMENTAÇÃO: cron deve materializar apenas o resultado canônico");
 test.todo("IMPLEMENTAÇÃO: cálculo manual de cancelada deve usar computeCanceladaBilling");
 test.todo("IMPLEMENTAÇÃO: lote deve pular todos os frozen statuses");
 test.todo("IMPLEMENTAÇÃO: operational-grid não deve materializar Live em espelhos");

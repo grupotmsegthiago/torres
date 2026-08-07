@@ -3,7 +3,9 @@ import nodemailer from "nodemailer";
 import { log } from "./lib/logger";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
-import { getHorasElapsedFromDB, calcularFaturamentoLive, computeBillingPayloadForOs, resolveContractForOs, shouldSkipBillingHours, DEFAULT_BILLING_CONTRACT } from "./billing-calc";
+import { getHorasElapsedFromDB, computeBillingPayloadForOs, resolveContractForOs, shouldSkipBillingHours, DEFAULT_BILLING_CONTRACT } from "./billing-calc";
+import { computeCanceladaBilling } from "./lib/cancelada-billing";
+import { buildRecusadaZeroPayload } from "./lib/recusada-guard";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { shouldRunBackgroundJobs } from "./platform";
 import { runCronBucket, type CronBucket } from "./cron-buckets";
@@ -883,17 +885,19 @@ export async function executeBillingCron() {
     so.type === "escolta" && isConcluded(so) && unverifBilledSet.has(so.id)
   ).length;
 
+  // Billing oficial só nasce quando a OS termina. OS ativa continua aparecendo
+  // como projeção no operational-grid, mas o cron não materializa essa projeção.
   const seenIds = new Set<number>();
-  const liveOrders = [...activeOrders, ...unbilledConcluded].filter((so: any) => {
+  const billingCandidates = unbilledConcluded.filter((so: any) => {
     if (seenIds.has(so.id)) return false;
     seenIds.add(so.id);
     return true;
   });
-  if (!liveOrders.length) {
-    log(`CRON Billing: 0 OSs para processar, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
+  if (!billingCandidates.length) {
+    log(`CRON Billing: 0 concluídas sem billing; ${activeOrders.length} ativas mantidas só como projeção; ${frozenUnverifCount} A_VERIFICAR preservadas`, "cron");
     return;
   }
-  log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing processadas, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
+  log(`CRON Billing: ${billingCandidates.length} concluídas sem billing processadas pelo motor canônico; ${activeOrders.length} ativas não materializadas`, "cron");
 
   const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
   const contractMap = new Map<number, any>();
@@ -905,10 +909,10 @@ export async function executeBillingCron() {
     }
   }
 
-  const liveOrderIds = liveOrders.map((so: any) => so.id);
-  const clientIds = Array.from(new Set(liveOrders.map((so: any) => so.client_id).filter((v: any) => v != null)));
-  const empIds = Array.from(new Set(liveOrders.flatMap((so: any) => [so.assigned_employee_id, so.assigned_employee_2_id]).filter((v: any) => v != null)));
-  const vehIds = Array.from(new Set(liveOrders.map((so: any) => so.vehicle_id).filter((v: any) => v != null)));
+  const candidateIds = billingCandidates.map((so: any) => so.id);
+  const clientIds = Array.from(new Set(billingCandidates.map((so: any) => so.client_id).filter((v: any) => v != null)));
+  const empIds = Array.from(new Set(billingCandidates.flatMap((so: any) => [so.assigned_employee_id, so.assigned_employee_2_id]).filter((v: any) => v != null)));
+  const vehIds = Array.from(new Set(billingCandidates.map((so: any) => so.vehicle_id).filter((v: any) => v != null)));
 
   // Paginação: PostgREST limita default a 1000 rows. Buscar tudo em chunks.
   const fetchAllPaged = async <T = any>(table: string, columns: string, idCol: string, ids: number[], orderCol: string = "id"): Promise<T[]> => {
@@ -932,13 +936,12 @@ export async function executeBillingCron() {
     return out;
   };
 
-  const [photosArr, clientsRes, empsRes, vehsRes, mCostsArr, existBillsRes] = await Promise.all([
-    fetchAllPaged<any>("mission_photos", "service_order_id, step, km_value", "service_order_id", liveOrderIds),
+  const [photosArr, clientsRes, empsRes, vehsRes, mCostsArr] = await Promise.all([
+    fetchAllPaged<any>("mission_photos", "service_order_id, step, km_value", "service_order_id", candidateIds),
     clientIds.length ? supabaseAdmin.from("clients").select("id, name").in("id", clientIds) : Promise.resolve({ data: [] as any[] }),
     empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : Promise.resolve({ data: [] as any[] }),
     vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : Promise.resolve({ data: [] as any[] }),
-    fetchAllPaged<any>("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", liveOrderIds),
-    supabaseAdmin.from("escort_billings").select("id, service_order_id, status").in("service_order_id", liveOrderIds),
+    fetchAllPaged<any>("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", candidateIds),
   ]);
 
   const photosMap = new Map<number, any[]>();
@@ -954,13 +957,21 @@ export async function executeBillingCron() {
     if (!mCostsMap.has(c.service_order_id)) mCostsMap.set(c.service_order_id, []);
     mCostsMap.get(c.service_order_id)!.push(c);
   }
-  const billingIdMap = new Map<number, number>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.id]));
-  const billingStatusMap = new Map<number, string>((existBillsRes.data || []).map((b: any) => [b.service_order_id, b.status]));
-  const FROZEN_STATUSES = new Set(["A_VERIFICAR", "APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA", "REJEITADA"]);
-
   const CHUNK_SIZE = 15;
   const processOne = async (so: any) => {
     try {
+      // Reconfere imediatamente antes da escrita: se outro writer criou qualquer
+      // billing depois do baseline inicial, o cron não sobrescreve esse registro.
+      const { data: currentBillings } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id, status")
+        .eq("service_order_id", so.id)
+        .limit(1);
+      if (currentBillings?.length) {
+        log(`CRON Billing: OS ${so.os_number} pulada — billing já existe`, "cron");
+        return;
+      }
+
       const contrato = resolveContractForOs(so, contractMap, clientContractMap, { ...DEFAULT_BILLING_CONTRACT });
 
       const skipBillingHoursCron = shouldSkipBillingHours(so);
@@ -973,24 +984,50 @@ export async function executeBillingCron() {
       const emp2Name = so.assigned_employee_2_id ? empNameMap.get(so.assigned_employee_2_id) || null : null;
       const vehPlate = so.vehicle_id ? vehPlateMap.get(so.vehicle_id) || null : null;
 
-      const billingPayload = computeBillingPayloadForOs({
+      let billingPayload: any = computeBillingPayloadForOs({
         so, contrato, photos, mCosts, horasMissao,
         clientName: cliName, empName, emp2Name, vehPlate,
       });
 
-      // Skip se billing está congelado (FATURADO/PAGO) — preserva imutabilidade financeira.
-      const existId = billingIdMap.get(so.id);
-      if (existId) {
-        const existStatus = billingStatusMap.get(so.id);
-        if (existStatus && FROZEN_STATUSES.has(existStatus)) {
-          log(`CRON Billing: OS ${so.os_number} pulada — billing congelado (status=${existStatus})`, "cron");
+      if (so.status === "cancelada") {
+        const cancelada = await computeCanceladaBilling({
+          serviceOrderId: so.id,
+          clientId: so.client_id,
+          escortContractId: so.escort_contract_id,
+          scheduledDate: so.scheduled_date,
+          missionStartedAt: so.mission_started_at,
+          completedDate: so.completed_date,
+          stepLogs: so.step_logs,
+        });
+        if (!cancelada) {
+          log(`CRON Billing: OS ${so.os_number} cancelada sem contrato utilizável — sem billing criado`, "cron");
           return;
         }
+        billingPayload = {
+          ...billingPayload,
+          contract_id: cancelada.contrato?.id || billingPayload.contract_id,
+          ...cancelada.fatFields,
+          horario_agendado: cancelada.horarios.horario_agendado,
+          horario_inicio: cancelada.horarios.horario_inicio,
+          horario_fim: cancelada.horarios.horario_fim,
+          observacoes: `OS CANCELADA — Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}`,
+          created_by: "CRON",
+        };
+      } else if (so.status === "recusada") {
+        billingPayload = {
+          ...billingPayload,
+          ...buildRecusadaZeroPayload(null),
+          created_by: "CRON",
+        };
       }
-      // UPSERT atômico via ON CONFLICT (service_order_id) — UNIQUE uniq_eb_so_id (db-init.ts).
-      // Antes era SELECT-then-UPDATE/INSERT, vulnerável a race com outras chamadas paralelas.
-      await supabaseAdmin.from("escort_billings")
-        .upsert(billingPayload, { onConflict: "service_order_id" });
+
+      // INSERT intencional: o cron só cria billing inexistente. A UNIQUE de
+      // service_order_id torna qualquer corrida concorrente fail-closed, sem
+      // sobrescrever billing aberto/frozen criado por outro fluxo.
+      const { error: insertError } = await supabaseAdmin
+        .from("escort_billings")
+        .insert(billingPayload);
+      if (insertError) throw insertError;
 
       log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
     } catch (err: any) {
@@ -998,11 +1035,11 @@ export async function executeBillingCron() {
     }
   };
 
-  for (let i = 0; i < liveOrders.length; i += CHUNK_SIZE) {
-    const chunk = liveOrders.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < billingCandidates.length; i += CHUNK_SIZE) {
+    const chunk = billingCandidates.slice(i, i + CHUNK_SIZE);
     await Promise.all(chunk.map(processOne));
   }
 
   const elapsed = ((Date.now() - cronStart) / 1000).toFixed(1);
-  log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
+  log(`CRON Billing: Ciclo completo em ${elapsed}s (${billingCandidates.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
 }

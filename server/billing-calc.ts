@@ -304,54 +304,60 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const startTime = missionStartDate ? toBRT(missionStartDate) : undefined;
   const endTime = toBRT(missionEndDate);
 
-  const billingStartDate = missionStartDate || scheduledDate;
-  const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
-
-  const km_total = kmFinal - kmInicial;
-  const km_carregado = Math.max(0, km_total);
-
-  const billing = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal, contrato });
-  let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
-  const { km_excedente, has_acionamento: hasAcionamento } = billing;
-  const franquiaKm = billing.franquia_km;
-
-  const isNoturno = (() => {
-    const checkH = (t?: string) => {
-      if (!t) return false;
-      const h = parseInt(t.split(":")[0]);
-      return h >= 22 || h < 5;
-    };
-    return checkH(inicioConsiderado) || checkH(endTime);
-  })();
-  if (isNoturno) {
-    fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
-  }
-
   const { despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os } = splitMissionCostsForBilling(mCosts);
-  fat_total += despesas_pedagio + receitas_os;
-
-  const pag_vrp = n(contrato.vrp_base);
-  const resultado_bruto = fat_total - pag_vrp;
+  const canonical = calcularEscolta({
+    km_inicial: kmInicial,
+    km_final: kmFinal,
+    km_vazio: 0,
+    horas_missao: horasMissao,
+    horas_estadia: 0,
+    teve_pernoite: false,
+    horario_agendado: scheduledTime,
+    horario_inicio: startTime,
+    horario_fim: endTime,
+    inicio_ts: so.mission_started_at || null,
+    fim_ts: so.completed_date || now.toISOString(),
+    scheduled_date: so.scheduled_date || null,
+    despesas_pedagio,
+    despesas_combustivel,
+    despesas_outras,
+    receitas_os,
+    contrato,
+  });
 
   return {
     service_order_id: so.id,
     client_id: so.client_id, client_name: clientName || "--",
     contract_id: contrato.id || null,
     km_inicial: n(kmInicial), km_final: n(kmFinal), km_vazio: 0,
-    km_carregado: n(km_carregado), km_total: n(km_total),
-    km_faturado: n(Math.max(km_carregado, franquiaKm)), km_franquia: n(franquiaKm),
-    km_excedente: n(km_excedente),
+    km_carregado: n(canonical.km_carregado), km_total: n(canonical.km_total),
+    km_faturado: n(canonical.km_faturado), km_franquia: n(canonical.km_franquia),
+    km_excedente: n(canonical.km_excedente),
     horario_agendado: scheduledTime || null,
     horario_inicio: startTime || null, horario_fim: endTime || null,
-    horario_inicio_considerado: inicioConsiderado,
-    horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
-    horas_estadia: 0, teve_pernoite: false, is_noturno: isNoturno,
-    fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
-    valor_franquia: hasAcionamento ? r(fat_acionamento) : r(Math.min(km_carregado, franquiaKm) * n(contrato.valor_km_carregado)),
-    valor_km_extra: r(km_excedente * (hasAcionamento ? n(contrato.valor_km_extra) : n(contrato.valor_km_carregado))),
-    pag_vrp: r(pag_vrp), pag_total: r(pag_vrp),
-    resultado_bruto: r(resultado_bruto), resultado_liquido: r(resultado_bruto),
-    margem_percentual: fat_total > 0 ? r((resultado_bruto / fat_total) * 100) : 0,
+    horario_inicio_considerado: canonical.horario_inicio_considerado,
+    horas_missao: r(canonical.horas_trabalhadas), horas_trabalhadas: r(canonical.horas_trabalhadas),
+    horas_estadia: 0, teve_pernoite: false, is_noturno: canonical.is_noturno,
+    fat_acionamento: r(canonical.fat_acionamento),
+    fat_km: r(canonical.fat_km),
+    fat_km_carregado: r(canonical.faturamento.km_carregado),
+    fat_km_vazio: r(canonical.faturamento.km_vazio),
+    fat_hora_extra: r(canonical.fat_hora_extra),
+    fat_adicional_noturno: r(canonical.fat_adicional_noturno),
+    fat_estadia: r(canonical.fat_estadia),
+    fat_pernoite: r(canonical.fat_pernoite),
+    fat_diaria: r(canonical.fat_pernoite),
+    fat_total: r(canonical.fat_total),
+    valor_franquia: r(canonical.valor_franquia),
+    valor_km_extra: r(canonical.valor_km_extra),
+    pag_vrp: r(canonical.pag_vrp),
+    pag_periculosidade: r(canonical.pag_periculosidade),
+    pag_adicional_noturno: r(canonical.pag_adicional_noturno),
+    pag_reembolsos: r(canonical.pag_reembolsos),
+    pag_total: r(canonical.pag_total),
+    resultado_bruto: r(canonical.resultado.bruto),
+    resultado_liquido: r(canonical.resultado.liquido),
+    margem_percentual: r(canonical.resultado.margem_pct),
     vigilante_id: so.assigned_employee_id, vigilante_name: empName || "--",
     vigilante2_id: so.assigned_employee_2_id || null, vigilante2_name: emp2Name || null,
     origem: so.origin || null, destino: so.destination || null,

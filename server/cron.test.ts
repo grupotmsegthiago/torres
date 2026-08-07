@@ -187,7 +187,7 @@ test("cron Billing: cria billing para OS concluída sem billing existente", asyn
   assert.equal(payload.service_order_id, 9001);
 });
 
-test("cron Billing: atualiza billing PENDENTE em OS ativa (não congelado)", async () => {
+test("cron Billing: não materializa projeção de OS ativa, mesmo com billing PENDENTE", async () => {
   const state = buildScenario("PENDENTE", { fat_total: 1, km_inicial: 0, km_final: 0 });
   state.tables.service_orders[0].status = "em_andamento";
   state.tables.service_orders[0].mission_status = "em_andamento";
@@ -199,5 +199,5 @@ test("cron Billing: atualiza billing PENDENTE em OS ativa (não congelado)", asy
     restore();
   }
   const updates = state.updates.filter((u) => u.table === "escort_billings");
-  assert.equal(updates.length, 1, "Billing PENDENTE em OS ativa deve ser atualizado");
+  assert.equal(updates.length, 0, "OS ativa é projeção e não pode materializar billing oficial");
 });
