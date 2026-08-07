@@ -408,7 +408,9 @@ BEGIN
       v_allowed_keys := ARRAY['status', 'invoice_id', 'faturado_em', 'faturado_por'];
     WHEN 'MARK_PAID' THEN
       IF v_current.id IS NULL
-         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN ('FATURADO', 'FATURADA', 'PAGO')
+         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN (
+           'FATURADO', 'FATURADA', 'PAGO', 'CANCELADO', 'CANCELADA'
+         )
          OR COALESCE(v_payload->>'status', '') <> 'PAGO' THEN
         RAISE EXCEPTION USING
           ERRCODE = '55000',
@@ -442,7 +444,14 @@ BEGIN
     WHEN 'RELEASE_REBILL' THEN
       IF v_current.id IS NULL
          OR upper(trim(COALESCE(v_current.status, ''))) NOT IN ('FATURADO', 'FATURADA', 'PAGO')
-         OR COALESCE(v_payload->>'status', '') <> 'APROVADA'
+         OR (
+           upper(trim(COALESCE(v_current.status, ''))) IN ('CANCELADO', 'CANCELADA')
+           AND COALESCE(v_payload->>'status', '') <> 'CANCELADO'
+         )
+         OR (
+           upper(trim(COALESCE(v_current.status, ''))) NOT IN ('CANCELADO', 'CANCELADA')
+           AND COALESCE(v_payload->>'status', '') <> 'APROVADA'
+         )
          OR v_actor_name IS NULL OR v_actor_reason IS NULL THEN
         RAISE EXCEPTION USING
           ERRCODE = '55000',
@@ -466,6 +475,9 @@ BEGIN
           MESSAGE = 'PR5B1_TX_DELETE_PAYLOAD_MUST_BE_EMPTY';
       END IF;
       PERFORM set_config('torres.atomic_billing_write', 'on', true);
+      DELETE FROM public.financial_transactions
+      WHERE origin_type = 'escort_billing'
+        AND origin_id = v_target_id::text;
       DELETE FROM public.escort_billings WHERE id = v_target_id
       RETURNING * INTO v_result;
       RETURN NEXT v_result;
@@ -909,6 +921,106 @@ COMMENT ON FUNCTION public.mark_escort_billings_invoiced_atomic(
   uuid[], integer, timestamptz, text
 ) IS 'PR5B.1-TX: vincula invoice a lote misto em uma transação.';
 
+CREATE OR REPLACE FUNCTION public.transition_invoice_billings_atomic(
+  p_invoice_id integer,
+  p_action text,
+  p_transitioned_at timestamptz,
+  p_actor text
+)
+RETURNS SETOF public.escort_billings
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  v_action text := upper(trim(COALESCE(p_action, '')));
+  v_ids uuid[];
+BEGIN
+  SELECT array_agg(id ORDER BY id)
+  INTO v_ids
+  FROM public.escort_billings
+  WHERE invoice_id = p_invoice_id;
+
+  IF v_ids IS NULL OR cardinality(v_ids) = 0 THEN
+    RETURN;
+  END IF;
+
+  PERFORM 1
+  FROM public.escort_billings
+  WHERE id = ANY(v_ids)
+  ORDER BY id
+  FOR UPDATE;
+
+  IF v_action = 'MARK_PAID' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.escort_billings
+      WHERE id = ANY(v_ids)
+        AND upper(trim(COALESCE(status, ''))) NOT IN (
+          'FATURADO', 'FATURADA', 'PAGO', 'CANCELADO', 'CANCELADA'
+        )
+    ) THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '55000',
+        MESSAGE = 'PR5B1_TX_INVALID_PAID_BATCH_STATUS';
+    END IF;
+  ELSIF v_action = 'RELEASE_REBILL' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.escort_billings
+      WHERE id = ANY(v_ids)
+        AND upper(trim(COALESCE(status, ''))) NOT IN (
+          'APROVADA', 'FATURADO', 'FATURADA', 'PAGO', 'CANCELADO', 'CANCELADA'
+        )
+    ) THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '55000',
+        MESSAGE = 'PR5B1_TX_INVALID_RELEASE_BATCH_STATUS';
+    END IF;
+  ELSE
+    RAISE EXCEPTION USING
+      ERRCODE = '22023',
+      MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BATCH_ACTION';
+  END IF;
+
+  PERFORM set_config('torres.atomic_billing_write', 'on', true);
+
+  IF v_action = 'MARK_PAID' THEN
+    RETURN QUERY
+    UPDATE public.escort_billings
+    SET
+      status = CASE
+        WHEN upper(trim(COALESCE(status, ''))) IN ('CANCELADO', 'CANCELADA')
+          THEN 'CANCELADO'
+        ELSE 'PAGO'
+      END,
+      pago_em = COALESCE(p_transitioned_at, now()),
+      lock_version = lock_version + 1
+    WHERE id = ANY(v_ids)
+    RETURNING *;
+  ELSE
+    RETURN QUERY
+    UPDATE public.escort_billings
+    SET
+      status = CASE
+        WHEN upper(trim(COALESCE(status, ''))) IN ('CANCELADO', 'CANCELADA')
+          THEN 'CANCELADO'
+        ELSE 'APROVADA'
+      END,
+      invoice_id = NULL,
+      faturado_em = NULL,
+      faturado_por = NULL,
+      pago_em = NULL,
+      boletim_gerado = false,
+      lock_version = lock_version + 1
+    WHERE id = ANY(v_ids)
+    RETURNING *;
+  END IF;
+END;
+$$;
+
+COMMENT ON FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
+) IS 'PR5B.1-TX: pagamento/desvinculação de invoice mista em uma transação.';
+
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
@@ -921,6 +1033,9 @@ REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.mark_escort_billings_invoiced_atomic(
   uuid[], integer, timestamptz, text
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.write_escort_billing_atomic(
@@ -935,6 +1050,9 @@ GRANT EXECUTE ON FUNCTION public.freeze_boletim_billings_atomic(
 ) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_escort_billings_invoiced_atomic(
   uuid[], integer, timestamptz, text
+) TO service_role;
+GRANT EXECUTE ON FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
 ) TO service_role;
 
 COMMIT;

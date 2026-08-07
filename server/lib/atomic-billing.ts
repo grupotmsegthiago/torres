@@ -121,12 +121,20 @@ export async function updateBillingLifecycleAtomic(
   sb: any = supabaseAdmin,
 ) {
   const ref = await getAtomicBillingRefById(billingId, sb);
+  const cancelled = ["CANCELADO", "CANCELADA"].includes(
+    String(ref.status || "").toUpperCase(),
+  );
+  const effectivePayload = (
+    action === "FREEZE_COMMERCIAL" || action === "RELEASE_REBILL"
+  ) && cancelled
+    ? { ...payload, status: "CANCELADO" }
+    : payload;
   return writeEscortBillingAtomic({
     action,
     billingId,
     serviceOrderId: ref.service_order_id,
     expectedVersion: ref.lock_version,
-    payload,
+    payload: effectivePayload,
     actor,
   }, sb);
 }
@@ -221,6 +229,23 @@ export async function markBillingsInvoicedAtomic(
     p_invoice_id: invoiceId,
     p_faturado_em: faturadoEm,
     p_faturado_por: faturadoPor,
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function transitionInvoiceBillingsAtomic(
+  invoiceId: number,
+  action: "MARK_PAID" | "RELEASE_REBILL",
+  transitionedAt: string,
+  actor: string,
+  sb: any = supabaseAdmin,
+) {
+  const { data, error } = await sb.rpc("transition_invoice_billings_atomic", {
+    p_invoice_id: invoiceId,
+    p_action: action,
+    p_transitioned_at: transitionedAt,
+    p_actor: actor,
   });
   if (error) throwRpcError(error);
   return Array.isArray(data) ? data : [];

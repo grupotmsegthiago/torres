@@ -66,6 +66,9 @@ const setupSql = `
     action text NOT NULL, target_id text, target_type text, details text,
     ip_address text, created_at timestamptz DEFAULT now()
   );
+  CREATE TABLE financial_transactions (
+    id serial PRIMARY KEY, origin_type text, origin_id text
+  );
   CREATE FUNCTION validate_escort_billing_approval() RETURNS trigger
     LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
   CREATE TRIGGER trg_validate_escort_billing_approval
@@ -171,7 +174,12 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           'authenticated',
           'public.mark_escort_billings_invoiced_atomic(uuid[],integer,timestamp with time zone,text)',
           'EXECUTE'
-        ) AS authenticated_can_invoice
+        ) AS authenticated_can_invoice,
+        has_function_privilege(
+          'service_role',
+          'public.transition_invoice_billings_atomic(integer,text,timestamp with time zone,text)',
+          'EXECUTE'
+        ) AS service_can_transition_invoice
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -180,6 +188,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       service_can_create_snapshot: true,
       anon_can_freeze: false,
       authenticated_can_invoice: false,
+      service_can_transition_invoice: true,
     });
   });
 
@@ -217,11 +226,15 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         'UPDATE_OPEN','{"fat_total":600}'::jsonb,$1::uuid,2,0,'{}'::jsonb
       )`,
       [billing.id],
+    ).then(
+      () => ({ error: null as any }),
+      (error) => ({ error }),
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     await createSnapshot(snapshotTx, billing, "snapshot-wins");
     await snapshotTx.query("COMMIT");
-    await assert.rejects(pendingWrite, /PR5B1_TX_BILLING_PROTECTED/);
+    const writeOutcome = await pendingWrite;
+    assert.match(String(writeOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
     const current = await admin.query("SELECT fat_total FROM escort_billings WHERE id=$1", [billing.id]);
     assert.equal(Number(current.rows[0].fat_total), 500);
     await snapshotTx.end();
@@ -239,11 +252,15 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         'DELETE_OPEN','{}'::jsonb,$1::uuid,3,0,'{}'::jsonb
       )`,
       [billing.id],
+    ).then(
+      () => ({ error: null as any }),
+      (error) => ({ error }),
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     const snapshot = await createSnapshot(snapshotTx, billing, "delete-loses");
     await snapshotTx.query("COMMIT");
-    await assert.rejects(pendingDelete, /PR5B1_TX_BILLING_PROTECTED/);
+    const deleteOutcome = await pendingDelete;
+    assert.match(String(deleteOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
     await assert.rejects(
       admin.query("UPDATE boletim_approvals SET total_value=999 WHERE id=$1", [snapshot.rows[0].id]),
       /PR5B1_TX_SNAPSHOT_IMMUTABLE/,
@@ -488,6 +505,20 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       invoiced.rows.map((row) => [row.status, Number(row.invoice_id)]).sort(),
       [["CANCELADO", 99], ["FATURADO", 99]],
     );
+    const paid = await admin.query(
+      "SELECT * FROM transition_invoice_billings_atomic(99,'MARK_PAID',now(),'test')",
+    );
+    assert.deepEqual(
+      paid.rows.map((row) => row.status).sort(),
+      ["CANCELADO", "PAGO"],
+    );
+    const released = await admin.query(
+      "SELECT * FROM transition_invoice_billings_atomic(99,'RELEASE_REBILL',now(),'test')",
+    );
+    assert.deepEqual(
+      released.rows.map((row) => [row.status, row.invoice_id]).sort(),
+      [["APROVADA", null], ["CANCELADO", null]],
+    );
   });
 
   await t.test("multi-ID snapshots lock in one order without deadlock", async () => {
@@ -584,6 +615,15 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       ),
       /PR5B1_TX_SERVICE_ORDER_REPARENT_BLOCKED/,
     );
+    await assert.rejects(
+      admin.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'UPDATE_OPEN','{"status":"PAGO"}'::jsonb,$1,90,0,'{}'::jsonb
+        )`,
+        [billing.id],
+      ),
+      /PR5B1_TX_PAYLOAD_KEY_NOT_ALLOWED/,
+    );
   });
 
   await t.test("direct DML and missing official facts fail closed", async () => {
@@ -604,6 +644,25 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     );
   });
 
+  await t.test("open billing delete removes its ledger mirror in the same transaction", async () => {
+    const billing = await createBilling(admin, 6);
+    await admin.query(
+      "INSERT INTO financial_transactions(origin_type,origin_id) VALUES ('escort_billing',$1)",
+      [billing.id],
+    );
+    await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('DELETE_OPEN','{}'::jsonb,$1,6,0,'{}'::jsonb)",
+      [billing.id],
+    );
+    const counts = await admin.query(
+      `SELECT
+        (SELECT count(*)::int FROM escort_billings WHERE id=$1) AS billings,
+        (SELECT count(*)::int FROM financial_transactions WHERE origin_id=$1::text) AS ledger`,
+      [billing.id],
+    );
+    assert.deepEqual(counts.rows[0], { billings: 0, ledger: 0 });
+  });
+
   await t.test("rollback restores legacy guards and removes TX objects", async () => {
     const rollbackContract = await readFile(
       path.join(root, "supabase/migrations/rollback/20260807181000_rollback_atomic_billing_enforcement.sql"),
@@ -621,6 +680,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         to_regprocedure('public.create_boletim_approval_atomic(text,integer,text,text,date,date,text[],numeric,integer,text,integer,jsonb)') IS NULL AS snapshot_rpc_removed,
         to_regprocedure('public.freeze_boletim_billings_atomic(integer,text,text,timestamptz)') IS NULL AS freeze_rpc_removed,
         to_regprocedure('public.mark_escort_billings_invoiced_atomic(uuid[],integer,timestamptz,text)') IS NULL AS invoice_rpc_removed,
+        to_regprocedure('public.transition_invoice_billings_atomic(integer,text,timestamptz,text)') IS NULL AS invoice_transition_rpc_removed,
         EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema='public' AND table_name='escort_billings' AND column_name='lock_version'
@@ -639,6 +699,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       snapshot_rpc_removed: true,
       freeze_rpc_removed: true,
       invoice_rpc_removed: true,
+      invoice_transition_rpc_removed: true,
       version_preserved: true,
       billing_legacy_restored: true,
       service_order_legacy_restored: true,

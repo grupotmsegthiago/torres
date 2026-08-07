@@ -6,6 +6,7 @@ import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_help
 import { bustBalancoCaches } from "./lib/balanco-cache";
 import {
   markBillingsInvoicedAtomic,
+  transitionInvoiceBillingsAtomic,
   updateBillingLifecycleBatchAtomic,
 } from "./lib/atomic-billing";
 import {
@@ -52,21 +53,15 @@ const REGRESSION_STATUSES = ["OVERDUE", "PENDING", "AWAITING_RISK_ANALYSIS", "AW
 async function updateBillingLifecycleByInvoiceAtomic(
   invoiceId: number,
   action: "MARK_PAID" | "RELEASE_REBILL",
-  payload: Record<string, unknown>,
+  _payload: Record<string, unknown>,
   actorName: string,
 ) {
-  const { data, error } = await supabaseAdmin
-    .from("escort_billings")
-    .select("id")
-    .eq("invoice_id", invoiceId);
-  if (error) throw error;
-  const ids = (data || []).map((row: any) => String(row.id));
-  if (!ids.length) return [];
-  return updateBillingLifecycleBatchAtomic(ids, action, payload, {
-    userName: actorName,
-    userRole: "system",
-    reason: `${action} invoice #${invoiceId}`,
-  });
+  return transitionInvoiceBillingsAtomic(
+    invoiceId,
+    action,
+    new Date().toISOString(),
+    actorName,
+  );
 }
 
 export function isStatusRegression(incoming: string | null | undefined): boolean {

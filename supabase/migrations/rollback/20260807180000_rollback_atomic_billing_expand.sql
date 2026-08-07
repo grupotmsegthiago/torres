@@ -15,7 +15,13 @@ REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
 REVOKE ALL ON FUNCTION public.mark_escort_billings_invoiced_atomic(
   uuid[], integer, timestamptz, text
 ) FROM service_role;
+REVOKE ALL ON FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
+) FROM service_role;
 
+DROP FUNCTION IF EXISTS public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
+);
 DROP FUNCTION IF EXISTS public.mark_escort_billings_invoiced_atomic(
   uuid[], integer, timestamptz, text
 );

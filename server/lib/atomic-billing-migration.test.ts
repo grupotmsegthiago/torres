@@ -31,6 +31,7 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(expand, /create_boletim_approval_atomic/);
   assert.match(expand, /freeze_boletim_billings_atomic/);
   assert.match(expand, /mark_escort_billings_invoiced_atomic/);
+  assert.match(expand, /transition_invoice_billings_atomic/);
   assert.match(expand, /FOR UPDATE/);
   assert.match(expand, /pg_advisory_xact_lock/);
   assert.match(enforcement, /BEFORE INSERT OR UPDATE OR DELETE ON public\.escort_billings/);
