@@ -1,6 +1,6 @@
 # PR5B.1-TX — Desenho da proteção atômica de billing
 
-**Status:** desenho concluído; pronto para autorização de implementação, ainda não implementado
+**Status:** implementado no PR #58; migrations versionadas, revisáveis e ainda não aplicadas live
 **Domínio dono:** faturamento
 **Dados protegidos:** `escort_billings` (SNAPSHOT financeiro) e `boletim_approvals.billing_snapshot` (SNAPSHOT comercial)
 **Camadas:** 5 e 6 da Arquitetura Oficial
@@ -553,15 +553,18 @@ Concluídos:
 7. writers diretos e caminhos de fallback inventariados;
 8. P1-07 e regra contratual fechados pelo proprietário.
 
-Obrigatórios na futura PR5B.1-TX-IMPLEMENTAÇÃO:
+Implementados na PR5B.1-TX-IMPLEMENTAÇÃO:
 
-1. migration expand versionada e rollback revisado;
+1. migration expand versionada e rollback;
 2. RPCs com allowlist real de colunas e grants explícitos;
-3. migração de todos os writers antes do enforcement;
-4. migration contract/enforcement;
-5. testes concorrentes em banco efêmero;
-6. homologação read-only das golden fixtures;
-7. autorização explícita antes de qualquer aplicação live.
+3. migração dos writers identificados;
+4. migration contract/enforcement mantida em `migrations/pending`;
+5. testes concorrentes em PostgreSQL efêmero;
+6. CI de integração PostgreSQL;
+7. rollback que preserva `lock_version`.
+
+Ainda obrigatório: revisão humana das migrations e autorização explícita antes
+de qualquer aplicação live.
 
 ### Ordem manual e CSVs
 
@@ -583,9 +586,9 @@ com esse pacote.
 
 ## 12. Decisão
 
-**PR5B.1-TX CONCLUÍDA — PRONTA PARA AUTORIZAÇÃO DE IMPLEMENTAÇÃO ATÔMICA**
+**PR5B.1-TX IMPLEMENTADA — MIGRATION PRONTA PARA REVISÃO, NÃO APLICADA**
 
-O desenho, a evidência live, o conjunto mínimo de objetos SQL, o rollout
-expand/contract, o rollback, os writers afetados, os testes concorrentes e as
-regras de negócio estão fechados. Nenhuma implementação ou alteração de banco
-foi executada nesta fase.
+O desenho, a evidência live, os objetos SQL, o rollout expand/contract, o
+rollback, os writers, os testes concorrentes e as regras de negócio foram
+implementados na branch do PR #58. Nenhuma migration foi aplicada no banco
+live; o próximo gate é a revisão humana do SQL.
