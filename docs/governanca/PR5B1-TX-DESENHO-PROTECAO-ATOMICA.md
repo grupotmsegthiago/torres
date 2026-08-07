@@ -55,6 +55,11 @@ Não há FK entre os itens JSON de `billing_snapshot` e `escort_billings`. A
 única barreira estrutural comprovada no repositório é o índice unique por OS,
 criado hoje de forma best-effort.
 
+Nem a criação original de `escort_billings`, nem PK/FKs para
+`service_order_id`/`invoice_id` estão versionadas. As definições live precisam
+ser coletadas antes de a migration futura decidir quais constraints apenas
+validar, promover ou criar.
+
 O arquivo `server/lib/boletim-resync.ts`, citado na governança, não foi
 localizado no estado auditado. O único writer versionado de
 `billing_snapshot` encontrado é a criação em
@@ -66,6 +71,15 @@ Além dos cinco writers de cálculo, `server/asaas.ts` altera status,
 altera status em `server/routes/boletim-approval.ts`; e `server/routes.ts`
 executa backfill runtime. O enforcement não pode ser ativado enquanto esses
 writers não aderirem ao contrato atômico ou forem formalmente retirados.
+
+Há ainda dois caminhos críticos:
+
+- `server/asaas.ts` pode apagar `boletim_approvals`; isso remove a evidência
+  consultada por `billingHasCommercialSnapshot` e precisa ser substituído por
+  estado/arquivamento, não hard delete;
+- `server/pg-fallback.ts` inclui `escort_billings` entre tabelas core; qualquer
+  replay/sync deve chamar o mesmo contrato atômico ou ficar desabilitado para
+  esse snapshot.
 
 ### 2.3 Código × banco
 
@@ -175,7 +189,7 @@ versão otimista no billing:
    - rejeita UPDATE/DELETE direto fora da RPC controlada;
    - atua como fail-closed para writer legado esquecido.
 5. Trigger de enforcement em `boletim_approvals.billing_snapshot`:
-   - rejeita INSERT/UPDATE direto fora da RPC de snapshot;
+   - rejeita INSERT/UPDATE/DELETE direto fora da RPC de snapshot;
    - bloqueia alteração quando status não é `PENDENTE`.
 6. `uniq_eb_so_id` passa a ser criado/validado por migration, sem `.catch()`.
 7. índice GIN versionado em `billing_snapshot` sustenta o containment check
@@ -212,6 +226,8 @@ Em nenhum caso um snapshot stale e uma mutação concorrente confirmam juntos.
 - `service_order_id = NULL` só é permitido para o fluxo avulso explicitamente
   autorizado; não pode ser usado para contornar snapshot de OS.
 - Snapshot não pode referenciar billing inexistente; a RPC valida todos os IDs.
+- A RPC também verifica conflito com approvals ativos; o parâmetro `force` da
+  aplicação não pode contornar a invariante sem ação excepcional auditada.
 
 ### 4.4 Reabertura e refaturamento
 
@@ -305,6 +321,10 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_escort_billing_direct_write();
 CREATE TRIGGER guard_boletim_snapshot_direct_write
 BEFORE INSERT OR UPDATE OF billing_snapshot ON public.boletim_approvals
 FOR EACH ROW EXECUTE FUNCTION public.guard_boletim_snapshot_direct_write();
+
+CREATE TRIGGER guard_boletim_snapshot_delete
+BEFORE DELETE ON public.boletim_approvals
+FOR EACH ROW EXECUTE FUNCTION public.guard_boletim_snapshot_direct_write();
 ```
 
 ## 6. Objetos a versionar na implementação futura
@@ -337,7 +357,9 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_boletim_snapshot_direct_write();
 | Reabrir/refaturar | `server/routes/escort.ts` | ação excepcional auditável da RPC |
 | Aprovação do cliente | `server/routes/boletim-approval.ts` | `FREEZE_COMMERCIAL` via RPC após validar approval/snapshot |
 | Vínculo/status de invoice e pagamento | `server/asaas.ts` | ações fechadas `LINK_INVOICE`, `MARK_INVOICED`, `MARK_PAID`, `UNLINK_FOR_REBILL`; a RPC não altera a invoice |
+| Exclusão de approval | `server/asaas.ts` | remover hard delete; preservar snapshot por status/arquivo auditável |
 | Backfill runtime | `server/routes.ts` | remover como writer runtime; transformar em migration/backfill controlado antes do enforcement |
+| Fallback/offline sync | `server/pg-fallback.ts` | impedir replay direto de billing ou encaminhar ao contrato atômico |
 
 `billing-frozen.ts` continua sendo precheck, não autorização final.
 
@@ -461,20 +483,21 @@ Rollback não apaga snapshots, invoices, ledger ou auditoria.
 6. Billing em snapshot: UPDATE e DELETE normais bloqueados.
 7. DML direto fora da RPC: trigger bloqueia.
 8. Snapshot com versão stale: bloqueia sem gravar approval.
-9. Duas sessões:
+9. UPDATE/NULL/DELETE direto de `billing_snapshot`: bloqueado.
+10. Duas sessões:
    - sessão A trava para snapshot;
    - sessão B tenta write;
    - A confirma;
    - B bloqueia.
-10. Ordem inversa:
+11. Ordem inversa:
     - B atualiza/incrementa versão;
     - A detecta versão stale;
     - nenhum snapshot stale é criado.
-11. Reabertura/refaturamento autorizada:
+12. Reabertura/refaturamento autorizada:
     estado permitido + ator + motivo + auditoria atômicos.
-12. Reabertura inválida ou sem motivo: bloqueada.
-13. Snapshot aprovado: resync bloqueado.
-14. RPC não altera `billing_snapshot`, `invoices` ou `financial_transactions`
+13. Reabertura inválida ou sem motivo: bloqueada.
+14. Snapshot aprovado: resync e hard delete bloqueados.
+15. RPC não altera `billing_snapshot`, `invoices` ou `financial_transactions`
     fora de sua responsabilidade.
 
 ### Golden fixtures read-only
