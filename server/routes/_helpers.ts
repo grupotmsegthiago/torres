@@ -274,3 +274,11 @@ export async function removeAutoTransaction(origin_type: string, origin_id: stri
     console.error("[AutoTransaction] remove exception:", e.message);
   }
 }
+
+export async function removeAutoTransactionStrict(origin_type: string, origin_id: string) {
+  const { error } = await supabaseAdmin.from("financial_transactions")
+    .delete()
+    .eq("origin_type", origin_type)
+    .eq("origin_id", origin_id);
+  if (error) throw error;
+}

@@ -29,10 +29,13 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(expand, /lock_version bigint NOT NULL DEFAULT 0/);
   assert.match(expand, /write_escort_billing_atomic/);
   assert.match(expand, /create_boletim_approval_atomic/);
+  assert.match(expand, /freeze_boletim_billings_atomic/);
+  assert.match(expand, /mark_escort_billings_invoiced_atomic/);
   assert.match(expand, /FOR UPDATE/);
   assert.match(expand, /pg_advisory_xact_lock/);
   assert.match(enforcement, /BEFORE INSERT OR UPDATE OR DELETE ON public\.escort_billings/);
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
+  assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
 });
 
 test("migration TX não duplica motor financeiro em SQL", () => {

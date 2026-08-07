@@ -208,3 +208,20 @@ export async function freezeBoletimBillingsAtomic(
   if (error) throwRpcError(error);
   return Array.isArray(data) ? data : [];
 }
+
+export async function markBillingsInvoicedAtomic(
+  billingIds: string[],
+  invoiceId: number,
+  faturadoEm: string,
+  faturadoPor: string,
+  sb: any = supabaseAdmin,
+) {
+  const { data, error } = await sb.rpc("mark_escort_billings_invoiced_atomic", {
+    p_billing_ids: billingIds,
+    p_invoice_id: invoiceId,
+    p_faturado_em: faturadoEm,
+    p_faturado_por: faturadoPor,
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}

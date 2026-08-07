@@ -4,7 +4,10 @@ import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { bustBalancoCaches } from "./lib/balanco-cache";
-import { updateBillingLifecycleBatchAtomic } from "./lib/atomic-billing";
+import {
+  markBillingsInvoicedAtomic,
+  updateBillingLifecycleBatchAtomic,
+} from "./lib/atomic-billing";
 import {
   TORRES_CNPJ,
   CNAE_PRINCIPAL,
@@ -334,9 +337,9 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
         const ids = orphans.map((b: any) => b.id);
         if (!dryRun) {
           try {
-            await updateBillingLifecycleBatchAtomic(ids.map(String), "MARK_INVOICED", {
-              invoice_id: invoice.id, status: "FATURADO",
-            }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+            await markBillingsInvoicedAtomic(
+              ids.map(String), invoice.id, new Date().toISOString(), "AUTO_LINK",
+            );
           } catch (error: any) {
             return { linked: 0, reason: error.message };
           }
@@ -351,9 +354,9 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       if (single) {
         if (!dryRun) {
           try {
-            await updateBillingLifecycleBatchAtomic([String(single.id)], "MARK_INVOICED", {
-              invoice_id: invoice.id, status: "FATURADO",
-            }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+            await markBillingsInvoicedAtomic(
+              [String(single.id)], invoice.id, new Date().toISOString(), "AUTO_LINK",
+            );
           } catch (error: any) {
             return { linked: 0, reason: error.message };
           }
@@ -381,9 +384,9 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       if (bestSubset && bestSubset.length > 0) {
         if (!dryRun) {
           try {
-            await updateBillingLifecycleBatchAtomic(bestSubset.map(String), "MARK_INVOICED", {
-              invoice_id: invoice.id, status: "FATURADO",
-            }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+            await markBillingsInvoicedAtomic(
+              bestSubset.map(String), invoice.id, new Date().toISOString(), "AUTO_LINK",
+            );
           } catch (error: any) {
             return { linked: 0, reason: error.message };
           }
@@ -895,16 +898,12 @@ export async function emitInvoiceAuto(
   const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
   if (billingIdsMatch) {
     const bIds = billingIdsMatch[1].split(",").map((s: string) => s.trim());
-    await updateBillingLifecycleBatchAtomic(bIds, "MARK_INVOICED", {
-      status: "FATURADO",
-      invoice_id: invoiceId,
-      faturado_em: new Date().toISOString(),
-      faturado_por: opts.actorName || "Auto-Aprovação Cliente",
-    }, {
-      userName: opts.actorName || "Auto-Aprovação Cliente",
-      userRole: "system",
-      reason: `Faturar invoice #${invoiceId}`,
-    });
+    await markBillingsInvoicedAtomic(
+      bIds,
+      invoiceId,
+      new Date().toISOString(),
+      opts.actorName || "Auto-Aprovação Cliente",
+    );
     bustBalancoCaches();
   }
 
@@ -2104,18 +2103,12 @@ export function registerAsaasRoutes(app: Express) {
       const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
       if (billingIdsMatch) {
         const bIds = billingIdsMatch[1].split(",").map((s: string) => s.trim());
-        await updateBillingLifecycleBatchAtomic(bIds, "MARK_INVOICED", {
-          status: "FATURADO",
-          invoice_id: id,
-          faturado_em: new Date().toISOString(),
-          faturado_por: (req as any).user?.name || "Admin",
-        }, {
-          userId: (req as any).user?.id,
-          userName: (req as any).user?.name || "Admin",
-          userRole: (req as any).user?.role || "admin",
-          reason: `Faturar invoice #${id}`,
-          ipAddress: req.ip,
-        });
+        await markBillingsInvoicedAtomic(
+          bIds,
+          id,
+          new Date().toISOString(),
+          (req as any).user?.name || "Admin",
+        );
         bustBalancoCaches();
         console.log(`[asaas] ${bIds.length} billing(s) marcados como FATURADO`);
       }
@@ -2949,15 +2942,12 @@ export function registerAsaasRoutes(app: Express) {
 
         const primaryInvoice = createdInvoices[0];
         try {
-          await updateBillingLifecycleBatchAtomic(billingIds.map(String), "MARK_INVOICED", {
-            status: "FATURADO",
-            faturado_em: new Date().toISOString(),
-            faturado_por: user?.name || "Sistema",
-            invoice_id: primaryInvoice.id,
-          }, {
-            userId: user?.id, userName: user?.name || "Sistema",
-            userRole: user?.role || "system", reason: `Invoice #${primaryInvoice.id}`,
-          });
+          await markBillingsInvoicedAtomic(
+            billingIds.map(String),
+            primaryInvoice.id,
+            new Date().toISOString(),
+            user?.name || "Sistema",
+          );
           bustBalancoCaches();
         } catch (updateErr: any) {
           console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
@@ -3107,15 +3097,12 @@ export function registerAsaasRoutes(app: Express) {
       if (invErr) throw invErr;
 
       try {
-        await updateBillingLifecycleBatchAtomic(billingIds.map(String), "MARK_INVOICED", {
-          status: "FATURADO",
-          faturado_em: new Date().toISOString(),
-          faturado_por: user?.name || "Sistema",
-          invoice_id: invoice.id,
-        }, {
-          userId: user?.id, userName: user?.name || "Sistema",
-          userRole: user?.role || "system", reason: `Invoice #${invoice.id}`,
-        });
+        await markBillingsInvoicedAtomic(
+          billingIds.map(String),
+          invoice.id,
+          new Date().toISOString(),
+          user?.name || "Sistema",
+        );
         bustBalancoCaches();
       } catch (updateErr: any) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
@@ -3655,14 +3642,12 @@ export function registerAsaasRoutes(app: Express) {
 
         // Desvincula billings/escort_billings que apontam pra essa fatura
         try { await supabaseAdmin.from("billings").update({ invoice_id: null } as any).eq("invoice_id", sourceId); } catch {}
-        try {
-          await updateBillingLifecycleByInvoiceAtomic(
-            sourceId,
-            "RELEASE_REBILL",
-            { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
-            user?.name || "Admin",
-          );
-        } catch {}
+        await updateBillingLifecycleByInvoiceAtomic(
+          sourceId,
+          "RELEASE_REBILL",
+          { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
+          user?.name || "Admin",
+        );
 
         const { error } = await supabaseAdmin.from("invoices").delete().eq("id", sourceId);
         if (error) throw error;
@@ -4297,12 +4282,9 @@ export function registerAsaasRoutes(app: Express) {
         }
         if (safeIds.length === 0) return res.json({ linked: 0, skipped: billingIds.length });
 
-        await updateBillingLifecycleBatchAtomic(safeIds.map(String), "MARK_INVOICED", {
-          invoice_id: invoiceId, status: "FATURADO",
-        }, {
-          userId: user?.id, userName: user?.name || "Admin",
-          userRole: user?.role || "admin", reason: `Vínculo manual invoice #${invoiceId}`,
-        });
+        await markBillingsInvoicedAtomic(
+          safeIds.map(String), invoiceId, new Date().toISOString(), user?.name || "Admin",
+        );
         bustBalancoCaches();
 
         console.log(`[link-os] ${safeIds.length} billing(s) vinculada(s) à invoice ${invoiceId} (${inv.client_name}) por ${user?.email}: [${safeIds.join(", ")}]`);
@@ -4408,12 +4390,9 @@ export function registerAsaasRoutes(app: Express) {
 
           const ids = inPeriod.map((b: any) => b.id);
           try {
-            await updateBillingLifecycleBatchAtomic(ids.map(String), "MARK_INVOICED", {
-              invoice_id: inv.id, status: "FATURADO",
-            }, {
-              userName: user?.name || "Admin", userRole: user?.role || "admin",
-              reason: `Reconciliação invoice #${inv.id}`,
-            });
+            await markBillingsInvoicedAtomic(
+              ids.map(String), inv.id, new Date().toISOString(), user?.name || "Admin",
+            );
           } catch (error: any) {
             results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: error.message });
             continue;

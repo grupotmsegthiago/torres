@@ -226,6 +226,14 @@ BEGIN
         MESSAGE = 'PR5B1_TX_SERVICE_ORDER_NOT_FOUND';
     END IF;
 
+    IF v_current.id IS NOT NULL
+       AND NULLIF(v_payload->>'service_order_id', '') IS NOT NULL
+       AND (v_payload->>'service_order_id')::integer <> v_current.service_order_id THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'PR5B1_TX_SERVICE_ORDER_REPARENT_BLOCKED';
+    END IF;
+
     IF NULLIF(trim(COALESCE(v_so.escort_contract_id, '')), '') IS NULL THEN
       RAISE EXCEPTION USING
         ERRCODE = '23514',
@@ -247,6 +255,13 @@ BEGIN
       RAISE EXCEPTION USING
         ERRCODE = '23514',
         MESSAGE = 'PR5B1_TX_CONTRACT_MISMATCH';
+    END IF;
+
+    IF NULLIF(v_payload->>'client_id', '') IS NOT NULL
+       AND (v_payload->>'client_id')::integer IS DISTINCT FROM v_so.client_id THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'PR5B1_TX_CLIENT_MISMATCH';
     END IF;
 
     IF v_action IN ('WRITE_OFFICIAL', 'UPDATE_OPEN') THEN
@@ -649,6 +664,37 @@ BEGIN
       MESSAGE = 'PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(p_billing_snapshot) AS item
+    JOIN public.escort_billings AS billing
+      ON billing.id = (item->>'billing_id')::uuid
+    WHERE round(COALESCE((item->>'fat_acionamento')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_acionamento, 0), 2)
+       OR round(COALESCE((item->>'fat_hora_extra')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_hora_extra, 0), 2)
+       OR round(COALESCE((item->>'fat_km')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_km, 0), 2)
+       OR round(COALESCE((item->>'fat_adicional_noturno')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_adicional_noturno, 0), 2)
+       OR round(COALESCE((item->>'fat_estadia')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_estadia, 0), 2)
+       OR round(COALESCE((item->>'fat_pernoite')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_pernoite, 0), 2)
+       OR round(COALESCE((item->>'despesas_pedagio')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.despesas_pedagio, 0), 2)
+       OR round(COALESCE((item->>'despesas_outras')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.despesas_outras, 0), 2)
+       OR round(COALESCE((item->>'receitas_os')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.receitas_os, 0), 2)
+       OR round(COALESCE((item->>'total')::numeric, 0), 2)
+            IS DISTINCT FROM round(COALESCE(billing.fat_total, 0), 2)
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_SNAPSHOT_COMPONENT_MISMATCH';
+  END IF;
+
   IF COALESCE(p_os_count, -1) <> v_snapshot_count
      OR round(COALESCE(p_total_value, 0), 2) IS DISTINCT FROM (
        SELECT round(COALESCE(sum((item->>'total')::numeric), 0), 2)
@@ -788,6 +834,81 @@ COMMENT ON FUNCTION public.freeze_boletim_billings_atomic(
   integer, text, text, timestamptz
 ) IS 'PR5B.1-TX: congela todos os billings do approval em uma transação.';
 
+CREATE OR REPLACE FUNCTION public.mark_escort_billings_invoiced_atomic(
+  p_billing_ids uuid[],
+  p_invoice_id integer,
+  p_faturado_em timestamptz,
+  p_faturado_por text
+)
+RETURNS SETOF public.escort_billings
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  v_ids uuid[];
+  v_locked_count integer;
+BEGIN
+  SELECT array_agg(id ORDER BY id)
+  INTO v_ids
+  FROM unnest(p_billing_ids) AS id;
+
+  IF v_ids IS NULL OR cardinality(v_ids) = 0
+     OR cardinality(v_ids) <> cardinality(ARRAY(SELECT DISTINCT unnest(v_ids))) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '22023',
+      MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BILLING_IDS';
+  END IF;
+
+  PERFORM 1
+  FROM public.escort_billings
+  WHERE id = ANY(v_ids)
+  ORDER BY id
+  FOR UPDATE;
+  GET DIAGNOSTICS v_locked_count = ROW_COUNT;
+
+  IF v_locked_count <> cardinality(v_ids) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_INVOICE_BILLING_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND upper(trim(COALESCE(status, ''))) NOT IN (
+        'APROVADA', 'FATURADO', 'CANCELADO', 'CANCELADA'
+      )
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '55000',
+      MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BATCH_STATUS';
+  END IF;
+
+  PERFORM set_config('torres.atomic_billing_write', 'on', true);
+
+  RETURN QUERY
+  UPDATE public.escort_billings
+  SET
+    status = CASE
+      WHEN upper(trim(COALESCE(status, ''))) IN ('CANCELADO', 'CANCELADA')
+        THEN 'CANCELADO'
+      ELSE 'FATURADO'
+    END,
+    invoice_id = p_invoice_id,
+    faturado_em = COALESCE(p_faturado_em, now()),
+    faturado_por = p_faturado_por,
+    lock_version = lock_version + 1
+  WHERE id = ANY(v_ids)
+  RETURNING *;
+END;
+$$;
+
+COMMENT ON FUNCTION public.mark_escort_billings_invoiced_atomic(
+  uuid[], integer, timestamptz, text
+) IS 'PR5B.1-TX: vincula invoice a lote misto em uma transação.';
+
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
@@ -797,6 +918,9 @@ REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
   integer, text, text, timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mark_escort_billings_invoiced_atomic(
+  uuid[], integer, timestamptz, text
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.write_escort_billing_atomic(
@@ -808,6 +932,9 @@ GRANT EXECUTE ON FUNCTION public.create_boletim_approval_atomic(
 ) TO service_role;
 GRANT EXECUTE ON FUNCTION public.freeze_boletim_billings_atomic(
   integer, text, text, timestamptz
+) TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_escort_billings_invoiced_atomic(
+  uuid[], integer, timestamptz, text
 ) TO service_role;
 
 COMMIT;

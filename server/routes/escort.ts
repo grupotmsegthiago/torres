@@ -9,7 +9,7 @@ import type { Express } from "express";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
-  import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
+  import { logFinancialAudit, haversineDist, removeAutoTransaction, removeAutoTransactionStrict, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
@@ -1790,7 +1790,7 @@ import type { Express } from "express";
           ipAddress: req.ip,
         },
       });
-      await removeAutoTransaction("escort_billing", req.params.id);
+      await removeAutoTransactionStrict("escort_billing", req.params.id);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

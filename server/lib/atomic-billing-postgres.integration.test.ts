@@ -38,7 +38,11 @@ const setupSql = `
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), service_order_id integer,
     client_id integer, client_name text, contract_id uuid,
     km_inicial numeric NOT NULL, km_final numeric NOT NULL,
-    fat_total numeric DEFAULT 0, pag_total numeric DEFAULT 0,
+    fat_acionamento numeric DEFAULT 0, fat_hora_extra numeric DEFAULT 0,
+    fat_km numeric DEFAULT 0, fat_adicional_noturno numeric DEFAULT 0,
+    fat_estadia numeric DEFAULT 0, fat_pernoite numeric DEFAULT 0,
+    despesas_pedagio numeric DEFAULT 0, despesas_outras numeric DEFAULT 0,
+    receitas_os numeric DEFAULT 0, fat_total numeric DEFAULT 0, pag_total numeric DEFAULT 0,
     desp_total numeric DEFAULT 0, status varchar DEFAULT 'CALCULADO',
     observacoes text, notas text, revisado_por text, revisado_em timestamptz,
     boletim_numero varchar, boletim_gerado boolean DEFAULT false,
@@ -152,12 +156,30 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           'authenticated',
           'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)',
           'EXECUTE'
-        ) AS authenticated_can_execute
+        ) AS authenticated_can_execute,
+        has_function_privilege(
+          'service_role',
+          'public.create_boletim_approval_atomic(text,integer,text,text,date,date,text[],numeric,integer,text,integer,jsonb)',
+          'EXECUTE'
+        ) AS service_can_create_snapshot,
+        has_function_privilege(
+          'anon',
+          'public.freeze_boletim_billings_atomic(integer,text,text,timestamp with time zone)',
+          'EXECUTE'
+        ) AS anon_can_freeze,
+        has_function_privilege(
+          'authenticated',
+          'public.mark_escort_billings_invoiced_atomic(uuid[],integer,timestamp with time zone,text)',
+          'EXECUTE'
+        ) AS authenticated_can_invoice
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
       anon_can_execute: false,
       authenticated_can_execute: false,
+      service_can_create_snapshot: true,
+      anon_can_freeze: false,
+      authenticated_can_invoice: false,
     });
   });
 
@@ -458,6 +480,14 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       [approval.rows[0].id],
     );
     assert.equal(approvalStatus.rows[0].status, "APROVADO");
+    const invoiced = await admin.query(
+      "SELECT * FROM mark_escort_billings_invoiced_atomic($1::uuid[],99,now(),'test')",
+      [[String(open.id), String(cancelled.id)]],
+    );
+    assert.deepEqual(
+      invoiced.rows.map((row) => [row.status, Number(row.invoice_id)]).sort(),
+      [["CANCELADO", 99], ["FATURADO", 99]],
+    );
   });
 
   await t.test("multi-ID snapshots lock in one order without deadlock", async () => {
@@ -520,6 +550,42 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     );
   });
 
+  await t.test("snapshot rejects totals that differ from locked billing", async () => {
+    const billing = await createBilling(admin, 81);
+    await assert.rejects(
+      admin.query(
+        `SELECT * FROM create_boletim_approval_atomic(
+          'wrong-total',1,'Client',NULL,current_date,current_date,
+          ARRAY[$1::text],999,1,'test',NULL,
+          jsonb_build_array(jsonb_build_object(
+            'billing_id',$1::text,'billing_version',0,'total',999
+          ))
+        )`,
+        [billing.id],
+      ),
+      /PR5B1_TX_SNAPSHOT_COMPONENT_MISMATCH/,
+    );
+  });
+
+  await t.test("existing billing cannot be re-parented by full write payload", async () => {
+    const billing = await createBilling(admin, 90);
+    const otherContract = await insertFacts(admin, 91);
+    await assert.rejects(
+      admin.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'WRITE_OFFICIAL',
+          jsonb_build_object(
+            'service_order_id',91,'client_id',1,'contract_id',$2::text,
+            'km_inicial',100,'km_final',150,'fat_total',500,'status','A_VERIFICAR'
+          ),
+          $1,90,0,'{}'::jsonb
+        )`,
+        [billing.id, otherContract],
+      ),
+      /PR5B1_TX_SERVICE_ORDER_REPARENT_BLOCKED/,
+    );
+  });
+
   await t.test("direct DML and missing official facts fail closed", async () => {
     const billing = await createBilling(admin, 5);
     await assert.rejects(
@@ -552,6 +618,9 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const result = await admin.query(`
       SELECT
         to_regprocedure('public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)') IS NULL AS rpc_removed,
+        to_regprocedure('public.create_boletim_approval_atomic(text,integer,text,text,date,date,text[],numeric,integer,text,integer,jsonb)') IS NULL AS snapshot_rpc_removed,
+        to_regprocedure('public.freeze_boletim_billings_atomic(integer,text,text,timestamptz)') IS NULL AS freeze_rpc_removed,
+        to_regprocedure('public.mark_escort_billings_invoiced_atomic(uuid[],integer,timestamptz,text)') IS NULL AS invoice_rpc_removed,
         EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema='public' AND table_name='escort_billings' AND column_name='lock_version'
@@ -559,12 +628,20 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         EXISTS (
           SELECT 1 FROM pg_trigger
           WHERE tgname='trg_validate_escort_billing_approval' AND NOT tgisinternal
-        ) AS legacy_restored
+        ) AS billing_legacy_restored,
+        EXISTS (
+          SELECT 1 FROM pg_trigger
+          WHERE tgname='trg_validate_service_order_approval' AND NOT tgisinternal
+        ) AS service_order_legacy_restored
     `);
     assert.deepEqual(result.rows[0], {
       rpc_removed: true,
+      snapshot_rpc_removed: true,
+      freeze_rpc_removed: true,
+      invoice_rpc_removed: true,
       version_preserved: true,
-      legacy_restored: true,
+      billing_legacy_restored: true,
+      service_order_legacy_restored: true,
     });
   });
 
