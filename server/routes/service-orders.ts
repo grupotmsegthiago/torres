@@ -297,11 +297,10 @@ import type { Express } from "express";
         let statusPayload: any;
         if (so.status === "recusada") {
           statusPayload = {
-          km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
-          km_faturado: 0, km_franquia: 0, km_excedente: 0,
-          horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0, teve_pernoite: false, is_noturno: false,
-            receitas_os: 0, valor_franquia: 0, valor_km_extra: 0,
-          pag_vrp: 0, pag_periculosidade: 0, pag_adicional_noturno: 0, pag_reembolsos: 0, pag_total: 0,
+            km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
+            km_faturado: 0, km_franquia: 0, km_excedente: 0,
+            horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0,
+            teve_pernoite: false, is_noturno: false,
             ...buildRecusadaZeroPayload((so as any).cancellationReason),
           };
         } else {
