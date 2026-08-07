@@ -55,7 +55,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
 GRANT SELECT, INSERT, UPDATE ON public.boletim_approvals
   TO torres_billing_rpc_owner;
 GRANT INSERT ON public.system_audit_logs TO torres_billing_rpc_owner;
-GRANT DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
+GRANT SELECT, DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE
   public.boletim_approvals_id_seq,
   public.system_audit_logs_id_seq
@@ -1069,7 +1069,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
 GRANT SELECT, INSERT, UPDATE ON public.boletim_approvals
   TO torres_billing_rpc_owner;
 GRANT INSERT ON public.system_audit_logs TO torres_billing_rpc_owner;
-GRANT DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
+GRANT SELECT, DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE
   public.boletim_approvals_id_seq,
   public.system_audit_logs_id_seq
