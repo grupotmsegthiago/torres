@@ -79,3 +79,9 @@ test("snapshot não possui INSERT/DELETE direto no código de produção", () =>
     .map((file) => path.relative(root, file));
   assert.deepEqual(offenders, []);
 });
+
+test("invoice delete usa resultado do lote atômico sem referência obsoleta", () => {
+  const asaas = readFileSync(path.join(root, "server/asaas.ts"), "utf8");
+  assert.match(asaas, /releasedBillings\.length/);
+  assert.doesNotMatch(asaas, /linkedBillings\?\.length/);
+});
