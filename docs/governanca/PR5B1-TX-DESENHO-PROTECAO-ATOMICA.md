@@ -1,10 +1,10 @@
 # PR5B.1-TX — Desenho da proteção atômica de billing
 
-**Status:** proposta técnica; não implementada  
-**Domínio dono:** faturamento  
-**Dados protegidos:** `escort_billings` (SNAPSHOT financeiro) e `boletim_approvals.billing_snapshot` (SNAPSHOT comercial)  
-**Camadas:** 5 e 6 da Arquitetura Oficial  
-**Banco alterado nesta fase:** não  
+**Status:** proposta técnica; não implementada
+**Domínio dono:** faturamento
+**Dados protegidos:** `escort_billings` (SNAPSHOT financeiro) e `boletim_approvals.billing_snapshot` (SNAPSHOT comercial)
+**Camadas:** 5 e 6 da Arquitetura Oficial
+**Banco alterado nesta fase:** não
 **SQL executado nesta fase:** nenhum
 
 ## 1. Problema
