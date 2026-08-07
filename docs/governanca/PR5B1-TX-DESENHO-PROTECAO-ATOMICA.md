@@ -1,11 +1,11 @@
 # PR5B.1-TX — Desenho da proteção atômica de billing
 
-**Status:** proposta técnica; não implementada
+**Status:** desenho concluído; pronto para autorização de implementação, ainda não implementado
 **Domínio dono:** faturamento
 **Dados protegidos:** `escort_billings` (SNAPSHOT financeiro) e `boletim_approvals.billing_snapshot` (SNAPSHOT comercial)
 **Camadas:** 5 e 6 da Arquitetura Oficial
 **Banco alterado nesta fase:** não
-**SQL executado nesta fase:** nenhum
+**SQL executado nesta fase:** 10 consultas read-only TX; zero SQL de escrita
 
 ## 1. Problema
 
@@ -83,27 +83,25 @@ Há ainda dois caminhos críticos:
 
 ### 2.3 Código × banco
 
-Os nomes abaixo foram observados no catálogo live anterior, mas suas definições
-não existem nas migrations versionadas:
+As dez consultas TX foram executadas via MCP read-only no banco Torres,
+confirmado por fingerprint. Evidência live:
 
-- `trg_validate_escort_billing_approval`;
-- `trg_validate_service_order_approval`;
-- demais `validate_*` live;
-- functions live-only associadas.
+| Objeto | Definição real | Classificação | Adequação ao P1-02 |
+|---|---|---|---|
+| `trg_validate_escort_billing_approval` | `BEFORE UPDATE` em `escort_billings`; chama `validate_escort_billing_approval` | LIVE-ONLY, legado | não consulta `boletim_approvals.billing_snapshot`, não cobre DELETE/INSERT/concorrência |
+| `validate_escort_billing_approval` | valida transição para `APROVADO`, `snapshot_data`, `fat_total` e `edit_reason`; SECURITY INVOKER | LIVE-ONLY, legado | não protege status atuais (`APROVADA/FATURADO/PAGO`) nem snapshot comercial |
+| `trg_validate_service_order_approval` | `BEFORE UPDATE` em `service_orders`; chama `validate_service_order_approval` | LIVE-ONLY, legado | não protege billing |
+| `validate_service_order_approval` | valida aprovação legada em `service_orders`; SECURITY INVOKER | LIVE-ONLY, legado | não protege billing |
+| `trg_ajustar_data_missao` / `fn_ajustar_data_missao` | ajusta data operacional em `service_orders` | VERSIONADA | não relacionada |
 
-Classificação: **CÓDIGO × BANCO — OBJETO LIVE NÃO VERSIONADO**.
+Não existem triggers live em `boletim_approvals`, `invoices` ou
+`financial_transactions`. Não existe RPC de billing, `FOR UPDATE`, proteção de
+hard delete ou vínculo relacional entre JSONB e billing.
 
-Não é seguro presumir que esses objetos:
+Classificação final: **CÓDIGO × BANCO — OBJETOS LIVE NÃO VERSIONADOS E NÃO
+ADEQUADOS À ATOMICIDADE**.
 
-- executam em `BEFORE UPDATE/DELETE`;
-- consultam `billing_snapshot`;
-- cobrem concorrência com criação de snapshot;
-- bloqueiam `service_role`;
-- preservam reabertura/refaturamento;
-- possuem a mesma definição em todos os ambientes.
-
-O pacote `scripts/pr5b1-tx-live-billing-protection-readonly.sql` deve ser
-executado e arquivado antes de autorizar a implementação.
+O TOCTOU permanece real; a implementação nova versionada é necessária.
 
 ## 3. Alternativas avaliadas
 
@@ -394,11 +392,15 @@ espera/deadlock, sem retry cego de mutação financeira.
   `mission_costs` expense/revenue.
 - **CONTRATO:** `escort_contracts`.
 - **PROJEÇÃO:** `calcularFaturamentoLive`; proibida no writer oficial.
-- **FALLBACK:** contrato default e `horasMissao` quando timestamps faltam.
+- **FALLBACK legado/proibido no writer oficial:** contrato default,
+  `horasMissao`, `now`, body e billing anterior quando fatos faltam.
 - **ESTIMATIVA:** `pedagio_estimado`, rota textual/KM estimado; proibidos no
   writer oficial.
 
 ### 8.2 Matriz
+
+A matriz abaixo registra o comportamento atual divergente; não representa a
+regra alvo já fechada em 8.4.
 
 | Campo | Cron | Manual | Mission | Lote | Submit | Fonte oficial | Divergência |
 |---|---|---|---|---|---|---|---|
@@ -433,29 +435,56 @@ espera/deadlock, sem retry cego de mutação financeira.
 Diferenças de `created_by`, nomes, placa e metadata não alteram a fórmula, mas
 podem produzir espelhos stale. Elas não devem ser confundidas com D1–D8.
 
-### 8.4 Decisões ainda necessárias para P1-07
+### 8.4 Decisões de negócio fechadas
 
-1. Tornar `computeBillingPayloadForOs` a única preparação oficial também no
-   manual e nos auto-recalcs de PATCH.
-2. Escolher uma única resolução de contrato:
-   `escort_contract_id` → contrato ativo do cliente com ordenação normativa →
-   default central.
-3. Definir se ausência de timestamps reais:
-   - bloqueia materialização (recomendação fail-closed); ou
-   - usa fallback único, rotulado e auditado após decisão do proprietário.
-4. Separar `submit-os` avulso do writer de OS; body manual não pode ser tratado
-   como fato oficial de uma OS.
-5. Definir fatos oficiais de estadia/pernoite antes de permitir valores
-   diferentes de zero.
-6. Decidir se `getHorasElapsedFromDB` sai do path de persistência ou se torna a
-   única regra temporal; não manter dupla precedência com timestamps do motor.
+#### Contrato — decisão do proprietário (opção 2)
 
-Direção recomendada, ainda não implementada: estender o builder existente para
-uma preparação única de fatos, sem criar segundo motor. Writers oficiais não
-devem usar `now`, body ou billing anterior como fato silencioso quando
-`mission_started_at`, `completed_date`, fotos ou contrato estiverem ausentes.
+1. Todo billing oficial usa exclusivamente
+   `service_orders.escort_contract_id`.
+2. Não há fallback automático por `client_id`, ordem, nome, criação, prioridade
+   implícita ou default tarifário inline.
+3. Se houver exatamente um contrato ativo, a UI pode selecioná-lo
+   automaticamente, mas deve persistir o ID na OS.
+4. Com múltiplos ativos, o usuário seleciona explicitamente antes da
+   criação/conclusão financeira.
+5. Reprocessamento reutiliza o ID originalmente persistido; nunca reescolhe.
+6. OS legada sem vínculo entra em correção operacional auditada e não
+   gera/recalcula billing oficial.
+7. Múltiplos contratos ativos continuam permitidos; não será criado critério
+   automático de prioridade/vigência nesta fase.
 
-P1-07 continua **parcial**; há decisão arquitetural pendente além de código.
+#### Timestamps
+
+- Billing de concluída exige `mission_started_at` e `completed_date` reais.
+- Agendamento, `now`, body, RPC secundária ou billing anterior não substituem
+  timestamps ausentes.
+- Fato incompleto bloqueia materialização/reprocessamento e exige correção
+  operacional auditada.
+
+#### KM
+
+- KM oficial vem da última evidência válida em `mission_photos`.
+- `km_final` ausente ou inválido bloqueia billing de concluída.
+- Rota, estimativa, clamp silencioso, KM da OS ou billing anterior não
+  substituem a foto factual.
+- Cancelada mantém exclusivamente a regra já fechada de
+  `computeCanceladaBilling`.
+
+#### Submit avulso
+
+- `submit-os` oficial exige `service_order_id`.
+- O ramo sem OS é legado e deve ser descontinuado no fluxo oficial.
+- Não adere à RPC oficial e não pode alimentar snapshot/invoice.
+
+#### Demais inputs já fechados
+
+- Pedágio/despesas: `mission_costs`; sem registro factual, zero.
+- Rota: projeção, nunca input oficial.
+- A preparação oficial deve ser única, estendendo
+  `computeBillingPayloadForOs`; não criar segundo motor.
+
+P1-07 permanece **parcial apenas no código**; fontes e regras de negócio estão
+fechadas para implementação.
 
 ## 9. Rollback futuro
 
@@ -511,21 +540,32 @@ Rollback não apaga snapshots, invoices, ledger ou auditoria.
 Esses registros só entram em verificação SELECT; testes mutáveis usam banco
 efêmero ou dados de homologação autorizados.
 
-## 11. Preflight obrigatório antes da implementação
+## 11. Evidências concluídas e gates da implementação
 
-1. executar o pacote read-only live;
-2. arquivar definições dos triggers/functions live;
-3. decidir manter, substituir ou remover cada objeto live-only;
-4. confirmar `uniq_eb_so_id` sem duplicidades;
-5. confirmar tipos reais de IDs (`uuid`/`bigint`) e colunas do payload;
-6. confirmar grants de `exec_sql` e RPCs;
-7. fechar decisões P1-07;
-8. revisar migration e rollback sem aplicar;
-9. só então solicitar autorização explícita.
+Concluídos:
+
+1. banco Torres confirmado por fingerprint;
+2. pacote TX-01 a TX-10 executado read-only;
+3. triggers/functions live coletados e classificados como não adequados;
+4. `uniq_eb_so_id`, PKs, FKs, CHECKs, índices e RLS inventariados;
+5. ausência de trigger/RPC/lock atômico comprovada;
+6. hard delete de snapshot/billing mapeado;
+7. writers diretos e caminhos de fallback inventariados;
+8. P1-07 e regra contratual fechados pelo proprietário.
+
+Obrigatórios na futura PR5B.1-TX-IMPLEMENTAÇÃO:
+
+1. migration expand versionada e rollback revisado;
+2. RPCs com allowlist real de colunas e grants explícitos;
+3. migração de todos os writers antes do enforcement;
+4. migration contract/enforcement;
+5. testes concorrentes em banco efêmero;
+6. homologação read-only das golden fixtures;
+7. autorização explícita antes de qualquer aplicação live.
 
 ### Ordem manual e CSVs
 
-Executar cada statement isoladamente no SQL Editor do projeto esperado:
+Statements executados isoladamente via MCP read-only:
 
 1. `TX-01` → `pr5b1_tx_01_context.csv`;
 2. `TX-02` → `pr5b1_tx_02_known_validate_triggers.csv`;
@@ -543,9 +583,9 @@ com esse pacote.
 
 ## 12. Decisão
 
-**PR5B.1-TX INCOMPLETA — EVIDÊNCIA LIVE ADICIONAL NECESSÁRIA**
+**PR5B.1-TX CONCLUÍDA — PRONTA PARA AUTORIZAÇÃO DE IMPLEMENTAÇÃO ATÔMICA**
 
-Motivo: a arquitetura recomendada está definida, mas as funções e triggers live
-`validate_*` não estão versionados nem tiveram sua definição coletada nesta
-fase. Implementar antes dessa evidência pode duplicar, conflitar ou enfraquecer
-uma proteção existente.
+O desenho, a evidência live, o conjunto mínimo de objetos SQL, o rollout
+expand/contract, o rollback, os writers afetados, os testes concorrentes e as
+regras de negócio estão fechados. Nenhuma implementação ou alteração de banco
+foi executada nesta fase.
