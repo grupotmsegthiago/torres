@@ -11,8 +11,12 @@ export const CANCELLED_PROTECTED_BILLING_STATUSES = new Set([
 ]);
 
 export const GENERIC_RECALC_PROTECTED_STATUSES = new Set([
-  ...COMMERCIAL_FROZEN_BILLING_STATUSES,
-  ...CANCELLED_PROTECTED_BILLING_STATUSES,
+  "APROVADA",
+  "FATURADO",
+  "FATURADA",
+  "PAGO",
+  "CANCELADO",
+  "CANCELADA",
 ]);
 
 export function normalizeBillingStatus(status: unknown): string {

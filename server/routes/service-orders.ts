@@ -253,7 +253,12 @@ import type { Express } from "express";
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
 
-      const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
+      const isConcluded =
+        so.status === "concluida" ||
+        so.status === "concluída" ||
+        so.missionStatus === "encerrada" ||
+        so.missionStatus === "finalizada";
+      const isLive = !isConcluded;
       const isCanceladaOuRecusada = so.status === "cancelada" || so.status === "recusada";
       if (isLive && !isCanceladaOuRecusada) {
         return res.status(409).json({
@@ -1374,7 +1379,7 @@ import type { Express } from "express";
             if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
               // Snapshot/billing congelado permanece integralmente imutável.
               // O status operacional da OS pode mudar sem reabrir o comercial.
-              console.log(`[OS-Cancel-Billing] OS ${data.osNumber}: billing protegido (${existingBilling.status}) preservado`);
+              console.log(`[OS-Cancel-Billing] OS ${existing.osNumber}: billing protegido (${existingBilling.status}) preservado`);
             } else {
               const cb = await computeCanceladaBilling({
                 serviceOrderId: soId,
