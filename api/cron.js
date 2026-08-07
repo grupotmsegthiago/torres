@@ -5841,6 +5841,7 @@ __export(helpers_exports, {
   nowBRTString: () => nowBRTString,
   parseEmailList: () => parseEmailList,
   removeAutoTransaction: () => removeAutoTransaction,
+  removeAutoTransactionStrict: () => removeAutoTransactionStrict,
   resilientSupabaseSelect: () => resilientSupabaseSelect,
   resilientSupabaseSingle: () => resilientSupabaseSingle,
   toSafeUser: () => toSafeUser
@@ -6037,6 +6038,10 @@ async function removeAutoTransaction(origin_type, origin_id) {
     console.error("[AutoTransaction] remove exception:", e.message);
   }
 }
+async function removeAutoTransactionStrict(origin_type, origin_id) {
+  const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("origin_type", origin_type).eq("origin_id", origin_id);
+  if (error) throw error;
+}
 var _transporter, _transporterInitTried, SMTP_BCC_OS, SMTP_BCC_WELCOME, MISSION_STEPS, STEP_REQUIRED_PHOTOS;
 var init_helpers = __esm({
   "server/routes/_helpers.ts"() {
@@ -6206,6 +6211,16 @@ async function updateBillingLifecycleBatchAtomic(billingIds, action, payload, ac
     ));
   }
   return results;
+}
+async function markBillingsInvoicedAtomic(billingIds, invoiceId, faturadoEm, faturadoPor, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("mark_escort_billings_invoiced_atomic", {
+    p_billing_ids: billingIds,
+    p_invoice_id: invoiceId,
+    p_faturado_em: faturadoEm,
+    p_faturado_por: faturadoPor
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
 }
 var AtomicBillingError;
 var init_atomic_billing = __esm({
@@ -6667,10 +6682,12 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
       const ids = orphans.map((b) => b.id);
       if (!dryRun) {
         try {
-          await updateBillingLifecycleBatchAtomic(ids.map(String), "MARK_INVOICED", {
-            invoice_id: invoice.id,
-            status: "FATURADO"
-          }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+          await markBillingsInvoicedAtomic(
+            ids.map(String),
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
         } catch (error) {
           return { linked: 0, reason: error.message };
         }
@@ -6683,10 +6700,12 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
     if (single) {
       if (!dryRun) {
         try {
-          await updateBillingLifecycleBatchAtomic([String(single.id)], "MARK_INVOICED", {
-            invoice_id: invoice.id,
-            status: "FATURADO"
-          }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+          await markBillingsInvoicedAtomic(
+            [String(single.id)],
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
         } catch (error) {
           return { linked: 0, reason: error.message };
         }
@@ -6718,10 +6737,12 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
     if (bestSubset && bestSubset.length > 0) {
       if (!dryRun) {
         try {
-          await updateBillingLifecycleBatchAtomic(bestSubset.map(String), "MARK_INVOICED", {
-            invoice_id: invoice.id,
-            status: "FATURADO"
-          }, { userName: "AUTO_LINK", userRole: "system", reason: `Invoice #${invoice.id}` });
+          await markBillingsInvoicedAtomic(
+            bestSubset.map(String),
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
         } catch (error) {
           return { linked: 0, reason: error.message };
         }
@@ -7175,16 +7196,12 @@ async function emitInvoiceAuto(invoiceId, opts) {
   const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
   if (billingIdsMatch) {
     const bIds = billingIdsMatch[1].split(",").map((s) => s.trim());
-    await updateBillingLifecycleBatchAtomic(bIds, "MARK_INVOICED", {
-      status: "FATURADO",
-      invoice_id: invoiceId,
-      faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-      faturado_por: opts.actorName || "Auto-Aprova\xE7\xE3o Cliente"
-    }, {
-      userName: opts.actorName || "Auto-Aprova\xE7\xE3o Cliente",
-      userRole: "system",
-      reason: `Faturar invoice #${invoiceId}`
-    });
+    await markBillingsInvoicedAtomic(
+      bIds,
+      invoiceId,
+      (/* @__PURE__ */ new Date()).toISOString(),
+      opts.actorName || "Auto-Aprova\xE7\xE3o Cliente"
+    );
     bustBalancoCaches();
   }
   await logSystemAudit({
@@ -8208,18 +8225,12 @@ function registerAsaasRoutes(app) {
       const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
       if (billingIdsMatch) {
         const bIds = billingIdsMatch[1].split(",").map((s) => s.trim());
-        await updateBillingLifecycleBatchAtomic(bIds, "MARK_INVOICED", {
-          status: "FATURADO",
-          invoice_id: id,
-          faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-          faturado_por: req.user?.name || "Admin"
-        }, {
-          userId: req.user?.id,
-          userName: req.user?.name || "Admin",
-          userRole: req.user?.role || "admin",
-          reason: `Faturar invoice #${id}`,
-          ipAddress: req.ip
-        });
+        await markBillingsInvoicedAtomic(
+          bIds,
+          id,
+          (/* @__PURE__ */ new Date()).toISOString(),
+          req.user?.name || "Admin"
+        );
         bustBalancoCaches();
         console.log(`[asaas] ${bIds.length} billing(s) marcados como FATURADO`);
       }
@@ -8919,17 +8930,12 @@ ${osDescriptions.join("\n")}`);
         }
         const primaryInvoice = createdInvoices[0];
         try {
-          await updateBillingLifecycleBatchAtomic(billingIds.map(String), "MARK_INVOICED", {
-            status: "FATURADO",
-            faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-            faturado_por: user?.name || "Sistema",
-            invoice_id: primaryInvoice.id
-          }, {
-            userId: user?.id,
-            userName: user?.name || "Sistema",
-            userRole: user?.role || "system",
-            reason: `Invoice #${primaryInvoice.id}`
-          });
+          await markBillingsInvoicedAtomic(
+            billingIds.map(String),
+            primaryInvoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            user?.name || "Sistema"
+          );
           bustBalancoCaches();
         } catch (updateErr) {
           console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
@@ -9077,17 +9083,12 @@ ${osDescriptions.join("\n")}`);
       }).select().single();
       if (invErr) throw invErr;
       try {
-        await updateBillingLifecycleBatchAtomic(billingIds.map(String), "MARK_INVOICED", {
-          status: "FATURADO",
-          faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-          faturado_por: user?.name || "Sistema",
-          invoice_id: invoice.id
-        }, {
-          userId: user?.id,
-          userName: user?.name || "Sistema",
-          userRole: user?.role || "system",
-          reason: `Invoice #${invoice.id}`
-        });
+        await markBillingsInvoicedAtomic(
+          billingIds.map(String),
+          invoice.id,
+          (/* @__PURE__ */ new Date()).toISOString(),
+          user?.name || "Sistema"
+        );
         bustBalancoCaches();
       } catch (updateErr) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
@@ -9490,15 +9491,12 @@ ${osDescriptions.join("\n")}`);
         await supabaseAdmin.from("billings").update({ invoice_id: null }).eq("invoice_id", sourceId);
       } catch {
       }
-      try {
-        await updateBillingLifecycleByInvoiceAtomic(
-          sourceId,
-          "RELEASE_REBILL",
-          { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
-          user?.name || "Admin"
-        );
-      } catch {
-      }
+      await updateBillingLifecycleByInvoiceAtomic(
+        sourceId,
+        "RELEASE_REBILL",
+        { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
+        user?.name || "Admin"
+      );
       const { error } = await supabaseAdmin.from("invoices").delete().eq("id", sourceId);
       if (error) throw error;
       console.log(`[relatorio-nf] Invoice ${sourceId} (cliente=${invoice.client_id}, R$${invoice.value}) EXCLU\xCDDA por ${user.email}. Motivo: ${reason || "\u2014"}`);
@@ -9952,15 +9950,12 @@ ${osDescriptions.join("\n")}`);
         safeIds.push(b.id);
       }
       if (safeIds.length === 0) return res.json({ linked: 0, skipped: billingIds.length });
-      await updateBillingLifecycleBatchAtomic(safeIds.map(String), "MARK_INVOICED", {
-        invoice_id: invoiceId,
-        status: "FATURADO"
-      }, {
-        userId: user?.id,
-        userName: user?.name || "Admin",
-        userRole: user?.role || "admin",
-        reason: `V\xEDnculo manual invoice #${invoiceId}`
-      });
+      await markBillingsInvoicedAtomic(
+        safeIds.map(String),
+        invoiceId,
+        (/* @__PURE__ */ new Date()).toISOString(),
+        user?.name || "Admin"
+      );
       bustBalancoCaches();
       console.log(`[link-os] ${safeIds.length} billing(s) vinculada(s) \xE0 invoice ${invoiceId} (${inv.client_name}) por ${user?.email}: [${safeIds.join(", ")}]`);
       res.json({ linked: safeIds.length, skipped: billingIds.length - safeIds.length, linkedIds: safeIds });
@@ -10024,14 +10019,12 @@ ${osDescriptions.join("\n")}`);
         }
         const ids = inPeriod.map((b) => b.id);
         try {
-          await updateBillingLifecycleBatchAtomic(ids.map(String), "MARK_INVOICED", {
-            invoice_id: inv.id,
-            status: "FATURADO"
-          }, {
-            userName: user?.name || "Admin",
-            userRole: user?.role || "admin",
-            reason: `Reconcilia\xE7\xE3o invoice #${inv.id}`
-          });
+          await markBillingsInvoicedAtomic(
+            ids.map(String),
+            inv.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            user?.name || "Admin"
+          );
         } catch (error) {
           results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: error.message });
           continue;
