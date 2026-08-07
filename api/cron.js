@@ -5841,7 +5841,6 @@ __export(helpers_exports, {
   nowBRTString: () => nowBRTString,
   parseEmailList: () => parseEmailList,
   removeAutoTransaction: () => removeAutoTransaction,
-  removeAutoTransactionStrict: () => removeAutoTransactionStrict,
   resilientSupabaseSelect: () => resilientSupabaseSelect,
   resilientSupabaseSingle: () => resilientSupabaseSingle,
   toSafeUser: () => toSafeUser
@@ -6038,10 +6037,6 @@ async function removeAutoTransaction(origin_type, origin_id) {
     console.error("[AutoTransaction] remove exception:", e.message);
   }
 }
-async function removeAutoTransactionStrict(origin_type, origin_id) {
-  const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("origin_type", origin_type).eq("origin_id", origin_id);
-  if (error) throw error;
-}
 var _transporter, _transporterInitTried, SMTP_BCC_OS, SMTP_BCC_WELCOME, MISSION_STEPS, STEP_REQUIRED_PHOTOS;
 var init_helpers = __esm({
   "server/routes/_helpers.ts"() {
@@ -6190,12 +6185,16 @@ async function getAtomicBillingRefById(billingId, sb = supabaseAdmin) {
 }
 async function updateBillingLifecycleAtomic(billingId, action, payload, actor, sb = supabaseAdmin) {
   const ref = await getAtomicBillingRefById(billingId, sb);
+  const cancelled = ["CANCELADO", "CANCELADA"].includes(
+    String(ref.status || "").toUpperCase()
+  );
+  const effectivePayload = (action === "FREEZE_COMMERCIAL" || action === "RELEASE_REBILL") && cancelled ? { ...payload, status: "CANCELADO" } : payload;
   return writeEscortBillingAtomic({
     action,
     billingId,
     serviceOrderId: ref.service_order_id,
     expectedVersion: ref.lock_version,
-    payload,
+    payload: effectivePayload,
     actor
   }, sb);
 }
@@ -6218,6 +6217,16 @@ async function markBillingsInvoicedAtomic(billingIds, invoiceId, faturadoEm, fat
     p_invoice_id: invoiceId,
     p_faturado_em: faturadoEm,
     p_faturado_por: faturadoPor
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}
+async function transitionInvoiceBillingsAtomic(invoiceId, action, transitionedAt, actor, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("transition_invoice_billings_atomic", {
+    p_invoice_id: invoiceId,
+    p_action: action,
+    p_transitioned_at: transitionedAt,
+    p_actor: actor
   });
   if (error) throwRpcError(error);
   return Array.isArray(data) ? data : [];
@@ -6504,16 +6513,13 @@ __export(asaas_exports, {
   reconcileInvoiceFromAsaas: () => reconcileInvoiceFromAsaas,
   registerAsaasRoutes: () => registerAsaasRoutes
 });
-async function updateBillingLifecycleByInvoiceAtomic(invoiceId, action, payload, actorName) {
-  const { data, error } = await supabaseAdmin.from("escort_billings").select("id").eq("invoice_id", invoiceId);
-  if (error) throw error;
-  const ids = (data || []).map((row) => String(row.id));
-  if (!ids.length) return [];
-  return updateBillingLifecycleBatchAtomic(ids, action, payload, {
-    userName: actorName,
-    userRole: "system",
-    reason: `${action} invoice #${invoiceId}`
-  });
+async function updateBillingLifecycleByInvoiceAtomic(invoiceId, action, _payload, actorName) {
+  return transitionInvoiceBillingsAtomic(
+    invoiceId,
+    action,
+    (/* @__PURE__ */ new Date()).toISOString(),
+    actorName
+  );
 }
 function isStatusRegression(incoming) {
   return REGRESSION_STATUSES.includes(String(incoming || "").toUpperCase());
@@ -9128,21 +9134,18 @@ ${osDescriptions.join("\n")}`);
       if (invoice.status === "PAGO") {
         return res.status(400).json({ message: "N\xE3o \xE9 poss\xEDvel excluir fatura j\xE1 paga" });
       }
-      const { data: linkedBillings } = await supabaseAdmin.from("escort_billings").select("id").eq("invoice_id", invoiceId);
-      if (linkedBillings && linkedBillings.length > 0) {
-        const billingIds = linkedBillings.map((b) => b.id);
-        await updateBillingLifecycleBatchAtomic(billingIds.map(String), "RELEASE_REBILL", {
+      const releasedBillings = await updateBillingLifecycleByInvoiceAtomic(
+        invoiceId,
+        "RELEASE_REBILL",
+        {
           status: "APROVADA",
           invoice_id: null,
           faturado_em: null,
           faturado_por: null
-        }, {
-          userId: user?.id,
-          userName: user?.name || "Sistema",
-          userRole: user?.role || "system",
-          reason: `Excluir invoice #${invoice.id}`,
-          ipAddress: req.ip
-        });
+        },
+        user?.name || "Sistema"
+      );
+      if (releasedBillings.length > 0) {
         bustBalancoCaches();
       }
       if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
