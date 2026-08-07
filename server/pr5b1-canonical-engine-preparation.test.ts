@@ -148,10 +148,14 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   calcularEscolta: {
     "server/billing-calc.ts": 1,
     "server/lib/cancelada-billing.ts": 1,
-    "server/routes/escort.ts": 6,
-    "server/routes/mission.ts": 1,
+    "server/routes/escort.ts": 5,
     "server/routes/operational.ts": 1,
     "server/routes/service-orders.ts": 6,
+  },
+  computeBillingPayloadForOs: {
+    "server/cron.ts": 1,
+    "server/routes/escort.ts": 2,
+    "server/routes/mission.ts": 1,
   },
   calcularFaturamentoLive: {
     "server/financial-snapshot.ts": 1,
@@ -215,10 +219,11 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=16, live=4, cancelada=7", () => {
+  test("totais de call-sites: canônico=14, builder=4, live=4, cancelada=7", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
-    assert.equal(total(countProductionCalls("calcularEscolta")), 16);
+    assert.equal(total(countProductionCalls("calcularEscolta")), 14);
+    assert.equal(total(countProductionCalls("computeBillingPayloadForOs")), 4);
     assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
     assert.equal(total(countProductionCalls("computeCanceladaBilling")), 7);
   });
@@ -463,7 +468,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     assert.match(batch, /isBillingProtected\s*\(/);
     assert.match(batch, /computeCanceladaBilling\s*\(/);
     assert.match(batch, /buildRecusadaZeroPayload\s*\(/);
-    assert.match(batch, /calcularEscolta\s*\(/);
+    assert.match(batch, /computeBillingPayloadForOs\s*\(/);
     assert.doesNotMatch(batch, /calcularFaturamentoLive\s*\(/);
   });
 
@@ -504,6 +509,52 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       remove.indexOf("isBillingProtected") < remove.indexOf("removeAutoTransaction"),
       "DELETE deve proteger antes de remover ledger/billing",
     );
+    assert.match(put, /alteração genérica bloqueada/);
+  });
+
+  test("recusas alternativas usam zero integral e preservam billing protegido", () => {
+    const adminRefuse = sourceSection(
+      "server/routes/mission.ts",
+      'app.post("/api/mission/refuse"',
+      'app.post("/api/mission/finish"',
+    );
+    const employeeRefuse = sourceSection(
+      "server/routes/mission.ts",
+      'app.post("/api/missions/:osId/refuse"',
+      'app.get("/api/missions/:osId/acceptances/:employeeId/comprovante"',
+    );
+    const serviceOrders = readFileSync(path.join(root, "server/routes/service-orders.ts"), "utf8");
+    assert.match(adminRefuse, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(adminRefuse, /isBillingProtected\s*\(/);
+    assert.match(employeeRefuse, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(employeeRefuse, /isBillingProtected\s*\(/);
+    assert.match(serviceOrders, /OS-Refuse-Billing[\s\S]*buildRecusadaZeroPayload/);
+  });
+
+  test("rollback e exclusão de OS bloqueiam billing frozen/snapshot", () => {
+    const rollback = sourceSection(
+      "server/routes/mission.ts",
+      'app.post("/api/mission/rollback-step"',
+      'app.post("/api/mission/cancel"',
+    );
+    const removeOs = sourceSection(
+      "server/routes/service-orders.ts",
+      'app.delete("/api/service-orders/:id"',
+      'app.post("/api/service-orders/:id/send-report-email"',
+    );
+    assert.match(rollback, /isBillingProtected\s*\(/);
+    assert.ok(rollback.indexOf("isBillingProtected") < rollback.indexOf(".delete()"));
+    assert.match(removeOs, /isBillingProtected\s*\(/);
+    assert.ok(removeOs.indexOf("isBillingProtected") < removeOs.indexOf("deleteServiceOrder"));
+  });
+
+  test("falhas de leitura de proteção e recálculo não são ignoradas", () => {
+    const escort = readFileSync(path.join(root, "server/routes/escort.ts"), "utf8");
+    const mission = readFileSync(path.join(root, "server/routes/mission.ts"), "utf8");
+    assert.match(escort, /currentBillingsError\) throw currentBillingsError/);
+    assert.match(escort, /Falha ao recalcular billing/);
+    assert.match(mission, /currentBillingsError\) throw currentBillingsError/);
+    assert.doesNotMatch(mission, /Auto-billing creation failed \(non-blocking\)/);
   });
 
   test("writers oficiais não usam pedágio estimado ou rota como fato financeiro", () => {
@@ -514,11 +565,12 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     );
     const mission = sourceSection(
       "server/routes/mission.ts",
-      'const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId)',
-      'const client = so.clientId ? await storage.getClient(so.clientId) : null',
+      'if (nextStep === "encerrada")',
+      'if (so.type === "escolta")',
     );
     assert.doesNotMatch(manual, /pedagioEstimadoCalc|kmRota/);
     assert.doesNotMatch(mission, /pedagioEstimado|kmRota/);
+    assert.match(mission, /computeBillingPayloadForOs\s*\(/);
   });
 
   test("auto-recalc usa o ID atualizado e falha visivelmente", () => {

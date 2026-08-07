@@ -75,7 +75,7 @@ import type { Express } from "express";
         }
         return undefined;
       };
-      const kmSaida = photos.find((p: any) => p.step === "km_saida");
+      const kmSaida = [...photos].reverse().find((p: any) => p.step === "km_saida");
       const kmChegada = findLast("km_chegada");
       const kmFinal = findLast("km_final");
       const baseHodometro = findLast("base_hodometro");
@@ -266,8 +266,9 @@ import type { Express } from "express";
         });
       }
 
-      const { data: existing } = await supabaseAdmin.from("escort_billings")
+      const { data: existing, error: existingError } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
+      if (existingError) throw existingError;
       const existingBilling = existing?.[0];
       if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
         return res.status(409).json({
@@ -342,9 +343,9 @@ import type { Express } from "express";
       }
 
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
-      const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+      const kmSaidaPhoto = [...photos].reverse().find((p: any) => p.step === "km_saida");
       const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
-      const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+      const kmFinalPhoto = [...photos].reverse().find((p: any) => p.step === "km_final");
       const kmInicial = kmChegadaPhoto?.kmValue || 0;
       const kmFinal = kmFinalPhoto?.kmValue || 0;
 
@@ -455,8 +456,9 @@ import type { Express } from "express";
       const so = await storage.getServiceOrder(osId);
       if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", osId).limit(1);
+      if (existingBillingError) throw existingBillingError;
 
       if (existingBilling?.[0] && await isBillingProtected(supabaseAdmin, existingBilling[0])) {
         return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial — valores travados." });
@@ -728,8 +730,9 @@ import type { Express } from "express";
         } catch (_muErr) {}
       }
 
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", osId).limit(1);
+      if (existingBillingError) throw existingBillingError;
       const billingProtected = existingBilling?.[0]
         ? await isBillingProtected(supabaseAdmin, existingBilling[0])
         : false;
@@ -1335,39 +1338,28 @@ import type { Express } from "express";
 
       try {
         if (isRecusada) {
-          // recusada: zera TODOS os valores do billing, independente do
-          // status atual (inclusive CANCELADO/REJEITADA — recusada da OS é
-          // a verdade final). Bug histórico: o filtro .in() de antes deixava
-          // billings já rejeitados/cancelados com fat_total intacto, que
-          // depois aparecia como custo na geração de fatura.
-          await supabaseAdmin.from("escort_billings")
-            .update({
-              status: "CANCELADO",
-              fat_total: 0,
-              fat_acionamento: 0,
-              fat_hora_extra: 0,
-              fat_km: 0,
-              fat_km_carregado: 0,
-              fat_km_vazio: 0,
-              fat_estadia: 0,
-              fat_pernoite: 0,
-              fat_diaria: 0,
-              fat_adicional_noturno: 0,
-              resultado_bruto: 0,
-              resultado_liquido: 0,
-              margem_percentual: 0,
-              observacoes: `OS RECUSADA${reason ? " — " + reason : ""}`,
-            })
-            .eq("service_order_id", Number(req.params.id));
-          bustBalancoCaches();
+          const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+            .select("id, status").eq("service_order_id", Number(req.params.id)).limit(1);
+          if (existingBillError) throw existingBillError;
+          const billing = existingBill?.[0];
+          if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+            console.log(`[OS-Refuse-Billing] OS ${existing.osNumber}: billing protegido (${billing.status}) preservado`);
+          } else if (billing) {
+            const { error: zeroError } = await supabaseAdmin.from("escort_billings")
+              .update(buildRecusadaZeroPayload(reason))
+              .eq("id", billing.id);
+            if (zeroError) throw zeroError;
+            bustBalancoCaches();
+          }
         } else {
           // cancelada: recalcula o billing pela "tabela de 100 km" do cliente
           // (acionamento + excedente real de km/horas; dentro da franquia ⇒ só o
           // acionamento). Regra do dono. Não toca billing já congelado (aprovado/faturado/pago).
           try {
             const soId = Number(req.params.id);
-            const { data: existingBill } = await supabaseAdmin.from("escort_billings")
+            const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
               .select("id, status").eq("service_order_id", soId).limit(1);
+            if (existingBillError) throw existingBillError;
             const existingBilling = existingBill?.[0];
             if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
               // Snapshot/billing congelado permanece integralmente imutável.
@@ -1412,16 +1404,24 @@ import type { Express } from "express";
                 (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
                 (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
               } else {
-                // sem tabela de 100km nem contrato vinculado: ao menos marca CANCELADO.
-                await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-              bustBalancoCaches();
+                throw new Error("Cancelada sem tabela 100 km ou contrato utilizável; billing preservado");
               }
             }
           } catch (cancErr: any) {
             console.error(`[OS-Cancel-Billing PATCH] OS ${req.params.id}:`, cancErr.message);
+            return res.status(500).json({
+              message: "OS não foi atualizada: falha ao consolidar billing de cancelamento.",
+              detail: cancErr.message,
+            });
           }
         }
-      } catch (_e) {}
+      } catch (billingErr: any) {
+        console.error(`[OS-Billing PATCH] OS ${req.params.id}:`, billingErr.message);
+        return res.status(500).json({
+          message: "OS não foi atualizada: falha ao proteger/recalcular billing.",
+          detail: billingErr.message,
+        });
+      }
 
       try {
         const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
@@ -1692,11 +1692,12 @@ import type { Express } from "express";
     const isConcluded = ["concluída", "concluida"].includes(data.status || "") || data.missionStatus === "encerrada";
     if (changedBillingFields && isConcluded && data.type === "escolta") {
       try {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
           .select("*")
           .eq("service_order_id", data.id)
           .order("created_at", { ascending: false })
           .limit(1);
+        if (existingBillingError) throw existingBillingError;
         const bill = existingBilling?.[0];
         if (bill && !await isBillingProtected(supabaseAdmin, bill)) {
           let contrato: any = null;
@@ -1718,15 +1719,12 @@ import type { Express } from "express";
           const horarioFim = horaFimMissaoAR ? toBRTx(new Date(horaFimMissaoAR)) : (bill.horario_fim || null);
           const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
 
-          let despPedagioAR = Number(bill.despesas_pedagio || 0);
-
           const mcListAR = await storage.getMissionCostsByOS(data.id);
           const _splitAR = splitMissionCostsForBilling(mcListAR);
-          const dpAR = _splitAR.despesas_pedagio;
+          const despPedagioAR = _splitAR.despesas_pedagio;
           const dcAR = _splitAR.despesas_combustivel;
           const doAR = _splitAR.despesas_outras;
           const roAR = _splitAR.receitas_os;
-          if (dpAR > 0) despPedagioAR = dpAR;
 
           const resultado = calcularEscolta({
             km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
@@ -1758,7 +1756,7 @@ import type { Express } from "express";
             fat_diaria: nb(resultado.fat_pernoite),
             fat_adicional_noturno: nb(resultado.fat_adicional_noturno), fat_total: nb(resultado.fat_total),
             receitas_os: nb(resultado.receitas_os),
-            despesas_pedagio: nb(despPedagioAR), despesas_combustivel: nb(dcAR || Number(bill.despesas_combustivel || 0)), despesas_outras: nb(doAR || Number(bill.despesas_outras || 0)),
+            despesas_pedagio: nb(despPedagioAR), despesas_combustivel: nb(dcAR), despesas_outras: nb(doAR),
             valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
             pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
             pag_adicional_noturno: nb(resultado.pag_adicional_noturno), pag_reembolsos: nb(resultado.pag_reembolsos),
@@ -1824,8 +1822,9 @@ import type { Express } from "express";
         parsed.data.completedDate !== undefined ||
         (parsed.data.status !== undefined && (parsed.data.status === "concluída" || parsed.data.status === "concluida"));
       if (billingRelevantChanged && data.type === "escolta") {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
           .select("id, status").eq("service_order_id", data.id).limit(1);
+        if (existingBillingError) throw existingBillingError;
         const billingProtected = existingBilling?.[0]
           ? await isBillingProtected(supabaseAdmin, existingBilling[0])
           : false;
@@ -1906,6 +1905,15 @@ import type { Express } from "express";
     const osId = Number(req.params.id);
     try {
       const existing = await storage.getServiceOrder(osId);
+      const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+        .select("id, status").eq("service_order_id", osId).limit(1);
+      if (existingBillError) throw existingBillError;
+      const billing = existingBill?.[0];
+      if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Exclusão bloqueada: billing congelado ou presente em snapshot comercial.",
+        });
+      }
       if (existing?.kitId) {
         await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
       }
@@ -3743,9 +3751,9 @@ import type { Express } from "express";
 
       // === BOLETIM DE MEDICAO (Financial Section) ===
       try {
-        const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+        const kmSaidaPhoto = [...photos].reverse().find((p: any) => p.step === "km_saida");
         const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
-        const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+        const kmFinalPhoto = [...photos].reverse().find((p: any) => p.step === "km_final");
         const kmInicial = kmChegadaPhoto?.kmValue || 0;
         let kmFinal = kmFinalPhoto?.kmValue || 0;
         if (kmFinal <= kmInicial) kmFinal = kmInicial;

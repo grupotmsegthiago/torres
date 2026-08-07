@@ -1646,13 +1646,17 @@ import type { Express } from "express";
       };
       let linkedSo: any = null;
       if (body.service_order_id) {
-        const [{ data: currentBillings }, { data: soRow }] = await Promise.all([
+        const [billingResult, soResult] = await Promise.all([
           supabaseAdmin.from("escort_billings")
             .select("id, status").eq("service_order_id", body.service_order_id).limit(1),
           supabaseAdmin.from("service_orders")
             .select("status, client_id, escort_contract_id, scheduled_date, mission_started_at, completed_date, step_logs")
             .eq("id", body.service_order_id).maybeSingle(),
         ]);
+        if (billingResult.error) throw billingResult.error;
+        if (soResult.error) throw soResult.error;
+        const currentBillings = billingResult.data;
+        const soRow = soResult.data;
         if (currentBillings?.[0] && await isBillingProtected(supabaseAdmin, currentBillings[0])) {
           return res.status(409).json({
             message: "Billing congelado ou presente em snapshot comercial — gravação bloqueada.",
@@ -1744,17 +1748,10 @@ import type { Express } from "express";
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id, status, service_order_id, observacoes").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
-      const STATUS_ONLY_FIELDS = ["status", "observacoes", "notas"];
-
       if (await isBillingProtected(supabaseAdmin, existing)) {
-        const updateBody = { ...req.body };
-        const attemptedFields = Object.keys(updateBody);
-        const blockedFields = attemptedFields.filter(f => !STATUS_ONLY_FIELDS.includes(f));
-        if (blockedFields.length > 0) {
-          return res.status(403).json({
-            message: `Boletim aprovado — valores de cálculo estão travados. Apenas status e observações podem ser alterados.`,
-          });
-        }
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — alteração genérica bloqueada.",
+        });
       }
 
       let updateBody: any = { ...req.body };
@@ -1833,11 +1830,12 @@ import type { Express } from "express";
       const body = req.body;
 
       if (body.service_order_id) {
-        const { data: currentBillings } = await supabaseAdmin
+        const { data: currentBillings, error: currentBillingsError } = await supabaseAdmin
           .from("escort_billings")
           .select("id, status")
           .eq("service_order_id", body.service_order_id)
           .limit(1);
+        if (currentBillingsError) throw currentBillingsError;
         if (currentBillings?.[0] && await isBillingProtected(supabaseAdmin, currentBillings[0])) {
           return res.status(409).json({
             message: "Billing congelado ou presente em snapshot comercial — submissão bloqueada.",
@@ -2049,7 +2047,8 @@ import type { Express } from "express";
       let success = 0, errors = 0, skipped = 0;
       for (const id of billing_ids) {
         try {
-          const { data: existing } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
+          const { data: existing, error: existingError } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
+          if (existingError) throw existingError;
           if (!existing) { errors++; continue; }
           if (await isBillingProtected(supabaseAdmin, existing)) { skipped++; continue; }
           // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Nunca recalcular pelo
@@ -2062,20 +2061,14 @@ import type { Express } from "express";
             success++; continue;
           }
 
-          // Busca timestamps reais da OS pra HE multi-dia
-          let lot_ts_ini: string | null = null, lot_ts_fim: string | null = null, lot_sch: string | null = null;
           let lotSo: any = null;
           if (existing.service_order_id) {
-            const { data: soRow } = await supabaseAdmin
+            const { data: soRow, error: soRowError } = await supabaseAdmin
               .from("service_orders")
-              .select("status, client_id, escort_contract_id, mission_started_at, completed_date, scheduled_date, step_logs")
+              .select("id, os_number, status, client_id, escort_contract_id, assigned_employee_id, assigned_employee_2_id, vehicle_id, origin, destination, escorted_vehicle_plate, escorted_driver_name, mission_started_at, completed_date, scheduled_date, step_logs")
               .eq("id", existing.service_order_id).maybeSingle();
-            if (soRow) {
-              lotSo = soRow;
-              lot_ts_ini = soRow.mission_started_at;
-              lot_ts_fim = soRow.completed_date;
-              lot_sch = soRow.scheduled_date;
-            }
+            if (soRowError) throw soRowError;
+            if (soRow) lotSo = soRow;
           }
 
           if (lotSo?.status === "cancelada") {
@@ -2100,57 +2093,42 @@ import type { Express } from "express";
             continue;
           }
 
-          if (!existing.contract_id) { errors++; continue; }
+          if (!lotSo || !["concluida", "concluída"].includes(lotSo.status)) { errors++; continue; }
+          const contractId = lotSo.escort_contract_id || existing.contract_id;
+          if (!contractId) { errors++; continue; }
 
-          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
+          const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", contractId).single();
+          if (contractError) throw contractError;
           if (!contrato) { errors++; continue; }
-          const resultado = calcularEscolta({
-            km_inicial: Number(existing.km_inicial || 0),
-            km_final: Math.max(Number(existing.km_inicial || 0), Number(existing.km_final || 0)),
-            km_vazio: Number(existing.km_vazio || 0),
-            horas_missao: Number(existing.horas_missao || 0),
-            horas_estadia: Number(existing.horas_estadia || 0),
-            teve_pernoite: !!existing.teve_pernoite,
-            horario_inicio: existing.horario_inicio || undefined,
-            horario_fim: existing.horario_fim || undefined,
-            horario_agendado: existing.horario_agendado || undefined,
-            inicio_ts: lot_ts_ini, fim_ts: lot_ts_fim, scheduled_date: lot_sch,
-            despesas_pedagio: Number(existing.despesas_pedagio || 0),
-            despesas_combustivel: Number(existing.despesas_combustivel || 0),
-            despesas_outras: Number(existing.despesas_outras || 0),
-            receitas_os: Number(existing.receitas_os || 0),
+          const [photos, missionCosts] = await Promise.all([
+            storage.getMissionPhotosByOS(existing.service_order_id),
+            storage.getMissionCostsByOS(existing.service_order_id),
+          ]);
+          const canonicalPayload = computeBillingPayloadForOs({
+            so: lotSo,
             contrato,
+            photos: (photos || []).map((photo: any) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value,
+            })),
+            mCosts: missionCosts || [],
+            horasMissao: Number(existing.horas_missao || 0),
+            clientName: existing.client_name || null,
+            empName: existing.vigilante_name || null,
+            emp2Name: existing.vigilante2_name || null,
+            vehPlate: existing.placa_viatura || null,
           });
 
-          await supabaseAdmin.from("escort_billings").update({
-            fat_total: resultado.fat_total,
-            fat_hora_extra: resultado.fat_hora_extra,
-            fat_km: resultado.fat_km || 0,
-            fat_acionamento: resultado.fat_acionamento,
-            fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
-            fat_estadia: resultado.fat_estadia || 0,
-            fat_pernoite: resultado.fat_pernoite || 0,
-            horas_trabalhadas: resultado.horas_trabalhadas,
-            horas_missao: resultado.horas_trabalhadas,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            km_total: resultado.km_total,
-            km_carregado: resultado.km_carregado,
-            km_faturado: resultado.km_faturado,
-            km_franquia: resultado.km_franquia,
-            km_excedente: resultado.km_excedente,
-            valor_franquia: resultado.valor_franquia,
-            valor_km_extra: resultado.valor_km_extra,
-            resultado_bruto: resultado.resultado.bruto,
-            resultado_liquido: resultado.resultado.liquido,
-            margem_percentual: resultado.resultado.margem_pct,
+          const { error: updateError } = await supabaseAdmin.from("escort_billings").update({
+            ...canonicalPayload,
+            status: existing.status,
           }).eq("id", id);
+          if (updateError) throw updateError;
 
           if (existing.service_order_id) {
-            const n = (v: any) => Number(v) || 0;
-            const totalCalc = n(resultado.fat_acionamento) + n(resultado.fat_hora_extra) + n(resultado.fat_km) +
-              n(resultado.despesas?.pedagio) + n(resultado.fat_adicional_noturno) + n(resultado.fat_estadia) +
-              n(resultado.fat_pernoite) + n(resultado.despesas?.outras);
-            await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id);
+            await supabaseAdmin.from("service_orders")
+              .update({ fat_calculado: Number(canonicalPayload.fat_total) || 0 })
+              .eq("id", existing.service_order_id);
           }
 
           success++;
@@ -2284,7 +2262,9 @@ import type { Express } from "express";
             });
             if (hInicio) updateData.horario_inicio = hInicio;
             if (hFim) updateData.horario_fim = hFim;
-          } catch {}
+          } catch (recalcErr: any) {
+            throw new Error(`Falha ao recalcular billing: ${recalcErr.message}`);
+          }
         }
       }
 
