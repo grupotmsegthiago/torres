@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { calcularEscolta, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { isBillingProtected } from "../lib/billing-frozen";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -1989,12 +1990,9 @@ Responda APENAS com JSON: {"km_lido": number}`;
           // Billing já congelado (aprovado/faturado/pago) NÃO recalcula — só marca CANCELADO (§8.1b).
           const { data: existingBill } = await supabaseAdmin.from("escort_billings")
             .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
-          const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
-          const billStatus = existingBill?.[0]?.status;
-          if (billStatus && FROZEN.includes(billStatus)) {
-            await supabaseAdmin.from("escort_billings")
-              .update({ status: "CANCELADO" }).eq("service_order_id", serviceOrderId);
-            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: billing CONGELADO (${billStatus}) — só marcou CANCELADO, valores preservados`);
+          const existingBilling = existingBill?.[0];
+          if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: billing protegido (${existingBilling.status}) preservado integralmente`);
             res.json(updated);
             return;
           }
@@ -2548,11 +2546,19 @@ Responda APENAS com JSON: {"km_lido": number}`;
             data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
           };
-          // UPSERT atômico via ON CONFLICT (service_order_id) — usa UNIQUE uniq_eb_so_id.
-          // Substitui o padrão SELECT-then-UPDATE/INSERT (vulnerável a race entre clique duplo / cron paralelo).
-          await supabaseAdmin.from("escort_billings")
-            .upsert(billingPayload, { onConflict: "service_order_id" });
-          console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
+          const { data: currentBillings } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, status")
+            .eq("service_order_id", serviceOrderId)
+            .limit(1);
+          const currentBilling = currentBillings?.[0];
+          if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
+            console.log(`[auto-billing] OS ${so.osNumber}: billing protegido (${currentBilling.status}) preservado`);
+          } else {
+            await supabaseAdmin.from("escort_billings")
+              .upsert(billingPayload, { onConflict: "service_order_id" });
+            console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
+          }
         }
       } catch (billingErr: any) {
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);

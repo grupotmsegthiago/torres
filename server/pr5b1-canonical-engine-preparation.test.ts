@@ -160,8 +160,9 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   },
   computeCanceladaBilling: {
     "server/cron.ts": 1,
+    "server/routes/escort.ts": 2,
     "server/routes/mission.ts": 1,
-    "server/routes/service-orders.ts": 1,
+    "server/routes/service-orders.ts": 2,
   },
 };
 
@@ -214,12 +215,12 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=16, live=4, cancelada=3", () => {
+  test("totais de call-sites: canônico=16, live=4, cancelada=6", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
     assert.equal(total(countProductionCalls("calcularEscolta")), 16);
     assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
-    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 3);
+    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 6);
   });
 });
 
@@ -439,8 +440,32 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       /\.from\(\s*["']invoices["']\s*\)/,
     );
   });
+
+  test("cálculo manual separa concluída, cancelada e recusada", () => {
+    const manual = sourceSection(
+      "server/routes/service-orders.ts",
+      'app.post("/api/boletim-medicao/calcular/:osId"',
+      'app.patch("/api/boletim-medicao/os/:id/diretoria-override"',
+    );
+    assert.match(manual, /calcularEscolta\s*\(/);
+    assert.match(manual, /computeCanceladaBilling\s*\(/);
+    assert.match(manual, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(manual, /isBillingProtected\s*\(/);
+    assert.doesNotMatch(manual, /calcularFaturamentoLive\s*\(/);
+  });
+
+  test("lote protege frozen e usa motor específico para cancelada", () => {
+    const batch = sourceSection(
+      "server/routes/escort.ts",
+      'app.post("/api/escort/billings/recalcular-lote"',
+      'app.patch("/api/escort/billings/:id/salvar"',
+    );
+    assert.match(batch, /isBillingProtected\s*\(/);
+    assert.match(batch, /computeCanceladaBilling\s*\(/);
+    assert.match(batch, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(batch, /calcularEscolta\s*\(/);
+    assert.doesNotMatch(batch, /calcularFaturamentoLive\s*\(/);
+  });
 });
 
-test.todo("IMPLEMENTAÇÃO: cálculo manual de cancelada deve usar computeCanceladaBilling");
-test.todo("IMPLEMENTAÇÃO: lote deve pular todos os frozen statuses");
 test.todo("IMPLEMENTAÇÃO: operational-grid não deve materializar Live em espelhos");

@@ -8,6 +8,8 @@ import type { Express } from "express";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { isBillingProtected } from "../lib/billing-frozen";
+  import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
@@ -253,39 +255,86 @@ import type { Express } from "express";
 
       const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
       const isCanceladaOuRecusada = so.status === "cancelada" || so.status === "recusada";
+      if (isLive && !isCanceladaOuRecusada) {
+        return res.status(409).json({
+          message: "OS ativa usa apenas projeção; billing oficial só é materializado após conclusão.",
+        });
+      }
 
       const { data: existing } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
       const existingBilling = existing?.[0];
-      const canRecalculate = !existingBilling || existingBilling.status === "REJEITADA" || existingBilling.status === "A_VERIFICAR" || isLive;
-      if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
-      if (existingBilling) {
-        await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+      if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — recálculo bloqueado.",
+        });
       }
+      const canRecalculate = !existingBilling || [
+        "REJEITADA",
+        "A_VERIFICAR",
+        "PENDENTE",
+        "VERIFICADA",
+      ].includes(existingBilling.status);
+      if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
 
       if (isCanceladaOuRecusada) {
         const client = so.clientId ? await storage.getClient(so.clientId) : null;
         const user = req.user!;
-        const { data: zeroBilling, error: zeroErr } = await supabaseAdmin.from("escort_billings").insert({
+        const commonPayload: any = {
           service_order_id: serviceOrderId,
           client_id: so.clientId, client_name: client?.name || "--",
           os_number: so.osNumber || null,
           origem: so.origin || null, destino: so.destination || null,
           data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
+          created_by: user.name,
+        };
+
+        let statusPayload: any;
+        if (so.status === "recusada") {
+          statusPayload = {
           km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
           km_faturado: 0, km_franquia: 0, km_excedente: 0,
           horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0, teve_pernoite: false, is_noturno: false,
-          fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0, fat_km_carregado: 0, fat_km_vazio: 0,
-          fat_estadia: 0, fat_pernoite: 0, fat_diaria: 0, fat_adicional_noturno: 0,
-          fat_total: 0, receitas_os: 0, valor_franquia: 0, valor_km_extra: 0,
+            receitas_os: 0, valor_franquia: 0, valor_km_extra: 0,
           pag_vrp: 0, pag_periculosidade: 0, pag_adicional_noturno: 0, pag_reembolsos: 0, pag_total: 0,
-          resultado_bruto: 0, resultado_liquido: 0, margem_percentual: 0,
-          status: "CANCELADO", created_by: user.name,
-          observacoes: `OS ${so.status === "recusada" ? "RECUSADA" : "CANCELADA"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
-        }).select().single();
-        if (zeroErr) throw zeroErr;
+            ...buildRecusadaZeroPayload((so as any).cancellationReason),
+          };
+        } else {
+          const cancelada = await computeCanceladaBilling({
+            serviceOrderId,
+            clientId: so.clientId,
+            escortContractId: so.escortContractId,
+            scheduledDate: so.scheduledDate ? String(so.scheduledDate) : null,
+            missionStartedAt: so.missionStartedAt ? String(so.missionStartedAt) : null,
+            completedDate: so.completedDate ? String(so.completedDate) : null,
+            stepLogs: (so.stepLogs || []) as any[],
+          });
+          if (!cancelada) {
+            return res.status(422).json({
+              message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
+            });
+          }
+          statusPayload = {
+            contract_id: cancelada.contrato?.id || so.escortContractId || null,
+            ...cancelada.fatFields,
+            horario_agendado: cancelada.horarios.horario_agendado,
+            horario_inicio: cancelada.horarios.horario_inicio,
+            horario_fim: cancelada.horarios.horario_fim,
+            observacoes: `OS CANCELADA — Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
+          };
+        }
+
+        const { data: billing, error } = await supabaseAdmin
+          .from("escort_billings")
+          .upsert(
+            { ...commonPayload, ...statusPayload },
+            { onConflict: "service_order_id" },
+          )
+          .select()
+          .single();
+        if (error) throw error;
         bustBalancoCaches();
-        return res.json(zeroBilling);
+        return res.json(billing);
       }
 
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
@@ -355,7 +404,7 @@ import type { Express } from "express";
       const user = req.user!;
 
       const n = (v: any) => Number(v) || 0;
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+      const { data, error } = await supabaseAdmin.from("escort_billings").upsert({
         service_order_id: serviceOrderId,
         client_id: so.clientId, client_name: client?.name || "--",
         contract_id: contrato.id || null,
@@ -390,7 +439,7 @@ import type { Express } from "express";
         motorista_escoltado: (so as any).escortedDriverName || null,
         data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
         status: "A_VERIFICAR", created_by: user.name,
-      }).select().single();
+      }, { onConflict: "service_order_id" }).select().single();
       if (error) throw error;
       bustBalancoCaches();
 
@@ -405,10 +454,10 @@ import type { Express } from "express";
       if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
       const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
-        .select("status").eq("service_order_id", osId).limit(1);
+        .select("id, status").eq("service_order_id", osId).limit(1);
 
-      if (existingBilling?.[0] && ["APROVADA", "FATURADO", "PAGO"].includes(existingBilling[0].status)) {
-        return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
+      if (existingBilling?.[0] && await isBillingProtected(supabaseAdmin, existingBilling[0])) {
+        return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial — valores travados." });
       }
 
       const { completedDate, hora_chegada_origem, mission_started_at, scheduled_date, km_chegada_origem, km_fim_missao } = req.body;
@@ -681,8 +730,10 @@ import type { Express } from "express";
 
       const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", osId).limit(1);
-      const FROZEN_BILL_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
-      if (existingBilling?.[0] && !FROZEN_BILL_STATUSES.includes(existingBilling[0].status)) {
+      const billingProtected = existingBilling?.[0]
+        ? await isBillingProtected(supabaseAdmin, existingBilling[0])
+        : false;
+      if (existingBilling?.[0] && !billingProtected) {
         const updatedSo = await storage.getServiceOrder(osId);
         if (updatedSo) {
           const phs = await storage.getMissionPhotosByOS(osId);
@@ -1319,12 +1370,11 @@ import type { Express } from "express";
             const soId = Number(req.params.id);
             const { data: existingBill } = await supabaseAdmin.from("escort_billings")
               .select("id, status").eq("service_order_id", soId).limit(1);
-            const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
-            const billStatus = existingBill?.[0]?.status;
-            if (billStatus && FROZEN.includes(billStatus)) {
-              // congelado: apenas marca como CANCELADO sem mexer nos valores.
-              await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-              bustBalancoCaches();
+            const existingBilling = existingBill?.[0];
+            if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+              // Snapshot/billing congelado permanece integralmente imutável.
+              // O status operacional da OS pode mudar sem reabrir o comercial.
+              console.log(`[OS-Cancel-Billing] OS ${data.osNumber}: billing protegido (${existingBilling.status}) preservado`);
             } else {
               const cb = await computeCanceladaBilling({
                 serviceOrderId: soId,
@@ -1650,7 +1700,7 @@ import type { Express } from "express";
           .order("created_at", { ascending: false })
           .limit(1);
         const bill = existingBilling?.[0];
-        if (bill && bill.status === "A_VERIFICAR") {
+        if (bill && !await isBillingProtected(supabaseAdmin, bill)) {
           let contrato: any = null;
           if (bill.contract_id) {
             const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", bill.contract_id).single();
@@ -1776,8 +1826,10 @@ import type { Express } from "express";
       if (billingRelevantChanged && data.type === "escolta") {
         const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
           .select("id, status").eq("service_order_id", data.id).limit(1);
-        const FROZEN = ["APROVADA", "FATURADO", "PAGO"];
-        if (existingBilling?.[0] && !FROZEN.includes(existingBilling[0].status)) {
+        const billingProtected = existingBilling?.[0]
+          ? await isBillingProtected(supabaseAdmin, existingBilling[0])
+          : false;
+        if (existingBilling?.[0] && !billingProtected) {
           const phs = await storage.getMissionPhotosByOS(data.id);
           const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
           const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");

@@ -11,6 +11,8 @@ import type { Express } from "express";
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
+  import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
 
   // Trava de edição de anexos (boleto/NF/comprovante): QUALQUER pessoa do
@@ -1642,10 +1644,49 @@ import type { Express } from "express";
         status: safeStatus,
         created_by: user.name, boletim_numero: boletimNumero, boletim_gerado: true,
       };
+      let linkedSo: any = null;
+      if (body.service_order_id) {
+        const [{ data: currentBillings }, { data: soRow }] = await Promise.all([
+          supabaseAdmin.from("escort_billings")
+            .select("id, status").eq("service_order_id", body.service_order_id).limit(1),
+          supabaseAdmin.from("service_orders")
+            .select("status, client_id, escort_contract_id, scheduled_date, mission_started_at, completed_date, step_logs")
+            .eq("id", body.service_order_id).maybeSingle(),
+        ]);
+        if (currentBillings?.[0] && await isBillingProtected(supabaseAdmin, currentBillings[0])) {
+          return res.status(409).json({
+            message: "Billing congelado ou presente em snapshot comercial — gravação bloqueada.",
+          });
+        }
+        linkedSo = soRow;
+      }
       // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Criar/upsertar um billing
       // para uma OS recusada nunca pode introduzir cobrança: força zero (CANCELADO).
-      if (await osIsRecusada(supabaseAdmin, body.service_order_id)) {
+      if (linkedSo?.status === "recusada" || await osIsRecusada(supabaseAdmin, body.service_order_id)) {
         payload = { ...payload, ...buildRecusadaZeroPayload(null, body.observacoes) };
+      } else if (linkedSo?.status === "cancelada") {
+        const cancelada = await computeCanceladaBilling({
+          serviceOrderId: body.service_order_id,
+          clientId: linkedSo.client_id,
+          escortContractId: linkedSo.escort_contract_id,
+          scheduledDate: linkedSo.scheduled_date,
+          missionStartedAt: linkedSo.mission_started_at,
+          completedDate: linkedSo.completed_date,
+          stepLogs: linkedSo.step_logs,
+        });
+        if (!cancelada) {
+          return res.status(422).json({
+            message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
+          });
+        }
+        payload = {
+          ...payload,
+          contract_id: cancelada.contrato?.id || linkedSo.escort_contract_id || null,
+          ...cancelada.fatFields,
+          horario_agendado: cancelada.horarios.horario_agendado,
+          horario_inicio: cancelada.horarios.horario_inicio,
+          horario_fim: cancelada.horarios.horario_fim,
+        };
       }
       // UPSERT atômico por service_order_id (quando informado) — ON CONFLICT via UNIQUE uniq_eb_so_id.
       // Quando não há OS vinculada, é billing manual avulso ⇒ INSERT normal.
@@ -1703,10 +1744,9 @@ import type { Express } from "express";
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status, service_order_id, observacoes").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
-      const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
       const STATUS_ONLY_FIELDS = ["status", "observacoes", "notas"];
 
-      if (LOCKED_STATUSES.includes(existing.status)) {
+      if (await isBillingProtected(supabaseAdmin, existing)) {
         const updateBody = { ...req.body };
         const attemptedFields = Object.keys(updateBody);
         const blockedFields = attemptedFields.filter(f => !STATUS_ONLY_FIELDS.includes(f));
@@ -1775,6 +1815,19 @@ import type { Express } from "express";
     try {
       const user = req.user!;
       const body = req.body;
+
+      if (body.service_order_id) {
+        const { data: currentBillings } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, status")
+          .eq("service_order_id", body.service_order_id)
+          .limit(1);
+        if (currentBillings?.[0] && await isBillingProtected(supabaseAdmin, currentBillings[0])) {
+          return res.status(409).json({
+            message: "Billing congelado ou presente em snapshot comercial — submissão bloqueada.",
+          });
+        }
+      }
 
       const kmIni = Number(body.km_inicial || 0);
       const kmFin = Number(body.km_final || 0);
@@ -1889,7 +1942,7 @@ import type { Express } from "express";
         try {
           const { data: existing } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
           if (!existing) { errors++; continue; }
-          if (["FATURADO", "PAGO"].includes(existing.status)) { skipped++; continue; }
+          if (await isBillingProtected(supabaseAdmin, existing)) { skipped++; continue; }
           // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Nunca recalcular pelo
           // contrato (ressuscitaria a cobrança): força zero e zera a OS.
           if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
@@ -1899,20 +1952,49 @@ import type { Express } from "express";
               .update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
             success++; continue;
           }
+
+          // Busca timestamps reais da OS pra HE multi-dia
+          let lot_ts_ini: string | null = null, lot_ts_fim: string | null = null, lot_sch: string | null = null;
+          let lotSo: any = null;
+          if (existing.service_order_id) {
+            const { data: soRow } = await supabaseAdmin
+              .from("service_orders")
+              .select("status, client_id, escort_contract_id, mission_started_at, completed_date, scheduled_date, step_logs")
+              .eq("id", existing.service_order_id).maybeSingle();
+            if (soRow) {
+              lotSo = soRow;
+              lot_ts_ini = soRow.mission_started_at;
+              lot_ts_fim = soRow.completed_date;
+              lot_sch = soRow.scheduled_date;
+            }
+          }
+
+          if (lotSo?.status === "cancelada") {
+            const cancelada = await computeCanceladaBilling({
+              serviceOrderId: existing.service_order_id,
+              clientId: lotSo.client_id,
+              escortContractId: lotSo.escort_contract_id || existing.contract_id,
+              scheduledDate: lotSo.scheduled_date,
+              missionStartedAt: lotSo.mission_started_at,
+              completedDate: lotSo.completed_date,
+              stepLogs: lotSo.step_logs,
+            });
+            if (!cancelada) { errors++; continue; }
+            await supabaseAdmin.from("escort_billings").update({
+              ...cancelada.fatFields,
+              contract_id: cancelada.contrato?.id || existing.contract_id,
+              horario_agendado: cancelada.horarios.horario_agendado,
+              horario_inicio: cancelada.horarios.horario_inicio,
+              horario_fim: cancelada.horarios.horario_fim,
+            }).eq("id", id);
+            success++;
+            continue;
+          }
+
           if (!existing.contract_id) { errors++; continue; }
 
           const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
           if (!contrato) { errors++; continue; }
-
-          // Busca timestamps reais da OS pra HE multi-dia
-          let lot_ts_ini: string | null = null, lot_ts_fim: string | null = null, lot_sch: string | null = null;
-          if (existing.service_order_id) {
-            const { data: soRow } = await supabaseAdmin
-              .from("service_orders")
-              .select("mission_started_at, completed_date, scheduled_date")
-              .eq("id", existing.service_order_id).maybeSingle();
-            if (soRow) { lot_ts_ini = soRow.mission_started_at; lot_ts_fim = soRow.completed_date; lot_sch = soRow.scheduled_date; }
-          }
           const resultado = calcularEscolta({
             km_inicial: Number(existing.km_inicial || 0),
             km_final: Math.max(Number(existing.km_inicial || 0), Number(existing.km_final || 0)),
@@ -1988,9 +2070,8 @@ import type { Express } from "express";
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
-      const LOCKED_STATUSES = ["FATURADO", "PAGO"];
-      if (LOCKED_STATUSES.includes(existing.status)) {
-        return res.status(403).json({ message: "Boletim faturado — valores travados. Não é possível alterar." });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial — valores travados." });
       }
 
       // §8.1 — OS recusada = faturamento ZERADO, SEMPRE (verdade final, incondicional).
