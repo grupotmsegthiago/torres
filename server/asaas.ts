@@ -3140,20 +3140,15 @@ export function registerAsaasRoutes(app: Express) {
         return res.status(400).json({ message: "Não é possível excluir fatura já paga" });
       }
 
-      const { data: linkedBillings } = await supabaseAdmin
-        .from("escort_billings")
-        .select("id")
-        .eq("invoice_id", invoiceId);
-
-      if (linkedBillings && linkedBillings.length > 0) {
-        const billingIds = linkedBillings.map((b: any) => b.id);
-        await updateBillingLifecycleBatchAtomic(billingIds.map(String), "RELEASE_REBILL", {
+      const releasedBillings = await updateBillingLifecycleByInvoiceAtomic(
+        invoiceId,
+        "RELEASE_REBILL",
+        {
           status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null,
-        }, {
-          userId: user?.id, userName: user?.name || "Sistema",
-          userRole: user?.role || "system", reason: `Excluir invoice #${invoice.id}`,
-          ipAddress: req.ip,
-        });
+        },
+        user?.name || "Sistema",
+      );
+      if (releasedBillings.length > 0) {
         bustBalancoCaches();
       }
 
