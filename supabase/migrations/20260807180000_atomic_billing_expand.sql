@@ -48,7 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_boletim_snapshot_billing_lookup
   WHERE billing_snapshot IS NOT NULL;
 
 GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
-GRANT SELECT ON public.service_orders, public.mission_photos
+GRANT SELECT, UPDATE ON public.service_orders, public.mission_photos
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
   TO torres_billing_rpc_owner;
@@ -1062,7 +1062,7 @@ ALTER FUNCTION public.transition_invoice_billings_atomic(
 
 -- Reafirma privilégios após a transferência de ownership das RPCs.
 GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
-GRANT SELECT ON public.service_orders, public.mission_photos
+GRANT SELECT, UPDATE ON public.service_orders, public.mission_photos
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
   TO torres_billing_rpc_owner;
