@@ -191,3 +191,20 @@ export async function createBoletimApprovalAtomic(
   if (error) throwRpcError(error);
   return Array.isArray(data) ? data[0] ?? null : data;
 }
+
+export async function freezeBoletimBillingsAtomic(
+  approvalId: number,
+  approvedByName: string,
+  approvedByIp: string,
+  approvedAt: string,
+  sb: any = supabaseAdmin,
+) {
+  const { data, error } = await sb.rpc("freeze_boletim_billings_atomic", {
+    p_approval_id: approvalId,
+    p_approved_by_name: approvedByName,
+    p_approved_by_ip: approvedByIp,
+    p_approved_at: approvedAt,
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}

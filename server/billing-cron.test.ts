@@ -177,7 +177,7 @@ test("computeBillingPayloadForOs: missão noturna aplica adicional_noturno_km_pc
   const horasMissao = 5;
   const photos = [
     { step: "km_chegada", km_value: 1000 },
-    { step: "km_final", km_value: 1080 },
+    { step: "km_final", km_value: 1580 },
   ];
 
   const p = computeBillingPayloadForOs({
@@ -250,8 +250,8 @@ test("computeBillingPayloadForOs: múltiplas km_chegada usa a última correção
   });
 
   assert.equal(p.km_inicial, 1500);
-  assert.equal(p.km_final, 1500);
-  assert.equal(p.km_total, 0);
+  assert.equal(p.km_final, 1580);
+  assert.equal(p.km_total, 80);
 });
 
 test("computeBillingPayloadForOs: km_saida usado como fallback quando km_chegada ausente", () => {
@@ -272,22 +272,21 @@ test("computeBillingPayloadForOs: km_saida usado como fallback quando km_chegada
   assert.equal(p.km_total, 120);
 });
 
-test("computeBillingPayloadForOs: km_final menor que km_inicial fica preso em km_inicial", () => {
+test("computeBillingPayloadForOs: km_final menor que km_inicial falha fechado", () => {
   const so = baseOs();
   const photos = [
     { step: "km_chegada", km_value: 1000 },
     { step: "km_final", km_value: 800 }, // leitura inconsistente
   ];
 
-  const p = computeBillingPayloadForOs({
-    so, contrato: CONTRATO_ACIONAMENTO, photos, mCosts: [], horasMissao: 4,
-    clientName: "Cliente A", empName: "Agente 1", emp2Name: null, vehPlate: "ABC1D23",
-    nowDate: FIXED_NOW,
-  });
-
-  assert.equal(p.km_inicial, 1000);
-  assert.equal(p.km_final, 1000);
-  assert.equal(p.km_total, 0);
+  assert.throws(
+    () => computeBillingPayloadForOs({
+      so, contrato: CONTRATO_ACIONAMENTO, photos, mCosts: [], horasMissao: 4,
+      clientName: "Cliente A", empName: "Agente 1", emp2Name: null, vehPlate: "ABC1D23",
+      nowDate: FIXED_NOW,
+    }),
+    /KM final não pode ser menor/,
+  );
 });
 
 test("computeBillingPayloadForOs: OS A_VERIFICAR já existente continua sendo recalculada como A_VERIFICAR", () => {
@@ -296,7 +295,7 @@ test("computeBillingPayloadForOs: OS A_VERIFICAR já existente continua sendo re
   const so = baseOs({ status: "concluida", mission_status: "encerrada" });
   const p = computeBillingPayloadForOs({
     so, contrato: CONTRATO_ACIONAMENTO,
-    photos: [{ step: "km_chegada", km_value: 0 }, { step: "km_final", km_value: 50 }],
+    photos: [{ step: "km_saida", km_value: 1 }, { step: "km_final", km_value: 50 }],
     mCosts: [], horasMissao: 4,
     clientName: "Cliente A", empName: "Agente 1", emp2Name: null, vehPlate: "ABC1D23",
     nowDate: FIXED_NOW,
@@ -421,7 +420,7 @@ test("fatos oficiais: contrato persistido é obrigatório e deve coincidir", () 
     () => assertOfficialBillingFacts({
       so,
       contrato: CONTRATO_ACIONAMENTO,
-      photos: [{ step: "km_final", km_value: 100 }],
+      photos: [{ step: "km_chegada", km_value: 100 }, { step: "km_final", km_value: 100 }],
     }),
     /escort_contract_id/,
   );
@@ -429,7 +428,7 @@ test("fatos oficiais: contrato persistido é obrigatório e deve coincidir", () 
     () => assertOfficialBillingFacts({
       so: baseOs(),
       contrato: { ...CONTRATO_ACIONAMENTO, id: 999 },
-      photos: [{ step: "km_final", km_value: 100 }],
+      photos: [{ step: "km_chegada", km_value: 100 }, { step: "km_final", km_value: 100 }],
     }),
     /difere do escort_contract_id/,
   );
@@ -441,18 +440,36 @@ test("fatos oficiais: timestamps completos são obrigatórios", () => {
       () => assertOfficialBillingFacts({
         so: baseOs({ [field]: null }),
         contrato: CONTRATO_ACIONAMENTO,
-        photos: [{ step: "km_final", km_value: 100 }],
+        photos: [{ step: "km_chegada", km_value: 100 }, { step: "km_final", km_value: 100 }],
       }),
       /mission_started_at e completed_date/,
     );
   }
+  assert.throws(
+    () => assertOfficialBillingFacts({
+      so: baseOs({
+        mission_started_at: "2025-06-15T20:00:00Z",
+        completed_date: "2025-06-15T15:00:00Z",
+      }),
+      contrato: CONTRATO_ACIONAMENTO,
+      photos: [{ step: "km_chegada", km_value: 100 }, { step: "km_final", km_value: 100 }],
+    }),
+    /invertidos/,
+  );
 });
 
-test("fatos oficiais: KM final factual positivo é obrigatório", () => {
+test("fatos oficiais: KM inicial e final factuais são obrigatórios", () => {
+  assert.throws(
+    () => assertOfficialBillingFacts({
+      so: baseOs(),
+      contrato: CONTRATO_ACIONAMENTO,
+      photos: [{ step: "km_final", km_value: 100 }],
+    }),
+    /KM inicial/,
+  );
   for (const photos of [
-    [],
-    [{ step: "km_final", km_value: 0 }],
     [{ step: "km_chegada", km_value: 100 }],
+    [{ step: "km_chegada", km_value: 100 }, { step: "km_final", km_value: 0 }],
   ]) {
     assert.throws(
       () => assertOfficialBillingFacts({

@@ -19,18 +19,20 @@ const setupSql = `
   GRANT ALL ON SCHEMA public TO public;
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-      CREATE ROLE service_role;
-    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated; END IF;
   END $$;
   CREATE TABLE service_orders (
-    id serial PRIMARY KEY, status text NOT NULL, mission_status text,
+    id serial PRIMARY KEY, client_id integer NOT NULL DEFAULT 1,
+    status text NOT NULL, mission_status text,
     escort_contract_id text, mission_started_at timestamptz,
     completed_date timestamptz, snapshot_data jsonb, revenue_value numeric,
     cost_value numeric, edit_reason text, approved_at timestamptz
   );
   CREATE TABLE mission_photos (
-    id serial PRIMARY KEY, service_order_id integer, step text, km_value numeric
+    id serial PRIMARY KEY, service_order_id integer, step text, km_value numeric,
+    created_at timestamptz DEFAULT now()
   );
   CREATE TABLE escort_billings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), service_order_id integer,
@@ -81,7 +83,7 @@ async function insertFacts(db: pg.Client, osId: number) {
     [osId, contractId],
   );
   await db.query(
-    "INSERT INTO mission_photos(service_order_id,step,km_value) VALUES ($1,'km_final',150)",
+    "INSERT INTO mission_photos(service_order_id,step,km_value) VALUES ($1,'km_chegada',100),($1,'km_final',150)",
     [osId],
   );
   return contractId;
@@ -93,7 +95,7 @@ async function createBilling(db: pg.Client, osId: number) {
     `SELECT * FROM write_escort_billing_atomic(
       'WRITE_OFFICIAL',
       jsonb_build_object(
-        'service_order_id',$1::integer,'contract_id',$2::text,'km_inicial',100,
+        'service_order_id',$1::integer,'client_id',1,'contract_id',$2::text,'km_inicial',100,
         'km_final',150,'fat_total',500,'status','A_VERIFICAR'
       ),
       NULL,$1::integer,NULL,'{"user_name":"test","user_role":"test"}'::jsonb
@@ -126,12 +128,38 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     "utf8",
   );
   const enforcement = await readFile(
-    path.join(root, "supabase/migrations/20260807181000_atomic_billing_enforcement.sql"),
+    path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
     "utf8",
   );
   await admin.query(setupSql);
   await admin.query(expand);
   await admin.query(enforcement);
+
+  await t.test("RPC grants are restricted to service_role", async () => {
+    const grants = await admin.query(`
+      SELECT
+        has_function_privilege(
+          'service_role',
+          'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)',
+          'EXECUTE'
+        ) AS service_can_execute,
+        has_function_privilege(
+          'anon',
+          'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)',
+          'EXECUTE'
+        ) AS anon_can_execute,
+        has_function_privilege(
+          'authenticated',
+          'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)',
+          'EXECUTE'
+        ) AS authenticated_can_execute
+    `);
+    assert.deepEqual(grants.rows[0], {
+      service_can_execute: true,
+      anon_can_execute: false,
+      authenticated_can_execute: false,
+    });
+  });
 
   await t.test("valid version increments; stale concurrent writer fails", async () => {
     const billing = await createBilling(admin, 1);
@@ -194,6 +222,10 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const snapshot = await createSnapshot(snapshotTx, billing, "delete-loses");
     await snapshotTx.query("COMMIT");
     await assert.rejects(pendingDelete, /PR5B1_TX_BILLING_PROTECTED/);
+    await assert.rejects(
+      admin.query("UPDATE boletim_approvals SET total_value=999 WHERE id=$1", [snapshot.rows[0].id]),
+      /PR5B1_TX_SNAPSHOT_IMMUTABLE/,
+    );
     await assert.rejects(
       admin.query("DELETE FROM boletim_approvals WHERE id=$1", [snapshot.rows[0].id]),
       /PR5B1_TX_APPROVAL_DELETE_BLOCKED/,
@@ -352,7 +384,21 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "INSERT INTO service_orders(id,status,mission_status,escort_contract_id,mission_started_at,completed_date) VALUES (42,'concluida','encerrada',$1,now()-interval '1h',now())",
       [contractId],
     );
-    await assert.rejects(invoke(42, contractId), /PR5B1_TX_KM_FINAL_REQUIRED/);
+    await assert.rejects(invoke(42, contractId), /PR5B1_TX_KM_INITIAL_REQUIRED/);
+
+    await admin.query(
+      "INSERT INTO service_orders(id,status,mission_status,escort_contract_id,mission_started_at,completed_date) VALUES (43,'concluida','encerrada',$1,now()-interval '1h',now())",
+      [contractId],
+    );
+    await admin.query("INSERT INTO mission_photos(service_order_id,step,km_value) VALUES (43,'km_chegada',100)");
+    await assert.rejects(invoke(43, contractId), /PR5B1_TX_KM_FINAL_REQUIRED/);
+
+    await admin.query(
+      "INSERT INTO service_orders(id,status,mission_status,escort_contract_id,mission_started_at,completed_date) VALUES (44,'concluida','encerrada',$1,now()-interval '1h',now())",
+      [contractId],
+    );
+    await admin.query("INSERT INTO mission_photos(service_order_id,step,km_value) VALUES (44,'km_chegada',100),(44,'km_final',90)");
+    await assert.rejects(invoke(44, contractId), /PR5B1_TX_KM_REVERSED/);
   });
 
   await t.test("recusada with financial residue is rejected", async () => {
@@ -370,6 +416,107 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         [contractId],
       ),
       /PR5B1_TX_REFUSED_MUST_BE_ZERO/,
+    );
+  });
+
+  await t.test("mixed open/cancelled approval freezes atomically without partial batch", async () => {
+    const open = await createBilling(admin, 60);
+    const cancelled = await createBilling(admin, 61);
+    const cancelledRow = await admin.query(
+      `SELECT * FROM write_escort_billing_atomic(
+        'WRITE_CANCELLED',
+        jsonb_build_object(
+          'service_order_id',61,'contract_id','00000000-0000-0000-0000-000000000061',
+          'km_inicial',100,'km_final',150,'fat_total',200,'status','CANCELADO'
+        ),
+        $1,61,0,'{}'::jsonb
+      )`,
+      [cancelled.id],
+    );
+    const cancelledVersion = Number(cancelledRow.rows[0].lock_version);
+    const approval = await admin.query(
+      `SELECT * FROM create_boletim_approval_atomic(
+        'mixed-approval',1,'Client',NULL,current_date,current_date,
+        ARRAY[$1::text,$2::text],700,2,'test',NULL,
+        jsonb_build_array(
+          jsonb_build_object('billing_id',$1::text,'billing_version',0,'total',500),
+          jsonb_build_object('billing_id',$2::text,'billing_version',$3::bigint,'total',200)
+        )
+      )`,
+      [open.id, cancelled.id, cancelledVersion],
+    );
+    const frozen = await admin.query(
+      "SELECT * FROM freeze_boletim_billings_atomic($1,'Cliente','127.0.0.1',now())",
+      [approval.rows[0].id],
+    );
+    assert.deepEqual(
+      frozen.rows.map((row) => row.status).sort(),
+      ["APROVADA", "CANCELADO"],
+    );
+    const approvalStatus = await admin.query(
+      "SELECT status FROM boletim_approvals WHERE id=$1",
+      [approval.rows[0].id],
+    );
+    assert.equal(approvalStatus.rows[0].status, "APROVADO");
+  });
+
+  await t.test("multi-ID snapshots lock in one order without deadlock", async () => {
+    const first = await createBilling(admin, 70);
+    const second = await createBilling(admin, 71);
+    const a = await client();
+    const b = await client();
+    await a.query("SET statement_timeout='3s'");
+    await b.query("SET statement_timeout='3s'");
+    const query = `
+      SELECT * FROM create_boletim_approval_atomic(
+        $1,1,'Client',NULL,current_date,current_date,$2::text[],1000,2,'test',NULL,$3::jsonb
+      )
+    `;
+    const snapshotA = JSON.stringify([
+      { billing_id: first.id, billing_version: 0, total: 500 },
+      { billing_id: second.id, billing_version: 0, total: 500 },
+    ]);
+    const snapshotB = JSON.stringify([
+      { billing_id: second.id, billing_version: 0, total: 500 },
+      { billing_id: first.id, billing_version: 0, total: 500 },
+    ]);
+    const outcomes = await Promise.allSettled([
+      a.query(query, ["order-a", [String(first.id), String(second.id)], snapshotA]),
+      b.query(query, ["order-b", [String(second.id), String(first.id)], snapshotB]),
+    ]);
+    assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+    assert.match(String(rejected.reason?.message), /PR5B1_TX_ACTIVE_APPROVAL_CONFLICT/);
+    assert.doesNotMatch(String(rejected.reason?.message), /deadlock|statement timeout/i);
+    await a.end();
+    await b.end();
+  });
+
+  await t.test("snapshot rejects cross-client and refused OS", async () => {
+    const billing = await createBilling(admin, 80);
+    const snapshot = JSON.stringify([
+      { billing_id: billing.id, billing_version: 0, total: 500 },
+    ]);
+    await assert.rejects(
+      admin.query(
+        `SELECT * FROM create_boletim_approval_atomic(
+          'cross-client',2,'Other',NULL,current_date,current_date,
+          ARRAY[$1::text],500,1,'test',NULL,$2::jsonb
+        )`,
+        [billing.id, snapshot],
+      ),
+      /PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH/,
+    );
+    await admin.query("UPDATE service_orders SET status='recusada' WHERE id=80");
+    await assert.rejects(
+      admin.query(
+        `SELECT * FROM create_boletim_approval_atomic(
+          'refused-os',1,'Client',NULL,current_date,current_date,
+          ARRAY[$1::text],500,1,'test',NULL,$2::jsonb
+        )`,
+        [billing.id, snapshot],
+      ),
+      /PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH/,
     );
   });
 
@@ -405,10 +552,10 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const result = await admin.query(`
       SELECT
         to_regprocedure('public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)') IS NULL AS rpc_removed,
-        NOT EXISTS (
+        EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema='public' AND table_name='escort_billings' AND column_name='lock_version'
-        ) AS version_removed,
+        ) AS version_preserved,
         EXISTS (
           SELECT 1 FROM pg_trigger
           WHERE tgname='trg_validate_escort_billing_approval' AND NOT tgisinternal
@@ -416,7 +563,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     `);
     assert.deepEqual(result.rows[0], {
       rpc_removed: true,
-      version_removed: true,
+      version_preserved: true,
       legacy_restored: true,
     });
   });

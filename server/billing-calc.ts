@@ -318,13 +318,34 @@ export function assertOfficialBillingFacts(input: {
       "Billing oficial exige mission_started_at e completed_date reais.",
     );
   }
-  const kmFinal = [...photos]
-    .reverse()
-    .find((photo) => photo.step === "km_final");
+  const startMs = new Date(so.mission_started_at).getTime();
+  const endMs = new Date(so.completed_date).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    throw new OfficialBillingFactsError(
+      "INVALID_TIMESTAMPS",
+      "Timestamps reais da missão são inválidos ou estão invertidos.",
+    );
+  }
+  const lastPhoto = (step: string) =>
+    [...photos].reverse().find((photo) => photo.step === step);
+  const kmInicial = lastPhoto("km_chegada") || lastPhoto("km_saida");
+  const kmFinal = lastPhoto("km_final");
+  if (!kmInicial || Number(kmInicial.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_INICIAL_REQUIRED",
+      "Billing oficial exige foto factual de KM inicial.",
+    );
+  }
   if (!kmFinal || Number(kmFinal.km_value) <= 0) {
     throw new OfficialBillingFactsError(
       "KM_FINAL_REQUIRED",
       "Billing oficial exige foto factual de KM final.",
+    );
+  }
+  if (Number(kmFinal.km_value) < Number(kmInicial.km_value)) {
+    throw new OfficialBillingFactsError(
+      "KM_REVERSED",
+      "KM final não pode ser menor que o KM inicial factual.",
     );
   }
 }

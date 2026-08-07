@@ -9,7 +9,7 @@ const expand = readFileSync(
   "utf8",
 );
 const enforcement = readFileSync(
-  path.join(root, "supabase/migrations/20260807181000_atomic_billing_enforcement.sql"),
+  path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
   "utf8",
 );
 const rollbackExpand = readFileSync(

@@ -75,6 +75,8 @@ DECLARE
   v_target_id uuid;
   v_service_order_id integer := p_service_order_id;
   v_contract_id uuid;
+  v_km_initial numeric;
+  v_km_final numeric;
   v_is_snapshot boolean := false;
   v_keys text[];
   v_allowed_keys text[];
@@ -259,16 +261,54 @@ BEGIN
           ERRCODE = '23514',
           MESSAGE = 'PR5B1_TX_TIMESTAMPS_REQUIRED';
       END IF;
-      IF NOT EXISTS (
-        SELECT 1
+      IF v_so.completed_date < v_so.mission_started_at THEN
+        RAISE EXCEPTION USING
+          ERRCODE = '23514',
+          MESSAGE = 'PR5B1_TX_INVALID_TIMESTAMPS';
+      END IF;
+
+      SELECT km_value
+      INTO v_km_initial
+      FROM public.mission_photos
+      WHERE service_order_id = v_so.id
+        AND step = 'km_chegada'
+      ORDER BY created_at DESC NULLS LAST, id::text DESC
+      LIMIT 1
+      FOR SHARE;
+      IF COALESCE(v_km_initial, 0) <= 0 THEN
+        SELECT km_value
+        INTO v_km_initial
         FROM public.mission_photos
         WHERE service_order_id = v_so.id
-          AND step = 'km_final'
-          AND COALESCE(km_value, 0) > 0
-      ) THEN
+          AND step = 'km_saida'
+        ORDER BY created_at DESC NULLS LAST, id::text DESC
+        LIMIT 1
+        FOR SHARE;
+      END IF;
+
+      SELECT km_value
+      INTO v_km_final
+      FROM public.mission_photos
+      WHERE service_order_id = v_so.id
+        AND step = 'km_final'
+      ORDER BY created_at DESC NULLS LAST, id::text DESC
+      LIMIT 1
+      FOR SHARE;
+
+      IF COALESCE(v_km_initial, 0) <= 0 THEN
+        RAISE EXCEPTION USING
+          ERRCODE = '23514',
+          MESSAGE = 'PR5B1_TX_KM_INITIAL_REQUIRED';
+      END IF;
+      IF COALESCE(v_km_final, 0) <= 0 THEN
         RAISE EXCEPTION USING
           ERRCODE = '23514',
           MESSAGE = 'PR5B1_TX_KM_FINAL_REQUIRED';
+      END IF;
+      IF v_km_final < v_km_initial THEN
+        RAISE EXCEPTION USING
+          ERRCODE = '23514',
+          MESSAGE = 'PR5B1_TX_KM_REVERSED';
       END IF;
       IF v_action = 'WRITE_OFFICIAL'
          AND COALESCE(v_payload->>'status', 'A_VERIFICAR') <> 'A_VERIFICAR' THEN
@@ -310,12 +350,29 @@ BEGIN
   END IF;
 
   CASE v_action
-    WHEN 'WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED' THEN
+    WHEN 'WRITE_OFFICIAL', 'WRITE_CANCELLED', 'WRITE_REFUSED' THEN
       v_allowed_keys := v_financial_keys;
+    WHEN 'UPDATE_OPEN' THEN
+      SELECT array_agg(key ORDER BY key)
+      INTO v_allowed_keys
+      FROM unnest(v_financial_keys) AS key
+      WHERE key NOT IN (
+        'service_order_id', 'contract_id', 'status', 'created_by',
+        'boletim_numero', 'boletim_gerado'
+      );
     WHEN 'FREEZE_COMMERCIAL' THEN
       IF v_current.id IS NULL
-         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN ('A_VERIFICAR', 'APROVADA')
-         OR COALESCE(v_payload->>'status', '') <> 'APROVADA'
+         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN (
+           'A_VERIFICAR', 'APROVADA', 'CANCELADO', 'CANCELADA'
+         )
+         OR (
+           upper(trim(COALESCE(v_current.status, ''))) IN ('CANCELADO', 'CANCELADA')
+           AND COALESCE(v_payload->>'status', '') <> 'CANCELADO'
+         )
+         OR (
+           upper(trim(COALESCE(v_current.status, ''))) NOT IN ('CANCELADO', 'CANCELADA')
+           AND COALESCE(v_payload->>'status', '') <> 'APROVADA'
+         )
       THEN
         RAISE EXCEPTION USING
           ERRCODE = '55000',
@@ -575,6 +632,33 @@ BEGIN
       MESSAGE = 'PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings AS billing
+    JOIN public.service_orders AS service_order
+      ON service_order.id = billing.service_order_id
+    WHERE billing.id = ANY(v_ids)
+      AND (
+        billing.client_id IS DISTINCT FROM p_client_id
+        OR service_order.client_id IS DISTINCT FROM p_client_id
+        OR lower(COALESCE(service_order.status, '')) = 'recusada'
+      )
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH';
+  END IF;
+
+  IF COALESCE(p_os_count, -1) <> v_snapshot_count
+     OR round(COALESCE(p_total_value, 0), 2) IS DISTINCT FROM (
+       SELECT round(COALESCE(sum((item->>'total')::numeric), 0), 2)
+       FROM jsonb_array_elements(p_billing_snapshot) AS item
+     ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_SNAPSHOT_TOTAL_OR_COUNT_MISMATCH';
+  END IF;
+
   IF ARRAY(SELECT unnest(p_billing_ids) ORDER BY 1)
      IS DISTINCT FROM ARRAY(SELECT id::text FROM unnest(v_ids) AS id ORDER BY 1) THEN
     RAISE EXCEPTION USING
@@ -616,12 +700,103 @@ COMMENT ON FUNCTION public.create_boletim_approval_atomic(
   integer, text, integer, jsonb
 ) IS 'PR5B.1-TX: locks ordenados, versão e criação imutável do snapshot.';
 
+CREATE OR REPLACE FUNCTION public.freeze_boletim_billings_atomic(
+  p_approval_id integer,
+  p_approved_by_name text,
+  p_approved_by_ip text,
+  p_approved_at timestamptz
+)
+RETURNS SETOF public.escort_billings
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  v_approval public.boletim_approvals%ROWTYPE;
+  v_ids uuid[];
+  v_locked_count integer;
+BEGIN
+  SELECT *
+  INTO v_approval
+  FROM public.boletim_approvals
+  WHERE id = p_approval_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_approval.status <> 'PENDENTE' THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '55000',
+      MESSAGE = 'PR5B1_TX_APPROVAL_NOT_PENDING';
+  END IF;
+
+  SELECT array_agg(id::uuid ORDER BY id::uuid)
+  INTO v_ids
+  FROM unnest(v_approval.billing_ids) AS id;
+
+  PERFORM 1
+  FROM public.escort_billings
+  WHERE id = ANY(v_ids)
+  ORDER BY id
+  FOR UPDATE;
+  GET DIAGNOSTICS v_locked_count = ROW_COUNT;
+
+  IF v_ids IS NULL OR v_locked_count <> cardinality(v_ids) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_APPROVAL_BILLING_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_approval.billing_snapshot) AS item
+    JOIN public.escort_billings AS billing
+      ON billing.id = (item->>'billing_id')::uuid
+    WHERE billing.lock_version <>
+      COALESCE(NULLIF(item->>'billing_version', '')::bigint, 0)
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_APPROVAL_STALE_BILLING';
+  END IF;
+
+  PERFORM set_config('torres.atomic_billing_write', 'on', true);
+
+  UPDATE public.boletim_approvals
+  SET
+    status = 'APROVADO',
+    approved_at = COALESCE(p_approved_at, now()),
+    approved_by_name = p_approved_by_name,
+    approved_by_ip = p_approved_by_ip
+  WHERE id = p_approval_id;
+
+  RETURN QUERY
+  UPDATE public.escort_billings
+  SET
+    status = CASE
+      WHEN upper(trim(COALESCE(status, ''))) IN ('CANCELADO', 'CANCELADA')
+        THEN 'CANCELADO'
+      ELSE 'APROVADA'
+    END,
+    revisado_por = 'Cliente: ' || COALESCE(p_approved_by_name, v_approval.client_name, 'Cliente'),
+    revisado_em = COALESCE(p_approved_at, now()),
+    lock_version = lock_version + 1
+  WHERE id = ANY(v_ids)
+  RETURNING *;
+END;
+$$;
+
+COMMENT ON FUNCTION public.freeze_boletim_billings_atomic(
+  integer, text, text, timestamptz
+) IS 'PR5B.1-TX: congela todos os billings do approval em uma transação.';
+
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
+  integer, text, text, timestamptz
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.write_escort_billing_atomic(
@@ -630,6 +805,9 @@ GRANT EXECUTE ON FUNCTION public.write_escort_billing_atomic(
 GRANT EXECUTE ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb
+) TO service_role;
+GRANT EXECUTE ON FUNCTION public.freeze_boletim_billings_atomic(
+  integer, text, text, timestamptz
 ) TO service_role;
 
 COMMIT;

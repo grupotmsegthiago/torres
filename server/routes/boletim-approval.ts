@@ -6,7 +6,7 @@ import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim
 import { bustBalancoCaches } from "../lib/balanco-cache";
 import {
   createBoletimApprovalAtomic,
-  updateBillingLifecycleBatchAtomic,
+  freezeBoletimBillingsAtomic,
 } from "../lib/atomic-billing";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
@@ -808,43 +808,18 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket.remoteAddress || "";
 
-      const { error: updateErr } = await supabaseAdmin
-        .from("boletim_approvals")
-        .update({
-          status: "APROVADO",
-          approved_at: new Date().toISOString(),
-          approved_by_name: nome || "Cliente",
-          approved_by_ip: clientIp,
-        })
-        .eq("id", approval.id);
-
-      if (updateErr) throw updateErr;
-
       let autoEmitResult: { success: boolean; message: string; nfEmitted: boolean; paymentId?: string } | null = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
-        try {
-          await updateBillingLifecycleBatchAtomic(
-            billingIds.map(String),
-            "FREEZE_COMMERCIAL",
-            {
-            status: "APROVADA",
-            revisado_por: `Cliente: ${nome || approval.client_name}`,
-            revisado_em: new Date().toISOString(),
-            },
-            {
-              userName: nome || approval.client_name || "Cliente",
-              userRole: "cliente",
-              reason: `Aprovação comercial #${approval.id}`,
-              ipAddress: clientIp,
-            },
-          );
-          console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
-          // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
-          bustBalancoCaches();
-        } catch (billErr: any) {
-          console.error("[boletim-approval] Erro ao aprovar billings:", billErr.message);
-        }
+        await freezeBoletimBillingsAtomic(
+          Number(approval.id),
+          nome || approval.client_name || "Cliente",
+          clientIp,
+          new Date().toISOString(),
+        );
+        console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+        // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
+        bustBalancoCaches();
       }
 
       try {

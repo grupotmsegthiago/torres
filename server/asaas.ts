@@ -2463,7 +2463,10 @@ export function registerAsaasRoutes(app: Express) {
             "ASAAS_WEBHOOK",
           );
           bustBalancoCaches();
-        } catch (_e) {}
+        } catch (billingError: any) {
+          console.error("[asaas] Falha atômica ao marcar billings como PAGO:", billingError.message);
+          throw billingError;
+        }
 
         try {
           const { createAutoTransaction } = await import("./routes/_helpers");
@@ -2958,6 +2961,7 @@ export function registerAsaasRoutes(app: Express) {
           bustBalancoCaches();
         } catch (updateErr: any) {
           console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+          throw updateErr;
         }
 
         await logSystemAudit({
@@ -3115,6 +3119,7 @@ export function registerAsaasRoutes(app: Express) {
         bustBalancoCaches();
       } catch (updateErr: any) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+        throw updateErr;
       }
 
       await logSystemAudit({

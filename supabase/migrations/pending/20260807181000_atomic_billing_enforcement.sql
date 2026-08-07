@@ -42,8 +42,17 @@ BEGIN
       MESSAGE = 'PR5B1_TX_DIRECT_SNAPSHOT_INSERT_BLOCKED: use RPC atômica';
   END IF;
 
-  IF TG_OP = 'UPDATE'
-     AND OLD.billing_snapshot IS DISTINCT FROM NEW.billing_snapshot THEN
+  IF TG_OP = 'UPDATE' AND (
+    OLD.billing_snapshot IS DISTINCT FROM NEW.billing_snapshot
+    OR OLD.billing_ids IS DISTINCT FROM NEW.billing_ids
+    OR OLD.total_value IS DISTINCT FROM NEW.total_value
+    OR OLD.client_id IS DISTINCT FROM NEW.client_id
+    OR OLD.client_name IS DISTINCT FROM NEW.client_name
+    OR OLD.client_email IS DISTINCT FROM NEW.client_email
+    OR OLD.period_start IS DISTINCT FROM NEW.period_start
+    OR OLD.period_end IS DISTINCT FROM NEW.period_end
+    OR OLD.os_count IS DISTINCT FROM NEW.os_count
+  ) THEN
     RAISE EXCEPTION USING
       ERRCODE = '55000',
       MESSAGE = 'PR5B1_TX_SNAPSHOT_IMMUTABLE';
@@ -78,7 +87,10 @@ EXECUTE FUNCTION public.guard_boletim_snapshot_atomic_write();
 DROP TRIGGER IF EXISTS guard_boletim_snapshot_atomic_update
   ON public.boletim_approvals;
 CREATE TRIGGER guard_boletim_snapshot_atomic_update
-BEFORE UPDATE OF billing_snapshot ON public.boletim_approvals
+BEFORE UPDATE OF
+  billing_snapshot, billing_ids, total_value, client_id, client_name,
+  client_email, period_start, period_end, os_count
+ON public.boletim_approvals
 FOR EACH ROW
 EXECUTE FUNCTION public.guard_boletim_snapshot_atomic_write();
 

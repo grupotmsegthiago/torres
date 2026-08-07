@@ -1680,10 +1680,9 @@ import type { Express } from "express";
 
       let updateBody: any = { ...req.body };
       if (updateBody.status) {
-        const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
-        if (!VALID_BILLING_STATUSES.includes(updateBody.status)) {
-          return res.status(400).json({ message: `Status inválido: ${updateBody.status}. Valores aceitos: ${VALID_BILLING_STATUSES.join(", ")}` });
-        }
+        return res.status(400).json({
+          message: "Status de billing só pode mudar pelos fluxos explícitos de ciclo de vida.",
+        });
       }
       // §8.1 — OS recusada = faturamento ZERADO, SEMPRE. Qualquer edição de billing
       // de OS recusada é forçada a zero (CANCELADO), sobrescrevendo valores enviados.
@@ -1729,6 +1728,9 @@ import type { Express } from "express";
       delete updateBody.id;
       delete updateBody.created_at;
       delete updateBody.created_by;
+      delete updateBody.status;
+      delete updateBody.service_order_id;
+      delete updateBody.contract_id;
 
       updateBody.edit_reason = updateBody.edit_reason || `Editado via Boletim por ${req.user!.name}`;
 
@@ -1777,7 +1779,6 @@ import type { Express } from "express";
           message: "Billing congelado ou presente em snapshot comercial — exclusão bloqueada.",
         });
       }
-      await removeAutoTransaction("escort_billing", req.params.id);
       await writeEscortBillingAtomic({
         action: "DELETE_OPEN",
         billingId: existing.id,
@@ -1789,6 +1790,7 @@ import type { Express } from "express";
           ipAddress: req.ip,
         },
       });
+      await removeAutoTransaction("escort_billing", req.params.id);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1940,7 +1942,7 @@ import type { Express } from "express";
             km_value: photo.kmValue ?? photo.km_value,
           })),
           mCosts: missionCosts || [],
-          horasMissao: Number(body.horas_missao || 0),
+          horasMissao: 0,
           clientName: clientName || null,
           empName: body.vigilante_name || null,
           emp2Name: body.vigilante2_name || null,
@@ -2077,7 +2079,7 @@ import type { Express } from "express";
               km_value: photo.kmValue ?? photo.km_value,
             })),
             mCosts: missionCosts || [],
-            horasMissao: Number(existing.horas_missao || 0),
+            horasMissao: 0,
             clientName: existing.client_name || null,
             empName: existing.vigilante_name || null,
             emp2Name: existing.vigilante2_name || null,
