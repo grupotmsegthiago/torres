@@ -91,7 +91,13 @@ function installMock(state: ScenarioState) {
   const origFrom = rest.from;
   const origRpc = rest.rpc;
   rest.from = (table: string) => makeQueryBuilder(state, table);
-  rest.rpc = async (_name: string, _args: any) => ({ data: 0, error: null });
+  rest.rpc = async (name: string, args: any) => {
+    if (name === "write_escort_billing_atomic") {
+      state.inserts.push({ table: "escort_billings", values: args.p_payload });
+      return { data: [{ ...args.p_payload, id: "atomic-test", lock_version: 0 }], error: null };
+    }
+    return { data: 0, error: null };
+  };
   return () => {
     rest.from = origFrom;
     rest.rpc = origRpc;
@@ -135,7 +141,7 @@ function buildScenario(billingStatus: string, manualValues: Row): ScenarioState 
       clients: [{ id: 1, name: "Cliente Teste" }],
       employees: [{ id: 10, name: "Agente Teste" }],
       vehicles: [{ id: 100, plate: "XYZ1A23" }],
-      mission_photos: [],
+      mission_photos: [{ service_order_id: 9001, step: "km_final", km_value: 150 }],
       mission_costs: [],
     },
     updates: [],

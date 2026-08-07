@@ -11,6 +11,7 @@ import type { Express } from "express";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
+  import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -1906,7 +1907,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       if (so.missionStatus === "encerrada") {
         const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
-          .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
+          .select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
         if (existingBillError) throw existingBillError;
         const billing = existingBill?.[0];
         if (billing && await isBillingProtected(supabaseAdmin, billing)) {
@@ -1921,10 +1922,21 @@ Responda APENAS com JSON: {"km_lido": number}`;
           try { await storage.updateWeaponKit(so.kitId, { status: "em_uso" }); } catch (_e) {}
         }
 
-        const { error: deleteBillingError } = await supabaseAdmin.from("escort_billings")
-          .delete()
-          .eq("service_order_id", serviceOrderId);
-        if (deleteBillingError) throw deleteBillingError;
+        if (billing) {
+          await writeEscortBillingAtomic({
+            action: "DELETE_OPEN",
+            billingId: billing.id,
+            serviceOrderId,
+            expectedVersion: Number(billing.lock_version) || 0,
+            actor: {
+              userId: req.user!.id,
+              userName: req.user!.name,
+              userRole: req.user!.role,
+              reason: "Rollback de etapa encerrada",
+              ipAddress: req.ip,
+            },
+          });
+        }
 
         try {
           await removeAutoTransaction("service_order", String(serviceOrderId));
@@ -1997,7 +2009,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
           // Dentro da franquia (≤100km/≤3h) ou sem equipe acionada ⇒ só o acionamento.
           // Billing já congelado (aprovado/faturado/pago) NÃO recalcula — só marca CANCELADO (§8.1b).
           const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
-            .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
+            .select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
           if (existingBillError) throw existingBillError;
           const existingBilling = existingBill?.[0];
           if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
@@ -2038,11 +2050,24 @@ Responda APENAS com JSON: {"km_lido": number}`;
               placa_viatura: vehicle?.plate || null,
               data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
               created_by: user.name,
-              observacoes: `OS CANCELADA — Tabela 100 km${cb.usouTabela100 ? "" : " (fallback: contrato da OS)"} | Motivo: ${reason || "Cancelada pelo administrador"}`,
+              observacoes: `OS CANCELADA — contrato vinculado à OS | Motivo: ${reason || "Cancelada pelo administrador"}`,
             };
-            const { error: upsertError } = await supabaseAdmin.from("escort_billings")
-              .upsert(cancelPayload, { onConflict: "service_order_id" });
-            if (upsertError) throw upsertError;
+            await writeEscortBillingAtomic({
+              action: "WRITE_CANCELLED",
+              billingId: existingBilling?.id || null,
+              serviceOrderId,
+              expectedVersion: existingBilling
+                ? Number(existingBilling.lock_version) || 0
+                : null,
+              payload: cancelPayload,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: reason || "Cancelada pelo administrador",
+                ipAddress: req.ip,
+              },
+            });
 
             // Espelha o total na OS p/ o card/listagem refletir a tabela 100km (mesmo comportamento do PATCH).
             const cancelTotal = Number(cb.fatFields.fat_total) || 0;
@@ -2133,18 +2158,52 @@ Responda APENAS com JSON: {"km_lido": number}`;
       lastMissionPos.delete(serviceOrderId);
       try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) {}
 
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
       try {
         const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
-          .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
+          .select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
         if (existingBillError) throw existingBillError;
         const billing = existingBill?.[0];
         if (billing && await isBillingProtected(supabaseAdmin, billing)) {
           console.log(`[mission-refuse] OS ${so.osNumber}: billing protegido (${billing.status}) preservado`);
         } else if (billing) {
-          const { error: zeroError } = await supabaseAdmin.from("escort_billings")
-            .update(buildRecusadaZeroPayload(motivo))
-            .eq("id", billing.id);
-          if (zeroError) throw zeroError;
+          if (!so.escortContractId) {
+            await writeEscortBillingAtomic({
+              action: "DELETE_OPEN",
+              billingId: billing.id,
+              serviceOrderId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: "Recusada sem contrato oficial",
+                ipAddress: req.ip,
+              },
+            });
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_REFUSED",
+              billingId: billing.id,
+              serviceOrderId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              payload: {
+                service_order_id: serviceOrderId,
+                contract_id: so.escortContractId,
+                km_inicial: 0,
+                km_final: 0,
+                ...buildRecusadaZeroPayload(motivo),
+              },
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: motivo,
+                ipAddress: req.ip,
+              },
+            });
+          }
         }
       } catch (billingErr: any) {
         console.error(`[mission-refuse] OS ${so.osNumber}:`, billingErr.message);
@@ -2194,7 +2253,6 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       } catch (_e) {}
 
-      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       console.log(`[OS-Refuse] OS ${so.osNumber} recusada por ${adminName} — motivo: ${motivo}`);
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -2486,16 +2544,16 @@ Responda APENAS com JSON: {"km_lido": number}`;
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
         const completedDateVal = updated?.completedDate || so.completedDate;
 
-        let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-
-        if (so.escortContractId) {
-          const { data: cc, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
-          if (contractError) throw contractError;
-          if (cc?.length) contrato = cc[0];
-        } else if (so.clientId) {
-          const { data: clientContracts, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).limit(1);
-          if (contractError) throw contractError;
-          if (clientContracts?.length) contrato = clientContracts[0];
+        if (!so.escortContractId) {
+          throw new Error("OS sem escort_contract_id: correção operacional necessária.");
+        }
+        const { data: contrato, error: contractError } = await supabaseAdmin
+          .from("escort_contracts")
+          .select("*")
+          .eq("id", so.escortContractId)
+          .single();
+        if (contractError || !contrato) {
+          throw contractError || new Error("Contrato vinculado à OS não encontrado.");
         }
 
         {
@@ -2536,7 +2594,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
           });
           const { data: currentBillings, error: currentBillingsError } = await supabaseAdmin
             .from("escort_billings")
-            .select("id, status")
+            .select("id, status, lock_version")
             .eq("service_order_id", serviceOrderId)
             .limit(1);
           if (currentBillingsError) throw currentBillingsError;
@@ -2544,8 +2602,21 @@ Responda APENAS com JSON: {"km_lido": number}`;
           if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
             console.log(`[auto-billing] OS ${so.osNumber}: billing protegido (${currentBilling.status}) preservado`);
           } else {
-            await supabaseAdmin.from("escort_billings")
-              .upsert(billingPayload, { onConflict: "service_order_id" });
+            await writeEscortBillingAtomic({
+              action: "WRITE_OFFICIAL",
+              billingId: currentBilling?.id || null,
+              serviceOrderId,
+              expectedVersion: currentBilling
+                ? Number(currentBilling.lock_version) || 0
+                : null,
+              payload: billingPayload,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                ipAddress: req.ip,
+              },
+            });
             console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${billingPayload.km_inicial} km_fin=${billingPayload.km_final} fat_total=${billingPayload.fat_total}`);
           }
         }
@@ -3100,16 +3171,48 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       try {
         const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
-          .select("id, status").eq("service_order_id", osId).limit(1);
+          .select("id, status, lock_version").eq("service_order_id", osId).limit(1);
         if (existingBillError) throw existingBillError;
         const billing = existingBill?.[0];
         if (billing && await isBillingProtected(supabaseAdmin, billing)) {
           console.log(`[acceptance-refuse] OS ${osId}: billing protegido (${billing.status}) preservado`);
         } else if (billing) {
-          const { error: zeroError } = await supabaseAdmin.from("escort_billings")
-            .update(buildRecusadaZeroPayload(notes))
-            .eq("id", billing.id);
-          if (zeroError) throw zeroError;
+          if (!osCheck.escortContractId) {
+            await writeEscortBillingAtomic({
+              action: "DELETE_OPEN",
+              billingId: billing.id,
+              serviceOrderId: osId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              actor: {
+                userId,
+                userName: emp.name,
+                userRole: req.user!.role,
+                reason: "Recusada sem contrato oficial",
+                ipAddress,
+              },
+            });
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_REFUSED",
+              billingId: billing.id,
+              serviceOrderId: osId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              payload: {
+                service_order_id: osId,
+                contract_id: osCheck.escortContractId,
+                km_inicial: 0,
+                km_final: 0,
+                ...buildRecusadaZeroPayload(notes),
+              },
+              actor: {
+                userId,
+                userName: emp.name,
+                userRole: req.user!.role,
+                reason: notes,
+                ipAddress,
+              },
+            });
+          }
         }
       } catch (billingErr: any) {
         console.error(`[acceptance-refuse] OS ${osId}:`, billingErr.message);

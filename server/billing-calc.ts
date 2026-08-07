@@ -281,8 +281,57 @@ export interface ComputeBillingPayloadInput {
   nowDate?: Date;
 }
 
+export class OfficialBillingFactsError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "OfficialBillingFactsError";
+  }
+}
+
+export function assertOfficialBillingFacts(input: {
+  so: any;
+  contrato: any;
+  photos: Array<{ step: string; km_value: any }>;
+}) {
+  const { so, contrato, photos } = input;
+  if (!so?.id) {
+    throw new OfficialBillingFactsError(
+      "SERVICE_ORDER_REQUIRED",
+      "Billing oficial exige service_order_id.",
+    );
+  }
+  if (!so?.escort_contract_id) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_REQUIRED",
+      "OS sem escort_contract_id: correção operacional necessária.",
+    );
+  }
+  if (!contrato?.id || String(contrato.id) !== String(so.escort_contract_id)) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_MISMATCH",
+      "Contrato do cálculo difere do escort_contract_id persistido na OS.",
+    );
+  }
+  if (!so?.mission_started_at || !so?.completed_date) {
+    throw new OfficialBillingFactsError(
+      "TIMESTAMPS_REQUIRED",
+      "Billing oficial exige mission_started_at e completed_date reais.",
+    );
+  }
+  const kmFinal = [...photos]
+    .reverse()
+    .find((photo) => photo.step === "km_final");
+  if (!kmFinal || Number(kmFinal.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_FINAL_REQUIRED",
+      "Billing oficial exige foto factual de KM final.",
+    );
+  }
+}
+
 export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const { so, contrato, photos, mCosts, horasMissao, clientName, empName, emp2Name, vehPlate } = input;
+  assertOfficialBillingFacts({ so, contrato, photos });
   const now = input.nowDate ?? new Date();
   const n = (v: any) => Number(v) || 0;
   const r = (v: number) => Math.round(v * 100) / 100;
@@ -300,7 +349,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const kmFinalVal = n(kmFinalPhoto?.km_value);
   const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;
 
-  const missionEndDate = so.completed_date ? new Date(so.completed_date) : now;
+  const missionEndDate = new Date(so.completed_date);
   const scheduledDate = so.scheduled_date ? new Date(so.scheduled_date) : null;
   const missionStartDate = so.mission_started_at ? new Date(so.mission_started_at) : null;
 
@@ -320,7 +369,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
     horario_inicio: startTime,
     horario_fim: endTime,
     inicio_ts: so.mission_started_at || null,
-    fim_ts: so.completed_date || now.toISOString(),
+    fim_ts: so.completed_date,
     scheduled_date: so.scheduled_date || null,
     despesas_pedagio,
     despesas_combustivel,

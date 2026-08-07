@@ -3,9 +3,10 @@ import nodemailer from "nodemailer";
 import { log } from "./lib/logger";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
-import { getHorasElapsedFromDB, computeBillingPayloadForOs, resolveContractForOs, shouldSkipBillingHours, DEFAULT_BILLING_CONTRACT } from "./billing-calc";
+import { computeBillingPayloadForOs } from "./billing-calc";
 import { computeCanceladaBilling } from "./lib/cancelada-billing";
 import { buildRecusadaZeroPayload } from "./lib/recusada-guard";
+import { writeEscortBillingAtomic } from "./lib/atomic-billing";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { shouldRunBackgroundJobs } from "./platform";
 import { runCronBucket, type CronBucket } from "./cron-buckets";
@@ -900,13 +901,9 @@ export async function executeBillingCron() {
   log(`CRON Billing: ${billingCandidates.length} concluídas sem billing processadas pelo motor canônico; ${activeOrders.length} ativas não materializadas`, "cron");
 
   const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
-  const contractMap = new Map<number, any>();
-  const clientContractMap = new Map<number, any>();
+  const contractMap = new Map<string, any>();
   for (const c of (allContracts || [])) {
-    contractMap.set(c.id, c);
-    if (c.status === "Ativo" && c.client_id) {
-      clientContractMap.set(c.client_id, c);
-    }
+    contractMap.set(String(c.id), c);
   }
 
   const candidateIds = billingCandidates.map((so: any) => so.id);
@@ -972,11 +969,6 @@ export async function executeBillingCron() {
         return;
       }
 
-      const contrato = resolveContractForOs(so, contractMap, clientContractMap, { ...DEFAULT_BILLING_CONTRACT });
-
-      const skipBillingHoursCron = shouldSkipBillingHours(so);
-      const horasMissao = skipBillingHoursCron ? 0 : await getHorasElapsedFromDB(so.id);
-
       const photos = photosMap.get(so.id) || [];
       const mCosts = mCostsMap.get(so.id) || [];
       const cliName = so.client_id ? clientNameMap.get(so.client_id) || null : null;
@@ -984,12 +976,18 @@ export async function executeBillingCron() {
       const emp2Name = so.assigned_employee_2_id ? empNameMap.get(so.assigned_employee_2_id) || null : null;
       const vehPlate = so.vehicle_id ? vehPlateMap.get(so.vehicle_id) || null : null;
 
-      let billingPayload: any = computeBillingPayloadForOs({
-        so, contrato, photos, mCosts, horasMissao,
-        clientName: cliName, empName, emp2Name, vehPlate,
-      });
+      const contrato = so.escort_contract_id
+        ? contractMap.get(String(so.escort_contract_id))
+        : null;
+      if (!contrato) {
+        log(`CRON Billing: OS ${so.os_number} sem escort_contract_id válido — correção operacional necessária`, "cron");
+        return;
+      }
 
+      let action: "WRITE_OFFICIAL" | "WRITE_CANCELLED" | "WRITE_REFUSED";
+      let billingPayload: any;
       if (so.status === "cancelada") {
+        action = "WRITE_CANCELLED";
         const cancelada = await computeCanceladaBilling({
           serviceOrderId: so.id,
           clientId: so.client_id,
@@ -1004,8 +1002,10 @@ export async function executeBillingCron() {
           return;
         }
         billingPayload = {
-          ...billingPayload,
-          contract_id: cancelada.contrato?.id || billingPayload.contract_id,
+          service_order_id: so.id,
+          client_id: so.client_id,
+          client_name: cliName || "--",
+          contract_id: cancelada.contrato.id,
           ...cancelada.fatFields,
           horario_agendado: cancelada.horarios.horario_agendado,
           horario_inicio: cancelada.horarios.horario_inicio,
@@ -1014,22 +1014,41 @@ export async function executeBillingCron() {
           created_by: "CRON",
         };
       } else if (so.status === "recusada") {
+        action = "WRITE_REFUSED";
         billingPayload = {
-          ...billingPayload,
+          service_order_id: so.id,
+          client_id: so.client_id,
+          client_name: cliName || "--",
+          contract_id: contrato.id,
+          km_inicial: 0,
+          km_final: 0,
           ...buildRecusadaZeroPayload(null),
           created_by: "CRON",
         };
+      } else {
+        action = "WRITE_OFFICIAL";
+        billingPayload = computeBillingPayloadForOs({
+          so,
+          contrato,
+          photos,
+          mCosts,
+          horasMissao: 0,
+          clientName: cliName,
+          empName,
+          emp2Name,
+          vehPlate,
+        });
       }
 
-      // INSERT intencional: o cron só cria billing inexistente. A UNIQUE de
-      // service_order_id torna qualquer corrida concorrente fail-closed, sem
-      // sobrescrever billing aberto/frozen criado por outro fluxo.
-      const { error: insertError } = await supabaseAdmin
-        .from("escort_billings")
-        .insert(billingPayload);
-      if (insertError) throw insertError;
+      await writeEscortBillingAtomic({
+        action,
+        serviceOrderId: so.id,
+        expectedVersion: null,
+        payload: billingPayload,
+        actor: { userName: "CRON", userRole: "system" },
+      });
 
-      log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
+      log(`CRON Billing: OS ${so.os_number} recalculada - ${n(billingPayload.horas_missao)}h, ${n(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
     } catch (err: any) {
       log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
     }

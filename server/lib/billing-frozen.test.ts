@@ -9,27 +9,13 @@ import {
   isBillingStatusProtected,
 } from "./billing-frozen";
 
-function snapshotMock(rows: any[] = [], error: any = null) {
+function snapshotMock(found = false, error: any = null) {
   const calls: any[] = [];
-  const builder: any = {
-    select(columns: string) {
-      calls.push(["select", columns]);
-      return builder;
-    },
-    contains(column: string, value: any) {
-      calls.push(["contains", column, value]);
-      return builder;
-    },
-    limit(value: number) {
-      calls.push(["limit", value]);
-      return Promise.resolve({ data: rows, error });
-    },
-  };
   return {
     sb: {
-      from(table: string) {
-        calls.push(["from", table]);
-        return builder;
+      rpc(name: string, args: any) {
+        calls.push(["rpc", name, args]);
+        return Promise.resolve({ data: found, error });
       },
     },
     calls,
@@ -61,21 +47,25 @@ describe("billing frozen — contrato normativo", () => {
   });
 
   test("snapshot comercial protege billing aberto", async () => {
-    const mock = snapshotMock([{ id: 90 }]);
+    const mock = snapshotMock(true);
     assert.equal(
-      await isBillingProtected(mock.sb, { id: "billing-1", status: "A_VERIFICAR" }),
+      await isBillingProtected(mock.sb, {
+        id: "billing-1",
+        status: "A_VERIFICAR",
+        lock_version: 0,
+      }),
       true,
     );
     assert.deepEqual(mock.calls, [
-      ["from", "boletim_approvals"],
-      ["select", "id"],
-      ["contains", "billing_snapshot", [{ billing_id: "billing-1" }]],
-      ["limit", 1],
+      ["rpc", "is_escort_billing_snapshotted", {
+        p_billing_id: "billing-1",
+        p_lock_version: 0,
+      }],
     ]);
   });
 
   test("billing aberto sem snapshot pode ser recalculado", async () => {
-    const mock = snapshotMock([]);
+    const mock = snapshotMock(false);
     assert.equal(
       await isBillingProtected(mock.sb, { id: "billing-2", status: "PENDENTE" }),
       false,
@@ -83,7 +73,7 @@ describe("billing frozen — contrato normativo", () => {
   });
 
   test("status frozen não consulta snapshot", async () => {
-    const mock = snapshotMock([]);
+    const mock = snapshotMock(false);
     assert.equal(
       await isBillingProtected(mock.sb, { id: "billing-3", status: "APROVADA" }),
       true,
@@ -92,7 +82,7 @@ describe("billing frozen — contrato normativo", () => {
   });
 
   test("billing aberto sem ID falha fechado", async () => {
-    const mock = snapshotMock([]);
+    const mock = snapshotMock(false);
     await assert.rejects(
       isBillingProtected(mock.sb, { status: "A_VERIFICAR" }),
       /ID do billing é obrigatório/,
@@ -101,7 +91,7 @@ describe("billing frozen — contrato normativo", () => {
   });
 
   test("falha de catálogo é fail-closed via erro", async () => {
-    const mock = snapshotMock([], { message: "schema unavailable" });
+    const mock = snapshotMock(false, { message: "schema unavailable" });
     await assert.rejects(
       billingHasCommercialSnapshot(mock.sb, "billing-4"),
       /Falha ao verificar snapshot comercial/,

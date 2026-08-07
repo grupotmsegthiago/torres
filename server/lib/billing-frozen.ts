@@ -30,28 +30,36 @@ export function isBillingStatusProtected(status: unknown): boolean {
 export async function billingHasCommercialSnapshot(
   sb: any,
   billingId: string | number | null | undefined,
+  lockVersion: number = 0,
 ): Promise<boolean> {
   if (billingId == null || billingId === "") {
     throw new Error("ID do billing é obrigatório para verificar snapshot comercial");
   }
 
-  const { data, error } = await sb
-    .from("boletim_approvals")
-    .select("id")
-    .contains("billing_snapshot", [{ billing_id: String(billingId) }])
-    .limit(1);
+  const { data, error } = await sb.rpc("is_escort_billing_snapshotted", {
+    p_billing_id: String(billingId),
+    p_lock_version: Number(lockVersion) || 0,
+  });
 
   if (error) {
     throw new Error(`Falha ao verificar snapshot comercial: ${error.message}`);
   }
-  return Array.isArray(data) && data.length > 0;
+  return data === true;
 }
 
 export async function isBillingProtected(
   sb: any,
-  billing: { id?: string | number | null; status?: unknown } | null | undefined,
+  billing: {
+    id?: string | number | null;
+    status?: unknown;
+    lock_version?: number | null;
+  } | null | undefined,
 ): Promise<boolean> {
   if (!billing) return false;
   if (isBillingStatusProtected(billing.status)) return true;
-  return billingHasCommercialSnapshot(sb, billing.id);
+  return billingHasCommercialSnapshot(
+    sb,
+    billing.id,
+    Number(billing.lock_version) || 0,
+  );
 }

@@ -148,14 +148,15 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   calcularEscolta: {
     "server/billing-calc.ts": 1,
     "server/lib/cancelada-billing.ts": 1,
-    "server/routes/escort.ts": 5,
+    "server/routes/escort.ts": 2,
     "server/routes/operational.ts": 1,
-    "server/routes/service-orders.ts": 6,
+    "server/routes/service-orders.ts": 1,
   },
   computeBillingPayloadForOs: {
     "server/cron.ts": 1,
     "server/routes/escort.ts": 2,
     "server/routes/mission.ts": 1,
+    "server/routes/service-orders.ts": 4,
   },
   calcularFaturamentoLive: {
     "server/financial-snapshot.ts": 1,
@@ -164,7 +165,7 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   },
   computeCanceladaBilling: {
     "server/cron.ts": 1,
-    "server/routes/escort.ts": 3,
+    "server/routes/escort.ts": 2,
     "server/routes/mission.ts": 1,
     "server/routes/service-orders.ts": 2,
   },
@@ -219,13 +220,13 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=14, builder=4, live=4, cancelada=7", () => {
+  test("totais de call-sites: canônico=6, builder=8, live=4, cancelada=6", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
-    assert.equal(total(countProductionCalls("calcularEscolta")), 14);
-    assert.equal(total(countProductionCalls("computeBillingPayloadForOs")), 4);
+    assert.equal(total(countProductionCalls("calcularEscolta")), 6);
+    assert.equal(total(countProductionCalls("computeBillingPayloadForOs")), 8);
     assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
-    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 7);
+    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 6);
   });
 });
 
@@ -283,6 +284,7 @@ describe("PR5B.1 — registro de golden fixtures live", () => {
 
 describe("PR5B.1 — contratos puros já normativos", () => {
   const contract = {
+    id: 1,
     valor_acionamento: 500,
     franquia_km: 100,
     franquia_horas: 3,
@@ -352,7 +354,10 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     const currentPayload = computeBillingPayloadForOs({
       so,
       contrato: shadowContract,
-      photos: [],
+      photos: [
+        { step: "km_chegada", km_value: 1 },
+        { step: "km_final", km_value: 1 },
+      ],
       mCosts: [],
       horasMissao: 3 + 40 / 60,
       clientName: null,
@@ -452,10 +457,11 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       'app.post("/api/boletim-medicao/calcular/:osId"',
       'app.patch("/api/boletim-medicao/os/:id/diretoria-override"',
     );
-    assert.match(manual, /calcularEscolta\s*\(/);
+    assert.match(manual, /computeBillingPayloadForOs\s*\(/);
     assert.match(manual, /computeCanceladaBilling\s*\(/);
     assert.match(manual, /buildRecusadaZeroPayload\s*\(/);
     assert.match(manual, /isBillingProtected\s*\(/);
+    assert.match(manual, /writeEscortBillingAtomic\s*\(/);
     assert.doesNotMatch(manual, /calcularFaturamentoLive\s*\(/);
   });
 
@@ -501,12 +507,12 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       'app.delete("/api/escort/billings/:id"',
       'app.post("/api/escort/billings/submit-os"',
     );
-    assert.match(put, /select\("id, status, service_order_id, observacoes"\)/);
+    assert.match(put, /select\("id, status, service_order_id, contract_id, observacoes, lock_version"\)/);
     assert.match(put, /isBillingProtected\s*\(/);
     assert.match(patch, /isBillingProtected\s*\(/);
     assert.match(remove, /isBillingProtected\s*\(/);
     assert.ok(
-      remove.indexOf("isBillingProtected") < remove.indexOf("removeAutoTransaction"),
+      remove.indexOf("isBillingProtected") < remove.indexOf("writeEscortBillingAtomic"),
       "DELETE deve proteger antes de remover ledger/billing",
     );
     assert.match(put, /alteração genérica bloqueada/);
@@ -543,7 +549,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       'app.post("/api/service-orders/:id/send-report-email"',
     );
     assert.match(rollback, /isBillingProtected\s*\(/);
-    assert.ok(rollback.indexOf("isBillingProtected") < rollback.indexOf(".delete()"));
+    assert.ok(rollback.indexOf("isBillingProtected") < rollback.indexOf("writeEscortBillingAtomic"));
     assert.match(removeOs, /isBillingProtected\s*\(/);
     assert.ok(removeOs.indexOf("isBillingProtected") < removeOs.indexOf("deleteServiceOrder"));
   });
@@ -552,7 +558,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     const escort = readFileSync(path.join(root, "server/routes/escort.ts"), "utf8");
     const mission = readFileSync(path.join(root, "server/routes/mission.ts"), "utf8");
     assert.match(escort, /currentBillingsError\) throw currentBillingsError/);
-    assert.match(escort, /Falha ao recalcular billing/);
+    assert.match(escort, /salvar não aceita fallback de fatos/);
     assert.match(mission, /currentBillingsError\) throw currentBillingsError/);
     assert.doesNotMatch(mission, /Auto-billing creation failed \(non-blocking\)/);
   });
@@ -597,7 +603,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       'app.get("/api/service-orders/:id/pdf"',
     );
     assert.doesNotMatch(patchRoute, /getMissionCostsByOS\(osId\)/);
-    assert.match(patchRoute, /getMissionCostsByOS\(data\.id\)/);
+    assert.match(patchRoute, /buildOfficialBillingPayloadForServiceOrder\(data/);
     assert.match(patchRoute, /OS atualizada, mas o billing não pôde ser recalculado/);
   });
 });

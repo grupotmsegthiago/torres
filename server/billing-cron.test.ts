@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   computeBillingPayloadForOs,
+  assertOfficialBillingFacts,
   resolveContractForOs,
   shouldSkipBillingHours,
   DEFAULT_BILLING_CONTRACT,
@@ -411,5 +412,55 @@ test("computeBillingPayloadForOs: snapshot completo do payload de uma missão t�
 
   for (const [k, v] of Object.entries(expected)) {
     assert.deepEqual((p as any)[k], v, `campo ${k} divergiu: esperado ${JSON.stringify(v)}, recebido ${JSON.stringify((p as any)[k])}`);
+  }
+});
+
+test("fatos oficiais: contrato persistido é obrigatório e deve coincidir", () => {
+  const so = baseOs({ escort_contract_id: null });
+  assert.throws(
+    () => assertOfficialBillingFacts({
+      so,
+      contrato: CONTRATO_ACIONAMENTO,
+      photos: [{ step: "km_final", km_value: 100 }],
+    }),
+    /escort_contract_id/,
+  );
+  assert.throws(
+    () => assertOfficialBillingFacts({
+      so: baseOs(),
+      contrato: { ...CONTRATO_ACIONAMENTO, id: 999 },
+      photos: [{ step: "km_final", km_value: 100 }],
+    }),
+    /difere do escort_contract_id/,
+  );
+});
+
+test("fatos oficiais: timestamps completos são obrigatórios", () => {
+  for (const field of ["mission_started_at", "completed_date"]) {
+    assert.throws(
+      () => assertOfficialBillingFacts({
+        so: baseOs({ [field]: null }),
+        contrato: CONTRATO_ACIONAMENTO,
+        photos: [{ step: "km_final", km_value: 100 }],
+      }),
+      /mission_started_at e completed_date/,
+    );
+  }
+});
+
+test("fatos oficiais: KM final factual positivo é obrigatório", () => {
+  for (const photos of [
+    [],
+    [{ step: "km_final", km_value: 0 }],
+    [{ step: "km_chegada", km_value: 100 }],
+  ]) {
+    assert.throws(
+      () => assertOfficialBillingFacts({
+        so: baseOs(),
+        contrato: CONTRATO_ACIONAMENTO,
+        photos,
+      }),
+      /KM final/,
+    );
   }
 });
