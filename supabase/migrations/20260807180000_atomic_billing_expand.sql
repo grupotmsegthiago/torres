@@ -287,17 +287,20 @@ BEGIN
          OR EXISTS (
            SELECT 1
            FROM jsonb_each_text(v_payload) AS component(key, value)
-           WHERE (
-             key LIKE 'fat_%'
-             OR key LIKE 'pag_%'
-             OR key LIKE 'desp_%'
-             OR key LIKE 'despesas_%'
-             OR key IN (
-               'receitas_os', 'resultado_bruto', 'resultado_liquido',
-               'margem_percentual', 'valor_franquia', 'valor_km_extra'
+           WHERE CASE
+             WHEN (
+               key LIKE 'fat_%'
+               OR key LIKE 'pag_%'
+               OR key LIKE 'desp_%'
+               OR key LIKE 'despesas_%'
+               OR key IN (
+                 'receitas_os', 'resultado_bruto', 'resultado_liquido',
+                 'margem_percentual', 'valor_franquia', 'valor_km_extra'
+               )
              )
-           )
-           AND COALESCE(NULLIF(value, '')::numeric, 0) <> 0
+             THEN COALESCE(NULLIF(value, '')::numeric, 0) <> 0
+             ELSE false
+           END
          ) THEN
         RAISE EXCEPTION USING
           ERRCODE = '23514',
