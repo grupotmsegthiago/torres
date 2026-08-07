@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRecusadaZeroPayload } from "./recusada-guard";
+import { buildRecusadaZeroPayload, osIsRecusada } from "./recusada-guard";
 
 test("§8.1: zera TODOS os campos fat_* e marca CANCELADO", () => {
   const p = buildRecusadaZeroPayload();
@@ -67,4 +67,25 @@ test("§8.1: spread do zero payload sobre billing calculado anula todo fat_* (pa
   assert.equal(final.desp_total, 0);
   assert.equal(final.receitas_os, 0);
   assert.equal(final.km_total, 246);
+});
+
+test("§8.1: erro ao consultar status da OS falha fechado", async () => {
+  const error = new Error("status indisponível");
+  const sb = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error }),
+        }),
+      }),
+    }),
+  };
+  await assert.rejects(osIsRecusada(sb, 35), /status indisponível/);
+});
+
+test("§8.1: billing avulso sem service_order_id não consulta OS", async () => {
+  let queried = false;
+  const sb = { from: () => { queried = true; } };
+  assert.equal(await osIsRecusada(sb, null), false);
+  assert.equal(queried, false);
 });

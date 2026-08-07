@@ -1630,7 +1630,8 @@ import type { Express } from "express";
       let clientId = body.client_id;
       let clientName = body.client_name;
       if (!clientId && body.route_id) {
-        const { data: route } = await supabaseAdmin.from("escort_routes").select("client_id, client_name").eq("id", body.route_id).single();
+        const { data: route, error: routeError } = await supabaseAdmin.from("escort_routes").select("client_id, client_name").eq("id", body.route_id).single();
+        if (routeError) throw routeError;
         if (route?.client_id) { clientId = route.client_id; clientName = clientName || route.client_name; }
       }
 
@@ -1856,7 +1857,8 @@ import type { Express } from "express";
 
       let contrato: any = null;
       if (body.contract_id) {
-        const { data } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", body.contract_id).single();
+        const { data, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", body.contract_id).single();
+        if (contractError) throw contractError;
         contrato = data;
       }
       if (!contrato) {
@@ -1867,10 +1869,11 @@ import type { Express } from "express";
       let so_ts_inicio: string | null = null, so_ts_fim: string | null = null, so_scheduled: string | null = null;
       let linkedSo: any = null;
       if (body.service_order_id) {
-        const { data: soRow } = await supabaseAdmin
+        const { data: soRow, error: soRowError } = await supabaseAdmin
           .from("service_orders")
           .select("id, os_number, status, client_id, escort_contract_id, assigned_employee_id, assigned_employee_2_id, vehicle_id, origin, destination, escorted_vehicle_plate, escorted_driver_name, mission_started_at, completed_date, scheduled_date, step_logs")
           .eq("id", body.service_order_id).maybeSingle();
+        if (soRowError) throw soRowError;
         if (soRow) {
           linkedSo = soRow;
           so_ts_inicio = soRow.mission_started_at;
@@ -1927,13 +1930,23 @@ import type { Express } from "express";
       }
 
       if (linkedSo) {
-        if (linkedSo.escort_contract_id && linkedSo.escort_contract_id !== body.contract_id) {
-          const { data: linkedContract } = await supabaseAdmin
+        const linkedContractId = linkedSo.escort_contract_id || body.contract_id;
+        if (linkedContractId) {
+          const { data: linkedContract, error: linkedContractError } = await supabaseAdmin
             .from("escort_contracts")
             .select("*")
-            .eq("id", linkedSo.escort_contract_id)
+            .eq("id", linkedContractId)
             .single();
+          if (linkedContractError) throw linkedContractError;
           if (linkedContract) contrato = linkedContract;
+        } else if (linkedSo.client_id) {
+          const { data: clientContracts, error: clientContractError } = await supabaseAdmin
+            .from("escort_contracts")
+            .select("*")
+            .eq("client_id", linkedSo.client_id)
+            .limit(1);
+          if (clientContractError) throw clientContractError;
+          if (clientContracts?.[0]) contrato = clientContracts[0];
         }
         const [photos, missionCosts] = await Promise.all([
           storage.getMissionPhotosByOS(body.service_order_id),
@@ -2345,6 +2358,11 @@ import type { Express } from "express";
 
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — revisão bloqueada.",
+        });
+      }
       if (acao === "APROVADA" && billing.status === "APROVADA") return res.json(billing);
       if (billing.status !== "A_VERIFICAR") return res.status(400).json({ message: "Somente OS com status 'A Verificar' podem ser revisadas" });
 
@@ -2353,7 +2371,11 @@ import type { Express } from "express";
         revisado_por: user.name,
         revisado_em: new Date().toISOString(),
       };
-      if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
+      if (acao === "REJEITADA") {
+        Object.assign(updateData, buildRecusadaZeroPayload(motivo_rejeicao, billing.observacoes));
+        updateData.status = "REJEITADA";
+        if (motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
+      }
 
       if (acao === "APROVADA") {
         // §8.1 — OS recusada nunca pode ser aprovada/faturada (faturamento = R$ 0,00
@@ -2361,9 +2383,10 @@ import type { Express } from "express";
         // além de marcar a OS como concluída (bug TOR-0255). Bloqueia antes de qualquer
         // recálculo. Para cobrar, é preciso reabrir a OS (status concluída) primeiro.
         if (billing.service_order_id) {
-          const { data: soRow } = await supabaseAdmin
+          const { data: soRow, error: soRowError } = await supabaseAdmin
             .from("service_orders").select("status")
             .eq("id", billing.service_order_id).maybeSingle();
+          if (soRowError) throw soRowError;
           if (soRow?.status === "recusada") {
             return res.status(400).json({ message: "OS recusada não pode ser aprovada — o faturamento é sempre R$ 0,00. Reabra a OS (status concluída) antes de aprovar o boletim." });
           }
@@ -2374,16 +2397,18 @@ import type { Express } from "express";
         updateData.boletim_gerado = true;
 
         if (billing.contract_id) {
-          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
+          const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
+          if (contractError) throw contractError;
           if (contrato) {
             try {
               // Busca timestamps reais da OS pra HE multi-dia
               let ap_ts_ini: string | null = null, ap_ts_fim: string | null = null, ap_sch: string | null = null;
               if (billing.service_order_id) {
-                const { data: soRow } = await supabaseAdmin
+                const { data: soRow, error: soRowError } = await supabaseAdmin
                   .from("service_orders")
                   .select("mission_started_at, completed_date, scheduled_date")
                   .eq("id", billing.service_order_id).maybeSingle();
+                if (soRowError) throw soRowError;
                 if (soRow) { ap_ts_ini = soRow.mission_started_at; ap_ts_fim = soRow.completed_date; ap_sch = soRow.scheduled_date; }
               }
               const resultado = calcularEscolta({
@@ -2476,7 +2501,16 @@ import type { Express } from "express";
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(billing.service_order_id));
         if (billing.service_order_id) {
-          await supabaseAdmin.from("service_orders").update({ status: "recusada", mission_status: "encerrada" }).eq("id", billing.service_order_id);
+          const { error: refuseMirrorError } = await supabaseAdmin.from("service_orders").update({
+            status: "recusada",
+            mission_status: "encerrada",
+            fat_calculado: 0,
+            custo_total_alocado: 0,
+            lucro_calculado: 0,
+            margem_calculada: 0,
+            valor_estimado: 0,
+          }).eq("id", billing.service_order_id);
+          if (refuseMirrorError) throw refuseMirrorError;
         }
         await logSystemAudit({
           userId: user.id, userName: user.name, userRole: user.role,
@@ -2564,6 +2598,11 @@ import type { Express } from "express";
       const user = req.user!;
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id,status,fat_total,client_name,service_order_id").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — zeragem bloqueada.",
+        });
+      }
       const st = String(billing.status || "").toUpperCase();
       if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
         return res.status(400).json({ message: "Não é possível zerar fat_total de OS já faturada/paga. Libere o refaturamento primeiro." });

@@ -557,6 +557,23 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     assert.doesNotMatch(mission, /Auto-billing creation failed \(non-blocking\)/);
   });
 
+  test("revisão e reativação não contornam snapshot nem deixam resíduos", () => {
+    const review = sourceSection(
+      "server/routes/escort.ts",
+      'app.post("/api/escort/billings/:id/revisar"',
+      'app.post("/api/escort/billings/:id/reabrir"',
+    );
+    const servicePatch = sourceSection(
+      "server/routes/service-orders.ts",
+      'app.patch("/api/service-orders/:id"',
+      'app.delete("/api/service-orders/:id"',
+    );
+    assert.match(review, /isBillingProtected\s*\(/);
+    assert.match(review, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(servicePatch, /billingHasCommercialSnapshot\s*\(/);
+    assert.match(servicePatch, /REATIVAR_OS_CANCELADA/);
+  });
+
   test("writers oficiais não usam pedágio estimado ou rota como fato financeiro", () => {
     const manual = sourceSection(
       "server/routes/service-orders.ts",

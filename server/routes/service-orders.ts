@@ -8,7 +8,7 @@ import type { Express } from "express";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
-  import { isBillingProtected } from "../lib/billing-frozen";
+  import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { logSystemAudit } from "../audit";
@@ -346,7 +346,7 @@ import type { Express } from "express";
       const kmSaidaPhoto = [...photos].reverse().find((p: any) => p.step === "km_saida");
       const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
       const kmFinalPhoto = [...photos].reverse().find((p: any) => p.step === "km_final");
-      const kmInicial = kmChegadaPhoto?.kmValue || 0;
+      const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
       const kmFinal = kmFinalPhoto?.kmValue || 0;
 
       const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -1296,16 +1296,44 @@ import type { Express } from "express";
       (parsed.data as any).custos_congelados_em = null;
       (parsed.data as any).custos_congelados_por = null;
       (parsed.data as any).cancellationReason = null;
-      // Reseta o billing CANCELADO para permitir recálculo (status volta para A_VERIFICAR e limpa observação de cancelamento)
       try {
-        await supabaseAdmin.from("escort_billings")
-          .update({ status: "A_VERIFICAR", observacoes: null })
+        const { data: cancelledBillings, error: cancelledBillingError } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, status")
           .eq("service_order_id", Number(req.params.id))
-          .eq("status", "CANCELADO");
+          .eq("status", "CANCELADO")
+          .limit(1);
+        if (cancelledBillingError) throw cancelledBillingError;
+        const cancelledBilling = cancelledBillings?.[0];
+        if (cancelledBilling) {
+          if (await billingHasCommercialSnapshot(supabaseAdmin, cancelledBilling.id)) {
+            return res.status(409).json({
+              message: "Reativação bloqueada: billing presente em snapshot comercial.",
+            });
+          }
+          const { error: reactivationError } = await supabaseAdmin.from("escort_billings")
+            .update({ status: "A_VERIFICAR", observacoes: null })
+            .eq("id", cancelledBilling.id);
+          if (reactivationError) throw reactivationError;
+          await logSystemAudit({
+            userId: req.user!.id,
+            userName: req.user!.name,
+            userRole: req.user!.role,
+            action: "REATIVAR_OS_CANCELADA",
+            targetId: String(cancelledBilling.id),
+            targetType: "escort_billing",
+            details: `OS #${req.params.id}: billing CANCELADO reaberto para A_VERIFICAR.`,
+            ipAddress: req.ip,
+          });
+        }
         bustBalancoCaches();
         console.log(`[so-patch-reactivate] OS ${req.params.id}: billing CANCELADO → A_VERIFICAR (recusada/cancelada → concluída)`);
       } catch (e: any) {
         console.error(`[so-patch-reactivate] erro ao resetar billing:`, e.message);
+        return res.status(500).json({
+          message: "Reativação não concluída: falha ao proteger/reabrir billing.",
+          detail: e.message,
+        });
       }
     }
 

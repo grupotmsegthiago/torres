@@ -2484,7 +2484,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
     if (nextStep === "encerrada") {
       try {
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
-        const completedDateVal = updated.completedDate || so.completedDate;
+        const completedDateVal = updated?.completedDate || so.completedDate;
 
         let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
