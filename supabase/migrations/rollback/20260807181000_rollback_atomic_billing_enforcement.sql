@@ -46,37 +46,4 @@ BEFORE UPDATE ON public.escort_billings
 FOR EACH ROW
 EXECUTE FUNCTION public.validate_escort_billing_approval();
 
-CREATE OR REPLACE FUNCTION public.validate_service_order_approval()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF NEW.status = 'aprovada' AND (OLD.status IS DISTINCT FROM 'aprovada') THEN
-    IF NEW.snapshot_data IS NULL OR NEW.snapshot_data = '{}'::jsonb THEN
-      RAISE EXCEPTION 'Não é possível aprovar sem snapshot de dados financeiros (snapshot_data vazio)';
-    END IF;
-
-    IF NEW.revenue_value IS NULL OR NEW.cost_value IS NULL THEN
-      RAISE EXCEPTION 'Não é possível aprovar sem valores financeiros (revenue_value e cost_value são obrigatórios)';
-    END IF;
-
-    IF NEW.revenue_value <= 0 AND (NEW.edit_reason IS NULL OR trim(NEW.edit_reason) = '') THEN
-      RAISE EXCEPTION 'Receita zero ou negativa exige justificativa (edit_reason obrigatório)';
-    END IF;
-
-    IF NEW.approved_at IS NULL THEN
-      NEW.approved_at = now();
-    END IF;
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-
-CREATE TRIGGER trg_validate_service_order_approval
-BEFORE UPDATE ON public.service_orders
-FOR EACH ROW
-EXECUTE FUNCTION public.validate_service_order_approval();
-
 COMMIT;

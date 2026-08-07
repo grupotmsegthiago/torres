@@ -69,6 +69,8 @@ const setupSql = `
   CREATE TABLE financial_transactions (
     id serial PRIMARY KEY, origin_type text, origin_id text
   );
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
   CREATE FUNCTION validate_escort_billing_approval() RETURNS trigger
     LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
   CREATE TRIGGER trg_validate_escort_billing_approval
@@ -179,7 +181,13 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           'service_role',
           'public.transition_invoice_billings_atomic(integer,text,timestamp with time zone,text)',
           'EXECUTE'
-        ) AS service_can_transition_invoice
+        ) AS service_can_transition_invoice,
+        (
+          SELECT role.rolname
+          FROM pg_proc AS proc
+          JOIN pg_roles AS role ON role.oid = proc.proowner
+          WHERE proc.oid = 'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)'::regprocedure
+        ) AS rpc_owner
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -189,6 +197,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       anon_can_freeze: false,
       authenticated_can_invoice: false,
       service_can_transition_invoice: true,
+      rpc_owner: "torres_billing_rpc_owner",
     });
   });
 
@@ -632,6 +641,16 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       admin.query("UPDATE escort_billings SET fat_total=999 WHERE id=$1", [billing.id]),
       /PR5B1_TX_DIRECT_BILLING_DML_BLOCKED/,
     );
+    const direct = await client();
+    await direct.query("BEGIN");
+    await direct.query("SET LOCAL ROLE service_role");
+    await direct.query("SELECT set_config('torres.atomic_billing_write','on',true)");
+    await assert.rejects(
+      direct.query("UPDATE escort_billings SET fat_total=1000 WHERE id=$1", [billing.id]),
+      /PR5B1_TX_DIRECT_BILLING_DML_BLOCKED/,
+    );
+    await direct.query("ROLLBACK");
+    await direct.end();
     await assert.rejects(
       admin.query(
         `SELECT * FROM write_escort_billing_atomic(

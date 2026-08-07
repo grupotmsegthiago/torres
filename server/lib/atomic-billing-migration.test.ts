@@ -37,6 +37,9 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(enforcement, /BEFORE INSERT OR UPDATE OR DELETE ON public\.escort_billings/);
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
+  assert.match(expand, /CREATE ROLE torres_billing_rpc_owner/);
+  assert.match(enforcement, /current_user <> 'torres_billing_rpc_owner'/);
+  assert.doesNotMatch(expand + enforcement, /set_config\('torres\.atomic_/);
 });
 
 test("migration TX não duplica motor financeiro em SQL", () => {
@@ -45,12 +48,12 @@ test("migration TX não duplica motor financeiro em SQL", () => {
   }
 });
 
-test("objetos live-only legados são removidos e rollback os restaura", () => {
+test("legado de billing é substituído e trigger de service_orders é preservado", () => {
   assert.match(enforcement, /DROP TRIGGER IF EXISTS trg_validate_escort_billing_approval/);
   assert.match(enforcement, /DROP FUNCTION IF EXISTS public\.validate_escort_billing_approval/);
-  assert.match(enforcement, /DROP TRIGGER IF EXISTS trg_validate_service_order_approval/);
+  assert.doesNotMatch(enforcement, /DROP TRIGGER IF EXISTS trg_validate_service_order_approval/);
   assert.match(rollbackEnforcement, /CREATE TRIGGER trg_validate_escort_billing_approval/);
-  assert.match(rollbackEnforcement, /CREATE TRIGGER trg_validate_service_order_approval/);
+  assert.doesNotMatch(rollbackEnforcement, /CREATE TRIGGER trg_validate_service_order_approval/);
 });
 
 function listProductionTs(dir: string): string[] {

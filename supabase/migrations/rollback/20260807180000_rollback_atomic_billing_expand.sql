@@ -39,6 +39,20 @@ DROP FUNCTION IF EXISTS public.is_escort_billing_snapshotted(uuid, bigint);
 
 DROP INDEX IF EXISTS public.idx_boletim_snapshot_billing_lookup;
 
+REVOKE ALL ON public.service_orders, public.mission_photos
+  FROM torres_billing_rpc_owner;
+REVOKE ALL ON public.escort_billings, public.boletim_approvals
+  FROM torres_billing_rpc_owner;
+REVOKE ALL ON public.system_audit_logs, public.financial_transactions
+  FROM torres_billing_rpc_owner;
+REVOKE ALL ON SEQUENCE
+  public.boletim_approvals_id_seq,
+  public.system_audit_logs_id_seq
+  FROM torres_billing_rpc_owner;
+REVOKE ALL ON SCHEMA public FROM torres_billing_rpc_owner;
+
+DROP ROLE IF EXISTS torres_billing_rpc_owner;
+
 -- uniq_eb_so_id já existia antes desta migration e é preservado.
 -- lock_version também é preservado: snapshots criados após o expand registram
 -- billing_version e rollback não pode apagar essa evidência de concorrência.

@@ -4,6 +4,23 @@ BEGIN;
 
 DO $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_roles
+    WHERE rolname = 'torres_billing_rpc_owner'
+  ) THEN
+    CREATE ROLE torres_billing_rpc_owner
+      NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+      NOREPLICATION BYPASSRLS;
+  END IF;
+END;
+$$;
+
+ALTER ROLE torres_billing_rpc_owner
+  NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOREPLICATION BYPASSRLS;
+
+DO $$
+BEGIN
   IF EXISTS (
     SELECT 1
     FROM public.escort_billings
@@ -29,6 +46,20 @@ CREATE INDEX IF NOT EXISTS idx_boletim_snapshot_billing_lookup
   ON public.boletim_approvals
   USING gin (billing_snapshot jsonb_path_ops)
   WHERE billing_snapshot IS NOT NULL;
+
+GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
+GRANT SELECT ON public.service_orders, public.mission_photos
+  TO torres_billing_rpc_owner;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
+  TO torres_billing_rpc_owner;
+GRANT SELECT, INSERT, UPDATE ON public.boletim_approvals
+  TO torres_billing_rpc_owner;
+GRANT INSERT ON public.system_audit_logs TO torres_billing_rpc_owner;
+GRANT DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
+GRANT USAGE, SELECT ON SEQUENCE
+  public.boletim_approvals_id_seq,
+  public.system_audit_logs_id_seq
+  TO torres_billing_rpc_owner;
 
 CREATE OR REPLACE FUNCTION public.is_escort_billing_snapshotted(
   p_billing_id uuid,
@@ -474,7 +505,6 @@ BEGIN
           ERRCODE = '22023',
           MESSAGE = 'PR5B1_TX_DELETE_PAYLOAD_MUST_BE_EMPTY';
       END IF;
-      PERFORM set_config('torres.atomic_billing_write', 'on', true);
       DELETE FROM public.financial_transactions
       WHERE origin_type = 'escort_billing'
         AND origin_id = v_target_id::text;
@@ -510,8 +540,6 @@ BEGIN
     string_agg(format('%1$I = src.%1$I', key), ', ' ORDER BY key)
   INTO v_columns, v_select_columns, v_assignments
   FROM unnest(v_keys) AS key;
-
-  PERFORM set_config('torres.atomic_billing_write', 'on', true);
 
   IF v_current.id IS NULL THEN
     EXECUTE format(
@@ -735,8 +763,6 @@ BEGIN
       MESSAGE = 'PR5B1_TX_ACTIVE_APPROVAL_CONFLICT';
   END IF;
 
-  PERFORM set_config('torres.atomic_snapshot_write', 'on', true);
-
   INSERT INTO public.boletim_approvals (
     token, client_id, client_name, client_email,
     period_start, period_end, billing_ids, total_value,
@@ -815,8 +841,6 @@ BEGIN
       ERRCODE = '40001',
       MESSAGE = 'PR5B1_TX_APPROVAL_STALE_BILLING';
   END IF;
-
-  PERFORM set_config('torres.atomic_billing_write', 'on', true);
 
   UPDATE public.boletim_approvals
   SET
@@ -897,8 +921,6 @@ BEGIN
       ERRCODE = '55000',
       MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BATCH_STATUS';
   END IF;
-
-  PERFORM set_config('torres.atomic_billing_write', 'on', true);
 
   RETURN QUERY
   UPDATE public.escort_billings
@@ -981,8 +1003,6 @@ BEGIN
       MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BATCH_ACTION';
   END IF;
 
-  PERFORM set_config('torres.atomic_billing_write', 'on', true);
-
   IF v_action = 'MARK_PAID' THEN
     RETURN QUERY
     UPDATE public.escort_billings
@@ -1021,9 +1041,30 @@ COMMENT ON FUNCTION public.transition_invoice_billings_atomic(
   integer, text, timestamptz, text
 ) IS 'PR5B.1-TX: pagamento/desvinculação de invoice mista em uma transação.';
 
+ALTER FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.write_escort_billing_atomic(
+  text, jsonb, uuid, integer, bigint, jsonb
+) OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.create_boletim_approval_atomic(
+  text, integer, text, text, date, date, text[], numeric,
+  integer, text, integer, jsonb
+) OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.freeze_boletim_billings_atomic(
+  integer, text, text, timestamptz
+) OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.mark_escort_billings_invoiced_atomic(
+  uuid[], integer, timestamptz, text
+) OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
+) OWNER TO torres_billing_rpc_owner;
+
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb

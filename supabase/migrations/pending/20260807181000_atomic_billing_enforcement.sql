@@ -8,7 +8,7 @@ LANGUAGE plpgsql
 SET search_path = public, pg_catalog
 AS $$
 BEGIN
-  IF current_setting('torres.atomic_billing_write', true) IS DISTINCT FROM 'on' THEN
+  IF current_user <> 'torres_billing_rpc_owner' THEN
     RAISE EXCEPTION USING
       ERRCODE = '55000',
       MESSAGE = format(
@@ -36,7 +36,7 @@ BEGIN
   END IF;
 
   IF TG_OP = 'INSERT'
-     AND current_setting('torres.atomic_snapshot_write', true) IS DISTINCT FROM 'on' THEN
+     AND current_user <> 'torres_billing_rpc_owner' THEN
     RAISE EXCEPTION USING
       ERRCODE = '55000',
       MESSAGE = 'PR5B1_TX_DIRECT_SNAPSHOT_INSERT_BLOCKED: use RPC atômica';
@@ -65,10 +65,6 @@ $$;
 DROP TRIGGER IF EXISTS trg_validate_escort_billing_approval
   ON public.escort_billings;
 DROP FUNCTION IF EXISTS public.validate_escort_billing_approval();
-
-DROP TRIGGER IF EXISTS trg_validate_service_order_approval
-  ON public.service_orders;
-DROP FUNCTION IF EXISTS public.validate_service_order_approval();
 
 DROP TRIGGER IF EXISTS guard_escort_billing_atomic_write
   ON public.escort_billings;
