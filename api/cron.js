@@ -9164,10 +9164,10 @@ ${osDescriptions.join("\n")}`);
         action: "DELETE_FATURA",
         targetId: String(invoiceId),
         targetType: "invoice",
-        details: `Fatura #${invoiceId} exclu\xEDda. ${linkedBillings?.length || 0} billing(s) revertidos para APROVADA.`,
+        details: `Fatura #${invoiceId} exclu\xEDda. ${releasedBillings.length} billing(s) processados atomicamente.`,
         ipAddress: req.ip
       });
-      res.json({ success: true, revertedBillings: linkedBillings?.length || 0 });
+      res.json({ success: true, revertedBillings: releasedBillings.length });
     } catch (err) {
       console.error("[billing] Erro ao excluir fatura:", err.message);
       res.status(500).json({ message: err.message });
