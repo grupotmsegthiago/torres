@@ -141,7 +141,10 @@ function buildScenario(billingStatus: string, manualValues: Row): ScenarioState 
       clients: [{ id: 1, name: "Cliente Teste" }],
       employees: [{ id: 10, name: "Agente Teste" }],
       vehicles: [{ id: 100, plate: "XYZ1A23" }],
-      mission_photos: [{ service_order_id: 9001, step: "km_final", km_value: 150 }],
+      mission_photos: [
+        { service_order_id: 9001, step: "km_chegada", km_value: 100 },
+        { service_order_id: 9001, step: "km_final", km_value: 150 },
+      ],
       mission_costs: [],
     },
     updates: [],

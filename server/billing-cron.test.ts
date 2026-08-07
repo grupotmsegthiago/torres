@@ -177,7 +177,7 @@ test("computeBillingPayloadForOs: missão noturna aplica adicional_noturno_km_pc
   const horasMissao = 5;
   const photos = [
     { step: "km_chegada", km_value: 1000 },
-    { step: "km_final", km_value: 1580 },
+    { step: "km_final", km_value: 1080 },
   ];
 
   const p = computeBillingPayloadForOs({
@@ -240,7 +240,7 @@ test("computeBillingPayloadForOs: múltiplas km_chegada usa a última correção
   const photos = [
     { step: "km_chegada", km_value: 1000 },
     { step: "km_chegada", km_value: 1500 },
-    { step: "km_final", km_value: 1080 },
+    { step: "km_final", km_value: 1580 },
   ];
 
   const p = computeBillingPayloadForOs({
