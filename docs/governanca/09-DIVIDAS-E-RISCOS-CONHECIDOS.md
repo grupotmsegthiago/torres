@@ -142,14 +142,14 @@ Enquanto a dívida existir:
 
 | Campo | Conteúdo |
 |-------|----------|
-| Descrição | Coluna texto legada; valores **já limpos** (36/36 NULL). Código/tipos **desacoplados** (PR4A: sem `plainPassword` no schema TS). RLS + `toSafeUser` + `sanitizeUserWrite` ativos. |
-| Consequência | Coluna física ainda existe (DROP = PR4B); risco residual se grants/policies regredirem ou alguém regravar texto |
-| Prioridade | **Média (P2)** para DROP; valores sensíveis já nulos; app não depende do campo |
+| Descrição | Coluna texto legada removida após limpeza dos valores, desacoplamento do código (PR4A), baseline/backup e APPLY controlado (PR4B). |
+| Consequência | Risco estrutural eliminado; permanece a obrigação de não reintroduzir persistência/exposição de senha |
+| Prioridade | Encerrada |
 | Módulos | `public.users`, Auth/RH |
-| Restrição | **Não criar dependência nova**; não logar; não exibir; não reintroduzir writers; **não** DROP sem backup; não inserir histórico falso de migration |
-| Correção | **PR1–PR3C feitos.** **PR4A feito** (tipos/código). **PR4B:** DROP COLUMN. **PR4C:** docs pós-DROP |
-| Status | **PR4A CONCLUÍDO — CÓDIGO E TIPOS DESACOPLADOS; COLUNA FÍSICA AINDA PRESENTE — PR4B PENDENTE** |
-| Camadas | Zero readers/writers operacionais; schema TS sem campo; filled=0 / null=36; coluna física permanece |
+| Restrição | **Não recriar a coluna**; não logar/expor senha; não reintroduzir readers/writers; manter `toSafeUser`, `sanitizeUserWrite` e `USER_SAFE_SELECT` |
+| Correção | **PR1–PR4A concluídos. PR4B aplicado e verificado. PR4C documentado.** Backup/baseline aprovados; migration versionada executada; verify pós-DROP sem exceções; rollback não usado. |
+| Status | **ENCERRADA — COLUNA REMOVIDA E VERIFY APROVADO** |
+| Camadas | Supabase Auth permanece SSOT; schema TS e banco sem `plain_password`; defesas de API/storage preservadas |
 
 ### D11 — Caches longos
 

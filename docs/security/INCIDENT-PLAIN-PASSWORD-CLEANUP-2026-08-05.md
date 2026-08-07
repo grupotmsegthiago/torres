@@ -1,8 +1,8 @@
 # Incidente / evento — limpeza ad-hoc de `plain_password` (2026-08-05)
 
 **Classificação:** evento operacional fora do fluxo controlado (não é restore, não é DROP).
-**Severidade residual:** baixa para disponibilidade; média para governança (histórico de migration desalinhado).
-**Status D13 após PR3C:** valores legados limpos; coluna ainda presente (PR4 pendente).
+**Severidade residual:** encerrada para a coluna legada; permanece apenas o registro histórico transparente da limpeza ad-hoc.
+**Status D13:** **ENCERRADA** — PR4A concluído; PR4B aplicado e verificado; coluna removida; PR4C documentado.
 
 ---
 
@@ -11,6 +11,21 @@
 Entre a validação pós-merge do PR #52 e o pré-voo do PR3B, o estado de `public.users.plain_password` passou de **36 preenchidos / 0 nulos** para **0 preenchidos / 36 nulos**, **sem** registro da migration versionada `20260805190500_null_legacy_plain_password` no histórico Supabase.
 
 A aplicação controlada via `apply_migration` / arquivo versionado **não** foi executada pelo fluxo PR3B (pré-voo abortado por divergência). O efeito desejado da limpeza **já estava presente**.
+
+---
+
+## Encerramento PR4B / PR4C (2026-08-06)
+
+- Backup físico de 2026-08-06 07:56:45 UTC confirmado com restore disponível.
+- Baseline pré-DROP: 36 users, filled=0, null=36, Auth match=36 e zero dependências.
+- Migration versionada `20260805210000_drop_users_plain_password` aplicada com sucesso, conforme confirmação do proprietário.
+- `verify-drop-plain-password.sql` executado sem exceções; todos os asserts passaram.
+- `public.users.plain_password` removida; Auth, RLS, policy `users_select_own`, grants seguros e demais colunas preservados.
+- Sistema acessado normalmente depois do APPLY; nenhuma regressão observada.
+- Rollback não executado.
+- Horário exato do APPLY não fornecido ao agente documental; nenhuma evidência foi retroativamente inventada.
+
+**Decisão:** incidente/D13 encerrado. `toSafeUser`, `sanitizeUserWrite` e `USER_SAFE_SELECT` permanecem como defesa em profundidade.
 
 ---
 
@@ -76,7 +91,7 @@ Não há evidência suficiente para atribuir autoria pessoal.
 - Não se regravou `plain_password`.
 - Não se executou rollback documental.
 - Não se alterou `auth.users` (senhas Auth).
-- Não se removeu a coluna (PR4).
+- Na fase PR3C não se removeu a coluna; a remoção ocorreu posteriormente no PR4B controlado.
 - Não se inseriu registro falso da migration no histórico Supabase.
 - Não se publicou Production / não se alterou `main`.
 
@@ -132,6 +147,6 @@ Observação de contexto (sem relação causal com este PR documental): `origin/
 
 ## Próximos passos
 
-1. Merge documental PR3C em `dev` (quando autorizado).
-2. Observação operacional contínua (24h recomendada no runbook).
-3. **PR4** (DROP da coluna) — **não iniciado**; somente após autorização explícita e runbook próprio.
+1. Preservar este documento como trilha histórica do evento ad-hoc.
+2. Manter as defesas de código (`toSafeUser`, `sanitizeUserWrite`, `USER_SAFE_SELECT`).
+3. Não recriar a coluna nem reintroduzir persistência/exposição de senha.
