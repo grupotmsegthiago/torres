@@ -375,10 +375,13 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           [billing.id, osId],
         );
       } else {
-        await admin.query("BEGIN");
-        await admin.query("SELECT set_config('torres.atomic_billing_write','on',true)");
+        await admin.query(
+          "ALTER TABLE escort_billings DISABLE TRIGGER guard_escort_billing_atomic_write",
+        );
         await admin.query("UPDATE escort_billings SET status=$1 WHERE id=$2", [status, billing.id]);
-        await admin.query("COMMIT");
+        await admin.query(
+          "ALTER TABLE escort_billings ENABLE TRIGGER guard_escort_billing_atomic_write",
+        );
       }
       const current = await admin.query(
         "SELECT lock_version FROM escort_billings WHERE id=$1",
