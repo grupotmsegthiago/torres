@@ -91,6 +91,15 @@ describe("billing frozen — contrato normativo", () => {
     assert.deepEqual(mock.calls, []);
   });
 
+  test("billing aberto sem ID falha fechado", async () => {
+    const mock = snapshotMock([]);
+    await assert.rejects(
+      isBillingProtected(mock.sb, { status: "A_VERIFICAR" }),
+      /ID do billing é obrigatório/,
+    );
+    assert.deepEqual(mock.calls, []);
+  });
+
   test("falha de catálogo é fail-closed via erro", async () => {
     const mock = snapshotMock([], { message: "schema unavailable" });
     await assert.rejects(

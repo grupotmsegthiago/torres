@@ -8,7 +8,7 @@ import type { Express } from "express";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
-  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
@@ -1741,7 +1741,7 @@ import type { Express } from "express";
 
   app.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
     try {
-      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status, service_order_id, observacoes").eq("id", req.params.id).single();
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id, status, service_order_id, observacoes").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
       const STATUS_ONLY_FIELDS = ["status", "observacoes", "notas"];
@@ -1780,6 +1780,11 @@ import type { Express } from "express";
     try {
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — alteração genérica bloqueada.",
+        });
+      }
 
       let updateBody: any = { ...req.body };
       delete updateBody.id;
@@ -1804,6 +1809,17 @@ import type { Express } from "express";
 
   app.delete("/api/escort/billings/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const { data: existing, error: fetchErr } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id, status")
+        .eq("id", req.params.id)
+        .single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — exclusão bloqueada.",
+        });
+      }
       await removeAutoTransaction("escort_billing", req.params.id);
       const { error } = await supabaseAdmin.from("escort_billings").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -1851,17 +1867,110 @@ import type { Express } from "express";
 
       // Se tem service_order_id, busca timestamps reais pra cálculo multi-dia correto
       let so_ts_inicio: string | null = null, so_ts_fim: string | null = null, so_scheduled: string | null = null;
+      let linkedSo: any = null;
       if (body.service_order_id) {
         const { data: soRow } = await supabaseAdmin
           .from("service_orders")
-          .select("mission_started_at, completed_date, scheduled_date")
+          .select("id, os_number, status, client_id, escort_contract_id, assigned_employee_id, assigned_employee_2_id, vehicle_id, origin, destination, escorted_vehicle_plate, escorted_driver_name, mission_started_at, completed_date, scheduled_date, step_logs")
           .eq("id", body.service_order_id).maybeSingle();
         if (soRow) {
+          linkedSo = soRow;
           so_ts_inicio = soRow.mission_started_at;
           so_ts_fim = soRow.completed_date;
           so_scheduled = soRow.scheduled_date;
         }
       }
+
+      if (linkedSo?.status === "cancelada" || linkedSo?.status === "recusada") {
+        let specialPayload: any = {
+          client_id: clientId,
+          client_name: clientName,
+          service_order_id: body.service_order_id,
+          data_missao: body.data_missao || linkedSo.scheduled_date || new Date().toISOString(),
+          created_by: user.name,
+        };
+        if (linkedSo.status === "recusada") {
+          specialPayload = {
+            ...specialPayload,
+            ...buildRecusadaZeroPayload(null, body.observacoes),
+          };
+        } else {
+          const cancelada = await computeCanceladaBilling({
+            serviceOrderId: body.service_order_id,
+            clientId: linkedSo.client_id,
+            escortContractId: linkedSo.escort_contract_id || body.contract_id,
+            scheduledDate: linkedSo.scheduled_date,
+            missionStartedAt: linkedSo.mission_started_at,
+            completedDate: linkedSo.completed_date,
+            stepLogs: linkedSo.step_logs,
+          });
+          if (!cancelada) {
+            return res.status(422).json({
+              message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
+            });
+          }
+          specialPayload = {
+            ...specialPayload,
+            contract_id: cancelada.contrato?.id || linkedSo.escort_contract_id || body.contract_id || null,
+            ...cancelada.fatFields,
+            horario_agendado: cancelada.horarios.horario_agendado,
+            horario_inicio: cancelada.horarios.horario_inicio,
+            horario_fim: cancelada.horarios.horario_fim,
+          };
+        }
+        const specialWrite = await supabaseAdmin
+          .from("escort_billings")
+          .upsert(specialPayload, { onConflict: "service_order_id" })
+          .select()
+          .single();
+        if (specialWrite.error) throw specialWrite.error;
+        bustBalancoCaches();
+        return res.json({ ...specialWrite.data, resumo_calculo: null });
+      }
+
+      if (linkedSo) {
+        if (linkedSo.escort_contract_id && linkedSo.escort_contract_id !== body.contract_id) {
+          const { data: linkedContract } = await supabaseAdmin
+            .from("escort_contracts")
+            .select("*")
+            .eq("id", linkedSo.escort_contract_id)
+            .single();
+          if (linkedContract) contrato = linkedContract;
+        }
+        const [photos, missionCosts] = await Promise.all([
+          storage.getMissionPhotosByOS(body.service_order_id),
+          storage.getMissionCostsByOS(body.service_order_id),
+        ]);
+        const canonicalPayload = computeBillingPayloadForOs({
+          so: linkedSo,
+          contrato,
+          photos: (photos || []).map((photo: any) => ({
+            step: photo.step,
+            km_value: photo.kmValue ?? photo.km_value,
+          })),
+          mCosts: missionCosts || [],
+          horasMissao: Number(body.horas_missao || 0),
+          clientName: clientName || null,
+          empName: body.vigilante_name || null,
+          emp2Name: body.vigilante2_name || null,
+          vehPlate: body.placa_viatura || null,
+        });
+        const linkedWrite = await supabaseAdmin
+          .from("escort_billings")
+          .upsert({
+            ...canonicalPayload,
+            route_id: body.route_id || null,
+            observacoes: body.observacoes,
+            notas: body.notas,
+            created_by: user.name,
+          }, { onConflict: "service_order_id" })
+          .select()
+          .single();
+        if (linkedWrite.error) throw linkedWrite.error;
+        bustBalancoCaches();
+        return res.json({ ...linkedWrite.data, resumo_calculo: canonicalPayload });
+      }
+
       const resultado = calcularEscolta({
         km_inicial: kmIni, km_final: kmFin, km_vazio: Number(body.km_vazio || 0),
         horas_missao: Number(body.horas_missao || 0), horas_estadia: Number(body.horas_estadia || 0),

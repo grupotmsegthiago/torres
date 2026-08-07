@@ -160,7 +160,7 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   },
   computeCanceladaBilling: {
     "server/cron.ts": 1,
-    "server/routes/escort.ts": 2,
+    "server/routes/escort.ts": 3,
     "server/routes/mission.ts": 1,
     "server/routes/service-orders.ts": 2,
   },
@@ -215,12 +215,12 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=16, live=4, cancelada=6", () => {
+  test("totais de call-sites: canônico=16, live=4, cancelada=7", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
     assert.equal(total(countProductionCalls("calcularEscolta")), 16);
     assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
-    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 6);
+    assert.equal(total(countProductionCalls("computeCanceladaBilling")), 7);
   });
 });
 
@@ -465,6 +465,71 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     assert.match(batch, /buildRecusadaZeroPayload\s*\(/);
     assert.match(batch, /calcularEscolta\s*\(/);
     assert.doesNotMatch(batch, /calcularFaturamentoLive\s*\(/);
+  });
+
+  test("submit-os usa fatos canônicos e separa cancelada/recusada", () => {
+    const submit = sourceSection(
+      "server/routes/escort.ts",
+      'app.post("/api/escort/billings/submit-os"',
+      'app.post("/api/escort/billings/recalcular-lote"',
+    );
+    assert.match(submit, /computeBillingPayloadForOs\s*\(/);
+    assert.match(submit, /computeCanceladaBilling\s*\(/);
+    assert.match(submit, /buildRecusadaZeroPayload\s*\(/);
+    assert.match(submit, /isBillingProtected\s*\(/);
+    assert.doesNotMatch(submit, /calcularFaturamentoLive\s*\(/);
+  });
+
+  test("PUT, PATCH e DELETE genéricos exigem proteção frozen/snapshot", () => {
+    const put = sourceSection(
+      "server/routes/escort.ts",
+      'app.put("/api/escort/billings/:id"',
+      'app.patch("/api/escort/billings/:id"',
+    );
+    const patch = sourceSection(
+      "server/routes/escort.ts",
+      'app.patch("/api/escort/billings/:id"',
+      'app.delete("/api/escort/billings/:id"',
+    );
+    const remove = sourceSection(
+      "server/routes/escort.ts",
+      'app.delete("/api/escort/billings/:id"',
+      'app.post("/api/escort/billings/submit-os"',
+    );
+    assert.match(put, /select\("id, status, service_order_id, observacoes"\)/);
+    assert.match(put, /isBillingProtected\s*\(/);
+    assert.match(patch, /isBillingProtected\s*\(/);
+    assert.match(remove, /isBillingProtected\s*\(/);
+    assert.ok(
+      remove.indexOf("isBillingProtected") < remove.indexOf("removeAutoTransaction"),
+      "DELETE deve proteger antes de remover ledger/billing",
+    );
+  });
+
+  test("writers oficiais não usam pedágio estimado ou rota como fato financeiro", () => {
+    const manual = sourceSection(
+      "server/routes/service-orders.ts",
+      'app.post("/api/boletim-medicao/calcular/:osId"',
+      'app.patch("/api/boletim-medicao/os/:id/diretoria-override"',
+    );
+    const mission = sourceSection(
+      "server/routes/mission.ts",
+      'const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId)',
+      'const client = so.clientId ? await storage.getClient(so.clientId) : null',
+    );
+    assert.doesNotMatch(manual, /pedagioEstimadoCalc|kmRota/);
+    assert.doesNotMatch(mission, /pedagioEstimado|kmRota/);
+  });
+
+  test("auto-recalc usa o ID atualizado e falha visivelmente", () => {
+    const patchRoute = sourceSection(
+      "server/routes/service-orders.ts",
+      'app.patch("/api/service-orders/:id"',
+      'app.get("/api/service-orders/:id/pdf"',
+    );
+    assert.doesNotMatch(patchRoute, /getMissionCostsByOS\(osId\)/);
+    assert.match(patchRoute, /getMissionCostsByOS\(data\.id\)/);
+    assert.match(patchRoute, /OS atualizada, mas o billing não pôde ser recalculado/);
   });
 });
 

@@ -31,7 +31,9 @@ export async function billingHasCommercialSnapshot(
   sb: any,
   billingId: string | number | null | undefined,
 ): Promise<boolean> {
-  if (billingId == null || billingId === "") return false;
+  if (billingId == null || billingId === "") {
+    throw new Error("ID do billing é obrigatório para verificar snapshot comercial");
+  }
 
   const { data, error } = await sb
     .from("boletim_approvals")

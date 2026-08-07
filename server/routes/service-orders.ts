@@ -389,8 +389,6 @@ import type { Express } from "express";
       const despCombustivelCalc = _split.despesas_combustivel;
       const despOutrasCalc = _split.despesas_outras;
       const receitasOsCalc = _split.receitas_os;
-      const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
-      if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
       console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}, receitas=${receitasOsCalc}`);
       const resultado = calcularEscolta({
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
@@ -544,8 +542,6 @@ import type { Express } from "express";
           const dcCalc = _split.despesas_combustivel;
           const doCalc = _split.despesas_outras;
           const roCalc = _split.receitas_os;
-          const pedagioEstOS = Number((updatedSo as any).pedagioEstimado) || 0;
-          if (pedagioEstOS > 0 && dpCalc === 0) dpCalc = pedagioEstOS;
           const resultado = calcularEscolta({
             km_inicial: kmI, km_final: kmFN, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
@@ -774,8 +770,6 @@ import type { Express } from "express";
           const dc2 = _split2.despesas_combustivel;
           const do2 = _split2.despesas_outras;
           const ro2 = _split2.receitas_os;
-          const pedagioEstOS2 = Number((updatedSo as any).pedagioEstimado) || 0;
-          if (pedagioEstOS2 > 0 && dp2 === 0) dp2 = pedagioEstOS2;
           const resultado = calcularEscolta({
             contrato, km_inicial: kmI, km_final: kmFN,
             km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
@@ -1690,7 +1684,7 @@ import type { Express } from "express";
       }
     }
 
-    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao", "pedagioEstimado", "pedagioIdaVolta"];
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao"];
     const changedBillingFields = existing && billingRelevantFields.some(f => {
       const oldVal = (existing as any)[f];
       const newVal = (parsed.data as any)[f];
@@ -1726,10 +1720,8 @@ import type { Express } from "express";
           const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
 
           let despPedagioAR = Number(bill.despesas_pedagio || 0);
-          const pedagioOS = Number((data as any).pedagioEstimado) || 0;
-          if (pedagioOS > 0) despPedagioAR = pedagioOS;
 
-          const mcListAR = await storage.getMissionCostsByOS(osId);
+          const mcListAR = await storage.getMissionCostsByOS(data.id);
           const _splitAR = splitMissionCostsForBilling(mcListAR);
           const dpAR = _splitAR.despesas_pedagio;
           const dcAR = _splitAR.despesas_combustivel;
@@ -1779,6 +1771,10 @@ import type { Express } from "express";
         }
       } catch (recalcErr: any) {
         console.error(`[OS-Billing] Auto-recalc failed for OS ${data.osNumber}:`, recalcErr.message);
+        return res.status(500).json({
+          message: "OS atualizada, mas o billing não pôde ser recalculado.",
+          serviceOrderId: data.id,
+        });
       }
     }
 
@@ -1866,8 +1862,6 @@ import type { Express } from "express";
           const dc = _splitP.despesas_combustivel;
           const douts = _splitP.despesas_outras;
           const ro = _splitP.receitas_os;
-          const pedEst = Number((data as any).pedagioEstimado) || 0;
-          if (pedEst > 0 && dp === 0) dp = pedEst;
 
           const resultado = calcularEscolta({
             contrato, km_inicial: kmI, km_final: kmFN,
@@ -1900,6 +1894,10 @@ import type { Express } from "express";
       }
     } catch (recalcErr: any) {
       console.error(`[so-patch-recalc] Erro ao recalcular boletim:`, recalcErr.message);
+      return res.status(500).json({
+        message: "OS atualizada, mas o billing não pôde ser recalculado.",
+        serviceOrderId: data.id,
+      });
     }
 
     res.json(data);

@@ -289,9 +289,13 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const toBRT = (d: Date) =>
     d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
 
-  const kmChegadaPhoto = photos.find((p) => p.step === "km_chegada");
-  const kmSaidaPhoto = photos.find((p) => p.step === "km_saida");
-  const kmFinalPhoto = photos.find((p) => p.step === "km_final");
+  // A última foto de cada etapa vence: ajustes/correções posteriores não podem
+  // ser ignorados por um writer enquanto outro usa o valor corrigido.
+  const lastPhoto = (step: string) =>
+    [...photos].reverse().find((p) => p.step === step);
+  const kmChegadaPhoto = lastPhoto("km_chegada");
+  const kmSaidaPhoto = lastPhoto("km_saida");
+  const kmFinalPhoto = lastPhoto("km_final");
   const kmInicial = n(kmChegadaPhoto?.km_value) || n(kmSaidaPhoto?.km_value);
   const kmFinalVal = n(kmFinalPhoto?.km_value);
   const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;

@@ -53,6 +53,22 @@ const n = (v: any) => Number(v) || 0;
 const toBRT = (d: Date) =>
   d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
 
+export const CANCELADA_CLEAN_FINANCIAL_FIELDS = {
+  receitas_os: 0,
+  despesas_pedagio: 0,
+  despesas_combustivel: 0,
+  despesas_outras: 0,
+  desp_total: 0,
+  desp_pedagio: 0,
+  desp_combustivel: 0,
+  desp_outras: 0,
+  pag_vrp: 0,
+  pag_periculosidade: 0,
+  pag_adicional_noturno: 0,
+  pag_reembolsos: 0,
+  pag_total: 0,
+} as const;
+
 export interface CanceladaInput {
   serviceOrderId: number;
   clientId: number | null | undefined;
@@ -173,14 +189,12 @@ export async function computeCanceladaBilling(input: CanceladaInput): Promise<Ca
     fat_diaria: nb(resultado.fat_pernoite),
     fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
     fat_total: nb(resultado.fat_total),
+    // Cancelada não carrega custos/receitas anteriores nem pedágio estimado.
+    // O único valor comercial vem do motor de cancelamento acima.
+    ...CANCELADA_CLEAN_FINANCIAL_FIELDS,
     valor_franquia: nb(resultado.valor_franquia),
     valor_km_extra: nb(resultado.valor_km_extra),
     // Cancelamento = receita pura: pagamento zerado, resultado = faturamento.
-    pag_vrp: 0,
-    pag_periculosidade: 0,
-    pag_adicional_noturno: 0,
-    pag_reembolsos: 0,
-    pag_total: 0,
     resultado_bruto: nb(resultado.fat_total),
     resultado_liquido: nb(resultado.fat_total),
     margem_percentual: 100,

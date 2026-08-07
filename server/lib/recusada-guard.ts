@@ -23,6 +23,21 @@ export type RecusadaZeroPayload = {
   fat_pernoite: 0;
   fat_diaria: 0;
   fat_adicional_noturno: 0;
+  receitas_os: 0;
+  despesas_pedagio: 0;
+  despesas_combustivel: 0;
+  despesas_outras: 0;
+  desp_total: 0;
+  desp_pedagio: 0;
+  desp_combustivel: 0;
+  desp_outras: 0;
+  pag_vrp: 0;
+  pag_periculosidade: 0;
+  pag_adicional_noturno: 0;
+  pag_reembolsos: 0;
+  pag_total: 0;
+  valor_franquia: 0;
+  valor_km_extra: 0;
   resultado_bruto: 0;
   resultado_liquido: 0;
   margem_percentual: 0;
@@ -80,6 +95,21 @@ export function buildRecusadaZeroPayload(
     fat_pernoite: 0,
     fat_diaria: 0,
     fat_adicional_noturno: 0,
+    receitas_os: 0,
+    despesas_pedagio: 0,
+    despesas_combustivel: 0,
+    despesas_outras: 0,
+    desp_total: 0,
+    desp_pedagio: 0,
+    desp_combustivel: 0,
+    desp_outras: 0,
+    pag_vrp: 0,
+    pag_periculosidade: 0,
+    pag_adicional_noturno: 0,
+    pag_reembolsos: 0,
+    pag_total: 0,
+    valor_franquia: 0,
+    valor_km_extra: 0,
     resultado_bruto: 0,
     resultado_liquido: 0,
     margem_percentual: 0,

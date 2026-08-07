@@ -233,7 +233,7 @@ test("computeBillingPayloadForOs: mission_costs com múltiplas categorias e rece
   assert.equal(p.resultado_bruto, 50);
 });
 
-test("computeBillingPayloadForOs: múltiplas km_chegada usa a primeira (ordem de chegada)", () => {
+test("computeBillingPayloadForOs: múltiplas km_chegada usa a última correção", () => {
   const so = baseOs();
   // Duplicatas/correções: primeira leitura é 1000, segunda (corrigida) é 1500
   const photos = [
@@ -248,9 +248,9 @@ test("computeBillingPayloadForOs: múltiplas km_chegada usa a primeira (ordem de
     nowDate: FIXED_NOW,
   });
 
-  assert.equal(p.km_inicial, 1000); // primeira leitura, não a segunda
-  assert.equal(p.km_final, 1080);
-  assert.equal(p.km_total, 80);
+  assert.equal(p.km_inicial, 1500);
+  assert.equal(p.km_final, 1500);
+  assert.equal(p.km_total, 0);
 });
 
 test("computeBillingPayloadForOs: km_saida usado como fallback quando km_chegada ausente", () => {

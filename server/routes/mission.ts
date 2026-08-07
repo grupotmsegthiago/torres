@@ -2490,10 +2490,6 @@ Responda APENAS com JSON: {"km_lido": number}`;
           const despCombustivel = _splitM.despesas_combustivel;
           const despOutras = _splitM.despesas_outras;
           const receitasOsEnc = _splitM.receitas_os;
-          const pedagioEstimado = Number((so as any).pedagioEstimado) || 0;
-          if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
-
-          const kmRotaEnc = extractKmFromText(so.destination) || extractKmFromText(so.route) || undefined;
 
           const resultado = calcularEscolta({
             km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
@@ -2503,7 +2499,6 @@ Responda APENAS com JSON: {"km_lido": number}`;
             fim_ts: completedDateVal ? new Date(completedDateVal as any).toISOString() : null,
             scheduled_date: so.scheduledDate ? new Date(so.scheduledDate as any).toISOString() : null,
             despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, receitas_os: receitasOsEnc, contrato,
-            kmRota: kmRotaEnc,
           });
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
