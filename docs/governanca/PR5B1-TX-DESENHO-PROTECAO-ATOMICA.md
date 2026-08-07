@@ -94,6 +94,10 @@ confirmado por fingerprint. Evidência live:
 | `validate_service_order_approval` | valida aprovação legada em `service_orders`; SECURITY INVOKER | LIVE-ONLY, legado | não protege billing |
 | `trg_ajustar_data_missao` / `fn_ajustar_data_missao` | ajusta data operacional em `service_orders` | VERSIONADA | não relacionada |
 
+O enforcement substitui somente `trg_validate_escort_billing_approval`.
+`trg_validate_service_order_approval` permanece intacto por pertencer ao fato
+operacional, não ao billing.
+
 Não existem triggers live em `boletim_approvals`, `invoices` ou
 `financial_transactions`. Não existe RPC de billing, `FOR UPDATE`, proteção de
 hard delete ou vínculo relacional entre JSONB e billing.
@@ -167,7 +171,9 @@ Adotar **F: protocolo bilateral de RPC + enforcement por trigger**, com uma
 versão otimista no billing:
 
 1. `escort_billings.lock_version BIGINT NOT NULL DEFAULT 0`.
-2. RPC de escrita de billing:
+2. role interna `torres_billing_rpc_owner` (`NOLOGIN`, sem membership das
+   roles PostgREST) como proprietária das RPCs;
+3. RPC de escrita de billing:
    - adquire lock por `service_order_id` para INSERT;
    - carrega billing existente com `FOR UPDATE`;
    - valida `lock_version` esperado;
@@ -176,21 +182,23 @@ versão otimista no billing:
    - incrementa `lock_version`;
    - grava auditoria quando a ação é excepcional;
    - retorna linha e versão nova.
-3. RPC de criação/resync de snapshot:
+4. RPC de criação/resync de snapshot:
    - trava todos os billings com `FOR UPDATE`, em ordem por ID;
    - compara `billing_version` recebido com `lock_version` atual;
    - rejeita payload stale;
    - permite resync somente quando approval está `PENDENTE`;
    - insere/atualiza `billing_snapshot` sem recalcular preço;
    - nunca altera invoice ou ledger.
-4. Trigger de enforcement em `escort_billings`:
+5. Trigger de enforcement em `escort_billings`:
    - rejeita UPDATE/DELETE direto fora da RPC controlada;
+   - valida `current_user = torres_billing_rpc_owner`; custom GUC não é
+     autorização;
    - atua como fail-closed para writer legado esquecido.
-5. Trigger de enforcement em `boletim_approvals.billing_snapshot`:
+6. Trigger de enforcement em `boletim_approvals.billing_snapshot`:
    - rejeita INSERT/UPDATE/DELETE direto fora da RPC de snapshot;
    - bloqueia alteração quando status não é `PENDENTE`.
-6. `uniq_eb_so_id` passa a ser criado/validado por migration, sem `.catch()`.
-7. índice GIN versionado em `billing_snapshot` sustenta o containment check
+7. `uniq_eb_so_id` passa a ser criado/validado por migration, sem `.catch()`.
+8. índice GIN versionado em `billing_snapshot` sustenta o containment check
    executado em todo write, após medir volume/impacto no preflight.
 
 O banco protege integridade, imutabilidade e ordem. `calcularEscolta`,
@@ -328,16 +336,16 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_boletim_snapshot_direct_write();
 ## 6. Objetos a versionar na implementação futura
 
 1. migration única e transacional;
-2. coluna `escort_billings.lock_version`;
-3. constraint/index unique total em `service_order_id`;
-4. índice GIN para busca por `billing_id` no JSONB;
-5. função de escrita atômica de billing;
-6. função de criação/resync atômico de snapshot;
+2. role interna `NOLOGIN` proprietária das RPCs;
+3. coluna `escort_billings.lock_version`;
+4. constraint/index unique total em `service_order_id`;
+5. índice GIN para busca por `billing_id` no JSONB;
+6. funções atômicas de billing, snapshot e lifecycle por invoice;
 7. função-trigger de enforcement do billing;
 8. função-trigger de enforcement do snapshot;
 9. grants/revokes explícitos;
 10. comentários SQL dos objetos;
-11. rollback estrutural que remove novos triggers/functions/coluna somente após
+11. rollback estrutural que remove novos triggers/functions somente após
     rollback do app.
 
 `exec_sql` não deve criar esses objetos no boot.
@@ -495,8 +503,8 @@ Ordem segura:
 3. restaurar writers antigos somente em janela controlada;
 4. remover triggers de enforcement;
 5. remover grants/functions;
-6. remover `lock_version` por último, somente se não houver snapshot novo que
-   dependa de `billing_version`.
+6. preservar `lock_version` quando houver qualquer snapshot versionado;
+7. remover a role interna somente após remover RPCs e revogar privilégios.
 
 Rollback não apaga snapshots, invoices, ledger ou auditoria.
 
