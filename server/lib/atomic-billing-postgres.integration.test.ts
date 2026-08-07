@@ -187,7 +187,12 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           FROM pg_proc AS proc
           JOIN pg_roles AS role ON role.oid = proc.proowner
           WHERE proc.oid = 'public.write_escort_billing_atomic(text,jsonb,uuid,integer,bigint,jsonb)'::regprocedure
-        ) AS rpc_owner
+        ) AS rpc_owner,
+        has_table_privilege(
+          'torres_billing_rpc_owner',
+          'public.service_orders',
+          'SELECT'
+        ) AS owner_can_read_service_orders
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -198,6 +203,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       authenticated_can_invoice: false,
       service_can_transition_invoice: true,
       rpc_owner: "torres_billing_rpc_owner",
+      owner_can_read_service_orders: true,
     });
   });
 
