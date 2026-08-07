@@ -395,20 +395,43 @@ espera/deadlock, sem retry cego de mutação financeira.
 | Status do billing | `A_VERIFICAR` | `A_VERIFICAR` | `A_VERIFICAR` | preserva status aberto | `A_VERIFICAR` | regra do fluxo | lote é exceção intencional |
 | Metadata | maps batelados | storage | storage | billing anterior | body para nomes/placa | cadastros mestres — FATO | não muda fórmula, mas pode ficar stale |
 
-### 8.3 Decisões ainda necessárias para P1-07
+### 8.3 Divergências materiais confirmadas
+
+| ID | Divergência | Impacto possível |
+|---|---|---|
+| D1 | builder usa `mission_started_at`; manual pode preferir `step_logs` para início | hora extra, noturno e horário considerado |
+| D2 | builder usa `now` quando `completed_date` falta | horas infladas em OS materializada prematuramente |
+| D3 | submit aceita `body.horas_missao`; lote aceita `existing.horas_missao` | fallback financeiro baseado em request/billing stale |
+| D4 | resolução de contrato difere por writer e nem todos filtram `status=Ativo` | tarifa diferente ou batch ignorado |
+| D5 | defaults inline não são iguais a `DEFAULT_BILLING_CONTRACT` | franquias/HE/KM diferentes sem contrato comprovado |
+| D6 | auto-recalc do PATCH de OS usa campos KM da OS, não `mission_photos` | `fat_km` diferente de cron/mission/manual calcular |
+| D7 | cron combina `getHorasElapsedFromDB` com o cálculo temporal do motor | regra dupla em casos de timestamp incompleto |
+| D8 | submit avulso usa body para KM, horas e despesas | valores sem vínculo com fatos oficiais |
+
+Diferenças de `created_by`, nomes, placa e metadata não alteram a fórmula, mas
+podem produzir espelhos stale. Elas não devem ser confundidas com D1–D8.
+
+### 8.4 Decisões ainda necessárias para P1-07
 
 1. Tornar `computeBillingPayloadForOs` a única preparação oficial também no
-   manual.
+   manual e nos auto-recalcs de PATCH.
 2. Escolher uma única resolução de contrato:
    `escort_contract_id` → contrato ativo do cliente com ordenação normativa →
    default central.
 3. Definir se ausência de timestamps reais:
-   - bloqueia materialização (fail-closed); ou
-   - usa fallback único, rotulado e auditado.
+   - bloqueia materialização (recomendação fail-closed); ou
+   - usa fallback único, rotulado e auditado após decisão do proprietário.
 4. Separar `submit-os` avulso do writer de OS; body manual não pode ser tratado
    como fato oficial de uma OS.
 5. Definir fatos oficiais de estadia/pernoite antes de permitir valores
    diferentes de zero.
+6. Decidir se `getHorasElapsedFromDB` sai do path de persistência ou se torna a
+   única regra temporal; não manter dupla precedência com timestamps do motor.
+
+Direção recomendada, ainda não implementada: estender o builder existente para
+uma preparação única de fatos, sem criar segundo motor. Writers oficiais não
+devem usar `now`, body ou billing anterior como fato silencioso quando
+`mission_started_at`, `completed_date`, fotos ou contrato estiverem ausentes.
 
 P1-07 continua **parcial**; há decisão arquitetural pendente além de código.
 
