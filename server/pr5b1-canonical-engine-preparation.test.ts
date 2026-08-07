@@ -21,7 +21,21 @@ type GoldenFixture = {
   billingId?: string;
   billingStatus?: string;
   approvalId?: number;
+  approvalStatus?: string;
   serviceOrderIds?: number[];
+  fatTotal?: number;
+  snapshotExists?: boolean;
+  billingTotal?: number;
+  snapshotTotal?: number;
+  absoluteDifference?: number;
+  zeroChecks?: {
+    fatCalculado: boolean;
+    lucroCalculado: boolean;
+    margemCalculada: boolean;
+    billing: boolean;
+    invoiceLinkAbsent: boolean;
+    positiveIncomeAbsent: boolean;
+  };
   expectedUse: "golden" | "negative-control" | "investigation-only";
 };
 
@@ -54,15 +68,81 @@ export const PR5B1_CONFIRMED_FIXTURES: readonly GoldenFixture[] = [
     serviceOrderIds: [959, 960, 961, 964],
     expectedUse: "investigation-only",
   },
+  {
+    label: "concluída com billing aberto",
+    serviceOrderId: 981,
+    osNumber: "TOR-0586",
+    billingId: "8555b538-9554-41c6-a451-6b1751aa5f32",
+    billingStatus: "A_VERIFICAR",
+    fatTotal: 480,
+    snapshotExists: false,
+    expectedUse: "golden",
+  },
+  {
+    label: "concluída com billing congelado",
+    serviceOrderId: 941,
+    osNumber: "TOR-0546",
+    billingId: "18f0b6b8-6cda-4461-bf61-5d1e87bf2d43",
+    billingStatus: "FATURADO",
+    approvalId: 90,
+    approvalStatus: "APROVADO",
+    snapshotExists: true,
+    expectedUse: "golden",
+  },
+  {
+    label: "recusada com valores financeiros zero",
+    serviceOrderId: 35,
+    osNumber: "TOR-0018",
+    billingId: "f92d5a1c-0874-4419-9e93-8d20c7a655c3",
+    billingStatus: "CANCELADO",
+    zeroChecks: {
+      fatCalculado: true,
+      lucroCalculado: true,
+      margemCalculada: true,
+      billing: true,
+      invoiceLinkAbsent: true,
+      positiveIncomeAbsent: true,
+    },
+    expectedUse: "golden",
+  },
+  {
+    label: "billing em snapshot consistente",
+    serviceOrderId: 749,
+    osNumber: "TOR-0471",
+    billingId: "92f27e7f-cf53-43a3-8c86-6c41c18e16cf",
+    billingStatus: "FATURADO",
+    approvalId: 86,
+    approvalStatus: "APROVADO",
+    billingTotal: 539.1,
+    snapshotTotal: 539.1,
+    absoluteDifference: 0,
+    expectedUse: "golden",
+  },
+  {
+    label: "billing atual diferente do snapshot",
+    serviceOrderId: 438,
+    osNumber: "TOR-0291",
+    billingId: "652578f8-4105-4c91-8d33-9632decef55e",
+    billingStatus: "APROVADA",
+    approvalId: 57,
+    approvalStatus: "APROVADO",
+    billingTotal: 548.73,
+    snapshotTotal: 550.57,
+    absoluteDifference: 1.84,
+    expectedUse: "golden",
+  },
 ] as const;
 
-export const PR5B1_MISSING_FIXTURE_KINDS = [
-  "concluída com billing aberto",
-  "concluída com billing congelado",
-  "recusada com valores zero",
-  "billing em snapshot consistente",
-  "billing atual diferente do snapshot",
-] as const;
+export const PR5B1_MISSING_FIXTURE_KINDS = [] as const;
+
+export const PR5B1_TRANSVERSAL_EVIDENCE = {
+  label: "billing ligado a múltiplos approvals históricos pendentes",
+  serviceOrderId: 646,
+  osNumber: "TOR-0436",
+  billingId: "53a32997-70e4-4f0d-8b69-acd1da5a2425",
+  approvalIds: [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 75],
+  destination: "PR5B.2/PR5B.6",
+} as const;
 
 const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   calcularEscolta: {
@@ -142,18 +222,55 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
   });
 });
 
-describe("PR5B.1 — registro de golden fixtures sem acesso live", () => {
+describe("PR5B.1 — registro de golden fixtures live", () => {
   test("fixtures confirmadas contêm apenas IDs técnicos e estados", () => {
-    assert.equal(PR5B1_CONFIRMED_FIXTURES.length, 4);
+    assert.equal(PR5B1_CONFIRMED_FIXTURES.length, 9);
     assert.deepEqual(
       PR5B1_CONFIRMED_FIXTURES.map((fixture) => fixture.serviceOrderId).filter(Boolean),
-      [42, 955, 979],
+      [42, 955, 979, 981, 941, 35, 749, 438],
     );
     assert.deepEqual(PR5B1_CONFIRMED_FIXTURES[3].serviceOrderIds, [959, 960, 961, 964]);
   });
 
-  test("cinco categorias live permanecem bloqueadas por falta de IDs", () => {
-    assert.equal(PR5B1_MISSING_FIXTURE_KINDS.length, 5);
+  test("as cinco categorias live obrigatórias possuem fixture definitiva", () => {
+    assert.equal(PR5B1_MISSING_FIXTURE_KINDS.length, 0);
+    const required = PR5B1_CONFIRMED_FIXTURES.slice(-5);
+    assert.deepEqual(
+      required.map((fixture) => fixture.label),
+      [
+        "concluída com billing aberto",
+        "concluída com billing congelado",
+        "recusada com valores financeiros zero",
+        "billing em snapshot consistente",
+        "billing atual diferente do snapshot",
+      ],
+    );
+  });
+
+  test("recusada fixture confirma todos os checks financeiros zero", () => {
+    const refused = PR5B1_CONFIRMED_FIXTURES.find(
+      (fixture) => fixture.serviceOrderId === 35,
+    );
+    assert.ok(refused?.zeroChecks);
+    assert.ok(Object.values(refused.zeroChecks).every(Boolean));
+  });
+
+  test("fixtures de snapshot preservam igualdade e divergência histórica", () => {
+    const consistent = PR5B1_CONFIRMED_FIXTURES.find(
+      (fixture) => fixture.serviceOrderId === 749,
+    );
+    const divergent = PR5B1_CONFIRMED_FIXTURES.find(
+      (fixture) => fixture.serviceOrderId === 438,
+    );
+    assert.equal(consistent?.absoluteDifference, 0);
+    assert.equal(divergent?.absoluteDifference, 1.84);
+    assert.notEqual(divergent?.billingTotal, divergent?.snapshotTotal);
+  });
+
+  test("evidência transversal fica fora da PR5B.1", () => {
+    assert.equal(PR5B1_TRANSVERSAL_EVIDENCE.serviceOrderId, 646);
+    assert.equal(PR5B1_TRANSVERSAL_EVIDENCE.approvalIds.length, 11);
+    assert.equal(PR5B1_TRANSVERSAL_EVIDENCE.destination, "PR5B.2/PR5B.6");
   });
 });
 
