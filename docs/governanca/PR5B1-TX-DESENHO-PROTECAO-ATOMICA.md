@@ -205,6 +205,20 @@ O banco protege integridade, imutabilidade e ordem. `calcularEscolta`,
 `computeCanceladaBilling`, `billingTotalForBoletim` e preparação de inputs
 continuam no domínio TypeScript.
 
+### 4.1.1 Ordem global de locks
+
+Todas as RPCs seguem a mesma ordem:
+
+1. advisory locks por `service_order_id`, em ordem crescente;
+2. `service_orders` em ordem de ID, `FOR SHARE`;
+3. `escort_contracts FOR SHARE` quando materializa faturamento;
+4. `escort_billings FOR UPDATE` em ordem de UUID;
+5. `boletim_approvals` ou `invoices FOR UPDATE`, quando aplicável.
+
+Após o último lock, membership de billing/OS/invoice é revalidado. Mudança
+concorrente de contrato, reparent de invoice ou alteração do conjunto aborta a
+transação com conflito stale.
+
 ### 4.2 Resultado concorrente determinístico
 
 #### Snapshot adquire lock primeiro
@@ -234,6 +248,10 @@ Em nenhum caso um snapshot stale e uma mutação concorrente confirmam juntos.
 - Snapshot não pode referenciar billing inexistente; a RPC valida todos os IDs.
 - A RPC também verifica conflito com approvals ativos; o parâmetro `force` da
   aplicação não pode contornar a invariante sem ação excepcional auditada.
+- Approvals legados ativos (`PENDENTE`/`APROVADO`) sem JSON snapshot protegem
+  temporariamente os billings referenciados em `billing_ids`.
+- `DELETE_OPEN` só remove billing sem snapshot/frozen e sem vínculo no ledger;
+  ledger relacionado bloqueia o delete e permanece auditável.
 
 ### 4.4 Reabertura e refaturamento
 
@@ -477,6 +495,8 @@ podem produzir espelhos stale. Elas não devem ser confundidas com D1–D8.
   substituem a foto factual.
 - Cancelada mantém exclusivamente a regra já fechada de
   `computeCanceladaBilling`.
+- O contrato da cancelada deve estar `Ativo` e possuir exatamente
+  `franquia_km=100` e `franquia_horas=3`; incompatibilidade falha fechado.
 
 #### Submit avulso
 
