@@ -320,6 +320,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const snapshotTx = await client();
     const writer = await client();
     await snapshotTx.query("BEGIN");
+    await snapshotTx.query("SELECT pg_advisory_xact_lock(7411,2)");
+    await snapshotTx.query("SELECT id FROM service_orders WHERE id=2 FOR SHARE");
     await snapshotTx.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billing.id]);
     const pendingWrite = writer.query(
       `SELECT * FROM write_escort_billing_atomic(
@@ -346,6 +348,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const snapshotTx = await client();
     const deleter = await client();
     await snapshotTx.query("BEGIN");
+    await snapshotTx.query("SELECT pg_advisory_xact_lock(7411,3)");
+    await snapshotTx.query("SELECT id FROM service_orders WHERE id=3 FOR SHARE");
     await snapshotTx.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billing.id]);
     const pendingDelete = deleter.query(
       `SELECT * FROM write_escort_billing_atomic(
@@ -499,6 +503,10 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("missing contract, timestamps and KM facts block official insert", async () => {
     const contractId = "00000000-0000-0000-0000-000000000040";
+    await admin.query(
+      "INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status) VALUES ($1,100,3,'Ativo')",
+      [contractId],
+    );
     await admin.query(
       "INSERT INTO service_orders(id,status,mission_status,escort_contract_id,mission_started_at,completed_date) VALUES (40,'concluida','encerrada',NULL,now()-interval '1h',now())",
     );
