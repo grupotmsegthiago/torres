@@ -59,6 +59,12 @@ export interface CanceladaResult {
   horarios: { horario_agendado: string | null; horario_inicio: string | null; horario_fim: string | null };
 }
 
+export function isCanceladaContract100km3(contrato: any): boolean {
+  return Number(contrato?.franquia_km) === 100 &&
+    Number(contrato?.franquia_horas) === 3 &&
+    contrato?.status === "Ativo";
+}
+
 // Resolve somente o contrato persistido na OS, extrai km/tempo reais e calcula
 // o faturamento de cancelamento via calcularEscolta.
 export async function computeCanceladaBilling(input: CanceladaInput): Promise<CanceladaResult | null> {
@@ -71,9 +77,8 @@ export async function computeCanceladaBilling(input: CanceladaInput): Promise<Ca
   if (contractError) throw contractError;
   const contrato = cc;
   if (!contrato) return null;
-  const usouTabela100 =
-    Number(contrato.franquia_km) === 100 &&
-    Number(contrato.franquia_horas) === 3;
+  const usouTabela100 = isCanceladaContract100km3(contrato);
+  if (!usouTabela100) return null;
 
   // KM real da OS — mesma convenção do recálculo de boletim: a franquia conta a
   // partir da chegada na origem (km_chegada); km_saida é fallback.

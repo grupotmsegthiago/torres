@@ -9,8 +9,6 @@ export type AtomicBillingAction =
   | "FREEZE_COMMERCIAL"
   | "REOPEN_APPROVED"
   | "REOPEN_CANCELLED"
-  | "MARK_INVOICED"
-  | "MARK_PAID"
   | "RELEASE_REBILL"
   | "METADATA_OPEN";
 

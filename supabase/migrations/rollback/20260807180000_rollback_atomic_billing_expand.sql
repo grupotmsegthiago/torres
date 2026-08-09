@@ -9,6 +9,8 @@ REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM service_role;
+REVOKE ALL ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  FROM service_role;
 REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
   integer, text, text, timestamptz
 ) FROM service_role;
@@ -35,13 +37,15 @@ DROP FUNCTION IF EXISTS public.create_boletim_approval_atomic(
 DROP FUNCTION IF EXISTS public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 );
+DROP FUNCTION IF EXISTS public.lock_service_orders_for_billings(uuid[]);
 DROP FUNCTION IF EXISTS public.is_escort_billing_snapshotted(uuid, bigint);
 
 DROP INDEX IF EXISTS public.idx_boletim_snapshot_billing_lookup;
+DROP INDEX IF EXISTS public.idx_boletim_legacy_billing_ids_lookup;
 
-REVOKE ALL ON public.service_orders, public.mission_photos
+REVOKE ALL ON public.service_orders, public.mission_photos, public.escort_contracts
   FROM torres_billing_rpc_owner;
-REVOKE ALL ON public.escort_billings, public.boletim_approvals
+REVOKE ALL ON public.escort_billings, public.boletim_approvals, public.invoices
   FROM torres_billing_rpc_owner;
 REVOKE ALL ON public.system_audit_logs, public.financial_transactions
   FROM torres_billing_rpc_owner;

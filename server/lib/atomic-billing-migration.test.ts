@@ -38,6 +38,17 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
   assert.match(expand, /CREATE ROLE torres_billing_rpc_owner/);
+  assert.match(
+    expand,
+    /FUNCTION public\.is_escort_billing_snapshotted[\s\S]*?LANGUAGE sql[\s\S]*?STABLE/,
+  );
+  assert.match(
+    expand,
+    /GRANT EXECUTE ON FUNCTION public\.is_escort_billing_snapshotted\(uuid, bigint\)[\s\S]*?TO service_role/,
+  );
+  assert.match(expand, /legacy\.status IN \('PENDENTE', 'APROVADO'\)/);
+  assert.match(expand, /legacy\.billing_snapshot IS NULL/);
+  assert.doesNotMatch(expand, /DELETE FROM public\.financial_transactions/);
   assert.match(enforcement, /current_user <> 'torres_billing_rpc_owner'/);
   assert.doesNotMatch(expand + enforcement, /set_config\('torres\.atomic_/);
 });

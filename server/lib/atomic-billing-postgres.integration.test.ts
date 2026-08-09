@@ -34,16 +34,38 @@ const setupSql = `
     id serial PRIMARY KEY, service_order_id integer, step text, km_value numeric,
     created_at timestamptz DEFAULT now()
   );
+  CREATE TABLE escort_contracts (
+    id uuid PRIMARY KEY,
+    franquia_km numeric,
+    franquia_horas numeric,
+    status text
+  );
   CREATE TABLE escort_billings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), service_order_id integer,
     client_id integer, client_name text, contract_id uuid,
     km_inicial numeric NOT NULL, km_final numeric NOT NULL,
+    km_carregado numeric DEFAULT 0, km_vazio numeric DEFAULT 0,
+    km_total numeric DEFAULT 0, km_faturado numeric DEFAULT 0,
+    km_franquia numeric DEFAULT 0, km_excedente numeric DEFAULT 0,
+    horas_missao numeric DEFAULT 0, horas_trabalhadas numeric DEFAULT 0,
+    horas_estadia numeric DEFAULT 0, teve_pernoite boolean DEFAULT false,
+    is_noturno boolean DEFAULT false,
     fat_acionamento numeric DEFAULT 0, fat_hora_extra numeric DEFAULT 0,
     fat_km numeric DEFAULT 0, fat_adicional_noturno numeric DEFAULT 0,
+    fat_km_carregado numeric DEFAULT 0, fat_km_vazio numeric DEFAULT 0,
     fat_estadia numeric DEFAULT 0, fat_pernoite numeric DEFAULT 0,
-    despesas_pedagio numeric DEFAULT 0, despesas_outras numeric DEFAULT 0,
-    receitas_os numeric DEFAULT 0, fat_total numeric DEFAULT 0, pag_total numeric DEFAULT 0,
-    desp_total numeric DEFAULT 0, status varchar DEFAULT 'CALCULADO',
+    fat_diaria numeric DEFAULT 0, valor_franquia numeric DEFAULT 0,
+    valor_km_extra numeric DEFAULT 0,
+    pag_vrp numeric DEFAULT 0, pag_periculosidade numeric DEFAULT 0,
+    pag_adicional_noturno numeric DEFAULT 0, pag_reembolsos numeric DEFAULT 0,
+    pag_total numeric DEFAULT 0,
+    despesas_pedagio numeric DEFAULT 0, despesas_combustivel numeric DEFAULT 0,
+    despesas_outras numeric DEFAULT 0, desp_pedagio numeric DEFAULT 0,
+    desp_combustivel numeric DEFAULT 0, desp_outras numeric DEFAULT 0,
+    desp_total numeric DEFAULT 0, receitas_os numeric DEFAULT 0,
+    resultado_bruto numeric DEFAULT 0, resultado_liquido numeric DEFAULT 0,
+    margem_percentual numeric DEFAULT 0, fat_total numeric DEFAULT 0,
+    status varchar DEFAULT 'CALCULADO',
     observacoes text, notas text, revisado_por text, revisado_em timestamptz,
     boletim_numero varchar, boletim_gerado boolean DEFAULT false,
     invoice_id integer, faturado_em timestamptz, faturado_por text,
@@ -69,6 +91,9 @@ const setupSql = `
   CREATE TABLE financial_transactions (
     id serial PRIMARY KEY, origin_type text, origin_id text
   );
+  CREATE TABLE invoices (
+    id integer PRIMARY KEY, client_id integer NOT NULL
+  );
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
   CREATE FUNCTION validate_escort_billing_approval() RETURNS trigger
@@ -85,6 +110,11 @@ const setupSql = `
 
 async function insertFacts(db: pg.Client, osId: number) {
   const contractId = `00000000-0000-0000-0000-${String(osId).padStart(12, "0")}`;
+  await db.query(
+    `INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status)
+     VALUES ($1,100,3,'Ativo') ON CONFLICT (id) DO NOTHING`,
+    [contractId],
+  );
   await db.query(
     `INSERT INTO service_orders
       (id,status,mission_status,escort_contract_id,mission_started_at,completed_date)
@@ -193,6 +223,17 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           'public.service_orders',
           'SELECT'
         ) AS owner_can_read_service_orders
+        ,
+        has_function_privilege(
+          'service_role',
+          'public.is_escort_billing_snapshotted(uuid,bigint)',
+          'EXECUTE'
+        ) AS service_can_check_snapshot,
+        has_function_privilege(
+          'anon',
+          'public.is_escort_billing_snapshotted(uuid,bigint)',
+          'EXECUTE'
+        ) AS anon_can_check_snapshot
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -204,7 +245,24 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       service_can_transition_invoice: true,
       rpc_owner: "torres_billing_rpc_owner",
       owner_can_read_service_orders: true,
+      service_can_check_snapshot: true,
+      anon_can_check_snapshot: false,
     });
+    const service = await client();
+    await service.query("SET ROLE service_role");
+    const helper = await service.query(
+      "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0) AS protected",
+    );
+    assert.equal(helper.rows[0].protected, false);
+    await service.query("RESET ROLE");
+    await service.query("SET ROLE anon");
+    await assert.rejects(
+      service.query(
+        "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0)",
+      ),
+      /permission denied/,
+    );
+    await service.end();
   });
 
   await t.test("valid version increments; stale concurrent writer fails", async () => {
@@ -226,6 +284,33 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       [billing.id],
     );
     assert.equal(Number(current.rows[0].lock_version), 1);
+    await a.end();
+    await b.end();
+  });
+
+  await t.test("concurrent INSERT for the same OS creates exactly one billing", async () => {
+    const contractId = await insertFacts(admin, 110);
+    const a = await client();
+    const b = await client();
+    const query = `SELECT * FROM write_escort_billing_atomic(
+      'WRITE_OFFICIAL',
+      jsonb_build_object(
+        'service_order_id',110,'client_id',1,'contract_id',$1::text,
+        'km_inicial',100,'km_final',150,'fat_total',500,'status','A_VERIFICAR'
+      ),
+      NULL,110,NULL,'{}'::jsonb
+    )`;
+    const outcomes = await Promise.allSettled([
+      a.query(query, [contractId]),
+      b.query(query, [contractId]),
+    ]);
+    assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+    assert.match(String(rejected.reason?.message), /PR5B1_TX_STALE_VERSION/);
+    const count = await admin.query(
+      "SELECT count(*)::int AS count FROM escort_billings WHERE service_order_id=110",
+    );
+    assert.equal(count.rows[0].count, 1);
     await a.end();
     await b.end();
   });
@@ -347,18 +432,18 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         );
         if (status === "FATURADO" || status === "PAGO") {
           await admin.query(
-            `SELECT * FROM write_escort_billing_atomic(
-              'MARK_INVOICED','{"status":"FATURADO","invoice_id":1}'::jsonb,$1,$2,1,'{}'::jsonb
-            )`,
+            "INSERT INTO invoices(id,client_id) VALUES ($1,1)",
+            [osId],
+          );
+          await admin.query(
+            "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],$2,now(),'test')",
             [billing.id, osId],
           );
         }
         if (status === "PAGO") {
           await admin.query(
-            `SELECT * FROM write_escort_billing_atomic(
-              'MARK_PAID','{"status":"PAGO"}'::jsonb,$1,$2,2,'{}'::jsonb
-            )`,
-            [billing.id, osId],
+            "SELECT * FROM transition_invoice_billings_atomic($1,'MARK_PAID',now(),'test')",
+            [osId],
           );
         }
       } else if (status === "CANCELADO") {
@@ -458,21 +543,63 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     await assert.rejects(invoke(44, contractId), /PR5B1_TX_KM_REVERSED/);
   });
 
-  await t.test("recusada with financial residue is rejected", async () => {
-    const contractId = await insertFacts(admin, 50);
+  await t.test("recusada partial payload clears every persisted financial residue", async () => {
+    const billing = await createBilling(admin, 50);
+    await admin.query(
+      `SELECT * FROM write_escort_billing_atomic(
+        'UPDATE_OPEN',
+        '{"fat_km":100,"pag_total":50,"desp_total":25,"resultado_bruto":325,"resultado_liquido":300,"margem_percentual":60}'::jsonb,
+        $1,50,0,'{}'::jsonb
+      )`,
+      [billing.id],
+    );
+    await admin.query(
+      `SELECT * FROM write_escort_billing_atomic(
+        'WRITE_REFUSED',
+        '{"service_order_id":50,"contract_id":"00000000-0000-0000-0000-000000000050"}'::jsonb,
+        $1,50,1,'{}'::jsonb
+      )`,
+      [billing.id],
+    );
+    const zeroed = await admin.query(
+      `SELECT fat_total,fat_km,pag_total,desp_total,receitas_os,
+              resultado_bruto,resultado_liquido,margem_percentual,
+              valor_franquia,valor_km_extra,km_total,horas_missao,status
+       FROM escort_billings WHERE id=$1`,
+      [billing.id],
+    );
+    assert.deepEqual(zeroed.rows[0], {
+      fat_total: "0",
+      fat_km: "0",
+      pag_total: "0",
+      desp_total: "0",
+      receitas_os: "0",
+      resultado_bruto: "0",
+      resultado_liquido: "0",
+      margem_percentual: "0",
+      valor_franquia: "0",
+      valor_km_extra: "0",
+      km_total: "0",
+      horas_missao: "0",
+      status: "CANCELADO",
+    });
+  });
+
+  await t.test("cancelada rejects linked contract outside active 100 km / 3 h", async () => {
+    const billing = await createBilling(admin, 55);
+    await admin.query(
+      "UPDATE escort_contracts SET franquia_km=50 WHERE id='00000000-0000-0000-0000-000000000055'",
+    );
     await assert.rejects(
       admin.query(
         `SELECT * FROM write_escort_billing_atomic(
-          'WRITE_REFUSED',
-          jsonb_build_object(
-            'service_order_id',50,'contract_id',$1::text,
-            'km_inicial',0,'km_final',0,'status','CANCELADO','fat_total',1
-          ),
-          NULL,50,NULL,'{}'::jsonb
+          'WRITE_CANCELLED',
+          '{"service_order_id":55,"contract_id":"00000000-0000-0000-0000-000000000055","km_inicial":100,"km_final":150,"status":"CANCELADO"}'::jsonb,
+          $1,55,0,'{}'::jsonb
         )`,
-        [contractId],
+        [billing.id],
       ),
-      /PR5B1_TX_REFUSED_MUST_BE_ZERO/,
+      /PR5B1_TX_CANCELLED_CONTRACT_MUST_BE_100KM_3H/,
     );
   });
 
@@ -491,6 +618,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       [cancelled.id],
     );
     const cancelledVersion = Number(cancelledRow.rows[0].lock_version);
+    await admin.query("INSERT INTO invoices(id,client_id) VALUES (99,1)");
     const approval = await admin.query(
       `SELECT * FROM create_boletim_approval_atomic(
         'mixed-approval',1,'Client',NULL,current_date,current_date,
@@ -536,6 +664,133 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     assert.deepEqual(
       released.rows.map((row) => [row.status, row.invoice_id]).sort(),
       [["APROVADA", null], ["CANCELADO", null]],
+    );
+  });
+
+  await t.test("invoice A and B cannot concurrently re-parent the same billing", async () => {
+    const billing = await createBilling(admin, 130);
+    await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('FREEZE_COMMERCIAL','{\"status\":\"APROVADA\"}'::jsonb,$1,130,0,'{}'::jsonb)",
+      [billing.id],
+    );
+    await admin.query("INSERT INTO invoices(id,client_id) VALUES (201,1),(202,1)");
+    const a = await client();
+    const b = await client();
+    const outcomes = await Promise.allSettled([
+      a.query(
+        "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],201,now(),'A')",
+        [billing.id],
+      ),
+      b.query(
+        "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],202,now(),'B')",
+        [billing.id],
+      ),
+    ]);
+    assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+    assert.match(String(rejected.reason?.message), /PR5B1_TX_INVOICE_MEMBERSHIP_STALE/);
+    const current = await admin.query(
+      "SELECT invoice_id FROM escort_billings WHERE id=$1",
+      [billing.id],
+    );
+    assert.ok([201, 202].includes(Number(current.rows[0].invoice_id)));
+    await a.end();
+    await b.end();
+  });
+
+  await t.test("invoice transition revalidates membership after concurrent move", async () => {
+    const billing = await createBilling(admin, 131);
+    await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('FREEZE_COMMERCIAL','{\"status\":\"APROVADA\"}'::jsonb,$1,131,0,'{}'::jsonb)",
+      [billing.id],
+    );
+    await admin.query("INSERT INTO invoices(id,client_id) VALUES (211,1),(212,1)");
+    await admin.query(
+      "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],211,now(),'test')",
+      [billing.id],
+    );
+    const mover = await client();
+    const transition = await client();
+    await mover.query("BEGIN");
+    await mover.query("SELECT pg_advisory_xact_lock(7411,131)");
+    await mover.query("SELECT id FROM service_orders WHERE id=131 FOR SHARE");
+    await mover.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billing.id]);
+    const pending = transition.query(
+      "SELECT * FROM transition_invoice_billings_atomic(211,'MARK_PAID',now(),'test')",
+    ).then(
+      () => ({ error: null as any }),
+      (error) => ({ error }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await mover.query("SET LOCAL ROLE torres_billing_rpc_owner");
+    await mover.query("UPDATE escort_billings SET invoice_id=212 WHERE id=$1", [billing.id]);
+    await mover.query("RESET ROLE");
+    await mover.query("COMMIT");
+    const outcome = await pending;
+    assert.match(String(outcome.error?.message), /PR5B1_TX_INVOICE_MEMBERSHIP_STALE/);
+    const current = await admin.query(
+      "SELECT invoice_id,status FROM escort_billings WHERE id=$1",
+      [billing.id],
+    );
+    assert.deepEqual(current.rows[0], { invoice_id: 212, status: "FATURADO" });
+    await mover.end();
+    await transition.end();
+  });
+
+  await t.test("freeze and invoice race has no deadlock or partial state", async () => {
+    const billing = await createBilling(admin, 132);
+    const approval = await createSnapshot(admin, billing, "freeze-invoice-race");
+    await admin.query("INSERT INTO invoices(id,client_id) VALUES (221,1)");
+    const freezer = await client();
+    const invoicer = await client();
+    const outcomes = await Promise.allSettled([
+      freezer.query(
+        "SELECT * FROM freeze_boletim_billings_atomic($1,'Cliente','127.0.0.1',now())",
+        [approval.rows[0].id],
+      ),
+      invoicer.query(
+        "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],221,now(),'test')",
+        [billing.id],
+      ),
+    ]);
+    assert.equal(outcomes[0].status, "fulfilled");
+    if (outcomes[1].status === "rejected") {
+      assert.match(String(outcomes[1].reason?.message), /PR5B1_TX_INVALID_INVOICE_BATCH_STATUS/);
+    }
+    const current = await admin.query(
+      "SELECT status,invoice_id FROM escort_billings WHERE id=$1",
+      [billing.id],
+    );
+    assert.ok(
+      (current.rows[0].status === "APROVADA" && current.rows[0].invoice_id === null) ||
+      (current.rows[0].status === "FATURADO" && Number(current.rows[0].invoice_id) === 221),
+    );
+    await freezer.end();
+    await invoicer.end();
+  });
+
+  await t.test("invalid member rolls back entire invoice batch", async () => {
+    const valid = await createBilling(admin, 133);
+    const invalid = await createBilling(admin, 134);
+    await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('FREEZE_COMMERCIAL','{\"status\":\"APROVADA\"}'::jsonb,$1,133,0,'{}'::jsonb)",
+      [valid.id],
+    );
+    await admin.query("INSERT INTO invoices(id,client_id) VALUES (230,1)");
+    await assert.rejects(
+      admin.query(
+        "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid,$2::uuid],230,now(),'test')",
+        [valid.id, invalid.id],
+      ),
+      /PR5B1_TX_INVALID_INVOICE_BATCH_STATUS/,
+    );
+    const rows = await admin.query(
+      "SELECT id,status,invoice_id FROM escort_billings WHERE id=ANY($1::uuid[]) ORDER BY id",
+      [[String(valid.id), String(invalid.id)]],
+    );
+    assert.deepEqual(
+      rows.rows.map((row) => [row.status, row.invoice_id]).sort(),
+      [["APROVADA", null], ["A_VERIFICAR", null]],
     );
   });
 
@@ -616,6 +871,56 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     );
   });
 
+  await t.test("active legacy approval without snapshot protects write/delete", async () => {
+    const billing = await createBilling(admin, 82);
+    const orphan = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    await admin.query(
+      "ALTER TABLE boletim_approvals DISABLE TRIGGER guard_boletim_snapshot_atomic_insert",
+    );
+    await admin.query(
+      `INSERT INTO boletim_approvals(
+        token,client_id,period_start,period_end,billing_ids,status,billing_snapshot
+      ) VALUES ('legacy-active',1,current_date,current_date,$1,'PENDENTE',NULL)`,
+      [[String(billing.id), orphan]],
+    );
+    await admin.query(
+      "ALTER TABLE boletim_approvals ENABLE TRIGGER guard_boletim_snapshot_atomic_insert",
+    );
+    await assert.rejects(
+      admin.query(
+        "SELECT * FROM write_escort_billing_atomic('UPDATE_OPEN','{\"fat_total\":600}'::jsonb,$1,82,0,'{}'::jsonb)",
+        [billing.id],
+      ),
+      /PR5B1_TX_BILLING_PROTECTED/,
+    );
+    await assert.rejects(
+      admin.query(
+        "SELECT * FROM write_escort_billing_atomic('DELETE_OPEN','{}'::jsonb,$1,82,0,'{}'::jsonb)",
+        [billing.id],
+      ),
+      /PR5B1_TX_BILLING_PROTECTED/,
+    );
+
+    const archivedBilling = await createBilling(admin, 83);
+    await admin.query(
+      "ALTER TABLE boletim_approvals DISABLE TRIGGER guard_boletim_snapshot_atomic_insert",
+    );
+    await admin.query(
+      `INSERT INTO boletim_approvals(
+        token,client_id,period_start,period_end,billing_ids,status,billing_snapshot
+      ) VALUES ('legacy-archived',1,current_date,current_date,$1,'ARQUIVADO',NULL)`,
+      [[String(archivedBilling.id)]],
+    );
+    await admin.query(
+      "ALTER TABLE boletim_approvals ENABLE TRIGGER guard_boletim_snapshot_atomic_insert",
+    );
+    const updated = await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('UPDATE_OPEN','{\"fat_total\":600}'::jsonb,$1,83,0,'{}'::jsonb)",
+      [archivedBilling.id],
+    );
+    assert.equal(Number(updated.rows[0].fat_total), 600);
+  });
+
   await t.test("existing billing cannot be re-parented by full write payload", async () => {
     const billing = await createBilling(admin, 90);
     const otherContract = await insertFacts(admin, 91);
@@ -642,6 +947,41 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       ),
       /PR5B1_TX_PAYLOAD_KEY_NOT_ALLOWED/,
     );
+  });
+
+  await t.test("contract change concurrent with billing write fails closed", async () => {
+    const billing = await createBilling(admin, 120);
+    const newContract = "00000000-0000-0000-0000-000000000121";
+    await admin.query(
+      "INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status) VALUES ($1,100,3,'Ativo')",
+      [newContract],
+    );
+    const changer = await client();
+    const writer = await client();
+    await changer.query("BEGIN");
+    await changer.query(
+      "UPDATE service_orders SET escort_contract_id=$1 WHERE id=120",
+      [newContract],
+    );
+    const pending = writer.query(
+      "SELECT * FROM write_escort_billing_atomic('UPDATE_OPEN','{\"fat_total\":650}'::jsonb,$1,120,0,'{}'::jsonb)",
+      [billing.id],
+    ).then(
+      () => ({ error: null as any }),
+      (error) => ({ error }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await changer.query("COMMIT");
+    const outcome = await pending;
+    assert.match(String(outcome.error?.message), /PR5B1_TX_CONTRACT_MISMATCH/);
+    const current = await admin.query(
+      "SELECT fat_total,lock_version FROM escort_billings WHERE id=$1",
+      [billing.id],
+    );
+    assert.equal(Number(current.rows[0].fat_total), 500);
+    assert.equal(Number(current.rows[0].lock_version), 0);
+    await changer.end();
+    await writer.end();
   });
 
   await t.test("direct DML and missing official facts fail closed", async () => {
@@ -672,15 +1012,29 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     );
   });
 
-  await t.test("open billing delete removes its ledger mirror in the same transaction", async () => {
-    const billing = await createBilling(admin, 6);
+  await t.test("open delete allows no-ledger billing and blocks linked ledger", async () => {
+    const deletable = await createBilling(admin, 6);
+    await admin.query(
+      "SELECT * FROM write_escort_billing_atomic('DELETE_OPEN','{}'::jsonb,$1,6,0,'{}'::jsonb)",
+      [deletable.id],
+    );
+    const deletedCount = await admin.query(
+      "SELECT count(*)::int AS count FROM escort_billings WHERE id=$1",
+      [deletable.id],
+    );
+    assert.equal(deletedCount.rows[0].count, 0);
+
+    const billing = await createBilling(admin, 7);
     await admin.query(
       "INSERT INTO financial_transactions(origin_type,origin_id) VALUES ('escort_billing',$1)",
       [billing.id],
     );
-    await admin.query(
-      "SELECT * FROM write_escort_billing_atomic('DELETE_OPEN','{}'::jsonb,$1,6,0,'{}'::jsonb)",
-      [billing.id],
+    await assert.rejects(
+      admin.query(
+        "SELECT * FROM write_escort_billing_atomic('DELETE_OPEN','{}'::jsonb,$1,7,0,'{}'::jsonb)",
+        [billing.id],
+      ),
+      /PR5B1_TX_DELETE_BLOCKED_BY_LEDGER/,
     );
     const counts = await admin.query(
       `SELECT
@@ -688,7 +1042,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
         (SELECT count(*)::int FROM financial_transactions WHERE origin_id=$1::text) AS ledger`,
       [billing.id],
     );
-    assert.deepEqual(counts.rows[0], { billings: 0, ledger: 0 });
+    assert.deepEqual(counts.rows[0], { billings: 1, ledger: 1 });
   });
 
   await t.test("rollback restores legacy guards and removes TX objects", async () => {

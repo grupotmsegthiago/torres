@@ -47,15 +47,23 @@ CREATE INDEX IF NOT EXISTS idx_boletim_snapshot_billing_lookup
   USING gin (billing_snapshot jsonb_path_ops)
   WHERE billing_snapshot IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_boletim_legacy_billing_ids_lookup
+  ON public.boletim_approvals
+  USING gin (billing_ids)
+  WHERE billing_snapshot IS NULL
+    AND status IN ('PENDENTE', 'APROVADO');
+
 GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
-GRANT SELECT, UPDATE ON public.service_orders, public.mission_photos
+GRANT SELECT, UPDATE ON
+  public.service_orders, public.mission_photos, public.escort_contracts
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE ON public.boletim_approvals
   TO torres_billing_rpc_owner;
+GRANT SELECT, UPDATE ON public.invoices TO torres_billing_rpc_owner;
 GRANT INSERT ON public.system_audit_logs TO torres_billing_rpc_owner;
-GRANT SELECT, DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
+GRANT SELECT ON public.financial_transactions TO torres_billing_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE
   public.boletim_approvals_id_seq,
   public.system_audit_logs_id_seq
@@ -70,19 +78,76 @@ LANGUAGE sql
 STABLE
 SET search_path = public, pg_catalog
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.boletim_approvals AS approval
-    CROSS JOIN LATERAL jsonb_array_elements(approval.billing_snapshot) AS item
-    WHERE approval.billing_snapshot @>
-      jsonb_build_array(jsonb_build_object('billing_id', p_billing_id::text))
-      AND item->>'billing_id' = p_billing_id::text
-      AND COALESCE(NULLIF(item->>'billing_version', '')::bigint, 0) = p_lock_version
-  );
+  SELECT
+    EXISTS (
+      SELECT 1
+      FROM public.boletim_approvals AS approval
+      CROSS JOIN LATERAL jsonb_array_elements(approval.billing_snapshot) AS item
+      WHERE approval.billing_snapshot @>
+        jsonb_build_array(jsonb_build_object('billing_id', p_billing_id::text))
+        AND item->>'billing_id' = p_billing_id::text
+        AND COALESCE(NULLIF(item->>'billing_version', '')::bigint, 0) = p_lock_version
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM public.boletim_approvals AS legacy
+      WHERE legacy.status IN ('PENDENTE', 'APROVADO')
+        AND legacy.billing_snapshot IS NULL
+        AND legacy.billing_ids @> ARRAY[p_billing_id::text]
+    );
 $$;
 
 COMMENT ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint) IS
   'PR5B.1-TX: detecta referência comercial imutável em billing_snapshot.';
+
+CREATE OR REPLACE FUNCTION public.lock_service_orders_for_billings(
+  p_billing_ids uuid[]
+)
+RETURNS integer[]
+LANGUAGE plpgsql
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  v_service_order_ids integer[];
+  v_service_order_id integer;
+  v_count integer;
+BEGIN
+  SELECT array_agg(DISTINCT service_order_id ORDER BY service_order_id)
+  INTO v_service_order_ids
+  FROM public.escort_billings
+  WHERE id = ANY(p_billing_ids)
+    AND service_order_id IS NOT NULL;
+
+  IF v_service_order_ids IS NULL
+     OR cardinality(v_service_order_ids) <> cardinality(p_billing_ids) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_BILLING_SERVICE_ORDER_MEMBERSHIP_INVALID';
+  END IF;
+
+  FOREACH v_service_order_id IN ARRAY v_service_order_ids LOOP
+    PERFORM pg_advisory_xact_lock(7411, v_service_order_id);
+  END LOOP;
+
+  PERFORM 1
+  FROM public.service_orders
+  WHERE id = ANY(v_service_order_ids)
+  ORDER BY id
+  FOR SHARE;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  IF v_count <> cardinality(v_service_order_ids) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_SERVICE_ORDER_MEMBERSHIP_STALE';
+  END IF;
+
+  RETURN v_service_order_ids;
+END;
+$$;
+
+COMMENT ON FUNCTION public.lock_service_orders_for_billings(uuid[]) IS
+  'PR5B.1-TX: ordem global advisory OS -> service_orders antes de billing locks.';
 
 CREATE OR REPLACE FUNCTION public.write_escort_billing_atomic(
   p_action text,
@@ -103,6 +168,7 @@ DECLARE
   v_current public.escort_billings%ROWTYPE;
   v_result public.escort_billings%ROWTYPE;
   v_so public.service_orders%ROWTYPE;
+  v_contract public.escort_contracts%ROWTYPE;
   v_target_id uuid;
   v_service_order_id integer := p_service_order_id;
   v_contract_id uuid;
@@ -152,7 +218,6 @@ BEGIN
   IF v_action NOT IN (
     'WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED', 'DELETE_OPEN',
     'FREEZE_COMMERCIAL', 'REOPEN_APPROVED', 'REOPEN_CANCELLED',
-    'MARK_INVOICED', 'MARK_PAID',
     'RELEASE_REBILL', 'METADATA_OPEN'
   ) THEN
     RAISE EXCEPTION USING
@@ -168,19 +233,82 @@ BEGIN
       MESSAGE = 'PR5B1_TX_INVALID_ACTOR: user_id inválido';
   END;
 
+  -- Ordem global: advisory da OS -> service_order -> contrato -> billing.
+  IF p_billing_id IS NOT NULL THEN
+    SELECT service_order_id
+    INTO v_service_order_id
+    FROM public.escort_billings
+    WHERE id = p_billing_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING
+        ERRCODE = 'P0002',
+        MESSAGE = 'PR5B1_TX_BILLING_NOT_FOUND';
+    END IF;
+    IF p_service_order_id IS NOT NULL
+       AND p_service_order_id IS DISTINCT FROM v_service_order_id THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'PR5B1_TX_SERVICE_ORDER_REPARENT_BLOCKED';
+    END IF;
+  END IF;
+
+  IF v_service_order_id IS NULL THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_SERVICE_ORDER_REQUIRED';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(7411, v_service_order_id);
+
+  SELECT *
+  INTO v_so
+  FROM public.service_orders
+  WHERE id = v_service_order_id
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_SERVICE_ORDER_NOT_FOUND';
+  END IF;
+
+  IF v_action IN ('WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED') THEN
+    IF NULLIF(trim(COALESCE(v_so.escort_contract_id, '')), '') IS NULL THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'PR5B1_TX_CONTRACT_REQUIRED: OS sem escort_contract_id';
+    END IF;
+    BEGIN
+      v_contract_id := v_so.escort_contract_id::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'PR5B1_TX_INVALID_CONTRACT_ID';
+    END;
+
+    SELECT *
+    INTO v_contract
+    FROM public.escort_contracts
+    WHERE id = v_contract_id
+    FOR SHARE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23503',
+        MESSAGE = 'PR5B1_TX_CONTRACT_NOT_FOUND';
+    END IF;
+  END IF;
+
   IF p_billing_id IS NOT NULL THEN
     SELECT *
     INTO v_current
     FROM public.escort_billings
     WHERE id = p_billing_id
+      AND service_order_id = v_service_order_id
     FOR UPDATE;
-  ELSIF p_service_order_id IS NOT NULL THEN
-    -- INSERTs concorrentes da mesma OS seguem a mesma ordem antes do row lock.
-    PERFORM pg_advisory_xact_lock(7411, p_service_order_id);
+  ELSE
     SELECT *
     INTO v_current
     FROM public.escort_billings
-    WHERE service_order_id = p_service_order_id
+    WHERE service_order_id = v_service_order_id
     FOR UPDATE;
   END IF;
 
@@ -235,28 +363,6 @@ BEGIN
   END IF;
 
   IF v_action IN ('WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED') THEN
-    v_service_order_id := COALESCE(
-      v_service_order_id,
-      NULLIF(v_payload->>'service_order_id', '')::integer
-    );
-    IF v_service_order_id IS NULL THEN
-      RAISE EXCEPTION USING
-        ERRCODE = '23514',
-        MESSAGE = 'PR5B1_TX_SERVICE_ORDER_REQUIRED';
-    END IF;
-
-    SELECT *
-    INTO v_so
-    FROM public.service_orders
-    WHERE id = v_service_order_id
-    FOR SHARE;
-
-    IF NOT FOUND THEN
-      RAISE EXCEPTION USING
-        ERRCODE = '23503',
-        MESSAGE = 'PR5B1_TX_SERVICE_ORDER_NOT_FOUND';
-    END IF;
-
     IF v_current.id IS NOT NULL
        AND NULLIF(v_payload->>'service_order_id', '') IS NOT NULL
        AND (v_payload->>'service_order_id')::integer <> v_current.service_order_id THEN
@@ -264,20 +370,6 @@ BEGIN
         ERRCODE = '23514',
         MESSAGE = 'PR5B1_TX_SERVICE_ORDER_REPARENT_BLOCKED';
     END IF;
-
-    IF NULLIF(trim(COALESCE(v_so.escort_contract_id, '')), '') IS NULL THEN
-      RAISE EXCEPTION USING
-        ERRCODE = '23514',
-        MESSAGE = 'PR5B1_TX_CONTRACT_REQUIRED: OS sem escort_contract_id';
-    END IF;
-
-    BEGIN
-      v_contract_id := v_so.escort_contract_id::uuid;
-    EXCEPTION WHEN invalid_text_representation THEN
-      RAISE EXCEPTION USING
-        ERRCODE = '23514',
-        MESSAGE = 'PR5B1_TX_INVALID_CONTRACT_ID';
-    END;
 
     IF COALESCE(
          NULLIF(v_payload->>'contract_id', '')::uuid,
@@ -293,6 +385,28 @@ BEGIN
       RAISE EXCEPTION USING
         ERRCODE = '23514',
         MESSAGE = 'PR5B1_TX_CLIENT_MISMATCH';
+    END IF;
+
+    IF v_action = 'WRITE_REFUSED' THEN
+      -- A RPC materializa o contrato completo da recusada; campos omitidos pelo
+      -- caller nunca preservam resíduos do billing anterior.
+      v_payload := v_payload || jsonb_build_object(
+        'status', 'CANCELADO',
+        'km_inicial', 0, 'km_final', 0, 'km_carregado', 0, 'km_vazio', 0,
+        'km_total', 0, 'km_faturado', 0, 'km_franquia', 0, 'km_excedente', 0,
+        'horas_missao', 0, 'horas_trabalhadas', 0, 'horas_estadia', 0,
+        'teve_pernoite', false, 'is_noturno', false,
+        'fat_acionamento', 0, 'fat_hora_extra', 0, 'fat_km', 0,
+        'fat_km_carregado', 0, 'fat_km_vazio', 0, 'fat_estadia', 0,
+        'fat_pernoite', 0, 'fat_diaria', 0, 'fat_adicional_noturno', 0,
+        'fat_total', 0, 'valor_franquia', 0, 'valor_km_extra', 0,
+        'pag_vrp', 0, 'pag_periculosidade', 0, 'pag_adicional_noturno', 0,
+        'pag_reembolsos', 0, 'pag_total', 0,
+        'despesas_pedagio', 0, 'despesas_combustivel', 0, 'despesas_outras', 0,
+        'desp_pedagio', 0, 'desp_combustivel', 0, 'desp_outras', 0,
+        'desp_total', 0, 'receitas_os', 0,
+        'resultado_bruto', 0, 'resultado_liquido', 0, 'margem_percentual', 0
+      );
     END IF;
 
     IF v_action IN ('WRITE_OFFICIAL', 'UPDATE_OPEN') THEN
@@ -363,6 +477,13 @@ BEGIN
           MESSAGE = 'PR5B1_TX_INVALID_OPEN_STATUS';
       END IF;
     ELSIF v_action = 'WRITE_CANCELLED' THEN
+      IF COALESCE(v_contract.franquia_km, 0) <> 100
+         OR COALESCE(v_contract.franquia_horas, 0) <> 3
+         OR v_contract.status IS DISTINCT FROM 'Ativo' THEN
+        RAISE EXCEPTION USING
+          ERRCODE = '23514',
+          MESSAGE = 'PR5B1_TX_CANCELLED_CONTRACT_MUST_BE_100KM_3H';
+      END IF;
       IF COALESCE(v_payload->>'status', 'CANCELADO') <> 'CANCELADO' THEN
         RAISE EXCEPTION USING
           ERRCODE = '23514',
@@ -428,26 +549,6 @@ BEGIN
         'status', 'revisado_por', 'revisado_em',
         'boletim_numero', 'boletim_gerado'
       ];
-    WHEN 'MARK_INVOICED' THEN
-      IF v_current.id IS NULL
-         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN ('APROVADA', 'FATURADO')
-         OR COALESCE(v_payload->>'status', '') <> 'FATURADO' THEN
-        RAISE EXCEPTION USING
-          ERRCODE = '55000',
-          MESSAGE = 'PR5B1_TX_INVALID_INVOICE_TRANSITION';
-      END IF;
-      v_allowed_keys := ARRAY['status', 'invoice_id', 'faturado_em', 'faturado_por'];
-    WHEN 'MARK_PAID' THEN
-      IF v_current.id IS NULL
-         OR upper(trim(COALESCE(v_current.status, ''))) NOT IN (
-           'FATURADO', 'FATURADA', 'PAGO', 'CANCELADO', 'CANCELADA'
-         )
-         OR COALESCE(v_payload->>'status', '') <> 'PAGO' THEN
-        RAISE EXCEPTION USING
-          ERRCODE = '55000',
-          MESSAGE = 'PR5B1_TX_INVALID_PAID_TRANSITION';
-      END IF;
-      v_allowed_keys := ARRAY['status', 'pago_em'];
     WHEN 'REOPEN_APPROVED' THEN
       IF v_current.id IS NULL
          OR upper(trim(COALESCE(v_current.status, ''))) <> 'APROVADA'
@@ -505,9 +606,16 @@ BEGIN
           ERRCODE = '22023',
           MESSAGE = 'PR5B1_TX_DELETE_PAYLOAD_MUST_BE_EMPTY';
       END IF;
-      DELETE FROM public.financial_transactions
-      WHERE origin_type = 'escort_billing'
-        AND origin_id = v_target_id::text;
+      IF EXISTS (
+        SELECT 1
+        FROM public.financial_transactions
+        WHERE origin_type = 'escort_billing'
+          AND origin_id = v_target_id::text
+      ) THEN
+        RAISE EXCEPTION USING
+          ERRCODE = '55000',
+          MESSAGE = 'PR5B1_TX_DELETE_BLOCKED_BY_LEDGER';
+      END IF;
       DELETE FROM public.escort_billings WHERE id = v_target_id
       RETURNING * INTO v_result;
       RETURN NEXT v_result;
@@ -609,6 +717,7 @@ AS $$
 DECLARE
   v_result public.boletim_approvals%ROWTYPE;
   v_ids uuid[];
+  v_service_order_ids integer[];
   v_snapshot_count integer;
   v_locked_count integer;
 BEGIN
@@ -635,6 +744,8 @@ BEGIN
       MESSAGE = 'PR5B1_TX_INVALID_SNAPSHOT_IDS';
   END IF;
 
+  v_service_order_ids := public.lock_service_orders_for_billings(v_ids);
+
   PERFORM 1
   FROM public.escort_billings
   WHERE id = ANY(v_ids)
@@ -646,6 +757,17 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = '23503',
       MESSAGE = 'PR5B1_TX_SNAPSHOT_BILLING_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND NOT (service_order_id = ANY(v_service_order_ids))
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_SNAPSHOT_MEMBERSHIP_STALE';
   END IF;
 
   IF EXISTS (
@@ -798,23 +920,33 @@ AS $$
 DECLARE
   v_approval public.boletim_approvals%ROWTYPE;
   v_ids uuid[];
+  v_service_order_ids integer[];
+  v_initial_billing_ids text[];
+  v_initial_snapshot jsonb;
   v_locked_count integer;
 BEGIN
   SELECT *
   INTO v_approval
   FROM public.boletim_approvals
-  WHERE id = p_approval_id
-  FOR UPDATE;
+  WHERE id = p_approval_id;
 
-  IF NOT FOUND OR v_approval.status <> 'PENDENTE' THEN
+  IF NOT FOUND
+     OR v_approval.status <> 'PENDENTE'
+     OR v_approval.billing_snapshot IS NULL
+     OR jsonb_typeof(v_approval.billing_snapshot) <> 'array' THEN
     RAISE EXCEPTION USING
       ERRCODE = '55000',
-      MESSAGE = 'PR5B1_TX_APPROVAL_NOT_PENDING';
+      MESSAGE = 'PR5B1_TX_APPROVAL_NOT_PENDING_OR_SNAPSHOT_MISSING';
   END IF;
+
+  v_initial_billing_ids := v_approval.billing_ids;
+  v_initial_snapshot := v_approval.billing_snapshot;
 
   SELECT array_agg(id::uuid ORDER BY id::uuid)
   INTO v_ids
   FROM unnest(v_approval.billing_ids) AS id;
+
+  v_service_order_ids := public.lock_service_orders_for_billings(v_ids);
 
   PERFORM 1
   FROM public.escort_billings
@@ -827,6 +959,32 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = '23503',
       MESSAGE = 'PR5B1_TX_APPROVAL_BILLING_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND NOT (service_order_id = ANY(v_service_order_ids))
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_APPROVAL_MEMBERSHIP_STALE';
+  END IF;
+
+  SELECT *
+  INTO v_approval
+  FROM public.boletim_approvals
+  WHERE id = p_approval_id
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR v_approval.status <> 'PENDENTE'
+     OR v_approval.billing_ids IS DISTINCT FROM v_initial_billing_ids
+     OR v_approval.billing_snapshot IS DISTINCT FROM v_initial_snapshot THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_APPROVAL_MEMBERSHIP_STALE';
   END IF;
 
   IF EXISTS (
@@ -883,7 +1041,9 @@ SET search_path = public, pg_catalog
 AS $$
 DECLARE
   v_ids uuid[];
+  v_service_order_ids integer[];
   v_locked_count integer;
+  v_invoice_client_id integer;
 BEGIN
   SELECT array_agg(id ORDER BY id)
   INTO v_ids
@@ -896,6 +1056,8 @@ BEGIN
       MESSAGE = 'PR5B1_TX_INVALID_INVOICE_BILLING_IDS';
   END IF;
 
+  v_service_order_ids := public.lock_service_orders_for_billings(v_ids);
+
   PERFORM 1
   FROM public.escort_billings
   WHERE id = ANY(v_ids)
@@ -907,6 +1069,42 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = '23503',
       MESSAGE = 'PR5B1_TX_INVOICE_BILLING_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND (
+        NOT (service_order_id = ANY(v_service_order_ids))
+        OR (invoice_id IS NOT NULL AND invoice_id <> p_invoice_id)
+      )
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_INVOICE_MEMBERSHIP_STALE';
+  END IF;
+
+  SELECT client_id
+  INTO v_invoice_client_id
+  FROM public.invoices
+  WHERE id = p_invoice_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_INVOICE_NOT_FOUND';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND client_id IS DISTINCT FROM v_invoice_client_id
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_INVOICE_CLIENT_MISMATCH';
   END IF;
 
   IF EXISTS (
@@ -957,6 +1155,9 @@ AS $$
 DECLARE
   v_action text := upper(trim(COALESCE(p_action, '')));
   v_ids uuid[];
+  v_service_order_ids integer[];
+  v_locked_count integer;
+  v_invoice_client_id integer;
 BEGIN
   SELECT array_agg(id ORDER BY id)
   INTO v_ids
@@ -967,11 +1168,61 @@ BEGIN
     RETURN;
   END IF;
 
+  v_service_order_ids := public.lock_service_orders_for_billings(v_ids);
+
   PERFORM 1
   FROM public.escort_billings
   WHERE id = ANY(v_ids)
   ORDER BY id
   FOR UPDATE;
+  GET DIAGNOSTICS v_locked_count = ROW_COUNT;
+
+  IF v_locked_count <> cardinality(v_ids)
+     OR EXISTS (
+       SELECT 1
+       FROM public.escort_billings
+       WHERE id = ANY(v_ids)
+         AND (
+           invoice_id IS DISTINCT FROM p_invoice_id
+           OR NOT (service_order_id = ANY(v_service_order_ids))
+         )
+     ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_INVOICE_MEMBERSHIP_STALE';
+  END IF;
+
+  SELECT client_id
+  INTO v_invoice_client_id
+  FROM public.invoices
+  WHERE id = p_invoice_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23503',
+      MESSAGE = 'PR5B1_TX_INVOICE_NOT_FOUND';
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM public.escort_billings
+    WHERE invoice_id = p_invoice_id
+  ) <> cardinality(v_ids) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '40001',
+      MESSAGE = 'PR5B1_TX_INVOICE_MEMBERSHIP_STALE';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.escort_billings
+    WHERE id = ANY(v_ids)
+      AND client_id IS DISTINCT FROM v_invoice_client_id
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_INVOICE_CLIENT_MISMATCH';
+  END IF;
 
   IF v_action = 'MARK_PAID' THEN
     IF EXISTS (
@@ -1043,6 +1294,8 @@ COMMENT ON FUNCTION public.transition_invoice_billings_atomic(
 
 ALTER FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
   OWNER TO torres_billing_rpc_owner;
+ALTER FUNCTION public.lock_service_orders_for_billings(uuid[])
+  OWNER TO torres_billing_rpc_owner;
 ALTER FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) OWNER TO torres_billing_rpc_owner;
@@ -1062,14 +1315,16 @@ ALTER FUNCTION public.transition_invoice_billings_atomic(
 
 -- Reafirma privilégios após a transferência de ownership das RPCs.
 GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
-GRANT SELECT, UPDATE ON public.service_orders, public.mission_photos
+GRANT SELECT, UPDATE ON
+  public.service_orders, public.mission_photos, public.escort_contracts
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.escort_billings
   TO torres_billing_rpc_owner;
 GRANT SELECT, INSERT, UPDATE ON public.boletim_approvals
   TO torres_billing_rpc_owner;
+GRANT SELECT, UPDATE ON public.invoices TO torres_billing_rpc_owner;
 GRANT INSERT ON public.system_audit_logs TO torres_billing_rpc_owner;
-GRANT SELECT, DELETE ON public.financial_transactions TO torres_billing_rpc_owner;
+GRANT SELECT ON public.financial_transactions TO torres_billing_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE
   public.boletim_approvals_id_seq,
   public.system_audit_logs_id_seq
@@ -1079,6 +1334,8 @@ REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.lock_service_orders_for_billings(uuid[])
   FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
@@ -1097,6 +1354,8 @@ REVOKE ALL ON FUNCTION public.transition_invoice_billings_atomic(
 GRANT EXECUTE ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) TO service_role;
+GRANT EXECUTE ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  TO service_role;
 GRANT EXECUTE ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb

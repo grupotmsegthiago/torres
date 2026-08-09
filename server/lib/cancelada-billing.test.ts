@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calcularEscolta } from "../billing-calc";
-import { CANCELADA_CLEAN_FINANCIAL_FIELDS } from "./cancelada-billing";
+import {
+  CANCELADA_CLEAN_FINANCIAL_FIELDS,
+  isCanceladaContract100km3,
+} from "./cancelada-billing";
 
 // Regra do dono p/ OS CANCELADA: puxar a "tabela de 100 km" do cliente e cobrar
 // o acionamento + excedente real de km/horas. Dentro da franquia (≤100 km/≤3 h)
@@ -10,6 +13,7 @@ import { CANCELADA_CLEAN_FINANCIAL_FIELDS } from "./cancelada-billing";
 
 // Espelho da tabela de 100 km de produção (franquia_km=100, franquia_horas=3).
 const tabela100km = {
+  status: "Ativo",
   valor_acionamento: 480,
   franquia_km: 100,
   franquia_horas: 3,
@@ -25,6 +29,13 @@ const tabela100km = {
   valor_hora_estadia: 50,
   valor_diaria: 200,
 };
+
+test("cancelada aceita somente contrato Ativo com franquia 100 km / 3 h", () => {
+  assert.equal(isCanceladaContract100km3(tabela100km), true);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_km: 50 }), false);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_horas: 4 }), false);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, status: "Inativo" }), false);
+});
 
 const base = {
   km_vazio: 0,
