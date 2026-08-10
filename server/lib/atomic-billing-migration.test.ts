@@ -34,6 +34,22 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(expand, /transition_invoice_billings_atomic/);
   assert.match(expand, /FOR UPDATE/);
   assert.match(expand, /pg_advisory_xact_lock/);
+  assert.match(
+    expand,
+    /ordem global advisory OS -> service_orders -> contracts antes de billing locks/,
+  );
+  assert.match(
+    expand,
+    /UPDATE_OPEN e DELETE_OPEN compartilham exatamente o mesmo prefixo de locks/,
+  );
+  assert.match(
+    expand,
+    /'WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED', 'DELETE_OPEN'/,
+  );
+  assert.doesNotMatch(
+    expand,
+    /step = 'km_final'[\s\S]{0,120}FOR SHARE/,
+  );
   assert.match(enforcement, /BEFORE INSERT OR UPDATE OR DELETE ON public\.escort_billings/);
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);

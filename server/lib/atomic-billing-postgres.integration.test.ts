@@ -315,66 +315,154 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     await b.end();
   });
 
+  async function holdGlobalBillingLocks(db: pg.Client, osId: number, billingId: string) {
+    const contractId = `00000000-0000-0000-0000-${String(osId).padStart(12, "0")}`;
+    await db.query("BEGIN");
+    // Ordem global completa — nunca billing antes de advisory/SO/contrato.
+    await db.query("SELECT pg_advisory_xact_lock(7411,$1)", [osId]);
+    await db.query("SELECT id FROM service_orders WHERE id=$1 FOR SHARE", [osId]);
+    await db.query("SELECT id FROM escort_contracts WHERE id=$1::uuid FOR SHARE", [contractId]);
+    await db.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billingId]);
+  }
+
   await t.test("snapshot lock wins and concurrent update fails closed", async () => {
+    for (let round = 0; round < 3; round++) {
+      const osId = 200 + round;
+      const billing = await createBilling(admin, osId);
+      const snapshotTx = await client();
+      const writer = await client();
+      await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
+      const pendingWrite = writer.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'UPDATE_OPEN','{"fat_total":600}'::jsonb,$1::uuid,$2,0,'{}'::jsonb
+        )`,
+        [billing.id, osId],
+      ).then(
+        () => ({ error: null as any }),
+        (error) => ({ error }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await createSnapshot(snapshotTx, billing, `snapshot-wins-${round}`);
+      await snapshotTx.query("COMMIT");
+      const writeOutcome = await pendingWrite;
+      assert.equal(writeOutcome.error?.message?.includes("deadlock"), false, String(writeOutcome.error?.message));
+      assert.match(String(writeOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
+      const current = await admin.query("SELECT fat_total FROM escort_billings WHERE id=$1", [billing.id]);
+      assert.equal(Number(current.rows[0].fat_total), 500);
+      await snapshotTx.end();
+      await writer.end();
+    }
+
+    // Corrida real RPC×RPC (sem pré-lock artificial): uma serializa via advisory.
     const billing = await createBilling(admin, 2);
-    const snapshotTx = await client();
-    const writer = await client();
-    await snapshotTx.query("BEGIN");
-    await snapshotTx.query("SELECT pg_advisory_xact_lock(7411,2)");
-    await snapshotTx.query("SELECT id FROM service_orders WHERE id=2 FOR SHARE");
-    await snapshotTx.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billing.id]);
-    const pendingWrite = writer.query(
-      `SELECT * FROM write_escort_billing_atomic(
-        'UPDATE_OPEN','{"fat_total":600}'::jsonb,$1::uuid,2,0,'{}'::jsonb
-      )`,
-      [billing.id],
-    ).then(
-      () => ({ error: null as any }),
-      (error) => ({ error }),
+    const snapClient = await client();
+    const writeClient = await client();
+    const outcomes = await Promise.allSettled([
+      createSnapshot(snapClient, billing, "snapshot-rpc-race"),
+      writeClient.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'UPDATE_OPEN','{"fat_total":600}'::jsonb,$1::uuid,2,0,'{}'::jsonb
+        )`,
+        [billing.id],
+      ),
+    ]);
+    await snapClient.end();
+    await writeClient.end();
+    const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
+    const rejected = outcomes.filter((o) => o.status === "rejected") as PromiseRejectedResult[];
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.doesNotMatch(String(rejected[0].reason?.message), /deadlock/i);
+    const snapExists = await admin.query(
+      "SELECT count(*)::int AS count FROM boletim_approvals WHERE token='snapshot-rpc-race'",
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await createSnapshot(snapshotTx, billing, "snapshot-wins");
-    await snapshotTx.query("COMMIT");
-    const writeOutcome = await pendingWrite;
-    assert.match(String(writeOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
-    const current = await admin.query("SELECT fat_total FROM escort_billings WHERE id=$1", [billing.id]);
-    assert.equal(Number(current.rows[0].fat_total), 500);
-    await snapshotTx.end();
-    await writer.end();
+    const billingRow = await admin.query(
+      "SELECT fat_total, lock_version FROM escort_billings WHERE id=$1",
+      [billing.id],
+    );
+    if (snapExists.rows[0].count === 1) {
+      assert.match(String(rejected[0].reason?.message), /PR5B1_TX_BILLING_PROTECTED/);
+      assert.equal(Number(billingRow.rows[0].fat_total), 500);
+    } else {
+      assert.match(
+        String(rejected[0].reason?.message),
+        /PR5B1_TX_STALE_SNAPSHOT_VERSION|PR5B1_TX_ACTIVE_APPROVAL_CONFLICT|PR5B1_TX_SNAPSHOT_BILLING_NOT_FOUND/,
+      );
+      assert.equal(Number(billingRow.rows[0].fat_total), 600);
+    }
   });
 
   await t.test("snapshot lock wins and concurrent delete fails closed", async () => {
+    for (let round = 0; round < 3; round++) {
+      const osId = 210 + round;
+      const billing = await createBilling(admin, osId);
+      const snapshotTx = await client();
+      const deleter = await client();
+      await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
+      const pendingDelete = deleter.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'DELETE_OPEN','{}'::jsonb,$1::uuid,$2,0,'{}'::jsonb
+        )`,
+        [billing.id, osId],
+      ).then(
+        () => ({ error: null as any }),
+        (error) => ({ error }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const snapshot = await createSnapshot(snapshotTx, billing, `delete-loses-${round}`);
+      await snapshotTx.query("COMMIT");
+      const deleteOutcome = await pendingDelete;
+      assert.equal(deleteOutcome.error?.message?.includes("deadlock"), false, String(deleteOutcome.error?.message));
+      assert.match(String(deleteOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
+      await assert.rejects(
+        admin.query("UPDATE boletim_approvals SET total_value=999 WHERE id=$1", [snapshot.rows[0].id]),
+        /PR5B1_TX_SNAPSHOT_IMMUTABLE/,
+      );
+      await assert.rejects(
+        admin.query("DELETE FROM boletim_approvals WHERE id=$1", [snapshot.rows[0].id]),
+        /PR5B1_TX_APPROVAL_DELETE_BLOCKED/,
+      );
+      await snapshotTx.end();
+      await deleter.end();
+    }
+
     const billing = await createBilling(admin, 3);
-    const snapshotTx = await client();
-    const deleter = await client();
-    await snapshotTx.query("BEGIN");
-    await snapshotTx.query("SELECT pg_advisory_xact_lock(7411,3)");
-    await snapshotTx.query("SELECT id FROM service_orders WHERE id=3 FOR SHARE");
-    await snapshotTx.query("SELECT id FROM escort_billings WHERE id=$1 FOR UPDATE", [billing.id]);
-    const pendingDelete = deleter.query(
-      `SELECT * FROM write_escort_billing_atomic(
-        'DELETE_OPEN','{}'::jsonb,$1::uuid,3,0,'{}'::jsonb
-      )`,
+    const snapClient = await client();
+    const deleteClient = await client();
+    const outcomes = await Promise.allSettled([
+      createSnapshot(snapClient, billing, "delete-rpc-race"),
+      deleteClient.query(
+        `SELECT * FROM write_escort_billing_atomic(
+          'DELETE_OPEN','{}'::jsonb,$1::uuid,3,0,'{}'::jsonb
+        )`,
+        [billing.id],
+      ),
+    ]);
+    await snapClient.end();
+    await deleteClient.end();
+    const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
+    const rejected = outcomes.filter((o) => o.status === "rejected") as PromiseRejectedResult[];
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.doesNotMatch(String(rejected[0].reason?.message), /deadlock/i);
+    const snapExists = await admin.query(
+      "SELECT count(*)::int AS count FROM boletim_approvals WHERE token='delete-rpc-race'",
+    );
+    const billingCount = await admin.query(
+      "SELECT count(*)::int AS count FROM escort_billings WHERE id=$1",
       [billing.id],
-    ).then(
-      () => ({ error: null as any }),
-      (error) => ({ error }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const snapshot = await createSnapshot(snapshotTx, billing, "delete-loses");
-    await snapshotTx.query("COMMIT");
-    const deleteOutcome = await pendingDelete;
-    assert.match(String(deleteOutcome.error?.message), /PR5B1_TX_BILLING_PROTECTED/);
-    await assert.rejects(
-      admin.query("UPDATE boletim_approvals SET total_value=999 WHERE id=$1", [snapshot.rows[0].id]),
-      /PR5B1_TX_SNAPSHOT_IMMUTABLE/,
-    );
-    await assert.rejects(
-      admin.query("DELETE FROM boletim_approvals WHERE id=$1", [snapshot.rows[0].id]),
-      /PR5B1_TX_APPROVAL_DELETE_BLOCKED/,
-    );
-    await snapshotTx.end();
-    await deleter.end();
+    // Snapshot-first: billing permanece protegido. Delete-first: billing e snapshot ausentes.
+    // Nunca snapshot órfão nem deadlock.
+    assert.equal(snapExists.rows[0].count, billingCount.rows[0].count);
+    if (snapExists.rows[0].count === 1) {
+      assert.match(String(rejected[0].reason?.message), /PR5B1_TX_BILLING_PROTECTED/);
+    } else {
+      assert.match(
+        String(rejected[0].reason?.message),
+        /PR5B1_TX_SNAPSHOT_BILLING_NOT_FOUND|PR5B1_TX_STALE_SNAPSHOT_VERSION|PR5B1_TX_ACTIVE_APPROVAL_CONFLICT/,
+      );
+    }
   });
 
   await t.test("snapshot with stale lock_version is rejected", async () => {
@@ -503,6 +591,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("missing contract, timestamps and KM facts block official insert", async () => {
     const contractId = "00000000-0000-0000-0000-000000000040";
+    // Fixture A: o contrato necessário existe antes do caso TIMESTAMPS_REQUIRED.
+    // Sem essa linha, a RPC falha em CONTRACT_NOT_FOUND antes de validar timestamps.
     await admin.query(
       "INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status) VALUES ($1,100,3,'Ativo')",
       [contractId],
@@ -527,6 +617,11 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "INSERT INTO service_orders(id,status,mission_status,escort_contract_id,mission_started_at,completed_date) VALUES (41,'concluida','encerrada',$1,NULL,now())",
       [contractId],
     );
+    const contractPresent = await admin.query(
+      "SELECT id FROM escort_contracts WHERE id=$1::uuid",
+      [contractId],
+    );
+    assert.equal(contractPresent.rowCount, 1);
     await admin.query("INSERT INTO mission_photos(service_order_id,step,km_value) VALUES (41,'km_final',10)");
     await assert.rejects(invoke(41, contractId), /PR5B1_TX_TIMESTAMPS_REQUIRED/);
 

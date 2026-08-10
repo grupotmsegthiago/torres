@@ -110,6 +110,7 @@ AS $$
 DECLARE
   v_service_order_ids integer[];
   v_service_order_id integer;
+  v_contract_ids uuid[];
   v_count integer;
 BEGIN
   SELECT array_agg(DISTINCT service_order_id ORDER BY service_order_id)
@@ -142,12 +143,37 @@ BEGIN
       MESSAGE = 'PR5B1_TX_SERVICE_ORDER_MEMBERSHIP_STALE';
   END IF;
 
+  -- Mesmo slot global de contrato usado por write_escort_billing_atomic:
+  -- advisory -> service_orders -> escort_contracts -> escort_billings.
+  BEGIN
+    SELECT array_agg(DISTINCT contract_id ORDER BY contract_id)
+    INTO v_contract_ids
+    FROM (
+      SELECT trim(so.escort_contract_id)::uuid AS contract_id
+      FROM public.service_orders AS so
+      WHERE so.id = ANY(v_service_order_ids)
+        AND NULLIF(trim(COALESCE(so.escort_contract_id, '')), '') IS NOT NULL
+    ) AS linked;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'PR5B1_TX_INVALID_CONTRACT_ID';
+  END;
+
+  IF v_contract_ids IS NOT NULL THEN
+    PERFORM 1
+    FROM public.escort_contracts
+    WHERE id = ANY(v_contract_ids)
+    ORDER BY id
+    FOR SHARE;
+  END IF;
+
   RETURN v_service_order_ids;
 END;
 $$;
 
 COMMENT ON FUNCTION public.lock_service_orders_for_billings(uuid[]) IS
-  'PR5B.1-TX: ordem global advisory OS -> service_orders antes de billing locks.';
+  'PR5B.1-TX: ordem global advisory OS -> service_orders -> contracts antes de billing locks.';
 
 CREATE OR REPLACE FUNCTION public.write_escort_billing_atomic(
   p_action text,
@@ -234,6 +260,7 @@ BEGIN
   END;
 
   -- Ordem global: advisory da OS -> service_order -> contrato -> billing.
+  -- UPDATE_OPEN e DELETE_OPEN compartilham exatamente o mesmo prefixo de locks.
   IF p_billing_id IS NOT NULL THEN
     SELECT service_order_id
     INTO v_service_order_id
@@ -271,14 +298,17 @@ BEGIN
       MESSAGE = 'PR5B1_TX_SERVICE_ORDER_NOT_FOUND';
   END IF;
 
-  IF v_action IN ('WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED') THEN
-    IF NULLIF(trim(COALESCE(v_so.escort_contract_id, '')), '') IS NULL THEN
+  IF NULLIF(trim(COALESCE(v_so.escort_contract_id, '')), '') IS NULL THEN
+    IF v_action IN (
+      'WRITE_OFFICIAL', 'UPDATE_OPEN', 'WRITE_CANCELLED', 'WRITE_REFUSED', 'DELETE_OPEN'
+    ) THEN
       RAISE EXCEPTION USING
         ERRCODE = '23514',
         MESSAGE = 'PR5B1_TX_CONTRACT_REQUIRED: OS sem escort_contract_id';
     END IF;
+  ELSE
     BEGIN
-      v_contract_id := v_so.escort_contract_id::uuid;
+      v_contract_id := trim(v_so.escort_contract_id)::uuid;
     EXCEPTION WHEN invalid_text_representation THEN
       RAISE EXCEPTION USING
         ERRCODE = '23514',
@@ -427,14 +457,16 @@ BEGIN
           MESSAGE = 'PR5B1_TX_INVALID_TIMESTAMPS';
       END IF;
 
+      -- Leitura factual sem FOR SHARE: o prefixo global já serializa a OS
+      -- (advisory + service_orders + contract + billing). Evita lock extra
+      -- após billing, que poderia inverter a ordem com writers satélites.
       SELECT km_value
       INTO v_km_initial
       FROM public.mission_photos
       WHERE service_order_id = v_so.id
         AND step = 'km_chegada'
       ORDER BY created_at DESC NULLS LAST, id::text DESC
-      LIMIT 1
-      FOR SHARE;
+      LIMIT 1;
       IF COALESCE(v_km_initial, 0) <= 0 THEN
         SELECT km_value
         INTO v_km_initial
@@ -442,8 +474,7 @@ BEGIN
         WHERE service_order_id = v_so.id
           AND step = 'km_saida'
         ORDER BY created_at DESC NULLS LAST, id::text DESC
-        LIMIT 1
-        FOR SHARE;
+        LIMIT 1;
       END IF;
 
       SELECT km_value
@@ -452,8 +483,7 @@ BEGIN
       WHERE service_order_id = v_so.id
         AND step = 'km_final'
       ORDER BY created_at DESC NULLS LAST, id::text DESC
-      LIMIT 1
-      FOR SHARE;
+      LIMIT 1;
 
       IF COALESCE(v_km_initial, 0) <= 0 THEN
         RAISE EXCEPTION USING

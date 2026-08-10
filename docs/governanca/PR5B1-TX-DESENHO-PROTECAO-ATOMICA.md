@@ -207,17 +207,44 @@ continuam no domínio TypeScript.
 
 ### 4.1.1 Ordem global de locks
 
-Todas as RPCs seguem a mesma ordem:
+Todas as RPCs seguem a mesma ordem determinística:
 
 1. advisory locks por `service_order_id`, em ordem crescente;
 2. `service_orders` em ordem de ID, `FOR SHARE`;
-3. `escort_contracts FOR SHARE` quando materializa faturamento;
+3. `escort_contracts FOR SHARE` pelos UUIDs distintos vinculados às OS, em ordem
+   crescente — inclusive em `UPDATE_OPEN`, `DELETE_OPEN`, snapshot/freeze/invoice
+   via `lock_service_orders_for_billings`;
 4. `escort_billings FOR UPDATE` em ordem de UUID;
 5. `boletim_approvals` ou `invoices FOR UPDATE`, quando aplicável.
+
+Nenhuma RPC pode adquirir billing/approval/invoice antes do prefixo
+`advisory -> service_orders -> contracts`. `UPDATE_OPEN` e `DELETE_OPEN`
+compartilham o mesmo prefixo. Leituras de `mission_photos` são factuais e não
+usam `FOR SHARE` após o lock de billing.
 
 Após o último lock, membership de billing/OS/invoice é revalidado. Mudança
 concorrente de contrato, reparent de invoice ou alteração do conjunto aborta a
 transação com conflito stale.
+
+#### FIX2B — causa raiz dos deadlocks snapshot × update/delete
+
+O deadlock ocorria quando o teste (ou qualquer caminho) adquiria
+`escort_billings FOR UPDATE` **antes** do advisory da OS, enquanto a RPC
+concorrente já detinha o advisory e esperava o billing. Ordem invertida:
+
+- TxA: billing → (depois) advisory
+- TxB: advisory → billing
+
+Correção: prefixo global único em write e em
+`lock_service_orders_for_billings` (usado por create/freeze/invoice).
+
+#### FIX2B — `CONTRACT_NOT_FOUND` × `TIMESTAMPS_REQUIRED`
+
+Causa A (fixture): o caso de timestamps exigia OS com
+`escort_contract_id` apontando para contrato inexistente na tabela. A RPC
+valida contrato no slot global antes dos timestamps; sem a row do contrato,
+retorna `PR5B1_TX_CONTRACT_NOT_FOUND`. A ordem de validação em produção
+permanece correta (contrato → timestamps → KM).
 
 ### 4.2 Resultado concorrente determinístico
 
@@ -614,9 +641,11 @@ com esse pacote.
 
 ## 12. Decisão
 
-**PR5B.1-TX IMPLEMENTADA — MIGRATION PRONTA PARA REVISÃO, NÃO APLICADA**
+**PR5B.1-TX-FIX2 CONCLUÍDA — PRONTA PARA NOVA HOMOLOGAÇÃO**
 
 O desenho, a evidência live, os objetos SQL, o rollout expand/contract, o
-rollback, os writers, os testes concorrentes e as regras de negócio foram
-implementados na branch do PR #58. Nenhuma migration foi aplicada no banco
-live; o próximo gate é a revisão humana do SQL.
+rollback, os writers, os testes concorrentes e as regras de negócio estão na
+branch do PR #58. FIX2B fechou deadlock snapshot×update/delete (ordem global
+única com contrato no mesmo prefixo) e o falso `CONTRACT_NOT_FOUND` do caso de
+timestamps (fixture A). Nenhuma migration foi aplicada no banco live; o
+próximo gate é nova homologação humana — sem apply/merge/publish.
