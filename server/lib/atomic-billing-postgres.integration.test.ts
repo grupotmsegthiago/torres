@@ -263,15 +263,15 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   const admin = await client();
   try {
   const expand = await readFile(
-    path.join(root, "supabase/migrations/20260807180000_atomic_billing_expand.sql"),
+    path.join(root, "supabase/migrations/20260810183628_atomic_billing_expand.sql"),
     "utf8",
   );
   const enforcement = await readFile(
-    path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
+    path.join(root, "supabase/migrations/20260810190554_atomic_billing_enforcement.sql"),
     "utf8",
   );
   const aclFix = await readFile(
-    path.join(root, "supabase/migrations/20260810184222_fix_atomic_billing_rpc_acl.sql"),
+    path.join(root, "supabase/migrations/20260810185149_fix_atomic_billing_rpc_acl.sql"),
     "utf8",
   );
   await admin.query(setupSql);
@@ -1498,11 +1498,11 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("rollback restores legacy guards and removes TX objects", async () => {
     const rollbackContract = await readFile(
-      path.join(root, "supabase/migrations/rollback/20260807181000_rollback_atomic_billing_enforcement.sql"),
+      path.join(root, "supabase/migrations/rollback/20260810190554_rollback_atomic_billing_enforcement.sql"),
       "utf8",
     );
     const rollbackExpand = await readFile(
-      path.join(root, "supabase/migrations/rollback/20260807180000_rollback_atomic_billing_expand.sql"),
+      path.join(root, "supabase/migrations/rollback/20260810183628_rollback_atomic_billing_expand.sql"),
       "utf8",
     );
     await admin.query(rollbackContract);

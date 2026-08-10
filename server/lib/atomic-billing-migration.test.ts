@@ -5,23 +5,23 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const expand = readFileSync(
-  path.join(root, "supabase/migrations/20260807180000_atomic_billing_expand.sql"),
+  path.join(root, "supabase/migrations/20260810183628_atomic_billing_expand.sql"),
   "utf8",
 );
 const enforcement = readFileSync(
-  path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
+  path.join(root, "supabase/migrations/20260810190554_atomic_billing_enforcement.sql"),
   "utf8",
 );
 const rollbackExpand = readFileSync(
-  path.join(root, "supabase/migrations/rollback/20260807180000_rollback_atomic_billing_expand.sql"),
+  path.join(root, "supabase/migrations/rollback/20260810183628_rollback_atomic_billing_expand.sql"),
   "utf8",
 );
 const rollbackEnforcement = readFileSync(
-  path.join(root, "supabase/migrations/rollback/20260807181000_rollback_atomic_billing_enforcement.sql"),
+  path.join(root, "supabase/migrations/rollback/20260810190554_rollback_atomic_billing_enforcement.sql"),
   "utf8",
 );
 const aclFix = readFileSync(
-  path.join(root, "supabase/migrations/20260810184222_fix_atomic_billing_rpc_acl.sql"),
+  path.join(root, "supabase/migrations/20260810185149_fix_atomic_billing_rpc_acl.sql"),
   "utf8",
 );
 

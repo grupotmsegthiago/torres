@@ -1,11 +1,11 @@
 # PR5B.1-TX — Desenho da proteção atômica de billing
 
-**Status:** implementado no PR #58; migrations versionadas, revisáveis e ainda não aplicadas live
+**Status:** implementado, aplicado e homologado no banco live; PR #58 em fechamento pré-merge
 **Domínio dono:** faturamento
 **Dados protegidos:** `escort_billings` (SNAPSHOT financeiro) e `boletim_approvals.billing_snapshot` (SNAPSHOT comercial)
 **Camadas:** 5 e 6 da Arquitetura Oficial
-**Banco alterado nesta fase:** não
-**SQL executado nesta fase:** 10 consultas read-only TX; zero SQL de escrita
+**Banco alterado:** sim, exclusivamente pelas migrations versionadas EXPAND, ACL e ENFORCEMENT
+**Homologação:** VERIFY estrutural + smoke transacional isolado com ROLLBACK — PASS
 
 ## 1. Problema
 
@@ -618,13 +618,19 @@ Implementados na PR5B.1-TX-IMPLEMENTAÇÃO:
 1. migration expand versionada e rollback;
 2. RPCs com allowlist real de colunas e grants explícitos;
 3. migração dos writers identificados;
-4. migration contract/enforcement mantida em `migrations/pending`;
+4. migration contract/enforcement promovida e versionada após homologação;
 5. testes concorrentes em PostgreSQL efêmero;
 6. CI de integração PostgreSQL;
 7. rollback que preserva `lock_version`.
 
-Ainda obrigatório: revisão humana das migrations e autorização explícita antes
-de qualquer aplicação live.
+Migrations aplicadas e homologadas no live:
+
+1. `20260810183628_atomic_billing_expand.sql`;
+2. `20260810185149_fix_atomic_billing_rpc_acl.sql`;
+3. `20260810190554_atomic_billing_enforcement.sql`.
+
+VERIFY, ACL/RLS, concorrência e smoke final: PASS. Merge/deploy/publicação
+permanecem etapas administrativas separadas e exigem autorização explícita.
 
 ### Ordem manual e CSVs
 
@@ -646,11 +652,13 @@ com esse pacote.
 
 ## 12. Decisão
 
-**PR5B.1-TX-FIX2 CONCLUÍDA — PRONTA PARA NOVA HOMOLOGAÇÃO**
+**PR5B.1-TX IMPLEMENTAÇÃO TÉCNICA CONCLUÍDA E HOMOLOGADA**
 
 O desenho, a evidência live, os objetos SQL, o rollout expand/contract, o
 rollback, os writers, os testes concorrentes e as regras de negócio estão na
 branch do PR #58. FIX2B fechou deadlock snapshot×update/delete (ordem global
 única com contrato no mesmo prefixo) e o falso `CONTRACT_NOT_FOUND` do caso de
-timestamps (fixture A). Nenhuma migration foi aplicada no banco live; o
-próximo gate é nova homologação humana — sem apply/merge/publish.
+timestamps (fixture A). EXPAND, correção ACL e ENFORCEMENT foram aplicados,
+verificados e submetidos a smoke transacional com rollback, sem alteração do
+baseline financeiro. Implementação técnica: 100%. Próximo gate: fechamento
+administrativo da PR — sem merge/deploy/publicação automática.
