@@ -270,13 +270,79 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
     "utf8",
   );
+  const aclFix = await readFile(
+    path.join(root, "supabase/migrations/20260810184222_fix_atomic_billing_rpc_acl.sql"),
+    "utf8",
+  );
   await admin.query(setupSql);
   await t.test(
     "Hosted CREATEROLE runner uses temporary SET membership for OWNER TO",
     async () => verifyHostedOwnerTransfer(admin),
   );
   await admin.query(expand);
+  // Reproduz a ACL encontrada após o APPLY Hosted: defaults de FUNCTION para
+  // PUBLIC/anon/authenticated/service_role sobreviveram aos REVOKEs sem owner.
+  await admin.query(`
+    GRANT EXECUTE ON FUNCTION
+      public.is_escort_billing_snapshotted(uuid, bigint),
+      public.lock_service_orders_for_billings(uuid[]),
+      public.write_escort_billing_atomic(text, jsonb, uuid, integer, bigint, jsonb),
+      public.create_boletim_approval_atomic(
+        text, integer, text, text, date, date, text[], numeric,
+        integer, text, integer, jsonb
+      ),
+      public.freeze_boletim_billings_atomic(integer, text, text, timestamptz),
+      public.mark_escort_billings_invoiced_atomic(uuid[], integer, timestamptz, text),
+      public.transition_invoice_billings_atomic(integer, text, timestamptz, text)
+    TO PUBLIC, anon, authenticated, service_role;
+  `);
+  await admin.query(aclFix);
   await admin.query(enforcement);
+
+  await t.test("ACL efetiva fecha toda função owned pela role TX", async () => {
+    const expectedServiceRpcs = new Set([
+      "create_boletim_approval_atomic",
+      "freeze_boletim_billings_atomic",
+      "is_escort_billing_snapshotted",
+      "mark_escort_billings_invoiced_atomic",
+      "transition_invoice_billings_atomic",
+      "write_escort_billing_atomic",
+    ]);
+    const grants = await admin.query(`
+      SELECT
+        proc.proname,
+        EXISTS (
+          SELECT 1
+          FROM aclexplode(COALESCE(proc.proacl, acldefault('f', proc.proowner))) AS acl
+          WHERE acl.grantee = 0
+            AND acl.privilege_type = 'EXECUTE'
+        ) AS public_execute,
+        has_function_privilege('anon', proc.oid, 'EXECUTE') AS anon_execute,
+        has_function_privilege('authenticated', proc.oid, 'EXECUTE') AS authenticated_execute,
+        has_function_privilege('service_role', proc.oid, 'EXECUTE') AS service_role_execute
+      FROM pg_proc AS proc
+      JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+      JOIN pg_roles AS owner ON owner.oid = proc.proowner
+      WHERE namespace.nspname = 'public'
+        AND owner.rolname = 'torres_billing_rpc_owner'
+      ORDER BY proc.proname
+    `);
+    assert.equal(grants.rows.length, 7);
+    assert.deepEqual(
+      new Set(grants.rows.map((row) => row.proname)),
+      new Set([...expectedServiceRpcs, "lock_service_orders_for_billings"]),
+    );
+    for (const row of grants.rows) {
+      assert.equal(row.public_execute, false, `${row.proname}: PUBLIC`);
+      assert.equal(row.anon_execute, false, `${row.proname}: anon`);
+      assert.equal(row.authenticated_execute, false, `${row.proname}: authenticated`);
+      assert.equal(
+        row.service_role_execute,
+        expectedServiceRpcs.has(row.proname),
+        `${row.proname}: service_role`,
+      );
+    }
+  });
 
   await t.test("RPC grants are restricted to service_role", async () => {
     const grants = await admin.query(`

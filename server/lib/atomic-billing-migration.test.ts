@@ -20,9 +20,13 @@ const rollbackEnforcement = readFileSync(
   path.join(root, "supabase/migrations/rollback/20260807181000_rollback_atomic_billing_enforcement.sql"),
   "utf8",
 );
+const aclFix = readFileSync(
+  path.join(root, "supabase/migrations/20260810184222_fix_atomic_billing_rpc_acl.sql"),
+  "utf8",
+);
 
 test("migration TX é transacional e contém objetos atômicos", () => {
-  for (const sql of [expand, enforcement, rollbackExpand, rollbackEnforcement]) {
+  for (const sql of [expand, enforcement, aclFix, rollbackExpand, rollbackEnforcement]) {
     assert.match(sql, /\bBEGIN;/);
     assert.match(sql, /\bCOMMIT;/);
   }
@@ -145,6 +149,41 @@ test("migration TX é compatível com Supabase Hosted sem atributos privilegiado
   assert.match(
     rollbackExpand,
     /DROP FUNCTION IF EXISTS public\.is_escort_billing_snapshotted\(uuid, bigint\);[\s\S]*?RESET ROLE;/,
+  );
+});
+
+test("migration corretiva fecha ACL efetiva das sete RPCs TX", () => {
+  const signatures = [
+    "is_escort_billing_snapshotted\\(uuid, bigint\\)",
+    "lock_service_orders_for_billings\\(uuid\\[\\]\\)",
+    "write_escort_billing_atomic\\(text, jsonb, uuid, integer, bigint, jsonb\\)",
+    "create_boletim_approval_atomic\\([\\s\\S]*?integer, text, integer, jsonb[\\s\\S]*?\\)",
+    "freeze_boletim_billings_atomic\\(integer, text, text, timestamptz\\)",
+    "mark_escort_billings_invoiced_atomic\\([\\s\\S]*?uuid\\[\\], integer, timestamptz, text[\\s\\S]*?\\)",
+    "transition_invoice_billings_atomic\\(integer, text, timestamptz, text\\)",
+  ];
+  for (const signature of signatures) {
+    assert.match(aclFix, new RegExp(`public\\.${signature}`, "m"));
+  }
+  assert.match(
+    aclFix,
+    /FROM PUBLIC, anon, authenticated, service_role;/,
+  );
+  assert.match(
+    aclFix,
+    /TO service_role;/,
+  );
+  assert.doesNotMatch(
+    aclFix,
+    /GRANT EXECUTE[\s\S]*?lock_service_orders_for_billings[\s\S]*?TO service_role;/,
+  );
+  assert.match(
+    aclFix,
+    /SET LOCAL ROLE torres_billing_rpc_owner;[\s\S]*?RESET ROLE;/,
+  );
+  assert.doesNotMatch(
+    aclFix,
+    /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER TABLE|CREATE FUNCTION|CREATE POLICY|CREATE TRIGGER)\b/i,
   );
 });
 
