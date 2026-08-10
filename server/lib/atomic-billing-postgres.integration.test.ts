@@ -7,9 +7,27 @@ import pg from "pg";
 const databaseUrl = process.env.PR5B1_TX_TEST_DATABASE_URL;
 const root = path.resolve(import.meta.dirname, "../..");
 
-async function client() {
+async function client(statementTimeoutMs = 15_000) {
   const db = new pg.Client({ connectionString: databaseUrl });
   await db.connect();
+  // Secondary guard: bound lock waits so a stuck query cannot keep the event loop alive.
+  await db.query(`SET statement_timeout = ${Number(statementTimeoutMs)}`);
+  return db;
+}
+
+/** Registers end() on the parent suite so aborted nested tests cannot leak handles. */
+async function trackedClient(
+  t: { after: (fn: () => void | Promise<void>) => void },
+  statementTimeoutMs = 15_000,
+) {
+  const db = await client(statementTimeoutMs);
+  t.after(async () => {
+    try {
+      await db.end();
+    } catch {
+      // already closed by the test body
+    }
+  });
   return db;
 }
 
@@ -158,10 +176,19 @@ async function createSnapshot(db: pg.Client, billing: any, token: string) {
 
 test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   skip: !databaseUrl,
-  timeout: 30_000,
+  // Full suite (concurrency rounds + rollback) exceeds 30s wall time; an expired
+  // parent timeout aborts nested tests without closing pg Clients → CI step hangs.
+  timeout: 180_000,
 }, async (t) => {
   assert.match(databaseUrl!, /(?:127\.0\.0\.1|localhost).*pr5b1_tx_test/);
-  const admin = await client();
+  const admin = await client(60_000);
+  t.after(async () => {
+    try {
+      await admin.end();
+    } catch {
+      // ignore teardown races after abort/timeout
+    }
+  });
   const expand = await readFile(
     path.join(root, "supabase/migrations/20260807180000_atomic_billing_expand.sql"),
     "utf8",
@@ -261,66 +288,88 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       rpc_owner_without_bypassrls: true,
       rpc_owner_policy_count: 8,
     });
-    const service = await client();
-    await service.query("SET ROLE service_role");
-    const helper = await service.query(
-      "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0) AS protected",
-    );
-    assert.equal(helper.rows[0].protected, false);
-    await service.query("RESET ROLE");
-    await service.query("SET ROLE anon");
-    await assert.rejects(
-      service.query(
-        "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0)",
-      ),
-      /permission denied/,
-    );
-    await service.end();
+    const service = await trackedClient(t);
+    try {
+      await service.query("SET ROLE service_role");
+      const helper = await service.query(
+        "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0) AS protected",
+      );
+      assert.equal(helper.rows[0].protected, false);
+      await service.query("RESET ROLE");
+      await service.query("SET ROLE anon");
+      await assert.rejects(
+        service.query(
+          "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0)",
+        ),
+        /permission denied/,
+      );
+    } finally {
+      await service.end();
+    }
   });
 
   await t.test("SECURITY DEFINER works under RLS without BYPASSRLS", async () => {
-    await admin.query(`
-      ALTER TABLE public.escort_billings ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.mission_photos ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.escort_contracts ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.boletim_approvals ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.system_audit_logs ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.financial_transactions ENABLE ROW LEVEL SECURITY;
-    `);
-    const role = await admin.query(`
-      SELECT rolbypassrls
-      FROM pg_roles
-      WHERE rolname = 'torres_billing_rpc_owner'
-    `);
-    assert.equal(role.rows[0].rolbypassrls, false);
-    const billing = await createBilling(admin, 140);
-    const updated = await admin.query(
-      `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
-        'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
-      )`,
-      [billing.id],
-    );
-    assert.equal(Number(updated.rows[0].lock_version), 1);
-    assert.equal(Number(updated.rows[0].fat_total), 777);
-    const service = await client();
-    await service.query("SET ROLE service_role");
-    const viaService = await service.query(
-      `SELECT lock_version FROM write_escort_billing_atomic(
-        'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
-      )`,
-      [billing.id],
-    );
-    assert.equal(Number(viaService.rows[0].lock_version), 2);
-    await service.query("RESET ROLE");
-    await service.end();
+    // Isolate RLS to this test. Leaving ENABLE for the rest of the suite changes
+    // lock/RLS behavior of concurrency tests and, on parent timeout, leaves open
+    // pg handles that prevent the CI process from exiting.
+    const rlsTables = [
+      "escort_billings",
+      "service_orders",
+      "mission_photos",
+      "escort_contracts",
+      "boletim_approvals",
+      "invoices",
+      "system_audit_logs",
+      "financial_transactions",
+    ] as const;
+    const service = await trackedClient(t, 15_000);
+    try {
+      await admin.query(
+        rlsTables.map((table) => `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`).join("\n"),
+      );
+      const role = await admin.query(`
+        SELECT rolbypassrls
+        FROM pg_roles
+        WHERE rolname = 'torres_billing_rpc_owner'
+      `);
+      assert.equal(role.rows[0].rolbypassrls, false);
+      const billing = await createBilling(admin, 140);
+      const updated = await admin.query(
+        `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
+          'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
+        )`,
+        [billing.id],
+      );
+      assert.equal(Number(updated.rows[0].lock_version), 1);
+      assert.equal(Number(updated.rows[0].fat_total), 777);
+      await service.query("SET ROLE service_role");
+      const viaService = await service.query(
+        `SELECT lock_version FROM write_escort_billing_atomic(
+          'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
+        )`,
+        [billing.id],
+      );
+      assert.equal(Number(viaService.rows[0].lock_version), 2);
+      await service.query("RESET ROLE");
+    } finally {
+      try {
+        await admin.query(
+          rlsTables.map((table) => `ALTER TABLE public.${table} DISABLE ROW LEVEL SECURITY;`).join("\n"),
+        );
+      } finally {
+        try {
+          await service.end();
+        } catch {
+          // already closed
+        }
+      }
+    }
   });
 
   await t.test("valid version increments; stale concurrent writer fails", async () => {
     const billing = await createBilling(admin, 1);
-    const a = await client();
-    const b = await client();
+    const a = await trackedClient(t);
+    const b = await trackedClient(t);
     const query = `SELECT * FROM write_escort_billing_atomic(
       'UPDATE_OPEN',jsonb_build_object('fat_total',$1::numeric),$2::uuid,1,0,'{}'::jsonb
     )`;
@@ -342,8 +391,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("concurrent INSERT for the same OS creates exactly one billing", async () => {
     const contractId = await insertFacts(admin, 110);
-    const a = await client();
-    const b = await client();
+    const a = await trackedClient(t);
+    const b = await trackedClient(t);
     const query = `SELECT * FROM write_escort_billing_atomic(
       'WRITE_OFFICIAL',
       jsonb_build_object(
@@ -381,8 +430,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     for (let round = 0; round < 3; round++) {
       const osId = 200 + round;
       const billing = await createBilling(admin, osId);
-      const snapshotTx = await client();
-      const writer = await client();
+      const snapshotTx = await trackedClient(t);
+      const writer = await trackedClient(t);
       await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
       const pendingWrite = writer.query(
         `SELECT * FROM write_escort_billing_atomic(
@@ -407,8 +456,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
     // Corrida real RPC×RPC (sem pré-lock artificial): uma serializa via advisory.
     const billing = await createBilling(admin, 2);
-    const snapClient = await client();
-    const writeClient = await client();
+    const snapClient = await trackedClient(t);
+    const writeClient = await trackedClient(t);
     const outcomes = await Promise.allSettled([
       createSnapshot(snapClient, billing, "snapshot-rpc-race"),
       writeClient.query(
@@ -448,8 +497,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     for (let round = 0; round < 3; round++) {
       const osId = 210 + round;
       const billing = await createBilling(admin, osId);
-      const snapshotTx = await client();
-      const deleter = await client();
+      const snapshotTx = await trackedClient(t);
+      const deleter = await trackedClient(t);
       await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
       const pendingDelete = deleter.query(
         `SELECT * FROM write_escort_billing_atomic(
@@ -479,8 +528,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     }
 
     const billing = await createBilling(admin, 3);
-    const snapClient = await client();
-    const deleteClient = await client();
+    const snapClient = await trackedClient(t);
+    const deleteClient = await trackedClient(t);
     const outcomes = await Promise.allSettled([
       createSnapshot(snapClient, billing, "delete-rpc-race"),
       deleteClient.query(
@@ -829,8 +878,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       [billing.id],
     );
     await admin.query("INSERT INTO invoices(id,client_id) VALUES (201,1),(202,1)");
-    const a = await client();
-    const b = await client();
+    const a = await trackedClient(t);
+    const b = await trackedClient(t);
     const outcomes = await Promise.allSettled([
       a.query(
         "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],201,now(),'A')",
@@ -864,8 +913,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],211,now(),'test')",
       [billing.id],
     );
-    const mover = await client();
-    const transition = await client();
+    const mover = await trackedClient(t);
+    const transition = await trackedClient(t);
     await mover.query("BEGIN");
     await mover.query("SELECT pg_advisory_xact_lock(7411,131)");
     await mover.query("SELECT id FROM service_orders WHERE id=131 FOR SHARE");
@@ -896,8 +945,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const billing = await createBilling(admin, 132);
     const approval = await createSnapshot(admin, billing, "freeze-invoice-race");
     await admin.query("INSERT INTO invoices(id,client_id) VALUES (221,1)");
-    const freezer = await client();
-    const invoicer = await client();
+    const freezer = await trackedClient(t);
+    const invoicer = await trackedClient(t);
     const outcomes = await Promise.allSettled([
       freezer.query(
         "SELECT * FROM freeze_boletim_billings_atomic($1,'Cliente','127.0.0.1',now())",
@@ -952,8 +1001,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   await t.test("multi-ID snapshots lock in one order without deadlock", async () => {
     const first = await createBilling(admin, 70);
     const second = await createBilling(admin, 71);
-    const a = await client();
-    const b = await client();
+    const a = await trackedClient(t);
+    const b = await trackedClient(t);
     await a.query("SET statement_timeout='3s'");
     await b.query("SET statement_timeout='3s'");
     const query = `
@@ -1111,8 +1160,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status) VALUES ($1,100,3,'Ativo')",
       [newContract],
     );
-    const changer = await client();
-    const writer = await client();
+    const changer = await trackedClient(t);
+    const writer = await trackedClient(t);
     await changer.query("BEGIN");
     await changer.query(
       "UPDATE service_orders SET escort_contract_id=$1 WHERE id=120",
@@ -1145,7 +1194,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       admin.query("UPDATE escort_billings SET fat_total=999 WHERE id=$1", [billing.id]),
       /PR5B1_TX_DIRECT_BILLING_DML_BLOCKED/,
     );
-    const direct = await client();
+    const direct = await trackedClient(t);
     await direct.query("BEGIN");
     await direct.query("SET LOCAL ROLE service_role");
     await direct.query("SELECT set_config('torres.atomic_billing_write','on',true)");
@@ -1242,6 +1291,4 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       service_order_legacy_restored: true,
     });
   });
-
-  await admin.end();
 });
