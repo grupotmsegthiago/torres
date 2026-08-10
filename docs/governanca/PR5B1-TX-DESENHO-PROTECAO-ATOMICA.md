@@ -171,8 +171,11 @@ Adotar **F: protocolo bilateral de RPC + enforcement por trigger**, com uma
 versão otimista no billing:
 
 1. `escort_billings.lock_version BIGINT NOT NULL DEFAULT 0`.
-2. role interna `torres_billing_rpc_owner` (`NOLOGIN`, sem membership das
-   roles PostgREST) como proprietária das RPCs;
+2. role interna `torres_billing_rpc_owner` (`NOLOGIN`, **sem** `BYPASSRLS` /
+   atributos de superuser) como proprietária das RPCs;
+   - no Supabase Hosted, `CREATE/ALTER ROLE ... BYPASSRLS` falha com `42501`;
+   - travessia de RLS via **policies explícitas** `torres_billing_rpc_owner_*`
+     nas tabelas tocadas pelas RPCs (não via BYPASSRLS);
 3. RPC de escrita de billing:
    - adquire lock por `service_order_id` para INSERT;
    - carrega billing existente com `FOR UPDATE`;

@@ -233,7 +233,18 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           'anon',
           'public.is_escort_billing_snapshotted(uuid,bigint)',
           'EXECUTE'
-        ) AS anon_can_check_snapshot
+        ) AS anon_can_check_snapshot,
+        (
+          SELECT NOT role.rolbypassrls
+          FROM pg_roles AS role
+          WHERE role.rolname = 'torres_billing_rpc_owner'
+        ) AS rpc_owner_without_bypassrls,
+        (
+          SELECT COUNT(*)::int
+          FROM pg_policies
+          WHERE schemaname = 'public'
+            AND policyname LIKE 'torres_billing_rpc_owner_%'
+        ) AS rpc_owner_policy_count
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -247,6 +258,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       owner_can_read_service_orders: true,
       service_can_check_snapshot: true,
       anon_can_check_snapshot: false,
+      rpc_owner_without_bypassrls: true,
+      rpc_owner_policy_count: 8,
     });
     const service = await client();
     await service.query("SET ROLE service_role");
@@ -262,6 +275,45 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       ),
       /permission denied/,
     );
+    await service.end();
+  });
+
+  await t.test("SECURITY DEFINER works under RLS without BYPASSRLS", async () => {
+    await admin.query(`
+      ALTER TABLE public.escort_billings ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.mission_photos ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.escort_contracts ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.boletim_approvals ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.system_audit_logs ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.financial_transactions ENABLE ROW LEVEL SECURITY;
+    `);
+    const role = await admin.query(`
+      SELECT rolbypassrls
+      FROM pg_roles
+      WHERE rolname = 'torres_billing_rpc_owner'
+    `);
+    assert.equal(role.rows[0].rolbypassrls, false);
+    const billing = await createBilling(admin, 140);
+    const updated = await admin.query(
+      `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
+        'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
+      )`,
+      [billing.id],
+    );
+    assert.equal(Number(updated.rows[0].lock_version), 1);
+    assert.equal(Number(updated.rows[0].fat_total), 777);
+    const service = await client();
+    await service.query("SET ROLE service_role");
+    const viaService = await service.query(
+      `SELECT lock_version FROM write_escort_billing_atomic(
+        'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
+      )`,
+      [billing.id],
+    );
+    assert.equal(Number(viaService.rows[0].lock_version), 2);
+    await service.query("RESET ROLE");
     await service.end();
   });
 

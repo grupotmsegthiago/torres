@@ -43,6 +43,15 @@ DROP FUNCTION IF EXISTS public.is_escort_billing_snapshotted(uuid, bigint);
 DROP INDEX IF EXISTS public.idx_boletim_snapshot_billing_lookup;
 DROP INDEX IF EXISTS public.idx_boletim_legacy_billing_ids_lookup;
 
+DROP POLICY IF EXISTS torres_billing_rpc_owner_all ON public.escort_billings;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.service_orders;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.mission_photos;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.escort_contracts;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.boletim_approvals;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.invoices;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_insert ON public.system_audit_logs;
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.financial_transactions;
+
 REVOKE ALL ON public.service_orders, public.mission_photos, public.escort_contracts
   FROM torres_billing_rpc_owner;
 REVOKE ALL ON public.escort_billings, public.boletim_approvals, public.invoices

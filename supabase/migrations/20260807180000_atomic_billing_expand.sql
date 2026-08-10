@@ -2,6 +2,9 @@
 -- Não contém cálculo financeiro: apenas integridade, locking e persistência.
 BEGIN;
 
+-- Role interna NOLOGIN sem atributo privilegiado de bypass RLS.
+-- No Supabase Hosted o canal de migration não pode criar/alterar esse atributo (42501).
+-- Travessia de RLS: policies explícitas abaixo + SECURITY DEFINER owned por esta role.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -10,14 +13,14 @@ BEGIN
   ) THEN
     CREATE ROLE torres_billing_rpc_owner
       NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-      NOREPLICATION BYPASSRLS;
+      NOREPLICATION;
   END IF;
 END;
 $$;
 
 ALTER ROLE torres_billing_rpc_owner
   NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION BYPASSRLS;
+  NOREPLICATION;
 
 DO $$
 BEGIN
@@ -68,6 +71,48 @@ GRANT USAGE, SELECT ON SEQUENCE
   public.boletim_approvals_id_seq,
   public.system_audit_logs_id_seq
   TO torres_billing_rpc_owner;
+
+-- Policies para a role interna (substitui atributo privilegiado de bypass RLS no Hosted).
+-- Tabelas com RLS e sem policy para esta role negariam DML do SECURITY DEFINER.
+DROP POLICY IF EXISTS torres_billing_rpc_owner_all ON public.escort_billings;
+CREATE POLICY torres_billing_rpc_owner_all ON public.escort_billings
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.service_orders;
+CREATE POLICY torres_billing_rpc_owner_select ON public.service_orders
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.mission_photos;
+CREATE POLICY torres_billing_rpc_owner_select ON public.mission_photos
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.escort_contracts;
+CREATE POLICY torres_billing_rpc_owner_select ON public.escort_contracts
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.boletim_approvals;
+CREATE POLICY torres_billing_rpc_owner_write ON public.boletim_approvals
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.invoices;
+CREATE POLICY torres_billing_rpc_owner_write ON public.invoices
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_insert ON public.system_audit_logs;
+CREATE POLICY torres_billing_rpc_owner_insert ON public.system_audit_logs
+  FOR INSERT TO torres_billing_rpc_owner
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.financial_transactions;
+CREATE POLICY torres_billing_rpc_owner_select ON public.financial_transactions
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
 
 CREATE OR REPLACE FUNCTION public.is_escort_billing_snapshotted(
   p_billing_id uuid,
@@ -1360,6 +1405,40 @@ GRANT USAGE, SELECT ON SEQUENCE
   public.system_audit_logs_id_seq
   TO torres_billing_rpc_owner;
 
+-- Reafirma policies após ownership (idempotente).
+DROP POLICY IF EXISTS torres_billing_rpc_owner_all ON public.escort_billings;
+CREATE POLICY torres_billing_rpc_owner_all ON public.escort_billings
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.service_orders;
+CREATE POLICY torres_billing_rpc_owner_select ON public.service_orders
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.mission_photos;
+CREATE POLICY torres_billing_rpc_owner_select ON public.mission_photos
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.escort_contracts;
+CREATE POLICY torres_billing_rpc_owner_select ON public.escort_contracts
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.boletim_approvals;
+CREATE POLICY torres_billing_rpc_owner_write ON public.boletim_approvals
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.invoices;
+CREATE POLICY torres_billing_rpc_owner_write ON public.invoices
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_insert ON public.system_audit_logs;
+CREATE POLICY torres_billing_rpc_owner_insert ON public.system_audit_logs
+  FOR INSERT TO torres_billing_rpc_owner
+  WITH CHECK (true);
+DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.financial_transactions;
+CREATE POLICY torres_billing_rpc_owner_select ON public.financial_transactions
+  FOR SELECT TO torres_billing_rpc_owner
+  USING (true);
+
 REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
   text, jsonb, uuid, integer, bigint, jsonb
 ) FROM PUBLIC;
@@ -1399,5 +1478,27 @@ GRANT EXECUTE ON FUNCTION public.mark_escort_billings_invoiced_atomic(
 GRANT EXECUTE ON FUNCTION public.transition_invoice_billings_atomic(
   integer, text, timestamptz, text
 ) TO service_role;
+
+-- Fail-closed: nunca expor RPCs TX a anon/authenticated.
+REVOKE ALL ON FUNCTION public.write_escort_billing_atomic(
+  text, jsonb, uuid, integer, bigint, jsonb
+) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
+  FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.lock_service_orders_for_billings(uuid[])
+  FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
+  text, integer, text, text, date, date, text[], numeric,
+  integer, text, integer, jsonb
+) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.freeze_boletim_billings_atomic(
+  integer, text, text, timestamptz
+) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_escort_billings_invoiced_atomic(
+  uuid[], integer, timestamptz, text
+) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.transition_invoice_billings_atomic(
+  integer, text, timestamptz, text
+) FROM anon, authenticated;
 
 COMMIT;

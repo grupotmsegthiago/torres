@@ -54,6 +54,11 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
   assert.match(expand, /CREATE ROLE torres_billing_rpc_owner/);
+  assert.doesNotMatch(expand, /CREATE ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
+  assert.doesNotMatch(expand, /ALTER ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
+  assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_all ON public\.escort_billings/);
+  assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_select ON public\.service_orders/);
+  assert.match(expand, /REVOKE ALL ON FUNCTION public\.write_escort_billing_atomic\([\s\S]*?FROM anon, authenticated/);
   assert.match(
     expand,
     /FUNCTION public\.is_escort_billing_snapshotted[\s\S]*?LANGUAGE sql[\s\S]*?STABLE/,
@@ -67,6 +72,27 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.doesNotMatch(expand, /DELETE FROM public\.financial_transactions/);
   assert.match(enforcement, /current_user <> 'torres_billing_rpc_owner'/);
   assert.doesNotMatch(expand + enforcement, /set_config\('torres\.atomic_/);
+  assert.match(rollbackExpand, /DROP POLICY IF EXISTS torres_billing_rpc_owner_all ON public\.escort_billings/);
+  assert.match(rollbackExpand, /DROP ROLE IF EXISTS torres_billing_rpc_owner/);
+});
+
+test("migration TX é compatível com Supabase Hosted sem BYPASSRLS custom", () => {
+  assert.doesNotMatch(expand, /CREATE ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
+  assert.doesNotMatch(expand, /ALTER ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
+  assert.match(
+    expand,
+    /CREATE ROLE torres_billing_rpc_owner\s+NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE\s+NOREPLICATION;/,
+  );
+  assert.match(expand, /SECURITY DEFINER/);
+  assert.match(expand, /SET search_path = public, pg_catalog/);
+  assert.match(expand, /OWNER TO torres_billing_rpc_owner/);
+  assert.match(expand, /GRANT EXECUTE[\s\S]*?TO service_role/);
+  assert.doesNotMatch(expand, /GRANT EXECUTE[\s\S]*?TO (?:anon|authenticated|PUBLIC)\b/);
+  assert.match(enforcement, /current_user <> 'torres_billing_rpc_owner'/);
+  assert.match(
+    expand,
+    /Policies para a role interna \(substitui atributo privilegiado de bypass RLS no Hosted\)/,
+  );
 });
 
 test("migration TX não duplica motor financeiro em SQL", () => {
