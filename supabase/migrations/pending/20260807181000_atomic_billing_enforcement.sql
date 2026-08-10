@@ -62,6 +62,13 @@ BEGIN
 END;
 $$;
 
+-- Trigger functions não são RPCs. Remove os defaults Hosted de FUNCTION para
+-- impedir exposição acidental via PostgREST; triggers continuam executando.
+REVOKE EXECUTE ON FUNCTION public.guard_escort_billing_atomic_write()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.guard_boletim_snapshot_atomic_write()
+  FROM PUBLIC, anon, authenticated, service_role;
+
 DROP TRIGGER IF EXISTS trg_validate_escort_billing_approval
   ON public.escort_billings;
 DROP FUNCTION IF EXISTS public.validate_escort_billing_approval();

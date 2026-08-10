@@ -57,6 +57,14 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(enforcement, /BEFORE INSERT OR UPDATE OR DELETE ON public\.escort_billings/);
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
+  assert.match(
+    enforcement,
+    /REVOKE EXECUTE ON FUNCTION public\.guard_escort_billing_atomic_write\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/,
+  );
+  assert.match(
+    enforcement,
+    /REVOKE EXECUTE ON FUNCTION public\.guard_boletim_snapshot_atomic_write\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/,
+  );
   assert.match(expand, /CREATE ROLE torres_billing_rpc_owner/);
   assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_all ON public\.escort_billings/);
   assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_select ON public\.service_orders/);

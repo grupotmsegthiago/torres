@@ -344,6 +344,39 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     }
   });
 
+  await t.test("guard functions não expõem EXECUTE a roles externas", async () => {
+    const guards = await admin.query(`
+      SELECT
+        proc.proname,
+        proc.proconfig,
+        EXISTS (
+          SELECT 1
+          FROM aclexplode(COALESCE(proc.proacl, acldefault('f', proc.proowner))) AS acl
+          WHERE acl.grantee = 0
+            AND acl.privilege_type = 'EXECUTE'
+        ) AS public_execute,
+        has_function_privilege('anon', proc.oid, 'EXECUTE') AS anon_execute,
+        has_function_privilege('authenticated', proc.oid, 'EXECUTE') AS authenticated_execute,
+        has_function_privilege('service_role', proc.oid, 'EXECUTE') AS service_role_execute
+      FROM pg_proc AS proc
+      JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+      WHERE namespace.nspname = 'public'
+        AND proc.proname IN (
+          'guard_escort_billing_atomic_write',
+          'guard_boletim_snapshot_atomic_write'
+        )
+      ORDER BY proc.proname
+    `);
+    assert.equal(guards.rows.length, 2);
+    for (const guard of guards.rows) {
+      assert.deepEqual(guard.proconfig, ["search_path=public, pg_catalog"]);
+      assert.equal(guard.public_execute, false, `${guard.proname}: PUBLIC`);
+      assert.equal(guard.anon_execute, false, `${guard.proname}: anon`);
+      assert.equal(guard.authenticated_execute, false, `${guard.proname}: authenticated`);
+      assert.equal(guard.service_role_execute, false, `${guard.proname}: service_role`);
+    }
+  });
+
   await t.test("RPC grants are restricted to service_role", async () => {
     const grants = await admin.query(`
       SELECT
@@ -414,7 +447,12 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
           FROM pg_policies
           WHERE schemaname = 'public'
             AND policyname LIKE 'torres_billing_rpc_owner_%'
-        ) AS rpc_owner_policy_count
+        ) AS rpc_owner_policy_count,
+        pg_has_role(
+          'service_role',
+          'torres_billing_rpc_owner',
+          'SET'
+        ) AS service_can_set_rpc_owner
     `);
     assert.deepEqual(grants.rows[0], {
       service_can_execute: true,
@@ -430,6 +468,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       anon_can_check_snapshot: false,
       rpc_owner_without_bypassrls: true,
       rpc_owner_policy_count: 8,
+      service_can_set_rpc_owner: false,
     });
     const service = await client();
     await service.query("SET ROLE service_role");
@@ -1395,6 +1434,20 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     await assert.rejects(
       direct.query("UPDATE escort_billings SET fat_total=1000 WHERE id=$1", [billing.id]),
       /PR5B1_TX_DIRECT_BILLING_DML_BLOCKED/,
+    );
+    await direct.query("ROLLBACK");
+
+    await direct.query("BEGIN");
+    await direct.query("SET LOCAL ROLE service_role");
+    await assert.rejects(
+      direct.query(`
+        INSERT INTO boletim_approvals (
+          token, client_id, period_start, period_end, billing_ids, status
+        ) VALUES (
+          'pr5b1-tx-direct-insert', 1, current_date, current_date, '{}', 'PENDENTE'
+        )
+      `),
+      /PR5B1_TX_DIRECT_SNAPSHOT_INSERT_BLOCKED/,
     );
     await direct.query("ROLLBACK");
     await direct.end();
