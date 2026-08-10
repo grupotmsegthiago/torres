@@ -43,7 +43,7 @@ function formatBRT(d: Date): string {
 
 const CORE_TABLES = [
   "users", "employees", "vehicles", "clients", "service_orders",
-  "escort_billings", "escort_contracts", "financial_transactions",
+  "escort_contracts", "financial_transactions",
   "timesheets", "mission_costs", "perfis_acesso", "system_settings",
   "weapon_kits", "vehicle_fueling", "invoices", "billing_alerts",
 ];

@@ -4,6 +4,10 @@ import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
 import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
 import { bustBalancoCaches } from "../lib/balanco-cache";
+import {
+  createBoletimApprovalAtomic,
+  freezeBoletimBillingsAtomic,
+} from "../lib/atomic-billing";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -623,6 +627,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         const comp = (v: any) => (osStatus === "recusada" ? 0 : round2(Number(v || 0)));
         return {
           billing_id: String(b.id),
+          billing_version: Number(b.lock_version) || 0,
           service_order_id: b.service_order_id,
           os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
           fat_acionamento: comp(b.fat_acionamento),
@@ -644,23 +649,20 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const approvalUrl = `${baseUrl}/aprovacao/${token}`;
       const period = `${new Date(periodStart + "T12:00:00Z").toLocaleDateString("pt-BR")} a ${new Date(periodEnd + "T12:00:00Z").toLocaleDateString("pt-BR")}`;
 
-      const { data, error } = await supabaseAdmin.from("boletim_approvals").insert({
+      const data = await createBoletimApprovalAtomic({
         token,
-        client_id: clientId,
-        client_name: clientName,
-        client_email: clientEmail,
-        period_start: periodStart,
-        period_end: periodEnd,
-        billing_ids: billingIds,
-        total_value: canonicalTotal,
-        billing_snapshot: billingSnapshot,
-        os_count: osCount || billingIds.length,
-        status: "PENDENTE",
-        sent_by: user?.name || user?.username || null,
-        sent_by_user_id: user?.id || null,
-      }).select().single();
-
-      if (error) throw error;
+        clientId,
+        clientName,
+        clientEmail,
+        periodStart,
+        periodEnd,
+        billingIds: billingIds.map(String),
+        totalValue: canonicalTotal,
+        billingSnapshot,
+        osCount: osCount || billingIds.length,
+        sentBy: user?.name || user?.username || null,
+        sentByUserId: user?.id || null,
+      });
 
       const periodShort = `${periodStart.replace(/-/g, "")}_${periodEnd.replace(/-/g, "")}`;
       const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20);
@@ -806,36 +808,18 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket.remoteAddress || "";
 
-      const { error: updateErr } = await supabaseAdmin
-        .from("boletim_approvals")
-        .update({
-          status: "APROVADO",
-          approved_at: new Date().toISOString(),
-          approved_by_name: nome || "Cliente",
-          approved_by_ip: clientIp,
-        })
-        .eq("id", approval.id);
-
-      if (updateErr) throw updateErr;
-
       let autoEmitResult: { success: boolean; message: string; nfEmitted: boolean; paymentId?: string } | null = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
-        const { error: billErr } = await supabaseAdmin
-          .from("escort_billings")
-          .update({
-            status: "APROVADA",
-            revisado_por: `Cliente: ${nome || approval.client_name}`,
-            revisado_em: new Date().toISOString(),
-          })
-          .in("id", billingIds);
-
-        if (billErr) console.error("[boletim-approval] Erro ao aprovar billings:", billErr.message);
-        else {
-          console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
-          // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
-          bustBalancoCaches();
-        }
+        await freezeBoletimBillingsAtomic(
+          Number(approval.id),
+          nome || approval.client_name || "Cliente",
+          clientIp,
+          new Date().toISOString(),
+        );
+        console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+        // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
+        bustBalancoCaches();
       }
 
       try {

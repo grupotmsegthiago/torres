@@ -23,6 +23,21 @@ export type RecusadaZeroPayload = {
   fat_pernoite: 0;
   fat_diaria: 0;
   fat_adicional_noturno: 0;
+  receitas_os: 0;
+  despesas_pedagio: 0;
+  despesas_combustivel: 0;
+  despesas_outras: 0;
+  desp_total: 0;
+  desp_pedagio: 0;
+  desp_combustivel: 0;
+  desp_outras: 0;
+  pag_vrp: 0;
+  pag_periculosidade: 0;
+  pag_adicional_noturno: 0;
+  pag_reembolsos: 0;
+  pag_total: 0;
+  valor_franquia: 0;
+  valor_km_extra: 0;
   resultado_bruto: 0;
   resultado_liquido: 0;
   margem_percentual: 0;
@@ -32,8 +47,8 @@ export type RecusadaZeroPayload = {
 /**
  * Verifica se a OS vinculada ao billing está RECUSADA (§8.1). Centraliza a
  * consulta para que qualquer caminho de escrita de billing possa aplicar a
- * zeragem incondicional. Usa `maybeSingle` e nunca lança: na dúvida (sem OS,
- * erro de leitura) retorna `false` para não bloquear billings avulsos legítimos.
+ * zeragem incondicional. Billing sem OS continua permitido; quando há ID, erro
+ * de leitura é propagado para impedir gravação financeira fail-open.
  * @param sb cliente supabaseAdmin (REST).
  * @param serviceOrderId id da OS vinculada (ou null/undefined p/ billing avulso).
  */
@@ -42,14 +57,11 @@ export async function osIsRecusada(
   serviceOrderId: number | string | null | undefined,
 ): Promise<boolean> {
   if (serviceOrderId == null || serviceOrderId === "") return false;
-  try {
-    const { data } = await sb
-      .from("service_orders").select("status")
-      .eq("id", serviceOrderId).maybeSingle();
-    return data?.status === "recusada";
-  } catch {
-    return false;
-  }
+  const { data, error } = await sb
+    .from("service_orders").select("status")
+    .eq("id", serviceOrderId).maybeSingle();
+  if (error) throw error;
+  return data?.status === "recusada";
 }
 
 /**
@@ -80,6 +92,21 @@ export function buildRecusadaZeroPayload(
     fat_pernoite: 0,
     fat_diaria: 0,
     fat_adicional_noturno: 0,
+    receitas_os: 0,
+    despesas_pedagio: 0,
+    despesas_combustivel: 0,
+    despesas_outras: 0,
+    desp_total: 0,
+    desp_pedagio: 0,
+    desp_combustivel: 0,
+    desp_outras: 0,
+    pag_vrp: 0,
+    pag_periculosidade: 0,
+    pag_adicional_noturno: 0,
+    pag_reembolsos: 0,
+    pag_total: 0,
+    valor_franquia: 0,
+    valor_km_extra: 0,
     resultado_bruto: 0,
     resultado_liquido: 0,
     margem_percentual: 0,

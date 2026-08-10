@@ -6,12 +6,71 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
-  import { calcularEscolta, splitMissionCostsForBilling } from "../billing-calc";
+  import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
+  import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { logSystemAudit } from "../audit";
+  import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
+
+  async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
+    if (!so?.escortContractId) {
+      throw new Error("OS sem escort_contract_id: correção operacional necessária.");
+    }
+    const { data: contrato, error: contractError } = await supabaseAdmin
+      .from("escort_contracts")
+      .select("*")
+      .eq("id", so.escortContractId)
+      .single();
+    if (contractError || !contrato) {
+      throw contractError || new Error("Contrato vinculado à OS não encontrado.");
+    }
+    const [photos, costs, client, emp, emp2, vehicle] = await Promise.all([
+      storage.getMissionPhotosByOS(so.id),
+      storage.getMissionCostsByOS(so.id),
+      so.clientId ? storage.getClient(so.clientId) : null,
+      so.assignedEmployeeId ? storage.getEmployee(so.assignedEmployeeId) : null,
+      so.assignedEmployee2Id ? storage.getEmployee(so.assignedEmployee2Id) : null,
+      so.vehicleId ? storage.getVehicle(so.vehicleId) : null,
+    ]);
+    return {
+      ...computeBillingPayloadForOs({
+        so: {
+          id: so.id,
+          os_number: so.osNumber,
+          status: so.status,
+          mission_status: so.missionStatus,
+          client_id: so.clientId,
+          escort_contract_id: so.escortContractId,
+          assigned_employee_id: so.assignedEmployeeId,
+          assigned_employee_2_id: so.assignedEmployee2Id,
+          vehicle_id: so.vehicleId,
+          origin: so.origin,
+          destination: so.destination,
+          escorted_vehicle_plate: so.escortedVehiclePlate,
+          escorted_driver_name: so.escortedDriverName,
+          scheduled_date: so.scheduledDate,
+          mission_started_at: so.missionStartedAt,
+          completed_date: so.completedDate,
+        },
+        contrato,
+        photos: photos.map((photo: any) => ({
+          step: photo.step,
+          km_value: photo.kmValue ?? photo.km_value,
+        })),
+        mCosts: costs,
+        horasMissao: 0,
+        clientName: client?.name || "--",
+        empName: emp?.name || createdBy,
+        emp2Name: emp2?.name || null,
+        vehPlate: vehicle?.plate || null,
+      }),
+      created_by: createdBy,
+    };
+  }
 
   // Valor Estimado a partir da Tabela de Preços (contrato de escolta).
   // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base.
@@ -73,7 +132,7 @@ import type { Express } from "express";
         }
         return undefined;
       };
-      const kmSaida = photos.find((p: any) => p.step === "km_saida");
+      const kmSaida = [...photos].reverse().find((p: any) => p.step === "km_saida");
       const kmChegada = findLast("km_chegada");
       const kmFinal = findLast("km_final");
       const baseHodometro = findLast("base_hodometro");
@@ -251,147 +310,168 @@ import type { Express } from "express";
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
 
-      const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
+      const isConcluded =
+        so.status === "concluida" ||
+        so.status === "concluída" ||
+        so.missionStatus === "encerrada" ||
+        so.missionStatus === "finalizada";
+      const isLive = !isConcluded;
       const isCanceladaOuRecusada = so.status === "cancelada" || so.status === "recusada";
-
-      const { data: existing } = await supabaseAdmin.from("escort_billings")
-        .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
-      const existingBilling = existing?.[0];
-      const canRecalculate = !existingBilling || existingBilling.status === "REJEITADA" || existingBilling.status === "A_VERIFICAR" || isLive;
-      if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
-      if (existingBilling) {
-        await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+      if (isLive && !isCanceladaOuRecusada) {
+        return res.status(409).json({
+          message: "OS ativa usa apenas projeção; billing oficial só é materializado após conclusão.",
+        });
       }
+
+      const { data: existing, error: existingError } = await supabaseAdmin.from("escort_billings")
+        .select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+      if (existingError) throw existingError;
+      const existingBilling = existing?.[0];
+      if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial — recálculo bloqueado.",
+        });
+      }
+      const canRecalculate = !existingBilling || [
+        "REJEITADA",
+        "A_VERIFICAR",
+        "PENDENTE",
+        "VERIFICADA",
+      ].includes(existingBilling.status);
+      if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
 
       if (isCanceladaOuRecusada) {
         const client = so.clientId ? await storage.getClient(so.clientId) : null;
         const user = req.user!;
-        const { data: zeroBilling, error: zeroErr } = await supabaseAdmin.from("escort_billings").insert({
+        const commonPayload: any = {
           service_order_id: serviceOrderId,
           client_id: so.clientId, client_name: client?.name || "--",
           os_number: so.osNumber || null,
           origem: so.origin || null, destino: so.destination || null,
           data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
-          km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
-          km_faturado: 0, km_franquia: 0, km_excedente: 0,
-          horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0, teve_pernoite: false, is_noturno: false,
-          fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0, fat_km_carregado: 0, fat_km_vazio: 0,
-          fat_estadia: 0, fat_pernoite: 0, fat_diaria: 0, fat_adicional_noturno: 0,
-          fat_total: 0, receitas_os: 0, valor_franquia: 0, valor_km_extra: 0,
-          pag_vrp: 0, pag_periculosidade: 0, pag_adicional_noturno: 0, pag_reembolsos: 0, pag_total: 0,
-          resultado_bruto: 0, resultado_liquido: 0, margem_percentual: 0,
-          status: "CANCELADO", created_by: user.name,
-          observacoes: `OS ${so.status === "recusada" ? "RECUSADA" : "CANCELADA"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
-        }).select().single();
-        if (zeroErr) throw zeroErr;
-        bustBalancoCaches();
-        return res.json(zeroBilling);
-      }
+          created_by: user.name,
+        };
 
-      const photos = await storage.getMissionPhotosByOS(serviceOrderId);
-      const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
-      const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
-      const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-      const kmInicial = kmChegadaPhoto?.kmValue || 0;
-      const kmFinal = kmFinalPhoto?.kmValue || 0;
-
-      const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-      const scheduledTime = so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : undefined;
-      const startTime = so.missionStartedAt ? toBRT(new Date(so.missionStartedAt as string)) : undefined;
-      const completedDateValid = so.completedDate && new Date(so.completedDate as string).getFullYear() > 2000;
-      const endTime = completedDateValid ? toBRT(new Date(so.completedDate as string)) : (isLive ? toBRT(new Date()) : undefined);
-
-      const stepLogs = (so.stepLogs || []) as any[];
-      const getLogTimeBilling = (steps: string[]) => {
-        for (const s of steps) {
-          const entry = [...stepLogs].reverse().find((l: any) => l.step === s && l.timestamp);
-          if (entry) return entry.timestamp;
+        let statusPayload: any;
+        if (so.status === "recusada") {
+          statusPayload = {
+            km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
+            km_faturado: 0, km_franquia: 0, km_excedente: 0,
+            horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0,
+            teve_pernoite: false, is_noturno: false,
+            ...buildRecusadaZeroPayload((so as any).cancellationReason),
+          };
+        } else {
+          const cancelada = await computeCanceladaBilling({
+            serviceOrderId,
+            clientId: so.clientId,
+            escortContractId: so.escortContractId,
+            scheduledDate: so.scheduledDate ? String(so.scheduledDate) : null,
+            missionStartedAt: so.missionStartedAt ? String(so.missionStartedAt) : null,
+            completedDate: so.completedDate ? String(so.completedDate) : null,
+            stepLogs: (so.stepLogs || []) as any[],
+          });
+          if (!cancelada) {
+            return res.status(422).json({
+              message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
+            });
+          }
+          statusPayload = {
+            contract_id: cancelada.contrato?.id || so.escortContractId || null,
+            ...cancelada.fatFields,
+            horario_agendado: cancelada.horarios.horario_agendado,
+            horario_inicio: cancelada.horarios.horario_inicio,
+            horario_fim: cancelada.horarios.horario_fim,
+            observacoes: `OS CANCELADA — Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
+          };
         }
-        return null;
-      };
-      // INICIO REAL DA COBRANÇA = quando o agente SAIU PRA ROTA (iniciou missão/viagem/deslocamento),
-      // NÃO quando ele chegou na origem. Chegar na origem antes do agendamento (esperando carregar)
-      // não conta como início — só conta a partir do clique em "Iniciar Missão" / "Em Trânsito Destino".
-      const horaInicioMissaoISO = getLogTimeBilling(["iniciar_missao", "em_transito_destino"]);
-      const inicioMissaoTime = horaInicioMissaoISO ? toBRT(new Date(horaInicioMissaoISO)) : undefined;
-      const horaFimMissaoISO = (so as any).hora_fim_missao || so.completedDate || getLogTimeBilling(["encerrada", "finalizada", "checkout_km_final"]);
-      const fimMissaoTime = horaFimMissaoISO ? toBRT(new Date(horaFimMissaoISO)) : endTime;
-      const billingStartTime = inicioMissaoTime || startTime;
 
-      let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-
-      if (so.escortContractId) {
-        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
-        if (cc?.length) contrato = cc[0];
-      } else if (so.clientId) {
-        const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
-        if (clientContracts?.length) contrato = clientContracts[0];
+        const billing = await writeEscortBillingAtomic({
+          action: so.status === "recusada" ? "WRITE_REFUSED" : "WRITE_CANCELLED",
+          billingId: existingBilling?.id || null,
+          serviceOrderId,
+          expectedVersion: existingBilling
+            ? Number(existingBilling.lock_version) || 0
+            : null,
+          payload: { ...commonPayload, ...statusPayload },
+          actor: {
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role,
+            reason: (so as any).cancellationReason || so.status,
+            ipAddress: req.ip,
+          },
+        });
+        bustBalancoCaches();
+        return res.json(billing);
       }
 
-      const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
+      if (!so.escortContractId) {
+        return res.status(422).json({
+          message: "OS sem escort_contract_id: correção operacional necessária.",
+        });
+      }
+      const { data: contrato, error: contractError } = await supabaseAdmin
+        .from("escort_contracts")
+        .select("*")
+        .eq("id", so.escortContractId)
+        .single();
+      if (contractError || !contrato) {
+        throw contractError || new Error("Contrato vinculado à OS não encontrado.");
+      }
+      const photos = await storage.getMissionPhotosByOS(serviceOrderId);
       const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-      const _split = splitMissionCostsForBilling(osMissionCosts);
-      let despPedagioCalc = _split.despesas_pedagio;
-      const despCombustivelCalc = _split.despesas_combustivel;
-      const despOutrasCalc = _split.despesas_outras;
-      const receitasOsCalc = _split.receitas_os;
-      const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
-      if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
-      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}, receitas=${receitasOsCalc}`);
-      const resultado = calcularEscolta({
-        km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
-        horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-        horario_inicio: billingStartTime, horario_fim: fimMissaoTime, horario_agendado: scheduledTime,
-        inicio_ts: (so as any).missionStartedAt ? new Date((so as any).missionStartedAt).toISOString() : null,
-        fim_ts: horaFimMissaoISO || ((so as any).completedDate ? new Date((so as any).completedDate).toISOString() : null),
-        scheduled_date: so.scheduledDate ? new Date(so.scheduledDate as any).toISOString() : null,
-        despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, receitas_os: receitasOsCalc, contrato,
-      });
-      console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
-
       const client = so.clientId ? await storage.getClient(so.clientId) : null;
       const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
       const emp2 = (so as any).assignedEmployee2Id ? await storage.getEmployee((so as any).assignedEmployee2Id) : null;
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
       const user = req.user!;
-
-      const n = (v: any) => Number(v) || 0;
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
-        service_order_id: serviceOrderId,
-        client_id: so.clientId, client_name: client?.name || "--",
-        contract_id: contrato.id || null,
-        km_inicial: n(kmInicial), km_final: n(kmFinalNorm), km_vazio: 0,
-        km_carregado: n(resultado.km_carregado), km_total: n(resultado.km_total),
-        km_faturado: n(resultado.km_faturado), km_franquia: n(resultado.km_franquia),
-        km_excedente: n(resultado.km_excedente),
-        horario_agendado: scheduledTime || null,
-        horario_inicio: billingStartTime || startTime || null, horario_fim: fimMissaoTime || endTime || null,
-        horario_inicio_considerado: resultado.horario_inicio_considerado,
-        horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
-        horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
-        fat_acionamento: n(resultado.fat_acionamento), fat_hora_extra: n(resultado.fat_hora_extra),
-        fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
-        fat_km_vazio: n(resultado.faturamento.km_vazio),
-        fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
-        fat_diaria: n(resultado.fat_pernoite), fat_adicional_noturno: n(resultado.fat_adicional_noturno),
-        fat_total: n(resultado.fat_total), receitas_os: n(resultado.receitas_os),
-        despesas_pedagio: n(despPedagioCalc), despesas_combustivel: n(despCombustivelCalc), despesas_outras: n(despOutrasCalc),
-        valor_franquia: n(resultado.valor_franquia), valor_km_extra: n(resultado.valor_km_extra),
-        pag_vrp: n(resultado.pag_vrp), pag_periculosidade: n(resultado.pag_periculosidade),
-        pag_adicional_noturno: n(resultado.pag_adicional_noturno),
-        pag_reembolsos: n(resultado.pag_reembolsos), pag_total: n(resultado.pag_total),
-        resultado_bruto: n(resultado.resultado.bruto), resultado_liquido: n(resultado.resultado.liquido),
-        margem_percentual: n(resultado.resultado.margem_pct),
-        vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
-        vigilante2_id: (so as any).assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
-        os_number: so.osNumber || null,
-        origem: so.origin || null, destino: so.destination || null,
-        placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
-        placa_escoltado: (so as any).escortedVehiclePlate || null,
-        motorista_escoltado: (so as any).escortedDriverName || null,
-        data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
-        status: "A_VERIFICAR", created_by: user.name,
-      }).select().single();
-      if (error) throw error;
+      const payload = computeBillingPayloadForOs({
+        so: {
+          id: serviceOrderId,
+          os_number: so.osNumber,
+          status: so.status,
+          mission_status: so.missionStatus,
+          client_id: so.clientId,
+          escort_contract_id: so.escortContractId,
+          assigned_employee_id: so.assignedEmployeeId,
+          assigned_employee_2_id: (so as any).assignedEmployee2Id,
+          vehicle_id: so.vehicleId,
+          origin: so.origin,
+          destination: so.destination,
+          escorted_vehicle_plate: (so as any).escortedVehiclePlate,
+          escorted_driver_name: (so as any).escortedDriverName,
+          scheduled_date: so.scheduledDate,
+          mission_started_at: so.missionStartedAt,
+          completed_date: so.completedDate,
+        },
+        contrato,
+        photos: photos.map((photo: any) => ({
+          step: photo.step,
+          km_value: photo.kmValue ?? photo.km_value,
+        })),
+        mCosts: osMissionCosts,
+        horasMissao: 0,
+        clientName: client?.name || "--",
+        empName: emp?.name || user.name,
+        emp2Name: emp2?.name || null,
+        vehPlate: vehicle?.plate || null,
+      });
+      const data = await writeEscortBillingAtomic({
+        action: "WRITE_OFFICIAL",
+        billingId: existingBilling?.id || null,
+        serviceOrderId,
+        expectedVersion: existingBilling
+          ? Number(existingBilling.lock_version) || 0
+          : null,
+        payload,
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          ipAddress: req.ip,
+        },
+      });
       bustBalancoCaches();
 
       res.json(data);
@@ -404,11 +484,12 @@ import type { Express } from "express";
       const so = await storage.getServiceOrder(osId);
       if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
-        .select("status").eq("service_order_id", osId).limit(1);
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
+        .select("id, status, lock_version").eq("service_order_id", osId).limit(1);
+      if (existingBillingError) throw existingBillingError;
 
-      if (existingBilling?.[0] && ["APROVADA", "FATURADO", "PAGO"].includes(existingBilling[0].status)) {
-        return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
+      if (existingBilling?.[0] && await isBillingProtected(supabaseAdmin, existingBilling[0])) {
+        return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial — valores travados." });
       }
 
       const { completedDate, hora_chegada_origem, mission_started_at, scheduled_date, km_chegada_origem, km_fim_missao } = req.body;
@@ -456,68 +537,68 @@ import type { Express } from "express";
       if (existingBilling?.[0] && existingBilling[0].status === "A_VERIFICAR") {
         const updatedSo = await storage.getServiceOrder(osId);
         if (updatedSo) {
-          const phs = await storage.getMissionPhotosByOS(osId);
-          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
-
-          const updatedLogs = (updatedSo.stepLogs || []) as any[];
-          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino" (saiu pra rota).
-          // Chegada na origem (checkin_chegada_km) NÃO conta como início de cobrança.
-          const inicioMissaoEntry = [...updatedLogs].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && l.timestamp);
-          const stTime = inicioMissaoEntry ? toBRT(new Date(inicioMissaoEntry.timestamp)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
-
-          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
-          const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
-
-          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (updatedSo.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (updatedSo.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
+          if (!updatedSo.escortContractId) {
+            throw new Error("OS sem escort_contract_id: correção operacional necessária.");
           }
-
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList = await storage.getMissionCostsByOS(osId);
-          const _split = splitMissionCostsForBilling(mcList);
-          let dpCalc = _split.despesas_pedagio;
-          const dcCalc = _split.despesas_combustivel;
-          const doCalc = _split.despesas_outras;
-          const roCalc = _split.receitas_os;
-          const pedagioEstOS = Number((updatedSo as any).pedagioEstimado) || 0;
-          if (pedagioEstOS > 0 && dpCalc === 0) dpCalc = pedagioEstOS;
-          const resultado = calcularEscolta({
-            km_inicial: kmI, km_final: kmFN, km_vazio: 0,
-            horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-            horario_inicio: stTime, horario_fim: eTime, horario_agendado: sTime,
-            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt as any).toISOString() : null,
-            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate as any).toISOString() : null,
-            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate as any).toISOString() : null,
-            despesas_pedagio: dpCalc, despesas_combustivel: dcCalc, despesas_outras: doCalc, receitas_os: roCalc, contrato,
+          const { data: contrato, error: contractError } = await supabaseAdmin
+            .from("escort_contracts")
+            .select("*")
+            .eq("id", updatedSo.escortContractId)
+            .single();
+          if (contractError || !contrato) throw contractError || new Error("Contrato não encontrado.");
+          const [phs, mcList, client, emp, emp2, vehicle] = await Promise.all([
+            storage.getMissionPhotosByOS(osId),
+            storage.getMissionCostsByOS(osId),
+            updatedSo.clientId ? storage.getClient(updatedSo.clientId) : null,
+            updatedSo.assignedEmployeeId ? storage.getEmployee(updatedSo.assignedEmployeeId) : null,
+            updatedSo.assignedEmployee2Id ? storage.getEmployee(updatedSo.assignedEmployee2Id) : null,
+            updatedSo.vehicleId ? storage.getVehicle(updatedSo.vehicleId) : null,
+          ]);
+          const payload = computeBillingPayloadForOs({
+            so: {
+              id: osId,
+              os_number: updatedSo.osNumber,
+              status: updatedSo.status,
+              mission_status: updatedSo.missionStatus,
+              client_id: updatedSo.clientId,
+              escort_contract_id: updatedSo.escortContractId,
+              assigned_employee_id: updatedSo.assignedEmployeeId,
+              assigned_employee_2_id: updatedSo.assignedEmployee2Id,
+              vehicle_id: updatedSo.vehicleId,
+              origin: updatedSo.origin,
+              destination: updatedSo.destination,
+              escorted_vehicle_plate: updatedSo.escortedVehiclePlate,
+              escorted_driver_name: updatedSo.escortedDriverName,
+              scheduled_date: updatedSo.scheduledDate,
+              mission_started_at: updatedSo.missionStartedAt,
+              completed_date: updatedSo.completedDate,
+            },
+            contrato,
+            photos: phs.map((photo: any) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value,
+            })),
+            mCosts: mcList,
+            horasMissao: 0,
+            clientName: client?.name || "--",
+            empName: emp?.name || req.user!.name,
+            emp2Name: emp2?.name || null,
+            vehPlate: vehicle?.plate || null,
           });
-
-          const n = (v: any) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: n(kmI), km_final: n(kmFN), km_total: n(resultado.km_total),
-            km_carregado: n(resultado.km_carregado), km_faturado: n(resultado.km_faturado),
-            km_franquia: n(resultado.km_franquia), km_excedente: n(resultado.km_excedente),
-            horario_inicio: stTime || null, horario_fim: eTime || null,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
-            fat_acionamento: n(resultado.fat_acionamento), fat_hora_extra: n(resultado.fat_hora_extra),
-            fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
-            fat_km_vazio: n(resultado.faturamento.km_vazio),
-            fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
-            fat_adicional_noturno: n(resultado.fat_adicional_noturno), fat_total: n(resultado.fat_total),
-            receitas_os: n(resultado.receitas_os),
-            despesas_pedagio: n(dpCalc), despesas_combustivel: n(dcCalc), despesas_outras: n(doCalc),
-          }).eq("service_order_id", osId);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: osId,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user!.id,
+              userName: req.user!.name,
+              userRole: req.user!.role,
+              reason: "Override de diretoria",
+              ipAddress: req.ip,
+            },
+          });
           bustBalancoCaches();
         }
       }
@@ -679,64 +760,65 @@ import type { Express } from "express";
         } catch (_muErr) {}
       }
 
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
-        .select("id, status").eq("service_order_id", osId).limit(1);
-      const FROZEN_BILL_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
-      if (existingBilling?.[0] && !FROZEN_BILL_STATUSES.includes(existingBilling[0].status)) {
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
+        .select("id, status, lock_version").eq("service_order_id", osId).limit(1);
+      if (existingBillingError) throw existingBillingError;
+      const billingProtected = existingBilling?.[0]
+        ? await isBillingProtected(supabaseAdmin, existingBilling[0])
+        : false;
+      if (existingBilling?.[0] && !billingProtected) {
         const updatedSo = await storage.getServiceOrder(osId);
         if (updatedSo) {
-          const phs = await storage.getMissionPhotosByOS(osId);
-          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
-
-          const updatedLogs = (updatedSo.stepLogs || []) as any[];
-          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino". Chegada na origem não conta.
-          const inicioEntry2 = [...updatedLogs].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
-          const stTime = inicioEntry2 ? toBRT(new Date(inicioEntry2.timestamp || inicioEntry2.completedAt)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
-
-          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
-          const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
-
-          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (updatedSo.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (updatedSo.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
-          }
-
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList2 = await storage.getMissionCostsByOS(osId);
-          const _split2 = splitMissionCostsForBilling(mcList2);
-          let dp2 = _split2.despesas_pedagio;
-          const dc2 = _split2.despesas_combustivel;
-          const do2 = _split2.despesas_outras;
-          const ro2 = _split2.receitas_os;
-          const pedagioEstOS2 = Number((updatedSo as any).pedagioEstimado) || 0;
-          if (pedagioEstOS2 > 0 && dp2 === 0) dp2 = pedagioEstOS2;
-          const resultado = calcularEscolta({
-            contrato, km_inicial: kmI, km_final: kmFN,
-            km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-            horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
-            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt as any).toISOString() : null,
-            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate as any).toISOString() : null,
-            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate as any).toISOString() : null,
-            despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2, receitas_os: ro2,
+          if (!updatedSo.escortContractId) throw new Error("OS sem escort_contract_id.");
+          const { data: contrato, error: contractError } = await supabaseAdmin
+            .from("escort_contracts").select("*")
+            .eq("id", updatedSo.escortContractId).single();
+          if (contractError || !contrato) throw contractError || new Error("Contrato não encontrado.");
+          const [phs, costs, client, emp, emp2, vehicle] = await Promise.all([
+            storage.getMissionPhotosByOS(osId),
+            storage.getMissionCostsByOS(osId),
+            updatedSo.clientId ? storage.getClient(updatedSo.clientId) : null,
+            updatedSo.assignedEmployeeId ? storage.getEmployee(updatedSo.assignedEmployeeId) : null,
+            updatedSo.assignedEmployee2Id ? storage.getEmployee(updatedSo.assignedEmployee2Id) : null,
+            updatedSo.vehicleId ? storage.getVehicle(updatedSo.vehicleId) : null,
+          ]);
+          const payload = computeBillingPayloadForOs({
+            so: {
+              id: osId, os_number: updatedSo.osNumber, status: updatedSo.status,
+              mission_status: updatedSo.missionStatus, client_id: updatedSo.clientId,
+              escort_contract_id: updatedSo.escortContractId,
+              assigned_employee_id: updatedSo.assignedEmployeeId,
+              assigned_employee_2_id: updatedSo.assignedEmployee2Id,
+              vehicle_id: updatedSo.vehicleId, origin: updatedSo.origin,
+              destination: updatedSo.destination,
+              escorted_vehicle_plate: updatedSo.escortedVehiclePlate,
+              escorted_driver_name: updatedSo.escortedDriverName,
+              scheduled_date: updatedSo.scheduledDate,
+              mission_started_at: updatedSo.missionStartedAt,
+              completed_date: updatedSo.completedDate,
+            },
+            contrato,
+            photos: phs.map((photo: any) => ({
+              step: photo.step, km_value: photo.kmValue ?? photo.km_value,
+            })),
+            mCosts: costs, horasMissao: 0,
+            clientName: client?.name || "--",
+            empName: emp?.name || req.user!.name,
+            emp2Name: emp2?.name || null,
+            vehPlate: vehicle?.plate || null,
           });
-
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: kmI, km_final: kmFN,
-            horario_inicio: stTime || null, horario_fim: eTime || null,
-            receitas_os: Number(resultado.receitas_os) || 0,
-            despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2,
-            ...resultado,
-          }).eq("id", existingBilling[0].id);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: osId,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user!.id, userName: req.user!.name,
+              userRole: req.user!.role, reason: "Ajuste manual de fatos",
+              ipAddress: req.ip,
+            },
+          });
           bustBalancoCaches();
         }
       }
@@ -1244,16 +1326,58 @@ import type { Express } from "express";
       (parsed.data as any).custos_congelados_em = null;
       (parsed.data as any).custos_congelados_por = null;
       (parsed.data as any).cancellationReason = null;
-      // Reseta o billing CANCELADO para permitir recálculo (status volta para A_VERIFICAR e limpa observação de cancelamento)
       try {
-        await supabaseAdmin.from("escort_billings")
-          .update({ status: "A_VERIFICAR", observacoes: null })
+        const { data: cancelledBillings, error: cancelledBillingError } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, status, lock_version")
           .eq("service_order_id", Number(req.params.id))
-          .eq("status", "CANCELADO");
+          .eq("status", "CANCELADO")
+          .limit(1);
+        if (cancelledBillingError) throw cancelledBillingError;
+        const cancelledBilling = cancelledBillings?.[0];
+        if (cancelledBilling) {
+          if (await billingHasCommercialSnapshot(
+            supabaseAdmin,
+            cancelledBilling.id,
+            Number(cancelledBilling.lock_version) || 0,
+          )) {
+            return res.status(409).json({
+              message: "Reativação bloqueada: billing presente em snapshot comercial.",
+            });
+          }
+          await writeEscortBillingAtomic({
+            action: "REOPEN_CANCELLED",
+            billingId: cancelledBilling.id,
+            serviceOrderId: Number(req.params.id),
+            expectedVersion: Number(cancelledBilling.lock_version) || 0,
+            payload: { status: "A_VERIFICAR", observacoes: null },
+            actor: {
+              userId: req.user!.id,
+              userName: req.user!.name,
+              userRole: req.user!.role,
+              reason: "Reativação explícita de OS cancelada/recusada",
+              ipAddress: req.ip,
+            },
+          });
+          await logSystemAudit({
+            userId: req.user!.id,
+            userName: req.user!.name,
+            userRole: req.user!.role,
+            action: "REATIVAR_OS_CANCELADA",
+            targetId: String(cancelledBilling.id),
+            targetType: "escort_billing",
+            details: `OS #${req.params.id}: billing CANCELADO reaberto para A_VERIFICAR.`,
+            ipAddress: req.ip,
+          });
+        }
         bustBalancoCaches();
         console.log(`[so-patch-reactivate] OS ${req.params.id}: billing CANCELADO → A_VERIFICAR (recusada/cancelada → concluída)`);
       } catch (e: any) {
         console.error(`[so-patch-reactivate] erro ao resetar billing:`, e.message);
+        return res.status(500).json({
+          message: "Reativação não concluída: falha ao proteger/reabrir billing.",
+          detail: e.message,
+        });
       }
     }
 
@@ -1286,45 +1410,60 @@ import type { Express } from "express";
 
       try {
         if (isRecusada) {
-          // recusada: zera TODOS os valores do billing, independente do
-          // status atual (inclusive CANCELADO/REJEITADA — recusada da OS é
-          // a verdade final). Bug histórico: o filtro .in() de antes deixava
-          // billings já rejeitados/cancelados com fat_total intacto, que
-          // depois aparecia como custo na geração de fatura.
-          await supabaseAdmin.from("escort_billings")
-            .update({
-              status: "CANCELADO",
-              fat_total: 0,
-              fat_acionamento: 0,
-              fat_hora_extra: 0,
-              fat_km: 0,
-              fat_km_carregado: 0,
-              fat_km_vazio: 0,
-              fat_estadia: 0,
-              fat_pernoite: 0,
-              fat_diaria: 0,
-              fat_adicional_noturno: 0,
-              resultado_bruto: 0,
-              resultado_liquido: 0,
-              margem_percentual: 0,
-              observacoes: `OS RECUSADA${reason ? " — " + reason : ""}`,
-            })
-            .eq("service_order_id", Number(req.params.id));
-          bustBalancoCaches();
+          const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+            .select("id, status, lock_version").eq("service_order_id", Number(req.params.id)).limit(1);
+          if (existingBillError) throw existingBillError;
+          const billing = existingBill?.[0];
+          if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+            console.log(`[OS-Refuse-Billing] OS ${existing.osNumber}: billing protegido (${billing.status}) preservado`);
+          } else if (billing) {
+            if (!existing.escortContractId) {
+              await writeEscortBillingAtomic({
+                action: "DELETE_OPEN",
+                billingId: billing.id,
+                serviceOrderId: Number(req.params.id),
+                expectedVersion: Number(billing.lock_version) || 0,
+                actor: {
+                  userId: req.user!.id, userName: adminName,
+                  userRole: req.user!.role, reason: "Recusada sem contrato oficial",
+                  ipAddress: req.ip,
+                },
+              });
+            } else {
+              await writeEscortBillingAtomic({
+                action: "WRITE_REFUSED",
+                billingId: billing.id,
+                serviceOrderId: Number(req.params.id),
+                expectedVersion: Number(billing.lock_version) || 0,
+                payload: {
+                  service_order_id: Number(req.params.id),
+                  contract_id: existing.escortContractId,
+                  km_inicial: 0,
+                  km_final: 0,
+                  ...buildRecusadaZeroPayload(reason),
+                },
+                actor: {
+                  userId: req.user!.id, userName: adminName,
+                  userRole: req.user!.role, reason, ipAddress: req.ip,
+                },
+              });
+            }
+            bustBalancoCaches();
+          }
         } else {
           // cancelada: recalcula o billing pela "tabela de 100 km" do cliente
           // (acionamento + excedente real de km/horas; dentro da franquia ⇒ só o
           // acionamento). Regra do dono. Não toca billing já congelado (aprovado/faturado/pago).
           try {
             const soId = Number(req.params.id);
-            const { data: existingBill } = await supabaseAdmin.from("escort_billings")
-              .select("id, status").eq("service_order_id", soId).limit(1);
-            const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
-            const billStatus = existingBill?.[0]?.status;
-            if (billStatus && FROZEN.includes(billStatus)) {
-              // congelado: apenas marca como CANCELADO sem mexer nos valores.
-              await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-              bustBalancoCaches();
+            const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+              .select("id, status, lock_version").eq("service_order_id", soId).limit(1);
+            if (existingBillError) throw existingBillError;
+            const existingBilling = existingBill?.[0];
+            if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+              // Snapshot/billing congelado permanece integralmente imutável.
+              // O status operacional da OS pode mudar sem reabrir o comercial.
+              console.log(`[OS-Cancel-Billing] OS ${existing.osNumber}: billing protegido (${existingBilling.status}) preservado`);
             } else {
               const cb = await computeCanceladaBilling({
                 serviceOrderId: soId,
@@ -1355,25 +1494,44 @@ import type { Express } from "express";
                   placa_viatura: vehicle?.plate || null,
                   data_missao: existing.scheduledDate || existing.missionStartedAt || new Date().toISOString(),
                   created_by: adminName,
-                  observacoes: `OS CANCELADA — Tabela 100 km${cb.usouTabela100 ? "" : " (fallback: contrato da OS)"}${reason ? " | Motivo: " + reason : ""}`,
+                  observacoes: `OS CANCELADA — contrato vinculado à OS${reason ? " | Motivo: " + reason : ""}`,
                 };
-                // UPSERT atômico via ON CONFLICT (service_order_id) — §8.6.
-                await supabaseAdmin.from("escort_billings").upsert(cancelPayload, { onConflict: "service_order_id" });
+                await writeEscortBillingAtomic({
+                  action: "WRITE_CANCELLED",
+                  billingId: existingBilling?.id || null,
+                  serviceOrderId: soId,
+                  expectedVersion: existingBilling
+                    ? Number(existingBilling.lock_version) || 0
+                    : null,
+                  payload: cancelPayload,
+                  actor: {
+                    userId: req.user!.id, userName: adminName,
+                    userRole: req.user!.role, reason, ipAddress: req.ip,
+                  },
+                });
                 bustBalancoCaches();
                 // Espelha o total na OS p/ o card/listagem refletir a tabela 100km.
                 (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
                 (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
               } else {
-                // sem tabela de 100km nem contrato vinculado: ao menos marca CANCELADO.
-                await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-              bustBalancoCaches();
+                throw new Error("Cancelada sem tabela 100 km ou contrato utilizável; billing preservado");
               }
             }
           } catch (cancErr: any) {
             console.error(`[OS-Cancel-Billing PATCH] OS ${req.params.id}:`, cancErr.message);
+            return res.status(500).json({
+              message: "OS não foi atualizada: falha ao consolidar billing de cancelamento.",
+              detail: cancErr.message,
+            });
           }
         }
-      } catch (_e) {}
+      } catch (billingErr: any) {
+        console.error(`[OS-Billing PATCH] OS ${req.params.id}:`, billingErr.message);
+        return res.status(500).json({
+          message: "OS não foi atualizada: falha ao proteger/recalcular billing.",
+          detail: billingErr.message,
+        });
+      }
 
       try {
         const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
@@ -1635,7 +1793,7 @@ import type { Express } from "express";
       }
     }
 
-    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao", "pedagioEstimado", "pedagioIdaVolta"];
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao"];
     const changedBillingFields = existing && billingRelevantFields.some(f => {
       const oldVal = (existing as any)[f];
       const newVal = (parsed.data as any)[f];
@@ -1644,86 +1802,35 @@ import type { Express } from "express";
     const isConcluded = ["concluída", "concluida"].includes(data.status || "") || data.missionStatus === "encerrada";
     if (changedBillingFields && isConcluded && data.type === "escolta") {
       try {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
           .select("*")
           .eq("service_order_id", data.id)
           .order("created_at", { ascending: false })
           .limit(1);
+        if (existingBillingError) throw existingBillingError;
         const bill = existingBilling?.[0];
-        if (bill && bill.status === "A_VERIFICAR") {
-          let contrato: any = null;
-          if (bill.contract_id) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", bill.contract_id).single();
-            contrato = cc;
-          }
-          if (!contrato) {
-            contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          }
-
-          const kmIni = Number((data as any).kmSaida || bill.km_inicial || 0);
-          const kmFin = Number((data as any).kmRetorno || bill.km_final || 0);
-          const toBRTx = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          // INICIO REAL = missionStartedAt (setado no clique de "iniciar_missao").
-          // hora_chegada_origem NÃO entra mais — chegar na origem não é início de cobrança.
-          const horarioInicio = data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null);
-          const horaFimMissaoAR = (data as any).hora_fim_missao || (existing as any)?.hora_fim_missao || data.completedDate;
-          const horarioFim = horaFimMissaoAR ? toBRTx(new Date(horaFimMissaoAR)) : (bill.horario_fim || null);
-          const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
-
-          let despPedagioAR = Number(bill.despesas_pedagio || 0);
-          const pedagioOS = Number((data as any).pedagioEstimado) || 0;
-          if (pedagioOS > 0) despPedagioAR = pedagioOS;
-
-          const mcListAR = await storage.getMissionCostsByOS(osId);
-          const _splitAR = splitMissionCostsForBilling(mcListAR);
-          const dpAR = _splitAR.despesas_pedagio;
-          const dcAR = _splitAR.despesas_combustivel;
-          const doAR = _splitAR.despesas_outras;
-          const roAR = _splitAR.receitas_os;
-          if (dpAR > 0) despPedagioAR = dpAR;
-
-          const resultado = calcularEscolta({
-            km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
-            horas_missao: 0, horas_estadia: Number(bill.horas_estadia || 0),
-            teve_pernoite: !!bill.teve_pernoite, horario_inicio: horarioInicio, horario_fim: horarioFim,
-            horario_agendado: horarioAgendado,
-            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt as any).toISOString() : null,
-            fim_ts: horaFimMissaoAR ? new Date(horaFimMissaoAR).toISOString() : (data.completedDate ? new Date(data.completedDate as any).toISOString() : null),
-            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate as any).toISOString() : null,
-            despesas_pedagio: despPedagioAR, despesas_combustivel: dcAR || Number(bill.despesas_combustivel || 0),
-            despesas_outras: doAR || Number(bill.despesas_outras || 0), receitas_os: roAR, contrato,
+        if (bill && !await isBillingProtected(supabaseAdmin, bill)) {
+          const payload = await buildOfficialBillingPayloadForServiceOrder(data, req.user!.name);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: bill.id,
+            serviceOrderId: data.id,
+            expectedVersion: Number(bill.lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user!.id, userName: req.user!.name,
+              userRole: req.user!.role, reason: "Auto-recalc após alteração de fatos",
+              ipAddress: req.ip,
+            },
           });
-
-          const nb = (v: any) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: nb(kmIni), km_final: nb(kmFin),
-            km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
-            km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
-            km_excedente: nb(resultado.km_excedente),
-            placa_escoltado: data.escortedVehiclePlate || bill.placa_escoltado || null,
-            horario_agendado: horarioAgendado, horario_inicio: horarioInicio, horario_fim: horarioFim,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: nb(resultado.horas_trabalhadas), horas_trabalhadas: nb(resultado.horas_trabalhadas),
-            is_noturno: resultado.is_noturno,
-            fat_acionamento: nb(resultado.fat_acionamento), fat_hora_extra: nb(resultado.fat_hora_extra),
-            fat_km: nb(resultado.fat_km), fat_km_carregado: nb(resultado.faturamento.km_carregado),
-            fat_km_vazio: nb(resultado.faturamento.km_vazio),
-            fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
-            fat_diaria: nb(resultado.fat_pernoite),
-            fat_adicional_noturno: nb(resultado.fat_adicional_noturno), fat_total: nb(resultado.fat_total),
-            receitas_os: nb(resultado.receitas_os),
-            despesas_pedagio: nb(despPedagioAR), despesas_combustivel: nb(dcAR || Number(bill.despesas_combustivel || 0)), despesas_outras: nb(doAR || Number(bill.despesas_outras || 0)),
-            valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
-            pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
-            pag_adicional_noturno: nb(resultado.pag_adicional_noturno), pag_reembolsos: nb(resultado.pag_reembolsos),
-            pag_total: nb(resultado.pag_total),
-            resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
-            margem_percentual: nb(resultado.resultado.margem_pct),
-          }).eq("id", bill.id);
           console.log(`[OS-Billing] Auto-recalculated billing #${bill.id} for OS ${data.osNumber} (fields changed: ${billingRelevantFields.filter(f => (parsed.data as any)[f] !== undefined).join(", ")})`);
         }
       } catch (recalcErr: any) {
         console.error(`[OS-Billing] Auto-recalc failed for OS ${data.osNumber}:`, recalcErr.message);
+        return res.status(500).json({
+          message: "OS atualizada, mas o billing não pôde ser recalculado.",
+          serviceOrderId: data.id,
+        });
       }
     }
 
@@ -1774,75 +1881,35 @@ import type { Express } from "express";
         parsed.data.completedDate !== undefined ||
         (parsed.data.status !== undefined && (parsed.data.status === "concluída" || parsed.data.status === "concluida"));
       if (billingRelevantChanged && data.type === "escolta") {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
-          .select("id, status").eq("service_order_id", data.id).limit(1);
-        const FROZEN = ["APROVADA", "FATURADO", "PAGO"];
-        if (existingBilling?.[0] && !FROZEN.includes(existingBilling[0].status)) {
-          const phs = await storage.getMissionPhotosByOS(data.id);
-          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = data.scheduledDate ? toBRT(new Date(data.scheduledDate)) : undefined;
-          const stepLogsArr = (data.stepLogs || []) as any[];
-          // INICIO REAL = clique em "iniciar_missao" / "em_transito_destino". Chegada na origem não conta.
-          const inicioEntry = [...stepLogsArr].reverse().find((l: any) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
-          const stTime = data.missionStartedAt ? toBRT(new Date(data.missionStartedAt as string)) : (inicioEntry ? toBRT(new Date(inicioEntry.timestamp || inicioEntry.completedAt)) : undefined);
-          const cdValid = data.completedDate && new Date(data.completedDate as string).getFullYear() > 2000;
-          const eTime = cdValid ? toBRT(new Date(data.completedDate as string)) : undefined;
-
-          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (data.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", data.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (data.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", data.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
-          }
-
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList = await storage.getMissionCostsByOS(data.id);
-          const _splitP = splitMissionCostsForBilling(mcList);
-          let dp = _splitP.despesas_pedagio;
-          const dc = _splitP.despesas_combustivel;
-          const douts = _splitP.despesas_outras;
-          const ro = _splitP.receitas_os;
-          const pedEst = Number((data as any).pedagioEstimado) || 0;
-          if (pedEst > 0 && dp === 0) dp = pedEst;
-
-          const resultado = calcularEscolta({
-            contrato, km_inicial: kmI, km_final: kmFN,
-            km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-            horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
-            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt as any).toISOString() : null,
-            fim_ts: data.completedDate ? new Date(data.completedDate as any).toISOString() : null,
-            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate as any).toISOString() : null,
-            despesas_pedagio: dp, despesas_combustivel: dc, despesas_outras: douts, receitas_os: ro,
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings")
+          .select("id, status, lock_version").eq("service_order_id", data.id).limit(1);
+        if (existingBillingError) throw existingBillingError;
+        const billingProtected = existingBilling?.[0]
+          ? await isBillingProtected(supabaseAdmin, existingBilling[0])
+          : false;
+        if (existingBilling?.[0] && !billingProtected) {
+          const payload = await buildOfficialBillingPayloadForServiceOrder(data, req.user!.name);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: data.id,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user!.id, userName: req.user!.name,
+              userRole: req.user!.role, reason: "Recalcular após conclusão/horários",
+              ipAddress: req.ip,
+            },
           });
-
-          const n = (v: any) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: n(kmI), km_final: n(kmFN), km_total: n(resultado.km_total),
-            km_carregado: n(resultado.km_carregado), km_faturado: n(resultado.km_faturado),
-            km_franquia: n(resultado.km_franquia), km_excedente: n(resultado.km_excedente),
-            horario_inicio: stTime || null, horario_fim: eTime || null,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
-            fat_acionamento: n(resultado.fat_acionamento), fat_hora_extra: n(resultado.fat_hora_extra),
-            fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
-            fat_km_vazio: n(resultado.faturamento.km_vazio),
-            fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
-            fat_adicional_noturno: n(resultado.fat_adicional_noturno), fat_total: n(resultado.fat_total),
-            receitas_os: n(resultado.receitas_os),
-            despesas_pedagio: n(dp), despesas_combustivel: n(dc), despesas_outras: n(douts),
-          }).eq("id", existingBilling[0].id);
-          console.log(`[so-patch-recalc] OS ${data.osNumber}: km=${kmI}->${kmFN}, h=${stTime}->${eTime}, fat=${resultado.fat_total}`);
+          console.log(`[so-patch-recalc] OS ${data.osNumber}: fat=${payload.fat_total}`);
         }
       }
     } catch (recalcErr: any) {
       console.error(`[so-patch-recalc] Erro ao recalcular boletim:`, recalcErr.message);
+      return res.status(500).json({
+        message: "OS atualizada, mas o billing não pôde ser recalculado.",
+        serviceOrderId: data.id,
+      });
     }
 
     res.json(data);
@@ -1852,13 +1919,34 @@ import type { Express } from "express";
     const osId = Number(req.params.id);
     try {
       const existing = await storage.getServiceOrder(osId);
+      const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+        .select("id, status, lock_version").eq("service_order_id", osId).limit(1);
+      if (existingBillError) throw existingBillError;
+      const billing = existingBill?.[0];
+      if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Exclusão bloqueada: billing congelado ou presente em snapshot comercial.",
+        });
+      }
       if (existing?.kitId) {
         await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
       }
       if (existing?.vehicleId) {
         await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
       }
-      await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", osId);
+      if (billing) {
+        await writeEscortBillingAtomic({
+          action: "DELETE_OPEN",
+          billingId: billing.id,
+          serviceOrderId: osId,
+          expectedVersion: Number(billing.lock_version) || 0,
+          actor: {
+            userId: req.user!.id, userName: req.user!.name,
+            userRole: req.user!.role, reason: "Exclusão explícita de OS",
+            ipAddress: req.ip,
+          },
+        });
+      }
       await supabaseAdmin.from("mission_updates").delete().eq("service_order_id", osId);
       await supabaseAdmin.from("mission_photos").delete().eq("service_order_id", osId);
       await supabaseAdmin.from("weapon_movements").delete().eq("service_order_id", osId);
@@ -3689,9 +3777,9 @@ import type { Express } from "express";
 
       // === BOLETIM DE MEDICAO (Financial Section) ===
       try {
-        const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+        const kmSaidaPhoto = [...photos].reverse().find((p: any) => p.step === "km_saida");
         const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
-        const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+        const kmFinalPhoto = [...photos].reverse().find((p: any) => p.step === "km_final");
         const kmInicial = kmChegadaPhoto?.kmValue || 0;
         let kmFinal = kmFinalPhoto?.kmValue || 0;
         if (kmFinal <= kmInicial) kmFinal = kmInicial;

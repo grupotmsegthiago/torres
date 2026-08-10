@@ -5,10 +5,27 @@ on:
     branches:
       - main
       - dev
+  pull_request:
+    branches:
+      - dev
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pr5b1_tx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pr5b1_tx_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       
@@ -20,6 +37,23 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
+
+      - name: Atomic billing tests
+        run: >-
+          npx tsx --test
+          server/lib/atomic-billing.test.ts
+          server/lib/atomic-billing-migration.test.ts
+          server/lib/atomic-billing-postgres.integration.test.ts
+          server/lib/billing-frozen.test.ts
+          server/lib/cancelada-billing.test.ts
+          server/lib/recusada-guard.test.ts
+          server/billing-cron.test.ts
+          server/pr5b1-canonical-engine-preparation.test.ts
+          server/cron.test.ts
+        env:
+          PR5B1_TX_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pr5b1_tx_test
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
       
       - name: Build
         run: npm run build

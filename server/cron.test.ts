@@ -87,13 +87,20 @@ function makeQueryBuilder(state: ScenarioState, table: string) {
 }
 
 function installMock(state: ScenarioState) {
-  const origFrom = (supabaseAdmin as any).from;
-  const origRpc = (supabaseAdmin as any).rpc;
-  (supabaseAdmin as any).from = (table: string) => makeQueryBuilder(state, table);
-  (supabaseAdmin as any).rpc = async (_name: string, _args: any) => ({ data: 0, error: null });
+  const rest = (supabaseAdmin as any).rest;
+  const origFrom = rest.from;
+  const origRpc = rest.rpc;
+  rest.from = (table: string) => makeQueryBuilder(state, table);
+  rest.rpc = async (name: string, args: any) => {
+    if (name === "write_escort_billing_atomic") {
+      state.inserts.push({ table: "escort_billings", values: args.p_payload });
+      return { data: [{ ...args.p_payload, id: "atomic-test", lock_version: 0 }], error: null };
+    }
+    return { data: 0, error: null };
+  };
   return () => {
-    (supabaseAdmin as any).from = origFrom;
-    (supabaseAdmin as any).rpc = origRpc;
+    rest.from = origFrom;
+    rest.rpc = origRpc;
   };
 }
 
@@ -134,7 +141,10 @@ function buildScenario(billingStatus: string, manualValues: Row): ScenarioState 
       clients: [{ id: 1, name: "Cliente Teste" }],
       employees: [{ id: 10, name: "Agente Teste" }],
       vehicles: [{ id: 100, plate: "XYZ1A23" }],
-      mission_photos: [],
+      mission_photos: [
+        { service_order_id: 9001, step: "km_chegada", km_value: 100 },
+        { service_order_id: 9001, step: "km_final", km_value: 150 },
+      ],
       mission_costs: [],
     },
     updates: [],
@@ -186,7 +196,7 @@ test("cron Billing: cria billing para OS concluída sem billing existente", asyn
   assert.equal(payload.service_order_id, 9001);
 });
 
-test("cron Billing: atualiza billing PENDENTE em OS ativa (não congelado)", async () => {
+test("cron Billing: não materializa projeção de OS ativa, mesmo com billing PENDENTE", async () => {
   const state = buildScenario("PENDENTE", { fat_total: 1, km_inicial: 0, km_final: 0 });
   state.tables.service_orders[0].status = "em_andamento";
   state.tables.service_orders[0].mission_status = "em_andamento";
@@ -198,5 +208,5 @@ test("cron Billing: atualiza billing PENDENTE em OS ativa (não congelado)", asy
     restore();
   }
   const updates = state.updates.filter((u) => u.table === "escort_billings");
-  assert.equal(updates.length, 1, "Billing PENDENTE em OS ativa deve ser atualizado");
+  assert.equal(updates.length, 0, "OS ativa é projeção e não pode materializar billing oficial");
 });
