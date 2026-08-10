@@ -296,11 +296,28 @@ function formatCnpj(v: string) {
   return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
 }
 
+function formatCpf(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+}
+
 function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null; onClose: () => void }) {
   const { toast } = useToast();
   const isEdit = !!editing;
   const [nome, setNome] = useState(editing?.nome || "");
-  const [cnpjCpf, setCnpjCpf] = useState(editing?.cnpj_cpf || "");
+  const [cnpjCpf, setCnpjCpf] = useState(() => {
+    const raw = editing?.cnpj_cpf || "";
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 11) return formatCpf(raw);
+    if (digits.length === 14) return formatCnpj(raw);
+    return raw;
+  });
+  const [docTipo, setDocTipo] = useState<"CNPJ" | "CPF">(
+    (editing?.cnpj_cpf || "").replace(/\D/g, "").length === 11 ? "CPF" : "CNPJ"
+  );
   const [categoria, setCategoria] = useState(editing?.categoria || "");
   const [email, setEmail] = useState(editing?.email || "");
   const [telefone, setTelefone] = useState(editing?.telefone || "");
@@ -332,7 +349,7 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
   }, {} as Record<string, FinancialCategory[]>);
 
   const cleanCnpj = cnpjCpf.replace(/\D/g, "");
-  const canSearch = cleanCnpj.length === 14;
+  const canSearch = docTipo === "CNPJ" && cleanCnpj.length === 14;
 
   const handleCnpjSearch = async () => {
     if (!canSearch) return;
@@ -421,16 +438,41 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
           e.preventDefault();
           if (!nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
           const clean = (cnpjCpf || "").replace(/\D/g, "");
-          if (clean.length !== 11 && clean.length !== 14) {
-            toast({ title: "CPF ou CNPJ obrigatório", description: "Informe 11 (CPF) ou 14 (CNPJ) dígitos", variant: "destructive" });
+          if (docTipo === "CPF" && clean.length !== 11) {
+            toast({ title: "CPF inválido", description: "O CPF deve ter 11 dígitos", variant: "destructive" });
+            return;
+          }
+          if (docTipo === "CNPJ" && clean.length !== 14) {
+            toast({ title: "CNPJ inválido", description: "O CNPJ deve ter 14 dígitos", variant: "destructive" });
             return;
           }
           saveMutation.mutate();
         }} className="p-6 space-y-4">
 
-          {/* CNPJ com busca */}
+          {/* CNPJ/CPF com busca */}
           <div>
-            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ / CPF *</label>
+            <div className="flex items-center gap-3 mb-1">
+              <label className="text-[10px] font-black text-neutral-400 uppercase block">Documento *</label>
+              <div className="inline-flex rounded-lg border border-neutral-200 overflow-hidden" data-testid="toggle-doc-tipo">
+                {(["CNPJ", "CPF"] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      setDocTipo(t);
+                      setCnpjCpf(prev => (t === "CPF" ? formatCpf(prev) : formatCnpj(prev)));
+                      setCnpjData(null);
+                    }}
+                    className={`px-3 py-1 text-[10px] font-black uppercase transition-colors ${
+                      docTipo === t ? "bg-violet-600 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50"
+                    }`}
+                    data-testid={`button-doc-tipo-${t.toLowerCase()}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <input
                 required
@@ -438,24 +480,30 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
                 className="flex-1 p-2.5 border border-neutral-200 rounded-lg text-sm font-mono bg-white"
                 value={cnpjCpf}
                 onChange={e => {
-                  setCnpjCpf(formatCnpj(e.target.value));
+                  setCnpjCpf(docTipo === "CPF" ? formatCpf(e.target.value) : formatCnpj(e.target.value));
                   setCnpjData(null);
                 }}
-                placeholder="00.000.000/0000-00"
+                placeholder={docTipo === "CPF" ? "000.000.000-00" : "00.000.000/0000-00"}
                 data-testid="input-cnpj-cpf"
               />
-              <button
-                type="button"
-                onClick={handleCnpjSearch}
-                disabled={!canSearch || cnpjLoading}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-xs font-black uppercase hover:bg-violet-700 disabled:opacity-40 transition-colors whitespace-nowrap"
-                data-testid="button-buscar-cnpj"
-              >
-                {cnpjLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                Buscar
-              </button>
+              {docTipo === "CNPJ" && (
+                <button
+                  type="button"
+                  onClick={handleCnpjSearch}
+                  disabled={!canSearch || cnpjLoading}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-xs font-black uppercase hover:bg-violet-700 disabled:opacity-40 transition-colors whitespace-nowrap"
+                  data-testid="button-buscar-cnpj"
+                >
+                  {cnpjLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                  Buscar
+                </button>
+              )}
             </div>
-            <p className="text-[9px] text-neutral-400 mt-1">Digite o CNPJ (14 dígitos) e clique em Buscar para preencher automaticamente</p>
+            <p className="text-[9px] text-neutral-400 mt-1">
+              {docTipo === "CPF"
+                ? "Fornecedor pessoa física — informe o CPF (11 dígitos)"
+                : "Digite o CNPJ (14 dígitos) e clique em Buscar para preencher automaticamente"}
+            </p>
           </div>
 
           {/* Card de resultado CNPJ */}
