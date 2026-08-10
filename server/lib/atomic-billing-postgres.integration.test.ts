@@ -281,7 +281,9 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   });
 
   await t.test("SECURITY DEFINER works under RLS without BYPASSRLS", async () => {
-    // Isolate RLS to this nested test. Leaving ENABLE on for concurrency was the #169 hang.
+    // Causa #173: createBilling() após ENABLE RLS fazia WRITE_OFFICIAL sem OS
+    // visível ao DEFINER no momento esperado do teste. Fixture deve existir
+    // ANTES do ENABLE; a RPC é exercitada com caller service_role sob RLS.
     const rlsTables = [
       "escort_billings",
       "service_orders",
@@ -294,32 +296,86 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     ] as const;
     const service = await client();
     try {
+      const contractId = await insertFacts(admin, 140);
+      const preRls = await admin.query(
+        "SELECT id FROM public.service_orders WHERE id=140",
+      );
+      assert.equal(preRls.rows.length, 1, "fixture OS 140 must exist before ENABLE RLS");
+
       await admin.query(
         rlsTables.map((table) => `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`).join("\n"),
       );
+
       const role = await admin.query(`
         SELECT rolbypassrls
         FROM pg_roles
         WHERE rolname = 'torres_billing_rpc_owner'
       `);
       assert.equal(role.rows[0].rolbypassrls, false);
-      const billing = await createBilling(admin, 140);
-      const updated = await admin.query(
-        `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
-          'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
-        )`,
-        [billing.id],
+
+      const rlsState = await admin.query(`
+        SELECT c.relname, c.relrowsecurity
+        FROM pg_class AS c
+        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = ANY($1::text[])
+        ORDER BY c.relname
+      `, [rlsTables as unknown as string[]]);
+      assert.equal(rlsState.rows.length, rlsTables.length);
+      assert.ok(rlsState.rows.every((row) => row.relrowsecurity === true));
+
+      const soPolicy = await admin.query(`
+        SELECT policyname, cmd
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'service_orders'
+          AND policyname = 'torres_billing_rpc_owner_select'
+      `);
+      assert.equal(soPolicy.rows.length, 1);
+      assert.equal(soPolicy.rows[0].cmd, "ALL");
+
+      // service_role tem GRANT de tabela, mas sem policy própria → 0 linhas (RLS ativo).
+      await service.query("SET ROLE service_role");
+      const hidden = await service.query(
+        "SELECT count(*)::int AS c FROM public.service_orders WHERE id=140",
+      );
+      assert.equal(hidden.rows[0].c, 0);
+
+      // Caller service_role → SECURITY DEFINER (owner) → policy SELECT → OS encontrada.
+      const created = await service.query(
+        `SELECT id, lock_version, fat_total::text AS fat_total
+         FROM write_escort_billing_atomic(
+           'WRITE_OFFICIAL',
+           jsonb_build_object(
+             'service_order_id',140,'client_id',1,'contract_id',$1::text,
+             'km_inicial',100,'km_final',150,'fat_total',777,'status','A_VERIFICAR'
+           ),
+           NULL,140,NULL,'{"user_name":"test","user_role":"test"}'::jsonb
+         )`,
+        [contractId],
+      );
+      assert.equal(Number(created.rows[0].lock_version), 0);
+      assert.equal(created.rows[0].fat_total, "777");
+
+      const updated = await service.query(
+        `SELECT lock_version, fat_total::text AS fat_total
+         FROM write_escort_billing_atomic(
+           'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 0, '{}'::jsonb
+         )`,
+        [created.rows[0].id],
       );
       assert.equal(Number(updated.rows[0].lock_version), 1);
-      assert.equal(Number(updated.rows[0].fat_total), 777);
-      await service.query("SET ROLE service_role");
-      const viaService = await service.query(
-        `SELECT lock_version FROM write_escort_billing_atomic(
-          'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
-        )`,
-        [billing.id],
+      assert.equal(updated.rows[0].fat_total, "778");
+
+      await service.query("RESET ROLE");
+      await service.query("SET ROLE anon");
+      await assert.rejects(
+        service.query(
+          "SELECT is_escort_billing_snapshotted($1::uuid, 0)",
+          [created.rows[0].id],
+        ),
+        /permission denied/,
       );
-      assert.equal(Number(viaService.rows[0].lock_version), 2);
       await service.query("RESET ROLE");
     } finally {
       try {

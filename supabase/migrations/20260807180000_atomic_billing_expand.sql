@@ -81,18 +81,18 @@ CREATE POLICY torres_billing_rpc_owner_all ON public.escort_billings
 
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.service_orders;
 CREATE POLICY torres_billing_rpc_owner_select ON public.service_orders
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.mission_photos;
 CREATE POLICY torres_billing_rpc_owner_select ON public.mission_photos
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.escort_contracts;
 CREATE POLICY torres_billing_rpc_owner_select ON public.escort_contracts
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.boletim_approvals;
 CREATE POLICY torres_billing_rpc_owner_write ON public.boletim_approvals
@@ -1412,16 +1412,16 @@ CREATE POLICY torres_billing_rpc_owner_all ON public.escort_billings
   USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.service_orders;
 CREATE POLICY torres_billing_rpc_owner_select ON public.service_orders
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.mission_photos;
 CREATE POLICY torres_billing_rpc_owner_select ON public.mission_photos
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS torres_billing_rpc_owner_select ON public.escort_contracts;
 CREATE POLICY torres_billing_rpc_owner_select ON public.escort_contracts
-  FOR SELECT TO torres_billing_rpc_owner
-  USING (true);
+  FOR ALL TO torres_billing_rpc_owner
+  USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS torres_billing_rpc_owner_write ON public.boletim_approvals;
 CREATE POLICY torres_billing_rpc_owner_write ON public.boletim_approvals
   FOR ALL TO torres_billing_rpc_owner
