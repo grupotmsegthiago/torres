@@ -156,6 +156,104 @@ async function createSnapshot(db: pg.Client, billing: any, token: string) {
   );
 }
 
+async function verifyHostedOwnerTransfer(db: pg.Client) {
+  const runner = "pr5b1_tx_hosted_migration_runner";
+  const owner = "pr5b1_tx_hosted_rpc_owner";
+  const schema = "pr5b1_tx_hosted_owner_test";
+
+  try {
+    await db.query(`
+      DROP SCHEMA IF EXISTS ${schema} CASCADE;
+      DROP ROLE IF EXISTS ${owner};
+      DROP ROLE IF EXISTS ${runner};
+      CREATE ROLE ${runner} NOLOGIN NOINHERIT CREATEROLE;
+      CREATE SCHEMA ${schema} AUTHORIZATION ${runner};
+      SET SESSION AUTHORIZATION ${runner};
+
+      CREATE ROLE ${owner} NOLOGIN NOINHERIT;
+      GRANT ${owner} TO CURRENT_USER WITH INHERIT FALSE;
+      GRANT ${owner} TO CURRENT_USER WITH SET TRUE;
+      GRANT USAGE, CREATE ON SCHEMA ${schema} TO ${owner};
+
+      CREATE FUNCTION ${schema}.ownership_probe()
+      RETURNS integer LANGUAGE sql AS 'SELECT 1';
+      ALTER FUNCTION ${schema}.ownership_probe() OWNER TO ${owner};
+
+      REVOKE CREATE ON SCHEMA ${schema} FROM ${owner};
+      REVOKE SET OPTION FOR ${owner} FROM CURRENT_USER;
+      REVOKE INHERIT OPTION FOR ${owner} FROM CURRENT_USER;
+      RESET SESSION AUTHORIZATION;
+    `);
+
+    const result = await db.query(`
+      SELECT
+        owner_role.rolcanlogin AS owner_can_login,
+        owner_role.rolinherit AS owner_inherits,
+        owner_role.rolsuper AS owner_superuser,
+        owner_role.rolcreatedb AS owner_createdb,
+        owner_role.rolcreaterole AS owner_createrole,
+        owner_role.rolreplication AS owner_replication,
+        owner_role.rolbypassrls AS owner_bypassrls,
+        function_owner.rolname AS function_owner,
+        has_schema_privilege('${owner}', '${schema}', 'CREATE') AS owner_schema_create,
+        EXISTS (
+          SELECT 1 FROM pg_auth_members AS membership
+          WHERE membership.roleid = owner_role.oid
+            AND membership.member = (SELECT oid FROM pg_roles WHERE rolname = '${runner}')
+            AND membership.admin_option
+        ) AS runner_admin_option,
+        EXISTS (
+          SELECT 1 FROM pg_auth_members AS membership
+          WHERE membership.roleid = owner_role.oid
+            AND membership.member = (SELECT oid FROM pg_roles WHERE rolname = '${runner}')
+            AND membership.inherit_option
+        ) AS runner_inherit_option,
+        EXISTS (
+          SELECT 1 FROM pg_auth_members AS membership
+          WHERE membership.roleid = owner_role.oid
+            AND membership.member = (SELECT oid FROM pg_roles WHERE rolname = '${runner}')
+            AND membership.set_option
+        ) AS runner_set_option
+      FROM pg_roles AS owner_role
+      CROSS JOIN pg_proc AS probe
+      JOIN pg_namespace AS namespace ON namespace.oid = probe.pronamespace
+      JOIN pg_roles AS function_owner ON function_owner.oid = probe.proowner
+      WHERE owner_role.rolname = '${owner}'
+        AND namespace.nspname = '${schema}'
+        AND probe.proname = 'ownership_probe'
+    `);
+    assert.deepEqual(result.rows[0], {
+      owner_can_login: false,
+      owner_inherits: false,
+      owner_superuser: false,
+      owner_createdb: false,
+      owner_createrole: false,
+      owner_replication: false,
+      owner_bypassrls: false,
+      function_owner: owner,
+      owner_schema_create: false,
+      runner_admin_option: true,
+      runner_inherit_option: false,
+      runner_set_option: false,
+    });
+
+    await db.query(`SET SESSION AUTHORIZATION ${runner}`);
+    await assert.rejects(
+      db.query(`SET ROLE ${owner}`),
+      /permission denied to set role/,
+    );
+    await db.query("RESET SESSION AUTHORIZATION");
+  } finally {
+    await db.query(`
+      RESET ROLE;
+      RESET SESSION AUTHORIZATION;
+      DROP SCHEMA IF EXISTS ${schema} CASCADE;
+      DROP ROLE IF EXISTS ${owner};
+      DROP ROLE IF EXISTS ${runner};
+    `);
+  }
+}
+
 test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   skip: !databaseUrl,
   // Secondary headroom only (green CI suites finish in ~3–6s).
@@ -173,6 +271,10 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     "utf8",
   );
   await admin.query(setupSql);
+  await t.test(
+    "Hosted CREATEROLE runner uses temporary SET membership for OWNER TO",
+    async () => verifyHostedOwnerTransfer(admin),
+  );
   await admin.query(expand);
   await admin.query(enforcement);
 

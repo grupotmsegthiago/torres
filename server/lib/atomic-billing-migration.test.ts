@@ -76,6 +76,12 @@ test("migration TX é transacional e contém objetos atômicos", () => {
 
 test("migration TX é compatível com Supabase Hosted sem atributos privilegiados de role", () => {
   // Hosted 42501: CREATE/ALTER ROLE não pode tocar atributos privilegiados.
+  const roleCommands = [
+    ...expand.matchAll(
+      /\b(?:CREATE|ALTER)\s+ROLE\s+torres_billing_rpc_owner\b[^;]*;/gi,
+    ),
+  ].map(([command]) => command);
+  assert.equal(roleCommands.length, 1);
   for (const forbidden of [
     "BYPASSRLS",
     "NOBYPASSRLS",
@@ -88,11 +94,13 @@ test("migration TX é compatível com Supabase Hosted sem atributos privilegiado
     "REPLICATION",
     "NOREPLICATION",
   ]) {
-    assert.doesNotMatch(
-      expand,
-      new RegExp(`(?:CREATE|ALTER)\\s+ROLE\\s+torres_billing_rpc_owner[\\s\\S]{0,200}?\\b${forbidden}\\b`, "i"),
-      `expand não pode usar ${forbidden} em CREATE/ALTER ROLE torres_billing_rpc_owner`,
-    );
+    for (const command of roleCommands) {
+      assert.doesNotMatch(
+        command,
+        new RegExp(`\\b${forbidden}\\b`, "i"),
+        `expand não pode usar ${forbidden} em CREATE/ALTER ROLE torres_billing_rpc_owner`,
+      );
+    }
     assert.doesNotMatch(
       rollbackExpand,
       new RegExp(`(?:CREATE|ALTER)\\s+ROLE\\s+torres_billing_rpc_owner[\\s\\S]{0,200}?\\b${forbidden}\\b`, "i"),
@@ -104,6 +112,22 @@ test("migration TX é compatível com Supabase Hosted sem atributos privilegiado
     expand,
     /CREATE ROLE torres_billing_rpc_owner\s+NOLOGIN\s+NOINHERIT;/,
   );
+  assert.match(
+    expand,
+    /GRANT torres_billing_rpc_owner TO CURRENT_USER WITH INHERIT FALSE;[\s\S]*?GRANT torres_billing_rpc_owner TO CURRENT_USER WITH SET TRUE;/,
+  );
+  assert.doesNotMatch(
+    expand + rollbackExpand,
+    /GRANT torres_billing_rpc_owner TO postgres\b/i,
+  );
+  assert.match(
+    expand,
+    /GRANT CREATE ON SCHEMA public TO torres_billing_rpc_owner;[\s\S]*?OWNER TO torres_billing_rpc_owner;[\s\S]*?REVOKE CREATE ON SCHEMA public FROM torres_billing_rpc_owner;/,
+  );
+  assert.match(
+    expand,
+    /REVOKE SET OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;[\s\S]*?REVOKE INHERIT OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;/,
+  );
   assert.match(expand, /SECURITY DEFINER/);
   assert.match(expand, /SET search_path = public, pg_catalog/);
   assert.match(expand, /OWNER TO torres_billing_rpc_owner/);
@@ -113,6 +137,14 @@ test("migration TX é compatível com Supabase Hosted sem atributos privilegiado
   assert.match(
     expand,
     /Policies para a role interna \(substitui atributo privilegiado de bypass RLS no Hosted\)/,
+  );
+  assert.match(
+    rollbackExpand,
+    /GRANT torres_billing_rpc_owner TO CURRENT_USER WITH INHERIT FALSE;[\s\S]*?GRANT torres_billing_rpc_owner TO CURRENT_USER WITH SET TRUE;[\s\S]*?SET LOCAL ROLE torres_billing_rpc_owner;/,
+  );
+  assert.match(
+    rollbackExpand,
+    /DROP FUNCTION IF EXISTS public\.is_escort_billing_snapshotted\(uuid, bigint\);[\s\S]*?RESET ROLE;/,
   );
 });
 

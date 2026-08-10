@@ -2,6 +2,12 @@
 -- Executar somente depois do rollback contract e do app.
 BEGIN;
 
+-- O executor Hosted mantém apenas ADMIN sobre a role criada, sem SET/INHERIT.
+-- Reabilita SET somente durante a remoção das funções pertencentes à role.
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH INHERIT FALSE;
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH SET TRUE;
+SET LOCAL ROLE torres_billing_rpc_owner;
+
 REVOKE ALL ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb
@@ -39,6 +45,8 @@ DROP FUNCTION IF EXISTS public.write_escort_billing_atomic(
 );
 DROP FUNCTION IF EXISTS public.lock_service_orders_for_billings(uuid[]);
 DROP FUNCTION IF EXISTS public.is_escort_billing_snapshotted(uuid, bigint);
+
+RESET ROLE;
 
 DROP INDEX IF EXISTS public.idx_boletim_snapshot_billing_lookup;
 DROP INDEX IF EXISTS public.idx_boletim_legacy_billing_ids_lookup;

@@ -20,6 +20,13 @@ BEGIN
 END;
 $$;
 
+-- O executor Hosted real é postgres não-superuser com CREATEROLE.
+-- ALTER FUNCTION ... OWNER TO exige SET ROLE para o novo owner. A membership
+-- abaixo habilita apenas SET (sem herança dos privilégios da role) e é
+-- desabilitada logo após a transferência de ownership.
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH INHERIT FALSE;
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH SET TRUE;
+
 DO $$
 BEGIN
   IF EXISTS (
@@ -1365,6 +1372,10 @@ COMMENT ON FUNCTION public.transition_invoice_billings_atomic(
   integer, text, timestamptz, text
 ) IS 'PR5B.1-TX: pagamento/desvinculação de invoice mista em uma transação.';
 
+-- PostgreSQL exige CREATE no schema para o novo owner durante OWNER TO.
+-- O privilégio é temporário e removido imediatamente após as transferências.
+GRANT CREATE ON SCHEMA public TO torres_billing_rpc_owner;
+
 ALTER FUNCTION public.is_escort_billing_snapshotted(uuid, bigint)
   OWNER TO torres_billing_rpc_owner;
 ALTER FUNCTION public.lock_service_orders_for_billings(uuid[])
@@ -1385,6 +1396,10 @@ ALTER FUNCTION public.mark_escort_billings_invoiced_atomic(
 ALTER FUNCTION public.transition_invoice_billings_atomic(
   integer, text, timestamptz, text
 ) OWNER TO torres_billing_rpc_owner;
+
+REVOKE CREATE ON SCHEMA public FROM torres_billing_rpc_owner;
+REVOKE SET OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;
+REVOKE INHERIT OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;
 
 -- Reafirma privilégios após a transferência de ownership das RPCs.
 GRANT USAGE ON SCHEMA public TO torres_billing_rpc_owner;
