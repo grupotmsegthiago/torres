@@ -1,9 +1,9 @@
 # Relatório de Entrega — PR5B.1-TX Proteção Atômica de Billing
 
-**Data:** 2026-08-10  
-**Branch:** `cursor/pr5b1-canonical-billing-engine-35ed`  
-**Commit técnico homologado:** `786ba9581f6be5be90d26619298e4b03dd6fa623`  
-**Ambiente validado:** local, CI PostgreSQL efêmero e banco live  
+**Data:** 2026-08-10
+**Branch:** `cursor/pr5b1-canonical-billing-engine-35ed`
+**Commit técnico homologado:** `786ba9581f6be5be90d26619298e4b03dd6fa623`
+**Ambiente validado:** local, CI PostgreSQL efêmero e banco live
 **Publicou?** Não — merge/deploy/publicação não fazem parte desta entrega.
 
 ## Reutilização (D11 / P13)
