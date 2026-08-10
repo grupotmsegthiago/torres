@@ -10,8 +10,6 @@ const root = path.resolve(import.meta.dirname, "../..");
 async function client() {
   const db = new pg.Client({ connectionString: databaseUrl });
   await db.connect();
-  // Avoid unhandled 'error' after abort/end keeping the process alive in CI.
-  db.on("error", () => {});
   return db;
 }
 
@@ -160,9 +158,7 @@ async function createSnapshot(db: pg.Client, billing: any, token: string) {
 
 test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   skip: !databaseUrl,
-  // Full suite (concurrency rounds + rollback) exceeds 30s wall time; an expired
-  // parent timeout aborts nested tests without closing pg Clients → CI step hangs.
-  timeout: 180_000,
+  timeout: 120_000,
 }, async (t) => {
   assert.match(databaseUrl!, /(?:127\.0\.0\.1|localhost).*pr5b1_tx_test/);
   const admin = await client();
@@ -170,7 +166,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     try {
       await admin.end();
     } catch {
-      // ignore teardown races after abort/timeout
+      // already closed / aborted
     }
   });
   const expand = await readFile(
@@ -273,81 +269,20 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       rpc_owner_policy_count: 8,
     });
     const service = await client();
-    try {
-      await service.query("SET ROLE service_role");
-      const helper = await service.query(
-        "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0) AS protected",
-      );
-      assert.equal(helper.rows[0].protected, false);
-      await service.query("RESET ROLE");
-      await service.query("SET ROLE anon");
-      await assert.rejects(
-        service.query(
-          "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0)",
-        ),
-        /permission denied/,
-      );
-    } finally {
-      await service.end();
-    }
-  });
-
-  await t.test("SECURITY DEFINER works under RLS without BYPASSRLS", async () => {
-    // Isolate RLS to this test. Leaving ENABLE for the rest of the suite changes
-    // lock/RLS behavior of concurrency tests and, on parent timeout, leaves open
-    // pg handles that prevent the CI process from exiting.
-    const rlsTables = [
-      "escort_billings",
-      "service_orders",
-      "mission_photos",
-      "escort_contracts",
-      "boletim_approvals",
-      "invoices",
-      "system_audit_logs",
-      "financial_transactions",
-    ] as const;
-    const service = await client();
-    try {
-      await admin.query(
-        rlsTables.map((table) => `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`).join("\n"),
-      );
-      const role = await admin.query(`
-        SELECT rolbypassrls
-        FROM pg_roles
-        WHERE rolname = 'torres_billing_rpc_owner'
-      `);
-      assert.equal(role.rows[0].rolbypassrls, false);
-      const billing = await createBilling(admin, 140);
-      const updated = await admin.query(
-        `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
-          'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
-        )`,
-        [billing.id],
-      );
-      assert.equal(Number(updated.rows[0].lock_version), 1);
-      assert.equal(Number(updated.rows[0].fat_total), 777);
-      await service.query("SET ROLE service_role");
-      const viaService = await service.query(
-        `SELECT lock_version FROM write_escort_billing_atomic(
-          'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
-        )`,
-        [billing.id],
-      );
-      assert.equal(Number(viaService.rows[0].lock_version), 2);
-      await service.query("RESET ROLE");
-    } finally {
-      try {
-        await admin.query(
-          rlsTables.map((table) => `ALTER TABLE public.${table} DISABLE ROW LEVEL SECURITY;`).join("\n"),
-        );
-      } finally {
-        try {
-          await service.end();
-        } catch {
-          // already closed
-        }
-      }
-    }
+    await service.query("SET ROLE service_role");
+    const helper = await service.query(
+      "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0) AS protected",
+    );
+    assert.equal(helper.rows[0].protected, false);
+    await service.query("RESET ROLE");
+    await service.query("SET ROLE anon");
+    await assert.rejects(
+      service.query(
+        "SELECT is_escort_billing_snapshotted('00000000-0000-0000-0000-000000000001',0)",
+      ),
+      /permission denied/,
+    );
+    await service.end();
   });
 
   await t.test("valid version increments; stale concurrent writer fails", async () => {
@@ -1275,4 +1210,68 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       service_order_legacy_restored: true,
     });
   });
+});
+
+test("PR5B.1-TX PostgreSQL: SECURITY DEFINER under RLS without BYPASSRLS", {
+  skip: !databaseUrl,
+  timeout: 60_000,
+}, async (t) => {
+  assert.match(databaseUrl!, /(?:127\.0\.0\.1|localhost).*pr5b1_tx_test/);
+  // Own ephemeral schema lifecycle — never ENABLE RLS inside the concurrency suite (#169 hang).
+  const admin = await client();
+  const service = await client();
+  t.after(async () => {
+    for (const c of [service, admin]) {
+      try {
+        await c.end();
+      } catch {
+        // already closed
+      }
+    }
+  });
+  const expand = await readFile(
+    path.join(root, "supabase/migrations/20260807180000_atomic_billing_expand.sql"),
+    "utf8",
+  );
+  const enforcement = await readFile(
+    path.join(root, "supabase/migrations/pending/20260807181000_atomic_billing_enforcement.sql"),
+    "utf8",
+  );
+  await admin.query(setupSql);
+  await admin.query(expand);
+  await admin.query(enforcement);
+  await admin.query(`
+    ALTER TABLE public.escort_billings ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.mission_photos ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.escort_contracts ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.boletim_approvals ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.system_audit_logs ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.financial_transactions ENABLE ROW LEVEL SECURITY;
+  `);
+  const role = await admin.query(`
+    SELECT rolbypassrls
+    FROM pg_roles
+    WHERE rolname = 'torres_billing_rpc_owner'
+  `);
+  assert.equal(role.rows[0].rolbypassrls, false);
+  const billing = await createBilling(admin, 140);
+  const updated = await admin.query(
+    `SELECT lock_version, fat_total FROM write_escort_billing_atomic(
+      'UPDATE_OPEN', jsonb_build_object('fat_total', 777), $1::uuid, 140, 0, '{}'::jsonb
+    )`,
+    [billing.id],
+  );
+  assert.equal(Number(updated.rows[0].lock_version), 1);
+  assert.equal(Number(updated.rows[0].fat_total), 777);
+  await service.query("SET ROLE service_role");
+  const viaService = await service.query(
+    `SELECT lock_version FROM write_escort_billing_atomic(
+      'UPDATE_OPEN', jsonb_build_object('fat_total', 778), $1::uuid, 140, 1, '{}'::jsonb
+    )`,
+    [billing.id],
+  );
+  assert.equal(Number(viaService.rows[0].lock_version), 2);
+  await service.query("RESET ROLE");
 });
