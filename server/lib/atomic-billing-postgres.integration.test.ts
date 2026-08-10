@@ -7,27 +7,11 @@ import pg from "pg";
 const databaseUrl = process.env.PR5B1_TX_TEST_DATABASE_URL;
 const root = path.resolve(import.meta.dirname, "../..");
 
-async function client(statementTimeoutMs = 15_000) {
+async function client() {
   const db = new pg.Client({ connectionString: databaseUrl });
   await db.connect();
-  // Secondary guard: bound lock waits so a stuck query cannot keep the event loop alive.
-  await db.query(`SET statement_timeout = ${Number(statementTimeoutMs)}`);
-  return db;
-}
-
-/** Registers end() on the parent suite so aborted nested tests cannot leak handles. */
-async function trackedClient(
-  t: { after: (fn: () => void | Promise<void>) => void },
-  statementTimeoutMs = 15_000,
-) {
-  const db = await client(statementTimeoutMs);
-  t.after(async () => {
-    try {
-      await db.end();
-    } catch {
-      // already closed by the test body
-    }
-  });
+  // Avoid unhandled 'error' after abort/end keeping the process alive in CI.
+  db.on("error", () => {});
   return db;
 }
 
@@ -181,7 +165,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   timeout: 180_000,
 }, async (t) => {
   assert.match(databaseUrl!, /(?:127\.0\.0\.1|localhost).*pr5b1_tx_test/);
-  const admin = await client(60_000);
+  const admin = await client();
   t.after(async () => {
     try {
       await admin.end();
@@ -288,7 +272,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       rpc_owner_without_bypassrls: true,
       rpc_owner_policy_count: 8,
     });
-    const service = await trackedClient(t);
+    const service = await client();
     try {
       await service.query("SET ROLE service_role");
       const helper = await service.query(
@@ -322,7 +306,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "system_audit_logs",
       "financial_transactions",
     ] as const;
-    const service = await trackedClient(t, 15_000);
+    const service = await client();
     try {
       await admin.query(
         rlsTables.map((table) => `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`).join("\n"),
@@ -368,8 +352,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("valid version increments; stale concurrent writer fails", async () => {
     const billing = await createBilling(admin, 1);
-    const a = await trackedClient(t);
-    const b = await trackedClient(t);
+    const a = await client();
+    const b = await client();
     const query = `SELECT * FROM write_escort_billing_atomic(
       'UPDATE_OPEN',jsonb_build_object('fat_total',$1::numeric),$2::uuid,1,0,'{}'::jsonb
     )`;
@@ -391,8 +375,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
   await t.test("concurrent INSERT for the same OS creates exactly one billing", async () => {
     const contractId = await insertFacts(admin, 110);
-    const a = await trackedClient(t);
-    const b = await trackedClient(t);
+    const a = await client();
+    const b = await client();
     const query = `SELECT * FROM write_escort_billing_atomic(
       'WRITE_OFFICIAL',
       jsonb_build_object(
@@ -430,8 +414,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     for (let round = 0; round < 3; round++) {
       const osId = 200 + round;
       const billing = await createBilling(admin, osId);
-      const snapshotTx = await trackedClient(t);
-      const writer = await trackedClient(t);
+      const snapshotTx = await client();
+      const writer = await client();
       await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
       const pendingWrite = writer.query(
         `SELECT * FROM write_escort_billing_atomic(
@@ -456,8 +440,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
 
     // Corrida real RPC×RPC (sem pré-lock artificial): uma serializa via advisory.
     const billing = await createBilling(admin, 2);
-    const snapClient = await trackedClient(t);
-    const writeClient = await trackedClient(t);
+    const snapClient = await client();
+    const writeClient = await client();
     const outcomes = await Promise.allSettled([
       createSnapshot(snapClient, billing, "snapshot-rpc-race"),
       writeClient.query(
@@ -497,8 +481,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     for (let round = 0; round < 3; round++) {
       const osId = 210 + round;
       const billing = await createBilling(admin, osId);
-      const snapshotTx = await trackedClient(t);
-      const deleter = await trackedClient(t);
+      const snapshotTx = await client();
+      const deleter = await client();
       await holdGlobalBillingLocks(snapshotTx, osId, billing.id);
       const pendingDelete = deleter.query(
         `SELECT * FROM write_escort_billing_atomic(
@@ -528,8 +512,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     }
 
     const billing = await createBilling(admin, 3);
-    const snapClient = await trackedClient(t);
-    const deleteClient = await trackedClient(t);
+    const snapClient = await client();
+    const deleteClient = await client();
     const outcomes = await Promise.allSettled([
       createSnapshot(snapClient, billing, "delete-rpc-race"),
       deleteClient.query(
@@ -878,8 +862,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       [billing.id],
     );
     await admin.query("INSERT INTO invoices(id,client_id) VALUES (201,1),(202,1)");
-    const a = await trackedClient(t);
-    const b = await trackedClient(t);
+    const a = await client();
+    const b = await client();
     const outcomes = await Promise.allSettled([
       a.query(
         "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],201,now(),'A')",
@@ -913,8 +897,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "SELECT * FROM mark_escort_billings_invoiced_atomic(ARRAY[$1::uuid],211,now(),'test')",
       [billing.id],
     );
-    const mover = await trackedClient(t);
-    const transition = await trackedClient(t);
+    const mover = await client();
+    const transition = await client();
     await mover.query("BEGIN");
     await mover.query("SELECT pg_advisory_xact_lock(7411,131)");
     await mover.query("SELECT id FROM service_orders WHERE id=131 FOR SHARE");
@@ -945,8 +929,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
     const billing = await createBilling(admin, 132);
     const approval = await createSnapshot(admin, billing, "freeze-invoice-race");
     await admin.query("INSERT INTO invoices(id,client_id) VALUES (221,1)");
-    const freezer = await trackedClient(t);
-    const invoicer = await trackedClient(t);
+    const freezer = await client();
+    const invoicer = await client();
     const outcomes = await Promise.allSettled([
       freezer.query(
         "SELECT * FROM freeze_boletim_billings_atomic($1,'Cliente','127.0.0.1',now())",
@@ -1001,8 +985,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
   await t.test("multi-ID snapshots lock in one order without deadlock", async () => {
     const first = await createBilling(admin, 70);
     const second = await createBilling(admin, 71);
-    const a = await trackedClient(t);
-    const b = await trackedClient(t);
+    const a = await client();
+    const b = await client();
     await a.query("SET statement_timeout='3s'");
     await b.query("SET statement_timeout='3s'");
     const query = `
@@ -1160,8 +1144,8 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       "INSERT INTO escort_contracts(id,franquia_km,franquia_horas,status) VALUES ($1,100,3,'Ativo')",
       [newContract],
     );
-    const changer = await trackedClient(t);
-    const writer = await trackedClient(t);
+    const changer = await client();
+    const writer = await client();
     await changer.query("BEGIN");
     await changer.query(
       "UPDATE service_orders SET escort_contract_id=$1 WHERE id=120",
@@ -1194,7 +1178,7 @@ test("PR5B.1-TX PostgreSQL: migrations, concurrency and rollback", {
       admin.query("UPDATE escort_billings SET fat_total=999 WHERE id=$1", [billing.id]),
       /PR5B1_TX_DIRECT_BILLING_DML_BLOCKED/,
     );
-    const direct = await trackedClient(t);
+    const direct = await client();
     await direct.query("BEGIN");
     await direct.query("SET LOCAL ROLE service_role");
     await direct.query("SELECT set_config('torres.atomic_billing_write','on',true)");
