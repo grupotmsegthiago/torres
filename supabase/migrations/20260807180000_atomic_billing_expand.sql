@@ -2,8 +2,10 @@
 -- Não contém cálculo financeiro: apenas integridade, locking e persistência.
 BEGIN;
 
--- Role interna NOLOGIN sem atributo privilegiado de bypass RLS.
--- No Supabase Hosted o canal de migration não pode criar/alterar esse atributo (42501).
+-- Role interna NOLOGIN/NOINHERIT: owner das RPCs SECURITY DEFINER.
+-- Hosted: canal de migration NÃO pode manipular atributos privilegiados (42501),
+-- inclusive BYPASSRLS, SUPERUSER/NOSUPERUSER, CREATEDB/CREATEROLE/REPLICATION.
+-- Defaults do CREATE ROLE já nascem superuser/createdb/createrole/replication/bypassrls.
 -- Travessia de RLS: policies explícitas abaixo + SECURITY DEFINER owned por esta role.
 DO $$
 BEGIN
@@ -12,15 +14,11 @@ BEGIN
     WHERE rolname = 'torres_billing_rpc_owner'
   ) THEN
     CREATE ROLE torres_billing_rpc_owner
-      NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-      NOREPLICATION;
+      NOLOGIN
+      NOINHERIT;
   END IF;
 END;
 $$;
-
-ALTER ROLE torres_billing_rpc_owner
-  NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION;
 
 DO $$
 BEGIN

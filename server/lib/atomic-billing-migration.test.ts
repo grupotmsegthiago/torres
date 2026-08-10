@@ -54,8 +54,6 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(enforcement, /BEFORE DELETE ON public\.boletim_approvals/);
   assert.match(enforcement, /billing_snapshot, billing_ids, total_value, client_id/);
   assert.match(expand, /CREATE ROLE torres_billing_rpc_owner/);
-  assert.doesNotMatch(expand, /CREATE ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
-  assert.doesNotMatch(expand, /ALTER ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
   assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_all ON public\.escort_billings/);
   assert.match(expand, /CREATE POLICY torres_billing_rpc_owner_select ON public\.service_orders/);
   assert.match(expand, /REVOKE ALL ON FUNCTION public\.write_escort_billing_atomic\([\s\S]*?FROM anon, authenticated/);
@@ -76,12 +74,35 @@ test("migration TX é transacional e contém objetos atômicos", () => {
   assert.match(rollbackExpand, /DROP ROLE IF EXISTS torres_billing_rpc_owner/);
 });
 
-test("migration TX é compatível com Supabase Hosted sem BYPASSRLS custom", () => {
-  assert.doesNotMatch(expand, /CREATE ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
-  assert.doesNotMatch(expand, /ALTER ROLE torres_billing_rpc_owner[\s\S]*?BYPASSRLS/);
+test("migration TX é compatível com Supabase Hosted sem atributos privilegiados de role", () => {
+  // Hosted 42501: CREATE/ALTER ROLE não pode tocar atributos privilegiados.
+  for (const forbidden of [
+    "BYPASSRLS",
+    "NOBYPASSRLS",
+    "SUPERUSER",
+    "NOSUPERUSER",
+    "CREATEDB",
+    "NOCREATEDB",
+    "CREATEROLE",
+    "NOCREATEROLE",
+    "REPLICATION",
+    "NOREPLICATION",
+  ]) {
+    assert.doesNotMatch(
+      expand,
+      new RegExp(`(?:CREATE|ALTER)\\s+ROLE\\s+torres_billing_rpc_owner[\\s\\S]{0,200}?\\b${forbidden}\\b`, "i"),
+      `expand não pode usar ${forbidden} em CREATE/ALTER ROLE torres_billing_rpc_owner`,
+    );
+    assert.doesNotMatch(
+      rollbackExpand,
+      new RegExp(`(?:CREATE|ALTER)\\s+ROLE\\s+torres_billing_rpc_owner[\\s\\S]{0,200}?\\b${forbidden}\\b`, "i"),
+      `rollback expand não pode usar ${forbidden} em CREATE/ALTER ROLE`,
+    );
+  }
+  assert.doesNotMatch(expand, /\bALTER\s+ROLE\s+torres_billing_rpc_owner\b/i);
   assert.match(
     expand,
-    /CREATE ROLE torres_billing_rpc_owner\s+NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE\s+NOREPLICATION;/,
+    /CREATE ROLE torres_billing_rpc_owner\s+NOLOGIN\s+NOINHERIT;/,
   );
   assert.match(expand, /SECURITY DEFINER/);
   assert.match(expand, /SET search_path = public, pg_catalog/);
