@@ -174,8 +174,12 @@ declare global {
   interface Window {
     google: any;
     initGridMap: () => void;
+    gm_authFailure?: () => void;
   }
 }
+
+const GOOGLE_MAPS_BROWSER_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const CANONICAL_SITE_ORIGIN = "https://www.torresseguranca.com.br";
 
 interface TrackedVehicle {
   id: number;
@@ -1466,6 +1470,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const initialBoundsDoneRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const [mapAuthError, setMapAuthError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
   const [activeRouteOsId, setActiveRouteOsId] = useState<number | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -1485,8 +1490,19 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   }, []);
 
   const loadGoogleMaps = useCallback(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    const apiKey = GOOGLE_MAPS_BROWSER_KEY;
     if (!apiKey) return;
+
+    window.gm_authFailure = () => {
+      const host = window.location.host;
+      const onCanonical = host === "www.torresseguranca.com.br";
+      setMapAuthError(
+        onCanonical
+          ? "Google Maps rejeitou a chave neste domínio. Verifique no Google Cloud as restrições de referrer HTTP e se a Maps JavaScript API está ativa."
+          : `Google Maps bloqueou este domínio (${host}). Use ${CANONICAL_SITE_ORIGIN} ou autorize o host nas restrições da chave.`,
+      );
+      setMapReady(false);
+    };
 
     if (window.google?.maps?.Map) {
       setMapReady(true);
@@ -1503,11 +1519,17 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       return;
     }
 
-    window.initGridMap = () => setMapReady(true);
+    window.initGridMap = () => {
+      setMapAuthError(null);
+      setMapReady(true);
+    };
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async&callback=initGridMap`;
     script.async = true;
     script.defer = true;
+    script.onerror = () => {
+      setMapAuthError("Falha ao carregar o script do Google Maps. Verifique rede e a chave VITE_GOOGLE_MAPS_API_KEY.");
+    };
     document.head.appendChild(script);
   }, []);
 
@@ -2241,7 +2263,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     pendingFocusRef.current = null;
   }, [focusVehicleId, mapReady, vehicles]);
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const apiKey = GOOGLE_MAPS_BROWSER_KEY;
 
   if (!apiKey) {
     return (
@@ -2250,6 +2272,29 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
           <MapPin className="w-10 h-10 mx-auto mb-2" />
           <p className="font-medium">Google Maps não configurado</p>
           <p className="text-xs mt-1">Configure VITE_GOOGLE_MAPS_API_KEY</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (mapAuthError) {
+    const canonicalHref = `${CANONICAL_SITE_ORIGIN}${window.location.pathname}${window.location.search}`;
+    const offCanonical = window.location.host !== "www.torresseguranca.com.br";
+    return (
+      <div className="h-[400px] bg-neutral-100 rounded-lg flex items-center justify-center px-6" data-testid="map-auth-error">
+        <div className="text-center text-neutral-600 max-w-md">
+          <AlertTriangle className="w-10 h-10 mx-auto mb-2 text-amber-500" />
+          <p className="font-medium text-neutral-800">Mapa bloqueado pelo Google</p>
+          <p className="text-xs mt-2 leading-relaxed">{mapAuthError}</p>
+          {offCanonical && (
+            <a
+              href={canonicalHref}
+              className="inline-flex mt-4 text-xs font-semibold text-blue-700 hover:underline"
+              data-testid="link-canonical-maps-host"
+            >
+              Abrir no domínio oficial
+            </a>
+          )}
         </div>
       </div>
     );
@@ -3543,7 +3588,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               <div className="px-4 py-2">
                 <a href={alertMapsLink!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-neutral-200 hover:border-blue-400 transition-colors" data-testid={`alert-map-${v.id}`}>
                   <img
-                    src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                    src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=${GOOGLE_MAPS_BROWSER_KEY}`}
                     alt="Localização do alerta"
                     className="w-full h-[140px] object-cover"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -4547,7 +4592,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <div className="px-4 py-2">
                   <a href={alertMapsLink!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-neutral-200 hover:border-blue-400 transition-colors" data-testid={`ctx-alert-map-${v.id}`}>
                     <img
-                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=${GOOGLE_MAPS_BROWSER_KEY}`}
                       alt="Localização do alerta"
                       className="w-full h-[140px] object-cover"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -8072,7 +8117,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 {lat && lng && (
                   <a href={mapsLink!} target="_blank" rel="noopener noreferrer" className="mt-2 block rounded-lg overflow-hidden border border-white/20 hover:border-white/60 transition-colors" data-testid="forward-map">
                     <img
-                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=600x150&markers=color:red%7C${lat},${lng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=600x150&markers=color:red%7C${lat},${lng}&key=${GOOGLE_MAPS_BROWSER_KEY}`}
                       alt="Localização"
                       className="w-full h-[120px] object-cover"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
