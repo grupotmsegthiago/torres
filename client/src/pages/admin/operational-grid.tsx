@@ -30,6 +30,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
+import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -3178,6 +3179,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [, forceUpdate] = useState(0);
   const [missionAction, setMissionAction] = useState<"finish" | "cancel" | "refuse" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [pedagioReview, setPedagioReview] = useState<PedagioFinishReviewValue>({
+    confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0,
+  });
 
   const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
   const hasNewUpdate = !!(lastUpdateId && !seenUpdateIds.has(lastUpdateId));
@@ -3209,12 +3213,23 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   });
 
   const missionMutation = useMutation({
-    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel" | "refuse"; serviceOrderId: number; reason?: string }) => {
+    mutationFn: async ({ action, serviceOrderId, reason, pedagioConferido, pedagioAjustes }: {
+      action: "finish" | "cancel" | "refuse";
+      serviceOrderId: number;
+      reason?: string;
+      pedagioConferido?: boolean;
+      pedagioAjustes?: Array<{ id: number; amount: number }>;
+    }) => {
       const url = action === "finish" ? "/api/mission/finish" : action === "refuse" ? "/api/mission/refuse" : "/api/mission/cancel";
+      const body: any = { serviceOrderId, reason };
+      if (action === "finish") {
+        body.pedagioConferido = pedagioConferido === true;
+        body.pedagioAjustes = pedagioAjustes || [];
+      }
       const res = await authFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serviceOrderId, reason }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
@@ -3228,8 +3243,10 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       toast({ title: l.t, description: `OS ${v.activeOs?.osNumber} ${l.d} com sucesso.` });
       setMissionAction(null);
       setCancelReason("");
+      setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 });
       invalidateRelatedQueries("service-order");
       invalidateRelatedQueries("billing");
+      invalidateRelatedQueries("mission-cost");
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
     },
     onError: (err: Error) => {
@@ -3806,8 +3823,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             </TooltipTrigger>
             <TooltipContent>Recusar Missão (zera faturamento)</TooltipContent>
           </Tooltip>
-          <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); } }}>
-            <DialogContent className="max-w-sm">
+          <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 }); } }}>
+            <DialogContent className={missionAction === "finish" ? "max-w-md" : "max-w-sm"}>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-sm">
                   {missionAction === "finish" ? (
@@ -3834,6 +3851,14 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   <p className="text-xs text-neutral-500 mt-1">Veículo</p>
                   <p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
                 </div>
+                {missionAction === "finish" && (
+                  <PedagioFinishReview
+                    serviceOrderId={v.activeOs?.id}
+                    active={missionAction === "finish"}
+                    onChange={setPedagioReview}
+                    testIdPrefix={`pedagio-review-${v.id}`}
+                  />
+                )}
                 {(missionAction === "cancel" || missionAction === "refuse") && (
                   <div>
                     <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo da {missionAction === "refuse" ? "recusa" : "cancelamento"}</label>
@@ -3856,16 +3881,22 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                           action: missionAction!,
                           serviceOrderId: v.activeOs.id,
                           reason: (missionAction === "cancel" || missionAction === "refuse") ? cancelReason : undefined,
+                          pedagioConferido: missionAction === "finish" ? pedagioReview.confirmed : undefined,
+                          pedagioAjustes: missionAction === "finish" ? pedagioReview.adjustments : undefined,
                         });
                       }
                     }}
-                    disabled={missionMutation.isPending || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())}
+                    disabled={
+                      missionMutation.isPending
+                      || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())
+                      || (missionAction === "finish" && !pedagioReview.ready)
+                    }
                     data-testid={`btn-confirm-mission-action-${v.id}`}
                   >
                     {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
                     {missionAction === "finish" ? "Confirmar Finalização" : missionAction === "refuse" ? "Confirmar Recusa" : "Confirmar Cancelamento"}
                   </Button>
-                  <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); }} data-testid={`btn-dismiss-mission-action-${v.id}`}>
+                  <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 }); }} data-testid={`btn-dismiss-mission-action-${v.id}`}>
                     Voltar
                   </Button>
                 </div>
@@ -4099,6 +4130,9 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
   const [mirrorOpen, setMirrorOpen] = useState(false);
   const [missionAction, setMissionAction] = useState<"finish" | "cancel" | "refuse" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [pedagioReview, setPedagioReview] = useState<PedagioFinishReviewValue>({
+    confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0,
+  });
   const [preAlertLoading, setPreAlertLoading] = useState(false);
   const [ctxPdfUrl, setCtxPdfUrl] = useState<string | null>(null);
   const [ctxPdfTitle, setCtxPdfTitle] = useState("");
@@ -4133,9 +4167,20 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
   });
 
   const missionMutation = useMutation({
-    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel" | "refuse"; serviceOrderId: number; reason?: string }) => {
+    mutationFn: async ({ action, serviceOrderId, reason, pedagioConferido, pedagioAjustes }: {
+      action: "finish" | "cancel" | "refuse";
+      serviceOrderId: number;
+      reason?: string;
+      pedagioConferido?: boolean;
+      pedagioAjustes?: Array<{ id: number; amount: number }>;
+    }) => {
       const url = action === "finish" ? "/api/mission/finish" : action === "refuse" ? "/api/mission/refuse" : "/api/mission/cancel";
-      const res = await authFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceOrderId, reason }) });
+      const body: any = { serviceOrderId, reason };
+      if (action === "finish") {
+        body.pedagioConferido = pedagioConferido === true;
+        body.pedagioAjustes = pedagioAjustes || [];
+      }
+      const res = await authFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) { const data = await res.json().catch(() => ({ message: "Erro desconhecido" })); throw new Error(data.message); }
       return res.json();
     },
@@ -4144,8 +4189,10 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
       const l = labels[vars.action];
       toast({ title: l.t, description: `OS ${v.activeOs?.osNumber} ${l.d} com sucesso.` });
       setMissionAction(null); setCancelReason("");
+      setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 });
       invalidateRelatedQueries("service-order");
       invalidateRelatedQueries("billing");
+      invalidateRelatedQueries("mission-cost");
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
     },
     onError: (err: Error) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); },
@@ -4606,8 +4653,8 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
         </Dialog>
       )}
 
-      <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); onClose(); } }}>
-        <DialogContent className="max-w-sm">
+      <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 }); onClose(); } }}>
+        <DialogContent className={missionAction === "finish" ? "max-w-md" : "max-w-sm"}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
               {missionAction === "finish" ? <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</> : missionAction === "refuse" ? <><Ban className="w-5 h-5 text-orange-600" /> Recusar Missão</> : <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>}
@@ -4621,6 +4668,14 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
               <p className="text-xs text-neutral-500">OS</p><p className="text-sm font-bold text-neutral-900">{v.activeOs?.osNumber}</p>
               <p className="text-xs text-neutral-500 mt-1">Veículo</p><p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
             </div>
+            {missionAction === "finish" && (
+              <PedagioFinishReview
+                serviceOrderId={v.activeOs?.id}
+                active={missionAction === "finish"}
+                onChange={setPedagioReview}
+                testIdPrefix={`ctx-pedagio-review-${v.id}`}
+              />
+            )}
             {(missionAction === "cancel" || missionAction === "refuse") && (
               <div>
                 <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo da {missionAction === "refuse" ? "recusa" : "cancelamento"}</label>
@@ -4629,12 +4684,27 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             )}
             <div className="flex gap-2">
               <Button className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : missionAction === "refuse" ? "bg-orange-600 hover:bg-orange-700" : "bg-red-600 hover:bg-red-700"}`}
-                onClick={() => { if (v.activeOs) { missionMutation.mutate({ action: missionAction!, serviceOrderId: v.activeOs.id, reason: (missionAction === "cancel" || missionAction === "refuse") ? cancelReason : undefined }); } }}
-                disabled={missionMutation.isPending || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())} data-testid={`ctx-confirm-mission-${v.id}`}>
+                onClick={() => {
+                  if (v.activeOs) {
+                    missionMutation.mutate({
+                      action: missionAction!,
+                      serviceOrderId: v.activeOs.id,
+                      reason: (missionAction === "cancel" || missionAction === "refuse") ? cancelReason : undefined,
+                      pedagioConferido: missionAction === "finish" ? pedagioReview.confirmed : undefined,
+                      pedagioAjustes: missionAction === "finish" ? pedagioReview.adjustments : undefined,
+                    });
+                  }
+                }}
+                disabled={
+                  missionMutation.isPending
+                  || ((missionAction === "cancel" || missionAction === "refuse") && !cancelReason.trim())
+                  || (missionAction === "finish" && !pedagioReview.ready)
+                }
+                data-testid={`ctx-confirm-mission-${v.id}`}>
                 {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
                 {missionAction === "finish" ? "Confirmar Finalização" : missionAction === "refuse" ? "Confirmar Recusa" : "Confirmar Cancelamento"}
               </Button>
-              <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); onClose(); }}>Voltar</Button>
+              <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); setPedagioReview({ confirmed: false, ready: false, loading: false, adjustments: [], total: 0, count: 0 }); onClose(); }}>Voltar</Button>
             </div>
           </div>
         </DialogContent>

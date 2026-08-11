@@ -14,6 +14,7 @@ import type { Express } from "express";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
+  import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -2260,9 +2261,34 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
   app.post("/api/mission/finish", requireAuth, requireAdminRole, async (req, res) => {
     try {
-      const { serviceOrderId } = req.body;
+      const { serviceOrderId, pedagioConferido, pedagioAjustes } = req.body;
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      // Gate obrigatório: operador deve conferir pedágio (foto/valores) antes de finalizar.
+      if (pedagioConferido !== true) {
+        return res.status(400).json({
+          message: "Conferência de pedágio obrigatória. Revise os comprovantes e confirme o valor a cobrar do cliente antes de finalizar a OS.",
+          code: "PEDAGIO_CONFERENCIA_REQUIRED",
+        });
+      }
+
+      const user = req.user!;
+      const ajustes = Array.isArray(pedagioAjustes) ? pedagioAjustes : [];
+      const { totalDespesa, adjustedIds } = await applyPedagioAjustes({
+        serviceOrderId: Number(serviceOrderId),
+        ajustes,
+        actorName: user.name || "ADMIN",
+      });
+
+      const { data: pedCosts } = await supabaseAdmin
+        .from("mission_costs")
+        .select("id, category, cost_type")
+        .eq("service_order_id", Number(serviceOrderId));
+      const expenseCount = (pedCosts || []).filter((c) => {
+        const cat = String(c.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        return cat.includes("pedagio") && String(c.cost_type || "expense") !== "revenue";
+      }).length;
 
       const updates: any = {
         status: "concluída",
@@ -2278,7 +2304,13 @@ Responda APENAS com JSON: {"km_lido": number}`;
       }
 
       const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
-      const user = req.user!;
+      const conferenciaEntry = buildPedagioConferidoLog({
+        actorName: user.name || "ADMIN",
+        actorId: user.id,
+        totalDespesa,
+        adjustedIds,
+        expenseCount,
+      });
       const finishEntry = {
         step: "encerrada",
         completedAt: new Date().toISOString(),
@@ -2288,12 +2320,92 @@ Responda APENAS com JSON: {"km_lido": number}`;
         nextStep: "encerrada",
         reason: "Missão finalizada pelo administrador",
       };
-      updates.stepLogs = [...existingLogs, finishEntry];
+      updates.stepLogs = [...existingLogs, conferenciaEntry, finishEntry];
 
       lastMissionPos.delete(serviceOrderId);
       try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+      // Recalcula billing oficial com pedágio conferido/ajustado (se não estiver congelado).
+      if (so.type === "escolta" && so.escortContractId) {
+        try {
+          const { data: contrato, error: contractError } = await supabaseAdmin
+            .from("escort_contracts")
+            .select("*")
+            .eq("id", so.escortContractId)
+            .single();
+          if (contractError || !contrato) throw contractError || new Error("Contrato não encontrado");
+
+          const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+          const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
+          const client = so.clientId ? await storage.getClient(so.clientId) : null;
+          const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+          const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const billingPayload = computeBillingPayloadForOs({
+            so: {
+              id: serviceOrderId,
+              os_number: so.osNumber,
+              status: "concluida",
+              client_id: so.clientId,
+              escort_contract_id: so.escortContractId,
+              assigned_employee_id: so.assignedEmployeeId,
+              assigned_employee_2_id: so.assignedEmployee2Id,
+              vehicle_id: so.vehicleId,
+              origin: so.origin,
+              destination: so.destination,
+              escorted_vehicle_plate: so.escortedVehiclePlate,
+              escorted_driver_name: so.escortedDriverName,
+              scheduled_date: so.scheduledDate,
+              mission_started_at: so.missionStartedAt,
+              completed_date: updates.completedDate,
+            },
+            contrato,
+            photos: photos.map((photo: any) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value,
+            })),
+            mCosts: osMissionCosts,
+            horasMissao: 0,
+            clientName: client?.name || "—",
+            empName: emp?.name || user.name,
+            emp2Name: emp2?.name || null,
+            vehPlate: vehicle?.plate || null,
+          });
+          const { data: currentBillings } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, status, lock_version")
+            .eq("service_order_id", serviceOrderId)
+            .limit(1);
+          const currentBilling = currentBillings?.[0];
+          if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
+            console.log(`[finish] OS ${so.osNumber}: billing protegido (${currentBilling.status}) — pedágio conferido sem reescrever snapshot`);
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_OFFICIAL",
+              billingId: currentBilling?.id || null,
+              serviceOrderId,
+              expectedVersion: currentBilling ? Number(currentBilling.lock_version) || 0 : null,
+              payload: billingPayload,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: "Finalização com conferência de pedágio",
+                ipAddress: req.ip,
+              },
+            });
+          }
+        } catch (billingErr: any) {
+          console.error(`[finish] billing após conferência pedágio falhou OS ${so.osNumber}:`, billingErr.message);
+          return res.status(500).json({
+            message: "Pedágio conferido e OS encerrada, mas o billing oficial não pôde ser consolidado.",
+            detail: billingErr.message,
+            serviceOrderId,
+          });
+        }
+      }
 
       if (so.type === "escolta") {
         try {
@@ -2330,7 +2442,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
-      res.json(updated);
+      res.json({ ...updated, pedagioConferido: true, pedagioTotal: totalDespesa, pedagioAjustados: adjustedIds });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
