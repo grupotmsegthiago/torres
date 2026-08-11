@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef, Component, type ReactNode, type ErrorInfo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
+import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -882,11 +883,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   /** Operador confirmou/ajustou o valor sugerido — não sobrescrever em recalc. */
   const [pedagioValorConfirmado, setPedagioValorConfirmado] = useState(!!(order as any)?.pedagioEstimado);
   const [pedagioUserEdited, setPedagioUserEdited] = useState(false);
+  /** Operador escolheu a tabela manualmente — não sobrescrever com sugestão por km. */
+  const [priceTableUserPicked, setPriceTableUserPicked] = useState(!!(order as any)?.escortContractId);
   const tollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTollKeyRef = useRef<string>("");
   const nowLocal = () => utcToLocalInput(new Date().toISOString());
+  const isNewOs = !order;
 
-  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({
+  const { data: escortContracts = [] } = useQuery<{
+    id: string;
+    client_id: number | null;
+    name: string | null;
+    status: string | null;
+    franquia_km?: number | null;
+    franquia_minima_km?: number | null;
+    franquia_horas?: number | null;
+    valor_acionamento?: number | null;
+    valor_km_carregado?: number | null;
+  }[]>({
     queryKey: ["/api/escort/contracts"],
   });
 
@@ -932,15 +946,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
-
-  useEffect(() => {
-    if (!order && form.clientId > 0 && !form.escortContractId) {
-      const cc = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
-      if (cc.length === 1) {
-        setForm(prev => ({ ...prev, escortContractId: cc[0].id }));
-      }
-    }
-  }, [form.clientId, escortContracts]);
+  const routeKm = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : 0;
+  const priceTableSuggestion = useMemo(
+    () => suggestPriceTableByRouteKm(
+      escortContracts.filter((c) => c.client_id === form.clientId && c.status === "Ativo"),
+      routeKm,
+    ),
+    [escortContracts, form.clientId, routeKm],
+  );
+  const originReady = String(form.origin || "").trim().length >= 3;
+  const destinationReady = String(form.destination || "").trim().length >= 3;
+  const routeReadyForTable = originReady && destinationReady;
 
   // Calcula o Valor Estimado a partir da Tabela de Preços (contrato de escolta).
   // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base
@@ -957,6 +973,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     const est = kmRate * franquiaKm;
     return est > 0 ? est : null;
   };
+
+  const applySuggestedPriceTable = useCallback((suggestedId: string) => {
+    const est = computeEstimado(suggestedId);
+    setForm((prev) => ({
+      ...prev,
+      escortContractId: suggestedId,
+      ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}),
+    }));
+  }, [escortContracts]);
+
+  // Nova OS: após calcular a rota, sugere a tabela pela franquia_km (ex.: 200 km → tabela 200).
+  useEffect(() => {
+    if (!isNewOs || priceTableUserPicked || routeKm <= 0) return;
+    const sug = priceTableSuggestion.suggested;
+    if (!sug?.id) return;
+    if (form.escortContractId === sug.id) return;
+    applySuggestedPriceTable(sug.id);
+  }, [isNewOs, priceTableUserPicked, routeKm, priceTableSuggestion.suggested?.id, form.escortContractId, applySuggestedPriceTable]);
 
   useEffect(() => {
     if (form.escortContractId && !form.valorEstimado) {
@@ -1061,6 +1095,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     lastTollKeyRef.current = "";
     // Nova rota → nova sugestão, salvo se o operador já digitou o valor à mão.
     if (!pedagioUserEdited) setPedagioValorConfirmado(false);
+    // Nova OS: trocar origem invalida a tabela sugerida até recalcular com o destino.
+    if (isNewOs && !priceTableUserPicked) {
+      setForm((prev) => ({ ...prev, escortContractId: prev.destination ? prev.escortContractId : "" }));
+    }
     setForm(prev => {
       const updated = { ...prev, origin: address, originLat: p.lat, originLng: p.lng };
       if (prev.destination) {
@@ -1249,7 +1287,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   ].filter(p => p.src) : [];
   const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
 
-  const step1Valid = form.clientId > 0;
+  const step1Valid = isNewOs
+    ? form.clientId > 0 && originReady && destinationReady && !!form.escortContractId
+    : form.clientId > 0;
 
   function isDocExpiringSoon(dateStr: string | null | undefined): "expired" | "warning" | "ok" {
     if (!dateStr) return "ok";
@@ -1446,34 +1486,204 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               <div>
                 <FieldLabel>Cliente *</FieldLabel>
-                <select value={form.clientId} onChange={(e) => setForm(prev => ({ ...prev, clientId: Number(e.target.value), escortContractId: "" }))} className={selectClass} required data-testid="select-os-client">
+                <select
+                  value={form.clientId}
+                  onChange={(e) => {
+                    setPriceTableUserPicked(false);
+                    setForm((prev) => ({ ...prev, clientId: Number(e.target.value), escortContractId: "" }));
+                  }}
+                  className={selectClass}
+                  required
+                  data-testid="select-os-client"
+                >
                   <option value={0}>Selecione...</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
                 </select>
               </div>
-              {form.clientId > 0 && clientContracts.length > 0 && (
-                <div>
-                  <FieldLabel>Tabela de Preços *</FieldLabel>
-                  <select value={form.escortContractId} onChange={(e) => {
-                    const id = e.target.value;
-                    setForm(prev => {
-                      const blocked = prev.status === "recusada" || prev.status === "cancelada";
-                      const est = (!blocked && id) ? computeEstimado(id) : null;
-                      return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
-                    });
-                  }} className={selectClass} required data-testid="select-os-price-table">
-                    <option value="">Selecione...</option>
-                    {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
-                  </select>
-                  {!form.escortContractId && (
-                    <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
+
+              {/* Nova OS: origem → destino obrigatórios antes da tabela de preços */}
+              {isNewOs && form.clientId > 0 && (
+                <div className="col-span-2 md:col-span-4 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2" data-testid="hint-os-rota-antes-tabela">
+                  <p className="text-[11px] font-semibold text-blue-900">
+                    Após o cliente: informe <span className="underline">primeiro a origem</span>, depois o <span className="underline">destino</span>. Com a distância da rota, o sistema sugere a tabela (ex.: 200 km → tabela de 200 km).
+                  </p>
+                </div>
+              )}
+              {isNewOs && (
+                <>
+                  <div className="col-span-2 md:col-span-2">
+                    <FieldLabel>Origem {form.clientId > 0 ? <span className="text-red-500">*</span> : null}</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.origin}
+                      onChange={(v) => setForm((prev) => ({ ...prev, origin: v }))}
+                      onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
+                      placeholder={form.clientId > 0 ? "1º — selecione a origem" : "Selecione o cliente primeiro"}
+                      className="text-sm"
+                      theme="light"
+                      disabled={form.clientId <= 0}
+                      data-testid="input-route-origin"
+                    />
+                    {form.clientId > 0 && !originReady && (
+                      <p className="text-[10px] text-amber-700 mt-1" data-testid="warn-os-origem">Selecione a origem para liberar o destino.</p>
+                    )}
+                  </div>
+                  <div className="col-span-2 md:col-span-2">
+                    <FieldLabel>Destino {originReady ? <span className="text-red-500">*</span> : null}</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.destination}
+                      onChange={(v) => setForm((prev) => ({ ...prev, destination: v }))}
+                      onPlaceSelect={(p) => handleDestSelect(p, p.address)}
+                      placeholder={originReady ? "2º — selecione o destino" : "Informe a origem primeiro"}
+                      className="text-sm"
+                      theme="light"
+                      disabled={!originReady}
+                      data-testid="input-route-destination"
+                    />
+                    {originReady && !destinationReady && (
+                      <p className="text-[10px] text-amber-700 mt-1" data-testid="warn-os-destino">Agora informe o destino para calcular a rota e sugerir a tabela.</p>
+                    )}
+                  </div>
+                  {(calculatingRoute || routeInfo) && (
+                    <div className="col-span-2 md:col-span-4 flex items-center gap-3 text-xs flex-wrap" data-testid="panel-os-rota-km">
+                      {calculatingRoute && (
+                        <span className="text-neutral-400 flex items-center gap-1.5">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Calculando distância...
+                        </span>
+                      )}
+                      {routeInfo && !calculatingRoute && (
+                        <>
+                          <span className="flex items-center gap-1 text-neutral-700 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-distance-early">
+                            <Navigation className="w-3 h-3" />
+                            {routeInfo.distanceText} ({routeKm} km)
+                          </span>
+                          <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium">
+                            <Clock className="w-3 h-3" />
+                            {routeInfo.durationText}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   )}
+                </>
+              )}
+
+              {/* Edição: tabela no fluxo antigo; Nova OS: só após origem+destino */}
+              {form.clientId > 0 && clientContracts.length > 0 && (!isNewOs || routeReadyForTable) && (
+                <div className={isNewOs ? "col-span-2 md:col-span-4 space-y-2" : ""}>
+                  {isNewOs && routeKm > 0 && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 space-y-2" data-testid="panel-tabela-por-km">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">
+                        Ajuda — tabela pela distância da rota ({routeKm} km)
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="text-left text-neutral-500 border-b border-emerald-100">
+                              <th className="py-1 pr-2 font-bold">Tabela</th>
+                              <th className="py-1 pr-2 font-bold">Franquia KM</th>
+                              <th className="py-1 pr-2 font-bold">Horas</th>
+                              <th className="py-1 pr-2 font-bold">Acionamento</th>
+                              <th className="py-1 font-bold">Adequação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {priceTableSuggestion.ranked.map((row) => {
+                              const isSug = priceTableSuggestion.suggested?.id === row.id;
+                              const selected = form.escortContractId === row.id;
+                              return (
+                                <tr
+                                  key={row.id}
+                                  className={`border-b border-emerald-50/80 ${isSug ? "bg-emerald-100/80 font-semibold" : ""} ${selected ? "ring-1 ring-inset ring-emerald-400" : ""}`}
+                                  data-testid={`row-tabela-km-${row.id}`}
+                                >
+                                  <td className="py-1.5 pr-2">
+                                    <button
+                                      type="button"
+                                      className="text-left text-emerald-950 hover:underline"
+                                      onClick={() => {
+                                        setPriceTableUserPicked(true);
+                                        applySuggestedPriceTable(row.id);
+                                      }}
+                                      data-testid={`btn-pick-tabela-${row.id}`}
+                                    >
+                                      {row.name || `Tabela ${row.id.slice(0, 8)}`}
+                                      {isSug ? " · sugerida" : ""}
+                                    </button>
+                                  </td>
+                                  <td className="py-1.5 pr-2 font-mono">{row.franquiaKm > 0 ? `${row.franquiaKm} km` : "—"}</td>
+                                  <td className="py-1.5 pr-2 font-mono">{Number(row.franquia_horas || 0) > 0 ? `${Number(row.franquia_horas)} h` : "—"}</td>
+                                  <td className="py-1.5 pr-2 font-mono">
+                                    {Number(row.valor_acionamento || 0) > 0
+                                      ? Number(row.valor_acionamento).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                                      : "—"}
+                                  </td>
+                                  <td className="py-1.5">
+                                    {row.covers ? (
+                                      <span className="text-emerald-700">Cobre a rota</span>
+                                    ) : (
+                                      <span className="text-amber-700">Abaixo da rota</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {priceTableSuggestion.suggested && (
+                        <p className="text-[10px] text-emerald-900" data-testid="text-tabela-sugerida">
+                          Sugestão: <strong>{priceTableSuggestion.suggested.name || "tabela"}</strong>
+                          {" "}({contractFranquiaKm(priceTableSuggestion.suggested)} km) para rota de {routeKm} km.
+                          Você pode escolher outra linha acima.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <FieldLabel>Tabela de Preços *</FieldLabel>
+                    <select
+                      value={form.escortContractId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setPriceTableUserPicked(true);
+                        setForm((prev) => {
+                          const blocked = prev.status === "recusada" || prev.status === "cancelada";
+                          const est = (!blocked && id) ? computeEstimado(id) : null;
+                          return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
+                        });
+                      }}
+                      className={selectClass}
+                      required
+                      disabled={isNewOs && !routeReadyForTable}
+                      data-testid="select-os-price-table"
+                    >
+                      <option value="">Selecione...</option>
+                      {clientContracts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name || `Tabela ${c.id.slice(0, 8)}`}
+                          {contractFranquiaKm(c) > 0 ? ` — ${contractFranquiaKm(c)} km` : ""}
+                          {priceTableSuggestion.suggested?.id === c.id ? " (sugerida)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {!form.escortContractId && (
+                      <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
+                    )}
+                  </div>
                 </div>
               )}
               {form.clientId > 0 && clientContracts.length === 0 && (
                 <div>
                   <FieldLabel>Tabela de Preços *</FieldLabel>
                   <p className="text-[11px] text-red-600 mt-1" data-testid="warn-os-no-price-table">Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela em Contratos/Tabelas antes de criar a OS.</p>
+                </div>
+              )}
+              {isNewOs && form.clientId > 0 && clientContracts.length > 0 && !routeReadyForTable && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>Tabela de Preços *</FieldLabel>
+                  <p className="text-[11px] text-neutral-500 mt-1" data-testid="warn-os-tabela-aguarde-rota">
+                    Informe origem e destino para liberar e sugerir a tabela de preços pela distância.
+                  </p>
                 </div>
               )}
               <div>
@@ -1665,30 +1875,34 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <Input type="datetime-local" value={form.completedDate} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-completed" />
                 </div>
               )}
-              <div>
-                <FieldLabel>Origem</FieldLabel>
-                <PlacesAutocomplete
-                  value={form.origin}
-                  onChange={(v) => setForm(prev => ({ ...prev, origin: v }))}
-                  onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
-                  placeholder="Ex: Sao Paulo, SP"
-                  className="text-sm"
-                  theme="light"
-                  data-testid="input-route-origin"
-                />
-              </div>
-              <div>
-                <FieldLabel>Destino</FieldLabel>
-                <PlacesAutocomplete
-                  value={form.destination}
-                  onChange={(v) => setForm(prev => ({ ...prev, destination: v }))}
-                  onPlaceSelect={(p) => handleDestSelect(p, p.address)}
-                  placeholder="Ex: Campinas, SP"
-                  className="text-sm"
-                  theme="light"
-                  data-testid="input-route-destination"
-                />
-              </div>
+              {!isNewOs && (
+                <>
+                  <div>
+                    <FieldLabel>Origem</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.origin}
+                      onChange={(v) => setForm(prev => ({ ...prev, origin: v }))}
+                      onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
+                      placeholder="Ex: Sao Paulo, SP"
+                      className="text-sm"
+                      theme="light"
+                      data-testid="input-route-origin"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Destino</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.destination}
+                      onChange={(v) => setForm(prev => ({ ...prev, destination: v }))}
+                      onPlaceSelect={(p) => handleDestSelect(p, p.address)}
+                      placeholder="Ex: Campinas, SP"
+                      className="text-sm"
+                      theme="light"
+                      data-testid="input-route-destination"
+                    />
+                  </div>
+                </>
+              )}
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between mb-1">
                   <FieldLabel>Pontos de Parada (Entregas Intermediárias)</FieldLabel>
@@ -1983,8 +2197,20 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <Button
                 type="button"
                 onClick={() => {
-                  if (step === 1 && !step1Valid) {
+                  if (step === 1 && !form.clientId) {
                     toast({ title: "Selecione o cliente", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !originReady) {
+                    toast({ title: "Origem obrigatória", description: "Informe primeiro a origem da rota.", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !destinationReady) {
+                    toast({ title: "Destino obrigatório", description: "Informe o destino após a origem para calcular a rota e sugerir a tabela.", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !form.escortContractId) {
+                    toast({ title: "Tabela de Preços obrigatória", description: "Selecione a tabela sugerida (ou outra) após informar origem e destino.", variant: "destructive" });
                     return;
                   }
                   if (step === 1 && !form.scheduledDate) {
@@ -2030,7 +2256,32 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } if (!order && !form.escortContractId) { toast({ title: "Tabela de Preços obrigatória", description: clientContracts.length === 0 ? "Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela antes de criar a OS." : "Selecione uma Tabela de Preços para criar a OS.", variant: "destructive" }); return; } console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step })); mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => {
+                if (!form.scheduledDate) {
+                  toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" });
+                  return;
+                }
+                if (isNewOs && !originReady) {
+                  toast({ title: "Origem obrigatória", description: "Informe primeiro a origem da rota.", variant: "destructive" });
+                  return;
+                }
+                if (isNewOs && !destinationReady) {
+                  toast({ title: "Destino obrigatório", description: "Informe o destino após a origem.", variant: "destructive" });
+                  return;
+                }
+                if (!order && !form.escortContractId) {
+                  toast({
+                    title: "Tabela de Preços obrigatória",
+                    description: clientContracts.length === 0
+                      ? "Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela antes de criar a OS."
+                      : "Selecione uma Tabela de Preços para criar a OS.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step }));
+                mutation.mutate(form);
+              }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>

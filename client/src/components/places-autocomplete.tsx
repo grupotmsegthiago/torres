@@ -67,6 +67,7 @@ interface PlacesAutocompleteProps {
   className?: string;
   id?: string;
   theme?: "dark" | "light";
+  disabled?: boolean;
   "aria-label"?: string;
   "data-testid"?: string;
 }
@@ -79,6 +80,7 @@ export function PlacesAutocomplete({
   className,
   id,
   theme = "dark",
+  disabled = false,
   ...props
 }: PlacesAutocompleteProps) {
   const isLight = theme === "light";
@@ -192,14 +194,16 @@ export function PlacesAutocomplete({
         id={id}
         value={value}
         onChange={handleInputChange}
-        onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+        onFocus={() => { if (!disabled && suggestions.length > 0) setShowDropdown(true); }}
         placeholder={placeholder}
         className={className}
         aria-label={props["aria-label"]}
         data-testid={props["data-testid"]}
         autoComplete="off"
+        disabled={disabled}
+        readOnly={disabled}
       />
-      {showDropdown && suggestions.length > 0 && (
+      {!disabled && showDropdown && suggestions.length > 0 && (
         <div className={`absolute z-50 w-full mt-1 rounded-lg border shadow-xl overflow-hidden ${isLight ? "bg-white border-neutral-200" : "bg-[#171717] border-white/10"}`} data-testid="dropdown-suggestions">
           {suggestions.map((s, i) => (
             <button
