@@ -93,6 +93,8 @@ export async function computeRouteTollsBrowser(params: {
   try {
     const resp = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
       method: "POST",
+      // Garante Referer/Origin — chave com restrição por site bloqueia referer vazio.
+      referrerPolicy: "origin",
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,

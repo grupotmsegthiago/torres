@@ -236,6 +236,8 @@ export interface RouteInfo {
   durationText: string;
   distanceMeters: number;
   durationSeconds: number;
+  /** Polilinha da rota (para estimar pedágio por praças ao longo do caminho). */
+  path?: Array<{ lat: number; lng: number }>;
 }
 
 export function calculateRouteInfo(origin: string, destination: string): Promise<RouteInfo | null> {
@@ -256,12 +258,20 @@ export function calculateRouteInfo(origin: string, destination: string): Promise
           },
           (result: any, status: string) => {
             if (status === "OK" && result?.routes?.[0]?.legs?.[0]) {
-              const leg = result.routes[0].legs[0];
+              const route = result.routes[0];
+              const leg = route.legs[0];
+              const path: Array<{ lat: number; lng: number }> = [];
+              if (Array.isArray(route.overview_path)) {
+                for (const p of route.overview_path) {
+                  path.push({ lat: p.lat(), lng: p.lng() });
+                }
+              }
               resolve({
                 distanceText: leg.distance.text,
                 durationText: leg.duration.text,
                 distanceMeters: leg.distance.value,
                 durationSeconds: leg.duration.value,
+                path,
               });
             } else {
               console.error("[directions] Error:", status);

@@ -14,7 +14,7 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { randomUUID } from "crypto";
-  import { estimateTolls, getAllTollPlazas } from "../toll-engine";
+  import { estimateTolls, estimateTollsAlongPath, getAllTollPlazas } from "../toll-engine";
   import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
   import { computeRouteTolls } from "../lib/google-routes-tolls";
 
@@ -2834,6 +2834,51 @@ import type { Express } from "express";
         plazas: [],
         routeDistanceKm: 0,
         error: err.message || "Falha ao calcular pedágio",
+        calculatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  /**
+   * Estima pedágio cruzando a polilinha real da rota (Directions) com praças cadastradas.
+   * Usado quando Google Routes (TOLLS) está bloqueado na chave (403 referrer/API).
+   */
+  app.post("/api/estimate-tolls-along-route", requireAuth, async (req, res) => {
+    try {
+      const path = Array.isArray(req.body?.path) ? req.body.path : [];
+      const routeDistanceKm = Number(req.body?.routeDistanceKm || 0);
+      const points = path
+        .map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng) }))
+        .filter((p: { lat: number; lng: number }) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (points.length < 2) {
+        return res.status(400).json({ message: "path com pelo menos 2 pontos é obrigatório" });
+      }
+      const result = estimateTollsAlongPath(points, {
+        corridorWidthKm: 4,
+        routeDistanceKm: routeDistanceKm > 0 ? routeDistanceKm : undefined,
+      });
+      console.log(
+        `[estimate-tolls-along-route] pts=${points.length} ida=R$${result.totalIda.toFixed(2)} plazas=${result.plazas.length} km=${result.routeDistanceKm}`,
+      );
+      res.json({
+        totalIda: result.totalIda,
+        totalIdaVolta: result.totalIdaVolta,
+        count: result.plazas.length,
+        routeDistanceKm: result.routeDistanceKm,
+        plazas: result.plazas,
+        source: result.totalIda > 0 ? "route_plazas" : "none",
+        calculatedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error("[estimate-tolls-along-route]", err.message);
+      res.status(200).json({
+        totalIda: 0,
+        totalIdaVolta: 0,
+        count: 0,
+        routeDistanceKm: 0,
+        plazas: [],
+        source: "none",
+        error: err.message || "Falha ao estimar pedágio pela rota",
         calculatedAt: new Date().toISOString(),
       });
     }
