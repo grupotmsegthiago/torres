@@ -1,6 +1,6 @@
 /**
  * Consulta Google Routes API (Compute Routes + TOLLS) com fallback local.
- * Chave: GOOGLE_MAPS_API_KEY (preferida) ou VITE_GOOGLE_MAPS_API_KEY (legado).
+ * Chave: GOOGLE_MAPS_ROUTES_API_KEY → GOOGLE_MAPS_API_KEY → VITE_GOOGLE_MAPS_API_KEY.
  * Nunca chamar do frontend com a chave privada.
  */
 import { estimateTolls, type TollEstimate } from "../toll-engine";
@@ -12,7 +12,8 @@ export type GoogleRoutesTollResult = {
   count: number;
   distanceMeters: number;
   duration: string | null;
-  source: "google" | "local" | "none";
+  source: "google" | "local" | "mixed" | "none";
+  distanceSource: "google" | "local" | "none";
   tolls: Array<{ name: string; price: number; city?: string; state?: string }>;
   plazas: TollEstimate["plazas"];
   routeDistanceKm: number;
@@ -30,6 +31,14 @@ function routesApiKey(): string | undefined {
 
 function parseMoney(units?: string, nanos?: string | number): number {
   return parseFloat(units || "0") + parseFloat(String(nanos || "0")) / 1e9;
+}
+
+/** Soma estimatedPrice preferindo BRL; se não houver BRL, usa a primeira moeda. */
+function sumEstimatedPrices(prices: Array<{ currencyCode?: string; units?: string; nanos?: string | number }> | undefined): number {
+  if (!prices?.length) return 0;
+  const brl = prices.filter((p) => p.currencyCode === "BRL");
+  const list = brl.length > 0 ? brl : [prices[0]];
+  return list.reduce((s, p) => s + parseMoney(p.units, p.nanos), 0);
 }
 
 const _cache = new Map<string, { ts: number; value: GoogleRoutesTollResult }>();
@@ -66,6 +75,7 @@ export async function computeRouteTolls(params: {
       distanceMeters: 0,
       duration: null,
       source: "none",
+      distanceSource: "none",
       tolls: [],
       plazas: [],
       routeDistanceKm: 0,
@@ -84,6 +94,7 @@ export async function computeRouteTolls(params: {
   let distanceMeters = 0;
   let duration: string | null = null;
   let googleError: string | undefined;
+  let googleDistanceOk = false;
 
   const apiKey = routesApiKey();
   if (apiKey) {
@@ -92,8 +103,13 @@ export async function computeRouteTolls(params: {
         origin: { address: origin },
         destination: { address: destination },
         travelMode: "DRIVE",
+        routingPreference: "TRAFFIC_UNAWARE",
         extraComputations: ["TOLLS"],
-        routeModifiers: { vehicleInfo: { emissionType: "GASOLINE" }, tollPasses: [] },
+        // Sem tollPasses a API retorna preço em dinheiro; passes BR melhoram cobertura no Brasil.
+        routeModifiers: {
+          vehicleInfo: { emissionType: "GASOLINE" },
+          tollPasses: ["BR_SEM_PARAR", "BR_VELOE", "BR_CONECTCAR"],
+        },
       };
       if (params.originLat && params.originLng) {
         body.origin = { location: { latLng: { latitude: Number(params.originLat), longitude: Number(params.originLng) } } };
@@ -116,7 +132,7 @@ export async function computeRouteTolls(params: {
             "routes.distanceMeters,routes.duration,routes.travelAdvisory.tollInfo,routes.legs.travelAdvisory.tollInfo",
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(20000),
       });
 
       if (resp.ok) {
@@ -125,38 +141,38 @@ export async function computeRouteTolls(params: {
         if (route) {
           distanceMeters = route.distanceMeters || 0;
           duration = route.duration || null;
-          const tollInfo = route.travelAdvisory?.tollInfo;
-          if (tollInfo?.estimatedPrice) {
-            for (const price of tollInfo.estimatedPrice) {
-              if (price.currencyCode === "BRL") {
-                googleTotalIda += parseMoney(price.units, price.nanos);
+          if (distanceMeters > 0) googleDistanceOk = true;
+
+          // Preferir total da rota (não somar legs — evita double-count).
+          const routeToll = sumEstimatedPrices(route.travelAdvisory?.tollInfo?.estimatedPrice);
+          if (routeToll > 0) {
+            googleTotalIda = routeToll;
+            googleTolls = [{ name: "Pedágio (rota)", price: routeToll }];
+          } else {
+            let legSum = 0;
+            for (const leg of route.legs || []) {
+              const legPrice = sumEstimatedPrices(leg.travelAdvisory?.tollInfo?.estimatedPrice);
+              if (legPrice > 0) {
+                legSum += legPrice;
+                googleTolls.push({ name: "Pedágio", price: legPrice });
               }
             }
+            googleTotalIda = legSum;
           }
-          for (const leg of route.legs || []) {
-            const legToll = leg.travelAdvisory?.tollInfo;
-            if (legToll?.estimatedPrice) {
-              for (const price of legToll.estimatedPrice) {
-                if (price.currencyCode === "BRL") {
-                  googleTolls.push({ name: "Pedágio", price: parseMoney(price.units, price.nanos) });
-                }
-              }
-            }
-          }
-          if (googleTotalIda === 0 && googleTolls.length > 0) {
-            googleTotalIda = googleTolls.reduce((s, t) => s + t.price, 0);
-          }
+        } else {
+          googleError = "Routes API sem rotas";
         }
       } else {
-        googleError = `HTTP ${resp.status}`;
-        console.error("[google-routes-tolls] Routes API error:", resp.status);
+        const errText = await resp.text().catch(() => "");
+        googleError = `HTTP ${resp.status}${errText ? `: ${errText.slice(0, 180)}` : ""}`;
+        console.error("[google-routes-tolls] Routes API error:", googleError);
       }
     } catch (e: any) {
       googleError = e?.message || "timeout/exception";
       console.error("[google-routes-tolls] exception:", googleError);
     }
   } else {
-    googleError = "API key ausente";
+    googleError = "API key ausente (GOOGLE_MAPS_API_KEY / VITE_GOOGLE_MAPS_API_KEY)";
   }
 
   let localEstimate: TollEstimate | null = null;
@@ -189,8 +205,17 @@ export async function computeRouteTolls(params: {
     googleTotalIda > 0
       ? Math.round(googleTotalIda * 2 * 100) / 100
       : localEstimate?.totalIdaVolta || 0;
-  const source: GoogleRoutesTollResult["source"] =
-    googleTotalIda > 0 ? "google" : localEstimate && localEstimate.totalIda > 0 ? "local" : "none";
+
+  const distanceSource: GoogleRoutesTollResult["distanceSource"] = googleDistanceOk
+    ? "google"
+    : localEstimate && localEstimate.routeDistanceKm > 0
+      ? "local"
+      : "none";
+
+  let source: GoogleRoutesTollResult["source"] = "none";
+  if (googleTotalIda > 0) source = "google";
+  else if (localEstimate && localEstimate.totalIda > 0 && googleDistanceOk) source = "mixed";
+  else if (localEstimate && localEstimate.totalIda > 0) source = "local";
 
   const value: GoogleRoutesTollResult = {
     totalIda,
@@ -199,6 +224,7 @@ export async function computeRouteTolls(params: {
     distanceMeters: distanceMeters || Math.round((localEstimate?.routeDistanceKm || 0) * 1000),
     duration,
     source,
+    distanceSource,
     tolls:
       googleTolls.length > 0
         ? googleTolls
@@ -210,9 +236,15 @@ export async function computeRouteTolls(params: {
           })),
     plazas: localEstimate?.plazas || [],
     routeDistanceKm:
+      (distanceMeters ? Math.round(distanceMeters / 100) / 10 : 0) ||
       localEstimate?.routeDistanceKm ||
-      (distanceMeters ? Math.round(distanceMeters / 100) / 10 : 0),
-    error: source === "none" ? googleError : undefined,
+      0,
+    error:
+      source === "none" && distanceSource === "none"
+        ? googleError || "Não foi possível calcular a rota"
+        : googleTotalIda <= 0 && googleError
+          ? `Pedágio Google indisponível (${googleError}); usando fallback quando possível`
+          : undefined,
   };
 
   _cache.set(key, { ts: Date.now(), value });

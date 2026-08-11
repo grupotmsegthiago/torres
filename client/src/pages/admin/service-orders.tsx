@@ -872,12 +872,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [tollInfo, setTollInfo] = useState<{
+  /** SSOT da UI para km + pedágio estimado (vem de POST /api/calculate-tolls). */
+  const [routeEstimate, setRouteEstimate] = useState<{
     loading: boolean;
-    source: string;
+    km: number;
+    distanceMeters: number;
+    duration: string | null;
     totalIda: number;
     totalIdaVolta: number;
     count: number;
+    source: string;
+    distanceSource: string;
     error?: string | null;
   } | null>(null);
   /** Operador confirmou/ajustou o valor sugerido — não sobrescrever em recalc. */
@@ -885,8 +890,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [pedagioUserEdited, setPedagioUserEdited] = useState(false);
   /** Operador escolheu a tabela manualmente — não sobrescrever com sugestão por km. */
   const [priceTableUserPicked, setPriceTableUserPicked] = useState(!!(order as any)?.escortContractId);
-  const tollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTollKeyRef = useRef<string>("");
+  const routeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRouteKeyRef = useRef<string>("");
+  const pedagioUserEditedRef = useRef(pedagioUserEdited);
+  const pedagioValorConfirmadoRef = useRef(pedagioValorConfirmado);
+  pedagioUserEditedRef.current = pedagioUserEdited;
+  pedagioValorConfirmadoRef.current = pedagioValorConfirmado;
   const nowLocal = () => utcToLocalInput(new Date().toISOString());
   const isNewOs = !order;
 
@@ -946,7 +955,13 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
-  const routeKm = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : 0;
+  // Distância oficial na criação: backend calculate-tolls; fallback Directions do browser.
+  const routeKm =
+    (routeEstimate && routeEstimate.km > 0
+      ? routeEstimate.km
+      : routeInfo
+        ? Math.round(routeInfo.distanceMeters / 1000)
+        : 0);
   const priceTableSuggestion = useMemo(
     () => suggestPriceTableByRouteKm(
       escortContracts.filter((c) => c.client_id === form.clientId && c.status === "Ativo"),
@@ -1009,91 +1024,116 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     setForm(prev => ({ ...prev, ...updates }));
   };
 
-  const calcTolls = useCallback(async (
+  const refreshRouteEstimates = useCallback(async (
     orig: string,
     dest: string,
     coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
   ) => {
-    const key = `${orig.trim().toLowerCase()}|${dest.trim().toLowerCase()}|${coords?.oLat || ""}|${coords?.dLat || ""}`;
-    if (key === lastTollKeyRef.current) return;
-    lastTollKeyRef.current = key;
-    setTollInfo({ loading: true, source: "none", totalIda: 0, totalIdaVolta: 0, count: 0 });
-    try {
-      const resp = await apiRequest("POST", "/api/calculate-tolls", {
-        origin: orig.trim(),
-        destination: dest.trim(),
-        originLat: coords?.oLat ?? originCoords?.lat ?? null,
-        originLng: coords?.oLng ?? originCoords?.lng ?? null,
-        destLat: coords?.dLat ?? destCoords?.lat ?? null,
-        destLng: coords?.dLng ?? destCoords?.lng ?? null,
-      });
-      const data = await resp.json();
-      const totalIda = Number(data.totalIda || 0);
-      const totalIdaVolta = Number(data.totalIdaVolta || 0);
-      setTollInfo({
-        loading: false,
-        source: data.source || "none",
-        totalIda,
-        totalIdaVolta,
-        count: data.count || 0,
-        error: data.error || null,
-      });
-      // Prefill só se operador ainda não confirmou/editou manualmente.
-      if (totalIda > 0 && !pedagioUserEdited && !pedagioValorConfirmado) {
-        setForm((prev) => ({
-          ...prev,
-          pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
-        }));
-      }
-    } catch {
-      setTollInfo({ loading: false, source: "none", totalIda: 0, totalIdaVolta: 0, count: 0, error: "Falha ao calcular" });
-    }
-  }, [originCoords, destCoords, pedagioUserEdited, pedagioValorConfirmado]);
+    const o = orig.trim();
+    const d = dest.trim();
+    if (!o || !d || o.length < 3 || d.length < 3) return;
 
-  const scheduleTollCalc = useCallback((
+    const oLat = coords?.oLat ?? originCoords?.lat ?? null;
+    const oLng = coords?.oLng ?? originCoords?.lng ?? null;
+    const dLat = coords?.dLat ?? destCoords?.lat ?? null;
+    const dLng = coords?.dLng ?? destCoords?.lng ?? null;
+    const key = `${o.toLowerCase()}|${d.toLowerCase()}|${Number(oLat) || ""}|${Number(dLat) || ""}`;
+    if (key === lastRouteKeyRef.current) return;
+    lastRouteKeyRef.current = key;
+
+    const routeStr = `${o} → ${d}`;
+    setForm((prev) => ({
+      ...prev,
+      route: routeStr,
+      origin: o,
+      originLat: oLat,
+      originLng: oLng,
+      destination: d,
+      destinationLat: dLat,
+      destinationLng: dLng,
+    }));
+
+    setCalculatingRoute(true);
+    setRouteEstimate({
+      loading: true,
+      km: 0,
+      distanceMeters: 0,
+      duration: null,
+      totalIda: 0,
+      totalIdaVolta: 0,
+      count: 0,
+      source: "none",
+      distanceSource: "none",
+      error: null,
+    });
+
+    // Distância + pedágio: backend (Google Routes). Directions no browser é só complemento de texto.
+    const [tollResp, dirInfo] = await Promise.all([
+      apiRequest("POST", "/api/calculate-tolls", {
+        origin: o,
+        destination: d,
+        originLat: oLat,
+        originLng: oLng,
+        destLat: dLat,
+        destLng: dLng,
+      }).then(async (resp) => {
+        const data = await resp.json();
+        return { ok: resp.ok, data };
+      }).catch((e: any) => ({ ok: false, data: { error: e?.message || "Falha ao calcular" } })),
+      calculateRouteInfo(o, d).catch(() => null),
+    ]);
+
+    const data = tollResp.data || {};
+    const distanceMeters = Number(data.distanceMeters || 0) || (dirInfo?.distanceMeters || 0);
+    const kmFromApi = Number(data.routeDistanceKm || 0);
+    const km = kmFromApi > 0
+      ? Math.round(kmFromApi)
+      : distanceMeters > 0
+        ? Math.round(distanceMeters / 1000)
+        : 0;
+    const totalIda = Number(data.totalIda || 0);
+    const totalIdaVolta = Number(data.totalIdaVolta || 0);
+
+    setRouteInfo(dirInfo);
+    setRouteEstimate({
+      loading: false,
+      km,
+      distanceMeters,
+      duration: data.duration || (dirInfo ? `${Math.round(dirInfo.durationSeconds / 60)} min` : null),
+      totalIda,
+      totalIdaVolta,
+      count: Number(data.count || 0),
+      source: data.source || "none",
+      distanceSource: data.distanceSource || (km > 0 ? "google" : "none"),
+      error: data.error || (!tollResp.ok ? "Falha ao calcular rota/pedágio" : null),
+    });
+    setCalculatingRoute(false);
+
+    if (totalIda > 0 && !pedagioUserEditedRef.current && !pedagioValorConfirmadoRef.current) {
+      setForm((prev) => ({
+        ...prev,
+        pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
+      }));
+    }
+  }, [originCoords, destCoords]);
+
+  const scheduleRouteEstimates = useCallback((
     orig: string,
     dest: string,
     coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
   ) => {
     if (!orig.trim() || !dest.trim() || orig.trim().length < 3 || dest.trim().length < 3) return;
-    if (tollDebounceRef.current) clearTimeout(tollDebounceRef.current);
-    tollDebounceRef.current = setTimeout(() => {
-      void calcTolls(orig, dest, coords);
-    }, 800);
-  }, [calcTolls]);
-
-  const calcRoute = async (
-    orig: string,
-    dest: string,
-    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
-  ) => {
-    if (!orig.trim() || !dest.trim()) { setRouteInfo(null); return; }
-    const routeStr = `${orig.trim()} → ${dest.trim()}`;
-    setForm(prev => ({
-      ...prev,
-      route: routeStr,
-      origin: orig.trim(),
-      originLat: coords?.oLat ?? originCoords?.lat ?? null,
-      originLng: coords?.oLng ?? originCoords?.lng ?? null,
-      destination: dest.trim(),
-      destinationLat: coords?.dLat ?? destCoords?.lat ?? null,
-      destinationLng: coords?.dLng ?? destCoords?.lng ?? null,
-    }));
-    setCalculatingRoute(true);
-    try {
-      const info = await calculateRouteInfo(orig.trim(), dest.trim());
-      setRouteInfo(info);
-    } catch {
-      setRouteInfo(null);
-    }
-    setCalculatingRoute(false);
-    scheduleTollCalc(orig, dest, coords);
-  };
+    if (routeDebounceRef.current) clearTimeout(routeDebounceRef.current);
+    routeDebounceRef.current = setTimeout(() => {
+      // Permite recalcular quando o debounce dispara após troca de endereço.
+      lastRouteKeyRef.current = "";
+      void refreshRouteEstimates(orig, dest, coords);
+    }, 500);
+  }, [refreshRouteEstimates]);
 
   const handleOriginSelect = (p: { lat: number; lng: number }, address: string) => {
     setOriginCoords({ lat: p.lat, lng: p.lng });
-    lastTollKeyRef.current = "";
-    // Nova rota → nova sugestão, salvo se o operador já digitou o valor à mão.
+    lastRouteKeyRef.current = "";
     if (!pedagioUserEdited) setPedagioValorConfirmado(false);
     setForm((prev) => {
       const updated = {
@@ -1101,11 +1141,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         origin: address,
         originLat: p.lat,
         originLng: p.lng,
-        // Sem destino ainda: não travar tabela antiga.
         ...((isNewOs && !priceTableUserPicked && !prev.destination) ? { escortContractId: "" } : {}),
       };
       if (prev.destination) {
-        calcRoute(address, prev.destination, {
+        scheduleRouteEstimates(address, prev.destination, {
           oLat: p.lat, oLng: p.lng,
           dLat: prev.destinationLat, dLng: prev.destinationLng,
         });
@@ -1116,12 +1155,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const handleDestSelect = (p: { lat: number; lng: number }, address: string) => {
     setDestCoords({ lat: p.lat, lng: p.lng });
-    lastTollKeyRef.current = "";
+    lastRouteKeyRef.current = "";
     if (!pedagioUserEdited) setPedagioValorConfirmado(false);
-    setForm(prev => {
+    setForm((prev) => {
       const updated = { ...prev, destination: address, destinationLat: p.lat, destinationLng: p.lng };
       if (prev.origin) {
-        calcRoute(prev.origin, address, {
+        scheduleRouteEstimates(prev.origin, address, {
           oLat: prev.originLat, oLng: prev.originLng,
           dLat: p.lat, dLng: p.lng,
         });
@@ -1130,17 +1169,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     });
   };
 
+  // Gatilho confiável: sempre que origem+destino estiverem preenchidos (nova OS ou edição).
   useEffect(() => {
-    if (order && (order as any).origin && (order as any).destination && !routeInfo) {
-      // Edição: mostra distância; NÃO sobrescreve pedágio já salvo (cache/confirmado).
-      calcRoute((order as any).origin, (order as any).destination, {
-        oLat: (order as any).originLat,
-        oLng: (order as any).originLng,
-        dLat: (order as any).destinationLat,
-        dLng: (order as any).destinationLng,
-      });
-    }
-  }, []);
+    if (!originReady || !destinationReady) return;
+    scheduleRouteEstimates(form.origin, form.destination, {
+      oLat: form.originLat,
+      oLng: form.originLng,
+      dLat: form.destinationLat,
+      dLng: form.destinationLng,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage a mudança de rota
+  }, [form.origin, form.destination, form.originLat, form.originLng, form.destinationLat, form.destinationLng, originReady, destinationReady]);
 
   const googleMapsUrl = form.route ? `https://www.google.com/maps/dir/${encodeURIComponent(form.route.replace(" → ", "/"))}` : null;
 
@@ -1542,24 +1581,36 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       <p className="text-[10px] text-amber-700 mt-1" data-testid="warn-os-destino">Agora informe o destino para calcular a rota e sugerir a tabela.</p>
                     )}
                   </div>
-                  {(calculatingRoute || routeInfo) && (
-                    <div className="col-span-2 md:col-span-4 flex items-center gap-3 text-xs flex-wrap" data-testid="panel-os-rota-km">
-                      {calculatingRoute && (
-                        <span className="text-neutral-400 flex items-center gap-1.5">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Calculando distância...
-                        </span>
-                      )}
-                      {routeInfo && !calculatingRoute && (
-                        <>
-                          <span className="flex items-center gap-1 text-neutral-700 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-distance-early">
-                            <Navigation className="w-3 h-3" />
-                            {routeInfo.distanceText} ({routeKm} km)
+                  {routeReadyForTable && (
+                    <div
+                      className="col-span-2 md:col-span-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 space-y-1.5"
+                      data-testid="panel-os-rota-km"
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-wider text-neutral-600">Distância da rota (total)</p>
+                      {(calculatingRoute || routeEstimate?.loading) ? (
+                        <p className="text-sm text-neutral-500 flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Calculando distância e pedágio...
+                        </p>
+                      ) : routeKm > 0 ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-lg font-black font-mono text-neutral-900" data-testid="text-route-distance-total">
+                            {routeKm} km
                           </span>
-                          <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium">
-                            <Clock className="w-3 h-3" />
-                            {routeInfo.durationText}
+                          {(routeInfo?.durationText || routeEstimate?.duration) && (
+                            <span className="flex items-center gap-1 text-xs text-neutral-600 bg-white border border-neutral-200 px-2 py-1 rounded font-medium">
+                              <Clock className="w-3 h-3" />
+                              {routeInfo?.durationText || routeEstimate?.duration}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-neutral-400">
+                            fonte: {routeEstimate?.distanceSource || "—"}
                           </span>
-                        </>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-700" data-testid="warn-rota-sem-km">
+                          Não foi possível obter a distância. Confira origem/destino ou a chave Google Routes.
+                          {routeEstimate?.error ? ` (${routeEstimate.error})` : ""}
+                        </p>
                       )}
                     </div>
                   )}
@@ -1719,7 +1770,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
-                {(tollInfo?.loading || (tollInfo && tollInfo.totalIda > 0) || tollInfo?.error) && (
+                {routeReadyForTable && (
                   <div
                     className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 space-y-1.5"
                     data-testid="panel-pedagio-estimado-aviso"
@@ -1727,38 +1778,42 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <div className="flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                       <p className="text-[10px] font-black uppercase tracking-wider text-amber-900">
-                        Rota calculada — confirme o pedágio
+                        Pedágio estimado (ida) — integração
                       </p>
                     </div>
-                    {tollInfo.loading ? (
+                    {(routeEstimate?.loading || calculatingRoute) ? (
                       <p className="text-[11px] text-amber-800 flex items-center gap-1.5">
                         <Loader2 className="w-3 h-3 animate-spin" /> Consultando pedágios (Google Routes)...
                       </p>
                     ) : (
                       <>
                         <p className="text-[11px] text-amber-900">
-                          Sugestão {tollInfo.source === "google" ? "Google" : tollInfo.source === "local" ? "local" : ""}:{" "}
+                          Valor da integração
+                          {routeEstimate?.source && routeEstimate.source !== "none" ? ` (${routeEstimate.source})` : ""}:{" "}
                           <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida">
-                            {Number(tollInfo.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            {Number(routeEstimate?.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </span>
                           {" "}ida
                           {form.pedagioIdaVolta && (
                             <>
                               {" · "}
                               <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida-volta">
-                                {Number(tollInfo.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                {Number(routeEstimate?.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                               </span>
                               {" "}ida+volta
                             </>
                           )}
-                          {tollInfo.count > 0 ? ` · ${tollInfo.count} praça(s)` : ""}
+                          {routeEstimate && routeEstimate.count > 0 ? ` · ${routeEstimate.count} praça(s)` : ""}
                         </p>
-                        <p className="text-[10px] text-amber-800 leading-snug">
-                          O sistema pode lançar essa estimativa na OS. Confirme se o valor está de acordo — a decisão final na cobrança fica na conferência ao fechar a OS (de/para com o agente).
-                        </p>
-                        {tollInfo.error && tollInfo.totalIda <= 0 && (
-                          <p className="text-[10px] text-red-600">{tollInfo.error}</p>
+                        {(routeEstimate?.totalIda || 0) <= 0 && (
+                          <p className="text-[10px] text-red-700 font-semibold" data-testid="warn-pedagio-zero">
+                            Integração retornou R$ 0,00. Verifique se a Routes API / chave Google está ativa no servidor.
+                            {routeEstimate?.error ? ` ${routeEstimate.error}` : ""}
+                          </p>
                         )}
+                        <p className="text-[10px] text-amber-800 leading-snug">
+                          O campo acima é preenchido automaticamente. Confirme se está de acordo — a decisão final fica na conferência ao fechar a OS.
+                        </p>
                         <label className="flex items-start gap-2 cursor-pointer select-none" data-testid="check-pedagio-valor-ok">
                           <input
                             type="checkbox"
@@ -1972,32 +2027,44 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         </a>
                       )}
                       <button type="button" onClick={() => {
-                        setForm(prev => ({ ...prev, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }));
+                        setForm(prev => ({
+                          ...prev,
+                          route: "",
+                          origin: "",
+                          originLat: null,
+                          originLng: null,
+                          destination: "",
+                          destinationLat: null,
+                          destinationLng: null,
+                          ...((isNewOs && !priceTableUserPicked) ? { escortContractId: "", pedagioEstimado: "" } : {}),
+                        }));
                         setRouteInfo(null);
+                        setRouteEstimate(null);
                         setOriginCoords(null);
                         setDestCoords(null);
-                        setTollInfo(null);
-                        lastTollKeyRef.current = "";
+                        lastRouteKeyRef.current = "";
                       }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>
-                    {calculatingRoute && (
+                    {(calculatingRoute || routeEstimate?.loading) && (
                       <div className="text-xs text-neutral-400 flex items-center gap-1.5">
                         <span className="animate-spin w-3 h-3 border border-neutral-300 border-t-neutral-600 rounded-full inline-block" />
                         Calculando distancia...
                       </div>
                     )}
-                    {routeInfo && !calculatingRoute && (
+                    {routeKm > 0 && !calculatingRoute && !routeEstimate?.loading && (
                       <div className="flex items-center gap-3 text-xs flex-wrap">
                         <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-distance">
                           <Navigation className="w-3 h-3" />
-                          {routeInfo.distanceText}
+                          {routeKm} km {routeInfo?.distanceText ? `(${routeInfo.distanceText})` : ""}
                         </span>
-                        <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-duration">
-                          <Clock className="w-3 h-3" />
-                          {routeInfo.durationText}
-                        </span>
+                        {(routeInfo?.durationText || routeEstimate?.duration) && (
+                          <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-duration">
+                            <Clock className="w-3 h-3" />
+                            {routeInfo?.durationText || routeEstimate?.duration}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
