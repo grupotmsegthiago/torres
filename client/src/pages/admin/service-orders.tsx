@@ -1095,12 +1095,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     lastTollKeyRef.current = "";
     // Nova rota → nova sugestão, salvo se o operador já digitou o valor à mão.
     if (!pedagioUserEdited) setPedagioValorConfirmado(false);
-    // Nova OS: trocar origem invalida a tabela sugerida até recalcular com o destino.
-    if (isNewOs && !priceTableUserPicked) {
-      setForm((prev) => ({ ...prev, escortContractId: prev.destination ? prev.escortContractId : "" }));
-    }
-    setForm(prev => {
-      const updated = { ...prev, origin: address, originLat: p.lat, originLng: p.lng };
+    setForm((prev) => {
+      const updated = {
+        ...prev,
+        origin: address,
+        originLat: p.lat,
+        originLng: p.lng,
+        // Sem destino ainda: não travar tabela antiga.
+        ...((isNewOs && !priceTableUserPicked && !prev.destination) ? { escortContractId: "" } : {}),
+      };
       if (prev.destination) {
         calcRoute(address, prev.destination, {
           oLat: p.lat, oLng: p.lng,
@@ -1286,10 +1289,6 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     { label: "Lateral Dir.", src: photoSrc.photoRight },
   ].filter(p => p.src) : [];
   const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
-
-  const step1Valid = isNewOs
-    ? form.clientId > 0 && originReady && destinationReady && !!form.escortContractId
-    : form.clientId > 0;
 
   function isDocExpiringSoon(dateStr: string | null | undefined): "expired" | "warning" | "ok" {
     if (!dateStr) return "ok";
