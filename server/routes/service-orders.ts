@@ -15,6 +15,7 @@ import type { Express } from "express";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { randomUUID } from "crypto";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
+  import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
 
   async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
     if (!so?.escortContractId) {
@@ -2877,7 +2878,36 @@ import type { Express } from "express";
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
       const costs = await storage.getMissionCostsByOS(id);
-      res.json(costs);
+      // Não enviar photo_url inline (base64 legado pode pesar MB). Só sinaliza presença.
+      res.json(costs.map((c: any) => {
+        const hasPhoto = hasPhotoValue(c.photoUrl);
+        const { photoUrl: _omit, ...rest } = c;
+        return { ...rest, hasPhoto, photoUrl: hasPhoto ? "[has_photo]" : null };
+      }));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Foto do comprovante de custo/pedágio (lazy — só sob demanda no admin).
+  app.get("/api/service-orders/:id/costs/:costId/photo", requireAuth, async (req, res) => {
+    try {
+      const serviceOrderId = Number(req.params.id);
+      const costId = Number(req.params.costId);
+      if (!Number.isInteger(serviceOrderId) || serviceOrderId <= 0 || !Number.isInteger(costId) || costId <= 0) {
+        return res.status(400).json({ message: "ID inválido" });
+      }
+      const { data: rows, error } = await supabaseAdmin
+        .from("mission_costs")
+        .select("id, service_order_id, photo_url")
+        .eq("id", costId)
+        .eq("service_order_id", serviceOrderId)
+        .limit(1);
+      if (error) throw new Error(error.message);
+      if (!rows?.length) return res.status(404).json({ message: "Custo não encontrado nesta OS" });
+      const photoUrl = await resolvePhotoForView(rows[0].photo_url);
+      if (!photoUrl) return res.status(404).json({ message: "Foto não disponível" });
+      res.json({ photoUrl });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

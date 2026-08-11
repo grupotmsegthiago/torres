@@ -4,6 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertReferencePointSchema } from "@shared/schema";
   import { haversineDist, createAutoTransaction } from "./_helpers";
+  import { uploadMissionPhoto } from "../lib/mission-photos";
 
   const HQ_FALLBACK_LAT = -23.4890;
   const HQ_FALLBACK_LNG = -46.7234;
@@ -414,6 +415,14 @@ import type { Express } from "express";
       const finalAmount = pedagioIdaVolta ? parsedAmount * 2 : parsedAmount;
       const descLabel = pedagioIdaVolta ? `Pedágio (Ida + Volta) - ${empName} (${vehiclePlate})` : `Pedágio - ${empName} (${vehiclePlate})`;
 
+      // Upload para storage (evita base64 gigante no banco); legado data: ainda é legível.
+      let storedPhoto: string = photoUrl;
+      try {
+        storedPhoto = await uploadMissionPhoto(serviceOrderId, photoUrl);
+      } catch (upErr: any) {
+        console.warn("[pedagio-missao] upload foto falhou, gravando data URI:", upErr?.message);
+      }
+
       const { data: costRecord, error: costErr } = await supabaseAdmin.from("mission_costs").insert({
         service_order_id: Number(serviceOrderId),
         vehicle_id: vehicleId,
@@ -422,7 +431,7 @@ import type { Express } from "express";
         description: descLabel,
         amount: finalAmount.toFixed(2),
         cost_type: "expense",
-        photo_url: photoUrl,
+        photo_url: storedPhoto,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
       }).select().single();
@@ -436,7 +445,7 @@ import type { Express } from "express";
         description: descLabel,
         amount: finalAmount.toFixed(2),
         cost_type: "revenue",
-        photo_url: photoUrl,
+        photo_url: storedPhoto,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
       }).select().single();
@@ -524,6 +533,13 @@ import type { Express } from "express";
         .select("name").eq("id", employeeId).limit(1).single();
       const empName = empData?.name || "Agente";
 
+      let storedPhoto: string = photoUrl;
+      try {
+        storedPhoto = await uploadMissionPhoto(null, photoUrl);
+      } catch (upErr: any) {
+        console.warn("[pedagio-vazio] upload foto falhou, gravando data URI:", upErr?.message);
+      }
+
       const { data: record, error: insertError } = await supabaseAdmin.from("mission_costs").insert({
         service_order_id: null,
         vehicle_id: vehicleId,
@@ -532,7 +548,7 @@ import type { Express } from "express";
         description: `Custo de Deslocamento Vazio - ${empName} (${vehiclePlate})`,
         amount: parsedAmount.toFixed(2),
         cost_type: "expense",
-        photo_url: photoUrl,
+        photo_url: storedPhoto,
         latitude: Number(latitude),
         longitude: Number(longitude),
       }).select().single();

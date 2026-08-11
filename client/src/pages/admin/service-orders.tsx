@@ -155,6 +155,8 @@ const REVENUE_CATEGORIES = [
   "Outro",
 ];
 
+type MissionCostRow = MissionCost & { hasPhoto?: boolean };
+
 function MissionCostsSection({ orderId }: { orderId: number }) {
   const { toast } = useToast();
   const { user: mcUser } = useAuth();
@@ -165,11 +167,26 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
   const [category, setCategory] = useState(categories[0]);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [photoModal, setPhotoModal] = useState<{ costId: number; src: string | null; loading: boolean; label: string } | null>(null);
 
-  const { data: costs = [], isLoading } = useQuery<MissionCost[]>({
+  const { data: costs = [], isLoading } = useQuery<MissionCostRow[]>({
     queryKey: ["/api/service-orders", orderId, "costs"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
+
+  const openCostPhoto = async (cost: MissionCostRow) => {
+    const label = `${cost.category || "Comprovante"}${cost.description ? ` — ${cost.description}` : ""}`;
+    setPhotoModal({ costId: cost.id, src: null, loading: true, label });
+    try {
+      const res = await authFetch(`/api/service-orders/${orderId}/costs/${cost.id}/photo`);
+      const data = await res.json();
+      if (!res.ok || !data?.photoUrl) throw new Error(data?.message || "Foto não disponível");
+      setPhotoModal({ costId: cost.id, src: data.photoUrl, loading: false, label });
+    } catch (err: any) {
+      setPhotoModal(null);
+      toast({ title: "Não foi possível abrir a foto", description: err?.message, variant: "destructive" });
+    }
+  };
 
   const addMutation = useMutation({
     mutationFn: async (data: { category: string; description: string; amount: string; costType: string }) => {
@@ -340,6 +357,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Tipo</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Categoria</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Descrição</th>
+              <th className="text-center px-2 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Foto</th>
               <th className="text-right px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Valor</th>
               <th className="w-10"></th>
             </tr>
@@ -347,6 +365,8 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
           <tbody className="divide-y divide-neutral-100">
             {costs.map(cost => {
               const isRevenue = (cost as any).costType === "revenue";
+              const hasPhoto = !!(cost as MissionCostRow).hasPhoto || (typeof cost.photoUrl === "string" && cost.photoUrl.length > 0);
+              const isPedagio = /ped[aá]gio/i.test(cost.category || "");
               return (
               <tr key={cost.id} data-testid={`row-cost-${cost.id}`} className={isRevenue ? "bg-emerald-50/40" : ""}>
                 <td className="px-3.5 py-2.5">
@@ -356,6 +376,21 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                 </td>
                 <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{(cost.category || "").replace("Reembolso de Pedágio", "Pedágio").replace("Pedágio Reembolso", "Pedágio")}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
+                <td className="px-2 py-2.5 text-center">
+                  {hasPhoto ? (
+                    <button
+                      type="button"
+                      onClick={() => openCostPhoto(cost)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-colors ${isPedagio ? "bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100" : "bg-neutral-100 text-neutral-700 border border-neutral-200 hover:bg-neutral-200"}`}
+                      title="Ver foto do comprovante"
+                      data-testid={`button-cost-photo-${cost.id}`}
+                    >
+                      <Camera className="w-3.5 h-3.5" /> Ver
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-neutral-300">—</span>
+                  )}
+                </td>
                 <td className={`px-3.5 py-2.5 text-right font-mono font-semibold text-sm ${isRevenue ? "text-emerald-700" : "text-red-700"}`}>
                   {isRevenue ? "+" : "-"}R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </td>
@@ -375,17 +410,17 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
           </tbody>
           <tfoot>
             <tr className="border-t border-neutral-200">
-              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Receitas</td>
+              <td colSpan={4} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Receitas</td>
               <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-emerald-700">+R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
               <td></td>
             </tr>
             <tr>
-              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Despesas</td>
+              <td colSpan={4} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Despesas</td>
               <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-red-700">-R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
               <td></td>
             </tr>
             <tr className="bg-neutral-50 border-t border-neutral-300">
-              <td colSpan={3} className="px-3.5 py-2.5 text-sm font-black text-neutral-700 uppercase">Saldo Líquido</td>
+              <td colSpan={4} className="px-3.5 py-2.5 text-sm font-black text-neutral-700 uppercase">Saldo Líquido</td>
               <td className={`px-3.5 py-2.5 text-right font-mono font-black text-sm ${totalRevenue - totalExpenses >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 R$ {(totalRevenue - totalExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </td>
@@ -393,6 +428,51 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
             </tr>
           </tfoot>
         </table>
+      )}
+
+      {photoModal && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setPhotoModal(null)}
+          data-testid="modal-cost-photo"
+        >
+          <div
+            className="bg-white rounded-xl max-w-2xl w-full overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Comprovante</p>
+                <p className="text-sm font-semibold text-neutral-800 truncate">{photoModal.label}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoModal(null)}
+                className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-600 hover:bg-neutral-200"
+                data-testid="button-close-cost-photo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="bg-neutral-900 min-h-[240px] flex items-center justify-center">
+              {photoModal.loading ? (
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              ) : photoModal.src ? (
+                <img
+                  src={photoModal.src}
+                  alt="Comprovante de pedágio"
+                  className="max-h-[75vh] w-full object-contain"
+                  data-testid="img-cost-photo"
+                />
+              ) : (
+                <p className="text-sm text-neutral-300">Foto indisponível</p>
+              )}
+            </div>
+            <p className="px-4 py-2 text-[10px] text-neutral-400">
+              Foto do comprovante enviada pelo agente (referência visual).
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
