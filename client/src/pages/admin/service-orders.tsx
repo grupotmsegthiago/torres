@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
+import { computeRouteTollsBrowser } from "@/lib/google-routes-tolls-browser";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -872,7 +873,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
-  /** SSOT da UI para km + pedágio estimado (vem de POST /api/calculate-tolls). */
+  /** SSOT da UI para km + pedágio estimado (preferência: Google Routes no browser). */
   const [routeEstimate, setRouteEstimate] = useState<{
     loading: boolean;
     km: number;
@@ -883,6 +884,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     count: number;
     source: string;
     distanceSource: string;
+    pedagioReal: boolean;
     error?: string | null;
   } | null>(null);
   /** Operador confirmou/ajustou o valor sugerido — não sobrescrever em recalc. */
@@ -1064,11 +1066,33 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       count: 0,
       source: "none",
       distanceSource: "none",
+      pedagioReal: false,
       error: null,
     });
 
-    // Distância + pedágio: backend (Google Routes). Directions no browser é só complemento de texto.
-    const [tollResp, dirInfo] = await Promise.all([
+    // 1) Google Routes no browser (chave VITE com referrer — costuma ser a que funciona)
+    // 2) Directions (km real de direção)
+    // 3) Backend /api/calculate-tolls (pode cair em fallback local incompleto)
+    const [browserTolls, dirInfo, tollResp] = await Promise.all([
+      computeRouteTollsBrowser({
+        origin: o,
+        destination: d,
+        originLat: oLat,
+        originLng: oLng,
+        destLat: dLat,
+        destLng: dLng,
+      }).catch((e: any) => ({
+        totalIda: 0,
+        totalIdaVolta: 0,
+        count: 0,
+        distanceMeters: 0,
+        routeDistanceKm: 0,
+        duration: null,
+        source: "none" as const,
+        distanceSource: "none" as const,
+        error: e?.message || "Falha browser Routes",
+      })),
+      calculateRouteInfo(o, d).catch(() => null),
       apiRequest("POST", "/api/calculate-tolls", {
         origin: o,
         destination: d,
@@ -1080,40 +1104,86 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         const data = await resp.json();
         return { ok: resp.ok, data };
       }).catch((e: any) => ({ ok: false, data: { error: e?.message || "Falha ao calcular" } })),
-      calculateRouteInfo(o, d).catch(() => null),
     ]);
 
-    const data = tollResp.data || {};
-    const distanceMeters = Number(data.distanceMeters || 0) || (dirInfo?.distanceMeters || 0);
-    const kmFromApi = Number(data.routeDistanceKm || 0);
-    const km = kmFromApi > 0
-      ? Math.round(kmFromApi)
-      : distanceMeters > 0
-        ? Math.round(distanceMeters / 1000)
-        : 0;
-    const totalIda = Number(data.totalIda || 0);
-    const totalIdaVolta = Number(data.totalIdaVolta || 0);
+    const backend = tollResp.data || {};
+    const backendSource = String(backend.source || "none");
+    const browserHasGoogleToll = browserTolls.source === "google" && browserTolls.totalIda > 0;
+    const backendHasGoogleToll = backendSource === "google" && Number(backend.totalIda || 0) > 0;
+
+    // Pedágio: só aceitar Google (browser ou backend). Fallback local NÃO é valor real.
+    let totalIda = 0;
+    let totalIdaVolta = 0;
+    let count = 0;
+    let tollSource = "none";
+    let pedagioReal = false;
+    if (browserHasGoogleToll) {
+      totalIda = browserTolls.totalIda;
+      totalIdaVolta = browserTolls.totalIdaVolta;
+      count = browserTolls.count;
+      tollSource = "google";
+      pedagioReal = true;
+    } else if (backendHasGoogleToll) {
+      totalIda = Number(backend.totalIda || 0);
+      totalIdaVolta = Number(backend.totalIdaVolta || 0);
+      count = Number(backend.count || 0);
+      tollSource = "google";
+      pedagioReal = true;
+    }
+
+    // Km: Google Routes > Directions (direção real) > backend google > backend local (haversine — último recurso)
+    let distanceMeters = 0;
+    let distanceSource = "none";
+    if (browserTolls.distanceSource === "google" && browserTolls.distanceMeters > 0) {
+      distanceMeters = browserTolls.distanceMeters;
+      distanceSource = "google";
+    } else if (dirInfo?.distanceMeters) {
+      distanceMeters = dirInfo.distanceMeters;
+      distanceSource = "directions";
+    } else if (backend.distanceSource === "google" && Number(backend.distanceMeters || 0) > 0) {
+      distanceMeters = Number(backend.distanceMeters || 0);
+      distanceSource = "google";
+    } else if (Number(backend.distanceMeters || 0) > 0) {
+      distanceMeters = Number(backend.distanceMeters || 0);
+      distanceSource = String(backend.distanceSource || "local");
+    }
+    const km = distanceMeters > 0 ? Math.round(distanceMeters / 1000) : 0;
+
+    const errors = [
+      !pedagioReal ? (browserTolls.error || null) : null,
+      !pedagioReal && backend.error ? String(backend.error) : null,
+      !pedagioReal ? "Pedágio Google indisponível — valor local incompleto foi IGNORADO para não distorcer a OS." : null,
+    ].filter(Boolean);
 
     setRouteInfo(dirInfo);
     setRouteEstimate({
       loading: false,
       km,
       distanceMeters,
-      duration: data.duration || (dirInfo ? `${Math.round(dirInfo.durationSeconds / 60)} min` : null),
+      duration:
+        browserTolls.duration ||
+        backend.duration ||
+        (dirInfo ? `${Math.round(dirInfo.durationSeconds / 60)} min` : null),
       totalIda,
       totalIdaVolta,
-      count: Number(data.count || 0),
-      source: data.source || "none",
-      distanceSource: data.distanceSource || (km > 0 ? "google" : "none"),
-      error: data.error || (!tollResp.ok ? "Falha ao calcular rota/pedágio" : null),
+      count,
+      source: tollSource,
+      distanceSource,
+      pedagioReal,
+      error: errors.length ? errors.join(" | ") : null,
     });
     setCalculatingRoute(false);
 
-    if (totalIda > 0 && !pedagioUserEditedRef.current && !pedagioValorConfirmadoRef.current) {
-      setForm((prev) => ({
-        ...prev,
-        pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
-      }));
+    // Prefill só com pedágio Google real. Nunca gravar fallback local incompleto.
+    if (!pedagioUserEditedRef.current && !pedagioValorConfirmadoRef.current) {
+      if (pedagioReal && totalIda > 0) {
+        setForm((prev) => ({
+          ...prev,
+          pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
+        }));
+      } else {
+        setForm((prev) => (prev.pedagioEstimado ? { ...prev, pedagioEstimado: "" } : prev));
+      }
     }
   }, [originCoords, destCoords]);
 
@@ -1603,7 +1673,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                             </span>
                           )}
                           <span className="text-[10px] text-neutral-400">
-                            fonte: {routeEstimate?.distanceSource || "—"}
+                            fonte: {routeEstimate?.distanceSource === "directions"
+                              ? "Google Directions"
+                              : routeEstimate?.distanceSource === "google"
+                                ? "Google Routes"
+                                : routeEstimate?.distanceSource || "—"}
                           </span>
                         </div>
                       ) : (
@@ -1772,47 +1846,43 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </label>
                 {routeReadyForTable && (
                   <div
-                    className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 space-y-1.5"
+                    className={`mt-2 rounded-md border px-2.5 py-2 space-y-1.5 ${
+                      routeEstimate?.pedagioReal
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-red-200 bg-red-50"
+                    }`}
                     data-testid="panel-pedagio-estimado-aviso"
                   >
                     <div className="flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                      <p className="text-[10px] font-black uppercase tracking-wider text-amber-900">
-                        Pedágio estimado (ida) — integração
+                      <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${routeEstimate?.pedagioReal ? "text-emerald-700" : "text-red-700"}`} />
+                      <p className={`text-[10px] font-black uppercase tracking-wider ${routeEstimate?.pedagioReal ? "text-emerald-900" : "text-red-900"}`}>
+                        Pedágio estimado (ida) — {routeEstimate?.pedagioReal ? "Google Routes (real)" : "aguardando valor real"}
                       </p>
                     </div>
                     {(routeEstimate?.loading || calculatingRoute) ? (
-                      <p className="text-[11px] text-amber-800 flex items-center gap-1.5">
+                      <p className="text-[11px] text-neutral-700 flex items-center gap-1.5">
                         <Loader2 className="w-3 h-3 animate-spin" /> Consultando pedágios (Google Routes)...
                       </p>
-                    ) : (
+                    ) : routeEstimate?.pedagioReal ? (
                       <>
-                        <p className="text-[11px] text-amber-900">
-                          Valor da integração
-                          {routeEstimate?.source && routeEstimate.source !== "none" ? ` (${routeEstimate.source})` : ""}:{" "}
+                        <p className="text-[11px] text-emerald-950">
+                          Valor Google:{" "}
                           <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida">
-                            {Number(routeEstimate?.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            {Number(routeEstimate.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </span>
                           {" "}ida
                           {form.pedagioIdaVolta && (
                             <>
                               {" · "}
                               <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida-volta">
-                                {Number(routeEstimate?.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                {Number(routeEstimate.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                               </span>
                               {" "}ida+volta
                             </>
                           )}
-                          {routeEstimate && routeEstimate.count > 0 ? ` · ${routeEstimate.count} praça(s)` : ""}
                         </p>
-                        {(routeEstimate?.totalIda || 0) <= 0 && (
-                          <p className="text-[10px] text-red-700 font-semibold" data-testid="warn-pedagio-zero">
-                            Integração retornou R$ 0,00. Verifique se a Routes API / chave Google está ativa no servidor.
-                            {routeEstimate?.error ? ` ${routeEstimate.error}` : ""}
-                          </p>
-                        )}
-                        <p className="text-[10px] text-amber-800 leading-snug">
-                          O campo acima é preenchido automaticamente. Confirme se está de acordo — a decisão final fica na conferência ao fechar a OS.
+                        <p className="text-[10px] text-emerald-800 leading-snug">
+                          Preenchido automaticamente. Confirme se está de acordo (referência Sem Parar pode variar por TAG/desconto).
                         </p>
                         <label className="flex items-start gap-2 cursor-pointer select-none" data-testid="check-pedagio-valor-ok">
                           <input
@@ -1825,6 +1895,18 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                             Confirmei que o valor do pedágio estimado está de acordo
                           </span>
                         </label>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[11px] text-red-900 font-semibold" data-testid="warn-pedagio-nao-real">
+                          Não foi possível obter pedágio real do Google Routes. O fallback local foi bloqueado (ele gerava valores irreais, ex.: R$ 8,60 nesta rota).
+                        </p>
+                        <p className="text-[10px] text-red-800 leading-snug">
+                          Habilite a <strong>Routes API</strong> na chave `VITE_GOOGLE_MAPS_API_KEY` (Google Cloud) com cobrança de pedágios (TOLLS). Enquanto isso, informe o pedágio manualmente (ex.: Sem Parar ≈ R$ 48,60 Itapevi→Floripa).
+                        </p>
+                        {routeEstimate?.error && (
+                          <p className="text-[10px] text-red-700 break-words" data-testid="text-pedagio-erro-api">{routeEstimate.error}</p>
+                        )}
                       </>
                     )}
                   </div>

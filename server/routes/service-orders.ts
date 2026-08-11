@@ -1138,13 +1138,18 @@ import type { Express } from "express";
               destLng: finalDestLng,
               waypoints: wpCoords,
             });
-            totalIdaCusto = tollResult.totalIda;
-            plazaCount = tollResult.count;
-            tollSource = tollResult.source;
-            plazaNames =
-              tollResult.source === "google"
-                ? "Google Routes API"
-                : (tollResult.plazas || []).map((p) => p.name).join(", ") || "Estimativa local";
+            // Só lança automaticamente pedágio Google real. Fallback local é incompleto
+            // (ex.: Itapevi→Floripa ~R$ 8 vs ~R$ 48 Sem Parar) e não deve virar fato.
+            if (tollResult.source === "google" && tollResult.totalIda > 0) {
+              totalIdaCusto = tollResult.totalIda;
+              plazaCount = tollResult.count;
+              tollSource = "google";
+              plazaNames = "Google Routes API";
+            } else {
+              console.warn(
+                `[OS ${data.osNumber}] Pedágio auto IGNORADO (source=${tollResult.source}, ida=${tollResult.totalIda}). Aguardando valor do formulário/Google.`,
+              );
+            }
           } catch (tollErr: any) {
             console.warn(`[OS ${data.osNumber}] Falha calculate tolls (não bloqueia OS):`, tollErr?.message);
           }
