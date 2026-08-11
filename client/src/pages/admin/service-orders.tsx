@@ -871,6 +871,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [tollInfo, setTollInfo] = useState<{
+    loading: boolean;
+    source: string;
+    totalIda: number;
+    totalIdaVolta: number;
+    count: number;
+    error?: string | null;
+  } | null>(null);
+  /** Operador confirmou/ajustou o valor sugerido — não sobrescrever em recalc. */
+  const [pedagioValorConfirmado, setPedagioValorConfirmado] = useState(!!(order as any)?.pedagioEstimado);
+  const [pedagioUserEdited, setPedagioUserEdited] = useState(false);
+  const tollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTollKeyRef = useRef<string>("");
   const nowLocal = () => utcToLocalInput(new Date().toISOString());
 
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({
@@ -962,18 +975,75 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     setForm(prev => ({ ...prev, ...updates }));
   };
 
-  const calcRoute = async (orig: string, dest: string) => {
+  const calcTolls = useCallback(async (
+    orig: string,
+    dest: string,
+    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
+  ) => {
+    const key = `${orig.trim().toLowerCase()}|${dest.trim().toLowerCase()}|${coords?.oLat || ""}|${coords?.dLat || ""}`;
+    if (key === lastTollKeyRef.current) return;
+    lastTollKeyRef.current = key;
+    setTollInfo({ loading: true, source: "none", totalIda: 0, totalIdaVolta: 0, count: 0 });
+    try {
+      const resp = await apiRequest("POST", "/api/calculate-tolls", {
+        origin: orig.trim(),
+        destination: dest.trim(),
+        originLat: coords?.oLat ?? originCoords?.lat ?? null,
+        originLng: coords?.oLng ?? originCoords?.lng ?? null,
+        destLat: coords?.dLat ?? destCoords?.lat ?? null,
+        destLng: coords?.dLng ?? destCoords?.lng ?? null,
+      });
+      const data = await resp.json();
+      const totalIda = Number(data.totalIda || 0);
+      const totalIdaVolta = Number(data.totalIdaVolta || 0);
+      setTollInfo({
+        loading: false,
+        source: data.source || "none",
+        totalIda,
+        totalIdaVolta,
+        count: data.count || 0,
+        error: data.error || null,
+      });
+      // Prefill só se operador ainda não confirmou/editou manualmente.
+      if (totalIda > 0 && !pedagioUserEdited && !pedagioValorConfirmado) {
+        setForm((prev) => ({
+          ...prev,
+          pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
+        }));
+      }
+    } catch {
+      setTollInfo({ loading: false, source: "none", totalIda: 0, totalIdaVolta: 0, count: 0, error: "Falha ao calcular" });
+    }
+  }, [originCoords, destCoords, pedagioUserEdited, pedagioValorConfirmado]);
+
+  const scheduleTollCalc = useCallback((
+    orig: string,
+    dest: string,
+    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
+  ) => {
+    if (!orig.trim() || !dest.trim() || orig.trim().length < 3 || dest.trim().length < 3) return;
+    if (tollDebounceRef.current) clearTimeout(tollDebounceRef.current);
+    tollDebounceRef.current = setTimeout(() => {
+      void calcTolls(orig, dest, coords);
+    }, 800);
+  }, [calcTolls]);
+
+  const calcRoute = async (
+    orig: string,
+    dest: string,
+    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
+  ) => {
     if (!orig.trim() || !dest.trim()) { setRouteInfo(null); return; }
     const routeStr = `${orig.trim()} → ${dest.trim()}`;
     setForm(prev => ({
       ...prev,
       route: routeStr,
       origin: orig.trim(),
-      originLat: originCoords?.lat || null,
-      originLng: originCoords?.lng || null,
+      originLat: coords?.oLat ?? originCoords?.lat ?? null,
+      originLng: coords?.oLng ?? originCoords?.lng ?? null,
       destination: dest.trim(),
-      destinationLat: destCoords?.lat || null,
-      destinationLng: destCoords?.lng || null,
+      destinationLat: coords?.dLat ?? destCoords?.lat ?? null,
+      destinationLng: coords?.dLng ?? destCoords?.lng ?? null,
     }));
     setCalculatingRoute(true);
     try {
@@ -983,29 +1053,51 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       setRouteInfo(null);
     }
     setCalculatingRoute(false);
+    scheduleTollCalc(orig, dest, coords);
   };
 
   const handleOriginSelect = (p: { lat: number; lng: number }, address: string) => {
     setOriginCoords({ lat: p.lat, lng: p.lng });
+    lastTollKeyRef.current = "";
+    // Nova rota → nova sugestão, salvo se o operador já digitou o valor à mão.
+    if (!pedagioUserEdited) setPedagioValorConfirmado(false);
     setForm(prev => {
       const updated = { ...prev, origin: address, originLat: p.lat, originLng: p.lng };
-      if (prev.destination) calcRoute(address, prev.destination);
+      if (prev.destination) {
+        calcRoute(address, prev.destination, {
+          oLat: p.lat, oLng: p.lng,
+          dLat: prev.destinationLat, dLng: prev.destinationLng,
+        });
+      }
       return updated;
     });
   };
 
   const handleDestSelect = (p: { lat: number; lng: number }, address: string) => {
     setDestCoords({ lat: p.lat, lng: p.lng });
+    lastTollKeyRef.current = "";
+    if (!pedagioUserEdited) setPedagioValorConfirmado(false);
     setForm(prev => {
       const updated = { ...prev, destination: address, destinationLat: p.lat, destinationLng: p.lng };
-      if (prev.origin) calcRoute(prev.origin, address);
+      if (prev.origin) {
+        calcRoute(prev.origin, address, {
+          oLat: prev.originLat, oLng: prev.originLng,
+          dLat: p.lat, dLng: p.lng,
+        });
+      }
       return updated;
     });
   };
 
   useEffect(() => {
     if (order && (order as any).origin && (order as any).destination && !routeInfo) {
-      calcRoute((order as any).origin, (order as any).destination);
+      // Edição: mostra distância; NÃO sobrescreve pedágio já salvo (cache/confirmado).
+      calcRoute((order as any).origin, (order as any).destination, {
+        oLat: (order as any).originLat,
+        oLng: (order as any).originLng,
+        dLat: (order as any).destinationLat,
+        dLng: (order as any).destinationLng,
+      });
     }
   }, []);
 
@@ -1393,13 +1485,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 )}
               </div>
               <div>
-                <FieldLabel>Pedágio (R$)</FieldLabel>
+                <FieldLabel>Pedágio estimado — ida (R$)</FieldLabel>
                 <div className="relative">
                   <Input
                     type="text"
                     inputMode="decimal"
                     value={form.pedagioEstimado}
-                    onChange={(e) => setForm(prev => ({ ...prev, pedagioEstimado: maskBRL(e.target.value) }))}
+                    onChange={(e) => {
+                      setPedagioUserEdited(true);
+                      setPedagioValorConfirmado(false);
+                      setForm(prev => ({ ...prev, pedagioEstimado: maskBRL(e.target.value) }));
+                    }}
                     placeholder="0,00"
                     className="text-sm font-mono"
                     data-testid="input-os-pedagio"
@@ -1414,6 +1510,61 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
+                {(tollInfo?.loading || (tollInfo && tollInfo.totalIda > 0) || tollInfo?.error) && (
+                  <div
+                    className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 space-y-1.5"
+                    data-testid="panel-pedagio-estimado-aviso"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <p className="text-[10px] font-black uppercase tracking-wider text-amber-900">
+                        Rota calculada — confirme o pedágio
+                      </p>
+                    </div>
+                    {tollInfo.loading ? (
+                      <p className="text-[11px] text-amber-800 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Consultando pedágios (Google Routes)...
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-[11px] text-amber-900">
+                          Sugestão {tollInfo.source === "google" ? "Google" : tollInfo.source === "local" ? "local" : ""}:{" "}
+                          <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida">
+                            {Number(tollInfo.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                          {" "}ida
+                          {form.pedagioIdaVolta && (
+                            <>
+                              {" · "}
+                              <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida-volta">
+                                {Number(tollInfo.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </span>
+                              {" "}ida+volta
+                            </>
+                          )}
+                          {tollInfo.count > 0 ? ` · ${tollInfo.count} praça(s)` : ""}
+                        </p>
+                        <p className="text-[10px] text-amber-800 leading-snug">
+                          O sistema pode lançar essa estimativa na OS. Confirme se o valor está de acordo — a decisão final na cobrança fica na conferência ao fechar a OS (de/para com o agente).
+                        </p>
+                        {tollInfo.error && tollInfo.totalIda <= 0 && (
+                          <p className="text-[10px] text-red-600">{tollInfo.error}</p>
+                        )}
+                        <label className="flex items-start gap-2 cursor-pointer select-none" data-testid="check-pedagio-valor-ok">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={pedagioValorConfirmado}
+                            onChange={(e) => setPedagioValorConfirmado(e.target.checked)}
+                          />
+                          <span className="text-[11px] font-semibold text-neutral-800 leading-snug">
+                            Confirmei que o valor do pedágio estimado está de acordo
+                          </span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <FieldLabel>Solicitante</FieldLabel>
@@ -1607,7 +1758,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm(prev => ({ ...prev, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null })); setRouteInfo(null); setOriginCoords(null); setDestCoords(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => {
+                        setForm(prev => ({ ...prev, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }));
+                        setRouteInfo(null);
+                        setOriginCoords(null);
+                        setDestCoords(null);
+                        setTollInfo(null);
+                        lastTollKeyRef.current = "";
+                      }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>

@@ -2275,7 +2275,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       const user = req.user!;
       const ajustes = Array.isArray(pedagioAjustes) ? pedagioAjustes : [];
-      const { totalDespesa, adjustedIds } = await applyPedagioAjustes({
+      const { totalDespesa, adjustedIds, depara } = await applyPedagioAjustes({
         serviceOrderId: Number(serviceOrderId),
         ajustes,
         actorName: user.name || "ADMIN",
@@ -2283,7 +2283,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       const { data: pedCosts } = await supabaseAdmin
         .from("mission_costs")
-        .select("id, category, cost_type")
+        .select("id, category, cost_type, description, employee_id, amount")
         .eq("service_order_id", Number(serviceOrderId));
       const expenseCount = (pedCosts || []).filter((c) => {
         const cat = String(c.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -2294,6 +2294,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         status: "concluída",
         missionStatus: "encerrada",
         completedDate: nowBRTString(),
+        // Snapshot do valor confirmado pelo operador (projeção/SSOT de campo da OS).
+        pedagioEstimado: totalDespesa,
       };
 
       if (so.kitId) {
@@ -2310,6 +2312,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         totalDespesa,
         adjustedIds,
         expenseCount,
+        estimado: Number((so as any).pedagioEstimado) || depara.estimado,
+        agentes: depara.agentes,
       });
       const finishEntry = {
         step: "encerrada",

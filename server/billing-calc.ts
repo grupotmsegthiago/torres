@@ -191,15 +191,19 @@ export function splitMissionCostsForBilling(mcs: Array<any>): {
     const amt = n((mc as any).amount);
     const isRevenue = ((mc as any).cost_type ?? (mc as any).costType) === "revenue";
     const catRaw = String((mc as any).category || "").trim().toLowerCase();
-    // Match EXATO da categoria "Pedágio" criada automaticamente pelo sistema.
-    // Categorias custom como "Pedágio Cliente" são receitas legítimas e NÃO devem ser ignoradas.
-    const isPedagioExpenseCat = catRaw === "pedágio" || catRaw === "pedagio";
+    // Match categoria "Pedágio" do sistema + variante "Pedágio (Receita)".
+    // Categorias custom como "Pedágio Cliente" NÃO entram (não começam com "pedágio (").
+    const isPedagioCat =
+      catRaw === "pedágio" ||
+      catRaw === "pedagio" ||
+      catRaw.startsWith("pedágio (") ||
+      catRaw.startsWith("pedagio (");
     const isCombustivel = catRaw.includes("combustível") || catRaw.includes("combustivel") || catRaw.includes("abastecimento");
     if (isRevenue) {
       // Pedágio duplicado: o sistema cria a entry revenue automaticamente quando há expense
       // de pedágio. NÃO somar em receitas_os — o repasse já está representado por despesas_pedagio
       // na fórmula fat_total.
-      if (isPedagioExpenseCat) continue;
+      if (isPedagioCat) continue;
       receitas_os += amt;
       revenueItems.push({
         id: (mc as any).id,
@@ -208,7 +212,7 @@ export function splitMissionCostsForBilling(mcs: Array<any>): {
         category: (mc as any).category || "Outros",
       });
     } else {
-      if (isPedagioExpenseCat) despesas_pedagio += amt;
+      if (isPedagioCat) despesas_pedagio += amt;
       else if (isCombustivel) despesas_combustivel += amt;
       else despesas_outras += amt;
     }

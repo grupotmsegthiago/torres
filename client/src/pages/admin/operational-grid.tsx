@@ -3856,6 +3856,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                     serviceOrderId={v.activeOs?.id}
                     active={missionAction === "finish"}
                     onChange={setPedagioReview}
+                    pedagioEstimadoOs={(v.activeOs as any)?.pedagioEstimado ?? null}
                     testIdPrefix={`pedagio-review-${v.id}`}
                   />
                 )}
@@ -4673,6 +4674,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 serviceOrderId={v.activeOs?.id}
                 active={missionAction === "finish"}
                 onChange={setPedagioReview}
+                pedagioEstimadoOs={(v.activeOs as any)?.pedagioEstimado ?? null}
                 testIdPrefix={`ctx-pedagio-review-${v.id}`}
               />
             )}
