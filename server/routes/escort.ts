@@ -6,6 +6,7 @@ import type { Express } from "express";
   import { withSwrCache, bustSwrCache } from "../lib/swr-cache";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
   import { bustBalancoCaches } from "../lib/balanco-cache";
+  import { fetchAllSupabaseRows } from "../lib/supabase-page";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
@@ -1631,14 +1632,17 @@ import type { Express } from "express";
   app.get("/api/escort/billings", requireAdminRole, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
-      let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
-      if (client_id) query = query.eq("client_id", client_id);
-      if (status) query = query.eq("status", status as string);
-      if (from) query = query.gte("data_missao", from as string);
-      if (to) query = query.lte("data_missao", to as string);
-      const { data, error } = await query;
-      if (error) throw error;
-      const list = data || [];
+      // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista
+      // (ordenada DESC) perde billings antigos; o Boletim "parece ok" só porque
+      // os recentes cabem na 1ª página — o Balanço (ASC) perdia os recentes.
+      const list = await fetchAllSupabaseRows((offset, limitTo) => {
+        let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
+        if (client_id) query = query.eq("client_id", client_id);
+        if (status) query = query.eq("status", status as string);
+        if (from) query = query.gte("data_missao", from as string);
+        if (to) query = query.lte("data_missao", to as string);
+        return query.range(offset, limitTo);
+      });
 
       // Enriquecer com status real da OS para que o cliente saiba diferenciar
       // RECUSADA (operacional não atendeu) de CANCELADA (cliente cancelou).
@@ -2655,16 +2659,26 @@ import type { Express } from "express";
   });
 
   app.get("/api/financial/dashboard", requireAuth, requireAdminRole, withSwrCache({
-    baseKey: "financial-dashboard",
+    // v2: billings paginados (>1000). Snapshot antigo (v1) truncava ASC e sumia
+    // canceladas recentes do byMission → Balanço caía no liveFat (TOR-0560).
+    baseKey: "financial-dashboard-v2",
     ttlMs: SWR_TTL_3H,
     // Warm-up: o dashboard não tem parâmetros — uma chave só.
     warmQueries: () => [{}],
   }, async (req, res) => {
     try {
-      const { data: billingsRaw, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
-      if (bErr) throw bErr;
+      // Paginação obrigatória (mesmo padrão das FTs abaixo). Sem isso o PostgREST
+      // devolve só 1000 linhas; com order ASC por data_missao, OS recentes (ex.
+      // TOR-0560 cancelada) ficam de fora do byMission e o Balanço usa canônico.
+      const billingsRaw = await fetchAllSupabaseRows((offset, limitTo) =>
+        supabaseAdmin
+          .from("escort_billings")
+          .select("*")
+          .order("data_missao", { ascending: true })
+          .range(offset, limitTo),
+      );
       const billingDedup = new Map<number, any>();
-      for (const b of (billingsRaw || [])) {
+      for (const b of billingsRaw) {
         const soId = Number(b.service_order_id);
         if (!soId) continue;
         const existing = billingDedup.get(soId);
@@ -2674,22 +2688,13 @@ import type { Express } from "express";
       }
       const billings = Array.from(billingDedup.values());
 
-      // Pagina pra superar o limite default de 1000 do Supabase REST
-      const transactions: any[] = [];
-      const PAGE_SIZE = 1000;
-      let offset = 0;
-      while (true) {
-        const { data: page, error: tErr } = await supabaseAdmin
+      const transactions = await fetchAllSupabaseRows((offset, limitTo) =>
+        supabaseAdmin
           .from("financial_transactions")
           .select("*")
           .order("due_date", { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (tErr) throw tErr;
-        if (!page || page.length === 0) break;
-        transactions.push(...page);
-        if (page.length < PAGE_SIZE) break;
-        offset += PAGE_SIZE;
-      }
+          .range(offset, limitTo),
+      );
 
       const { data: vehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model");
       const { data: employees } = await supabaseAdmin.from("employees").select("id, name");
@@ -2922,26 +2927,35 @@ import type { Express } from "express";
         missionsByDay[d].push(b);
       });
 
-      const { data: invoicesForCancel } = await supabaseAdmin
-        .from("invoices")
-        .select("id, service_order_id, nfse_status, status");
+      const invoicesForCancel = await fetchAllSupabaseRows((offset, limitTo) =>
+        supabaseAdmin
+          .from("invoices")
+          .select("id, service_order_id, nfse_status, status")
+          .order("id", { ascending: true })
+          .range(offset, limitTo),
+      );
       const isNfCancelled = (s: string | null | undefined) =>
         !!s && /CANCEL/i.test(String(s));
       const cancelledInvoiceIds = new Set<number>();
       const cancelledNfSoIds = new Set<number>();
-      for (const inv of (invoicesForCancel || [])) {
+      for (const inv of invoicesForCancel) {
         if (!isNfCancelled(inv.nfse_status) && !isNfCancelled(inv.status)) continue;
         cancelledInvoiceIds.add(Number(inv.id));
         if (inv.service_order_id) cancelledNfSoIds.add(Number(inv.service_order_id));
       }
       // billings vinculados (via invoice_id) a NFs canceladas — também devem zerar
       if (cancelledInvoiceIds.size > 0) {
-        const { data: billingsLinked } = await supabaseAdmin
-          .from("escort_billings")
-          .select("service_order_id, invoice_id")
-          .in("invoice_id", Array.from(cancelledInvoiceIds));
-        for (const b of (billingsLinked || [])) {
-          if (b.service_order_id) cancelledNfSoIds.add(Number(b.service_order_id));
+        const invoiceIdList = Array.from(cancelledInvoiceIds);
+        const INVOICE_CHUNK = 150;
+        for (let i = 0; i < invoiceIdList.length; i += INVOICE_CHUNK) {
+          const slice = invoiceIdList.slice(i, i + INVOICE_CHUNK);
+          const { data: billingsLinked } = await supabaseAdmin
+            .from("escort_billings")
+            .select("service_order_id, invoice_id")
+            .in("invoice_id", slice);
+          for (const b of (billingsLinked || [])) {
+            if (b.service_order_id) cancelledNfSoIds.add(Number(b.service_order_id));
+          }
         }
       }
 

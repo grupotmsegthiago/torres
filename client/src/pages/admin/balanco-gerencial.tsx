@@ -5,6 +5,7 @@ import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
 import { computeProjection } from "@/lib/balanco-projection";
+import { resolveBalancoOsRevenue } from "@/lib/balanco-revenue";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,13 +35,6 @@ import {
   resolveCustomPeriodArgs,
   costDaysForPeriod,
 } from "@/lib/balanco-period";
-
-// Boletins nesses status foram conferidos e CONGELADOS por uma pessoa (aprovador/diretoria).
-// O valor travado é a verdade — o recálculo ao vivo NÃO pode sobrescrevê-lo (pode ler dado sujo,
-// ex.: foto de km_final duplicada). Só boletins não-aprovados (A_VERIFICAR) recalculam ao vivo.
-// APROVADA/FATURADO/PAGO = boletim conferido. CANCELADO/CANCELADA = §8.1b tabela 100 km
-// (valor já calculado no cancelamento — NÃO pode cair no liveFat do contrato cheio).
-const FROZEN_BILLING_STATUSES = new Set(["APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA"]);
 
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -393,14 +387,11 @@ export default function BalancoGerencialPage() {
         //   - boletim APROVADA/FATURADO/PAGO — valor conferido e travado por uma pessoa, é a verdade e
         //     não pode ser sobrescrito por recálculo ao vivo (que pode ler foto de km duplicada).
         const liveFat = Number(lcCanon?.faturamento ?? lc.faturamento_live ?? lc.faturamento) || 0;
-        const isCancelada = (o.status || "").toLowerCase() === "cancelada";
-        const billStatus = String(bill?.status || "").toUpperCase();
-        const billFrozen = !!bill && FROZEN_BILLING_STATUSES.has(billStatus);
-        // Preferir fat_total_boletim; fallback fat_total (mesmo valor persistido no escort_billings).
-        const boletimFat = Number(bill?.fat_total_boletim ?? bill?.fat_total) || 0;
-        // Cancelada OU boletim congelado/CANCELADO → usa valor do boletim (§8.1b), nunca liveFat.
-        const useBoletim = (isCancelada || billFrozen) && !!bill && boletimFat > 0;
-        const fat = useBoletim ? boletimFat : liveFat;
+        // Fonte única: resolveBalancoOsRevenue — cancelada = snapshot 100 km (§8.1b), nunca canônico.
+        // Fail-closed se billing faltar no byMission (truncamento histórico >1000 linhas).
+        const rev = resolveBalancoOsRevenue({ osStatus: o.status, liveFat, bill });
+        const useBoletim = rev.useBoletim;
+        const fat = rev.fat;
         const km = bill ? (Number(bill.km_total) || Number(lc.km_total) || 0) : (Number(lc.km_total) || 0);
         const pag = bill ? Number(bill.pag_total || 0) : 0;
         const despPedagio = bill ? Number(bill.despesas_pedagio || 0) : 0;
@@ -458,8 +449,8 @@ export default function BalancoGerencialPage() {
           status: o.status,
           // Origem do faturamento desta linha: `true` = valor TRAVADO (APROVADA/FATURADO/PAGO
           // ou CANCELADO §8.1b) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
-          // — entra em "Em Aberto". Mesma flag que decide useBoletim acima.
-          is_frozen: useBoletim,
+          // — entra em "Em Aberto". Cancelada sem snapshot também fica frozen (fail-closed).
+          is_frozen: rev.isFrozen,
           client_name: o.clientName || bill?.client_name || "",
         };
       });
