@@ -23,16 +23,20 @@ No Balanço, `APROVADA` continua **Finalizado**.
 2. App: remove `REOPEN_APPROVED` no force; force só arquiva boletim conflitante
 3. `APROVADA` entra em `sendable` na partição de envio
 4. Governança `04` — esclarecimento APROVADA ≠ boletim do cliente
+5. Migration `20260817223000_restore_aprovada_from_force_reopen.sql` — recuperação auditada
 
-### Risco
+### Execução em produção (2026-08-17)
 
-- **Obrigatório aplicar a migration no Supabase** antes do deploy de app; sem ela a RPC antiga ainda rejeita `APROVADA`
-- OS reabertas por engano no fix anterior (`A_VERIFICAR`) **não** são restauradas automaticamente — decidir recuperação auditada à parte
+- RPC aplicada (bloqueio só faturada/paga) — confirmado via `pg_get_functiondef`
+- **56** billings restaurados `A_VERIFICAR → APROVADA` via `FREEZE_COMMERCIAL` + audit `RESTORE_APPROVED_INTERNAL`
+- `still_a_verificar` pós-restore = **0**
+- Snapshots SWR `financial-dashboard*` / `operational-grid*` limpos
 
 ### Testes
 
-- `server/lib/billing-frozen.test.ts`
+- `server/lib/billing-frozen.test.ts` (11/11)
 
 ### Rollback
 
-- Reverter migration (voltar `APROVADA` no IN do frozen check) + revert do app
+- Reverter RPC (voltar `APROVADA` no IN) + revert do app
+- Restauração: não reabrir em massa sem decisão; audit trail preservado

@@ -2,6 +2,15 @@
 -- Enviar/reenviar boletim NÃO pode exigir reabertura nem bloquear snapshot.
 -- Bloqueio de create_boletim_approval_atomic: só FATURADO / FATURADA / PAGO.
 -- Cliente aprovar medição (boletim_approvals) é processo separado.
+--
+-- Hosted: função pertence a torres_billing_rpc_owner (ACL PR5B.1-TX).
+
+BEGIN;
+
+GRANT USAGE, CREATE ON SCHEMA public TO torres_billing_rpc_owner;
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH INHERIT FALSE;
+GRANT torres_billing_rpc_owner TO CURRENT_USER WITH SET TRUE;
+SET LOCAL ROLE torres_billing_rpc_owner;
 
 CREATE OR REPLACE FUNCTION public.create_boletim_approval_atomic(
   p_token text,
@@ -214,3 +223,10 @@ COMMENT ON FUNCTION public.create_boletim_approval_atomic(
   text, integer, text, text, date, date, text[], numeric,
   integer, text, integer, jsonb
 ) IS 'PR5B.1-TX: snapshot de boletim; APROVADA (interna) permitida; bloqueia só FATURADO/FATURADA/PAGO.';
+
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM torres_billing_rpc_owner;
+REVOKE SET OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;
+REVOKE INHERIT OPTION FOR torres_billing_rpc_owner FROM CURRENT_USER;
+
+COMMIT;
