@@ -167,6 +167,7 @@ export default function RelatorioFaturamentoPage() {
   };
   const approvedBillings = useMemo(() => billings.filter(isFaturavelBilling), [billings]);
   const faturadoBillings = useMemo(() => billings.filter(b => b.status === "FATURADO" || b.status === "FATURADA"), [billings]);
+  const sendableBillings = approvedBillings;
 
   const liberarRefaturarMutation = useMutation({
     mutationFn: async (billingIds: string[]) => {
@@ -281,9 +282,20 @@ export default function RelatorioFaturamentoPage() {
       toast({ title: "E-mail inválido", description: "Informe um e-mail válido do cliente.", variant: "destructive" });
       return;
     }
+    // Só OS faturáveis: exclui recusada/rejeitada e já faturada/paga (§8.1 + invoice).
+    const sendBillings = sendableBillings;
+    if (sendBillings.length === 0) {
+      toast({
+        title: "Nada para enviar",
+        description: "Não há OS elegíveis neste período (recusadas/faturadas não entram no boletim).",
+        variant: "destructive",
+      });
+      return;
+    }
     setSendLoading(true);
     try {
-      const billingIds = billings.map((b: any) => b.id);
+      const billingIds = sendBillings.map((b: any) => b.id);
+      const sendTotal = sendableTotal;
       const cd = clients.find((c: any) => c.id.toString() === selectedClient);
       const resp = await authFetch("/api/boletim/enviar-aprovacao", {
         method: "POST",
@@ -295,7 +307,7 @@ export default function RelatorioFaturamentoPage() {
           periodStart: startDate,
           periodEnd: endDate,
           billingIds,
-          totalValue: grandTotal,
+          totalValue: sendTotal,
           osCount: billingIds.length,
           force,
         }),
@@ -335,12 +347,15 @@ export default function RelatorioFaturamentoPage() {
       if (result.emailError) {
         toast({ title: "Boletim criado, mas e-mail falhou", description: result.emailError, variant: "destructive" });
       } else {
-        toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando aprovação do cliente.` });
+        const extra = result.contractsSynced
+          ? ` (${result.contractsSynced} contrato(s) alinhado(s) automaticamente)`
+          : "";
+        toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando aprovação do cliente.${extra}` });
       }
       setSendDialog(false);
       await refetchApprovalStatus();
       // Reenvio forçado pode ter reaberto APROVADA → A_VERIFICAR; atualiza a grade.
-      if (force) await handleGenerate();
+      if (force || result.contractsSynced) await handleGenerate();
     } catch (err: any) {
       toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
     } finally {
@@ -844,6 +859,10 @@ export default function RelatorioFaturamentoPage() {
   }, [rowsData]);
 
   const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+  const sendableTotal = useMemo(() => {
+    const ids = new Set(sendableBillings.map((b: any) => String(b.id)));
+    return rowsData.filter((r) => ids.has(String(r.billingId))).reduce((s, r) => s + r.totalGeral, 0);
+  }, [rowsData, sendableBillings]);
   // Total p/ Faturamento = Aprovadas + A Verificar + Canceladas (Recusadas e
   // Faturadas/Pagas fora). Usa rowsData.totalGeral que já aplica isCancelada
   // (acionamento + extras) e isRecusada (zera) corretamente.
@@ -2019,8 +2038,8 @@ export default function RelatorioFaturamentoPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Valor Total</p>
-                  <p className="text-xl font-black font-mono text-blue-800" data-testid="text-send-total">{fmt(grandTotal)}</p>
-                  <p className="text-[10px] text-blue-500">{rowsData.length} OS no período</p>
+                  <p className="text-xl font-black font-mono text-blue-800" data-testid="text-send-total">{fmt(sendableTotal)}</p>
+                  <p className="text-[10px] text-blue-500">{sendableBillings.length} OS no boletim{billings.length > sendableBillings.length ? ` (${billings.length - sendableBillings.length} recusada(s)/fora)` : ""}</p>
                 </div>
               </div>
             </div>

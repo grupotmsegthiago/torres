@@ -13,6 +13,11 @@ import {
   billingOsLabel,
   partitionBillingsForBoletimSend,
 } from "../lib/billing-frozen";
+import {
+  classifyBillingsForBoletimSend,
+  planContractHeals,
+} from "../lib/boletim-send-prepare";
+import { logSystemAudit } from "../audit";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -695,10 +700,60 @@ export function registerBoletimApprovalRoutes(app: Express) {
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id")
           .in("id", soIds);
         ordersData = sos || [];
       }
+      const ordersById = new Map((ordersData || []).map((o: any) => [Number(o.id), o]));
+
+      // Recusada fora do boletim (§8.1). Contrato OS × billing deve bater
+      // (PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH). Heal: OS passa a apontar o
+      // contract_id congelado no billing (tabela que precificou — ex. 100 km).
+      const classified = classifyBillingsForBoletimSend(billingsData, ordersById);
+      if (classified.missingContract.length > 0) {
+        const labels = classified.missingContract.map(billingOsLabel);
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH",
+          message:
+            `Há OS sem contrato tarifário vinculado (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
+            `Vincule a tabela na OS e recalcule antes de enviar.`,
+          osNumbers: labels,
+        });
+      }
+
+      const heals = planContractHeals(classified.contractMismatch);
+      for (const h of heals) {
+        const { error: healErr } = await supabaseAdmin
+          .from("service_orders")
+          .update({ escort_contract_id: h.contractId })
+          .eq("id", h.serviceOrderId);
+        if (healErr) throw healErr;
+        try {
+          await logSystemAudit({
+            userId: user?.id, userName: user?.name || user?.username, userRole: user?.role,
+            action: "BOLETIM_SYNC_CONTRACT",
+            targetId: String(h.serviceOrderId),
+            targetType: "service_order",
+            details: `${h.osNumber}: escort_contract_id alinhado ao billing ${h.billingId} (${h.contractId}) antes do envio do boletim`,
+            ipAddress: req.ip,
+          });
+        } catch (_e) { /* audit best-effort */ }
+        const so = ordersById.get(h.serviceOrderId);
+        if (so) so.escort_contract_id = h.contractId;
+      }
+
+      // Snapshot comercial só com elegíveis (sem recusada).
+      billingsData = classified.eligible;
+      if (billingsData.length === 0) {
+        return res.status(400).json({
+          message: "Nenhuma OS elegível para envio neste período (todas recusadas ou sem contrato).",
+        });
+      }
+      const sendBillingIds = billingsData.map((b: any) => String(b.id));
+      ordersData = billingsData
+        .map((b: any) => ordersById.get(Number(b.service_order_id)))
+        .filter(Boolean);
+
       const isOmega = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
       const processoNumbers = isOmega
         ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
@@ -726,9 +781,8 @@ export function registerBoletimApprovalRoutes(app: Express) {
       // os 4 mostram SEMPRE o mesmo número, mesmo que a OS seja editada
       // depois (boletim já enviado não muda). Ignora `totalValue` do front.
       // ============================================================
-      const ordersById = new Map((ordersData || []).map((o: any) => [o.id, o]));
       const billingSnapshot = billingsData.map((b: any) => {
-        const so = ordersById.get(b.service_order_id) || {};
+        const so = ordersById.get(Number(b.service_order_id)) || {};
         const osStatus = (so as any).status;
         // recusada: zera TODOS os componentes (não só o total) p/ a página de
         // aprovação e o Excel exibirem a OS sem cobrança, coerente com a tela.
@@ -764,10 +818,10 @@ export function registerBoletimApprovalRoutes(app: Express) {
         clientEmail,
         periodStart,
         periodEnd,
-        billingIds: billingIds.map(String),
+        billingIds: sendBillingIds,
         totalValue: canonicalTotal,
         billingSnapshot,
-        osCount: osCount || billingIds.length,
+        osCount: sendBillingIds.length,
         sentBy: user?.name || user?.username || null,
         sentByUserId: user?.id || null,
       });
@@ -777,14 +831,19 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
+        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);
         return res.json({ ...data, emailError: emailErr.message, approvalUrl });
       }
 
-      res.json({ ...data, approvalUrl });
+      res.json({
+        ...data,
+        approvalUrl,
+        excludedRefused: classified.refused.length,
+        contractsSynced: heals.length,
+      });
     } catch (err: any) {
       console.error("[boletim-approval] Erro:", err.message);
       const msg = String(err?.message || "");
@@ -801,6 +860,19 @@ export function registerBoletimApprovalRoutes(app: Express) {
           code: "PR5B1_TX_ACTIVE_APPROVAL_CONFLICT",
           message: "Já existe boletim PENDENTE/APROVADO cobrindo estas OS. Force o reenvio para arquivar o anterior e criar um novo.",
           canForce: true,
+        });
+      }
+      if (msg.includes("PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH",
+          message:
+            "Há OS com contrato tarifário diferente do billing (ou sem contrato). O sistema tenta alinhar automaticamente; se o erro persistir, vincule a tabela correta na OS e recalcule.",
+        });
+      }
+      if (msg.includes("PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH")) {
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH",
+          message: "O boletim inclui OS recusada ou de outro cliente. Remova as recusadas e envie apenas as OS do cliente selecionado.",
         });
       }
       res.status(500).json({ message: err.message });
