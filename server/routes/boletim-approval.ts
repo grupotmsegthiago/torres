@@ -7,7 +7,12 @@ import { bustBalancoCaches } from "../lib/balanco-cache";
 import {
   createBoletimApprovalAtomic,
   freezeBoletimBillingsAtomic,
+  writeEscortBillingAtomic,
 } from "../lib/atomic-billing";
+import {
+  billingOsLabel,
+  partitionBillingsForBoletimSend,
+} from "../lib/billing-frozen";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -577,12 +582,115 @@ export function registerBoletimApprovalRoutes(app: Express) {
         }
   
 
-      const { data: billingsData } = await supabaseAdmin
+      const { data: billingsDataRaw } = await supabaseAdmin
         .from("escort_billings")
         .select("*")
         .in("id", billingIds);
 
-      const soIds = (billingsData || []).map((b: any) => b.service_order_id).filter(Boolean);
+      let billingsData = billingsDataRaw || [];
+      if (billingsData.length !== billingIds.length) {
+        return res.status(400).json({
+          message: "Uma ou mais OS do boletim não foram encontradas. Regenerue o relatório e tente novamente.",
+          code: "PR5B1_TX_SNAPSHOT_BILLING_NOT_FOUND",
+        });
+      }
+
+      // create_boletim_approval_atomic rejeita APROVADA/FATURADO/FATURADA/PAGO
+      // (PR5B1_TX_SNAPSHOT_FROZEN_BILLING). Reenvio forçado: arquiva aprovação
+      // ativa, reabre APROVADA → A_VERIFICAR; faturada/paga exige liberar antes.
+      const partition = partitionBillingsForBoletimSend(billingsData);
+      if (partition.faturadas.length > 0) {
+        const labels = partition.faturadas.map(billingOsLabel);
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+          message:
+            `Não é possível enviar medição com OS já faturada/paga (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
+            `Libere para refaturamento essas OS e tente novamente.`,
+          frozenBillingIds: partition.faturadas.map((b: any) => String(b.id)),
+          frozenOsNumbers: labels,
+          reason: "invoiced",
+        });
+      }
+
+      if (partition.aprovadas.length > 0 && !force) {
+        const labels = partition.aprovadas.map(billingOsLabel);
+        return res.status(409).json({
+          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+          message:
+            `Há ${partition.aprovadas.length} OS já APROVADA(s) no período (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
+            `Para reenviar a medição, confirme o reenvio forçado — isso reabre essas OS para uma nova foto comercial.`,
+          frozenBillingIds: partition.aprovadas.map((b: any) => String(b.id)),
+          frozenOsNumbers: labels,
+          reason: "approved",
+          canForce: true,
+        });
+      }
+
+      if (force) {
+        const billingIdsAsStr = billingIds.map((x: any) => String(x));
+        const { data: existing } = await supabaseAdmin
+          .from("boletim_approvals")
+          .select("id, status, billing_ids")
+          .eq("client_id", clientId)
+          .in("status", ["PENDENTE", "APROVADO"]);
+
+        const conflicts = (existing || []).filter((row: any) => {
+          const ids = (row.billing_ids || []).map((x: any) => String(x));
+          return ids.some((id: string) => billingIdsAsStr.includes(id));
+        });
+
+        for (const conflict of conflicts) {
+          const { error: archErr } = await supabaseAdmin
+            .from("boletim_approvals")
+            .update({ status: "ARQUIVADO" })
+            .eq("id", conflict.id)
+            .in("status", ["PENDENTE", "APROVADO"]);
+          if (archErr) throw archErr;
+        }
+
+        if (partition.aprovadas.length > 0) {
+          for (const b of partition.aprovadas) {
+            await writeEscortBillingAtomic({
+              action: "REOPEN_APPROVED",
+              billingId: b.id,
+              serviceOrderId: b.service_order_id,
+              expectedVersion: Number(b.lock_version) || 0,
+              payload: {
+                status: "A_VERIFICAR",
+                revisado_por: null,
+                revisado_em: null,
+                boletim_gerado: false,
+              },
+              actor: {
+                userId: user?.id || null,
+                userName: user?.name || user?.username || null,
+                userRole: user?.role || null,
+                reason: "Reenvio forçado de boletim de medição",
+                ipAddress: req.ip,
+              },
+            });
+          }
+          bustBalancoCaches();
+
+          const { data: reloaded } = await supabaseAdmin
+            .from("escort_billings")
+            .select("*")
+            .in("id", billingIds);
+          billingsData = reloaded || [];
+
+          const after = partitionBillingsForBoletimSend(billingsData);
+          if (after.aprovadas.length > 0 || after.faturadas.length > 0) {
+            return res.status(409).json({
+              code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+              message: "Não foi possível reabrir todas as OS aprovadas/faturadas para o reenvio. Libere ou reabra manualmente e tente de novo.",
+              frozenBillingIds: [...after.aprovadas, ...after.faturadas].map((b: any) => String(b.id)),
+              frozenOsNumbers: [...after.aprovadas, ...after.faturadas].map(billingOsLabel),
+            });
+          }
+        }
+      }
+
+      const soIds = billingsData.map((b: any) => b.service_order_id).filter(Boolean);
       let ordersData: any[] = [];
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
@@ -597,7 +705,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         : [];
 
       let contractsData: any[] = [];
-      const contractIds = [...new Set((billingsData || []).map((b: any) => b.contract_id).filter(Boolean))];
+      const contractIds = [...new Set(billingsData.map((b: any) => b.contract_id).filter(Boolean))];
       if (contractIds.length > 0) {
         const { data: cts } = await supabaseAdmin
           .from("escort_contracts")
@@ -608,7 +716,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       const excelBuffer = await generateBoletimExcel(
         clientName, periodStart, periodEnd,
-        billingsData || [], ordersData, contractsData,
+        billingsData, ordersData, contractsData,
       );
 
       // ============================================================
@@ -619,7 +727,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       // depois (boletim já enviado não muda). Ignora `totalValue` do front.
       // ============================================================
       const ordersById = new Map((ordersData || []).map((o: any) => [o.id, o]));
-      const billingSnapshot = (billingsData || []).map((b: any) => {
+      const billingSnapshot = billingsData.map((b: any) => {
         const so = ordersById.get(b.service_order_id) || {};
         const osStatus = (so as any).status;
         // recusada: zera TODOS os componentes (não só o total) p/ a página de
@@ -679,6 +787,22 @@ export function registerBoletimApprovalRoutes(app: Express) {
       res.json({ ...data, approvalUrl });
     } catch (err: any) {
       console.error("[boletim-approval] Erro:", err.message);
+      const msg = String(err?.message || "");
+      if (msg.includes("PR5B1_TX_SNAPSHOT_FROZEN_BILLING")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+          message:
+            "Há OS com boletim já aprovado/faturado neste envio. Libere para refaturamento (faturadas) ou force o reenvio (aprovadas) para reabrir e gerar nova medição.",
+          canForce: true,
+        });
+      }
+      if (msg.includes("PR5B1_TX_ACTIVE_APPROVAL_CONFLICT")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_ACTIVE_APPROVAL_CONFLICT",
+          message: "Já existe boletim PENDENTE/APROVADO cobrindo estas OS. Force o reenvio para arquivar o anterior e criar um novo.",
+          canForce: true,
+        });
+      }
       res.status(500).json({ message: err.message });
     }
   });

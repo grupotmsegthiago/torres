@@ -3,10 +3,15 @@ import { describe, test } from "node:test";
 
 import {
   billingHasCommercialSnapshot,
+  billingOsLabel,
   COMMERCIAL_FROZEN_BILLING_STATUSES,
   GENERIC_RECALC_PROTECTED_STATUSES,
   isBillingProtected,
   isBillingStatusProtected,
+  isInvoicedBillingStatus,
+  isReopenableForBoletimResend,
+  isSnapshotFrozenBillingStatus,
+  partitionBillingsForBoletimSend,
 } from "./billing-frozen";
 
 function snapshotMock(found = false, error: any = null) {
@@ -96,5 +101,28 @@ describe("billing frozen — contrato normativo", () => {
       billingHasCommercialSnapshot(mock.sb, "billing-4"),
       /Falha ao verificar snapshot comercial/,
     );
+  });
+
+  test("partitionBillingsForBoletimSend separa aprovadas/faturadas/enviáveis", () => {
+    const p = partitionBillingsForBoletimSend([
+      { id: "1", status: "A_VERIFICAR", os_number: "TOR-1" },
+      { id: "2", status: "APROVADA", os_number: "TOR-2" },
+      { id: "3", status: "CANCELADO", os_number: "TOR-3" },
+      { id: "4", status: "FATURADO", os_number: "TOR-4" },
+      { id: "5", status: "pago", os_number: "TOR-5" },
+    ]);
+    assert.deepEqual(p.sendable.map((b) => b.id), ["1", "3"]);
+    assert.deepEqual(p.aprovadas.map((b) => b.id), ["2"]);
+    assert.deepEqual(p.faturadas.map((b) => b.id), ["4", "5"]);
+  });
+
+  test("snapshot frozen / reopen / invoiced helpers", () => {
+    assert.equal(isSnapshotFrozenBillingStatus("APROVADA"), true);
+    assert.equal(isSnapshotFrozenBillingStatus("CANCELADO"), false);
+    assert.equal(isReopenableForBoletimResend("APROVADA"), true);
+    assert.equal(isReopenableForBoletimResend("FATURADO"), false);
+    assert.equal(isInvoicedBillingStatus("FATURADA"), true);
+    assert.equal(billingOsLabel({ os_number: "TOR-0560" }), "TOR-0560");
+    assert.equal(billingOsLabel({ service_order_id: 12 }), "OS-12");
   });
 });
