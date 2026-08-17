@@ -1,5 +1,8 @@
 ## Relatório de Entrega — Reenviar medição (PR5B1_TX_SNAPSHOT_FROZEN_BILLING)
 
+> **SUPERSEDED** por `RELATORIO-ENTREGA-APROVADA-INTERNA-BOLETIM-2026-08-17.md`.  
+> Reabrir `APROVADA → A_VERIFICAR` no force estava incorreto: APROVADA é aprovação interna e não muda no envio.
+
 **Data:** 2026-08-17  
 **Branch:** `cursor/fix-reenviar-boletim-frozen-ea3f`  
 **Publicou?** Não

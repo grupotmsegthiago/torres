@@ -103,7 +103,7 @@ describe("billing frozen — contrato normativo", () => {
     );
   });
 
-  test("partitionBillingsForBoletimSend separa aprovadas/faturadas/enviáveis", () => {
+  test("partitionBillingsForBoletimSend: APROVADA entra no envio; faturada bloqueia", () => {
     const p = partitionBillingsForBoletimSend([
       { id: "1", status: "A_VERIFICAR", os_number: "TOR-1" },
       { id: "2", status: "APROVADA", os_number: "TOR-2" },
@@ -111,15 +111,16 @@ describe("billing frozen — contrato normativo", () => {
       { id: "4", status: "FATURADO", os_number: "TOR-4" },
       { id: "5", status: "pago", os_number: "TOR-5" },
     ]);
-    assert.deepEqual(p.sendable.map((b) => b.id), ["1", "3"]);
+    assert.deepEqual(p.sendable.map((b) => b.id), ["1", "2", "3"]);
     assert.deepEqual(p.aprovadas.map((b) => b.id), ["2"]);
     assert.deepEqual(p.faturadas.map((b) => b.id), ["4", "5"]);
   });
 
-  test("snapshot frozen / reopen / invoiced helpers", () => {
-    assert.equal(isSnapshotFrozenBillingStatus("APROVADA"), true);
+  test("snapshot frozen só faturada/paga; envio nunca reabre APROVADA", () => {
+    assert.equal(isSnapshotFrozenBillingStatus("APROVADA"), false);
+    assert.equal(isSnapshotFrozenBillingStatus("FATURADO"), true);
     assert.equal(isSnapshotFrozenBillingStatus("CANCELADO"), false);
-    assert.equal(isReopenableForBoletimResend("APROVADA"), true);
+    assert.equal(isReopenableForBoletimResend("APROVADA"), false);
     assert.equal(isReopenableForBoletimResend("FATURADO"), false);
     assert.equal(isInvoicedBillingStatus("FATURADA"), true);
     assert.equal(billingOsLabel({ os_number: "TOR-0560" }), "TOR-0560");

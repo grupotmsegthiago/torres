@@ -27,14 +27,18 @@ export function isBillingStatusProtected(status: unknown): boolean {
   return GENERIC_RECALC_PROTECTED_STATUSES.has(normalizeBillingStatus(status));
 }
 
-/** Status que bloqueiam create_boletim_approval_atomic (PR5B1_TX_SNAPSHOT_FROZEN_BILLING). */
+/**
+ * Status que bloqueiam create_boletim_approval_atomic (PR5B1_TX_SNAPSHOT_FROZEN_BILLING).
+ * APROVADA = aprovação interna e pode entrar no snapshot sem reabrir.
+ * Só faturada/paga bloqueia o envio.
+ */
 export function isSnapshotFrozenBillingStatus(status: unknown): boolean {
-  return COMMERCIAL_FROZEN_BILLING_STATUSES.has(normalizeBillingStatus(status));
+  return isInvoicedBillingStatus(status);
 }
 
-/** APROVADA pode ser reaberta no force-reenvio; faturada/paga exige liberar refaturamento. */
-export function isReopenableForBoletimResend(status: unknown): boolean {
-  return normalizeBillingStatus(status) === "APROVADA";
+/** Envio de boletim nunca reabre APROVADA (aprovação interna ≠ aprovação do cliente). */
+export function isReopenableForBoletimResend(_status: unknown): boolean {
+  return false;
 }
 
 export function isInvoicedBillingStatus(status: unknown): boolean {
@@ -44,6 +48,7 @@ export function isInvoicedBillingStatus(status: unknown): boolean {
 
 export type BoletimSendPartition = {
   sendable: any[];
+  /** Informativo: OS com APROVADA (interna) — entram no envio sem reabrir. */
   aprovadas: any[];
   faturadas: any[];
 };
@@ -55,9 +60,12 @@ export function partitionBillingsForBoletimSend(billings: any[]): BoletimSendPar
   const faturadas: any[] = [];
   for (const b of billings || []) {
     const st = normalizeBillingStatus(b?.status);
-    if (st === "APROVADA") aprovadas.push(b);
-    else if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") faturadas.push(b);
-    else sendable.push(b);
+    if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
+      faturadas.push(b);
+    } else {
+      if (st === "APROVADA") aprovadas.push(b);
+      sendable.push(b);
+    }
   }
   return { sendable, aprovadas, faturadas };
 }

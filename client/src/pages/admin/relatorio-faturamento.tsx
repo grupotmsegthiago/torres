@@ -326,23 +326,6 @@ export default function RelatorioFaturamentoPage() {
         toast({ title: "Envio cancelado", description: result.message, variant: "destructive" });
         return;
       }
-      // OS já APROVADA no período — RPC bloqueia snapshot (PR5B1_TX_SNAPSHOT_FROZEN_BILLING).
-      // Oferece force: arquiva boletim anterior e reabre APROVADA → A_VERIFICAR.
-      if (resp.status === 409 && result?.canForce && !force) {
-        const osHint = Array.isArray(result.frozenOsNumbers) && result.frozenOsNumbers.length
-          ? `\n\nOS: ${result.frozenOsNumbers.slice(0, 12).join(", ")}${result.frozenOsNumbers.length > 12 ? "…" : ""}`
-          : "";
-        const proceed = window.confirm(
-          `${result.message || "Há OS aprovadas neste boletim."}${osHint}\n\nForçar reenvio? Isso reabre as OS aprovadas para uma nova medição ao cliente.`,
-        );
-        if (proceed) {
-          setSendLoading(false);
-          await handleSendToClient(true);
-          return;
-        }
-        toast({ title: "Envio cancelado", description: result.message, variant: "destructive" });
-        return;
-      }
       if (!resp.ok) throw new Error(result.message || "Erro ao enviar");
       if (result.emailError) {
         toast({ title: "Boletim criado, mas e-mail falhou", description: result.emailError, variant: "destructive" });
@@ -350,12 +333,12 @@ export default function RelatorioFaturamentoPage() {
         const extra = result.contractsSynced
           ? ` (${result.contractsSynced} contrato(s) alinhado(s) automaticamente)`
           : "";
-        toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando aprovação do cliente.${extra}` });
+        toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando resposta do cliente à medição.${extra}` });
       }
       setSendDialog(false);
       await refetchApprovalStatus();
-      // Reenvio forçado pode ter reaberto APROVADA → A_VERIFICAR; atualiza a grade.
-      if (force || result.contractsSynced) await handleGenerate();
+      // Force só arquiva boletim anterior; APROVADA (interna) não muda. Regenera se houve heal de contrato.
+      if (result.contractsSynced) await handleGenerate();
     } catch (err: any) {
       toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
     } finally {

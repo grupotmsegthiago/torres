@@ -7,7 +7,6 @@ import { bustBalancoCaches } from "../lib/balanco-cache";
 import {
   createBoletimApprovalAtomic,
   freezeBoletimBillingsAtomic,
-  writeEscortBillingAtomic,
 } from "../lib/atomic-billing";
 import {
   billingOsLabel,
@@ -600,9 +599,9 @@ export function registerBoletimApprovalRoutes(app: Express) {
         });
       }
 
-      // create_boletim_approval_atomic rejeita APROVADA/FATURADO/FATURADA/PAGO
-      // (PR5B1_TX_SNAPSHOT_FROZEN_BILLING). Reenvio forçado: arquiva aprovação
-      // ativa, reabre APROVADA → A_VERIFICAR; faturada/paga exige liberar antes.
+      // APROVADA = aprovação interna: entra no snapshot e permanece APROVADA.
+      // create_boletim_approval_atomic bloqueia só FATURADO/FATURADA/PAGO.
+      // Reenvio forçado: arquiva boletim PENDENTE/APROVADO conflitante — nunca reabre APROVADA.
       const partition = partitionBillingsForBoletimSend(billingsData);
       if (partition.faturadas.length > 0) {
         const labels = partition.faturadas.map(billingOsLabel);
@@ -614,20 +613,6 @@ export function registerBoletimApprovalRoutes(app: Express) {
           frozenBillingIds: partition.faturadas.map((b: any) => String(b.id)),
           frozenOsNumbers: labels,
           reason: "invoiced",
-        });
-      }
-
-      if (partition.aprovadas.length > 0 && !force) {
-        const labels = partition.aprovadas.map(billingOsLabel);
-        return res.status(409).json({
-          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
-          message:
-            `Há ${partition.aprovadas.length} OS já APROVADA(s) no período (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
-            `Para reenviar a medição, confirme o reenvio forçado — isso reabre essas OS para uma nova foto comercial.`,
-          frozenBillingIds: partition.aprovadas.map((b: any) => String(b.id)),
-          frozenOsNumbers: labels,
-          reason: "approved",
-          canForce: true,
         });
       }
 
@@ -651,47 +636,6 @@ export function registerBoletimApprovalRoutes(app: Express) {
             .eq("id", conflict.id)
             .in("status", ["PENDENTE", "APROVADO"]);
           if (archErr) throw archErr;
-        }
-
-        if (partition.aprovadas.length > 0) {
-          for (const b of partition.aprovadas) {
-            await writeEscortBillingAtomic({
-              action: "REOPEN_APPROVED",
-              billingId: b.id,
-              serviceOrderId: b.service_order_id,
-              expectedVersion: Number(b.lock_version) || 0,
-              payload: {
-                status: "A_VERIFICAR",
-                revisado_por: null,
-                revisado_em: null,
-                boletim_gerado: false,
-              },
-              actor: {
-                userId: user?.id || null,
-                userName: user?.name || user?.username || null,
-                userRole: user?.role || null,
-                reason: "Reenvio forçado de boletim de medição",
-                ipAddress: req.ip,
-              },
-            });
-          }
-          bustBalancoCaches();
-
-          const { data: reloaded } = await supabaseAdmin
-            .from("escort_billings")
-            .select("*")
-            .in("id", billingIds);
-          billingsData = reloaded || [];
-
-          const after = partitionBillingsForBoletimSend(billingsData);
-          if (after.aprovadas.length > 0 || after.faturadas.length > 0) {
-            return res.status(409).json({
-              code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
-              message: "Não foi possível reabrir todas as OS aprovadas/faturadas para o reenvio. Libere ou reabra manualmente e tente de novo.",
-              frozenBillingIds: [...after.aprovadas, ...after.faturadas].map((b: any) => String(b.id)),
-              frozenOsNumbers: [...after.aprovadas, ...after.faturadas].map(billingOsLabel),
-            });
-          }
         }
       }
 
