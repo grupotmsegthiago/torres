@@ -27,6 +27,45 @@ export function isBillingStatusProtected(status: unknown): boolean {
   return GENERIC_RECALC_PROTECTED_STATUSES.has(normalizeBillingStatus(status));
 }
 
+/** Status que bloqueiam create_boletim_approval_atomic (PR5B1_TX_SNAPSHOT_FROZEN_BILLING). */
+export function isSnapshotFrozenBillingStatus(status: unknown): boolean {
+  return COMMERCIAL_FROZEN_BILLING_STATUSES.has(normalizeBillingStatus(status));
+}
+
+/** APROVADA pode ser reaberta no force-reenvio; faturada/paga exige liberar refaturamento. */
+export function isReopenableForBoletimResend(status: unknown): boolean {
+  return normalizeBillingStatus(status) === "APROVADA";
+}
+
+export function isInvoicedBillingStatus(status: unknown): boolean {
+  const st = normalizeBillingStatus(status);
+  return st === "FATURADO" || st === "FATURADA" || st === "PAGO";
+}
+
+export type BoletimSendPartition = {
+  sendable: any[];
+  aprovadas: any[];
+  faturadas: any[];
+};
+
+/** Parte billings para o fluxo enviar/reenviar medição ao cliente. */
+export function partitionBillingsForBoletimSend(billings: any[]): BoletimSendPartition {
+  const sendable: any[] = [];
+  const aprovadas: any[] = [];
+  const faturadas: any[] = [];
+  for (const b of billings || []) {
+    const st = normalizeBillingStatus(b?.status);
+    if (st === "APROVADA") aprovadas.push(b);
+    else if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") faturadas.push(b);
+    else sendable.push(b);
+  }
+  return { sendable, aprovadas, faturadas };
+}
+
+export function billingOsLabel(b: any): string {
+  return String(b?.os_number || (b?.service_order_id != null ? `OS-${b.service_order_id}` : b?.id || "?"));
+}
+
 export async function billingHasCommercialSnapshot(
   sb: any,
   billingId: string | number | null | undefined,
