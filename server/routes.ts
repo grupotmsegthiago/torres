@@ -707,6 +707,7 @@ async function ensureSystemSettingsTable() {
   import { registerLeadRoutes } from "./routes/leads";
   import { registerConciliacaoRoutes } from "./routes/conciliacao";
   import { registerFixedCostsRoutes } from "./routes/fixed-costs";
+  import { registerBalancoMetaRoutes } from "./routes/balanco-meta";
   import { registerHolidaysRoutes } from "./routes/holidays";
   import { registerDailyAllowancesRoutes } from "./routes/daily-allowances";
   import { registerInterRoutes } from "./routes/inter";
@@ -1382,6 +1383,7 @@ async function ensureSystemSettingsTable() {
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
+    registerBalancoMetaRoutes(app);
     registerHolidaysRoutes(app);
     registerInterRoutes(app);
     registerDailyAllowancesRoutes(app);

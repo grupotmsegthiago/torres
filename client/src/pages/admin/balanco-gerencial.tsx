@@ -4,6 +4,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
+import { metaPeriodoFromMensal } from "@shared/balanco-meta";
+import { useBalancoMetaFaturamento } from "@/lib/balanco-meta-faturamento";
 import { computeProjection } from "@/lib/balanco-projection";
 import { resolveBalancoOsRevenue } from "@/lib/balanco-revenue";
 import { Card } from "@/components/ui/card";
@@ -184,6 +186,14 @@ export default function BalancoGerencialPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
+  const isDiretoriaStrict = user?.role === "diretoria";
+  const {
+    meta: balancoMeta,
+    saveMeta,
+    saving: savingMeta,
+    resetMeta,
+    resetting: resettingMeta,
+  } = useBalancoMetaFaturamento();
 
   // Tela pesada: abre instantâneo servindo o último cálculo (cache no servidor) e
   // o backend recalcula sozinho a cada 3h. Botão "Atualizar agora" força na hora.
@@ -339,6 +349,19 @@ export default function BalancoGerencialPage() {
   const costDays = useMemo(
     () => costDaysForPeriod(period, daysInPeriod, gridRange.from, gridRange.to),
     [daysInPeriod, period, gridRange.from, gridRange.to],
+  );
+
+  const viaturasAtivasBalanco = useMemo(
+    () => (allVehicles || []).filter(isActiveVehicle).length,
+    [allVehicles],
+  );
+  const metaMensalGestor = useMemo(() => {
+    if (balancoMeta?.mensal && balancoMeta.mensal > 0) return balancoMeta.mensal;
+    return META_DIARIA_VIATURA * 30 * Math.max(viaturasAtivasBalanco, 1);
+  }, [balancoMeta?.mensal, viaturasAtivasBalanco]);
+  const metaPeriodoGestor = useMemo(
+    () => metaPeriodoFromMensal(metaMensalGestor, daysInPeriod),
+    [metaMensalGestor, daysInPeriod],
   );
 
   const filtered = useMemo(() => {
@@ -1897,7 +1920,14 @@ export default function BalancoGerencialPage() {
             rhSummary={rhSummary}
             allEmployees={allEmployees || []}
             eficiencia={eficiencia}
-            metaPeriodo={(META_DIARIA_VIATURA * daysInPeriod * Math.max((allVehicles || []).filter(isActiveVehicle).length, 1))}
+            metaPeriodo={metaPeriodoGestor}
+            metaMensal={metaMensalGestor}
+            metaFonte={balancoMeta?.fonte ?? "automatica"}
+            metaAutomaticaMensal={balancoMeta?.automatica?.mensal}
+            canEditMeta={isDiretoriaStrict}
+            onSaveMetaMensal={saveMeta}
+            onResetMeta={resetMeta}
+            savingMeta={savingMeta || resettingMeta}
             impostoPct={metaCfg.impostoPct}
             custoVarPct={metaCfg.custoVarPct}
             auditUser={user?.email || user?.name || null}
@@ -1927,7 +1957,8 @@ export default function BalancoGerencialPage() {
 
 function BalancoTab({
   missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, costDays, allVehicles, provisaoDiaria,
-  rhSummary, allEmployees, eficiencia, metaPeriodo, impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter,
+  rhSummary, allEmployees, eficiencia, metaPeriodo, metaMensal, metaFonte, metaAutomaticaMensal, canEditMeta, onSaveMetaMensal, onResetMeta, savingMeta,
+  impostoPct, custoVarPct, auditUser, dataReady, updatedAt, onSync, syncing, onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter,
 }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
@@ -1943,6 +1974,13 @@ function BalancoTab({
   rhSummary: any; allEmployees: any[];
   eficiencia: { mediaKmL: number; totalKm: number; totalLiters: number; abaixo: any[] };
   metaPeriodo: number;
+  metaMensal: number;
+  metaFonte: "diretoria" | "automatica";
+  metaAutomaticaMensal?: number;
+  canEditMeta: boolean;
+  onSaveMetaMensal: (mensal: number) => Promise<unknown>;
+  onResetMeta: () => Promise<unknown>;
+  savingMeta: boolean;
   impostoPct: number;
   custoVarPct: number;
   auditUser?: string | null;
@@ -2049,6 +2087,13 @@ function BalancoTab({
         allEmployees={allEmployees}
         eficiencia={eficiencia}
         metaPeriodo={metaPeriodo}
+        metaMensal={metaMensal}
+        metaFonte={metaFonte}
+        metaAutomaticaMensal={metaAutomaticaMensal}
+        canEditMeta={canEditMeta}
+        onSaveMetaMensal={onSaveMetaMensal}
+        onResetMeta={onResetMeta}
+        savingMeta={savingMeta}
         impostoPct={impostoPct}
         custoVarPct={custoVarPct}
         auditUser={auditUser}

@@ -23,6 +23,7 @@ import {
   Gauge,
   Loader2,
   Network,
+  Pencil,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -35,7 +36,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Link } from "wouter";
+import { maskBRL, parseBRL } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { GaugeRing } from "@/components/admin/balanco-executivo";
 import {
   buildAiInsights,
@@ -64,6 +69,7 @@ import {
   type ValidationFinding,
 } from "@/lib/gestor-financeiro";
 import { computeProjection } from "@/lib/balanco-projection";
+import { metaPeriodoFromMensal } from "@shared/balanco-meta";
 import { SeloTermometro, TermometroFinanceiroSvg } from "@/components/admin/termometro-financeiro";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -115,6 +121,13 @@ type Props = {
     abaixo: { plate: string; model: string; km: number; liters: number; kmL: number }[];
   };
   metaPeriodo: number;
+  metaMensal: number;
+  metaFonte: "diretoria" | "automatica";
+  metaAutomaticaMensal?: number;
+  canEditMeta: boolean;
+  onSaveMetaMensal: (mensal: number) => Promise<unknown>;
+  onResetMeta: () => Promise<unknown>;
+  savingMeta: boolean;
   impostoPct: number;
   custoVarPct: number;
   dataReady: { dashboard: boolean; grid: boolean; rh: boolean; fixedCosts: boolean };
@@ -240,9 +253,14 @@ function FatList({
 export function GestorFinanceiroPanel(props: Props) {
   const {
     periodLabel, daysInPeriod, costDays, period, totals, missions, vehicles, agents, rhSummary, allEmployees,
-    eficiencia, metaPeriodo, impostoPct, custoVarPct, dataReady, updatedAt, onSync, syncing, dailyChart,
+    eficiencia, metaPeriodo, metaMensal, metaFonte, metaAutomaticaMensal, canEditMeta, onSaveMetaMensal, onResetMeta, savingMeta,
+    impostoPct, custoVarPct, dataReady, updatedAt, onSync, syncing, dailyChart,
     onOpenOsAbertas, onOpenEficiencia, onOpenPeriodFilter, rangeStart, rangeEnd, auditUser,
   } = props;
+
+  const { toast } = useToast();
+  const [showMetaDialog, setShowMetaDialog] = useState(false);
+  const [metaDraft, setMetaDraft] = useState("");
 
   const [memoria, setMemoria] = useState<MemoriaCalculo | null>(null);
   const [finding, setFinding] = useState<ValidationFinding | null>(null);
@@ -272,6 +290,39 @@ export function GestorFinanceiroPanel(props: Props) {
   });
   const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
   const projPct = metaPeriodo > 0 ? (projection / metaPeriodo) * 100 : 0;
+
+  const openMetaDialog = () => {
+    setMetaDraft(maskBRL(String(metaMensal)));
+    setShowMetaDialog(true);
+  };
+
+  const handleSaveMeta = async () => {
+    const valor = parseBRL(metaDraft);
+    if (!valor || valor <= 0) {
+      toast({ title: "Valor inválido", description: "Informe a meta mensal em reais.", variant: "destructive" });
+      return;
+    }
+    try {
+      await onSaveMetaMensal(valor);
+      setShowMetaDialog(false);
+      toast({
+        title: "Meta atualizada",
+        description: `Meta mensal definida em ${fmt(valor)}. Válida para toda a diretoria.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar", description: e?.message || "Tente novamente.", variant: "destructive" });
+    }
+  };
+
+  const handleResetMeta = async () => {
+    try {
+      await onResetMeta();
+      setShowMetaDialog(false);
+      toast({ title: "Meta automática restaurada", description: "Voltou ao cálculo por viatura ativa." });
+    } catch (e: any) {
+      toast({ title: "Erro ao restaurar", description: e?.message || "Tente novamente.", variant: "destructive" });
+    }
+  };
 
   // Rateio RH com costDays (mês comercial), NÃO daysInPeriod (calendário 31d → inflava 3,3%).
   const folhaAgents = useMemo(
@@ -618,10 +669,27 @@ export function GestorFinanceiroPanel(props: Props) {
 
               {metaPeriodo > 0 && (
                 <p className="text-[10px] text-slate-400">
-                  Meta de faturamento <b className="text-slate-200 font-mono">{fmt(metaPeriodo)}</b>
+                  Meta de faturamento{" "}
+                  <b className="text-slate-200 font-mono">{fmt(metaPeriodo)}</b>
+                  {" · "}
+                  Mensal <b className="text-slate-200 font-mono">{fmt(metaMensal)}</b>
+                  {metaFonte === "diretoria" ? (
+                    <span className="text-cyan-400/80"> · definida pela diretoria</span>
+                  ) : (
+                    <span className="text-slate-600"> · automática (viaturas)</span>
+                  )}
                   {" · "}
                   Atingimento <b className="text-slate-200">{fmtPct(metaPct)}</b>
-                  <span className="text-slate-600"> (indicador distinto do % sobre o custo)</span>
+                  {canEditMeta ? (
+                    <button
+                      type="button"
+                      onClick={openMetaDialog}
+                      className="ml-1.5 inline-flex items-center gap-0.5 text-cyan-300 hover:text-cyan-200 underline underline-offset-2 font-black uppercase"
+                      data-testid="button-editar-meta-faturamento"
+                    >
+                      <Pencil size={10} /> Ajustar meta
+                    </button>
+                  ) : null}
                 </p>
               )}
 
@@ -682,6 +750,16 @@ export function GestorFinanceiroPanel(props: Props) {
             </button>
           </div>
           <p className="text-[10px] text-slate-400">Meta <b className="text-slate-200 font-mono">{fmt(metaPeriodo)}</b> · {fmtPct(metaPct)}</p>
+          {canEditMeta ? (
+            <button
+              type="button"
+              onClick={openMetaDialog}
+              className="text-[10px] font-black uppercase text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+              data-testid="button-editar-meta-kpi"
+            >
+              Ajustar meta mensal
+            </button>
+          ) : null}
           <p className="text-[10px] text-slate-400">Projeção <b className="text-slate-200 font-mono">{fmt(projection)}</b> · {fmtPct(projPct)}</p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaFaturamento(gestorInput, fatBreakdown))} data-testid="button-memoria-faturamento">
             Ver memória de cálculo
@@ -1151,6 +1229,65 @@ export function GestorFinanceiroPanel(props: Props) {
           <p className="text-xs text-slate-400">
             Integridade {integrity.pct.toFixed(1)}% · {certified ? "Painel certificado" : "Ainda há pendências"}
           </p>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMetaDialog} onOpenChange={setShowMetaDialog}>
+        <DialogContent className="max-w-md bg-slate-950 border-slate-700 text-slate-100" data-testid="dialog-meta-faturamento">
+          <DialogHeader>
+            <DialogTitle className="text-slate-50 flex items-center gap-2">
+              <Target size={16} className="text-emerald-300" /> Meta de faturamento
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Valor mensal oficial do Balanço Gerencial. Somente a Diretoria pode alterar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="meta-mensal-input" className="text-slate-300 text-xs font-bold uppercase">
+                Meta mensal (R$)
+              </Label>
+              <Input
+                id="meta-mensal-input"
+                value={metaDraft}
+                onChange={(e) => setMetaDraft(maskBRL(e.target.value))}
+                className="font-mono bg-slate-900 border-slate-600 text-slate-100"
+                placeholder="310.000,00"
+                data-testid="input-meta-mensal"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400">
+              No período atual ({daysInPeriod} dias): <b className="text-slate-200 font-mono">{fmt(metaPeriodoFromMensal(parseBRL(metaDraft) || metaMensal, daysInPeriod))}</b>
+            </p>
+            {metaAutomaticaMensal ? (
+              <p className="text-[10px] text-slate-500">
+                Automática hoje (viaturas): {fmt(metaAutomaticaMensal)}/mês
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                onClick={handleSaveMeta}
+                disabled={savingMeta}
+                className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black uppercase text-xs"
+                data-testid="button-salvar-meta-faturamento"
+              >
+                {savingMeta ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+                Salvar meta
+              </Button>
+              {metaFonte === "diretoria" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetMeta}
+                  disabled={savingMeta}
+                  className="border-slate-600 text-slate-200 text-xs font-black uppercase"
+                  data-testid="button-restaurar-meta-automatica"
+                >
+                  Restaurar automática
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
