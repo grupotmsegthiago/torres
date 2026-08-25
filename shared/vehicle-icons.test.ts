@@ -9,7 +9,7 @@ import {
 test("vehicleIconSrc: polo, kwid e mobi", () => {
   assert.equal(vehicleIconSrc("polo"), "/polo-icon.webp");
   assert.equal(vehicleIconSrc("kwid"), "/kwid-icon.png");
-  assert.equal(vehicleIconSrc("mobi"), "/mobi-icon.png");
+  assert.equal(vehicleIconSrc("mobi"), "/mobi-icon.webp");
   assert.equal(vehicleIconSrc(null), "/polo-icon.webp");
 });
 
