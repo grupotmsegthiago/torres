@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye, Video } from "lucide-react";
 import { VehicleCamerasHover } from "@/components/admin/vehicle-cameras-hover";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
+import { VEHICLE_ICON_OPTIONS, inferVehicleIcon, type VehicleIconOption } from "@shared/vehicle-icons";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
   const { toast } = useToast();
@@ -49,6 +50,48 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
   // pra não derrubar o Supabase. Ao EDITAR, buscamos o veículo completo e hidratamos o form —
   // sem isso, salvar mandaria esses campos vazios e APAGARIA documento/fotos existentes.
   const [photosLoaded, setPhotosLoaded] = useState(!vehicle?.id);
+  const [applyingWrap, setApplyingWrap] = useState(false);
+
+  async function urlToDataUrl(url: string): Promise<string> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Falha ao carregar ${url}`);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Falha ao ler imagem"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function selectVehicleType(opt: VehicleIconOption) {
+    setApplyingWrap(true);
+    try {
+      let photos: { photoFront: string; photoLeft: string; photoRear: string; photoRight: string } | null = null;
+      if (opt.wrap) {
+        const [photoFront, photoLeft, photoRear, photoRight] = await Promise.all([
+          urlToDataUrl(opt.wrap.front),
+          urlToDataUrl(opt.wrap.left),
+          urlToDataUrl(opt.wrap.rear),
+          urlToDataUrl(opt.wrap.right),
+        ]);
+        photos = { photoFront, photoLeft, photoRear, photoRight };
+      }
+      setForm((prev) => ({
+        ...prev,
+        iconType: opt.key,
+        brand: opt.brand,
+        model: opt.model,
+        color: prev.color || opt.color || prev.color,
+        ...(photos || {}),
+      }));
+    } catch (err: any) {
+      toast({ title: "Não foi possível aplicar as fotos do modelo", description: err?.message, variant: "destructive" });
+      setForm((prev) => ({ ...prev, iconType: opt.key, brand: opt.brand, model: opt.model }));
+    } finally {
+      setApplyingWrap(false);
+    }
+  }
   const { data: fullVehicle, isError: fullVehicleError } = useQuery<Vehicle>({
     queryKey: ["/api/vehicles", vehicle?.id],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -166,11 +209,29 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Marca *</label>
-          <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} required data-testid="input-vehicle-brand" />
+          <Input
+            value={form.brand}
+            onChange={(e) => {
+              const brand = e.target.value;
+              const inferred = inferVehicleIcon(brand, form.model);
+              setForm({ ...form, brand, iconType: inferred || form.iconType });
+            }}
+            required
+            data-testid="input-vehicle-brand"
+          />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Modelo *</label>
-          <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required data-testid="input-vehicle-model" />
+          <Input
+            value={form.model}
+            onChange={(e) => {
+              const model = e.target.value;
+              const inferred = inferVehicleIcon(form.brand, model);
+              setForm({ ...form, model, iconType: inferred || form.iconType });
+            }}
+            required
+            data-testid="input-vehicle-model"
+          />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Ano</label>
@@ -271,15 +332,13 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         </div>
         <div className="md:col-span-3">
           <label className="text-sm font-semibold text-neutral-700 mb-2 block">Ícone no Mapa / Grid</label>
-          <div className="flex items-center gap-3">
-            {[
-              { key: "polo", label: "Polo Track", src: "/polo-icon.webp" },
-              { key: "kwid", label: "Renault Kwid", src: "/kwid-icon.png" },
-            ].map((opt) => (
+          <div className="flex items-center gap-3 flex-wrap">
+            {VEHICLE_ICON_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
                 type="button"
-                onClick={() => setForm({ ...form, iconType: opt.key })}
+                disabled={applyingWrap}
+                onClick={() => selectVehicleType(opt)}
                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 transition-all ${
                   form.iconType === opt.key
                     ? "border-neutral-900 bg-neutral-50 shadow-sm"
@@ -296,6 +355,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
               </button>
             ))}
           </div>
+          {applyingWrap && <p className="text-xs text-neutral-500 mt-2">Aplicando adesivagem do modelo…</p>}
+          <p className="text-xs text-neutral-500 mt-2">Fiat Mobi preenche as 4 fotos da adesivagem Torres e grava no cadastro ao salvar, como Polo e Kwid.</p>
         </div>
 
         <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50">

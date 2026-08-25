@@ -31,6 +31,7 @@ import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
+import { VEHICLE_ICON_OPTIONS, vehicleIconSrc } from "@shared/vehicle-icons";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -1476,7 +1477,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const [radiusKm, setRadiusKm] = useState(20);
 
   useEffect(() => {
-    const sources: Record<string, string> = { polo: "/polo-icon.webp", kwid: "/kwid-icon.png" };
+    const sources: Record<string, string> = Object.fromEntries(VEHICLE_ICON_OPTIONS.map((o) => [o.key, o.src]));
     Object.entries(sources).forEach(([key, src]) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -1558,8 +1559,8 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       const isSpy = v.deviceType === "spy";
 
       const getCarImageKey = (iconType?: string | null) => {
-        if (iconType === "kwid") return "kwid";
-        return "polo";
+        const key = String(iconType || "").toLowerCase();
+        return VEHICLE_ICON_OPTIONS.some((o) => o.key === key) ? key : "polo";
       };
 
       const buildCarIcon = (statusColor: string, plate: string, iconType?: string | null) => {
@@ -5373,7 +5374,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: statusColor }}>
-                          <img src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
+                          <img src={vehicleIconSrc(v.iconType)} alt="VTR" className="w-full h-full object-cover" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -6190,7 +6191,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             style={{ borderColor: statusColor }}
                           >
                             <img
-                              src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"}
+                              src={vehicleIconSrc(v.iconType)}
                               alt={v.plate}
                               className="w-full h-full object-cover"
                             />
@@ -7472,7 +7473,7 @@ function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
                   data-testid={`proximity-vehicle-${v.id}`}
                 >
                   <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8" }}>
-                    <img src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
+                    <img src={vehicleIconSrc(v.iconType)} alt="VTR" className="w-full h-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
