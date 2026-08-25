@@ -47,9 +47,9 @@ test("calcularFolha não-CLT (isClt=false) zera INSS/IRRF/FGTS/provisões", () =
   assert.equal(f.totalProvisoes, 0);
   assert.equal(f.totalDeducoes, 0);
   assert.equal(f.custoTotalEmpresa, f.totalBruto, "custo empresa = bruto (sem encargos)");
-  // Modelo Torres: líquido salarial = base tributável (benefícios ficam em tabela
-  // separada, fora do líquido). Não-CLT zera descontos → líquido = baseTributavel.
-  assert.equal(f.liquidoFuncionario, f.baseTributavel, "líquido = base (sem descontos, sem benefícios)");
+  // Modelo Torres: líquido salarial = base de encargos (benefícios ficam em tabela
+  // separada, fora do líquido). Não-CLT zera descontos → líquido = baseEncargos.
+  assert.equal(f.liquidoFuncionario, f.baseEncargos, "líquido = base encargos (sem descontos, sem benefícios)");
 });
 
 test("calcularFolha PJ: valor fixo = base cadastrada (sem peric/HE/VR)", () => {
@@ -111,7 +111,8 @@ test("modelo Torres: INSS 12% + IRRF isento ≤5k + FGTS NÃO desconta do líqui
     horasMensais: 220,
     aplicarPericulosidade: false,
   });
-  assert.equal(f.baseTributavel, 2200, "base = salário (sem peric/dsr)");
+  assert.equal(f.baseTributavel, 2200, "total bruto = salário (sem peric/dsr neste caso)");
+  assert.equal(f.baseEncargos, 2200, "base encargos = salário (sem peric/dsr)");
   assert.equal(f.baseIrrfMensal, 2200, "base IRRF = salário+peric");
   assert.equal(f.inss, 264, "INSS 12% fixo (2200 × 0.12)");
   assert.equal(f.irrf, 0, "IRRF isento (2200 ≤ 5000)");
@@ -151,7 +152,10 @@ test("IRRF flat só acima do teto de isenção (sobre salário+peric, sem HE)", 
     horasExtras: 50, // HE NÃO entra na base de IRRF
   });
   assert.equal(f.baseIrrfMensal, 6000);
-  assert.ok(f.baseTributavel > 6000, "HE entra na base tributável INSS/FGTS");
+  assert.ok(f.baseTributavel > 6000, "HE entra no total bruto (vencimentos)");
+  assert.equal(f.baseEncargos, 6000, "HE NÃO entra na base de encargos INSS/FGTS");
+  assert.equal(f.inss, +(6000 * 0.12).toFixed(2), "INSS 12% só sobre salário");
+  assert.equal(f.fgts, +(6000 * 0.08).toFixed(2), "FGTS 8% só sobre salário");
   assert.equal(f.irrf, +(6000 * 0.22).toFixed(2), "IRRF 22% só sobre salário (sem HE)");
   assert.ok(f.baseIrrfMensal > IRRF_ISENTO_ATE);
 });
@@ -182,12 +186,13 @@ test("modelo Torres: regressão planilha do dono (caso André) — HE fora do IR
   assert.ok(Math.abs(f.horasExtrasValor - vh * 1.6 * horasExtras) < 0.01, "HE = valorHora(c/peric) × 1.6 × horas");
   assert.ok(Math.abs(f.adicionalNoturnoValor - vh * 1.8 * horasNoturnas) < 0.01, "Noturno = valorHora(c/peric) × 1.8 × horas");
   assert.equal(f.baseTributavel, +(salarioComPeric + f.horasExtrasValor + f.adicionalNoturnoValor).toFixed(2), "Total = salário(c/peric) + HE + Noturno");
-  assert.equal(f.inss, +(f.baseTributavel * 0.12).toFixed(2), "INSS 12% do total");
+  assert.equal(f.baseEncargos, +salarioComPeric.toFixed(2), "Encargos só sobre salário+peric");
+  assert.equal(f.inss, +(f.baseEncargos * 0.12).toFixed(2), "INSS 12% só sobre salário+peric");
   // IRRF: base mensal 3334.90 ≤ 5000 → 0 (HE paga à parte)
   assert.equal(f.baseIrrfMensal, +salarioComPeric.toFixed(2));
   assert.equal(f.irrf, 0, "IRRF isento na folha mensal (≤5k; HE à parte)");
-  assert.equal(f.fgts, +(f.baseTributavel * 0.08).toFixed(2), "FGTS 8% do total");
-  assert.equal(f.liquidoFuncionario, +(f.baseTributavel - f.inss - f.irrf).toFixed(2), "líquido = Total − INSS − IRRF (FGTS NÃO desconta)");
+  assert.equal(f.fgts, +(f.baseEncargos * 0.08).toFixed(2), "FGTS 8% só sobre salário+peric");
+  assert.equal(f.liquidoFuncionario, +(f.baseEncargos - f.inss - f.irrf).toFixed(2), "líquido folha = salário+peric − INSS − IRRF (HE à parte)");
   assert.ok(Math.abs(f.baseTributavel - 8846.26) < 25, `Total (${f.baseTributavel}) ~ 8846,26`);
 });
 

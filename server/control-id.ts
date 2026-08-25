@@ -1564,9 +1564,9 @@ export async function buildFolhaStats(
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
   const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal + ajudaCustoReal).toFixed(2);
 
-  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE + adic. noturno).
+  // Recolhimentos: só salário+peric (HE/noturno R$ 16/16,50 pagos à parte — sem encargo).
   // Não-CLT (PJ, fixo): zera FGTS, INSS patronal e seguro de vida.
-  const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra + adicionalNoturno;
+  const baseRecolhimentos = baseSalaryReal + periculosidade;
   const fgtsPct = isClt ? ((CCT as any).fgtsPct ?? 8) : 0;
   const inssPatronalPct = isClt ? ((CCT as any).inssPatronalPct ?? 20) : 0;
   const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
@@ -1583,7 +1583,10 @@ export async function buildFolhaStats(
   const custoBase = baseSalaryReal;
   // Para não-CLT, encargosPct efetivo é 0 (custo com encargos = bruto + benefícios).
   const encargosPctEfetivo = isClt ? encargosPct : 0;
-  const custoComEncargos = +((custoBase + periculosidade + custoExtra + adicionalNoturno) * (1 + encargosPctEfetivo / 100) + beneficiosTotal).toFixed(2);
+  const custoComEncargos = +(
+    (custoBase + periculosidade) * (1 + encargosPctEfetivo / 100) +
+    custoExtra + adicionalNoturno + beneficiosTotal
+  ).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
   let faturamentoBruto = 0;
@@ -1633,18 +1636,19 @@ export async function buildFolhaStats(
   faturamentoMargem = +faturamentoMargem.toFixed(2);
 
   // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
-  // Base tributável INSS/FGTS = Salário(c/ peric) + HE + Noturno.
-  // IRRF mensal: só salário+peric; isento ≤ R$ 5.000 (HE paga à parte — 29/07/2026).
-  // Líquido NÃO desconta FGTS (depósito do empregador).
+  // INSS/FGTS: só salário+peric. HE/noturno (R$ 16/16,50) pagos à parte — sem encargo.
+  // IRRF mensal: só salário+peric; isento ≤ R$ 5.000 (29/07/2026).
+  // Líquido folha NÃO inclui HE/noturno nem desconta FGTS (depósito do empregador).
   const { IRRF_ISENTO_ATE } = await import("./lib/payroll");
-  const baseTributavelFunc = vencimentosTotal;
-  const baseIrrfMensalFunc = +(baseSalaryReal + periculosidade).toFixed(2);
-  const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
+  const baseEncargosFunc = +(baseSalaryReal + periculosidade).toFixed(2);
+  const baseTributavelFunc = vencimentosTotal; // total vencimentos (inclui HE/noturno p/ exibição)
+  const baseIrrfMensalFunc = baseEncargosFunc;
+  const inssFuncionario = isClt ? +(baseEncargosFunc * 0.12).toFixed(2) : 0;
   const irrfFuncionario = isClt
     ? (baseIrrfMensalFunc <= IRRF_ISENTO_ATE ? 0 : +(baseIrrfMensalFunc * 0.22).toFixed(2))
     : 0;
-  const fgtsFuncionario = fgts; // 8% sobre vencimentos — NÃO desconta do líquido (modelo Torres)
-  const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
+  const fgtsFuncionario = fgts; // 8% só sobre salário+peric — NÃO desconta do líquido
+  const liquidoFuncionario = +(baseEncargosFunc - inssFuncionario - irrfFuncionario).toFixed(2);
 
   return {
     employeeId,
