@@ -1,6 +1,7 @@
 import { useState, memo, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { canSeePath, parsePermissions } from "@shared/perfis-acesso";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -344,7 +345,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
   );
 });
 
-const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number }) {
+const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isFinanceiroRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isFinanceiroRole: boolean; aclPermissions: string[] }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
 
@@ -357,10 +358,15 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
   }, []);
 
   const filterItem = useCallback((item: MenuItem): boolean => {
+    if (isFinanceiroRole) {
+      if (item.children?.length) return item.children.some(filterItem);
+      if (item.path) return canSeePath(aclPermissions, item.path);
+      return false;
+    }
     if (item.diretoriaOnly) return isDiretoria;
     if (item.adminOnly) return isAdmin;
     return true;
-  }, [isAdmin, isDiretoria]);
+  }, [isAdmin, isDiretoria, isFinanceiroRole, aclPermissions]);
 
   return (
     <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
@@ -386,7 +392,10 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
         </Link>
       ))}
 
-      {menuSections.filter(s => s.diretoriaOnly ? isDiretoria : (!s.adminOnly || isAdmin)).map((section) => {
+      {menuSections.filter(s => {
+        if (isFinanceiroRole) return s.items.some(filterItem);
+        return s.diretoriaOnly ? isDiretoria : (!s.adminOnly || isAdmin);
+      }).map((section) => {
         const isSectionOpen = openSections[section.title] ?? true;
         return (
           <div key={section.title}>
@@ -477,9 +486,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     queryKey: ["/api/chat/unread-count"],
     refetchInterval: 120000,
   });
+  const { data: perfilData } = useQuery<{ permissions?: string[] | string }>({
+    queryKey: ["/api/auth/perfil"],
+    enabled: !!user,
+    staleTime: 60_000,
+  });
   const unreadCount = chatUnread?.total || 0;
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";
   const isDiretoria = user?.role === "diretoria";
+  const isFinanceiroRole = user?.role === "financeiro";
+  const aclPermissions = parsePermissions(perfilData?.permissions as any);
 
   return (
     <div className="h-screen bg-neutral-100 flex overflow-hidden" data-testid="admin-layout">
@@ -498,7 +514,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} />
+        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isFinanceiroRole={isFinanceiroRole} aclPermissions={aclPermissions} />
 
         <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}

@@ -5,7 +5,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   History, Loader2, AlertCircle, Calendar, Landmark, UserCog,
-  FileCheck2, Wallet, PlusCircle, Activity,
+  FileCheck2, Wallet, PlusCircle, Mail, Eye, StickyNote, MessageSquare,
+  Banknote,
 } from "lucide-react";
 
 interface TraceEvent {
@@ -19,13 +20,19 @@ interface TraceEvent {
 }
 
 const TRACE_KIND: Record<string, { label: string; icon: any; dot: string; ring: string }> = {
-  criada:     { label: "Criação",      icon: PlusCircle, dot: "bg-indigo-500",  ring: "ring-indigo-100" },
-  auditoria:  { label: "Auditoria",    icon: FileCheck2, dot: "bg-slate-400",   ring: "ring-slate-100" },
-  baixa:      { label: "Baixa manual", icon: UserCog,    dot: "bg-emerald-500", ring: "ring-emerald-100" },
-  vencimento: { label: "Vencimento",   icon: Calendar,   dot: "bg-amber-500",   ring: "ring-amber-100" },
-  banco:      { label: "Banco",        icon: Landmark,   dot: "bg-blue-600",    ring: "ring-blue-100" },
-  financeiro: { label: "Caixa",        icon: Wallet,     dot: "bg-teal-500",    ring: "ring-teal-100" },
-  nota:       { label: "Anotação",     icon: Activity,   dot: "bg-neutral-400", ring: "ring-neutral-100" },
+  criada:      { label: "Criação",      icon: PlusCircle,     dot: "bg-indigo-500",  ring: "ring-indigo-100" },
+  auditoria:   { label: "Auditoria",    icon: FileCheck2,     dot: "bg-slate-400",   ring: "ring-slate-100" },
+  baixa:       { label: "Baixa manual", icon: UserCog,        dot: "bg-emerald-500", ring: "ring-emerald-100" },
+  vencimento:  { label: "Vencimento",   icon: Calendar,       dot: "bg-amber-500",   ring: "ring-amber-100" },
+  banco:       { label: "Banco",        icon: Landmark,       dot: "bg-blue-600",    ring: "ring-blue-100" },
+  financeiro:  { label: "Caixa",        icon: Wallet,         dot: "bg-teal-500",    ring: "ring-teal-100" },
+  email:       { label: "E-mail",       icon: Mail,           dot: "bg-sky-500",     ring: "ring-sky-100" },
+  leitura:     { label: "Leitura",      icon: Eye,            dot: "bg-violet-500",  ring: "ring-violet-100" },
+  boleto:      { label: "Boleto",       icon: Banknote,       dot: "bg-blue-500",    ring: "ring-blue-100" },
+  nf:          { label: "NFS-e",        icon: FileCheck2,     dot: "bg-emerald-600", ring: "ring-emerald-100" },
+  comprovante: { label: "Comprovante",  icon: FileCheck2,     dot: "bg-cyan-600",    ring: "ring-cyan-100" },
+  ocorrencia:  { label: "Ocorrência",   icon: MessageSquare,  dot: "bg-orange-500",  ring: "ring-orange-100" },
+  nota:        { label: "Anotação",     icon: StickyNote,     dot: "bg-neutral-400", ring: "ring-neutral-100" },
 };
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
@@ -43,7 +50,7 @@ function fmtBRL(v: number | null | undefined): string {
 }
 
 export function InvoiceTraceDialog({
-  invoiceId, clientName, value, netValue, status, paymentDate, onClose,
+  invoiceId, clientName, value, netValue, status, paymentDate, dueDate, launchedAt, createdByName, onClose,
 }: {
   invoiceId: number;
   clientName: string;
@@ -51,6 +58,9 @@ export function InvoiceTraceDialog({
   netValue?: number | null;
   status?: string | null;
   paymentDate?: string | null;
+  dueDate?: string | null;
+  launchedAt?: string | null;
+  createdByName?: string | null;
   onClose: () => void;
 }) {
   const { data, isLoading, isError } = useQuery<{ invoice: any; events: TraceEvent[] }>({
@@ -69,7 +79,7 @@ export function InvoiceTraceDialog({
             Rastreio da Fatura #{invoiceId}
           </DialogTitle>
           <DialogDescription>
-            Rota completa do dinheiro — quem criou, quem deu baixa, e quando o valor entrou.
+            Rota completa: criação, boletos, NFS-e, e-mails, leituras, edições e baixa. Integração aparece como “Integração”.
           </DialogDescription>
         </DialogHeader>
 
@@ -78,6 +88,9 @@ export function InvoiceTraceDialog({
             <p className="text-sm font-bold text-neutral-900 uppercase" data-testid="text-trace-client">{clientName}</p>
             <p className="text-[11px] text-neutral-500">
               {fmtBRL(value)}{netValue != null && netValue !== value ? ` · líquido ${fmtBRL(netValue)}` : ""}
+              {launchedAt ? ` · lançamento ${new Date(launchedAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}
+              {dueDate ? ` · venc. ${new Date(dueDate + (dueDate.length === 10 ? "T12:00:00" : "")).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : " · venc. —"}
+              {createdByName ? ` · ${createdByName}` : ""}
               {paymentDate ? ` · pago em ${paymentDate}` : ""}
             </p>
           </div>

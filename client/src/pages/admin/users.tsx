@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
-import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock } from "lucide-react";
+import { PerfisAcessoPanel } from "@/pages/admin/perfis-acesso-panel";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -32,6 +32,7 @@ type OneShotCredentials = {
 const ALL_ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
   { value: "diretoria", label: "Diretoria", icon: Crown },
+  { value: "financeiro", label: "Financeiro", icon: Wallet },
   { value: "funcionario", label: "Funcionário", icon: UserCircle },
 ];
 
@@ -112,6 +113,7 @@ function UserListSection({
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       u.role === "diretoria" ? "bg-amber-50 text-amber-600" :
                       u.role === "admin" ? "bg-blue-50 text-blue-600" :
+                      u.role === "financeiro" ? "bg-emerald-50 text-emerald-600" :
                       "bg-neutral-100 text-neutral-500"
                     }`}>
                       <RoleIcon className="w-4 h-4" />
@@ -129,6 +131,7 @@ function UserListSection({
                         <span className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase tracking-wide ${
                           u.role === "diretoria" ? "bg-neutral-900 text-white" :
                           u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                          u.role === "financeiro" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                           "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`} data-testid={`text-user-role-${u.id}`}>
                           {roleInfo.label}
@@ -276,6 +279,7 @@ export default function UsersPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<SafeUser | null>(null);
   const [oneShotCredentials, setOneShotCredentials] = useState<OneShotCredentials | null>(null);
 
+  const [tab, setTab] = useState<"users" | "perfis">("users");
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState("funcionario");
@@ -289,7 +293,7 @@ export default function UsersPage() {
   });
 
   const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin");
+  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro");
   const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
   const createMutation = useMutation({
@@ -405,16 +409,24 @@ export default function UsersPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-page-title">Usuários do Sistema</h1>
-            <p className="text-sm text-neutral-500 mt-1">Gerencie os acessos ao sistema interno</p>
+            <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-page-title">Usuários e perfis</h1>
+            <p className="text-sm text-neutral-500 mt-1">Cadastre pessoas e defina o que cada perfil vê no sistema</p>
           </div>
+          {tab === "users" && (
           <Button onClick={openCreate} className="gap-2" data-testid="button-add-user">
             <Plus className="w-4 h-4" />
             Novo Usuário
           </Button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setTab("users")} className={`px-3 py-1.5 text-sm rounded-md border ${tab === "users" ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200"}`} data-testid="tab-users">Usuários</button>
+          <button type="button" onClick={() => setTab("perfis")} className={`px-3 py-1.5 text-sm rounded-md border ${tab === "perfis" ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200"}`} data-testid="tab-perfis">Perfis de acesso</button>
         </div>
 
-        {isLoading ? (
+        {tab === "perfis" ? (
+          <PerfisAcessoPanel canEdit={isDiretoria} />
+        ) : isLoading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-3 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
           </div>
