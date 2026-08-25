@@ -1593,6 +1593,7 @@ export async function buildFolhaStats(
   let faturamentoEmpregado = 0;
   let faturamentoOsCount = 0;
   let faturamentoMargem = 0;
+  const rotasInput: import("./lib/rotas-faturamento").RotaFaturamentoInput[] = [];
   try {
     const monthStartIso = `${monthYear}-01T00:00:00-03:00`;
     // Cap em "hoje" quando mês corrente, para refletir só o realizado
@@ -1602,7 +1603,7 @@ export async function buildFolhaStats(
     const monthEndIso = `${monthYear}-${lastDayCap}T23:59:59-03:00`;
     const { data: osRows } = await supabaseAdmin
       .from("service_orders")
-      .select("id, status, assigned_employee_id, assigned_employee_2_id")
+      .select("id, status, assigned_employee_id, assigned_employee_2_id, origin, destination")
       .or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`)
       .gte("scheduled_date", monthStartIso)
       .lte("scheduled_date", monthEndIso)
@@ -1612,7 +1613,7 @@ export async function buildFolhaStats(
     if (osIds.length > 0) {
       const { data: billRows } = await supabaseAdmin
         .from("escort_billings")
-        .select("service_order_id, fat_total, resultado_liquido")
+        .select("service_order_id, fat_total, resultado_liquido, desp_total")
         .in("service_order_id", osIds);
       for (const b of (billRows || [])) {
         const os = (osRows || []).find((o: any) => o.id === (b as any).service_order_id);
@@ -1620,11 +1621,20 @@ export async function buildFolhaStats(
         const share = hasDoubleAgent ? 0.5 : 1.0;
         const total = Number((b as any).fat_total || 0);
         const liquido = Number((b as any).resultado_liquido || 0);
+        const despesas = Number((b as any).desp_total || 0);
         if (total > 0) {
           faturamentoBruto += total;
           faturamentoEmpregado += total * share;
           faturamentoMargem += liquido * share;
           faturamentoOsCount += 1;
+          rotasInput.push({
+            origin: os?.origin,
+            destination: os?.destination,
+            fatTotal: total,
+            share,
+            margemLiquida: liquido,
+            despesas,
+          });
         }
       }
     }
@@ -1634,6 +1644,18 @@ export async function buildFolhaStats(
   faturamentoBruto = +faturamentoBruto.toFixed(2);
   faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
   faturamentoMargem = +faturamentoMargem.toFixed(2);
+
+  let rotasBreakdown: import("./lib/rotas-faturamento").RotasFaturamentoResult = {
+    rotas: [],
+    melhoresRotas: [],
+    totalFaturamento: 0,
+  };
+  try {
+    const { aggregateRotasFaturamento } = await import("./lib/rotas-faturamento");
+    rotasBreakdown = aggregateRotasFaturamento(rotasInput);
+  } catch (err) {
+    console.error("[buildFolhaStats] erro ao agregar rotas:", err);
+  }
 
   // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
   // INSS/FGTS: só salário+peric. HE/noturno (R$ 16/16,50) pagos à parte — sem encargo.
@@ -1713,6 +1735,7 @@ export async function buildFolhaStats(
     faturamentoEmpregado,
     faturamentoMargem,
     faturamentoOsCount,
+    rotasBreakdown,
     hasSalary: !!sal,
   };
 }
