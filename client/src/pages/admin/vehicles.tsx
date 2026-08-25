@@ -332,21 +332,21 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         </div>
         <div className="md:col-span-3">
           <label className="text-sm font-semibold text-neutral-700 mb-2 block">Ícone no Mapa / Grid</label>
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {VEHICLE_ICON_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
                 type="button"
                 disabled={applyingWrap}
                 onClick={() => selectVehicleType(opt)}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 transition-all ${
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 transition-all text-left ${
                   form.iconType === opt.key
                     ? "border-neutral-900 bg-neutral-50 shadow-sm"
                     : "border-neutral-200 bg-white hover:border-neutral-300"
                 }`}
                 data-testid={`btn-icon-${opt.key}`}
               >
-                <div className={`w-10 h-10 rounded-full overflow-hidden border-2 flex-shrink-0 ${
+                <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex-shrink-0 bg-neutral-900 ${
                   form.iconType === opt.key ? "border-neutral-900" : "border-neutral-300"
                 }`}>
                   <img src={opt.src} alt={opt.label} className="w-full h-full object-cover" />
@@ -356,7 +356,6 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             ))}
           </div>
           {applyingWrap && <p className="text-xs text-neutral-500 mt-2">Aplicando adesivagem do modelo…</p>}
-          <p className="text-xs text-neutral-500 mt-2">Fiat Mobi preenche as 4 fotos da adesivagem Torres e grava no cadastro ao salvar, como Polo e Kwid.</p>
         </div>
 
         <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50">

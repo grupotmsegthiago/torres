@@ -27,8 +27,8 @@ export const VEHICLE_ICON_OPTIONS: VehicleIconOption[] = [
   { key: "kwid", label: "Renault Kwid", src: "/kwid-icon.png", brand: "RENAULT", model: "KWID" },
   {
     key: "mobi",
-    label: "Fiat Mobi",
-    src: "/mobi-icon.png",
+    label: "Fiat Mobi Preto",
+    src: "/mobi-icon.webp",
     brand: "FIAT",
     model: "MOBI",
     color: "Preto",
