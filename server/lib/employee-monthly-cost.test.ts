@@ -60,7 +60,7 @@ test("composeCustoEmpresa: INSS patronal + seguro entram no realizado e no total
     inssPatronalPct: 20,
     seguroVidaMensal: 14.9,
   });
-  const esperadoPatronal = +(folha.baseTributavel * 0.2).toFixed(2);
+  const esperadoPatronal = +(folha.baseEncargos * 0.2).toFixed(2);
   assert.equal(com.inssPatronal, esperadoPatronal);
   assert.equal(com.seguroVida, 14.9);
   assert.equal(
@@ -129,7 +129,7 @@ test("composeCustoEmpresa: descontos do empregado são informativos (não somam 
   assert.ok(c.custoTotalEmpresa > c.descontosEmpregado.total);
 });
 
-test("HE eleva base tributável e, em cascata, FGTS + INSS patronal", () => {
+test("HE não eleva FGTS nem INSS patronal (pagos à parte R$ 16/h)", () => {
   const base = {
     salarioBaseCheio: 2565.31,
     diasTrabalhados: 30,
@@ -137,6 +137,8 @@ test("HE eleva base tributável e, em cascata, FGTS + INSS patronal", () => {
     periculosidadePct: 0.3,
     diasUteis: 23,
     refeicaoDiaria: 43,
+    valorHoraExtraFixo: 16,
+    valorHoraNoturnaFixo: 16.5,
   };
   const semHe = calcularFolha({ ...base, horasExtras: 0 });
   const comHe = calcularFolha({ ...base, horasExtras: 40 });
@@ -154,7 +156,14 @@ test("HE eleva base tributável e, em cascata, FGTS + INSS patronal", () => {
     seguroVidaMensal: 14.9,
   });
   assert.ok(comHe.horasExtrasValor > 0);
-  assert.ok(b.custoTotalEmpresa > a.custoTotalEmpresa);
-  assert.ok(b.inssPatronal > a.inssPatronal);
-  assert.ok(b.custoProvisionado > a.custoProvisionado); // FGTS sobe com HE
+  assert.equal(comHe.baseEncargos, semHe.baseEncargos, "HE não altera base de encargos");
+  assert.equal(b.inssPatronal, a.inssPatronal, "INSS patronal não sobe com HE");
+  assert.equal(b.custoProvisionado, a.custoProvisionado, "FGTS não sobe com HE");
+  // Custo total sobe só pelo valor face da HE (sem % encargo em cima)
+  const deltaHe = comHe.horasExtrasValor;
+  assert.equal(
+    +(b.custoTotalEmpresa - a.custoTotalEmpresa).toFixed(2),
+    +deltaHe.toFixed(2),
+    "custo extra = só R$ 16/h × horas",
+  );
 });

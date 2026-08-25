@@ -190,10 +190,10 @@ export const TOLL_PLAZAS: TollPlaza[] = [
     state: "SP",
     lat: -23.5490,
     lng: -46.9340,
-    price: 4.30,
+    price: 9.80,
     bidirectional: true,
     type: "conventional",
-    updatedAt: "2025-09-01",
+    updatedAt: "2026-03-30",
   },
   {
     id: "rio-santos-mangaratiba",
@@ -207,6 +207,137 @@ export const TOLL_PLAZAS: TollPlaza[] = [
     bidirectional: true,
     type: "conventional",
     updatedAt: "2025-09-01",
+  },
+  // —— Corredor SP → Sul (Régis / BR-376 / BR-101 Litoral Sul) ——
+  {
+    id: "regis-miracatu",
+    name: "Miracatu",
+    road: "BR-116 (Régis Bittencourt)",
+    city: "Miracatu",
+    state: "SP",
+    lat: -24.2810,
+    lng: -47.4600,
+    price: 3.90,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-01-01",
+  },
+  {
+    id: "regis-juquia",
+    name: "Juquiá",
+    road: "BR-116 (Régis Bittencourt)",
+    city: "Juquiá",
+    state: "SP",
+    lat: -24.3200,
+    lng: -47.6350,
+    price: 3.90,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-01-01",
+  },
+  {
+    id: "regis-cajati",
+    name: "Cajati",
+    road: "BR-116 (Régis Bittencourt)",
+    city: "Cajati",
+    state: "SP",
+    lat: -24.7360,
+    lng: -48.1230,
+    price: 3.90,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-01-01",
+  },
+  {
+    id: "regis-jacupiranga",
+    name: "Jacupiranga",
+    road: "BR-116 (Régis Bittencourt)",
+    city: "Jacupiranga",
+    state: "SP",
+    lat: -24.6920,
+    lng: -48.0050,
+    price: 3.90,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-01-01",
+  },
+  {
+    id: "regis-pariquera",
+    name: "Pariquera-Açu",
+    road: "BR-116 (Régis Bittencourt)",
+    city: "Pariquera-Açu",
+    state: "SP",
+    lat: -24.7150,
+    lng: -47.8810,
+    price: 3.90,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-01-01",
+  },
+  {
+    id: "br376-sao-jose-pinhais",
+    name: "São José dos Pinhais",
+    road: "BR-376 / Contorno Leste",
+    city: "São José dos Pinhais",
+    state: "PR",
+    lat: -25.5350,
+    lng: -49.1060,
+    price: 5.70,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-06-01",
+  },
+  {
+    id: "br101-garuva",
+    name: "Garuva",
+    road: "BR-101 (Arteris Litoral Sul)",
+    city: "Garuva",
+    state: "SC",
+    lat: -26.0270,
+    lng: -48.8520,
+    price: 5.70,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-06-01",
+  },
+  {
+    id: "br101-araquari",
+    name: "Araquari",
+    road: "BR-101 (Arteris Litoral Sul)",
+    city: "Araquari",
+    state: "SC",
+    lat: -26.3750,
+    lng: -48.7220,
+    price: 5.70,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-06-01",
+  },
+  {
+    id: "br101-porto-belo",
+    name: "Porto Belo",
+    road: "BR-101 (Arteris Litoral Sul)",
+    city: "Porto Belo",
+    state: "SC",
+    lat: -27.1570,
+    lng: -48.5530,
+    price: 5.70,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-06-01",
+  },
+  {
+    id: "br101-palhoca",
+    name: "Palhoça",
+    road: "BR-101 (Arteris Litoral Sul)",
+    city: "Palhoça",
+    state: "SC",
+    lat: -27.6450,
+    lng: -48.6700,
+    price: 5.70,
+    bidirectional: true,
+    type: "conventional",
+    updatedAt: "2026-06-01",
   },
 ];
 
@@ -259,21 +390,25 @@ export interface TollEstimate {
   routeDistanceKm: number;
 }
 
-export function estimateTolls(
-  originLat: number,
-  originLng: number,
-  destLat: number,
-  destLng: number,
-  waypoints?: Array<{ lat: number; lng: number }>,
-  corridorWidthKm: number = 15
+/**
+ * Estima pedágios ao longo de uma polilinha real (Directions/OSRM).
+ * Usa corredor estreito — bem mais preciso que origem→destino em linha reta.
+ */
+export function estimateTollsAlongPath(
+  path: Array<{ lat: number; lng: number }>,
+  opts?: { corridorWidthKm?: number; routeDistanceKm?: number },
 ): TollEstimate {
-  const segments: Array<{ aLat: number; aLng: number; bLat: number; bLng: number }> = [];
-  const points = [
-    { lat: originLat, lng: originLng },
-    ...(waypoints || []),
-    { lat: destLat, lng: destLng },
-  ];
+  const corridorWidthKm = opts?.corridorWidthKm ?? 4;
+  const raw = (path || []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (raw.length < 2) {
+    return { totalIda: 0, totalIdaVolta: 0, plazas: [], routeDistanceKm: 0 };
+  }
 
+  // Downsample para performance (máx. ~400 segmentos).
+  const step = Math.max(1, Math.ceil(raw.length / 400));
+  const points = raw.filter((_, i) => i % step === 0 || i === raw.length - 1);
+
+  const segments: Array<{ aLat: number; aLng: number; bLat: number; bLng: number }> = [];
   for (let i = 0; i < points.length - 1; i++) {
     segments.push({
       aLat: points[i].lat,
@@ -283,11 +418,16 @@ export function estimateTolls(
     });
   }
 
-  const routeDistanceKm = segments.reduce((sum, s) =>
-    sum + haversineDistKm(s.aLat, s.aLng, s.bLat, s.bLng), 0
+  const pathDistanceKm = segments.reduce(
+    (sum, s) => sum + haversineDistKm(s.aLat, s.aLng, s.bLat, s.bLng),
+    0,
   );
+  const routeDistanceKm = opts?.routeDistanceKm && opts.routeDistanceKm > 0
+    ? opts.routeDistanceKm
+    : pathDistanceKm;
 
   const matchedPlazas: TollEstimate["plazas"] = [];
+  const origin = points[0];
 
   for (const plaza of TOLL_PLAZAS) {
     let isNear = false;
@@ -297,27 +437,24 @@ export function estimateTolls(
         break;
       }
     }
-
-    if (isNear) {
-      const distFromOrigin = haversineDistKm(originLat, originLng, plaza.lat, plaza.lng);
-      matchedPlazas.push({
-        id: plaza.id,
-        name: plaza.name,
-        road: plaza.road,
-        city: plaza.city,
-        state: plaza.state,
-        price: plaza.price,
-        type: plaza.type,
-        distFromOriginKm: Math.round(distFromOrigin * 10) / 10,
-      });
-    }
+    if (!isNear) continue;
+    const distFromOrigin = haversineDistKm(origin.lat, origin.lng, plaza.lat, plaza.lng);
+    matchedPlazas.push({
+      id: plaza.id,
+      name: plaza.name,
+      road: plaza.road,
+      city: plaza.city,
+      state: plaza.state,
+      price: plaza.price,
+      type: plaza.type,
+      distFromOriginKm: Math.round(distFromOrigin * 10) / 10,
+    });
   }
 
   matchedPlazas.sort((a, b) => a.distFromOriginKm - b.distFromOriginKm);
-
   const totalIda = matchedPlazas.reduce((sum, p) => sum + p.price, 0);
   const totalIdaVolta = matchedPlazas.reduce((sum, p) => {
-    const original = TOLL_PLAZAS.find(tp => tp.id === p.id);
+    const original = TOLL_PLAZAS.find((tp) => tp.id === p.id);
     return sum + p.price + (original?.bidirectional ? p.price : 0);
   }, 0);
 
@@ -327,6 +464,22 @@ export function estimateTolls(
     plazas: matchedPlazas,
     routeDistanceKm: Math.round(routeDistanceKm * 10) / 10,
   };
+}
+
+export function estimateTolls(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  waypoints?: Array<{ lat: number; lng: number }>,
+  corridorWidthKm: number = 15
+): TollEstimate {
+  const points = [
+    { lat: originLat, lng: originLng },
+    ...(waypoints || []),
+    { lat: destLat, lng: destLng },
+  ];
+  return estimateTollsAlongPath(points, { corridorWidthKm });
 }
 
 export function getAllTollPlazas(): TollPlaza[] {

@@ -191,15 +191,19 @@ export function splitMissionCostsForBilling(mcs: Array<any>): {
     const amt = n((mc as any).amount);
     const isRevenue = ((mc as any).cost_type ?? (mc as any).costType) === "revenue";
     const catRaw = String((mc as any).category || "").trim().toLowerCase();
-    // Match EXATO da categoria "Pedágio" criada automaticamente pelo sistema.
-    // Categorias custom como "Pedágio Cliente" são receitas legítimas e NÃO devem ser ignoradas.
-    const isPedagioExpenseCat = catRaw === "pedágio" || catRaw === "pedagio";
+    // Match categoria "Pedágio" do sistema + variante "Pedágio (Receita)".
+    // Categorias custom como "Pedágio Cliente" NÃO entram (não começam com "pedágio (").
+    const isPedagioCat =
+      catRaw === "pedágio" ||
+      catRaw === "pedagio" ||
+      catRaw.startsWith("pedágio (") ||
+      catRaw.startsWith("pedagio (");
     const isCombustivel = catRaw.includes("combustível") || catRaw.includes("combustivel") || catRaw.includes("abastecimento");
     if (isRevenue) {
       // Pedágio duplicado: o sistema cria a entry revenue automaticamente quando há expense
       // de pedágio. NÃO somar em receitas_os — o repasse já está representado por despesas_pedagio
       // na fórmula fat_total.
-      if (isPedagioExpenseCat) continue;
+      if (isPedagioCat) continue;
       receitas_os += amt;
       revenueItems.push({
         id: (mc as any).id,
@@ -208,7 +212,7 @@ export function splitMissionCostsForBilling(mcs: Array<any>): {
         category: (mc as any).category || "Outros",
       });
     } else {
-      if (isPedagioExpenseCat) despesas_pedagio += amt;
+      if (isPedagioCat) despesas_pedagio += amt;
       else if (isCombustivel) despesas_combustivel += amt;
       else despesas_outras += amt;
     }
@@ -281,22 +285,96 @@ export interface ComputeBillingPayloadInput {
   nowDate?: Date;
 }
 
+export class OfficialBillingFactsError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "OfficialBillingFactsError";
+  }
+}
+
+export function assertOfficialBillingFacts(input: {
+  so: any;
+  contrato: any;
+  photos: Array<{ step: string; km_value: any }>;
+}) {
+  const { so, contrato, photos } = input;
+  if (!so?.id) {
+    throw new OfficialBillingFactsError(
+      "SERVICE_ORDER_REQUIRED",
+      "Billing oficial exige service_order_id.",
+    );
+  }
+  if (!so?.escort_contract_id) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_REQUIRED",
+      "OS sem escort_contract_id: correção operacional necessária.",
+    );
+  }
+  if (!contrato?.id || String(contrato.id) !== String(so.escort_contract_id)) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_MISMATCH",
+      "Contrato do cálculo difere do escort_contract_id persistido na OS.",
+    );
+  }
+  if (!so?.mission_started_at || !so?.completed_date) {
+    throw new OfficialBillingFactsError(
+      "TIMESTAMPS_REQUIRED",
+      "Billing oficial exige mission_started_at e completed_date reais.",
+    );
+  }
+  const startMs = new Date(so.mission_started_at).getTime();
+  const endMs = new Date(so.completed_date).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    throw new OfficialBillingFactsError(
+      "INVALID_TIMESTAMPS",
+      "Timestamps reais da missão são inválidos ou estão invertidos.",
+    );
+  }
+  const lastPhoto = (step: string) =>
+    [...photos].reverse().find((photo) => photo.step === step);
+  const kmInicial = lastPhoto("km_chegada") || lastPhoto("km_saida");
+  const kmFinal = lastPhoto("km_final");
+  if (!kmInicial || Number(kmInicial.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_INICIAL_REQUIRED",
+      "Billing oficial exige foto factual de KM inicial.",
+    );
+  }
+  if (!kmFinal || Number(kmFinal.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_FINAL_REQUIRED",
+      "Billing oficial exige foto factual de KM final.",
+    );
+  }
+  if (Number(kmFinal.km_value) < Number(kmInicial.km_value)) {
+    throw new OfficialBillingFactsError(
+      "KM_REVERSED",
+      "KM final não pode ser menor que o KM inicial factual.",
+    );
+  }
+}
+
 export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const { so, contrato, photos, mCosts, horasMissao, clientName, empName, emp2Name, vehPlate } = input;
+  assertOfficialBillingFacts({ so, contrato, photos });
   const now = input.nowDate ?? new Date();
   const n = (v: any) => Number(v) || 0;
   const r = (v: number) => Math.round(v * 100) / 100;
   const toBRT = (d: Date) =>
     d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
 
-  const kmChegadaPhoto = photos.find((p) => p.step === "km_chegada");
-  const kmSaidaPhoto = photos.find((p) => p.step === "km_saida");
-  const kmFinalPhoto = photos.find((p) => p.step === "km_final");
+  // A última foto de cada etapa vence: ajustes/correções posteriores não podem
+  // ser ignorados por um writer enquanto outro usa o valor corrigido.
+  const lastPhoto = (step: string) =>
+    [...photos].reverse().find((p) => p.step === step);
+  const kmChegadaPhoto = lastPhoto("km_chegada");
+  const kmSaidaPhoto = lastPhoto("km_saida");
+  const kmFinalPhoto = lastPhoto("km_final");
   const kmInicial = n(kmChegadaPhoto?.km_value) || n(kmSaidaPhoto?.km_value);
   const kmFinalVal = n(kmFinalPhoto?.km_value);
   const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;
 
-  const missionEndDate = so.completed_date ? new Date(so.completed_date) : now;
+  const missionEndDate = new Date(so.completed_date);
   const scheduledDate = so.scheduled_date ? new Date(so.scheduled_date) : null;
   const missionStartDate = so.mission_started_at ? new Date(so.mission_started_at) : null;
 
@@ -304,61 +382,68 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const startTime = missionStartDate ? toBRT(missionStartDate) : undefined;
   const endTime = toBRT(missionEndDate);
 
-  const billingStartDate = missionStartDate || scheduledDate;
-  const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
-
-  const km_total = kmFinal - kmInicial;
-  const km_carregado = Math.max(0, km_total);
-
-  const billing = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal, contrato });
-  let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
-  const { km_excedente, has_acionamento: hasAcionamento } = billing;
-  const franquiaKm = billing.franquia_km;
-
-  const isNoturno = (() => {
-    const checkH = (t?: string) => {
-      if (!t) return false;
-      const h = parseInt(t.split(":")[0]);
-      return h >= 22 || h < 5;
-    };
-    return checkH(inicioConsiderado) || checkH(endTime);
-  })();
-  if (isNoturno) {
-    fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
-  }
-
   const { despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os } = splitMissionCostsForBilling(mCosts);
-  fat_total += despesas_pedagio + receitas_os;
-
-  const pag_vrp = n(contrato.vrp_base);
-  const resultado_bruto = fat_total - pag_vrp;
+  const canonical = calcularEscolta({
+    km_inicial: kmInicial,
+    km_final: kmFinal,
+    km_vazio: 0,
+    horas_missao: horasMissao,
+    horas_estadia: 0,
+    teve_pernoite: false,
+    horario_agendado: scheduledTime,
+    horario_inicio: startTime,
+    horario_fim: endTime,
+    inicio_ts: so.mission_started_at || null,
+    fim_ts: so.completed_date,
+    scheduled_date: so.scheduled_date || null,
+    despesas_pedagio,
+    despesas_combustivel,
+    despesas_outras,
+    receitas_os,
+    contrato,
+  });
 
   return {
     service_order_id: so.id,
     client_id: so.client_id, client_name: clientName || "--",
     contract_id: contrato.id || null,
     km_inicial: n(kmInicial), km_final: n(kmFinal), km_vazio: 0,
-    km_carregado: n(km_carregado), km_total: n(km_total),
-    km_faturado: n(Math.max(km_carregado, franquiaKm)), km_franquia: n(franquiaKm),
-    km_excedente: n(km_excedente),
+    km_carregado: n(canonical.km_carregado), km_total: n(canonical.km_total),
+    km_faturado: n(canonical.km_faturado), km_franquia: n(canonical.km_franquia),
+    km_excedente: n(canonical.km_excedente),
     horario_agendado: scheduledTime || null,
     horario_inicio: startTime || null, horario_fim: endTime || null,
-    horario_inicio_considerado: inicioConsiderado,
-    horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
-    horas_estadia: 0, teve_pernoite: false, is_noturno: isNoturno,
-    fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
-    valor_franquia: hasAcionamento ? r(fat_acionamento) : r(Math.min(km_carregado, franquiaKm) * n(contrato.valor_km_carregado)),
-    valor_km_extra: r(km_excedente * (hasAcionamento ? n(contrato.valor_km_extra) : n(contrato.valor_km_carregado))),
-    pag_vrp: r(pag_vrp), pag_total: r(pag_vrp),
-    resultado_bruto: r(resultado_bruto), resultado_liquido: r(resultado_bruto),
-    margem_percentual: fat_total > 0 ? r((resultado_bruto / fat_total) * 100) : 0,
+    horario_inicio_considerado: canonical.horario_inicio_considerado,
+    horas_missao: r(canonical.horas_trabalhadas), horas_trabalhadas: r(canonical.horas_trabalhadas),
+    horas_estadia: 0, teve_pernoite: false, is_noturno: canonical.is_noturno,
+    fat_acionamento: r(canonical.fat_acionamento),
+    fat_km: r(canonical.fat_km),
+    fat_km_carregado: r(canonical.faturamento.km_carregado),
+    fat_km_vazio: r(canonical.faturamento.km_vazio),
+    fat_hora_extra: r(canonical.fat_hora_extra),
+    fat_adicional_noturno: r(canonical.fat_adicional_noturno),
+    fat_estadia: r(canonical.fat_estadia),
+    fat_pernoite: r(canonical.fat_pernoite),
+    fat_diaria: r(canonical.fat_pernoite),
+    fat_total: r(canonical.fat_total),
+    valor_franquia: r(canonical.valor_franquia),
+    valor_km_extra: r(canonical.valor_km_extra),
+    pag_vrp: r(canonical.pag_vrp),
+    pag_periculosidade: r(canonical.pag_periculosidade),
+    pag_adicional_noturno: r(canonical.pag_adicional_noturno),
+    pag_reembolsos: r(canonical.pag_reembolsos),
+    pag_total: r(canonical.pag_total),
+    resultado_bruto: r(canonical.resultado.bruto),
+    resultado_liquido: r(canonical.resultado.liquido),
+    margem_percentual: r(canonical.resultado.margem_pct),
     vigilante_id: so.assigned_employee_id, vigilante_name: empName || "--",
     vigilante2_id: so.assigned_employee_2_id || null, vigilante2_name: emp2Name || null,
     origem: so.origin || null, destino: so.destination || null,
     placa_viatura: vehPlate || null,
     placa_escoltado: so.escorted_vehicle_plate || null,
     motorista_escoltado: so.escorted_driver_name || null,
-    despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras), receitas_os: r(receitas_os),
+    despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
+    desp_total: r(canonical.despesas.total), receitas_os: r(receitas_os),
     data_missao: (() => {
       const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
       const b = so.scheduled_date ? new Date(so.scheduled_date).getTime() : Infinity;

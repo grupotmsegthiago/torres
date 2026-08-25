@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calcularEscolta } from "../billing-calc";
+import {
+  CANCELADA_CLEAN_FINANCIAL_FIELDS,
+  isCanceladaContract100km3,
+} from "./cancelada-billing";
 
 // Regra do dono p/ OS CANCELADA: puxar a "tabela de 100 km" do cliente e cobrar
 // o acionamento + excedente real de km/horas. Dentro da franquia (≤100 km/≤3 h)
@@ -9,6 +13,7 @@ import { calcularEscolta } from "../billing-calc";
 
 // Espelho da tabela de 100 km de produção (franquia_km=100, franquia_horas=3).
 const tabela100km = {
+  status: "Ativo",
   valor_acionamento: 480,
   franquia_km: 100,
   franquia_horas: 3,
@@ -24,6 +29,13 @@ const tabela100km = {
   valor_hora_estadia: 50,
   valor_diaria: 200,
 };
+
+test("cancelada aceita somente contrato Ativo com franquia 100 km / 3 h", () => {
+  assert.equal(isCanceladaContract100km3(tabela100km), true);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_km: 50 }), false);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_horas: 4 }), false);
+  assert.equal(isCanceladaContract100km3({ ...tabela100km, status: "Inativo" }), false);
+});
 
 const base = {
   km_vazio: 0,
@@ -77,4 +89,26 @@ test("cancelada com horas excedentes cobra acionamento + hora extra fracionada",
   assert.equal(r.is_noturno, false);
   assert.equal(r.fat_hora_extra, 220);
   assert.equal(r.fat_total, 700);
+});
+
+test("cancelada limpa resíduos de custos, receitas e pagamentos anteriores", () => {
+  const antigo = {
+    receitas_os: 100,
+    despesas_pedagio: 50,
+    despesas_combustivel: 70,
+    despesas_outras: 30,
+    desp_total: 150,
+    desp_pedagio: 50,
+    desp_combustivel: 70,
+    desp_outras: 30,
+    pag_vrp: 150,
+    pag_periculosidade: 45,
+    pag_adicional_noturno: 30,
+    pag_reembolsos: 150,
+    pag_total: 375,
+  };
+  const final = { ...antigo, ...CANCELADA_CLEAN_FINANCIAL_FIELDS };
+  for (const field of Object.keys(CANCELADA_CLEAN_FINANCIAL_FIELDS)) {
+    assert.equal((final as any)[field], 0, `${field} deve ser limpo`);
+  }
 });

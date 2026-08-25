@@ -61,6 +61,12 @@ Constante de apoio no cliente: `FROZEN_BILLING_STATUSES` em `balanco-calc.ts`.
 
 Edição manual excepcional, se existir, exige autorização de role adequada e trilha de auditoria — nunca cron silencioso.
 
+### APROVADA (billing) ≠ aprovação do cliente (boletim)
+
+- `escort_billings.status = APROVADA` = **aprovação interna**: OS conferida e pronta para enviar ao cliente. No Balanço Gerencial permanece **Finalizado**. Enviar/reenviar boletim **não** altera esse status.
+- `boletim_approvals` (`PENDENTE` / `APROVADO` / …) = fluxo do **cliente** sobre a medição/fatura — processo separado.
+- Snapshot comercial (`create_boletim_approval_atomic`) bloqueia apenas `FATURADO` / `FATURADA` / `PAGO`. `APROVADA` entra no boletim sem reabrir.
+
 ---
 
 ## Pedágio

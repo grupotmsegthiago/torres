@@ -18,10 +18,12 @@ aplica-se a alíquota flat de 22% sobre a base mensal (média histórica).
 HE à parte → base mensal < 5k → IRRF zerado (ex.: Jorge 3.334,90 → IRRF 0).
 
 **FGTS NÃO desconta do líquido** (inalterado): FGTS é depósito do empregador.
-Líquido = `baseTributavel − INSS − IRRF − VT` (sem FGTS).
+Líquido folha = `baseEncargos − INSS − IRRF − VT` (HE/noturno pagos à parte).
+
+**HE/noturno (decisão dono 2026):** pagos à parte a R$ 16,00 / R$ 16,50 — **sem**
+INSS, FGTS, IRRF nem % de encargos sociais em cima. `baseEncargos` = só salário+peric+DSR.
 
 **Como aplicar:**
 - `calcularFolha`: IRRF flat usa base = salário+peric; isento se ≤ `IRRF_ISENTO_ATE` (5000).
-- HE/noturno continuam em `baseTributavel` para INSS/FGTS quando lançados na folha,
-  mas **não** na base de IRRF mensal.
-- NÃO voltar a tributar HE no IRRF mensal sem ordem explícita do dono.
+- INSS/FGTS/INSS patronal usam `baseEncargos` (nunca HE/noturno).
+- NÃO voltar a tributar HE/noturno sem ordem explícita do dono.

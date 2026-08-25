@@ -70,6 +70,12 @@ type FolhaDay = {
   hasAlert?: boolean;
   hasWarning?: boolean;
 };
+type RotaFaturamentoItem = {
+  rota: string; missoes: number; fatBruto: number; fatAgente: number;
+  margemLiquida: number; despesas: number; lucro: number;
+  pctFaturamento: number; margemPct: number; ticketMedio: number;
+};
+type RotasBreakdown = { rotas: RotaFaturamentoItem[]; melhoresRotas: string[]; totalFaturamento: number };
 type FolhaStats = {
   hoursWorked: number; hoursLimit: number; horaExtra: number; horasRestantes: number; percentUsed: number;
   daysWorked: number; baseSalary: number; valorHora: number; valorHoraExtra: number;
@@ -82,6 +88,7 @@ type FolhaStats = {
   vencimentosTotal: number; beneficiosTotal: number;
   fgts?: number; fgtsPct?: number; inssPatronal?: number; inssPatronalPct?: number; seguroVida?: number; recolhimentosTotal?: number;
   faturamentoBruto?: number; faturamentoEmpregado?: number; faturamentoMargem?: number; faturamentoOsCount?: number;
+  rotasBreakdown?: RotasBreakdown;
   hasSalary: boolean;
 };
 
@@ -1751,13 +1758,13 @@ function FolhaTab() {
                     )}
                   </div>
                 </HoverCardTrigger>
-                <HoverCardContent align="end" className="w-80 p-0 overflow-hidden">
-                  <div className="bg-emerald-600 text-white px-3 py-2">
+                <HoverCardContent align="end" className="w-96 p-0 overflow-hidden max-h-[min(85vh,560px)] flex flex-col">
+                  <div className="bg-emerald-600 text-white px-3 py-2 shrink-0">
                     <div className="text-[10px] uppercase tracking-wider opacity-90">Faturamento gerado no mês</div>
                     <div className="text-lg font-black tabular-nums" data-testid="text-faturamento-empregado">{fmtBRL(stats.faturamentoEmpregado ?? 0)}</div>
                     <div className="text-[10px] opacity-90">Participou de {stats.faturamentoOsCount ?? 0} OS{(stats.faturamentoOsCount ?? 0) === 1 ? "" : "s"}</div>
                   </div>
-                  <div className="p-3 space-y-2 text-xs">
+                  <div className="p-3 space-y-2 text-xs overflow-y-auto flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-neutral-800 font-medium">Faturamento bruto das OSs</div>
@@ -1815,6 +1822,65 @@ function FolhaTab() {
                         </div>
                       );
                     })()}
+                    {(stats.rotasBreakdown?.rotas?.length ?? 0) > 0 && (
+                      <div className="pt-3 border-t border-neutral-200 space-y-2" data-testid="section-rotas-breakdown">
+                        <div>
+                          <div className="text-neutral-800 font-semibold">Rotas do mês</div>
+                          <div className="text-[10px] text-neutral-400 mt-0.5">% do faturamento · ticket · gasto · lucro</div>
+                        </div>
+                        {(stats.rotasBreakdown?.melhoresRotas?.length ?? 0) > 0 && (
+                          <div className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-1.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-800">Melhores rotas para aceitar</div>
+                            <div className="text-[11px] text-emerald-900 mt-0.5 leading-snug">
+                              {(stats.rotasBreakdown?.melhoresRotas || []).map((r, i) => (
+                                <span key={r}>
+                                  {i > 0 && " · "}
+                                  <span className="font-semibold">{r}</span>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="text-[10px] text-emerald-700/80 mt-0.5">Ordenadas por margem de lucro %</div>
+                          </div>
+                        )}
+                        <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                          {(stats.rotasBreakdown?.rotas || []).map((r) => {
+                            const isTop = (stats.rotasBreakdown?.melhoresRotas || []).includes(r.rota);
+                            return (
+                              <div
+                                key={r.rota}
+                                className={`rounded-md border px-2 py-1.5 ${isTop ? "border-emerald-300 bg-emerald-50/60" : "border-neutral-200 bg-neutral-50/50"}`}
+                                data-testid={`rota-item-${r.rota.replace(/[^a-zA-Z0-9]/g, "-")}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-neutral-800 truncate" title={r.rota}>{r.rota}</div>
+                                    <div className="text-[10px] text-neutral-500">{r.missoes} missão{r.missoes === 1 ? "" : "ões"} · ticket {fmtBRL(r.ticketMedio)}</div>
+                                  </div>
+                                  <span className="shrink-0 text-[11px] font-bold tabular-nums text-emerald-700">{r.pctFaturamento.toFixed(1)}%</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1 mt-1.5 text-[10px]">
+                                  <div>
+                                    <div className="text-neutral-400">Fat.</div>
+                                    <div className="font-semibold tabular-nums text-neutral-800">{fmtBRL(r.fatAgente)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-neutral-400">Gasto</div>
+                                    <div className="font-semibold tabular-nums text-neutral-600">{fmtBRL(r.despesas)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-neutral-400">Lucro</div>
+                                    <div className={`font-semibold tabular-nums ${r.lucro >= 0 ? "text-emerald-700" : "text-red-600"}`}>{fmtBRL(r.lucro)}</div>
+                                  </div>
+                                </div>
+                                <div className="text-[10px] text-neutral-500 mt-0.5">
+                                  Margem {r.margemPct >= 0 ? "+" : ""}{r.margemPct.toFixed(1)}% sobre faturamento
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </HoverCardContent>
               </HoverCard>

@@ -452,7 +452,7 @@ export function composeCustoEmpresaDetalhado(input: {
     Number(beneficios.valeAlimentacao || 0) +
     Number(beneficios.assiduidade || 0);
 
-  const inssPatronal = isClt ? r2(folha.baseTributavel * (inssPatronalPct / 100)) : 0;
+  const inssPatronal = isClt ? r2(folha.baseEncargos * (inssPatronalPct / 100)) : 0;
   const seguroVida = isClt ? r2(Number(seguroVidaMensal) || 0) : 0;
   const diariasN = r2(Number(diarias) || 0);
 

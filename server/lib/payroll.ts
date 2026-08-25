@@ -17,17 +17,16 @@
  *   3) Horas Extras (valorHora × 1,60 × horas_extras)
  *   4) Hora Noturna (valorHora × 1,80 × horas_noturnas — hora cheia + 60% HE + 20% not).
  *   5) DSR: NÃO aplicado → aplicarDsr=false.
- *   6) Total tributável (INSS/FGTS) = Salário(c/ peric) + HE + Noturno (sem DSR).
- *   7) INSS = 12% fixo sobre o total tributável (inssModo="flat", inssFlatPct=12).
- *   8) IRRF mensal (decisão dono 29/07/2026 — ver memória payroll-irrf-flat):
- *      base = só salário + periculosidade (HE/noturno são pagos à parte);
- *      se base ≤ R$ 5.000 → IRRF = 0; senão 22% flat sobre essa base.
- *   9) FGTS 8% sobre o total tributável.
- *   10) Total bruto (quadro Remuneração) = base tributável (sem VR/ajuda —
- *      benefícios ficam no quadro à parte). Decisão dono 29/07/2026.
- *   11) Líquido = baseTributavel − IRRF − INSS − VT (FGTS NÃO desconta do líquido).
- *   12) Custo empresa = bruto + VR + ajuda + FGTS (SEM provisões — decisão
- *       dono 29/07/2026: 13º/férias/1/3 são só informativos).
+ *   6) HE/noturno (CCT R$ 16 / R$ 16,50) são pagos À PARTE — sem INSS, FGTS,
+ *      IRRF nem encargos sociais em cima (decisão dono 2026).
+ *   7) Base de encargos (INSS/FGTS) = só Salário(c/ peric) + DSR (DSR off).
+ *   8) INSS = 12% fixo sobre a base de encargos (inssModo="flat").
+ *   9) IRRF mensal (decisão dono 29/07/2026): base = salário + periculosidade;
+ *      isento ≤ R$ 5.000; senão 22% flat.
+ *   10) FGTS 8% só sobre a base de encargos (não incide em HE/noturno).
+ *   11) Total bruto (quadro Remuneração) = folha + HE + noturno (sem VR/ajuda).
+ *   12) Líquido folha = baseEncargos − IRRF − INSS − VT (HE/noturno fora).
+ *   13) Custo empresa = totalBruto + VR + ajuda + FGTS (FGTS só na base folha).
  *   13) Provisões (informativo): 13º, Férias, 1/3, FGTS/INSS s/ provisões.
  *
  * Regra travada revertida pelo dono: adicional noturno passou de 20% (só prêmio)
@@ -226,7 +225,10 @@ export interface PayrollBreakdown {
   ajudaCusto: number;
   /** Remuneração (salário+peric+HE+noturno+DSR) — sem VR/ajuda. */
   totalBruto: number;
-  baseTributavel: number; // exclui refeição e ajuda de custo (não compõem base prev/IR)
+  /** Vencimentos totais (= totalBruto). Compat: nome legado. */
+  baseTributavel: number;
+  /** Base INSS/FGTS — só salário+peric+DSR (HE/noturno pagos à parte, sem encargo). */
+  baseEncargos: number;
   /** Base só de IRRF mensal (= salário + peric; sem HE/noturno). */
   baseIrrfMensal: number;
 
@@ -314,28 +316,26 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   const refeicao = r2(refeicaoDiaria * diasUteis);
   const ajudaCusto = r2(ajudaCustoMensal);
 
-  // Base tributável (INSS/FGTS) — exclui benefícios indenizatórios (VR/ajuda).
-  // HE/noturno entram aqui quando lançados na folha do período.
-  const baseTributavel = r2(
-    salarioProporcional + periculosidade + horasExtrasValor + adicionalNoturnoValor + dsr
-  );
-  // Quadro Remuneração: só vencimentos (sem VR/ajuda — esses vão em Benefícios).
-  const totalBruto = baseTributavel;
+  // Base de encargos: só folha (salário+peric+DSR). HE/noturno = R$ 16 / R$ 16,50
+  // pagos à parte, sem INSS/FGTS/IRRF nem % encargos em cima.
+  const baseEncargos = r2(salarioProporcional + periculosidade + dsr);
+  const totalBruto = r2(baseEncargos + horasExtrasValor + adicionalNoturnoValor);
+  const baseTributavel = totalBruto;
   // Base IRRF mensal: HE/noturno pagos à parte → fora da base (29/07/2026).
   const baseIrrfMensal = r2(salarioProporcional + periculosidade);
 
   // 2) Deduções — só CLT tem INSS/IRRF/FGTS. Não-CLT (PJ, fixo) zera tudo.
-  // INSS: modelo Torres usa 12% fixo; "progressivo" mantém a tabela oficial com teto.
+  // INSS/FGTS: apenas sobre baseEncargos (nunca sobre HE/noturno).
   const inss = isClt
-    ? (inssModo === "flat" ? r2(baseTributavel * (inssFlatPct / 100)) : calcularINSS(baseTributavel))
+    ? (inssModo === "flat" ? r2(baseEncargos * (inssFlatPct / 100)) : calcularINSS(baseEncargos))
     : 0;
   // IRRF flat: isento se salário+peric ≤ 5k; senão 22% sobre essa base (sem HE).
   const irrf = isClt
     ? (irrfModo === "flat"
         ? (baseIrrfMensal <= irrfIsentoAte ? 0 : r2(baseIrrfMensal * (irrfFlatPct / 100)))
-        : calcularIRRF(baseTributavel, inss, dependentesIR))
+        : calcularIRRF(baseEncargos, inss, dependentesIR))
     : 0;
-  const fgts = isClt ? r2(baseTributavel * FGTS_ALIQUOTA) : 0;
+  const fgts = isClt ? r2(baseEncargos * FGTS_ALIQUOTA) : 0;
   const totalDeducoes = r2(inss + irrf);
 
   // 3) Provisões mensais (sobre salário cheio — convenção contábil).
@@ -360,7 +360,7 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
   // 26/06/2026; fica fgtsNoLiquido=false. Benefícios indenizatórios como VR/ajuda
   // ficam numa tabela separada e não entram no líquido salarial.)
   const liquidoFuncionario = r2(
-    baseTributavel - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
+    baseEncargos - inss - irrf - (fgtsNoLiquido ? fgts : 0) - vtDesconto
   );
 
   return {
@@ -373,6 +373,7 @@ export function calcularFolha(input: PayrollInput): PayrollBreakdown {
     ajudaCusto,
     totalBruto,
     baseTributavel,
+    baseEncargos,
     baseIrrfMensal,
     inss,
     irrf,

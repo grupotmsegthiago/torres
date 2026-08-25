@@ -887,11 +887,13 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
       const custoHorasExtras = horasExtras * Number(CCT.horaExtraValor);
       const dsrHorasExtras = horasExtras > 0 ? (custoHorasExtras / 6) : 0;
       const subtotalRemuneracao = salarioComPeric + custoHorasExtras + dsrHorasExtras;
-      const encargos = subtotalRemuneracao * (Number(CCT.encargosSociaisPct) / 100);
+      // Encargos só sobre salário+peric; HE (R$ 16/h) paga à parte — sem % em cima.
+      const encargos = salarioComPeric * (Number(CCT.encargosSociaisPct) / 100);
       const valeRefeicao = Number(CCT.valeRefeicaoDia) * Number(CCT.diasUteisMes);
       const cestaBasica = Number(CCT.cestaBasica);
       const totalBeneficios = valeRefeicao + cestaBasica;
-      const custoTotal = subtotalRemuneracao + encargos + totalBeneficios;
+      const custoTotal = salarioComPeric * (1 + Number(CCT.encargosSociaisPct) / 100)
+        + custoHorasExtras + dsrHorasExtras + totalBeneficios;
 
       res.json({
         employee: { id: emp.id, name: emp.name, role: emp.role },

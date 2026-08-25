@@ -1167,6 +1167,7 @@ import type { Express } from "express";
                   kitId: linkedOrder.kitId || null,
                   kitName: kit?.name || null,
                   waypoints: (linkedOrder as any).waypoints || [],
+                  pedagioEstimado: (linkedOrder as any).pedagioEstimado ?? null,
                 };
               })()
             : null,

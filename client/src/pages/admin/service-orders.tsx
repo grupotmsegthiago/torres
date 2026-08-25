@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback, useRef, Component, type ReactNode, type ErrorInfo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
+import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
+import { computeRouteTollsBrowser } from "@/lib/google-routes-tolls-browser";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -155,6 +157,8 @@ const REVENUE_CATEGORIES = [
   "Outro",
 ];
 
+type MissionCostRow = MissionCost & { hasPhoto?: boolean };
+
 function MissionCostsSection({ orderId }: { orderId: number }) {
   const { toast } = useToast();
   const { user: mcUser } = useAuth();
@@ -165,11 +169,26 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
   const [category, setCategory] = useState(categories[0]);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [photoModal, setPhotoModal] = useState<{ costId: number; src: string | null; loading: boolean; label: string } | null>(null);
 
-  const { data: costs = [], isLoading } = useQuery<MissionCost[]>({
+  const { data: costs = [], isLoading } = useQuery<MissionCostRow[]>({
     queryKey: ["/api/service-orders", orderId, "costs"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
+
+  const openCostPhoto = async (cost: MissionCostRow) => {
+    const label = `${cost.category || "Comprovante"}${cost.description ? ` — ${cost.description}` : ""}`;
+    setPhotoModal({ costId: cost.id, src: null, loading: true, label });
+    try {
+      const res = await authFetch(`/api/service-orders/${orderId}/costs/${cost.id}/photo`);
+      const data = await res.json();
+      if (!res.ok || !data?.photoUrl) throw new Error(data?.message || "Foto não disponível");
+      setPhotoModal({ costId: cost.id, src: data.photoUrl, loading: false, label });
+    } catch (err: any) {
+      setPhotoModal(null);
+      toast({ title: "Não foi possível abrir a foto", description: err?.message, variant: "destructive" });
+    }
+  };
 
   const addMutation = useMutation({
     mutationFn: async (data: { category: string; description: string; amount: string; costType: string }) => {
@@ -340,6 +359,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Tipo</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Categoria</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Descrição</th>
+              <th className="text-center px-2 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Foto</th>
               <th className="text-right px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Valor</th>
               <th className="w-10"></th>
             </tr>
@@ -347,6 +367,8 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
           <tbody className="divide-y divide-neutral-100">
             {costs.map(cost => {
               const isRevenue = (cost as any).costType === "revenue";
+              const hasPhoto = !!(cost as MissionCostRow).hasPhoto || (typeof cost.photoUrl === "string" && cost.photoUrl.length > 0);
+              const isPedagio = /ped[aá]gio/i.test(cost.category || "");
               return (
               <tr key={cost.id} data-testid={`row-cost-${cost.id}`} className={isRevenue ? "bg-emerald-50/40" : ""}>
                 <td className="px-3.5 py-2.5">
@@ -356,6 +378,21 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                 </td>
                 <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{(cost.category || "").replace("Reembolso de Pedágio", "Pedágio").replace("Pedágio Reembolso", "Pedágio")}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
+                <td className="px-2 py-2.5 text-center">
+                  {hasPhoto ? (
+                    <button
+                      type="button"
+                      onClick={() => openCostPhoto(cost)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-colors ${isPedagio ? "bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100" : "bg-neutral-100 text-neutral-700 border border-neutral-200 hover:bg-neutral-200"}`}
+                      title="Ver foto do comprovante"
+                      data-testid={`button-cost-photo-${cost.id}`}
+                    >
+                      <Camera className="w-3.5 h-3.5" /> Ver
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-neutral-300">—</span>
+                  )}
+                </td>
                 <td className={`px-3.5 py-2.5 text-right font-mono font-semibold text-sm ${isRevenue ? "text-emerald-700" : "text-red-700"}`}>
                   {isRevenue ? "+" : "-"}R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </td>
@@ -375,17 +412,17 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
           </tbody>
           <tfoot>
             <tr className="border-t border-neutral-200">
-              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Receitas</td>
+              <td colSpan={4} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Receitas</td>
               <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-emerald-700">+R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
               <td></td>
             </tr>
             <tr>
-              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Despesas</td>
+              <td colSpan={4} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Despesas</td>
               <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-red-700">-R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
               <td></td>
             </tr>
             <tr className="bg-neutral-50 border-t border-neutral-300">
-              <td colSpan={3} className="px-3.5 py-2.5 text-sm font-black text-neutral-700 uppercase">Saldo Líquido</td>
+              <td colSpan={4} className="px-3.5 py-2.5 text-sm font-black text-neutral-700 uppercase">Saldo Líquido</td>
               <td className={`px-3.5 py-2.5 text-right font-mono font-black text-sm ${totalRevenue - totalExpenses >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 R$ {(totalRevenue - totalExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </td>
@@ -393,6 +430,51 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
             </tr>
           </tfoot>
         </table>
+      )}
+
+      {photoModal && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setPhotoModal(null)}
+          data-testid="modal-cost-photo"
+        >
+          <div
+            className="bg-white rounded-xl max-w-2xl w-full overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Comprovante</p>
+                <p className="text-sm font-semibold text-neutral-800 truncate">{photoModal.label}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoModal(null)}
+                className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-600 hover:bg-neutral-200"
+                data-testid="button-close-cost-photo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="bg-neutral-900 min-h-[240px] flex items-center justify-center">
+              {photoModal.loading ? (
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              ) : photoModal.src ? (
+                <img
+                  src={photoModal.src}
+                  alt="Comprovante de pedágio"
+                  className="max-h-[75vh] w-full object-contain"
+                  data-testid="img-cost-photo"
+                />
+              ) : (
+                <p className="text-sm text-neutral-300">Foto indisponível</p>
+              )}
+            </div>
+            <p className="px-4 py-2 text-[10px] text-neutral-400">
+              Foto do comprovante enviada pelo agente (referência visual).
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -791,9 +873,47 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  /** SSOT da UI para km + pedágio estimado (Google Routes → praças na rota → bloqueia local). */
+  const [routeEstimate, setRouteEstimate] = useState<{
+    loading: boolean;
+    km: number;
+    distanceMeters: number;
+    duration: string | null;
+    totalIda: number;
+    totalIdaVolta: number;
+    count: number;
+    source: string;
+    distanceSource: string;
+    /** Valor confiável para preencher o campo (Google ou praças ao longo da rota). */
+    pedagioOk: boolean;
+    pedagioReal: boolean;
+    error?: string | null;
+  } | null>(null);
+  /** Operador confirmou/ajustou o valor sugerido — não sobrescrever em recalc. */
+  const [pedagioValorConfirmado, setPedagioValorConfirmado] = useState(!!(order as any)?.pedagioEstimado);
+  const [pedagioUserEdited, setPedagioUserEdited] = useState(false);
+  /** Operador escolheu a tabela manualmente — não sobrescrever com sugestão por km. */
+  const [priceTableUserPicked, setPriceTableUserPicked] = useState(!!(order as any)?.escortContractId);
+  const routeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRouteKeyRef = useRef<string>("");
+  const pedagioUserEditedRef = useRef(pedagioUserEdited);
+  const pedagioValorConfirmadoRef = useRef(pedagioValorConfirmado);
+  pedagioUserEditedRef.current = pedagioUserEdited;
+  pedagioValorConfirmadoRef.current = pedagioValorConfirmado;
   const nowLocal = () => utcToLocalInput(new Date().toISOString());
+  const isNewOs = !order;
 
-  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({
+  const { data: escortContracts = [] } = useQuery<{
+    id: string;
+    client_id: number | null;
+    name: string | null;
+    status: string | null;
+    franquia_km?: number | null;
+    franquia_minima_km?: number | null;
+    franquia_horas?: number | null;
+    valor_acionamento?: number | null;
+    valor_km_carregado?: number | null;
+  }[]>({
     queryKey: ["/api/escort/contracts"],
   });
 
@@ -839,15 +959,23 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
-
-  useEffect(() => {
-    if (!order && form.clientId > 0 && !form.escortContractId) {
-      const cc = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
-      if (cc.length === 1) {
-        setForm(prev => ({ ...prev, escortContractId: cc[0].id }));
-      }
-    }
-  }, [form.clientId, escortContracts]);
+  // Distância oficial na criação: backend calculate-tolls; fallback Directions do browser.
+  const routeKm =
+    (routeEstimate && routeEstimate.km > 0
+      ? routeEstimate.km
+      : routeInfo
+        ? Math.round(routeInfo.distanceMeters / 1000)
+        : 0);
+  const priceTableSuggestion = useMemo(
+    () => suggestPriceTableByRouteKm(
+      escortContracts.filter((c) => c.client_id === form.clientId && c.status === "Ativo"),
+      routeKm,
+    ),
+    [escortContracts, form.clientId, routeKm],
+  );
+  const originReady = String(form.origin || "").trim().length >= 3;
+  const destinationReady = String(form.destination || "").trim().length >= 3;
+  const routeReadyForTable = originReady && destinationReady;
 
   // Calcula o Valor Estimado a partir da Tabela de Preços (contrato de escolta).
   // O valor_acionamento JÁ inclui a franquia (km + horas) → ele É a estimativa base
@@ -864,6 +992,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     const est = kmRate * franquiaKm;
     return est > 0 ? est : null;
   };
+
+  const applySuggestedPriceTable = useCallback((suggestedId: string) => {
+    const est = computeEstimado(suggestedId);
+    setForm((prev) => ({
+      ...prev,
+      escortContractId: suggestedId,
+      ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}),
+    }));
+  }, [escortContracts]);
+
+  // Nova OS: após calcular a rota, sugere a tabela pela franquia_km (ex.: 200 km → tabela 200).
+  useEffect(() => {
+    if (!isNewOs || priceTableUserPicked || routeKm <= 0) return;
+    const sug = priceTableSuggestion.suggested;
+    if (!sug?.id) return;
+    if (form.escortContractId === sug.id) return;
+    applySuggestedPriceTable(sug.id);
+  }, [isNewOs, priceTableUserPicked, routeKm, priceTableSuggestion.suggested?.id, form.escortContractId, applySuggestedPriceTable]);
 
   useEffect(() => {
     if (form.escortContractId && !form.valorEstimado) {
@@ -882,52 +1028,226 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     setForm(prev => ({ ...prev, ...updates }));
   };
 
-  const calcRoute = async (orig: string, dest: string) => {
-    if (!orig.trim() || !dest.trim()) { setRouteInfo(null); return; }
-    const routeStr = `${orig.trim()} → ${dest.trim()}`;
-    setForm(prev => ({
+  const refreshRouteEstimates = useCallback(async (
+    orig: string,
+    dest: string,
+    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
+  ) => {
+    const o = orig.trim();
+    const d = dest.trim();
+    if (!o || !d || o.length < 3 || d.length < 3) return;
+
+    const oLat = coords?.oLat ?? originCoords?.lat ?? null;
+    const oLng = coords?.oLng ?? originCoords?.lng ?? null;
+    const dLat = coords?.dLat ?? destCoords?.lat ?? null;
+    const dLng = coords?.dLng ?? destCoords?.lng ?? null;
+    const key = `${o.toLowerCase()}|${d.toLowerCase()}|${Number(oLat) || ""}|${Number(dLat) || ""}`;
+    if (key === lastRouteKeyRef.current) return;
+    lastRouteKeyRef.current = key;
+
+    const routeStr = `${o} → ${d}`;
+    setForm((prev) => ({
       ...prev,
       route: routeStr,
-      origin: orig.trim(),
-      originLat: originCoords?.lat || null,
-      originLng: originCoords?.lng || null,
-      destination: dest.trim(),
-      destinationLat: destCoords?.lat || null,
-      destinationLng: destCoords?.lng || null,
+      origin: o,
+      originLat: oLat,
+      originLng: oLng,
+      destination: d,
+      destinationLat: dLat,
+      destinationLng: dLng,
     }));
+
     setCalculatingRoute(true);
-    try {
-      const info = await calculateRouteInfo(orig.trim(), dest.trim());
-      setRouteInfo(info);
-    } catch {
-      setRouteInfo(null);
+    setRouteEstimate({
+      loading: true,
+      km: 0,
+      distanceMeters: 0,
+      duration: null,
+      totalIda: 0,
+      totalIdaVolta: 0,
+      count: 0,
+      source: "none",
+      distanceSource: "none",
+      pedagioOk: false,
+      pedagioReal: false,
+      error: null,
+    });
+
+    // 1) Google Routes no browser (se a chave permitir Routes API)
+    // 2) Directions (km + polilinha) — já funciona com a chave atual
+    const [browserTolls, dirInfo] = await Promise.all([
+      computeRouteTollsBrowser({
+        origin: o,
+        destination: d,
+        originLat: oLat,
+        originLng: oLng,
+        destLat: dLat,
+        destLng: dLng,
+      }).catch((e: any) => ({
+        totalIda: 0,
+        totalIdaVolta: 0,
+        count: 0,
+        distanceMeters: 0,
+        routeDistanceKm: 0,
+        duration: null,
+        source: "none" as const,
+        distanceSource: "none" as const,
+        error: e?.message || "Falha browser Routes",
+      })),
+      calculateRouteInfo(o, d).catch(() => null),
+    ]);
+
+    let totalIda = 0;
+    let totalIdaVolta = 0;
+    let count = 0;
+    let tollSource = "none";
+    let pedagioReal = false;
+    let pedagioOk = false;
+    let pathError: string | null = null;
+
+    if (browserTolls.source === "google" && browserTolls.totalIda > 0) {
+      totalIda = browserTolls.totalIda;
+      totalIdaVolta = browserTolls.totalIdaVolta;
+      count = browserTolls.count;
+      tollSource = "google";
+      pedagioReal = true;
+      pedagioOk = true;
+    } else if (dirInfo?.path && dirInfo.path.length >= 2) {
+      // 3) Fallback útil: praças ao longo da polilinha real (sem depender de Routes TOLLS)
+      try {
+        const resp = await apiRequest("POST", "/api/estimate-tolls-along-route", {
+          path: dirInfo.path,
+          routeDistanceKm: dirInfo.distanceMeters ? dirInfo.distanceMeters / 1000 : 0,
+        });
+        const along = await resp.json();
+        if (Number(along.totalIda || 0) > 0) {
+          totalIda = Number(along.totalIda || 0);
+          totalIdaVolta = Number(along.totalIdaVolta || 0);
+          count = Number(along.count || 0);
+          tollSource = "route_plazas";
+          pedagioOk = true;
+          pedagioReal = false;
+        } else {
+          pathError = along.error || "Nenhuma praça encontrada ao longo da rota";
+        }
+      } catch (e: any) {
+        pathError = e?.message || "Falha ao estimar pedágio pela rota";
+      }
     }
+
+    let distanceMeters = 0;
+    let distanceSource = "none";
+    if (browserTolls.distanceSource === "google" && browserTolls.distanceMeters > 0) {
+      distanceMeters = browserTolls.distanceMeters;
+      distanceSource = "google";
+    } else if (dirInfo?.distanceMeters) {
+      distanceMeters = dirInfo.distanceMeters;
+      distanceSource = "directions";
+    }
+    const km = distanceMeters > 0 ? Math.round(distanceMeters / 1000) : 0;
+
+    const errors = [
+      !pedagioOk && browserTolls.error ? browserTolls.error : null,
+      !pedagioOk && pathError ? pathError : null,
+      !pedagioOk
+        ? "Não foi possível estimar pedágio. Informe manualmente ou habilite Routes API (TOLLS) na chave Google."
+        : null,
+    ].filter(Boolean);
+
+    setRouteInfo(dirInfo);
+    setRouteEstimate({
+      loading: false,
+      km,
+      distanceMeters,
+      duration:
+        browserTolls.duration ||
+        (dirInfo ? `${Math.round(dirInfo.durationSeconds / 60)} min` : null),
+      totalIda,
+      totalIdaVolta,
+      count,
+      source: tollSource,
+      distanceSource,
+      pedagioOk,
+      pedagioReal,
+      error: errors.length ? errors.join(" | ") : null,
+    });
     setCalculatingRoute(false);
-  };
+
+    if (!pedagioUserEditedRef.current && !pedagioValorConfirmadoRef.current) {
+      if (pedagioOk && totalIda > 0) {
+        setForm((prev) => ({
+          ...prev,
+          pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
+        }));
+      } else {
+        setForm((prev) => (prev.pedagioEstimado ? { ...prev, pedagioEstimado: "" } : prev));
+      }
+    }
+  }, [originCoords, destCoords]);
+
+  const scheduleRouteEstimates = useCallback((
+    orig: string,
+    dest: string,
+    coords?: { oLat?: number | null; oLng?: number | null; dLat?: number | null; dLng?: number | null },
+  ) => {
+    if (!orig.trim() || !dest.trim() || orig.trim().length < 3 || dest.trim().length < 3) return;
+    if (routeDebounceRef.current) clearTimeout(routeDebounceRef.current);
+    routeDebounceRef.current = setTimeout(() => {
+      // Permite recalcular quando o debounce dispara após troca de endereço.
+      lastRouteKeyRef.current = "";
+      void refreshRouteEstimates(orig, dest, coords);
+    }, 500);
+  }, [refreshRouteEstimates]);
 
   const handleOriginSelect = (p: { lat: number; lng: number }, address: string) => {
     setOriginCoords({ lat: p.lat, lng: p.lng });
-    setForm(prev => {
-      const updated = { ...prev, origin: address, originLat: p.lat, originLng: p.lng };
-      if (prev.destination) calcRoute(address, prev.destination);
+    lastRouteKeyRef.current = "";
+    if (!pedagioUserEdited) setPedagioValorConfirmado(false);
+    setForm((prev) => {
+      const updated = {
+        ...prev,
+        origin: address,
+        originLat: p.lat,
+        originLng: p.lng,
+        ...((isNewOs && !priceTableUserPicked && !prev.destination) ? { escortContractId: "" } : {}),
+      };
+      if (prev.destination) {
+        scheduleRouteEstimates(address, prev.destination, {
+          oLat: p.lat, oLng: p.lng,
+          dLat: prev.destinationLat, dLng: prev.destinationLng,
+        });
+      }
       return updated;
     });
   };
 
   const handleDestSelect = (p: { lat: number; lng: number }, address: string) => {
     setDestCoords({ lat: p.lat, lng: p.lng });
-    setForm(prev => {
+    lastRouteKeyRef.current = "";
+    if (!pedagioUserEdited) setPedagioValorConfirmado(false);
+    setForm((prev) => {
       const updated = { ...prev, destination: address, destinationLat: p.lat, destinationLng: p.lng };
-      if (prev.origin) calcRoute(prev.origin, address);
+      if (prev.origin) {
+        scheduleRouteEstimates(prev.origin, address, {
+          oLat: prev.originLat, oLng: prev.originLng,
+          dLat: p.lat, dLng: p.lng,
+        });
+      }
       return updated;
     });
   };
 
+  // Gatilho confiável: sempre que origem+destino estiverem preenchidos (nova OS ou edição).
   useEffect(() => {
-    if (order && (order as any).origin && (order as any).destination && !routeInfo) {
-      calcRoute((order as any).origin, (order as any).destination);
-    }
-  }, []);
+    if (!originReady || !destinationReady) return;
+    scheduleRouteEstimates(form.origin, form.destination, {
+      oLat: form.originLat,
+      oLng: form.originLng,
+      dLat: form.destinationLat,
+      dLng: form.destinationLng,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage a mudança de rota
+  }, [form.origin, form.destination, form.originLat, form.originLng, form.destinationLat, form.destinationLng, originReady, destinationReady]);
 
   const googleMapsUrl = form.route ? `https://www.google.com/maps/dir/${encodeURIComponent(form.route.replace(" → ", "/"))}` : null;
 
@@ -1076,8 +1396,6 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     { label: "Lateral Dir.", src: photoSrc.photoRight },
   ].filter(p => p.src) : [];
   const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
-
-  const step1Valid = form.clientId > 0;
 
   function isDocExpiringSoon(dateStr: string | null | undefined): "expired" | "warning" | "ok" {
     if (!dateStr) return "ok";
@@ -1274,34 +1592,220 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               <div>
                 <FieldLabel>Cliente *</FieldLabel>
-                <select value={form.clientId} onChange={(e) => setForm(prev => ({ ...prev, clientId: Number(e.target.value), escortContractId: "" }))} className={selectClass} required data-testid="select-os-client">
+                <select
+                  value={form.clientId}
+                  onChange={(e) => {
+                    setPriceTableUserPicked(false);
+                    setForm((prev) => ({ ...prev, clientId: Number(e.target.value), escortContractId: "" }));
+                  }}
+                  className={selectClass}
+                  required
+                  data-testid="select-os-client"
+                >
                   <option value={0}>Selecione...</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
                 </select>
               </div>
-              {form.clientId > 0 && clientContracts.length > 0 && (
-                <div>
-                  <FieldLabel>Tabela de Preços *</FieldLabel>
-                  <select value={form.escortContractId} onChange={(e) => {
-                    const id = e.target.value;
-                    setForm(prev => {
-                      const blocked = prev.status === "recusada" || prev.status === "cancelada";
-                      const est = (!blocked && id) ? computeEstimado(id) : null;
-                      return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
-                    });
-                  }} className={selectClass} required data-testid="select-os-price-table">
-                    <option value="">Selecione...</option>
-                    {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
-                  </select>
-                  {!form.escortContractId && (
-                    <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
+
+              {/* Nova OS: origem → destino obrigatórios antes da tabela de preços */}
+              {isNewOs && form.clientId > 0 && (
+                <div className="col-span-2 md:col-span-4 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2" data-testid="hint-os-rota-antes-tabela">
+                  <p className="text-[11px] font-semibold text-blue-900">
+                    Após o cliente: informe <span className="underline">primeiro a origem</span>, depois o <span className="underline">destino</span>. Com a distância da rota, o sistema sugere a tabela (ex.: 200 km → tabela de 200 km).
+                  </p>
+                </div>
+              )}
+              {isNewOs && (
+                <>
+                  <div className="col-span-2 md:col-span-2">
+                    <FieldLabel>Origem {form.clientId > 0 ? <span className="text-red-500">*</span> : null}</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.origin}
+                      onChange={(v) => setForm((prev) => ({ ...prev, origin: v }))}
+                      onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
+                      placeholder={form.clientId > 0 ? "1º — selecione a origem" : "Selecione o cliente primeiro"}
+                      className="text-sm"
+                      theme="light"
+                      disabled={form.clientId <= 0}
+                      data-testid="input-route-origin"
+                    />
+                    {form.clientId > 0 && !originReady && (
+                      <p className="text-[10px] text-amber-700 mt-1" data-testid="warn-os-origem">Selecione a origem para liberar o destino.</p>
+                    )}
+                  </div>
+                  <div className="col-span-2 md:col-span-2">
+                    <FieldLabel>Destino {originReady ? <span className="text-red-500">*</span> : null}</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.destination}
+                      onChange={(v) => setForm((prev) => ({ ...prev, destination: v }))}
+                      onPlaceSelect={(p) => handleDestSelect(p, p.address)}
+                      placeholder={originReady ? "2º — selecione o destino" : "Informe a origem primeiro"}
+                      className="text-sm"
+                      theme="light"
+                      disabled={!originReady}
+                      data-testid="input-route-destination"
+                    />
+                    {originReady && !destinationReady && (
+                      <p className="text-[10px] text-amber-700 mt-1" data-testid="warn-os-destino">Agora informe o destino para calcular a rota e sugerir a tabela.</p>
+                    )}
+                  </div>
+                  {routeReadyForTable && (
+                    <div
+                      className="col-span-2 md:col-span-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 space-y-1.5"
+                      data-testid="panel-os-rota-km"
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-wider text-neutral-600">Distância da rota (total)</p>
+                      {(calculatingRoute || routeEstimate?.loading) ? (
+                        <p className="text-sm text-neutral-500 flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Calculando distância e pedágio...
+                        </p>
+                      ) : routeKm > 0 ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-lg font-black font-mono text-neutral-900" data-testid="text-route-distance-total">
+                            {routeKm} km
+                          </span>
+                          {(routeInfo?.durationText || routeEstimate?.duration) && (
+                            <span className="flex items-center gap-1 text-xs text-neutral-600 bg-white border border-neutral-200 px-2 py-1 rounded font-medium">
+                              <Clock className="w-3 h-3" />
+                              {routeInfo?.durationText || routeEstimate?.duration}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-neutral-400">
+                            fonte: {routeEstimate?.distanceSource === "directions"
+                              ? "Google Directions"
+                              : routeEstimate?.distanceSource === "google"
+                                ? "Google Routes"
+                                : routeEstimate?.distanceSource || "—"}
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-700" data-testid="warn-rota-sem-km">
+                          Não foi possível obter a distância. Confira origem/destino ou a chave Google Routes.
+                          {routeEstimate?.error ? ` (${routeEstimate.error})` : ""}
+                        </p>
+                      )}
+                    </div>
                   )}
+                </>
+              )}
+
+              {/* Edição: tabela no fluxo antigo; Nova OS: só após origem+destino */}
+              {form.clientId > 0 && clientContracts.length > 0 && (!isNewOs || routeReadyForTable) && (
+                <div className={isNewOs ? "col-span-2 md:col-span-4 space-y-2" : ""}>
+                  {isNewOs && routeKm > 0 && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 space-y-2" data-testid="panel-tabela-por-km">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">
+                        Ajuda — tabela pela distância da rota ({routeKm} km)
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="text-left text-neutral-500 border-b border-emerald-100">
+                              <th className="py-1 pr-2 font-bold">Tabela</th>
+                              <th className="py-1 pr-2 font-bold">Franquia KM</th>
+                              <th className="py-1 pr-2 font-bold">Horas</th>
+                              <th className="py-1 pr-2 font-bold">Acionamento</th>
+                              <th className="py-1 font-bold">Adequação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {priceTableSuggestion.ranked.map((row) => {
+                              const isSug = priceTableSuggestion.suggested?.id === row.id;
+                              const selected = form.escortContractId === row.id;
+                              return (
+                                <tr
+                                  key={row.id}
+                                  className={`border-b border-emerald-50/80 ${isSug ? "bg-emerald-100/80 font-semibold" : ""} ${selected ? "ring-1 ring-inset ring-emerald-400" : ""}`}
+                                  data-testid={`row-tabela-km-${row.id}`}
+                                >
+                                  <td className="py-1.5 pr-2">
+                                    <button
+                                      type="button"
+                                      className="text-left text-emerald-950 hover:underline"
+                                      onClick={() => {
+                                        setPriceTableUserPicked(true);
+                                        applySuggestedPriceTable(row.id);
+                                      }}
+                                      data-testid={`btn-pick-tabela-${row.id}`}
+                                    >
+                                      {row.name || `Tabela ${row.id.slice(0, 8)}`}
+                                      {isSug ? " · sugerida" : ""}
+                                    </button>
+                                  </td>
+                                  <td className="py-1.5 pr-2 font-mono">{row.franquiaKm > 0 ? `${row.franquiaKm} km` : "—"}</td>
+                                  <td className="py-1.5 pr-2 font-mono">{Number(row.franquia_horas || 0) > 0 ? `${Number(row.franquia_horas)} h` : "—"}</td>
+                                  <td className="py-1.5 pr-2 font-mono">
+                                    {Number(row.valor_acionamento || 0) > 0
+                                      ? Number(row.valor_acionamento).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                                      : "—"}
+                                  </td>
+                                  <td className="py-1.5">
+                                    {row.covers ? (
+                                      <span className="text-emerald-700">Cobre a rota</span>
+                                    ) : (
+                                      <span className="text-amber-700">Abaixo da rota</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {priceTableSuggestion.suggested && (
+                        <p className="text-[10px] text-emerald-900" data-testid="text-tabela-sugerida">
+                          Sugestão: <strong>{priceTableSuggestion.suggested.name || "tabela"}</strong>
+                          {" "}({contractFranquiaKm(priceTableSuggestion.suggested)} km) para rota de {routeKm} km.
+                          Você pode escolher outra linha acima.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <FieldLabel>Tabela de Preços *</FieldLabel>
+                    <select
+                      value={form.escortContractId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setPriceTableUserPicked(true);
+                        setForm((prev) => {
+                          const blocked = prev.status === "recusada" || prev.status === "cancelada";
+                          const est = (!blocked && id) ? computeEstimado(id) : null;
+                          return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
+                        });
+                      }}
+                      className={selectClass}
+                      required
+                      disabled={isNewOs && !routeReadyForTable}
+                      data-testid="select-os-price-table"
+                    >
+                      <option value="">Selecione...</option>
+                      {clientContracts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name || `Tabela ${c.id.slice(0, 8)}`}
+                          {contractFranquiaKm(c) > 0 ? ` — ${contractFranquiaKm(c)} km` : ""}
+                          {priceTableSuggestion.suggested?.id === c.id ? " (sugerida)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {!form.escortContractId && (
+                      <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
+                    )}
+                  </div>
                 </div>
               )}
               {form.clientId > 0 && clientContracts.length === 0 && (
                 <div>
                   <FieldLabel>Tabela de Preços *</FieldLabel>
                   <p className="text-[11px] text-red-600 mt-1" data-testid="warn-os-no-price-table">Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela em Contratos/Tabelas antes de criar a OS.</p>
+                </div>
+              )}
+              {isNewOs && form.clientId > 0 && clientContracts.length > 0 && !routeReadyForTable && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>Tabela de Preços *</FieldLabel>
+                  <p className="text-[11px] text-neutral-500 mt-1" data-testid="warn-os-tabela-aguarde-rota">
+                    Informe origem e destino para liberar e sugerir a tabela de preços pela distância.
+                  </p>
                 </div>
               )}
               <div>
@@ -1313,13 +1817,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 )}
               </div>
               <div>
-                <FieldLabel>Pedágio (R$)</FieldLabel>
+                <FieldLabel>Pedágio estimado — ida (R$)</FieldLabel>
                 <div className="relative">
                   <Input
                     type="text"
                     inputMode="decimal"
                     value={form.pedagioEstimado}
-                    onChange={(e) => setForm(prev => ({ ...prev, pedagioEstimado: maskBRL(e.target.value) }))}
+                    onChange={(e) => {
+                      setPedagioUserEdited(true);
+                      setPedagioValorConfirmado(false);
+                      setForm(prev => ({ ...prev, pedagioEstimado: maskBRL(e.target.value) }));
+                    }}
                     placeholder="0,00"
                     className="text-sm font-mono"
                     data-testid="input-os-pedagio"
@@ -1334,6 +1842,81 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
+                {routeReadyForTable && (
+                  <div
+                    className={`mt-2 rounded-md border px-2.5 py-2 space-y-1.5 ${
+                      routeEstimate?.pedagioOk
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-red-200 bg-red-50"
+                    }`}
+                    data-testid="panel-pedagio-estimado-aviso"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${routeEstimate?.pedagioOk ? "text-emerald-700" : "text-red-700"}`} />
+                      <p className={`text-[10px] font-black uppercase tracking-wider ${routeEstimate?.pedagioOk ? "text-emerald-900" : "text-red-900"}`}>
+                        Pedágio estimado (ida) —{" "}
+                        {routeEstimate?.pedagioReal
+                          ? "Google Routes"
+                          : routeEstimate?.source === "route_plazas"
+                            ? "praças na rota (Directions)"
+                            : "aguardando valor"}
+                      </p>
+                    </div>
+                    {(routeEstimate?.loading || calculatingRoute) ? (
+                      <p className="text-[11px] text-neutral-700 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Calculando pedágio pela rota...
+                      </p>
+                    ) : routeEstimate?.pedagioOk ? (
+                      <>
+                        <p className="text-[11px] text-emerald-950">
+                          Valor:{" "}
+                          <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida">
+                            {Number(routeEstimate.totalIda || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                          {" "}ida
+                          {form.pedagioIdaVolta && (
+                            <>
+                              {" · "}
+                              <span className="font-mono font-bold" data-testid="text-pedagio-sugerido-ida-volta">
+                                {Number(routeEstimate.totalIdaVolta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </span>
+                              {" "}ida+volta
+                            </>
+                          )}
+                          {routeEstimate.count > 0 ? ` · ${routeEstimate.count} praça(s)` : ""}
+                        </p>
+                        <p className="text-[10px] text-emerald-800 leading-snug">
+                          {routeEstimate.pedagioReal
+                            ? "Fonte Google Routes. Confirme (Sem Parar pode variar por TAG/desconto)."
+                            : "Estimativa pelas praças no caminho da rota (Directions). Compare com Sem Parar e ajuste se precisar."}
+                        </p>
+                        <label className="flex items-start gap-2 cursor-pointer select-none" data-testid="check-pedagio-valor-ok">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={pedagioValorConfirmado}
+                            onChange={(e) => setPedagioValorConfirmado(e.target.checked)}
+                          />
+                          <span className="text-[11px] font-semibold text-neutral-800 leading-snug">
+                            Confirmei que o valor do pedágio estimado está de acordo
+                          </span>
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[11px] text-red-900 font-semibold" data-testid="warn-pedagio-nao-real">
+                          Não foi possível estimar o pedágio automaticamente.
+                        </p>
+                        <p className="text-[10px] text-red-800 leading-snug">
+                          Informe manualmente (ex.: Sem Parar ≈ R$ 48,60 Itapevi→Floripa) ou habilite a <strong>Routes API</strong> na chave Google Cloud.
+                        </p>
+                        {routeEstimate?.error && (
+                          <p className="text-[10px] text-red-700 break-words" data-testid="text-pedagio-erro-api">{routeEstimate.error}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <FieldLabel>Solicitante</FieldLabel>
@@ -1434,30 +2017,34 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <Input type="datetime-local" value={form.completedDate} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-completed" />
                 </div>
               )}
-              <div>
-                <FieldLabel>Origem</FieldLabel>
-                <PlacesAutocomplete
-                  value={form.origin}
-                  onChange={(v) => setForm(prev => ({ ...prev, origin: v }))}
-                  onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
-                  placeholder="Ex: Sao Paulo, SP"
-                  className="text-sm"
-                  theme="light"
-                  data-testid="input-route-origin"
-                />
-              </div>
-              <div>
-                <FieldLabel>Destino</FieldLabel>
-                <PlacesAutocomplete
-                  value={form.destination}
-                  onChange={(v) => setForm(prev => ({ ...prev, destination: v }))}
-                  onPlaceSelect={(p) => handleDestSelect(p, p.address)}
-                  placeholder="Ex: Campinas, SP"
-                  className="text-sm"
-                  theme="light"
-                  data-testid="input-route-destination"
-                />
-              </div>
+              {!isNewOs && (
+                <>
+                  <div>
+                    <FieldLabel>Origem</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.origin}
+                      onChange={(v) => setForm(prev => ({ ...prev, origin: v }))}
+                      onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
+                      placeholder="Ex: Sao Paulo, SP"
+                      className="text-sm"
+                      theme="light"
+                      data-testid="input-route-origin"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Destino</FieldLabel>
+                    <PlacesAutocomplete
+                      value={form.destination}
+                      onChange={(v) => setForm(prev => ({ ...prev, destination: v }))}
+                      onPlaceSelect={(p) => handleDestSelect(p, p.address)}
+                      placeholder="Ex: Campinas, SP"
+                      className="text-sm"
+                      theme="light"
+                      data-testid="input-route-destination"
+                    />
+                  </div>
+                </>
+              )}
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between mb-1">
                   <FieldLabel>Pontos de Parada (Entregas Intermediárias)</FieldLabel>
@@ -1527,26 +2114,45 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm(prev => ({ ...prev, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null })); setRouteInfo(null); setOriginCoords(null); setDestCoords(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => {
+                        setForm(prev => ({
+                          ...prev,
+                          route: "",
+                          origin: "",
+                          originLat: null,
+                          originLng: null,
+                          destination: "",
+                          destinationLat: null,
+                          destinationLng: null,
+                          ...((isNewOs && !priceTableUserPicked) ? { escortContractId: "", pedagioEstimado: "" } : {}),
+                        }));
+                        setRouteInfo(null);
+                        setRouteEstimate(null);
+                        setOriginCoords(null);
+                        setDestCoords(null);
+                        lastRouteKeyRef.current = "";
+                      }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>
-                    {calculatingRoute && (
+                    {(calculatingRoute || routeEstimate?.loading) && (
                       <div className="text-xs text-neutral-400 flex items-center gap-1.5">
                         <span className="animate-spin w-3 h-3 border border-neutral-300 border-t-neutral-600 rounded-full inline-block" />
                         Calculando distancia...
                       </div>
                     )}
-                    {routeInfo && !calculatingRoute && (
+                    {routeKm > 0 && !calculatingRoute && !routeEstimate?.loading && (
                       <div className="flex items-center gap-3 text-xs flex-wrap">
                         <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-distance">
                           <Navigation className="w-3 h-3" />
-                          {routeInfo.distanceText}
+                          {routeKm} km {routeInfo?.distanceText ? `(${routeInfo.distanceText})` : ""}
                         </span>
-                        <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-duration">
-                          <Clock className="w-3 h-3" />
-                          {routeInfo.durationText}
-                        </span>
+                        {(routeInfo?.durationText || routeEstimate?.duration) && (
+                          <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-duration">
+                            <Clock className="w-3 h-3" />
+                            {routeInfo?.durationText || routeEstimate?.duration}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1745,8 +2351,20 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <Button
                 type="button"
                 onClick={() => {
-                  if (step === 1 && !step1Valid) {
+                  if (step === 1 && !form.clientId) {
                     toast({ title: "Selecione o cliente", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !originReady) {
+                    toast({ title: "Origem obrigatória", description: "Informe primeiro a origem da rota.", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !destinationReady) {
+                    toast({ title: "Destino obrigatório", description: "Informe o destino após a origem para calcular a rota e sugerir a tabela.", variant: "destructive" });
+                    return;
+                  }
+                  if (step === 1 && isNewOs && !form.escortContractId) {
+                    toast({ title: "Tabela de Preços obrigatória", description: "Selecione a tabela sugerida (ou outra) após informar origem e destino.", variant: "destructive" });
                     return;
                   }
                   if (step === 1 && !form.scheduledDate) {
@@ -1792,7 +2410,32 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } if (!order && !form.escortContractId) { toast({ title: "Tabela de Preços obrigatória", description: clientContracts.length === 0 ? "Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela antes de criar a OS." : "Selecione uma Tabela de Preços para criar a OS.", variant: "destructive" }); return; } console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step })); mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => {
+                if (!form.scheduledDate) {
+                  toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" });
+                  return;
+                }
+                if (isNewOs && !originReady) {
+                  toast({ title: "Origem obrigatória", description: "Informe primeiro a origem da rota.", variant: "destructive" });
+                  return;
+                }
+                if (isNewOs && !destinationReady) {
+                  toast({ title: "Destino obrigatório", description: "Informe o destino após a origem.", variant: "destructive" });
+                  return;
+                }
+                if (!order && !form.escortContractId) {
+                  toast({
+                    title: "Tabela de Preços obrigatória",
+                    description: clientContracts.length === 0
+                      ? "Este cliente não tem tabela de preços cadastrada. Cadastre uma tabela antes de criar a OS."
+                      : "Selecione uma Tabela de Preços para criar a OS.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step }));
+                mutation.mutate(form);
+              }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>

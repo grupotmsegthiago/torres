@@ -4,6 +4,19 @@ import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { emitInvoiceAuto } from "../asaas";
 import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
 import { bustBalancoCaches } from "../lib/balanco-cache";
+import {
+  createBoletimApprovalAtomic,
+  freezeBoletimBillingsAtomic,
+} from "../lib/atomic-billing";
+import {
+  billingOsLabel,
+  partitionBillingsForBoletimSend,
+} from "../lib/billing-frozen";
+import {
+  classifyBillingsForBoletimSend,
+  planContractHeals,
+} from "../lib/boletim-send-prepare";
+import { logSystemAudit } from "../audit";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -573,27 +586,125 @@ export function registerBoletimApprovalRoutes(app: Express) {
         }
   
 
-      const { data: billingsData } = await supabaseAdmin
+      const { data: billingsDataRaw } = await supabaseAdmin
         .from("escort_billings")
         .select("*")
         .in("id", billingIds);
 
-      const soIds = (billingsData || []).map((b: any) => b.service_order_id).filter(Boolean);
+      let billingsData = billingsDataRaw || [];
+      if (billingsData.length !== billingIds.length) {
+        return res.status(400).json({
+          message: "Uma ou mais OS do boletim não foram encontradas. Regenerue o relatório e tente novamente.",
+          code: "PR5B1_TX_SNAPSHOT_BILLING_NOT_FOUND",
+        });
+      }
+
+      // APROVADA = aprovação interna: entra no snapshot e permanece APROVADA.
+      // create_boletim_approval_atomic bloqueia só FATURADO/FATURADA/PAGO.
+      // Reenvio forçado: arquiva boletim PENDENTE/APROVADO conflitante — nunca reabre APROVADA.
+      const partition = partitionBillingsForBoletimSend(billingsData);
+      if (partition.faturadas.length > 0) {
+        const labels = partition.faturadas.map(billingOsLabel);
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+          message:
+            `Não é possível enviar medição com OS já faturada/paga (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
+            `Libere para refaturamento essas OS e tente novamente.`,
+          frozenBillingIds: partition.faturadas.map((b: any) => String(b.id)),
+          frozenOsNumbers: labels,
+          reason: "invoiced",
+        });
+      }
+
+      if (force) {
+        const billingIdsAsStr = billingIds.map((x: any) => String(x));
+        const { data: existing } = await supabaseAdmin
+          .from("boletim_approvals")
+          .select("id, status, billing_ids")
+          .eq("client_id", clientId)
+          .in("status", ["PENDENTE", "APROVADO"]);
+
+        const conflicts = (existing || []).filter((row: any) => {
+          const ids = (row.billing_ids || []).map((x: any) => String(x));
+          return ids.some((id: string) => billingIdsAsStr.includes(id));
+        });
+
+        for (const conflict of conflicts) {
+          const { error: archErr } = await supabaseAdmin
+            .from("boletim_approvals")
+            .update({ status: "ARQUIVADO" })
+            .eq("id", conflict.id)
+            .in("status", ["PENDENTE", "APROVADO"]);
+          if (archErr) throw archErr;
+        }
+      }
+
+      const soIds = billingsData.map((b: any) => b.service_order_id).filter(Boolean);
       let ordersData: any[] = [];
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id")
           .in("id", soIds);
         ordersData = sos || [];
       }
+      const ordersById = new Map((ordersData || []).map((o: any) => [Number(o.id), o]));
+
+      // Recusada fora do boletim (§8.1). Contrato OS × billing deve bater
+      // (PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH). Heal: OS passa a apontar o
+      // contract_id congelado no billing (tabela que precificou — ex. 100 km).
+      const classified = classifyBillingsForBoletimSend(billingsData, ordersById);
+      if (classified.missingContract.length > 0) {
+        const labels = classified.missingContract.map(billingOsLabel);
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH",
+          message:
+            `Há OS sem contrato tarifário vinculado (${labels.slice(0, 8).join(", ")}${labels.length > 8 ? ` e mais ${labels.length - 8}` : ""}). ` +
+            `Vincule a tabela na OS e recalcule antes de enviar.`,
+          osNumbers: labels,
+        });
+      }
+
+      const heals = planContractHeals(classified.contractMismatch);
+      for (const h of heals) {
+        const { error: healErr } = await supabaseAdmin
+          .from("service_orders")
+          .update({ escort_contract_id: h.contractId })
+          .eq("id", h.serviceOrderId);
+        if (healErr) throw healErr;
+        try {
+          await logSystemAudit({
+            userId: user?.id, userName: user?.name || user?.username, userRole: user?.role,
+            action: "BOLETIM_SYNC_CONTRACT",
+            targetId: String(h.serviceOrderId),
+            targetType: "service_order",
+            details: `${h.osNumber}: escort_contract_id alinhado ao billing ${h.billingId} (${h.contractId}) antes do envio do boletim`,
+            ipAddress: req.ip,
+          });
+        } catch (_e) { /* audit best-effort */ }
+        const so = ordersById.get(h.serviceOrderId);
+        if (so) so.escort_contract_id = h.contractId;
+      }
+
+      // Snapshot comercial só com elegíveis (sem recusada).
+      billingsData = classified.eligible;
+      if (billingsData.length === 0) {
+        return res.status(400).json({
+          message: "Nenhuma OS elegível para envio neste período (todas recusadas ou sem contrato).",
+        });
+      }
+      const sendBillingIds = billingsData.map((b: any) => String(b.id));
+      ordersData = billingsData
+        .map((b: any) => ordersById.get(Number(b.service_order_id)))
+        .filter(Boolean);
+
       const isOmega = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
       const processoNumbers = isOmega
         ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
         : [];
 
       let contractsData: any[] = [];
-      const contractIds = [...new Set((billingsData || []).map((b: any) => b.contract_id).filter(Boolean))];
+      const contractIds = [...new Set(billingsData.map((b: any) => b.contract_id).filter(Boolean))];
       if (contractIds.length > 0) {
         const { data: cts } = await supabaseAdmin
           .from("escort_contracts")
@@ -604,7 +715,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       const excelBuffer = await generateBoletimExcel(
         clientName, periodStart, periodEnd,
-        billingsData || [], ordersData, contractsData,
+        billingsData, ordersData, contractsData,
       );
 
       // ============================================================
@@ -614,15 +725,15 @@ export function registerBoletimApprovalRoutes(app: Express) {
       // os 4 mostram SEMPRE o mesmo número, mesmo que a OS seja editada
       // depois (boletim já enviado não muda). Ignora `totalValue` do front.
       // ============================================================
-      const ordersById = new Map((ordersData || []).map((o: any) => [o.id, o]));
-      const billingSnapshot = (billingsData || []).map((b: any) => {
-        const so = ordersById.get(b.service_order_id) || {};
+      const billingSnapshot = billingsData.map((b: any) => {
+        const so = ordersById.get(Number(b.service_order_id)) || {};
         const osStatus = (so as any).status;
         // recusada: zera TODOS os componentes (não só o total) p/ a página de
         // aprovação e o Excel exibirem a OS sem cobrança, coerente com a tela.
         const comp = (v: any) => (osStatus === "recusada" ? 0 : round2(Number(v || 0)));
         return {
           billing_id: String(b.id),
+          billing_version: Number(b.lock_version) || 0,
           service_order_id: b.service_order_id,
           os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
           fat_acionamento: comp(b.fat_acionamento),
@@ -644,39 +755,70 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const approvalUrl = `${baseUrl}/aprovacao/${token}`;
       const period = `${new Date(periodStart + "T12:00:00Z").toLocaleDateString("pt-BR")} a ${new Date(periodEnd + "T12:00:00Z").toLocaleDateString("pt-BR")}`;
 
-      const { data, error } = await supabaseAdmin.from("boletim_approvals").insert({
+      const data = await createBoletimApprovalAtomic({
         token,
-        client_id: clientId,
-        client_name: clientName,
-        client_email: clientEmail,
-        period_start: periodStart,
-        period_end: periodEnd,
-        billing_ids: billingIds,
-        total_value: canonicalTotal,
-        billing_snapshot: billingSnapshot,
-        os_count: osCount || billingIds.length,
-        status: "PENDENTE",
-        sent_by: user?.name || user?.username || null,
-        sent_by_user_id: user?.id || null,
-      }).select().single();
-
-      if (error) throw error;
+        clientId,
+        clientName,
+        clientEmail,
+        periodStart,
+        periodEnd,
+        billingIds: sendBillingIds,
+        totalValue: canonicalTotal,
+        billingSnapshot,
+        osCount: sendBillingIds.length,
+        sentBy: user?.name || user?.username || null,
+        sentByUserId: user?.id || null,
+      });
 
       const periodShort = `${periodStart.replace(/-/g, "")}_${periodEnd.replace(/-/g, "")}`;
       const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20);
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
+        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);
         return res.json({ ...data, emailError: emailErr.message, approvalUrl });
       }
 
-      res.json({ ...data, approvalUrl });
+      res.json({
+        ...data,
+        approvalUrl,
+        excludedRefused: classified.refused.length,
+        contractsSynced: heals.length,
+      });
     } catch (err: any) {
       console.error("[boletim-approval] Erro:", err.message);
+      const msg = String(err?.message || "");
+      if (msg.includes("PR5B1_TX_SNAPSHOT_FROZEN_BILLING")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_SNAPSHOT_FROZEN_BILLING",
+          message:
+            "Há OS com boletim já aprovado/faturado neste envio. Libere para refaturamento (faturadas) ou force o reenvio (aprovadas) para reabrir e gerar nova medição.",
+          canForce: true,
+        });
+      }
+      if (msg.includes("PR5B1_TX_ACTIVE_APPROVAL_CONFLICT")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_ACTIVE_APPROVAL_CONFLICT",
+          message: "Já existe boletim PENDENTE/APROVADO cobrindo estas OS. Force o reenvio para arquivar o anterior e criar um novo.",
+          canForce: true,
+        });
+      }
+      if (msg.includes("PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH")) {
+        return res.status(409).json({
+          code: "PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH",
+          message:
+            "Há OS com contrato tarifário diferente do billing (ou sem contrato). O sistema tenta alinhar automaticamente; se o erro persistir, vincule a tabela correta na OS e recalcule.",
+        });
+      }
+      if (msg.includes("PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH")) {
+        return res.status(400).json({
+          code: "PR5B1_TX_SNAPSHOT_CLIENT_OR_REFUSED_MISMATCH",
+          message: "O boletim inclui OS recusada ou de outro cliente. Remova as recusadas e envie apenas as OS do cliente selecionado.",
+        });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -806,36 +948,18 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
       const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket.remoteAddress || "";
 
-      const { error: updateErr } = await supabaseAdmin
-        .from("boletim_approvals")
-        .update({
-          status: "APROVADO",
-          approved_at: new Date().toISOString(),
-          approved_by_name: nome || "Cliente",
-          approved_by_ip: clientIp,
-        })
-        .eq("id", approval.id);
-
-      if (updateErr) throw updateErr;
-
       let autoEmitResult: { success: boolean; message: string; nfEmitted: boolean; paymentId?: string } | null = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
-        const { error: billErr } = await supabaseAdmin
-          .from("escort_billings")
-          .update({
-            status: "APROVADA",
-            revisado_por: `Cliente: ${nome || approval.client_name}`,
-            revisado_em: new Date().toISOString(),
-          })
-          .in("id", billingIds);
-
-        if (billErr) console.error("[boletim-approval] Erro ao aprovar billings:", billErr.message);
-        else {
-          console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
-          // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
-          bustBalancoCaches();
-        }
+        await freezeBoletimBillingsAtomic(
+          Number(approval.id),
+          nome || approval.client_name || "Cliente",
+          clientIp,
+          new Date().toISOString(),
+        );
+        console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+        // Invalida o cache SWR do Balanço/Grid — senão a aprovação só aparece após o TTL de 3h (bug TOR-0360)
+        bustBalancoCaches();
       }
 
       try {

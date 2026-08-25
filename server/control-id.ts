@@ -1564,9 +1564,9 @@ export async function buildFolhaStats(
   const vencimentosTotal = +(baseSalaryReal + periculosidade + custoExtra + adicionalNoturno).toFixed(2);
   const beneficiosTotal = +(valeRefeicao + diarias + cestaBasicaReal + ajudaCustoReal).toFixed(2);
 
-  // Recolhimentos sobre vencimentos brutos reais (base ratada + periculosidade + HE + adic. noturno).
+  // Recolhimentos: só salário+peric (HE/noturno R$ 16/16,50 pagos à parte — sem encargo).
   // Não-CLT (PJ, fixo): zera FGTS, INSS patronal e seguro de vida.
-  const baseRecolhimentos = baseSalaryReal + periculosidade + custoExtra + adicionalNoturno;
+  const baseRecolhimentos = baseSalaryReal + periculosidade;
   const fgtsPct = isClt ? ((CCT as any).fgtsPct ?? 8) : 0;
   const inssPatronalPct = isClt ? ((CCT as any).inssPatronalPct ?? 20) : 0;
   const seguroVidaMensal = isClt ? ((CCT as any).seguroVidaMensal ?? 0) : 0;
@@ -1583,13 +1583,17 @@ export async function buildFolhaStats(
   const custoBase = baseSalaryReal;
   // Para não-CLT, encargosPct efetivo é 0 (custo com encargos = bruto + benefícios).
   const encargosPctEfetivo = isClt ? encargosPct : 0;
-  const custoComEncargos = +((custoBase + periculosidade + custoExtra + adicionalNoturno) * (1 + encargosPctEfetivo / 100) + beneficiosTotal).toFixed(2);
+  const custoComEncargos = +(
+    (custoBase + periculosidade) * (1 + encargosPctEfetivo / 100) +
+    custoExtra + adicionalNoturno + beneficiosTotal
+  ).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
   let faturamentoBruto = 0;
   let faturamentoEmpregado = 0;
   let faturamentoOsCount = 0;
   let faturamentoMargem = 0;
+  const rotasInput: import("./lib/rotas-faturamento").RotaFaturamentoInput[] = [];
   try {
     const monthStartIso = `${monthYear}-01T00:00:00-03:00`;
     // Cap em "hoje" quando mês corrente, para refletir só o realizado
@@ -1599,7 +1603,7 @@ export async function buildFolhaStats(
     const monthEndIso = `${monthYear}-${lastDayCap}T23:59:59-03:00`;
     const { data: osRows } = await supabaseAdmin
       .from("service_orders")
-      .select("id, status, assigned_employee_id, assigned_employee_2_id")
+      .select("id, status, assigned_employee_id, assigned_employee_2_id, origin, destination")
       .or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`)
       .gte("scheduled_date", monthStartIso)
       .lte("scheduled_date", monthEndIso)
@@ -1609,7 +1613,7 @@ export async function buildFolhaStats(
     if (osIds.length > 0) {
       const { data: billRows } = await supabaseAdmin
         .from("escort_billings")
-        .select("service_order_id, fat_total, resultado_liquido")
+        .select("service_order_id, fat_total, resultado_liquido, desp_total")
         .in("service_order_id", osIds);
       for (const b of (billRows || [])) {
         const os = (osRows || []).find((o: any) => o.id === (b as any).service_order_id);
@@ -1617,11 +1621,20 @@ export async function buildFolhaStats(
         const share = hasDoubleAgent ? 0.5 : 1.0;
         const total = Number((b as any).fat_total || 0);
         const liquido = Number((b as any).resultado_liquido || 0);
+        const despesas = Number((b as any).desp_total || 0);
         if (total > 0) {
           faturamentoBruto += total;
           faturamentoEmpregado += total * share;
           faturamentoMargem += liquido * share;
           faturamentoOsCount += 1;
+          rotasInput.push({
+            origin: os?.origin,
+            destination: os?.destination,
+            fatTotal: total,
+            share,
+            margemLiquida: liquido,
+            despesas,
+          });
         }
       }
     }
@@ -1632,19 +1645,32 @@ export async function buildFolhaStats(
   faturamentoEmpregado = +faturamentoEmpregado.toFixed(2);
   faturamentoMargem = +faturamentoMargem.toFixed(2);
 
+  let rotasBreakdown: import("./lib/rotas-faturamento").RotasFaturamentoResult = {
+    rotas: [],
+    melhoresRotas: [],
+    totalFaturamento: 0,
+  };
+  try {
+    const { aggregateRotasFaturamento } = await import("./lib/rotas-faturamento");
+    rotasBreakdown = aggregateRotasFaturamento(rotasInput);
+  } catch (err) {
+    console.error("[buildFolhaStats] erro ao agregar rotas:", err);
+  }
+
   // ===== Deduções do FUNCIONÁRIO (modelo Torres — só p/ exibição no Balanço/Ponto) =====
-  // Base tributável INSS/FGTS = Salário(c/ peric) + HE + Noturno.
-  // IRRF mensal: só salário+peric; isento ≤ R$ 5.000 (HE paga à parte — 29/07/2026).
-  // Líquido NÃO desconta FGTS (depósito do empregador).
+  // INSS/FGTS: só salário+peric. HE/noturno (R$ 16/16,50) pagos à parte — sem encargo.
+  // IRRF mensal: só salário+peric; isento ≤ R$ 5.000 (29/07/2026).
+  // Líquido folha NÃO inclui HE/noturno nem desconta FGTS (depósito do empregador).
   const { IRRF_ISENTO_ATE } = await import("./lib/payroll");
-  const baseTributavelFunc = vencimentosTotal;
-  const baseIrrfMensalFunc = +(baseSalaryReal + periculosidade).toFixed(2);
-  const inssFuncionario = isClt ? +(baseTributavelFunc * 0.12).toFixed(2) : 0;
+  const baseEncargosFunc = +(baseSalaryReal + periculosidade).toFixed(2);
+  const baseTributavelFunc = vencimentosTotal; // total vencimentos (inclui HE/noturno p/ exibição)
+  const baseIrrfMensalFunc = baseEncargosFunc;
+  const inssFuncionario = isClt ? +(baseEncargosFunc * 0.12).toFixed(2) : 0;
   const irrfFuncionario = isClt
     ? (baseIrrfMensalFunc <= IRRF_ISENTO_ATE ? 0 : +(baseIrrfMensalFunc * 0.22).toFixed(2))
     : 0;
-  const fgtsFuncionario = fgts; // 8% sobre vencimentos — NÃO desconta do líquido (modelo Torres)
-  const liquidoFuncionario = +(baseTributavelFunc - inssFuncionario - irrfFuncionario).toFixed(2);
+  const fgtsFuncionario = fgts; // 8% só sobre salário+peric — NÃO desconta do líquido
+  const liquidoFuncionario = +(baseEncargosFunc - inssFuncionario - irrfFuncionario).toFixed(2);
 
   return {
     employeeId,
@@ -1709,6 +1735,7 @@ export async function buildFolhaStats(
     faturamentoEmpregado,
     faturamentoMargem,
     faturamentoOsCount,
+    rotasBreakdown,
     hasSalary: !!sal,
   };
 }

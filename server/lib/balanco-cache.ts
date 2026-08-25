@@ -6,7 +6,9 @@ import { bustSwrCache } from "./swr-cache";
 // (bug TOR-0360, 02/07/2026). Chamar após TODO write que muda status de escort_billings.
 export function bustBalancoCaches() {
   bustSwrCache("operational-grid");
+  // v1 (legado) + v2 (billings paginados) — bust ambos pra não ressuscitar snapshot truncado.
   bustSwrCache("financial-dashboard");
+  bustSwrCache("financial-dashboard-v2");
   bustSwrCache("rh-summary");
   bustSwrCache("rh-summary-v4");
   bustSwrCache("rh-summary-v5");

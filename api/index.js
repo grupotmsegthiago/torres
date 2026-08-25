@@ -563,7 +563,6 @@ var init_pg_fallback = __esm({
       "vehicles",
       "clients",
       "service_orders",
-      "escort_billings",
       "escort_contracts",
       "financial_transactions",
       "timesheets",
@@ -841,6 +840,116 @@ var init_supabase = __esm({
   }
 });
 
+// server/lib/safe-user.ts
+function pick(user, camel, snake) {
+  if (user[camel] !== void 0) return user[camel];
+  if (user[snake] !== void 0) return user[snake];
+  return void 0;
+}
+function toSafeUser(user) {
+  if (user == null || typeof user !== "object") {
+    return {
+      id: 0,
+      email: null,
+      username: null,
+      name: "",
+      role: "funcionario",
+      employeeId: null,
+      mustChangePassword: false,
+      supabaseUid: null,
+      avatarUrl: null,
+      termsAcceptedAt: null,
+      termsIpAddress: null,
+      termsUserAgent: null,
+      createdAt: null
+    };
+  }
+  const u = user;
+  const mustRaw = pick(u, "mustChangePassword", "must_change_password");
+  return {
+    id: Number(pick(u, "id", "id") ?? 0),
+    email: pick(u, "email", "email") ?? null,
+    username: pick(u, "username", "username") ?? null,
+    name: String(pick(u, "name", "name") ?? ""),
+    role: String(pick(u, "role", "role") ?? "funcionario"),
+    employeeId: pick(u, "employeeId", "employee_id") == null ? null : Number(pick(u, "employeeId", "employee_id")),
+    mustChangePassword: mustRaw === 1 || mustRaw === true,
+    supabaseUid: pick(u, "supabaseUid", "supabase_uid") ?? null,
+    avatarUrl: pick(u, "avatarUrl", "avatar_url") ?? null,
+    termsAcceptedAt: pick(u, "termsAcceptedAt", "terms_accepted_at") ?? null,
+    termsIpAddress: pick(u, "termsIpAddress", "terms_ip_address") ?? null,
+    termsUserAgent: pick(u, "termsUserAgent", "terms_user_agent") ?? null,
+    createdAt: pick(u, "createdAt", "created_at") ?? null
+  };
+}
+function assertNoPasswordFields(payload) {
+  if (payload == null || typeof payload !== "object") return true;
+  const json = JSON.stringify(payload);
+  return !/(plainPassword|plain_password|"password"|passwordHash|password_hash|refreshToken|accessToken)/i.test(
+    json
+  );
+}
+var USER_SAFE_SELECT;
+var init_safe_user = __esm({
+  "server/lib/safe-user.ts"() {
+    "use strict";
+    USER_SAFE_SELECT = "id, email, username, name, role, employee_id, must_change_password, supabase_uid, avatar_url, terms_accepted_at, terms_ip_address, terms_user_agent, created_at";
+  }
+});
+
+// server/lib/user-write.ts
+function snakeToCamel(str) {
+  return str.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+function sanitizeUserWrite(input) {
+  if (input == null || typeof input !== "object") return {};
+  const src = input;
+  const out = {};
+  const allowed = new Set(USER_WRITE_KEYS);
+  for (const [key, value] of Object.entries(src)) {
+    if (value === void 0) continue;
+    if (FORBIDDEN_KEYS.has(key)) continue;
+    const camel = key.includes("_") ? snakeToCamel(key) : key;
+    if (FORBIDDEN_KEYS.has(camel)) continue;
+    if (!allowed.has(camel)) continue;
+    out[camel] = value;
+  }
+  return out;
+}
+var USER_WRITE_KEYS, FORBIDDEN_KEYS;
+var init_user_write = __esm({
+  "server/lib/user-write.ts"() {
+    "use strict";
+    USER_WRITE_KEYS = [
+      "supabaseUid",
+      "email",
+      "username",
+      "name",
+      "role",
+      "employeeId",
+      "mustChangePassword",
+      "avatarUrl",
+      "termsAcceptedAt",
+      "termsIpAddress",
+      "termsUserAgent"
+    ];
+    FORBIDDEN_KEYS = /* @__PURE__ */ new Set([
+      "plainPassword",
+      "plain_password",
+      "password",
+      "passwordHash",
+      "password_hash",
+      "tempPassword",
+      "newPassword",
+      "accessToken",
+      "refreshToken",
+      "token",
+      "secret",
+      "hash"
+    ]);
+  }
+});
+
 // shared/contact-validation.ts
 function digitCount(value) {
   if (value === null || value === void 0) return 0;
@@ -1107,7 +1216,7 @@ async function resilientDelete(table, filters) {
 function camelToSnake(str) {
   return str.replace(/([a-z])(\d)/g, "$1_$2").replace(/(\d)([A-Z])/g, "$1_$2").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
 }
-function snakeToCamel(str) {
+function snakeToCamel2(str) {
   return str.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
 function toSnakeObj(obj) {
@@ -1121,7 +1230,7 @@ function toSnakeObj(obj) {
 function toCamelObj(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    out[snakeToCamel(k)] = v;
+    out[snakeToCamel2(k)] = v;
   }
   return out;
 }
@@ -1133,6 +1242,8 @@ var init_storage = __esm({
   "server/storage.ts"() {
     "use strict";
     init_supabase();
+    init_safe_user();
+    init_user_write();
     init_pg_fallback();
     init_normalize_contact();
     _directPool = null;
@@ -1144,22 +1255,22 @@ var init_storage = __esm({
     VEHICLE_LIST_COLS = "id,plate,model,brand,year,color,chassi,renavam,status,tracker_id,tracker_api_url,tracker_type,truckscontrol_identifier,ssx_integration_code,km,initial_km,last_km_update,frota,photo_front,icon_type,last_latitude,last_longitude,last_ignition,last_speed,last_gps_signal,last_address,last_position_time,stopped_since,ignition_on_since,no_signal_since,last_oil_change_km,notes,created_at";
     DatabaseStorage = class {
       async getUser(id) {
-        return resilientGet("users", [{ column: "id", op: "eq", value: id }], () => supabaseAdmin.from("users").select("*").eq("id", id).single());
+        return resilientGet("users", [{ column: "id", op: "eq", value: id }], () => supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("id", id).single());
       }
       async getUserByEmail(email) {
-        return resilientGet("users", [{ column: "email", op: "ilike", value: email.toLowerCase() }], () => supabaseAdmin.from("users").select("*").ilike("email", email).single());
+        return resilientGet("users", [{ column: "email", op: "ilike", value: email.toLowerCase() }], () => supabaseAdmin.from("users").select(USER_SAFE_SELECT).ilike("email", email).single());
       }
       async getUserBySupabaseUid(uid) {
-        return resilientGet("users", [{ column: "supabase_uid", op: "eq", value: uid }], () => supabaseAdmin.from("users").select("*").eq("supabase_uid", uid).single());
+        return resilientGet("users", [{ column: "supabase_uid", op: "eq", value: uid }], () => supabaseAdmin.from("users").select(USER_SAFE_SELECT).eq("supabase_uid", uid).single());
       }
       async getUsers() {
-        return resilientList("users", () => supabaseAdmin.from("users").select("*").order("id"), "id", true);
+        return resilientList("users", () => supabaseAdmin.from("users").select(USER_SAFE_SELECT).order("id"), "id", true);
       }
       async createUser(user) {
-        return resilientInsert("users", toSnakeObj(user));
+        return resilientInsert("users", toSnakeObj(sanitizeUserWrite(user)));
       }
       async updateUser(id, userData) {
-        return resilientUpdate("users", toSnakeObj(userData), { id });
+        return resilientUpdate("users", toSnakeObj(sanitizeUserWrite(userData)), { id });
       }
       async deleteUser(id) {
         return resilientDelete("users", { id });
@@ -1634,6 +1745,9 @@ var init_storage = __esm({
 });
 
 // server/auth.ts
+function toAuthUser(user) {
+  return toSafeUser(user);
+}
 function authCacheGet(token) {
   const entry = authCache.get(token);
   if (!entry) return null;
@@ -1682,6 +1796,7 @@ var init_auth = __esm({
     init_supabase();
     init_pg_fallback();
     init_storage();
+    init_safe_user();
     AUTH_CACHE_TTL_MS = 6e4;
     AUTH_CACHE_STALE_MS = 30 * 6e4;
     AUTH_CACHE_MAX = 1e3;
@@ -1718,9 +1833,10 @@ var init_auth = __esm({
         }
         const localUser = await storage.getUserBySupabaseUid(supaUser.id);
         if (localUser) {
-          req.user = localUser;
+          const authUser = toAuthUser(localUser);
+          req.user = authUser;
           req.supabaseUid = supaUser.id;
-          authCacheSet(token, localUser, supaUser.id);
+          authCacheSet(token, authUser, supaUser.id);
         } else {
           req.supabaseUid = supaUser.id;
         }
@@ -1793,6 +1909,8 @@ __export(helpers_exports, {
   SMTP_BCC_OS: () => SMTP_BCC_OS2,
   SMTP_BCC_WELCOME: () => SMTP_BCC_WELCOME,
   STEP_REQUIRED_PHOTOS: () => STEP_REQUIRED_PHOTOS,
+  USER_SAFE_SELECT: () => USER_SAFE_SELECT,
+  assertNoPasswordFields: () => assertNoPasswordFields,
   createAutoTransaction: () => createAutoTransaction2,
   createSmtpTransporter: () => createSmtpTransporter,
   decodePolyline: () => decodePolyline,
@@ -1936,13 +2054,6 @@ function findClosestIndex(pt, polyline) {
   }
   return idx;
 }
-function toSafeUser(user) {
-  const { password, ...safe } = user;
-  return {
-    ...safe,
-    mustChangePassword: user.mustChangePassword === 1 || user.mustChangePassword === true
-  };
-}
 async function logFinancialAudit(targetTable, targetId, action, changes, changedBy, changedById, reason) {
   try {
     const rows = changes.map((c) => ({
@@ -2014,6 +2125,7 @@ var init_helpers = __esm({
     "use strict";
     init_supabase();
     init_pg_fallback();
+    init_safe_user();
     _transporter = null;
     _transporterInitTried = false;
     SMTP_BCC_OS2 = ["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"];
@@ -3187,66 +3299,102 @@ function splitMissionCostsForBilling(mcs) {
     revenueItems
   };
 }
-function shouldSkipBillingHours(so, now = Date.now()) {
-  const missionNotStartedYet = !so.mission_status || so.mission_status === "aguardando";
-  const scheduledInFuture = (() => {
-    if (!so.scheduled_date) return false;
-    const s = String(so.scheduled_date);
-    const sched = new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
-    return sched.getTime() > now;
-  })();
-  return missionNotStartedYet || so.status === "agendada" && scheduledInFuture;
-}
-function resolveContractForOs(so, contractMap, clientContractMap, defaultContract = DEFAULT_BILLING_CONTRACT) {
-  if (so.escort_contract_id && contractMap.has(so.escort_contract_id)) {
-    return contractMap.get(so.escort_contract_id);
+function assertOfficialBillingFacts(input) {
+  const { so, contrato, photos } = input;
+  if (!so?.id) {
+    throw new OfficialBillingFactsError(
+      "SERVICE_ORDER_REQUIRED",
+      "Billing oficial exige service_order_id."
+    );
   }
-  if (so.client_id && clientContractMap.has(so.client_id)) {
-    return clientContractMap.get(so.client_id);
+  if (!so?.escort_contract_id) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_REQUIRED",
+      "OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria."
+    );
   }
-  return defaultContract;
+  if (!contrato?.id || String(contrato.id) !== String(so.escort_contract_id)) {
+    throw new OfficialBillingFactsError(
+      "CONTRACT_MISMATCH",
+      "Contrato do c\xE1lculo difere do escort_contract_id persistido na OS."
+    );
+  }
+  if (!so?.mission_started_at || !so?.completed_date) {
+    throw new OfficialBillingFactsError(
+      "TIMESTAMPS_REQUIRED",
+      "Billing oficial exige mission_started_at e completed_date reais."
+    );
+  }
+  const startMs = new Date(so.mission_started_at).getTime();
+  const endMs = new Date(so.completed_date).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    throw new OfficialBillingFactsError(
+      "INVALID_TIMESTAMPS",
+      "Timestamps reais da miss\xE3o s\xE3o inv\xE1lidos ou est\xE3o invertidos."
+    );
+  }
+  const lastPhoto = (step) => [...photos].reverse().find((photo) => photo.step === step);
+  const kmInicial = lastPhoto("km_chegada") || lastPhoto("km_saida");
+  const kmFinal = lastPhoto("km_final");
+  if (!kmInicial || Number(kmInicial.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_INICIAL_REQUIRED",
+      "Billing oficial exige foto factual de KM inicial."
+    );
+  }
+  if (!kmFinal || Number(kmFinal.km_value) <= 0) {
+    throw new OfficialBillingFactsError(
+      "KM_FINAL_REQUIRED",
+      "Billing oficial exige foto factual de KM final."
+    );
+  }
+  if (Number(kmFinal.km_value) < Number(kmInicial.km_value)) {
+    throw new OfficialBillingFactsError(
+      "KM_REVERSED",
+      "KM final n\xE3o pode ser menor que o KM inicial factual."
+    );
+  }
 }
 function computeBillingPayloadForOs(input) {
   const { so, contrato, photos, mCosts, horasMissao, clientName, empName, emp2Name, vehPlate } = input;
+  assertOfficialBillingFacts({ so, contrato, photos });
   const now = input.nowDate ?? /* @__PURE__ */ new Date();
   const n2 = (v) => Number(v) || 0;
   const r = (v) => Math.round(v * 100) / 100;
   const toBRT2 = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-  const kmChegadaPhoto = photos.find((p) => p.step === "km_chegada");
-  const kmSaidaPhoto = photos.find((p) => p.step === "km_saida");
-  const kmFinalPhoto = photos.find((p) => p.step === "km_final");
+  const lastPhoto = (step) => [...photos].reverse().find((p) => p.step === step);
+  const kmChegadaPhoto = lastPhoto("km_chegada");
+  const kmSaidaPhoto = lastPhoto("km_saida");
+  const kmFinalPhoto = lastPhoto("km_final");
   const kmInicial = n2(kmChegadaPhoto?.km_value) || n2(kmSaidaPhoto?.km_value);
   const kmFinalVal = n2(kmFinalPhoto?.km_value);
   const kmFinal = kmFinalVal > kmInicial ? kmFinalVal : kmInicial;
-  const missionEndDate = so.completed_date ? new Date(so.completed_date) : now;
+  const missionEndDate = new Date(so.completed_date);
   const scheduledDate = so.scheduled_date ? new Date(so.scheduled_date) : null;
   const missionStartDate = so.mission_started_at ? new Date(so.mission_started_at) : null;
   const scheduledTime = scheduledDate ? toBRT2(scheduledDate) : void 0;
   const startTime = missionStartDate ? toBRT2(missionStartDate) : void 0;
   const endTime = toBRT2(missionEndDate);
-  const billingStartDate = missionStartDate || scheduledDate;
-  const inicioConsiderado = billingStartDate ? toBRT2(billingStartDate) : startTime || scheduledTime || "00:00";
-  const km_total = kmFinal - kmInicial;
-  const km_carregado = Math.max(0, km_total);
-  const billing = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal, contrato });
-  let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
-  const { km_excedente, has_acionamento: hasAcionamento } = billing;
-  const franquiaKm = billing.franquia_km;
-  const isNoturno = (() => {
-    const checkH = (t) => {
-      if (!t) return false;
-      const h = parseInt(t.split(":")[0]);
-      return h >= 22 || h < 5;
-    };
-    return checkH(inicioConsiderado) || checkH(endTime);
-  })();
-  if (isNoturno) {
-    fat_total += (hasAcionamento ? fat_acionamento + fat_km : fat_km) * (n2(contrato.adicional_noturno_km_pct) / 100);
-  }
   const { despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os } = splitMissionCostsForBilling(mCosts);
-  fat_total += despesas_pedagio + receitas_os;
-  const pag_vrp = n2(contrato.vrp_base);
-  const resultado_bruto = fat_total - pag_vrp;
+  const canonical = calcularEscolta({
+    km_inicial: kmInicial,
+    km_final: kmFinal,
+    km_vazio: 0,
+    horas_missao: horasMissao,
+    horas_estadia: 0,
+    teve_pernoite: false,
+    horario_agendado: scheduledTime,
+    horario_inicio: startTime,
+    horario_fim: endTime,
+    inicio_ts: so.mission_started_at || null,
+    fim_ts: so.completed_date,
+    scheduled_date: so.scheduled_date || null,
+    despesas_pedagio,
+    despesas_combustivel,
+    despesas_outras,
+    receitas_os,
+    contrato
+  });
   return {
     service_order_id: so.id,
     client_id: so.client_id,
@@ -3255,31 +3403,40 @@ function computeBillingPayloadForOs(input) {
     km_inicial: n2(kmInicial),
     km_final: n2(kmFinal),
     km_vazio: 0,
-    km_carregado: n2(km_carregado),
-    km_total: n2(km_total),
-    km_faturado: n2(Math.max(km_carregado, franquiaKm)),
-    km_franquia: n2(franquiaKm),
-    km_excedente: n2(km_excedente),
+    km_carregado: n2(canonical.km_carregado),
+    km_total: n2(canonical.km_total),
+    km_faturado: n2(canonical.km_faturado),
+    km_franquia: n2(canonical.km_franquia),
+    km_excedente: n2(canonical.km_excedente),
     horario_agendado: scheduledTime || null,
     horario_inicio: startTime || null,
     horario_fim: endTime || null,
-    horario_inicio_considerado: inicioConsiderado,
-    horas_missao: r(horasMissao),
-    horas_trabalhadas: r(horasMissao),
+    horario_inicio_considerado: canonical.horario_inicio_considerado,
+    horas_missao: r(canonical.horas_trabalhadas),
+    horas_trabalhadas: r(canonical.horas_trabalhadas),
     horas_estadia: 0,
     teve_pernoite: false,
-    is_noturno: isNoturno,
-    fat_acionamento: r(fat_acionamento),
-    fat_km: r(fat_km),
-    fat_hora_extra: r(fat_hora_extra),
-    fat_total: r(fat_total),
-    valor_franquia: hasAcionamento ? r(fat_acionamento) : r(Math.min(km_carregado, franquiaKm) * n2(contrato.valor_km_carregado)),
-    valor_km_extra: r(km_excedente * (hasAcionamento ? n2(contrato.valor_km_extra) : n2(contrato.valor_km_carregado))),
-    pag_vrp: r(pag_vrp),
-    pag_total: r(pag_vrp),
-    resultado_bruto: r(resultado_bruto),
-    resultado_liquido: r(resultado_bruto),
-    margem_percentual: fat_total > 0 ? r(resultado_bruto / fat_total * 100) : 0,
+    is_noturno: canonical.is_noturno,
+    fat_acionamento: r(canonical.fat_acionamento),
+    fat_km: r(canonical.fat_km),
+    fat_km_carregado: r(canonical.faturamento.km_carregado),
+    fat_km_vazio: r(canonical.faturamento.km_vazio),
+    fat_hora_extra: r(canonical.fat_hora_extra),
+    fat_adicional_noturno: r(canonical.fat_adicional_noturno),
+    fat_estadia: r(canonical.fat_estadia),
+    fat_pernoite: r(canonical.fat_pernoite),
+    fat_diaria: r(canonical.fat_pernoite),
+    fat_total: r(canonical.fat_total),
+    valor_franquia: r(canonical.valor_franquia),
+    valor_km_extra: r(canonical.valor_km_extra),
+    pag_vrp: r(canonical.pag_vrp),
+    pag_periculosidade: r(canonical.pag_periculosidade),
+    pag_adicional_noturno: r(canonical.pag_adicional_noturno),
+    pag_reembolsos: r(canonical.pag_reembolsos),
+    pag_total: r(canonical.pag_total),
+    resultado_bruto: r(canonical.resultado.bruto),
+    resultado_liquido: r(canonical.resultado.liquido),
+    margem_percentual: r(canonical.resultado.margem_pct),
     vigilante_id: so.assigned_employee_id,
     vigilante_name: empName || "--",
     vigilante2_id: so.assigned_employee_2_id || null,
@@ -3292,6 +3449,7 @@ function computeBillingPayloadForOs(input) {
     despesas_pedagio: r(despesas_pedagio),
     despesas_combustivel: r(despesas_combustivel),
     despesas_outras: r(despesas_outras),
+    desp_total: r(canonical.despesas.total),
     receitas_os: r(receitas_os),
     data_missao: (() => {
       const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
@@ -3490,26 +3648,17 @@ function calcularEscolta(dados) {
     pag_total: r(pag_total)
   };
 }
-var DEFAULT_BILLING_CONTRACT;
+var OfficialBillingFactsError;
 var init_billing_calc = __esm({
   "server/billing-calc.ts"() {
     "use strict";
     init_supabase();
-    DEFAULT_BILLING_CONTRACT = {
-      valor_km_carregado: 2.8,
-      valor_km_vazio: 1.4,
-      valor_km_extra: 2.4,
-      franquia_minima_km: 50,
-      franquia_km: 50,
-      franquia_horas: 3,
-      valor_hora_estadia: 50,
-      valor_hora_extra: 110,
-      valor_acionamento: 0,
-      valor_diaria: 200,
-      vrp_base: 150,
-      adicional_noturno_vrp_pct: 20,
-      adicional_noturno_km_pct: 15,
-      adicional_periculosidade_pct: 30
+    OfficialBillingFactsError = class extends Error {
+      constructor(code, message) {
+        super(message);
+        this.code = code;
+        this.name = "OfficialBillingFactsError";
+      }
     };
   }
 });
@@ -4122,11 +4271,12 @@ var init_cct_config = __esm({
     cctConfigSchema = z2.object({
       label: z2.string().min(1).default("CCT SP 2025/2026"),
       sindicato: z2.string().default(""),
-      salarioBase: z2.number().nonnegative().default(2432.5),
+      // Piso CCT Vigilância SP vigente (cct_presets.vigilancia) — não usar 2432,50 legado.
+      salarioBase: z2.number().nonnegative().default(2565.31),
       periculosidadePct: z2.number().nonnegative().default(30),
       valeRefeicaoDia: z2.number().nonnegative().default(43),
       valeAlimentacaoDia: z2.number().nonnegative().default(0),
-      cestaBasica: z2.number().nonnegative().default(208.45),
+      cestaBasica: z2.number().nonnegative().default(200),
       cestaBasicaIIFaixas: cestaBasicaIIFaixasSchema.optional(),
       escala: z2.string().default(""),
       jornada: z2.string().default(""),
@@ -4368,13 +4518,19 @@ async function ensureDefaultPresets() {
           const before = Number(raw.horaExtraValor);
           const beforeN = Number(raw.horaExtraNoturnaValor);
           const needsHe = !Number.isFinite(before) || before <= 0 || Math.abs(before - LEGACY_HE_DIURNA_DEFAULT) < 0.011 || !Number.isFinite(beforeN) || beforeN <= 0;
-          if (needsHe) {
-            const cfg = parseCctConfig(raw, CCT_PRESET_VIGILANCIA);
+          const beforeSal = Number(raw.salarioBase);
+          const needsSalario = Number.isFinite(beforeSal) && Math.abs(beforeSal - 2432.5) < 0.011;
+          if (needsHe || needsSalario) {
+            const cfg = parseCctConfig(
+              needsSalario ? { ...raw, salarioBase: DEFAULT_CCT_CONFIG.salarioBase, cestaBasica: DEFAULT_CCT_CONFIG.cestaBasica } : raw,
+              CCT_PRESET_VIGILANCIA
+            );
             await supabaseAdmin.from("cct_presets").update({ config: cfg, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("key", CCT_PRESET_VIGILANCIA);
             await syncLegacyCctSettings(cfg).catch(() => {
             });
             invalidateCctConfigCache();
-            console.log("[cct-config] HE vigil\xE2ncia migrada para 16 / 16,50");
+            if (needsHe) console.log("[cct-config] HE vigil\xE2ncia migrada para 16 / 16,50");
+            if (needsSalario) console.log("[cct-config] sal\xE1rio vigil\xE2ncia migrado 2432,50 \u2192", cfg.salarioBase);
           }
         }
       } catch (e) {
@@ -12656,6 +12812,325 @@ var init_truckscontrol = __esm({
   }
 });
 
+// server/lib/cancelada-billing.ts
+async function computeCanceladaBilling(input) {
+  if (!input.escortContractId) return null;
+  const { data: cc, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", input.escortContractId).single();
+  if (contractError) throw contractError;
+  const contrato = cc;
+  if (!contrato) return null;
+  const usouTabela100 = Number(contrato.franquia_km) === 100 && Number(contrato.franquia_horas) === 3;
+  const { data: photos } = await supabaseAdmin.from("mission_photos").select("step, km_value, created_at").eq("service_order_id", input.serviceOrderId).order("created_at", { ascending: true });
+  const ph = photos || [];
+  const last = (step) => [...ph].reverse().find((p) => p.step === step);
+  const kmSaida = last("km_saida");
+  const kmChegada = last("km_chegada");
+  const kmFinalP = last("km_final");
+  const kmIni = n(kmChegada?.km_value) || n(kmSaida?.km_value) || 0;
+  const kmFinalRaw = n(kmFinalP?.km_value) || 0;
+  const kmFin = kmFinalRaw > kmIni ? kmFinalRaw : kmIni;
+  const logs = Array.isArray(input.stepLogs) ? input.stepLogs : [];
+  const inicioEntry = [...logs].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
+  const inicio_ts = input.missionStartedAt ? new Date(input.missionStartedAt).toISOString() : inicioEntry ? new Date(inicioEntry.timestamp || inicioEntry.completedAt).toISOString() : null;
+  const cdValid = input.completedDate && new Date(input.completedDate).getFullYear() > 2e3;
+  const fim_ts = cdValid ? new Date(input.completedDate).toISOString() : null;
+  const scheduled_date = input.scheduledDate ? new Date(input.scheduledDate).toISOString() : null;
+  const horarios = {
+    horario_agendado: input.scheduledDate ? toBRT(new Date(input.scheduledDate)) : null,
+    horario_inicio: inicio_ts ? toBRT(new Date(inicio_ts)) : null,
+    horario_fim: fim_ts ? toBRT(new Date(fim_ts)) : null
+  };
+  const resultado = calcularEscolta({
+    km_inicial: kmIni,
+    km_final: kmFin,
+    km_vazio: 0,
+    horas_missao: 0,
+    horas_estadia: 0,
+    teve_pernoite: false,
+    horario_agendado: horarios.horario_agendado || void 0,
+    horario_inicio: horarios.horario_inicio || void 0,
+    horario_fim: horarios.horario_fim || void 0,
+    inicio_ts,
+    fim_ts,
+    scheduled_date,
+    despesas_pedagio: 0,
+    despesas_combustivel: 0,
+    despesas_outras: 0,
+    receitas_os: 0,
+    contrato
+  });
+  const nb = (v) => Number(v) || 0;
+  const fatFields = {
+    km_inicial: nb(kmIni),
+    km_final: nb(kmFin),
+    km_carregado: nb(resultado.km_carregado),
+    km_vazio: 0,
+    km_total: nb(resultado.km_total),
+    km_faturado: nb(resultado.km_faturado),
+    km_franquia: nb(resultado.km_franquia),
+    km_excedente: nb(resultado.km_excedente),
+    horario_inicio_considerado: resultado.horario_inicio_considerado,
+    horas_missao: nb(resultado.horas_trabalhadas),
+    horas_trabalhadas: nb(resultado.horas_trabalhadas),
+    horas_estadia: 0,
+    teve_pernoite: false,
+    is_noturno: resultado.is_noturno,
+    fat_acionamento: nb(resultado.fat_acionamento),
+    fat_hora_extra: nb(resultado.fat_hora_extra),
+    fat_km: nb(resultado.fat_km),
+    fat_km_carregado: nb(resultado.faturamento.km_carregado),
+    fat_km_vazio: nb(resultado.faturamento.km_vazio),
+    fat_estadia: nb(resultado.fat_estadia),
+    fat_pernoite: nb(resultado.fat_pernoite),
+    fat_diaria: nb(resultado.fat_pernoite),
+    fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
+    fat_total: nb(resultado.fat_total),
+    // Cancelada não carrega custos/receitas anteriores nem pedágio estimado.
+    // O único valor comercial vem do motor de cancelamento acima.
+    ...CANCELADA_CLEAN_FINANCIAL_FIELDS,
+    valor_franquia: nb(resultado.valor_franquia),
+    valor_km_extra: nb(resultado.valor_km_extra),
+    // Cancelamento = receita pura: pagamento zerado, resultado = faturamento.
+    resultado_bruto: nb(resultado.fat_total),
+    resultado_liquido: nb(resultado.fat_total),
+    margem_percentual: 100,
+    status: "CANCELADO"
+  };
+  return { contrato, usouTabela100, resultado, kmIni, kmFin, fatFields, horarios };
+}
+var n, toBRT, CANCELADA_CLEAN_FINANCIAL_FIELDS;
+var init_cancelada_billing = __esm({
+  "server/lib/cancelada-billing.ts"() {
+    "use strict";
+    init_supabase();
+    init_billing_calc();
+    n = (v) => Number(v) || 0;
+    toBRT = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+    CANCELADA_CLEAN_FINANCIAL_FIELDS = {
+      receitas_os: 0,
+      despesas_pedagio: 0,
+      despesas_combustivel: 0,
+      despesas_outras: 0,
+      desp_total: 0,
+      desp_pedagio: 0,
+      desp_combustivel: 0,
+      desp_outras: 0,
+      pag_vrp: 0,
+      pag_periculosidade: 0,
+      pag_adicional_noturno: 0,
+      pag_reembolsos: 0,
+      pag_total: 0
+    };
+  }
+});
+
+// server/lib/recusada-guard.ts
+async function osIsRecusada(sb, serviceOrderId) {
+  if (serviceOrderId == null || serviceOrderId === "") return false;
+  const { data, error } = await sb.from("service_orders").select("status").eq("id", serviceOrderId).maybeSingle();
+  if (error) throw error;
+  return data?.status === "recusada";
+}
+function buildRecusadaZeroPayload(motivo, observacaoAtual) {
+  let observacoes = "OS RECUSADA";
+  if (observacaoAtual && observacaoAtual.startsWith("OS RECUSADA")) {
+    observacoes = observacaoAtual;
+  } else if (motivo && motivo.trim()) {
+    observacoes = `OS RECUSADA \u2014 ${motivo.trim()}`;
+  }
+  return {
+    status: "CANCELADO",
+    fat_total: 0,
+    fat_acionamento: 0,
+    fat_hora_extra: 0,
+    fat_km: 0,
+    fat_km_carregado: 0,
+    fat_km_vazio: 0,
+    fat_estadia: 0,
+    fat_pernoite: 0,
+    fat_diaria: 0,
+    fat_adicional_noturno: 0,
+    receitas_os: 0,
+    despesas_pedagio: 0,
+    despesas_combustivel: 0,
+    despesas_outras: 0,
+    desp_total: 0,
+    desp_pedagio: 0,
+    desp_combustivel: 0,
+    desp_outras: 0,
+    pag_vrp: 0,
+    pag_periculosidade: 0,
+    pag_adicional_noturno: 0,
+    pag_reembolsos: 0,
+    pag_total: 0,
+    valor_franquia: 0,
+    valor_km_extra: 0,
+    resultado_bruto: 0,
+    resultado_liquido: 0,
+    margem_percentual: 0,
+    observacoes
+  };
+}
+var init_recusada_guard = __esm({
+  "server/lib/recusada-guard.ts"() {
+    "use strict";
+  }
+});
+
+// server/audit.ts
+async function logSystemAudit(params) {
+  try {
+    await supabaseAdmin.from("system_audit_logs").insert({
+      user_id: params.userId ?? null,
+      user_name: params.userName ?? null,
+      user_role: params.userRole ?? null,
+      action: params.action,
+      target_id: params.targetId ?? null,
+      target_type: params.targetType ?? null,
+      details: params.details ?? null,
+      ip_address: params.ipAddress ?? null
+    });
+  } catch (_e) {
+  }
+}
+var init_audit = __esm({
+  "server/audit.ts"() {
+    "use strict";
+    init_supabase();
+  }
+});
+
+// server/lib/atomic-billing.ts
+function actorPayload(actor) {
+  return {
+    user_id: actor?.userId ?? null,
+    user_name: actor?.userName ?? null,
+    user_role: actor?.userRole ?? null,
+    reason: actor?.reason ?? null,
+    ip_address: actor?.ipAddress ?? null
+  };
+}
+function throwRpcError(error) {
+  throw new AtomicBillingError(
+    error?.message || "Falha na opera\xE7\xE3o at\xF4mica de billing",
+    error?.code,
+    error?.details
+  );
+}
+async function writeEscortBillingAtomic(input, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("write_escort_billing_atomic", {
+    p_action: input.action,
+    p_payload: input.payload ?? {},
+    p_billing_id: input.billingId ?? null,
+    p_service_order_id: input.serviceOrderId ?? null,
+    p_expected_version: input.expectedVersion ?? null,
+    p_actor: actorPayload(input.actor)
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data[0] ?? null : data;
+}
+async function getAtomicBillingRefById(billingId, sb = supabaseAdmin) {
+  const { data, error } = await sb.from("escort_billings").select("id, service_order_id, status, lock_version").eq("id", billingId).single();
+  if (error || !data) throwRpcError(error || { message: "Billing n\xE3o encontrado", code: "P0002" });
+  return {
+    id: String(data.id),
+    service_order_id: data.service_order_id == null ? null : Number(data.service_order_id),
+    status: data.status == null ? null : String(data.status),
+    lock_version: Number(data.lock_version) || 0
+  };
+}
+async function updateBillingLifecycleAtomic(billingId, action, payload, actor, sb = supabaseAdmin) {
+  const ref = await getAtomicBillingRefById(billingId, sb);
+  const cancelled = ["CANCELADO", "CANCELADA"].includes(
+    String(ref.status || "").toUpperCase()
+  );
+  const effectivePayload = (action === "FREEZE_COMMERCIAL" || action === "RELEASE_REBILL") && cancelled ? { ...payload, status: "CANCELADO" } : payload;
+  return writeEscortBillingAtomic({
+    action,
+    billingId,
+    serviceOrderId: ref.service_order_id,
+    expectedVersion: ref.lock_version,
+    payload: effectivePayload,
+    actor
+  }, sb);
+}
+async function updateBillingLifecycleBatchAtomic(billingIds, action, payload, actor, sb = supabaseAdmin) {
+  const results = [];
+  for (const billingId of billingIds) {
+    results.push(await updateBillingLifecycleAtomic(
+      billingId,
+      action,
+      payload,
+      actor,
+      sb
+    ));
+  }
+  return results;
+}
+async function createBoletimApprovalAtomic(input, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("create_boletim_approval_atomic", {
+    p_token: input.token,
+    p_client_id: input.clientId,
+    p_client_name: input.clientName ?? null,
+    p_client_email: input.clientEmail ?? null,
+    p_period_start: input.periodStart,
+    p_period_end: input.periodEnd,
+    p_billing_ids: input.billingIds,
+    p_total_value: input.totalValue,
+    p_os_count: input.osCount,
+    p_sent_by: input.sentBy ?? null,
+    p_sent_by_user_id: input.sentByUserId ?? null,
+    p_billing_snapshot: input.billingSnapshot
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data[0] ?? null : data;
+}
+async function freezeBoletimBillingsAtomic(approvalId, approvedByName, approvedByIp, approvedAt, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("freeze_boletim_billings_atomic", {
+    p_approval_id: approvalId,
+    p_approved_by_name: approvedByName,
+    p_approved_by_ip: approvedByIp,
+    p_approved_at: approvedAt
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}
+async function markBillingsInvoicedAtomic(billingIds, invoiceId, faturadoEm, faturadoPor, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("mark_escort_billings_invoiced_atomic", {
+    p_billing_ids: billingIds,
+    p_invoice_id: invoiceId,
+    p_faturado_em: faturadoEm,
+    p_faturado_por: faturadoPor
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}
+async function transitionInvoiceBillingsAtomic(invoiceId, action, transitionedAt, actor, sb = supabaseAdmin) {
+  const { data, error } = await sb.rpc("transition_invoice_billings_atomic", {
+    p_invoice_id: invoiceId,
+    p_action: action,
+    p_transitioned_at: transitionedAt,
+    p_actor: actor
+  });
+  if (error) throwRpcError(error);
+  return Array.isArray(data) ? data : [];
+}
+var AtomicBillingError;
+var init_atomic_billing = __esm({
+  "server/lib/atomic-billing.ts"() {
+    "use strict";
+    init_supabase();
+    AtomicBillingError = class extends Error {
+      constructor(message, code, details) {
+        super(message);
+        this.code = code;
+        this.details = details;
+        this.name = "AtomicBillingError";
+      }
+    };
+  }
+});
+
 // shared/documents-catalog.ts
 function profileFromRole(role) {
   const r = (role || "").toLowerCase();
@@ -13079,29 +13554,6 @@ var init_onboarding = __esm({
   }
 });
 
-// server/audit.ts
-async function logSystemAudit(params) {
-  try {
-    await supabaseAdmin.from("system_audit_logs").insert({
-      user_id: params.userId ?? null,
-      user_name: params.userName ?? null,
-      user_role: params.userRole ?? null,
-      action: params.action,
-      target_id: params.targetId ?? null,
-      target_type: params.targetType ?? null,
-      details: params.details ?? null,
-      ip_address: params.ipAddress ?? null
-    });
-  } catch (_e) {
-  }
-}
-var init_audit = __esm({
-  "server/audit.ts"() {
-    "use strict";
-    init_supabase();
-  }
-});
-
 // server/lib/correct-text-ai.ts
 var correct_text_ai_exports = {};
 __export(correct_text_ai_exports, {
@@ -13449,6 +13901,243 @@ var init_asaas_helpers = __esm({
   }
 });
 
+// server/lib/inter-integration.ts
+var inter_integration_exports = {};
+__export(inter_integration_exports, {
+  INTER_INTEGRATION_ENV: () => INTER_INTEGRATION_ENV,
+  evaluateInterWriteGate: () => evaluateInterWriteGate,
+  interStatusWhenDisabled: () => interStatusWhenDisabled,
+  isInterGatewayAllowedForNewCharge: () => isInterGatewayAllowedForNewCharge,
+  isInterIntegrationEnabled: () => isInterIntegrationEnabled
+});
+function isInterIntegrationEnabled(env = process.env) {
+  const raw = String(env[INTER_INTEGRATION_ENV] ?? "").trim().toLowerCase();
+  return TRUTHY.has(raw);
+}
+function evaluateInterWriteGate(opts) {
+  const env = opts.env ?? process.env;
+  if (!isInterIntegrationEnabled(env)) {
+    return {
+      allow: false,
+      reason: "disabled",
+      status: 410,
+      body: DISABLED_BODY
+    };
+  }
+  if (!opts.configured) {
+    return {
+      allow: false,
+      reason: "not_configured",
+      status: 503,
+      body: NOT_CONFIGURED_BODY
+    };
+  }
+  return { allow: true, reason: "ok", status: 200, body: null };
+}
+function isInterGatewayAllowedForNewCharge(opts) {
+  return evaluateInterWriteGate(opts).allow;
+}
+function interStatusWhenDisabled() {
+  return {
+    connected: false,
+    disabled: true,
+    message: DISABLED_BODY.message
+  };
+}
+var INTER_INTEGRATION_ENV, TRUTHY, DISABLED_BODY, NOT_CONFIGURED_BODY;
+var init_inter_integration = __esm({
+  "server/lib/inter-integration.ts"() {
+    "use strict";
+    INTER_INTEGRATION_ENV = "INTER_INTEGRATION_ENABLED";
+    TRUTHY = /* @__PURE__ */ new Set(["1", "true", "yes", "on"]);
+    DISABLED_BODY = {
+      ok: false,
+      code: "INTER_DISABLED",
+      message: "Integra\xE7\xE3o Banco Inter desativada."
+    };
+    NOT_CONFIGURED_BODY = {
+      ok: false,
+      code: "INTER_NOT_CONFIGURED",
+      message: "Integra\xE7\xE3o Banco Inter habilitada, mas configura\xE7\xE3o operacional ausente."
+    };
+  }
+});
+
+// server/services/inter/client.ts
+var client_exports = {};
+__export(client_exports, {
+  getInterClient: () => getInterClient,
+  isInterConfigured: () => isInterConfigured
+});
+import https from "https";
+import fs2 from "fs";
+import path2 from "path";
+function getInterCa() {
+  if (_interCa !== null) return _interCa || null;
+  try {
+    const caPath = path2.join(__dirname, "inter-ca.pem");
+    _interCa = fs2.readFileSync(caPath, "utf8");
+    return _interCa;
+  } catch {
+    _interCa = "";
+    return null;
+  }
+}
+function normalizePem(s) {
+  return s.includes("\\n") ? s.replace(/\\n/g, "\n") : s;
+}
+function loadCertKey() {
+  const cert = process.env.INTER_CERT_CRT;
+  const key = process.env.INTER_CERT_KEY;
+  if (!cert || !key) {
+    throw new Error("INTER_CERT_CRT e INTER_CERT_KEY s\xE3o obrigat\xF3rios para mTLS");
+  }
+  return { cert: normalizePem(cert), key: normalizePem(key) };
+}
+function getInterClient() {
+  if (!_instance) _instance = new InterClient();
+  return _instance;
+}
+function isInterConfigured() {
+  return getInterClient().isConfigured();
+}
+var BASE_URLS, _interCa, InterClient, _instance;
+var init_client = __esm({
+  "server/services/inter/client.ts"() {
+    "use strict";
+    BASE_URLS = {
+      prod: "https://cdpj.partners.bancointer.com.br",
+      sandbox: "https://cdpj-sandbox.partners.uatinter.co"
+    };
+    _interCa = null;
+    InterClient = class {
+      tokens = /* @__PURE__ */ new Map();
+      isConfigured() {
+        return !!(process.env.INTER_CLIENT_ID && process.env.INTER_CLIENT_SECRET && process.env.INTER_CERT_CRT && process.env.INTER_CERT_KEY);
+      }
+      getBaseUrl() {
+        return process.env.INTER_AMBIENTE === "prod" ? BASE_URLS.prod : BASE_URLS.sandbox;
+      }
+      getAmbiente() {
+        return process.env.INTER_AMBIENTE === "prod" ? "prod" : "sandbox";
+      }
+      getContaCorrente() {
+        return process.env.INTER_CONTA_CORRENTE || "";
+      }
+      /** Request HTTPS com mTLS. Resolve com JSON parsed, texto ou Buffer. */
+      rawRequest(opts) {
+        const { method, path: path6, body, contentType, headers = {}, rawBuffer } = opts;
+        const { cert, key } = loadCertKey();
+        const url = new URL(this.getBaseUrl() + path6);
+        const finalHeaders = { ...headers };
+        if (body != null) {
+          finalHeaders["Content-Type"] = contentType || "application/json";
+          finalHeaders["Content-Length"] = Buffer.byteLength(body).toString();
+        }
+        return new Promise((resolve, reject) => {
+          const ca = getInterCa();
+          const req = https.request(
+            {
+              method,
+              hostname: url.hostname,
+              port: 443,
+              path: url.pathname + url.search,
+              cert,
+              key,
+              ...ca ? { ca } : {},
+              headers: finalHeaders
+            },
+            (res) => {
+              const chunks = [];
+              res.on("data", (c) => chunks.push(c));
+              res.on("end", () => {
+                const buf = Buffer.concat(chunks);
+                const status = res.statusCode || 0;
+                if (status >= 200 && status < 300) {
+                  if (rawBuffer) return resolve(buf);
+                  const txt = buf.toString("utf8");
+                  if (!txt) return resolve(void 0);
+                  try {
+                    resolve(JSON.parse(txt));
+                  } catch {
+                    resolve(txt);
+                  }
+                } else {
+                  const txt = buf.toString("utf8");
+                  const err = new Error(`Inter API ${status} ${method} ${path6}: ${txt.slice(0, 500)}`);
+                  err.status = status;
+                  err.body = txt;
+                  reject(err);
+                }
+              });
+            }
+          );
+          req.on("error", reject);
+          if (body != null) req.write(body);
+          req.end();
+        });
+      }
+      /** Obtém token OAuth2 com cache por escopo. Renova automaticamente. */
+      async getToken(scopes) {
+        const cached = this.tokens.get(scopes);
+        if (cached && cached.expiresAt > Date.now() + 6e4) return cached.accessToken;
+        const clientId = process.env.INTER_CLIENT_ID;
+        const clientSecret = process.env.INTER_CLIENT_SECRET;
+        const form = new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          scope: scopes,
+          grant_type: "client_credentials"
+        }).toString();
+        const data = await this.rawRequest({
+          method: "POST",
+          path: "/oauth/v2/token",
+          body: form,
+          contentType: "application/x-www-form-urlencoded"
+        });
+        this.tokens.set(scopes, {
+          accessToken: data.access_token,
+          expiresAt: Date.now() + data.expires_in * 1e3
+        });
+        return data.access_token;
+      }
+      /** Chamada autenticada às APIs Inter. */
+      async call(opts) {
+        const { method, path: path6, scopes, body, query, useContaCorrente, rawBuffer } = opts;
+        if (!this.isConfigured()) {
+          throw new Error(
+            "Banco Inter n\xE3o configurado. Defina INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CONTA_CORRENTE, INTER_CERT_CRT, INTER_CERT_KEY."
+          );
+        }
+        const token = await this.getToken(scopes);
+        let fullPath = path6;
+        if (query) {
+          const qs = new URLSearchParams(
+            Object.entries(query).filter(([_, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])
+          ).toString();
+          if (qs) fullPath += (path6.includes("?") ? "&" : "?") + qs;
+        }
+        const headers = { Authorization: `Bearer ${token}` };
+        if (useContaCorrente && this.getContaCorrente()) {
+          headers["x-conta-corrente"] = this.getContaCorrente();
+        }
+        return this.rawRequest({
+          method,
+          path: fullPath,
+          body: body == null ? void 0 : JSON.stringify(body),
+          headers,
+          rawBuffer
+        });
+      }
+      /** Limpa cache de tokens (útil após troca de credenciais). */
+      resetTokens() {
+        this.tokens.clear();
+      }
+    };
+    _instance = null;
+  }
+});
+
 // server/asaas.ts
 var asaas_exports = {};
 __export(asaas_exports, {
@@ -13465,6 +14154,14 @@ __export(asaas_exports, {
   reconcileInvoiceFromAsaas: () => reconcileInvoiceFromAsaas,
   registerAsaasRoutes: () => registerAsaasRoutes
 });
+async function updateBillingLifecycleByInvoiceAtomic(invoiceId, action, _payload, actorName) {
+  return transitionInvoiceBillingsAtomic(
+    invoiceId,
+    action,
+    (/* @__PURE__ */ new Date()).toISOString(),
+    actorName
+  );
+}
 function isStatusRegression(incoming) {
   return REGRESSION_STATUSES.includes(String(incoming || "").toUpperCase());
 }
@@ -13631,8 +14328,16 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
     if (Math.abs(totalSum - target) <= tol) {
       const ids = orphans.map((b) => b.id);
       if (!dryRun) {
-        const { error } = await supabaseAdmin.from("escort_billings").update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", ids);
-        if (error) return { linked: 0, reason: error.message };
+        try {
+          await markBillingsInvoicedAtomic(
+            ids.map(String),
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
+        } catch (error) {
+          return { linked: 0, reason: error.message };
+        }
         bustBalancoCaches();
         console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${ids.length} OS vinculadas (TODAS, soma R$${totalSum.toFixed(2)} \u2248 R$${target.toFixed(2)}, ${periodSource})`);
       }
@@ -13641,8 +14346,16 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
     const single = orphans.find((b) => Math.abs(valorOf(b) - target) <= tol);
     if (single) {
       if (!dryRun) {
-        const { error } = await supabaseAdmin.from("escort_billings").update({ invoice_id: invoice.id, status: "FATURADO" }).eq("id", single.id);
-        if (error) return { linked: 0, reason: error.message };
+        try {
+          await markBillingsInvoicedAtomic(
+            [String(single.id)],
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
+        } catch (error) {
+          return { linked: 0, reason: error.message };
+        }
         bustBalancoCaches();
         console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): 1 OS vinculada (single match R$${valorOf(single).toFixed(2)} \u2248 R$${target.toFixed(2)}, ${periodSource})`);
       }
@@ -13670,8 +14383,16 @@ async function autoLinkOrphanBillingsForInvoice(invoice, opts = {}) {
     }
     if (bestSubset && bestSubset.length > 0) {
       if (!dryRun) {
-        const { error } = await supabaseAdmin.from("escort_billings").update({ invoice_id: invoice.id, status: "FATURADO" }).in("id", bestSubset);
-        if (error) return { linked: 0, reason: error.message };
+        try {
+          await markBillingsInvoicedAtomic(
+            bestSubset.map(String),
+            invoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            "AUTO_LINK"
+          );
+        } catch (error) {
+          return { linked: 0, reason: error.message };
+        }
         bustBalancoCaches();
         console.log(`[auto-link] invoice #${invoice.id} (${invoice.client_name}): ${bestSubset.length} OS vinculadas (subset diff R$${(bestDiff / 100).toFixed(2)}, ${periodSource})`);
       }
@@ -14122,12 +14843,12 @@ async function emitInvoiceAuto(invoiceId, opts) {
   const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
   if (billingIdsMatch) {
     const bIds = billingIdsMatch[1].split(",").map((s) => s.trim());
-    await supabaseAdmin.from("escort_billings").update({
-      status: "FATURADO",
-      invoice_id: invoiceId,
-      faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-      faturado_por: opts.actorName || "Auto-Aprova\xE7\xE3o Cliente"
-    }).in("id", bIds);
+    await markBillingsInvoicedAtomic(
+      bIds,
+      invoiceId,
+      (/* @__PURE__ */ new Date()).toISOString(),
+      opts.actorName || "Auto-Aprova\xE7\xE3o Cliente"
+    );
     bustBalancoCaches();
   }
   await logSystemAudit({
@@ -14402,7 +15123,18 @@ function registerAsaasRoutes(app2) {
   });
   app2.post("/api/invoices", requireAdminRole, async (req, res) => {
     try {
-      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas, clientEmail: bodyClientEmail } = req.body;
+      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas, clientEmail: bodyClientEmail, gateway } = req.body;
+      if (String(gateway || "").toLowerCase() === "inter") {
+        const { evaluateInterWriteGate: evaluateInterWriteGate2 } = await Promise.resolve().then(() => (init_inter_integration(), inter_integration_exports));
+        const { isInterConfigured: isInterConfigured2 } = await Promise.resolve().then(() => (init_client(), client_exports));
+        const gate = evaluateInterWriteGate2({ configured: isInterConfigured2() });
+        if (!gate.allow) {
+          return res.status(gate.status).json({
+            message: gate.body?.message || "Integra\xE7\xE3o Banco Inter desativada.",
+            code: gate.body?.code
+          });
+        }
+      }
       if (!clientName || !value || !dueDate || !description) {
         return res.status(400).json({ message: "Campos obrigat\xF3rios: clientName, value, dueDate, description" });
       }
@@ -15140,12 +15872,12 @@ function registerAsaasRoutes(app2) {
       const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
       if (billingIdsMatch) {
         const bIds = billingIdsMatch[1].split(",").map((s) => s.trim());
-        await supabaseAdmin.from("escort_billings").update({
-          status: "FATURADO",
-          invoice_id: id,
-          faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-          faturado_por: req.user?.name || "Admin"
-        }).in("id", bIds);
+        await markBillingsInvoicedAtomic(
+          bIds,
+          id,
+          (/* @__PURE__ */ new Date()).toISOString(),
+          req.user?.name || "Admin"
+        );
         bustBalancoCaches();
         console.log(`[asaas] ${bIds.length} billing(s) marcados como FATURADO`);
       }
@@ -15431,9 +16163,16 @@ function registerAsaasRoutes(app2) {
       }
       if (updatedInvoice && (newStatus === "CONFIRMED" || newStatus === "RECEIVED")) {
         try {
-          await supabaseAdmin.from("escort_billings").update({ status: "PAGO", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("invoice_id", updatedInvoice.id);
+          await updateBillingLifecycleByInvoiceAtomic(
+            updatedInvoice.id,
+            "MARK_PAID",
+            { status: "PAGO", pago_em: (/* @__PURE__ */ new Date()).toISOString() },
+            "ASAAS_WEBHOOK"
+          );
           bustBalancoCaches();
-        } catch (_e) {
+        } catch (billingError) {
+          console.error("[asaas] Falha at\xF4mica ao marcar billings como PAGO:", billingError.message);
+          throw billingError;
         }
         try {
           const { createAutoTransaction: createAutoTransaction4 } = await Promise.resolve().then(() => (init_helpers(), helpers_exports));
@@ -15837,16 +16576,17 @@ ${osDescriptions.join("\n")}`);
           }
         }
         const primaryInvoice = createdInvoices[0];
-        const { error: updateErr2 } = await supabaseAdmin.from("escort_billings").update({
-          status: "FATURADO",
-          faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-          faturado_por: user?.name || "Sistema",
-          invoice_id: primaryInvoice.id
-        }).in("id", billingIds);
-        if (updateErr2) {
-          console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr2.message);
-        } else {
+        try {
+          await markBillingsInvoicedAtomic(
+            billingIds.map(String),
+            primaryInvoice.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            user?.name || "Sistema"
+          );
           bustBalancoCaches();
+        } catch (updateErr) {
+          console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+          throw updateErr;
         }
         await logSystemAudit({
           userId: user?.id,
@@ -15989,16 +16729,17 @@ ${osDescriptions.join("\n")}`);
         created_by: user?.id
       }).select().single();
       if (invErr) throw invErr;
-      const { error: updateErr } = await supabaseAdmin.from("escort_billings").update({
-        status: "FATURADO",
-        faturado_em: (/* @__PURE__ */ new Date()).toISOString(),
-        faturado_por: user?.name || "Sistema",
-        invoice_id: invoice.id
-      }).in("id", billingIds);
-      if (updateErr) {
-        console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
-      } else {
+      try {
+        await markBillingsInvoicedAtomic(
+          billingIds.map(String),
+          invoice.id,
+          (/* @__PURE__ */ new Date()).toISOString(),
+          user?.name || "Sistema"
+        );
         bustBalancoCaches();
+      } catch (updateErr) {
+        console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+        throw updateErr;
       }
       await logSystemAudit({
         userId: user?.id,
@@ -16034,10 +16775,18 @@ ${osDescriptions.join("\n")}`);
       if (invoice.status === "PAGO") {
         return res.status(400).json({ message: "N\xE3o \xE9 poss\xEDvel excluir fatura j\xE1 paga" });
       }
-      const { data: linkedBillings } = await supabaseAdmin.from("escort_billings").select("id").eq("invoice_id", invoiceId);
-      if (linkedBillings && linkedBillings.length > 0) {
-        const billingIds = linkedBillings.map((b) => b.id);
-        await supabaseAdmin.from("escort_billings").update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null }).in("id", billingIds);
+      const releasedBillings = await updateBillingLifecycleByInvoiceAtomic(
+        invoiceId,
+        "RELEASE_REBILL",
+        {
+          status: "APROVADA",
+          invoice_id: null,
+          faturado_em: null,
+          faturado_por: null
+        },
+        user?.name || "Sistema"
+      );
+      if (releasedBillings.length > 0) {
         bustBalancoCaches();
       }
       if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
@@ -16056,10 +16805,10 @@ ${osDescriptions.join("\n")}`);
         action: "DELETE_FATURA",
         targetId: String(invoiceId),
         targetType: "invoice",
-        details: `Fatura #${invoiceId} exclu\xEDda. ${linkedBillings?.length || 0} billing(s) revertidos para APROVADA.`,
+        details: `Fatura #${invoiceId} exclu\xEDda. ${releasedBillings.length} billing(s) processados atomicamente.`,
         ipAddress: req.ip
       });
-      res.json({ success: true, revertedBillings: linkedBillings?.length || 0 });
+      res.json({ success: true, revertedBillings: releasedBillings.length });
     } catch (err) {
       console.error("[billing] Erro ao excluir fatura:", err.message);
       res.status(500).json({ message: err.message });
@@ -16366,10 +17115,10 @@ ${osDescriptions.join("\n")}`);
         const sourceId2 = String(rawId);
         const { data: ap } = await supabaseAdmin.from("boletim_approvals").select("*").eq("id", sourceId2).maybeSingle();
         if (!ap) return res.status(404).json({ message: "Boletim n\xE3o encontrado" });
-        const { error: error2 } = await supabaseAdmin.from("boletim_approvals").delete().eq("id", sourceId2);
+        const { error: error2 } = await supabaseAdmin.from("boletim_approvals").update({ status: "ARQUIVADO" }).eq("id", sourceId2);
         if (error2) throw error2;
-        console.log(`[relatorio-nf] Boletim ${sourceId2} (${ap.client_name}, R$${ap.total_value}) EXCLU\xCDDO por ${user.email}. Motivo: ${reason || "\u2014"}`);
-        return res.json({ success: true, removed: { source, sourceId: sourceId2, clientName: ap.client_name, value: Number(ap.total_value || 0) } });
+        console.log(`[relatorio-nf] Boletim ${sourceId2} ARQUIVADO por ${user.email}. Motivo: ${reason || "\u2014"}`);
+        return res.json({ success: true, archived: { source, sourceId: sourceId2, clientName: ap.client_name, value: Number(ap.total_value || 0) } });
       }
       const sourceId = Number(rawId);
       if (!sourceId) return res.status(400).json({ message: "sourceId inv\xE1lido para INVOICE" });
@@ -16386,10 +17135,12 @@ ${osDescriptions.join("\n")}`);
         await supabaseAdmin.from("billings").update({ invoice_id: null }).eq("invoice_id", sourceId);
       } catch {
       }
-      try {
-        await supabaseAdmin.from("escort_billings").update({ invoice_id: null }).eq("invoice_id", sourceId);
-      } catch {
-      }
+      await updateBillingLifecycleByInvoiceAtomic(
+        sourceId,
+        "RELEASE_REBILL",
+        { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
+        user?.name || "Admin"
+      );
       const { error } = await supabaseAdmin.from("invoices").delete().eq("id", sourceId);
       if (error) throw error;
       console.log(`[relatorio-nf] Invoice ${sourceId} (cliente=${invoice.client_id}, R$${invoice.value}) EXCLU\xCDDA por ${user.email}. Motivo: ${reason || "\u2014"}`);
@@ -16744,7 +17495,14 @@ ${osDescriptions.join("\n")}`);
         safeIds.push(inv.id);
       }
       if (safeIds.length === 0) return res.json({ deleted: 0, skipped: ids.length });
-      await supabaseAdmin.from("escort_billings").update({ invoice_id: null }).in("invoice_id", safeIds);
+      for (const invoiceId of safeIds) {
+        await updateBillingLifecycleByInvoiceAtomic(
+          invoiceId,
+          "RELEASE_REBILL",
+          { status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null },
+          user?.name || "Admin"
+        );
+      }
       const { error } = await supabaseAdmin.from("invoices").delete().in("id", safeIds);
       if (error) throw error;
       console.log(`[cleanup-orphans] ${safeIds.length} invoice(s) \xF3rf\xE3(s) deletada(s) por ${user.email}: [${safeIds.join(", ")}]`);
@@ -16836,8 +17594,12 @@ ${osDescriptions.join("\n")}`);
         safeIds.push(b.id);
       }
       if (safeIds.length === 0) return res.json({ linked: 0, skipped: billingIds.length });
-      const { error } = await supabaseAdmin.from("escort_billings").update({ invoice_id: invoiceId, status: "FATURADO" }).in("id", safeIds);
-      if (error) throw error;
+      await markBillingsInvoicedAtomic(
+        safeIds.map(String),
+        invoiceId,
+        (/* @__PURE__ */ new Date()).toISOString(),
+        user?.name || "Admin"
+      );
       bustBalancoCaches();
       console.log(`[link-os] ${safeIds.length} billing(s) vinculada(s) \xE0 invoice ${invoiceId} (${inv.client_name}) por ${user?.email}: [${safeIds.join(", ")}]`);
       res.json({ linked: safeIds.length, skipped: billingIds.length - safeIds.length, linkedIds: safeIds });
@@ -16900,8 +17662,14 @@ ${osDescriptions.join("\n")}`);
           continue;
         }
         const ids = inPeriod.map((b) => b.id);
-        const { error } = await supabaseAdmin.from("escort_billings").update({ invoice_id: inv.id, status: "FATURADO" }).in("id", ids);
-        if (error) {
+        try {
+          await markBillingsInvoicedAtomic(
+            ids.map(String),
+            inv.id,
+            (/* @__PURE__ */ new Date()).toISOString(),
+            user?.name || "Admin"
+          );
+        } catch (error) {
           results.push({ invoiceId: inv.id, clientName: inv.client_name, value: target, linked: 0, reason: error.message });
           continue;
         }
@@ -17170,8 +17938,17 @@ ${osDescriptions.join("\n")}`);
         return res.json({ reverted: 0, message: "Nenhum status falso encontrado.", ids: [] });
       }
       const revertIds = toRevert.map((b) => b.id);
-      const { error: updErr } = await supabaseAdmin.from("escort_billings").update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null }).in("id", revertIds);
-      if (updErr) throw updErr;
+      await updateBillingLifecycleBatchAtomic(revertIds.map(String), "RELEASE_REBILL", {
+        status: "APROVADA",
+        invoice_id: null,
+        faturado_em: null,
+        faturado_por: null
+      }, {
+        userId: user?.id,
+        userName: user?.name || "Admin",
+        userRole: user?.role || "admin",
+        reason: "Reverter falso v\xEDnculo de invoice"
+      });
       bustBalancoCaches();
       await logSystemAudit({
         userId: user?.id,
@@ -17205,6 +17982,7 @@ var init_asaas = __esm({
     init_audit();
     init_helpers();
     init_balanco_cache();
+    init_atomic_billing();
     init_asaas_helpers();
     ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
     PAID_STATUSES = ["RECEIVED_IN_CASH", "RECEIVED", "CONFIRMED", "PAGO"];
@@ -17218,181 +17996,6 @@ var init_asaas = __esm({
       lastError: null,
       running: false
     };
-  }
-});
-
-// server/services/inter/client.ts
-var client_exports = {};
-__export(client_exports, {
-  getInterClient: () => getInterClient,
-  isInterConfigured: () => isInterConfigured
-});
-import https from "https";
-import fs4 from "fs";
-import path4 from "path";
-function getInterCa() {
-  if (_interCa !== null) return _interCa || null;
-  try {
-    const caPath = path4.join(__dirname, "inter-ca.pem");
-    _interCa = fs4.readFileSync(caPath, "utf8");
-    return _interCa;
-  } catch {
-    _interCa = "";
-    return null;
-  }
-}
-function normalizePem(s) {
-  return s.includes("\\n") ? s.replace(/\\n/g, "\n") : s;
-}
-function loadCertKey() {
-  const cert = process.env.INTER_CERT_CRT;
-  const key = process.env.INTER_CERT_KEY;
-  if (!cert || !key) {
-    throw new Error("INTER_CERT_CRT e INTER_CERT_KEY s\xE3o obrigat\xF3rios para mTLS");
-  }
-  return { cert: normalizePem(cert), key: normalizePem(key) };
-}
-function getInterClient() {
-  if (!_instance) _instance = new InterClient();
-  return _instance;
-}
-function isInterConfigured() {
-  return getInterClient().isConfigured();
-}
-var BASE_URLS, _interCa, InterClient, _instance;
-var init_client = __esm({
-  "server/services/inter/client.ts"() {
-    "use strict";
-    BASE_URLS = {
-      prod: "https://cdpj.partners.bancointer.com.br",
-      sandbox: "https://cdpj-sandbox.partners.uatinter.co"
-    };
-    _interCa = null;
-    InterClient = class {
-      tokens = /* @__PURE__ */ new Map();
-      isConfigured() {
-        return !!(process.env.INTER_CLIENT_ID && process.env.INTER_CLIENT_SECRET && process.env.INTER_CERT_CRT && process.env.INTER_CERT_KEY);
-      }
-      getBaseUrl() {
-        return process.env.INTER_AMBIENTE === "prod" ? BASE_URLS.prod : BASE_URLS.sandbox;
-      }
-      getAmbiente() {
-        return process.env.INTER_AMBIENTE === "prod" ? "prod" : "sandbox";
-      }
-      getContaCorrente() {
-        return process.env.INTER_CONTA_CORRENTE || "";
-      }
-      /** Request HTTPS com mTLS. Resolve com JSON parsed, texto ou Buffer. */
-      rawRequest(opts) {
-        const { method, path: path6, body, contentType, headers = {}, rawBuffer } = opts;
-        const { cert, key } = loadCertKey();
-        const url = new URL(this.getBaseUrl() + path6);
-        const finalHeaders = { ...headers };
-        if (body != null) {
-          finalHeaders["Content-Type"] = contentType || "application/json";
-          finalHeaders["Content-Length"] = Buffer.byteLength(body).toString();
-        }
-        return new Promise((resolve, reject) => {
-          const ca = getInterCa();
-          const req = https.request(
-            {
-              method,
-              hostname: url.hostname,
-              port: 443,
-              path: url.pathname + url.search,
-              cert,
-              key,
-              ...ca ? { ca } : {},
-              headers: finalHeaders
-            },
-            (res) => {
-              const chunks = [];
-              res.on("data", (c) => chunks.push(c));
-              res.on("end", () => {
-                const buf = Buffer.concat(chunks);
-                const status = res.statusCode || 0;
-                if (status >= 200 && status < 300) {
-                  if (rawBuffer) return resolve(buf);
-                  const txt = buf.toString("utf8");
-                  if (!txt) return resolve(void 0);
-                  try {
-                    resolve(JSON.parse(txt));
-                  } catch {
-                    resolve(txt);
-                  }
-                } else {
-                  const txt = buf.toString("utf8");
-                  const err = new Error(`Inter API ${status} ${method} ${path6}: ${txt.slice(0, 500)}`);
-                  err.status = status;
-                  err.body = txt;
-                  reject(err);
-                }
-              });
-            }
-          );
-          req.on("error", reject);
-          if (body != null) req.write(body);
-          req.end();
-        });
-      }
-      /** Obtém token OAuth2 com cache por escopo. Renova automaticamente. */
-      async getToken(scopes) {
-        const cached = this.tokens.get(scopes);
-        if (cached && cached.expiresAt > Date.now() + 6e4) return cached.accessToken;
-        const clientId = process.env.INTER_CLIENT_ID;
-        const clientSecret = process.env.INTER_CLIENT_SECRET;
-        const form = new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          scope: scopes,
-          grant_type: "client_credentials"
-        }).toString();
-        const data = await this.rawRequest({
-          method: "POST",
-          path: "/oauth/v2/token",
-          body: form,
-          contentType: "application/x-www-form-urlencoded"
-        });
-        this.tokens.set(scopes, {
-          accessToken: data.access_token,
-          expiresAt: Date.now() + data.expires_in * 1e3
-        });
-        return data.access_token;
-      }
-      /** Chamada autenticada às APIs Inter. */
-      async call(opts) {
-        const { method, path: path6, scopes, body, query, useContaCorrente, rawBuffer } = opts;
-        if (!this.isConfigured()) {
-          throw new Error(
-            "Banco Inter n\xE3o configurado. Defina INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CONTA_CORRENTE, INTER_CERT_CRT, INTER_CERT_KEY."
-          );
-        }
-        const token = await this.getToken(scopes);
-        let fullPath = path6;
-        if (query) {
-          const qs = new URLSearchParams(
-            Object.entries(query).filter(([_, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)])
-          ).toString();
-          if (qs) fullPath += (path6.includes("?") ? "&" : "?") + qs;
-        }
-        const headers = { Authorization: `Bearer ${token}` };
-        if (useContaCorrente && this.getContaCorrente()) {
-          headers["x-conta-corrente"] = this.getContaCorrente();
-        }
-        return this.rawRequest({
-          method,
-          path: fullPath,
-          body: body == null ? void 0 : JSON.stringify(body),
-          headers,
-          rawBuffer
-        });
-      }
-      /** Limpa cache de tokens (útil após troca de credenciais). */
-      resetTokens() {
-        this.tokens.clear();
-      }
-    };
-    _instance = null;
   }
 });
 
@@ -19515,6 +20118,11 @@ async function withCronLock(name, fn) {
   }
 }
 async function runInterReconcile(diasJanela, contexto) {
+  const { isInterIntegrationEnabled: isInterIntegrationEnabled2 } = await Promise.resolve().then(() => (init_inter_integration(), inter_integration_exports));
+  if (!isInterIntegrationEnabled2()) {
+    log(`CRON Inter-Reconcile[${contexto}]: integra\xE7\xE3o desativada \u2014 skip`, "cron");
+    return;
+  }
   const { isInterConfigured: isInterConfigured2 } = await Promise.resolve().then(() => (init_client(), client_exports));
   if (!isInterConfigured2()) return;
   const { consultarExtrato: consultarExtrato2 } = await Promise.resolve().then(() => (init_banking(), banking_exports));
@@ -19648,6 +20256,11 @@ async function runFolhaCatchupCron() {
   });
 }
 async function runInterReconcileFastCron() {
+  const { isInterIntegrationEnabled: isInterIntegrationEnabled2 } = await Promise.resolve().then(() => (init_inter_integration(), inter_integration_exports));
+  if (!isInterIntegrationEnabled2()) {
+    log("CRON Inter-Reconcile[5min/2d]: integra\xE7\xE3o desativada \u2014 skip", "cron");
+    return;
+  }
   await withCronLock("inter-reconcile", async () => {
     if (!isSupabaseHealthy()) return;
     try {
@@ -19658,6 +20271,11 @@ async function runInterReconcileFastCron() {
   });
 }
 async function runInterReconcileBackfillCron() {
+  const { isInterIntegrationEnabled: isInterIntegrationEnabled2 } = await Promise.resolve().then(() => (init_inter_integration(), inter_integration_exports));
+  if (!isInterIntegrationEnabled2()) {
+    log("CRON Inter-Reconcile[backfill/30d]: integra\xE7\xE3o desativada \u2014 skip", "cron");
+    return;
+  }
   await withCronLock("inter-reconcile", async () => {
     if (!isSupabaseHealthy()) return;
     try {
@@ -19921,14 +20539,8 @@ async function runProvisaoCron() {
     const year = Number(yearStr);
     const month = Number(monthStr);
     const day = Number(dayStr);
-    const CCT = {
-      salarioBase: 2432.5,
-      periculosidadePct: 30,
-      valeRefeicaoDia: 40,
-      cestaBasica: 208.45,
-      diasUteisMes: 22,
-      horaExtraValor: 16
-    };
+    const { getCctConfig: getCctConfig2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+    const CCT = await getCctConfig2();
     const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
     const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
     const totalBrutoMensal = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
@@ -20995,29 +21607,25 @@ async function executeBillingCron() {
     (so) => so.type === "escolta" && isConcluded(so) && unverifBilledSet.has(so.id)
   ).length;
   const seenIds = /* @__PURE__ */ new Set();
-  const liveOrders = [...activeOrders, ...unbilledConcluded].filter((so) => {
+  const billingCandidates = unbilledConcluded.filter((so) => {
     if (seenIds.has(so.id)) return false;
     seenIds.add(so.id);
     return true;
   });
-  if (!liveOrders.length) {
-    log(`CRON Billing: 0 OSs para processar, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
+  if (!billingCandidates.length) {
+    log(`CRON Billing: 0 conclu\xEDdas sem billing; ${activeOrders.length} ativas mantidas s\xF3 como proje\xE7\xE3o; ${frozenUnverifCount} A_VERIFICAR preservadas`, "cron");
     return;
   }
-  log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} conclu\xEDdas sem billing processadas, ${frozenUnverifCount} A_VERIFICAR congeladas`, "cron");
+  log(`CRON Billing: ${billingCandidates.length} conclu\xEDdas sem billing processadas pelo motor can\xF4nico; ${activeOrders.length} ativas n\xE3o materializadas`, "cron");
   const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
   const contractMap = /* @__PURE__ */ new Map();
-  const clientContractMap = /* @__PURE__ */ new Map();
   for (const c of allContracts || []) {
-    contractMap.set(c.id, c);
-    if (c.status === "Ativo" && c.client_id) {
-      clientContractMap.set(c.client_id, c);
-    }
+    contractMap.set(String(c.id), c);
   }
-  const liveOrderIds = liveOrders.map((so) => so.id);
-  const clientIds = Array.from(new Set(liveOrders.map((so) => so.client_id).filter((v) => v != null)));
-  const empIds = Array.from(new Set(liveOrders.flatMap((so) => [so.assigned_employee_id, so.assigned_employee_2_id]).filter((v) => v != null)));
-  const vehIds = Array.from(new Set(liveOrders.map((so) => so.vehicle_id).filter((v) => v != null)));
+  const candidateIds = billingCandidates.map((so) => so.id);
+  const clientIds = Array.from(new Set(billingCandidates.map((so) => so.client_id).filter((v) => v != null)));
+  const empIds = Array.from(new Set(billingCandidates.flatMap((so) => [so.assigned_employee_id, so.assigned_employee_2_id]).filter((v) => v != null)));
+  const vehIds = Array.from(new Set(billingCandidates.map((so) => so.vehicle_id).filter((v) => v != null)));
   const fetchAllPaged = async (table, columns, idCol, ids, orderCol = "id") => {
     const out = [];
     const pageSize = 1e3;
@@ -21032,13 +21640,12 @@ async function executeBillingCron() {
     }
     return out;
   };
-  const [photosArr, clientsRes, empsRes, vehsRes, mCostsArr, existBillsRes] = await Promise.all([
-    fetchAllPaged("mission_photos", "service_order_id, step, km_value", "service_order_id", liveOrderIds),
+  const [photosArr, clientsRes, empsRes, vehsRes, mCostsArr] = await Promise.all([
+    fetchAllPaged("mission_photos", "service_order_id, step, km_value", "service_order_id", candidateIds),
     clientIds.length ? supabaseAdmin.from("clients").select("id, name").in("id", clientIds) : Promise.resolve({ data: [] }),
     empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : Promise.resolve({ data: [] }),
     vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : Promise.resolve({ data: [] }),
-    fetchAllPaged("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", liveOrderIds),
-    supabaseAdmin.from("escort_billings").select("id, service_order_id, status").in("service_order_id", liveOrderIds)
+    fetchAllPaged("mission_costs", "service_order_id, category, amount, cost_type", "service_order_id", candidateIds)
   ]);
   const photosMap = /* @__PURE__ */ new Map();
   for (const p of photosArr) {
@@ -21053,52 +21660,98 @@ async function executeBillingCron() {
     if (!mCostsMap.has(c.service_order_id)) mCostsMap.set(c.service_order_id, []);
     mCostsMap.get(c.service_order_id).push(c);
   }
-  const billingIdMap = new Map((existBillsRes.data || []).map((b) => [b.service_order_id, b.id]));
-  const billingStatusMap = new Map((existBillsRes.data || []).map((b) => [b.service_order_id, b.status]));
-  const FROZEN_STATUSES = /* @__PURE__ */ new Set(["A_VERIFICAR", "APROVADA", "FATURADO", "FATURADA", "PAGO", "CANCELADO", "CANCELADA", "REJEITADA"]);
   const CHUNK_SIZE = 15;
   const processOne = async (so) => {
     try {
-      const contrato = resolveContractForOs(so, contractMap, clientContractMap, { ...DEFAULT_BILLING_CONTRACT });
-      const skipBillingHoursCron = shouldSkipBillingHours(so);
-      const horasMissao = skipBillingHoursCron ? 0 : await getHorasElapsedFromDB(so.id);
+      const { data: currentBillings } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", so.id).limit(1);
+      if (currentBillings?.length) {
+        log(`CRON Billing: OS ${so.os_number} pulada \u2014 billing j\xE1 existe`, "cron");
+        return;
+      }
       const photos = photosMap.get(so.id) || [];
       const mCosts = mCostsMap.get(so.id) || [];
       const cliName = so.client_id ? clientNameMap.get(so.client_id) || null : null;
       const empName = so.assigned_employee_id ? empNameMap.get(so.assigned_employee_id) || null : null;
       const emp2Name = so.assigned_employee_2_id ? empNameMap.get(so.assigned_employee_2_id) || null : null;
       const vehPlate = so.vehicle_id ? vehPlateMap.get(so.vehicle_id) || null : null;
-      const billingPayload = computeBillingPayloadForOs({
-        so,
-        contrato,
-        photos,
-        mCosts,
-        horasMissao,
-        clientName: cliName,
-        empName,
-        emp2Name,
-        vehPlate
-      });
-      const existId = billingIdMap.get(so.id);
-      if (existId) {
-        const existStatus = billingStatusMap.get(so.id);
-        if (existStatus && FROZEN_STATUSES.has(existStatus)) {
-          log(`CRON Billing: OS ${so.os_number} pulada \u2014 billing congelado (status=${existStatus})`, "cron");
+      const contrato = so.escort_contract_id ? contractMap.get(String(so.escort_contract_id)) : null;
+      if (!contrato) {
+        log(`CRON Billing: OS ${so.os_number} sem escort_contract_id v\xE1lido \u2014 corre\xE7\xE3o operacional necess\xE1ria`, "cron");
+        return;
+      }
+      let action;
+      let billingPayload;
+      if (so.status === "cancelada") {
+        action = "WRITE_CANCELLED";
+        const cancelada = await computeCanceladaBilling({
+          serviceOrderId: so.id,
+          clientId: so.client_id,
+          escortContractId: so.escort_contract_id,
+          scheduledDate: so.scheduled_date,
+          missionStartedAt: so.mission_started_at,
+          completedDate: so.completed_date,
+          stepLogs: so.step_logs
+        });
+        if (!cancelada) {
+          log(`CRON Billing: OS ${so.os_number} cancelada sem contrato utiliz\xE1vel \u2014 sem billing criado`, "cron");
           return;
         }
+        billingPayload = {
+          service_order_id: so.id,
+          client_id: so.client_id,
+          client_name: cliName || "--",
+          contract_id: cancelada.contrato.id,
+          ...cancelada.fatFields,
+          horario_agendado: cancelada.horarios.horario_agendado,
+          horario_inicio: cancelada.horarios.horario_inicio,
+          horario_fim: cancelada.horarios.horario_fim,
+          observacoes: `OS CANCELADA \u2014 Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}`,
+          created_by: "CRON"
+        };
+      } else if (so.status === "recusada") {
+        action = "WRITE_REFUSED";
+        billingPayload = {
+          service_order_id: so.id,
+          client_id: so.client_id,
+          client_name: cliName || "--",
+          contract_id: contrato.id,
+          km_inicial: 0,
+          km_final: 0,
+          ...buildRecusadaZeroPayload(null),
+          created_by: "CRON"
+        };
+      } else {
+        action = "WRITE_OFFICIAL";
+        billingPayload = computeBillingPayloadForOs({
+          so,
+          contrato,
+          photos,
+          mCosts,
+          horasMissao: 0,
+          clientName: cliName,
+          empName,
+          emp2Name,
+          vehPlate
+        });
       }
-      await supabaseAdmin.from("escort_billings").upsert(billingPayload, { onConflict: "service_order_id" });
-      log(`CRON Billing: OS ${so.os_number} recalculada - ${r(horasMissao)}h, ${n2(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
+      await writeEscortBillingAtomic({
+        action,
+        serviceOrderId: so.id,
+        expectedVersion: null,
+        payload: billingPayload,
+        actor: { userName: "CRON", userRole: "system" }
+      });
+      log(`CRON Billing: OS ${so.os_number} recalculada - ${n2(billingPayload.horas_missao)}h, ${n2(billingPayload.km_total)}km, fat=${r(billingPayload.fat_total)}`, "cron");
     } catch (err) {
       log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
     }
   };
-  for (let i = 0; i < liveOrders.length; i += CHUNK_SIZE) {
-    const chunk = liveOrders.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < billingCandidates.length; i += CHUNK_SIZE) {
+    const chunk = billingCandidates.slice(i, i + CHUNK_SIZE);
     await Promise.all(chunk.map(processOne));
   }
   const elapsed = ((Date.now() - cronStart) / 1e3).toFixed(1);
-  log(`CRON Billing: Ciclo completo em ${elapsed}s (${liveOrders.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
+  log(`CRON Billing: Ciclo completo em ${elapsed}s (${billingCandidates.length} OSs, chunks de ${CHUNK_SIZE})`, "cron");
 }
 var RODIZIO_MAP, META_DIARIA_VIATURA2, isActiveVehicle2, MONTHS_PT2, DIRETORIA_EMAIL_DEFAULT;
 var init_cron = __esm({
@@ -21108,6 +21761,9 @@ var init_cron = __esm({
     init_truckscontrol();
     init_supabase();
     init_billing_calc();
+    init_cancelada_billing();
+    init_recusada_guard();
+    init_atomic_billing();
     init_financial_snapshot();
     init_platform();
     init_cron_buckets();
@@ -21722,7 +22378,7 @@ var users = pgTable("users", {
   role: text("role").notNull().default("funcionario"),
   employeeId: integer("employee_id"),
   mustChangePassword: integer("must_change_password").default(0),
-  plainPassword: text("plain_password"),
+  // plain_password removido do schema TS (PR4A). Coluna física permanece até aplicação controlada do DROP (PR4B preparado, não aplicado).
   termsAcceptedAt: timestamp("terms_accepted_at"),
   termsIpAddress: text("terms_ip_address"),
   termsUserAgent: text("terms_user_agent"),
@@ -24287,6 +24943,31 @@ function toDecimalString(value, opts) {
   return n2.toFixed(2);
 }
 
+// server/lib/temp-password.ts
+import { randomBytes } from "crypto";
+var UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+var LOWER = "abcdefghijkmnopqrstuvwxyz";
+var DIGITS = "23456789";
+var SPECIAL = "@#$%&*!";
+var ALL = UPPER + LOWER + DIGITS + SPECIAL;
+function pick2(chars) {
+  return chars[randomBytes(1)[0] % chars.length];
+}
+function generateTempPassword(length = 14) {
+  const len = Math.max(10, Math.min(64, Math.floor(length)));
+  const chars = [pick2(UPPER), pick2(LOWER), pick2(DIGITS), pick2(SPECIAL)];
+  while (chars.length < len) {
+    chars.push(pick2(ALL));
+  }
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomBytes(1)[0] % (i + 1);
+    const tmp = chars[i];
+    chars[i] = chars[j];
+    chars[j] = tmp;
+  }
+  return chars.join("");
+}
+
 // server/routes/employees.ts
 var EMPLOYEE_DATE_FIELDS = [
   "birthDate",
@@ -24406,6 +25087,7 @@ function registerEmployeeRoutes(app2) {
     }
     let autoUserCreated = false;
     let autoUserError = null;
+    let autoUserTempPassword = null;
     if (data.cpf) {
       const cleanCpf = data.cpf.replace(/\D/g, "");
       if (cleanCpf.length === 11) {
@@ -24415,10 +25097,10 @@ function registerEmployeeRoutes(app2) {
           autoUserError = "J\xE1 existe um login para este CPF";
         } else {
           try {
-            const defaultPassword = "torres@123";
+            const tempPassword = generateTempPassword();
             const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
               email: syntheticEmail,
-              password: defaultPassword,
+              password: tempPassword,
               email_confirm: true
             });
             if (authError) {
@@ -24431,10 +25113,10 @@ function registerEmployeeRoutes(app2) {
                   name: data.name,
                   role: "funcionario",
                   employeeId: data.id,
-                  mustChangePassword: 1,
-                  plainPassword: defaultPassword
+                  mustChangePassword: 1
                 });
                 autoUserCreated = true;
+                autoUserTempPassword = tempPassword;
               } catch (dbErr) {
                 await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {
                 });
@@ -24458,7 +25140,18 @@ function registerEmployeeRoutes(app2) {
       enqueueRhidSync({ kind: "employee", op: "create", refId: data.id, employeeId: data.id }).catch(() => {
       });
     }
-    res.status(201).json({ ...data, autoUserCreated, autoUserError, probationContractId, probationContractError });
+    res.status(201).json({
+      ...data,
+      autoUserCreated,
+      autoUserError,
+      probationContractId,
+      probationContractError,
+      ...autoUserTempPassword ? {
+        tempPassword: autoUserTempPassword,
+        oneShot: true,
+        message: "Copie agora. Esta senha n\xE3o ser\xE1 exibida novamente."
+      } : {}
+    });
   });
   app2.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
@@ -24882,7 +25575,8 @@ function registerEmployeeRoutes(app2) {
       const mesLabel = MESES2[month - 1];
       const allEmployees = await storage.getEmployees();
       const activeEmployees = allEmployees.filter((e) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
-      const CCT = { salarioBase: 2432.5, periculosidadePct: 30, valeRefeicaoDia: 40, cestaBasica: 208.45, diasUteisMes: 22 };
+      const { getCctConfig: getCctConfig2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+      const CCT = await getCctConfig2();
       const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
       const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
       const totalBruto = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
@@ -24988,15 +25682,6 @@ function registerEmployeeRoutes(app2) {
       res.status(500).json({ message: err.message });
     }
   });
-  const CCT_CONFIG = {
-    salarioBase: 2432.5,
-    periculosidadePct: 30,
-    valeRefeicaoDia: 40,
-    cestaBasica: 208.45,
-    diasUteisMes: 22,
-    encargosSociaisPct: 80,
-    horaExtraValor: 16
-  };
   app2.get("/api/employees/monthly-hours", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const month = Number(req.query.month) || (/* @__PURE__ */ new Date()).getMonth() + 1;
@@ -25048,17 +25733,19 @@ function registerEmployeeRoutes(app2) {
         missions++;
         missionDetails.push({ osNumber: os.osNumber, date: b.data_missao, hours });
       }
-      const salarioBase = CCT_CONFIG.salarioBase;
-      const periculosidade = salarioBase * (CCT_CONFIG.periculosidadePct / 100);
+      const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+      const CCT = await getCctConfigByCargo2(emp.role);
+      const salarioBase = Number(CCT.salarioBase) || 0;
+      const periculosidade = salarioBase * (Number(CCT.periculosidadePct) / 100);
       const salarioComPeric = salarioBase + periculosidade;
       const horasContratuais = 220;
       const horasExtras = Math.max(0, totalHours - horasContratuais);
-      const custoHorasExtras = horasExtras * CCT_CONFIG.horaExtraValor;
+      const custoHorasExtras = horasExtras * Number(CCT.horaExtraValor);
       const dsrHorasExtras = horasExtras > 0 ? custoHorasExtras / 6 : 0;
       const subtotalRemuneracao = salarioComPeric + custoHorasExtras + dsrHorasExtras;
-      const encargos = subtotalRemuneracao * (CCT_CONFIG.encargosSociaisPct / 100);
-      const valeRefeicao = CCT_CONFIG.valeRefeicaoDia * CCT_CONFIG.diasUteisMes;
-      const cestaBasica = CCT_CONFIG.cestaBasica;
+      const encargos = subtotalRemuneracao * (Number(CCT.encargosSociaisPct) / 100);
+      const valeRefeicao = Number(CCT.valeRefeicaoDia) * Number(CCT.diasUteisMes);
+      const cestaBasica = Number(CCT.cestaBasica);
       const totalBeneficios = valeRefeicao + cestaBasica;
       const custoTotal = subtotalRemuneracao + encargos + totalBeneficios;
       res.json({
@@ -25077,7 +25764,7 @@ function registerEmployeeRoutes(app2) {
           custoHorasExtras: Math.round(custoHorasExtras * 100) / 100,
           dsrHorasExtras: Math.round(dsrHorasExtras * 100) / 100,
           subtotalRemuneracao: Math.round(subtotalRemuneracao * 100) / 100,
-          encargosSociaisPct: CCT_CONFIG.encargosSociaisPct,
+          encargosSociaisPct: CCT.encargosSociaisPct,
           encargos: Math.round(encargos * 100) / 100,
           valeRefeicao,
           cestaBasica,
@@ -25476,111 +26163,51 @@ init_truckscontrol();
 init_db_init();
 init_helpers();
 init_billing_calc();
+init_cancelada_billing();
 
-// server/lib/cancelada-billing.ts
-init_supabase();
-init_billing_calc();
-async function getTabela100km(clientId) {
-  if (!clientId) return null;
-  const { data } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", clientId).eq("franquia_km", 100).eq("franquia_horas", 3).eq("status", "Ativo").order("valor_acionamento", { ascending: true }).limit(1);
-  if (data?.length) return data[0];
-  const { data: d2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", clientId).eq("franquia_km", 100).eq("status", "Ativo").order("valor_acionamento", { ascending: true }).limit(1);
-  if (d2?.length) return d2[0];
-  return null;
+// server/lib/billing-frozen.ts
+var GENERIC_RECALC_PROTECTED_STATUSES = /* @__PURE__ */ new Set([
+  "APROVADA",
+  "FATURADO",
+  "FATURADA",
+  "PAGO",
+  "CANCELADO",
+  "CANCELADA"
+]);
+function normalizeBillingStatus(status) {
+  return String(status || "").trim().toUpperCase();
 }
-var n = (v) => Number(v) || 0;
-var toBRT = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-async function computeCanceladaBilling(input) {
-  let contrato = await getTabela100km(input.clientId);
-  let usouTabela100 = !!contrato;
-  if (!contrato && input.escortContractId) {
-    const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", input.escortContractId).limit(1);
-    if (cc?.length) contrato = cc[0];
+function isBillingStatusProtected(status) {
+  return GENERIC_RECALC_PROTECTED_STATUSES.has(normalizeBillingStatus(status));
+}
+async function billingHasCommercialSnapshot(sb, billingId, lockVersion = 0) {
+  if (billingId == null || billingId === "") {
+    throw new Error("ID do billing \xE9 obrigat\xF3rio para verificar snapshot comercial");
   }
-  if (!contrato) return null;
-  const { data: photos } = await supabaseAdmin.from("mission_photos").select("step, km_value, created_at").eq("service_order_id", input.serviceOrderId).order("created_at", { ascending: true });
-  const ph = photos || [];
-  const last = (step) => [...ph].reverse().find((p) => p.step === step);
-  const kmSaida = last("km_saida");
-  const kmChegada = last("km_chegada");
-  const kmFinalP = last("km_final");
-  const kmIni = n(kmChegada?.km_value) || n(kmSaida?.km_value) || 0;
-  const kmFinalRaw = n(kmFinalP?.km_value) || 0;
-  const kmFin = kmFinalRaw > kmIni ? kmFinalRaw : kmIni;
-  const logs = Array.isArray(input.stepLogs) ? input.stepLogs : [];
-  const inicioEntry = [...logs].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
-  const inicio_ts = input.missionStartedAt ? new Date(input.missionStartedAt).toISOString() : inicioEntry ? new Date(inicioEntry.timestamp || inicioEntry.completedAt).toISOString() : null;
-  const cdValid = input.completedDate && new Date(input.completedDate).getFullYear() > 2e3;
-  const fim_ts = cdValid ? new Date(input.completedDate).toISOString() : null;
-  const scheduled_date = input.scheduledDate ? new Date(input.scheduledDate).toISOString() : null;
-  const horarios = {
-    horario_agendado: input.scheduledDate ? toBRT(new Date(input.scheduledDate)) : null,
-    horario_inicio: inicio_ts ? toBRT(new Date(inicio_ts)) : null,
-    horario_fim: fim_ts ? toBRT(new Date(fim_ts)) : null
-  };
-  const resultado = calcularEscolta({
-    km_inicial: kmIni,
-    km_final: kmFin,
-    km_vazio: 0,
-    horas_missao: 0,
-    horas_estadia: 0,
-    teve_pernoite: false,
-    horario_agendado: horarios.horario_agendado || void 0,
-    horario_inicio: horarios.horario_inicio || void 0,
-    horario_fim: horarios.horario_fim || void 0,
-    inicio_ts,
-    fim_ts,
-    scheduled_date,
-    despesas_pedagio: 0,
-    despesas_combustivel: 0,
-    despesas_outras: 0,
-    receitas_os: 0,
-    contrato
+  const { data, error } = await sb.rpc("is_escort_billing_snapshotted", {
+    p_billing_id: String(billingId),
+    p_lock_version: Number(lockVersion) || 0
   });
-  const nb = (v) => Number(v) || 0;
-  const fatFields = {
-    km_inicial: nb(kmIni),
-    km_final: nb(kmFin),
-    km_carregado: nb(resultado.km_carregado),
-    km_vazio: 0,
-    km_total: nb(resultado.km_total),
-    km_faturado: nb(resultado.km_faturado),
-    km_franquia: nb(resultado.km_franquia),
-    km_excedente: nb(resultado.km_excedente),
-    horario_inicio_considerado: resultado.horario_inicio_considerado,
-    horas_missao: nb(resultado.horas_trabalhadas),
-    horas_trabalhadas: nb(resultado.horas_trabalhadas),
-    horas_estadia: 0,
-    teve_pernoite: false,
-    is_noturno: resultado.is_noturno,
-    fat_acionamento: nb(resultado.fat_acionamento),
-    fat_hora_extra: nb(resultado.fat_hora_extra),
-    fat_km: nb(resultado.fat_km),
-    fat_km_carregado: nb(resultado.faturamento.km_carregado),
-    fat_km_vazio: nb(resultado.faturamento.km_vazio),
-    fat_estadia: nb(resultado.fat_estadia),
-    fat_pernoite: nb(resultado.fat_pernoite),
-    fat_diaria: nb(resultado.fat_pernoite),
-    fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
-    fat_total: nb(resultado.fat_total),
-    valor_franquia: nb(resultado.valor_franquia),
-    valor_km_extra: nb(resultado.valor_km_extra),
-    // Cancelamento = receita pura: pagamento zerado, resultado = faturamento.
-    pag_vrp: 0,
-    pag_periculosidade: 0,
-    pag_adicional_noturno: 0,
-    pag_reembolsos: 0,
-    pag_total: 0,
-    resultado_bruto: nb(resultado.fat_total),
-    resultado_liquido: nb(resultado.fat_total),
-    margem_percentual: 100,
-    status: "CANCELADO"
-  };
-  return { contrato, usouTabela100, resultado, kmIni, kmFin, fatFields, horarios };
+  if (error) {
+    throw new Error(`Falha ao verificar snapshot comercial: ${error.message}`);
+  }
+  return data === true;
+}
+async function isBillingProtected(sb, billing) {
+  if (!billing) return false;
+  if (isBillingStatusProtected(billing.status)) return true;
+  return billingHasCommercialSnapshot(
+    sb,
+    billing.id,
+    Number(billing.lock_version) || 0
+  );
 }
 
 // server/routes/service-orders.ts
+init_recusada_guard();
 init_balanco_cache();
+init_audit();
+init_atomic_billing();
 import { randomUUID } from "crypto";
 
 // server/toll-engine.ts
@@ -25862,6 +26489,57 @@ function getAllTollPlazas() {
 }
 
 // server/routes/service-orders.ts
+async function buildOfficialBillingPayloadForServiceOrder(so, createdBy) {
+  if (!so?.escortContractId) {
+    throw new Error("OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria.");
+  }
+  const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).single();
+  if (contractError || !contrato) {
+    throw contractError || new Error("Contrato vinculado \xE0 OS n\xE3o encontrado.");
+  }
+  const [photos, costs, client, emp, emp2, vehicle] = await Promise.all([
+    storage.getMissionPhotosByOS(so.id),
+    storage.getMissionCostsByOS(so.id),
+    so.clientId ? storage.getClient(so.clientId) : null,
+    so.assignedEmployeeId ? storage.getEmployee(so.assignedEmployeeId) : null,
+    so.assignedEmployee2Id ? storage.getEmployee(so.assignedEmployee2Id) : null,
+    so.vehicleId ? storage.getVehicle(so.vehicleId) : null
+  ]);
+  return {
+    ...computeBillingPayloadForOs({
+      so: {
+        id: so.id,
+        os_number: so.osNumber,
+        status: so.status,
+        mission_status: so.missionStatus,
+        client_id: so.clientId,
+        escort_contract_id: so.escortContractId,
+        assigned_employee_id: so.assignedEmployeeId,
+        assigned_employee_2_id: so.assignedEmployee2Id,
+        vehicle_id: so.vehicleId,
+        origin: so.origin,
+        destination: so.destination,
+        escorted_vehicle_plate: so.escortedVehiclePlate,
+        escorted_driver_name: so.escortedDriverName,
+        scheduled_date: so.scheduledDate,
+        mission_started_at: so.missionStartedAt,
+        completed_date: so.completedDate
+      },
+      contrato,
+      photos: photos.map((photo) => ({
+        step: photo.step,
+        km_value: photo.kmValue ?? photo.km_value
+      })),
+      mCosts: costs,
+      horasMissao: 0,
+      clientName: client?.name || "--",
+      empName: emp?.name || createdBy,
+      emp2Name: emp2?.name || null,
+      vehPlate: vehicle?.plate || null
+    }),
+    created_by: createdBy
+  };
+}
 function estimadoFromContract(c) {
   if (!c) return null;
   const acion = Number(c.valor_acionamento || 0);
@@ -25908,7 +26586,7 @@ function registerServiceOrderRoutes(app2) {
         }
         return void 0;
       };
-      const kmSaida = photos.find((p) => p.step === "km_saida");
+      const kmSaida = [...photos].reverse().find((p) => p.step === "km_saida");
       const kmChegada = findLast("km_chegada");
       const kmFinal = findLast("km_final");
       const baseHodometro = findLast("base_hodometro");
@@ -26058,19 +26736,33 @@ function registerServiceOrderRoutes(app2) {
       const serviceOrderId = Number(req.params.osId);
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
-      const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
+      const isConcluded = so.status === "concluida" || so.status === "conclu\xEDda" || so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
+      const isLive = !isConcluded;
       const isCanceladaOuRecusada = so.status === "cancelada" || so.status === "recusada";
-      const { data: existing } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", serviceOrderId).limit(1);
-      const existingBilling = existing?.[0];
-      const canRecalculate = !existingBilling || existingBilling.status === "REJEITADA" || existingBilling.status === "A_VERIFICAR" || isLive;
-      if (!canRecalculate) return res.status(400).json({ message: "Billing j\xE1 aprovado \u2014 n\xE3o pode ser recalculado" });
-      if (existingBilling) {
-        await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+      if (isLive && !isCanceladaOuRecusada) {
+        return res.status(409).json({
+          message: "OS ativa usa apenas proje\xE7\xE3o; billing oficial s\xF3 \xE9 materializado ap\xF3s conclus\xE3o."
+        });
       }
+      const { data: existing, error: existingError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+      if (existingError) throw existingError;
+      const existingBilling = existing?.[0];
+      if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 rec\xE1lculo bloqueado."
+        });
+      }
+      const canRecalculate = !existingBilling || [
+        "REJEITADA",
+        "A_VERIFICAR",
+        "PENDENTE",
+        "VERIFICADA"
+      ].includes(existingBilling.status);
+      if (!canRecalculate) return res.status(400).json({ message: "Billing j\xE1 aprovado \u2014 n\xE3o pode ser recalculado" });
       if (isCanceladaOuRecusada) {
         const client2 = so.clientId ? await storage.getClient(so.clientId) : null;
         const user2 = req.user;
-        const { data: zeroBilling, error: zeroErr } = await supabaseAdmin.from("escort_billings").insert({
+        const commonPayload = {
           service_order_id: serviceOrderId,
           client_id: so.clientId,
           client_name: client2?.name || "--",
@@ -26078,176 +26770,127 @@ function registerServiceOrderRoutes(app2) {
           origem: so.origin || null,
           destino: so.destination || null,
           data_missao: so.scheduledDate || so.missionStartedAt || (/* @__PURE__ */ new Date()).toISOString(),
-          km_inicial: 0,
-          km_final: 0,
-          km_vazio: 0,
-          km_carregado: 0,
-          km_total: 0,
-          km_faturado: 0,
-          km_franquia: 0,
-          km_excedente: 0,
-          horas_missao: 0,
-          horas_trabalhadas: 0,
-          horas_estadia: 0,
-          teve_pernoite: false,
-          is_noturno: false,
-          fat_acionamento: 0,
-          fat_hora_extra: 0,
-          fat_km: 0,
-          fat_km_carregado: 0,
-          fat_km_vazio: 0,
-          fat_estadia: 0,
-          fat_pernoite: 0,
-          fat_diaria: 0,
-          fat_adicional_noturno: 0,
-          fat_total: 0,
-          receitas_os: 0,
-          valor_franquia: 0,
-          valor_km_extra: 0,
-          pag_vrp: 0,
-          pag_periculosidade: 0,
-          pag_adicional_noturno: 0,
-          pag_reembolsos: 0,
-          pag_total: 0,
-          resultado_bruto: 0,
-          resultado_liquido: 0,
-          margem_percentual: 0,
-          status: "CANCELADO",
-          created_by: user2.name,
-          observacoes: `OS ${so.status === "recusada" ? "RECUSADA" : "CANCELADA"}${so.cancellationReason ? " \u2014 " + so.cancellationReason : ""}`
-        }).select().single();
-        if (zeroErr) throw zeroErr;
+          created_by: user2.name
+        };
+        let statusPayload;
+        if (so.status === "recusada") {
+          statusPayload = {
+            km_inicial: 0,
+            km_final: 0,
+            km_vazio: 0,
+            km_carregado: 0,
+            km_total: 0,
+            km_faturado: 0,
+            km_franquia: 0,
+            km_excedente: 0,
+            horas_missao: 0,
+            horas_trabalhadas: 0,
+            horas_estadia: 0,
+            teve_pernoite: false,
+            is_noturno: false,
+            ...buildRecusadaZeroPayload(so.cancellationReason)
+          };
+        } else {
+          const cancelada = await computeCanceladaBilling({
+            serviceOrderId,
+            clientId: so.clientId,
+            escortContractId: so.escortContractId,
+            scheduledDate: so.scheduledDate ? String(so.scheduledDate) : null,
+            missionStartedAt: so.missionStartedAt ? String(so.missionStartedAt) : null,
+            completedDate: so.completedDate ? String(so.completedDate) : null,
+            stepLogs: so.stepLogs || []
+          });
+          if (!cancelada) {
+            return res.status(422).json({
+              message: "Cancelada sem tabela 100 km ou contrato utiliz\xE1vel; billing n\xE3o foi alterado."
+            });
+          }
+          statusPayload = {
+            contract_id: cancelada.contrato?.id || so.escortContractId || null,
+            ...cancelada.fatFields,
+            horario_agendado: cancelada.horarios.horario_agendado,
+            horario_inicio: cancelada.horarios.horario_inicio,
+            horario_fim: cancelada.horarios.horario_fim,
+            observacoes: `OS CANCELADA \u2014 Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}${so.cancellationReason ? " \u2014 " + so.cancellationReason : ""}`
+          };
+        }
+        const billing = await writeEscortBillingAtomic({
+          action: so.status === "recusada" ? "WRITE_REFUSED" : "WRITE_CANCELLED",
+          billingId: existingBilling?.id || null,
+          serviceOrderId,
+          expectedVersion: existingBilling ? Number(existingBilling.lock_version) || 0 : null,
+          payload: { ...commonPayload, ...statusPayload },
+          actor: {
+            userId: user2.id,
+            userName: user2.name,
+            userRole: user2.role,
+            reason: so.cancellationReason || so.status,
+            ipAddress: req.ip
+          }
+        });
         bustBalancoCaches();
-        return res.json(zeroBilling);
+        return res.json(billing);
+      }
+      if (!so.escortContractId) {
+        return res.status(422).json({
+          message: "OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria."
+        });
+      }
+      const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).single();
+      if (contractError || !contrato) {
+        throw contractError || new Error("Contrato vinculado \xE0 OS n\xE3o encontrado.");
       }
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
-      const kmSaidaPhoto = photos.find((p) => p.step === "km_saida");
-      const kmChegadaPhoto = [...photos].reverse().find((p) => p.step === "km_chegada");
-      const kmFinalPhoto = photos.find((p) => p.step === "km_final");
-      const kmInicial = kmChegadaPhoto?.kmValue || 0;
-      const kmFinal = kmFinalPhoto?.kmValue || 0;
-      const toBRT2 = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-      const scheduledTime = so.scheduledDate ? toBRT2(new Date(so.scheduledDate)) : void 0;
-      const startTime = so.missionStartedAt ? toBRT2(new Date(so.missionStartedAt)) : void 0;
-      const completedDateValid = so.completedDate && new Date(so.completedDate).getFullYear() > 2e3;
-      const endTime = completedDateValid ? toBRT2(new Date(so.completedDate)) : isLive ? toBRT2(/* @__PURE__ */ new Date()) : void 0;
-      const stepLogs = so.stepLogs || [];
-      const getLogTimeBilling = (steps) => {
-        for (const s of steps) {
-          const entry = [...stepLogs].reverse().find((l) => l.step === s && l.timestamp);
-          if (entry) return entry.timestamp;
-        }
-        return null;
-      };
-      const horaInicioMissaoISO = getLogTimeBilling(["iniciar_missao", "em_transito_destino"]);
-      const inicioMissaoTime = horaInicioMissaoISO ? toBRT2(new Date(horaInicioMissaoISO)) : void 0;
-      const horaFimMissaoISO = so.hora_fim_missao || so.completedDate || getLogTimeBilling(["encerrada", "finalizada", "checkout_km_final"]);
-      const fimMissaoTime = horaFimMissaoISO ? toBRT2(new Date(horaFimMissaoISO)) : endTime;
-      const billingStartTime = inicioMissaoTime || startTime;
-      let contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-      if (so.escortContractId) {
-        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
-        if (cc?.length) contrato = cc[0];
-      } else if (so.clientId) {
-        const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
-        if (clientContracts?.length) contrato = clientContracts[0];
-      }
-      const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
       const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-      const _split = splitMissionCostsForBilling(osMissionCosts);
-      let despPedagioCalc = _split.despesas_pedagio;
-      const despCombustivelCalc = _split.despesas_combustivel;
-      const despOutrasCalc = _split.despesas_outras;
-      const receitasOsCalc = _split.receitas_os;
-      const pedagioEstimadoCalc = Number(so.pedagioEstimado) || 0;
-      if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
-      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}, receitas=${receitasOsCalc}`);
-      const resultado = calcularEscolta({
-        km_inicial: kmInicial,
-        km_final: kmFinalNorm,
-        km_vazio: 0,
-        horas_missao: 0,
-        horas_estadia: 0,
-        teve_pernoite: false,
-        horario_inicio: billingStartTime,
-        horario_fim: fimMissaoTime,
-        horario_agendado: scheduledTime,
-        inicio_ts: so.missionStartedAt ? new Date(so.missionStartedAt).toISOString() : null,
-        fim_ts: horaFimMissaoISO || (so.completedDate ? new Date(so.completedDate).toISOString() : null),
-        scheduled_date: so.scheduledDate ? new Date(so.scheduledDate).toISOString() : null,
-        despesas_pedagio: despPedagioCalc,
-        despesas_combustivel: despCombustivelCalc,
-        despesas_outras: despOutrasCalc,
-        receitas_os: receitasOsCalc,
-        contrato
-      });
-      console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
       const client = so.clientId ? await storage.getClient(so.clientId) : null;
       const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
       const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
       const user = req.user;
-      const n2 = (v) => Number(v) || 0;
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
-        service_order_id: serviceOrderId,
-        client_id: so.clientId,
-        client_name: client?.name || "--",
-        contract_id: contrato.id || null,
-        km_inicial: n2(kmInicial),
-        km_final: n2(kmFinalNorm),
-        km_vazio: 0,
-        km_carregado: n2(resultado.km_carregado),
-        km_total: n2(resultado.km_total),
-        km_faturado: n2(resultado.km_faturado),
-        km_franquia: n2(resultado.km_franquia),
-        km_excedente: n2(resultado.km_excedente),
-        horario_agendado: scheduledTime || null,
-        horario_inicio: billingStartTime || startTime || null,
-        horario_fim: fimMissaoTime || endTime || null,
-        horario_inicio_considerado: resultado.horario_inicio_considerado,
-        horas_missao: n2(resultado.horas_trabalhadas),
-        horas_trabalhadas: n2(resultado.horas_trabalhadas),
-        horas_estadia: 0,
-        teve_pernoite: false,
-        is_noturno: resultado.is_noturno,
-        fat_acionamento: n2(resultado.fat_acionamento),
-        fat_hora_extra: n2(resultado.fat_hora_extra),
-        fat_km: n2(resultado.fat_km),
-        fat_km_carregado: n2(resultado.faturamento.km_carregado),
-        fat_km_vazio: n2(resultado.faturamento.km_vazio),
-        fat_estadia: n2(resultado.fat_estadia),
-        fat_pernoite: n2(resultado.fat_pernoite),
-        fat_diaria: n2(resultado.fat_pernoite),
-        fat_adicional_noturno: n2(resultado.fat_adicional_noturno),
-        fat_total: n2(resultado.fat_total),
-        receitas_os: n2(resultado.receitas_os),
-        despesas_pedagio: n2(despPedagioCalc),
-        despesas_combustivel: n2(despCombustivelCalc),
-        despesas_outras: n2(despOutrasCalc),
-        valor_franquia: n2(resultado.valor_franquia),
-        valor_km_extra: n2(resultado.valor_km_extra),
-        pag_vrp: n2(resultado.pag_vrp),
-        pag_periculosidade: n2(resultado.pag_periculosidade),
-        pag_adicional_noturno: n2(resultado.pag_adicional_noturno),
-        pag_reembolsos: n2(resultado.pag_reembolsos),
-        pag_total: n2(resultado.pag_total),
-        resultado_bruto: n2(resultado.resultado.bruto),
-        resultado_liquido: n2(resultado.resultado.liquido),
-        margem_percentual: n2(resultado.resultado.margem_pct),
-        vigilante_id: so.assignedEmployeeId,
-        vigilante_name: emp?.name || user.name,
-        vigilante2_id: so.assignedEmployee2Id || null,
-        vigilante2_name: emp2?.name || null,
-        os_number: so.osNumber || null,
-        origem: so.origin || null,
-        destino: so.destination || null,
-        placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
-        placa_escoltado: so.escortedVehiclePlate || null,
-        motorista_escoltado: so.escortedDriverName || null,
-        data_missao: so.scheduledDate || so.missionStartedAt || (/* @__PURE__ */ new Date()).toISOString(),
-        status: "A_VERIFICAR",
-        created_by: user.name
-      }).select().single();
-      if (error) throw error;
+      const payload = computeBillingPayloadForOs({
+        so: {
+          id: serviceOrderId,
+          os_number: so.osNumber,
+          status: so.status,
+          mission_status: so.missionStatus,
+          client_id: so.clientId,
+          escort_contract_id: so.escortContractId,
+          assigned_employee_id: so.assignedEmployeeId,
+          assigned_employee_2_id: so.assignedEmployee2Id,
+          vehicle_id: so.vehicleId,
+          origin: so.origin,
+          destination: so.destination,
+          escorted_vehicle_plate: so.escortedVehiclePlate,
+          escorted_driver_name: so.escortedDriverName,
+          scheduled_date: so.scheduledDate,
+          mission_started_at: so.missionStartedAt,
+          completed_date: so.completedDate
+        },
+        contrato,
+        photos: photos.map((photo) => ({
+          step: photo.step,
+          km_value: photo.kmValue ?? photo.km_value
+        })),
+        mCosts: osMissionCosts,
+        horasMissao: 0,
+        clientName: client?.name || "--",
+        empName: emp?.name || user.name,
+        emp2Name: emp2?.name || null,
+        vehPlate: vehicle?.plate || null
+      });
+      const data = await writeEscortBillingAtomic({
+        action: "WRITE_OFFICIAL",
+        billingId: existingBilling?.id || null,
+        serviceOrderId,
+        expectedVersion: existingBilling ? Number(existingBilling.lock_version) || 0 : null,
+        payload,
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       res.json(data);
     } catch (err) {
@@ -26259,9 +26902,10 @@ function registerServiceOrderRoutes(app2) {
       const osId2 = Number(req.params.id);
       const so = await storage.getServiceOrder(osId2);
       if (!so) return res.status(404).json({ message: "OS n\xE3o encontrada" });
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings").select("status").eq("service_order_id", osId2).limit(1);
-      if (existingBilling?.[0] && ["APROVADA", "FATURADO", "PAGO"].includes(existingBilling[0].status)) {
-        return res.status(403).json({ message: "Boletim aprovado \u2014 valores travados. N\xE3o \xE9 poss\xEDvel alterar." });
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", osId2).limit(1);
+      if (existingBillingError) throw existingBillingError;
+      if (existingBilling?.[0] && await isBillingProtected(supabaseAdmin, existingBilling[0])) {
+        return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial \u2014 valores travados." });
       }
       const { completedDate, hora_chegada_origem, mission_started_at, scheduled_date, km_chegada_origem, km_fim_missao } = req.body;
       const updates = {};
@@ -26302,83 +26946,64 @@ function registerServiceOrderRoutes(app2) {
       if (existingBilling?.[0] && existingBilling[0].status === "A_VERIFICAR") {
         const updatedSo = await storage.getServiceOrder(osId2);
         if (updatedSo) {
-          const phs = await storage.getMissionPhotosByOS(osId2);
-          const kmSP = [...phs].reverse().find((p) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT2 = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = updatedSo.scheduledDate ? toBRT2(new Date(updatedSo.scheduledDate)) : void 0;
-          const updatedLogs = updatedSo.stepLogs || [];
-          const inicioMissaoEntry = [...updatedLogs].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && l.timestamp);
-          const stTime = inicioMissaoEntry ? toBRT2(new Date(inicioMissaoEntry.timestamp)) : updatedSo.missionStartedAt ? toBRT2(new Date(updatedSo.missionStartedAt)) : void 0;
-          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate).getFullYear() > 2e3;
-          const eTime = cdValid ? toBRT2(new Date(updatedSo.completedDate)) : void 0;
-          let contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (updatedSo.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (updatedSo.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
+          if (!updatedSo.escortContractId) {
+            throw new Error("OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria.");
           }
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList = await storage.getMissionCostsByOS(osId2);
-          const _split = splitMissionCostsForBilling(mcList);
-          let dpCalc = _split.despesas_pedagio;
-          const dcCalc = _split.despesas_combustivel;
-          const doCalc = _split.despesas_outras;
-          const roCalc = _split.receitas_os;
-          const pedagioEstOS = Number(updatedSo.pedagioEstimado) || 0;
-          if (pedagioEstOS > 0 && dpCalc === 0) dpCalc = pedagioEstOS;
-          const resultado = calcularEscolta({
-            km_inicial: kmI,
-            km_final: kmFN,
-            km_vazio: 0,
-            horas_missao: 0,
-            horas_estadia: 0,
-            teve_pernoite: false,
-            horario_inicio: stTime,
-            horario_fim: eTime,
-            horario_agendado: sTime,
-            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt).toISOString() : null,
-            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate).toISOString() : null,
-            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate).toISOString() : null,
-            despesas_pedagio: dpCalc,
-            despesas_combustivel: dcCalc,
-            despesas_outras: doCalc,
-            receitas_os: roCalc,
-            contrato
+          const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).single();
+          if (contractError || !contrato) throw contractError || new Error("Contrato n\xE3o encontrado.");
+          const [phs, mcList, client, emp, emp2, vehicle] = await Promise.all([
+            storage.getMissionPhotosByOS(osId2),
+            storage.getMissionCostsByOS(osId2),
+            updatedSo.clientId ? storage.getClient(updatedSo.clientId) : null,
+            updatedSo.assignedEmployeeId ? storage.getEmployee(updatedSo.assignedEmployeeId) : null,
+            updatedSo.assignedEmployee2Id ? storage.getEmployee(updatedSo.assignedEmployee2Id) : null,
+            updatedSo.vehicleId ? storage.getVehicle(updatedSo.vehicleId) : null
+          ]);
+          const payload = computeBillingPayloadForOs({
+            so: {
+              id: osId2,
+              os_number: updatedSo.osNumber,
+              status: updatedSo.status,
+              mission_status: updatedSo.missionStatus,
+              client_id: updatedSo.clientId,
+              escort_contract_id: updatedSo.escortContractId,
+              assigned_employee_id: updatedSo.assignedEmployeeId,
+              assigned_employee_2_id: updatedSo.assignedEmployee2Id,
+              vehicle_id: updatedSo.vehicleId,
+              origin: updatedSo.origin,
+              destination: updatedSo.destination,
+              escorted_vehicle_plate: updatedSo.escortedVehiclePlate,
+              escorted_driver_name: updatedSo.escortedDriverName,
+              scheduled_date: updatedSo.scheduledDate,
+              mission_started_at: updatedSo.missionStartedAt,
+              completed_date: updatedSo.completedDate
+            },
+            contrato,
+            photos: phs.map((photo) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value
+            })),
+            mCosts: mcList,
+            horasMissao: 0,
+            clientName: client?.name || "--",
+            empName: emp?.name || req.user.name,
+            emp2Name: emp2?.name || null,
+            vehPlate: vehicle?.plate || null
           });
-          const n2 = (v) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: n2(kmI),
-            km_final: n2(kmFN),
-            km_total: n2(resultado.km_total),
-            km_carregado: n2(resultado.km_carregado),
-            km_faturado: n2(resultado.km_faturado),
-            km_franquia: n2(resultado.km_franquia),
-            km_excedente: n2(resultado.km_excedente),
-            horario_inicio: stTime || null,
-            horario_fim: eTime || null,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: n2(resultado.horas_trabalhadas),
-            horas_trabalhadas: n2(resultado.horas_trabalhadas),
-            fat_acionamento: n2(resultado.fat_acionamento),
-            fat_hora_extra: n2(resultado.fat_hora_extra),
-            fat_km: n2(resultado.fat_km),
-            fat_km_carregado: n2(resultado.faturamento.km_carregado),
-            fat_km_vazio: n2(resultado.faturamento.km_vazio),
-            fat_estadia: n2(resultado.fat_estadia),
-            fat_pernoite: n2(resultado.fat_pernoite),
-            fat_adicional_noturno: n2(resultado.fat_adicional_noturno),
-            fat_total: n2(resultado.fat_total),
-            receitas_os: n2(resultado.receitas_os),
-            despesas_pedagio: n2(dpCalc),
-            despesas_combustivel: n2(dcCalc),
-            despesas_outras: n2(doCalc)
-          }).eq("service_order_id", osId2);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: osId2,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Override de diretoria",
+              ipAddress: req.ip
+            }
+          });
           bustBalancoCaches();
         }
       }
@@ -26529,71 +27154,68 @@ ${auditEntries.join("\n")}`;
         } catch (_muErr) {
         }
       }
-      const { data: existingBilling } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", osId2).limit(1);
-      const FROZEN_BILL_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
-      if (existingBilling?.[0] && !FROZEN_BILL_STATUSES.includes(existingBilling[0].status)) {
+      const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", osId2).limit(1);
+      if (existingBillingError) throw existingBillingError;
+      const billingProtected = existingBilling?.[0] ? await isBillingProtected(supabaseAdmin, existingBilling[0]) : false;
+      if (existingBilling?.[0] && !billingProtected) {
         const updatedSo = await storage.getServiceOrder(osId2);
         if (updatedSo) {
-          const phs = await storage.getMissionPhotosByOS(osId2);
-          const kmSP = [...phs].reverse().find((p) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT2 = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = updatedSo.scheduledDate ? toBRT2(new Date(updatedSo.scheduledDate)) : void 0;
-          const updatedLogs = updatedSo.stepLogs || [];
-          const inicioEntry2 = [...updatedLogs].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
-          const stTime = inicioEntry2 ? toBRT2(new Date(inicioEntry2.timestamp || inicioEntry2.completedAt)) : updatedSo.missionStartedAt ? toBRT2(new Date(updatedSo.missionStartedAt)) : void 0;
-          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate).getFullYear() > 2e3;
-          const eTime = cdValid ? toBRT2(new Date(updatedSo.completedDate)) : void 0;
-          let contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (updatedSo.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (updatedSo.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
-          }
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList2 = await storage.getMissionCostsByOS(osId2);
-          const _split2 = splitMissionCostsForBilling(mcList2);
-          let dp2 = _split2.despesas_pedagio;
-          const dc2 = _split2.despesas_combustivel;
-          const do2 = _split2.despesas_outras;
-          const ro2 = _split2.receitas_os;
-          const pedagioEstOS2 = Number(updatedSo.pedagioEstimado) || 0;
-          if (pedagioEstOS2 > 0 && dp2 === 0) dp2 = pedagioEstOS2;
-          const resultado = calcularEscolta({
+          if (!updatedSo.escortContractId) throw new Error("OS sem escort_contract_id.");
+          const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).single();
+          if (contractError || !contrato) throw contractError || new Error("Contrato n\xE3o encontrado.");
+          const [phs, costs, client, emp, emp2, vehicle] = await Promise.all([
+            storage.getMissionPhotosByOS(osId2),
+            storage.getMissionCostsByOS(osId2),
+            updatedSo.clientId ? storage.getClient(updatedSo.clientId) : null,
+            updatedSo.assignedEmployeeId ? storage.getEmployee(updatedSo.assignedEmployeeId) : null,
+            updatedSo.assignedEmployee2Id ? storage.getEmployee(updatedSo.assignedEmployee2Id) : null,
+            updatedSo.vehicleId ? storage.getVehicle(updatedSo.vehicleId) : null
+          ]);
+          const payload = computeBillingPayloadForOs({
+            so: {
+              id: osId2,
+              os_number: updatedSo.osNumber,
+              status: updatedSo.status,
+              mission_status: updatedSo.missionStatus,
+              client_id: updatedSo.clientId,
+              escort_contract_id: updatedSo.escortContractId,
+              assigned_employee_id: updatedSo.assignedEmployeeId,
+              assigned_employee_2_id: updatedSo.assignedEmployee2Id,
+              vehicle_id: updatedSo.vehicleId,
+              origin: updatedSo.origin,
+              destination: updatedSo.destination,
+              escorted_vehicle_plate: updatedSo.escortedVehiclePlate,
+              escorted_driver_name: updatedSo.escortedDriverName,
+              scheduled_date: updatedSo.scheduledDate,
+              mission_started_at: updatedSo.missionStartedAt,
+              completed_date: updatedSo.completedDate
+            },
             contrato,
-            km_inicial: kmI,
-            km_final: kmFN,
-            km_vazio: 0,
-            horas_missao: 0,
-            horas_estadia: 0,
-            teve_pernoite: false,
-            horario_agendado: sTime,
-            horario_inicio: stTime,
-            horario_fim: eTime,
-            inicio_ts: updatedSo.missionStartedAt ? new Date(updatedSo.missionStartedAt).toISOString() : null,
-            fim_ts: updatedSo.completedDate ? new Date(updatedSo.completedDate).toISOString() : null,
-            scheduled_date: updatedSo.scheduledDate ? new Date(updatedSo.scheduledDate).toISOString() : null,
-            despesas_pedagio: dp2,
-            despesas_combustivel: dc2,
-            despesas_outras: do2,
-            receitas_os: ro2
+            photos: phs.map((photo) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value
+            })),
+            mCosts: costs,
+            horasMissao: 0,
+            clientName: client?.name || "--",
+            empName: emp?.name || req.user.name,
+            emp2Name: emp2?.name || null,
+            vehPlate: vehicle?.plate || null
           });
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: kmI,
-            km_final: kmFN,
-            horario_inicio: stTime || null,
-            horario_fim: eTime || null,
-            receitas_os: Number(resultado.receitas_os) || 0,
-            despesas_pedagio: dp2,
-            despesas_combustivel: dc2,
-            despesas_outras: do2,
-            ...resultado
-          }).eq("id", existingBilling[0].id);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: osId2,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Ajuste manual de fatos",
+              ipAddress: req.ip
+            }
+          });
           bustBalancoCaches();
         }
       }
@@ -27058,11 +27680,52 @@ ${auditEntries.join("\n")}`;
       parsed.data.custos_congelados_por = null;
       parsed.data.cancellationReason = null;
       try {
-        await supabaseAdmin.from("escort_billings").update({ status: "A_VERIFICAR", observacoes: null }).eq("service_order_id", Number(req.params.id)).eq("status", "CANCELADO");
+        const { data: cancelledBillings, error: cancelledBillingError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", Number(req.params.id)).eq("status", "CANCELADO").limit(1);
+        if (cancelledBillingError) throw cancelledBillingError;
+        const cancelledBilling = cancelledBillings?.[0];
+        if (cancelledBilling) {
+          if (await billingHasCommercialSnapshot(
+            supabaseAdmin,
+            cancelledBilling.id,
+            Number(cancelledBilling.lock_version) || 0
+          )) {
+            return res.status(409).json({
+              message: "Reativa\xE7\xE3o bloqueada: billing presente em snapshot comercial."
+            });
+          }
+          await writeEscortBillingAtomic({
+            action: "REOPEN_CANCELLED",
+            billingId: cancelledBilling.id,
+            serviceOrderId: Number(req.params.id),
+            expectedVersion: Number(cancelledBilling.lock_version) || 0,
+            payload: { status: "A_VERIFICAR", observacoes: null },
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Reativa\xE7\xE3o expl\xEDcita de OS cancelada/recusada",
+              ipAddress: req.ip
+            }
+          });
+          await logSystemAudit({
+            userId: req.user.id,
+            userName: req.user.name,
+            userRole: req.user.role,
+            action: "REATIVAR_OS_CANCELADA",
+            targetId: String(cancelledBilling.id),
+            targetType: "escort_billing",
+            details: `OS #${req.params.id}: billing CANCELADO reaberto para A_VERIFICAR.`,
+            ipAddress: req.ip
+          });
+        }
         bustBalancoCaches();
         console.log(`[so-patch-reactivate] OS ${req.params.id}: billing CANCELADO \u2192 A_VERIFICAR (recusada/cancelada \u2192 conclu\xEDda)`);
       } catch (e) {
         console.error(`[so-patch-reactivate] erro ao resetar billing:`, e.message);
+        return res.status(500).json({
+          message: "Reativa\xE7\xE3o n\xE3o conclu\xEDda: falha ao proteger/reabrir billing.",
+          detail: e.message
+        });
       }
     }
     const isRecusadaOuCancelada = (parsed.data.status === "recusada" || parsed.data.status === "cancelada") && existing && existing.status !== parsed.data.status;
@@ -27089,33 +27752,58 @@ ${auditEntries.join("\n")}`;
       parsed.data.custos_congelados_por = `${actionLabel}_por_${adminName}`;
       try {
         if (isRecusada) {
-          await supabaseAdmin.from("escort_billings").update({
-            status: "CANCELADO",
-            fat_total: 0,
-            fat_acionamento: 0,
-            fat_hora_extra: 0,
-            fat_km: 0,
-            fat_km_carregado: 0,
-            fat_km_vazio: 0,
-            fat_estadia: 0,
-            fat_pernoite: 0,
-            fat_diaria: 0,
-            fat_adicional_noturno: 0,
-            resultado_bruto: 0,
-            resultado_liquido: 0,
-            margem_percentual: 0,
-            observacoes: `OS RECUSADA${reason ? " \u2014 " + reason : ""}`
-          }).eq("service_order_id", Number(req.params.id));
-          bustBalancoCaches();
+          const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", Number(req.params.id)).limit(1);
+          if (existingBillError) throw existingBillError;
+          const billing = existingBill?.[0];
+          if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+            console.log(`[OS-Refuse-Billing] OS ${existing.osNumber}: billing protegido (${billing.status}) preservado`);
+          } else if (billing) {
+            if (!existing.escortContractId) {
+              await writeEscortBillingAtomic({
+                action: "DELETE_OPEN",
+                billingId: billing.id,
+                serviceOrderId: Number(req.params.id),
+                expectedVersion: Number(billing.lock_version) || 0,
+                actor: {
+                  userId: req.user.id,
+                  userName: adminName,
+                  userRole: req.user.role,
+                  reason: "Recusada sem contrato oficial",
+                  ipAddress: req.ip
+                }
+              });
+            } else {
+              await writeEscortBillingAtomic({
+                action: "WRITE_REFUSED",
+                billingId: billing.id,
+                serviceOrderId: Number(req.params.id),
+                expectedVersion: Number(billing.lock_version) || 0,
+                payload: {
+                  service_order_id: Number(req.params.id),
+                  contract_id: existing.escortContractId,
+                  km_inicial: 0,
+                  km_final: 0,
+                  ...buildRecusadaZeroPayload(reason)
+                },
+                actor: {
+                  userId: req.user.id,
+                  userName: adminName,
+                  userRole: req.user.role,
+                  reason,
+                  ipAddress: req.ip
+                }
+              });
+            }
+            bustBalancoCaches();
+          }
         } else {
           try {
             const soId = Number(req.params.id);
-            const { data: existingBill } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", soId).limit(1);
-            const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
-            const billStatus = existingBill?.[0]?.status;
-            if (billStatus && FROZEN.includes(billStatus)) {
-              await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-              bustBalancoCaches();
+            const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", soId).limit(1);
+            if (existingBillError) throw existingBillError;
+            const existingBilling = existingBill?.[0];
+            if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+              console.log(`[OS-Cancel-Billing] OS ${existing.osNumber}: billing protegido (${existingBilling.status}) preservado`);
             } else {
               const cb = await computeCanceladaBilling({
                 serviceOrderId: soId,
@@ -27146,22 +27834,43 @@ ${auditEntries.join("\n")}`;
                   placa_viatura: vehicle?.plate || null,
                   data_missao: existing.scheduledDate || existing.missionStartedAt || (/* @__PURE__ */ new Date()).toISOString(),
                   created_by: adminName,
-                  observacoes: `OS CANCELADA \u2014 Tabela 100 km${cb.usouTabela100 ? "" : " (fallback: contrato da OS)"}${reason ? " | Motivo: " + reason : ""}`
+                  observacoes: `OS CANCELADA \u2014 contrato vinculado \xE0 OS${reason ? " | Motivo: " + reason : ""}`
                 };
-                await supabaseAdmin.from("escort_billings").upsert(cancelPayload, { onConflict: "service_order_id" });
+                await writeEscortBillingAtomic({
+                  action: "WRITE_CANCELLED",
+                  billingId: existingBilling?.id || null,
+                  serviceOrderId: soId,
+                  expectedVersion: existingBilling ? Number(existingBilling.lock_version) || 0 : null,
+                  payload: cancelPayload,
+                  actor: {
+                    userId: req.user.id,
+                    userName: adminName,
+                    userRole: req.user.role,
+                    reason,
+                    ipAddress: req.ip
+                  }
+                });
                 bustBalancoCaches();
                 parsed.data.valorEstimado = Number(cb.fatFields.fat_total) || 0;
                 parsed.data.fat_calculado = Number(cb.fatFields.fat_total) || 0;
               } else {
-                await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", soId);
-                bustBalancoCaches();
+                throw new Error("Cancelada sem tabela 100 km ou contrato utiliz\xE1vel; billing preservado");
               }
             }
           } catch (cancErr) {
             console.error(`[OS-Cancel-Billing PATCH] OS ${req.params.id}:`, cancErr.message);
+            return res.status(500).json({
+              message: "OS n\xE3o foi atualizada: falha ao consolidar billing de cancelamento.",
+              detail: cancErr.message
+            });
           }
         }
-      } catch (_e) {
+      } catch (billingErr) {
+        console.error(`[OS-Billing PATCH] OS ${req.params.id}:`, billingErr.message);
+        return res.status(500).json({
+          message: "OS n\xE3o foi atualizada: falha ao proteger/recalcular billing.",
+          detail: billingErr.message
+        });
       }
       try {
         const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions").select("id, asaas_payment_id").eq("origin_type", "service_order").eq("origin_id", String(req.params.id)).not("asaas_payment_id", "is", null);
@@ -27417,7 +28126,7 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
         console.log(`[auto-cancel] Erro ao cancelar espelhamento autom\xE1tico: ${err.message}`);
       }
     }
-    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao", "pedagioEstimado", "pedagioIdaVolta"];
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao"];
     const changedBillingFields = existing && billingRelevantFields.some((f) => {
       const oldVal = existing[f];
       const newVal = parsed.data[f];
@@ -27426,99 +28135,33 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     const isConcluded = ["conclu\xEDda", "concluida"].includes(data.status || "") || data.missionStatus === "encerrada";
     if (changedBillingFields && isConcluded && data.type === "escolta") {
       try {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings").select("*").eq("service_order_id", data.id).order("created_at", { ascending: false }).limit(1);
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings").select("*").eq("service_order_id", data.id).order("created_at", { ascending: false }).limit(1);
+        if (existingBillingError) throw existingBillingError;
         const bill = existingBilling?.[0];
-        if (bill && bill.status === "A_VERIFICAR") {
-          let contrato = null;
-          if (bill.contract_id) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", bill.contract_id).single();
-            contrato = cc;
-          }
-          if (!contrato) {
-            contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          }
-          const kmIni = Number(data.kmSaida || bill.km_inicial || 0);
-          const kmFin = Number(data.kmRetorno || bill.km_final || 0);
-          const toBRTx = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const horarioInicio = data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt)) : bill.horario_inicio || null;
-          const horaFimMissaoAR = data.hora_fim_missao || existing?.hora_fim_missao || data.completedDate;
-          const horarioFim = horaFimMissaoAR ? toBRTx(new Date(horaFimMissaoAR)) : bill.horario_fim || null;
-          const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate)) : bill.horario_agendado || null;
-          let despPedagioAR = Number(bill.despesas_pedagio || 0);
-          const pedagioOS = Number(data.pedagioEstimado) || 0;
-          if (pedagioOS > 0) despPedagioAR = pedagioOS;
-          const mcListAR = await storage.getMissionCostsByOS(osId);
-          const _splitAR = splitMissionCostsForBilling(mcListAR);
-          const dpAR = _splitAR.despesas_pedagio;
-          const dcAR = _splitAR.despesas_combustivel;
-          const doAR = _splitAR.despesas_outras;
-          const roAR = _splitAR.receitas_os;
-          if (dpAR > 0) despPedagioAR = dpAR;
-          const resultado = calcularEscolta({
-            km_inicial: kmIni,
-            km_final: kmFin,
-            km_vazio: Number(bill.km_vazio || 0),
-            horas_missao: 0,
-            horas_estadia: Number(bill.horas_estadia || 0),
-            teve_pernoite: !!bill.teve_pernoite,
-            horario_inicio: horarioInicio,
-            horario_fim: horarioFim,
-            horario_agendado: horarioAgendado,
-            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt).toISOString() : null,
-            fim_ts: horaFimMissaoAR ? new Date(horaFimMissaoAR).toISOString() : data.completedDate ? new Date(data.completedDate).toISOString() : null,
-            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
-            despesas_pedagio: despPedagioAR,
-            despesas_combustivel: dcAR || Number(bill.despesas_combustivel || 0),
-            despesas_outras: doAR || Number(bill.despesas_outras || 0),
-            receitas_os: roAR,
-            contrato
+        if (bill && !await isBillingProtected(supabaseAdmin, bill)) {
+          const payload = await buildOfficialBillingPayloadForServiceOrder(data, req.user.name);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: bill.id,
+            serviceOrderId: data.id,
+            expectedVersion: Number(bill.lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Auto-recalc ap\xF3s altera\xE7\xE3o de fatos",
+              ipAddress: req.ip
+            }
           });
-          const nb = (v) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: nb(kmIni),
-            km_final: nb(kmFin),
-            km_carregado: nb(resultado.km_carregado),
-            km_total: nb(resultado.km_total),
-            km_faturado: nb(resultado.km_faturado),
-            km_franquia: nb(resultado.km_franquia),
-            km_excedente: nb(resultado.km_excedente),
-            placa_escoltado: data.escortedVehiclePlate || bill.placa_escoltado || null,
-            horario_agendado: horarioAgendado,
-            horario_inicio: horarioInicio,
-            horario_fim: horarioFim,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: nb(resultado.horas_trabalhadas),
-            horas_trabalhadas: nb(resultado.horas_trabalhadas),
-            is_noturno: resultado.is_noturno,
-            fat_acionamento: nb(resultado.fat_acionamento),
-            fat_hora_extra: nb(resultado.fat_hora_extra),
-            fat_km: nb(resultado.fat_km),
-            fat_km_carregado: nb(resultado.faturamento.km_carregado),
-            fat_km_vazio: nb(resultado.faturamento.km_vazio),
-            fat_estadia: nb(resultado.fat_estadia),
-            fat_pernoite: nb(resultado.fat_pernoite),
-            fat_diaria: nb(resultado.fat_pernoite),
-            fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
-            fat_total: nb(resultado.fat_total),
-            receitas_os: nb(resultado.receitas_os),
-            despesas_pedagio: nb(despPedagioAR),
-            despesas_combustivel: nb(dcAR || Number(bill.despesas_combustivel || 0)),
-            despesas_outras: nb(doAR || Number(bill.despesas_outras || 0)),
-            valor_franquia: nb(resultado.valor_franquia),
-            valor_km_extra: nb(resultado.valor_km_extra),
-            pag_vrp: nb(resultado.pag_vrp),
-            pag_periculosidade: nb(resultado.pag_periculosidade),
-            pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
-            pag_reembolsos: nb(resultado.pag_reembolsos),
-            pag_total: nb(resultado.pag_total),
-            resultado_bruto: nb(resultado.resultado.bruto),
-            resultado_liquido: nb(resultado.resultado.liquido),
-            margem_percentual: nb(resultado.resultado.margem_pct)
-          }).eq("id", bill.id);
           console.log(`[OS-Billing] Auto-recalculated billing #${bill.id} for OS ${data.osNumber} (fields changed: ${billingRelevantFields.filter((f) => parsed.data[f] !== void 0).join(", ")})`);
         }
       } catch (recalcErr) {
         console.error(`[OS-Billing] Auto-recalc failed for OS ${data.osNumber}:`, recalcErr.message);
+        return res.status(500).json({
+          message: "OS atualizada, mas o billing n\xE3o p\xF4de ser recalculado.",
+          serviceOrderId: data.id
+        });
       }
     }
     const wasNotFinished = existing && !["conclu\xEDda", "concluida"].includes(existing.status || "");
@@ -27555,91 +28198,34 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     try {
       const billingRelevantChanged = parsed.data.missionStartedAt !== void 0 || parsed.data.completedDate !== void 0 || parsed.data.status !== void 0 && (parsed.data.status === "conclu\xEDda" || parsed.data.status === "concluida");
       if (billingRelevantChanged && data.type === "escolta") {
-        const { data: existingBilling } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", data.id).limit(1);
-        const FROZEN = ["APROVADA", "FATURADO", "PAGO"];
-        if (existingBilling?.[0] && !FROZEN.includes(existingBilling[0].status)) {
-          const phs = await storage.getMissionPhotosByOS(data.id);
-          const kmSP = [...phs].reverse().find((p) => p.step === "km_saida");
-          const kmCP = [...phs].reverse().find((p) => p.step === "km_chegada");
-          const kmFP = [...phs].reverse().find((p) => p.step === "km_final");
-          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
-          const kmF = kmFP?.kmValue || 0;
-          const toBRT2 = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const sTime = data.scheduledDate ? toBRT2(new Date(data.scheduledDate)) : void 0;
-          const stepLogsArr = data.stepLogs || [];
-          const inicioEntry = [...stepLogsArr].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && (l.timestamp || l.completedAt));
-          const stTime = data.missionStartedAt ? toBRT2(new Date(data.missionStartedAt)) : inicioEntry ? toBRT2(new Date(inicioEntry.timestamp || inicioEntry.completedAt)) : void 0;
-          const cdValid = data.completedDate && new Date(data.completedDate).getFullYear() > 2e3;
-          const eTime = cdValid ? toBRT2(new Date(data.completedDate)) : void 0;
-          let contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-          if (data.escortContractId) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", data.escortContractId).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (data.clientId) {
-            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", data.clientId).eq("status", "Ativo").limit(1);
-            if (cc2?.length) contrato = cc2[0];
-          }
-          const kmFN = kmF > kmI ? kmF : kmI;
-          const mcList = await storage.getMissionCostsByOS(data.id);
-          const _splitP = splitMissionCostsForBilling(mcList);
-          let dp = _splitP.despesas_pedagio;
-          const dc = _splitP.despesas_combustivel;
-          const douts = _splitP.despesas_outras;
-          const ro = _splitP.receitas_os;
-          const pedEst = Number(data.pedagioEstimado) || 0;
-          if (pedEst > 0 && dp === 0) dp = pedEst;
-          const resultado = calcularEscolta({
-            contrato,
-            km_inicial: kmI,
-            km_final: kmFN,
-            km_vazio: 0,
-            horas_missao: 0,
-            horas_estadia: 0,
-            teve_pernoite: false,
-            horario_agendado: sTime,
-            horario_inicio: stTime,
-            horario_fim: eTime,
-            inicio_ts: data.missionStartedAt ? new Date(data.missionStartedAt).toISOString() : null,
-            fim_ts: data.completedDate ? new Date(data.completedDate).toISOString() : null,
-            scheduled_date: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
-            despesas_pedagio: dp,
-            despesas_combustivel: dc,
-            despesas_outras: douts,
-            receitas_os: ro
+        const { data: existingBilling, error: existingBillingError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", data.id).limit(1);
+        if (existingBillingError) throw existingBillingError;
+        const billingProtected = existingBilling?.[0] ? await isBillingProtected(supabaseAdmin, existingBilling[0]) : false;
+        if (existingBilling?.[0] && !billingProtected) {
+          const payload = await buildOfficialBillingPayloadForServiceOrder(data, req.user.name);
+          await writeEscortBillingAtomic({
+            action: "WRITE_OFFICIAL",
+            billingId: existingBilling[0].id,
+            serviceOrderId: data.id,
+            expectedVersion: Number(existingBilling[0].lock_version) || 0,
+            payload,
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Recalcular ap\xF3s conclus\xE3o/hor\xE1rios",
+              ipAddress: req.ip
+            }
           });
-          const n2 = (v) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").update({
-            km_inicial: n2(kmI),
-            km_final: n2(kmFN),
-            km_total: n2(resultado.km_total),
-            km_carregado: n2(resultado.km_carregado),
-            km_faturado: n2(resultado.km_faturado),
-            km_franquia: n2(resultado.km_franquia),
-            km_excedente: n2(resultado.km_excedente),
-            horario_inicio: stTime || null,
-            horario_fim: eTime || null,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: n2(resultado.horas_trabalhadas),
-            horas_trabalhadas: n2(resultado.horas_trabalhadas),
-            fat_acionamento: n2(resultado.fat_acionamento),
-            fat_hora_extra: n2(resultado.fat_hora_extra),
-            fat_km: n2(resultado.fat_km),
-            fat_km_carregado: n2(resultado.faturamento.km_carregado),
-            fat_km_vazio: n2(resultado.faturamento.km_vazio),
-            fat_estadia: n2(resultado.fat_estadia),
-            fat_pernoite: n2(resultado.fat_pernoite),
-            fat_adicional_noturno: n2(resultado.fat_adicional_noturno),
-            fat_total: n2(resultado.fat_total),
-            receitas_os: n2(resultado.receitas_os),
-            despesas_pedagio: n2(dp),
-            despesas_combustivel: n2(dc),
-            despesas_outras: n2(douts)
-          }).eq("id", existingBilling[0].id);
-          console.log(`[so-patch-recalc] OS ${data.osNumber}: km=${kmI}->${kmFN}, h=${stTime}->${eTime}, fat=${resultado.fat_total}`);
+          console.log(`[so-patch-recalc] OS ${data.osNumber}: fat=${payload.fat_total}`);
         }
       }
     } catch (recalcErr) {
       console.error(`[so-patch-recalc] Erro ao recalcular boletim:`, recalcErr.message);
+      return res.status(500).json({
+        message: "OS atualizada, mas o billing n\xE3o p\xF4de ser recalculado.",
+        serviceOrderId: data.id
+      });
     }
     res.json(data);
   });
@@ -27647,13 +28233,35 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
     const osId2 = Number(req.params.id);
     try {
       const existing = await storage.getServiceOrder(osId2);
+      const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", osId2).limit(1);
+      if (existingBillError) throw existingBillError;
+      const billing = existingBill?.[0];
+      if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Exclus\xE3o bloqueada: billing congelado ou presente em snapshot comercial."
+        });
+      }
       if (existing?.kitId) {
         await storage.updateWeaponKit(existing.kitId, { status: "dispon\xEDvel" });
       }
       if (existing?.vehicleId) {
         await storage.updateVehicle(existing.vehicleId, { status: "dispon\xEDvel" });
       }
-      await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", osId2);
+      if (billing) {
+        await writeEscortBillingAtomic({
+          action: "DELETE_OPEN",
+          billingId: billing.id,
+          serviceOrderId: osId2,
+          expectedVersion: Number(billing.lock_version) || 0,
+          actor: {
+            userId: req.user.id,
+            userName: req.user.name,
+            userRole: req.user.role,
+            reason: "Exclus\xE3o expl\xEDcita de OS",
+            ipAddress: req.ip
+          }
+        });
+      }
       await supabaseAdmin.from("mission_updates").delete().eq("service_order_id", osId2);
       await supabaseAdmin.from("mission_photos").delete().eq("service_order_id", osId2);
       await supabaseAdmin.from("weapon_movements").delete().eq("service_order_id", osId2);
@@ -29350,9 +29958,9 @@ Ao aceitar, voc\xEA declara ci\xEAncia de:
         }
       }
       try {
-        const kmSaidaPhoto2 = photos.find((p) => p.step === "km_saida");
+        const kmSaidaPhoto2 = [...photos].reverse().find((p) => p.step === "km_saida");
         const kmChegadaPhoto2 = [...photos].reverse().find((p) => p.step === "km_chegada");
-        const kmFinalPhoto2 = photos.find((p) => p.step === "km_final");
+        const kmFinalPhoto2 = [...photos].reverse().find((p) => p.step === "km_final");
         const kmInicial = kmChegadaPhoto2?.kmValue || 0;
         let kmFinal = kmFinalPhoto2?.kmValue || 0;
         if (kmFinal <= kmInicial) kmFinal = kmInicial;
@@ -31750,6 +32358,9 @@ init_auth();
 init_truckscontrol();
 init_helpers();
 init_billing_calc();
+init_cancelada_billing();
+init_recusada_guard();
+init_atomic_billing();
 init_audit();
 import { randomUUID as randomUUID2 } from "crypto";
 var INSPECTION_STEPS = {
@@ -33289,6 +33900,14 @@ function registerMissionRoutes(app2) {
       const previousStep = MISSION_STEPS[currentIdx - 1];
       const updates = { missionStatus: previousStep };
       if (so.missionStatus === "encerrada") {
+        const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+        if (existingBillError) throw existingBillError;
+        const billing = existingBill?.[0];
+        if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+          return res.status(409).json({
+            message: "Rollback bloqueado: billing congelado ou presente em snapshot comercial."
+          });
+        }
         updates.status = "em_andamento";
         updates.completedDate = null;
         if (so.kitId) {
@@ -33297,9 +33916,20 @@ function registerMissionRoutes(app2) {
           } catch (_e) {
           }
         }
-        try {
-          await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
-        } catch (_e) {
+        if (billing) {
+          await writeEscortBillingAtomic({
+            action: "DELETE_OPEN",
+            billingId: billing.id,
+            serviceOrderId,
+            expectedVersion: Number(billing.lock_version) || 0,
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Rollback de etapa encerrada",
+              ipAddress: req.ip
+            }
+          });
         }
         try {
           await removeAutoTransaction("service_order", String(serviceOrderId));
@@ -33364,20 +33994,17 @@ function registerMissionRoutes(app2) {
       } catch (_e) {
         console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId);
       }
-      try {
+      if (so.type !== "escolta") {
         await removeAutoTransaction("service_order", String(serviceOrderId));
-        console.log(`[OS-Financial] Removed auto-transaction for cancelled OS ${so.osNumber}`);
-      } catch (_e) {
       }
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       if (so.type === "escolta") {
         try {
-          const { data: existingBill } = await supabaseAdmin.from("escort_billings").select("id, status").eq("service_order_id", serviceOrderId).limit(1);
-          const FROZEN = ["APROVADA", "FATURADO", "FATURADA", "PAGO"];
-          const billStatus = existingBill?.[0]?.status;
-          if (billStatus && FROZEN.includes(billStatus)) {
-            await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO" }).eq("service_order_id", serviceOrderId);
-            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: billing CONGELADO (${billStatus}) \u2014 s\xF3 marcou CANCELADO, valores preservados`);
+          const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+          if (existingBillError) throw existingBillError;
+          const existingBilling = existingBill?.[0];
+          if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: billing protegido (${existingBilling.status}) preservado integralmente`);
             res.json(updated);
             return;
           }
@@ -33391,6 +34018,8 @@ function registerMissionRoutes(app2) {
             stepLogs: existingLogs
           });
           if (cb) {
+            await removeAutoTransaction("service_order", String(serviceOrderId));
+            console.log(`[OS-Financial] Removed auto-transaction for cancelled OS ${so.osNumber}`);
             const client = so.clientId ? await storage.getClient(so.clientId) : null;
             const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
             const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
@@ -33410,14 +34039,24 @@ function registerMissionRoutes(app2) {
               placa_viatura: vehicle?.plate || null,
               data_missao: so.scheduledDate || so.missionStartedAt || (/* @__PURE__ */ new Date()).toISOString(),
               created_by: user.name,
-              observacoes: `OS CANCELADA \u2014 Tabela 100 km${cb.usouTabela100 ? "" : " (fallback: contrato da OS)"} | Motivo: ${reason || "Cancelada pelo administrador"}`
+              observacoes: `OS CANCELADA \u2014 contrato vinculado \xE0 OS | Motivo: ${reason || "Cancelada pelo administrador"}`
             };
-            await supabaseAdmin.from("escort_billings").upsert(cancelPayload, { onConflict: "service_order_id" });
+            await writeEscortBillingAtomic({
+              action: "WRITE_CANCELLED",
+              billingId: existingBilling?.id || null,
+              serviceOrderId,
+              expectedVersion: existingBilling ? Number(existingBilling.lock_version) || 0 : null,
+              payload: cancelPayload,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: reason || "Cancelada pelo administrador",
+                ipAddress: req.ip
+              }
+            });
             const cancelTotal = Number(cb.fatFields.fat_total) || 0;
-            try {
-              await storage.updateServiceOrder(serviceOrderId, { valorEstimado: cancelTotal, fat_calculado: cancelTotal });
-            } catch (_e) {
-            }
+            await storage.updateServiceOrder(serviceOrderId, { valorEstimado: cancelTotal, fat_calculado: cancelTotal });
             if (cancelTotal > 0) {
               await createAutoTransaction2({
                 description: `CANCELAMENTO OS ${so.osNumber} - ${client?.name || "--"} ${vehicle?.plate || ""}`.toUpperCase().trim(),
@@ -33433,10 +34072,15 @@ function registerMissionRoutes(app2) {
             }
             console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: Tabela 100km (${cb.contrato.name || cb.contrato.id}) \u2014 Total R$ ${cancelTotal.toFixed(2)} (acion=${cb.fatFields.fat_acionamento}, HE=${cb.fatFields.fat_hora_extra}, KM=${cb.fatFields.fat_km})`);
           } else {
-            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: cliente sem tabela de 100km nem contrato vinculado \u2014 nenhum faturamento gerado`);
+            throw new Error("Cancelada sem tabela 100 km ou contrato utiliz\xE1vel; billing preservado");
           }
         } catch (billingErr) {
           console.error(`[OS-Cancel-Billing] Erro ao gerar billing de cancelamento para OS ${so.osNumber}:`, billingErr.message);
+          return res.status(500).json({
+            message: "OS cancelada, mas o billing oficial n\xE3o p\xF4de ser consolidado.",
+            detail: billingErr.message,
+            serviceOrderId
+          });
         }
       }
       res.json(updated);
@@ -33498,9 +34142,57 @@ function registerMissionRoutes(app2) {
         await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId);
       } catch (_e) {
       }
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       try {
-        await supabaseAdmin.from("escort_billings").update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 }).eq("service_order_id", serviceOrderId).in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
-      } catch (_e) {
+        const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+        if (existingBillError) throw existingBillError;
+        const billing = existingBill?.[0];
+        if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+          console.log(`[mission-refuse] OS ${so.osNumber}: billing protegido (${billing.status}) preservado`);
+        } else if (billing) {
+          if (!so.escortContractId) {
+            await writeEscortBillingAtomic({
+              action: "DELETE_OPEN",
+              billingId: billing.id,
+              serviceOrderId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: "Recusada sem contrato oficial",
+                ipAddress: req.ip
+              }
+            });
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_REFUSED",
+              billingId: billing.id,
+              serviceOrderId,
+              expectedVersion: Number(billing.lock_version) || 0,
+              payload: {
+                service_order_id: serviceOrderId,
+                contract_id: so.escortContractId,
+                km_inicial: 0,
+                km_final: 0,
+                ...buildRecusadaZeroPayload(motivo)
+              },
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                reason: motivo,
+                ipAddress: req.ip
+              }
+            });
+          }
+        }
+      } catch (billingErr) {
+        console.error(`[mission-refuse] OS ${so.osNumber}:`, billingErr.message);
+        return res.status(500).json({
+          message: "Recusa n\xE3o conclu\xEDda: falha ao proteger/zerar billing.",
+          detail: billingErr.message
+        });
       }
       try {
         const { data: existingCosts } = await supabaseAdmin.from("mission_costs").select("id").eq("service_order_id", serviceOrderId);
@@ -33539,7 +34231,6 @@ function registerMissionRoutes(app2) {
         }
       } catch (_e) {
       }
-      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       console.log(`[OS-Refuse] OS ${so.osNumber} recusada por ${adminName} \u2014 motivo: ${motivo}`);
       res.json(updated);
     } catch (err) {
@@ -33803,125 +34494,79 @@ function registerMissionRoutes(app2) {
     if (nextStep === "encerrada") {
       try {
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
-        const kmSaidaPhoto = photos.find((p) => p.step === "km_saida");
-        const kmChegadaPhoto = [...photos].reverse().find((p) => p.step === "km_chegada");
-        const kmFinalPhoto = photos.find((p) => p.step === "km_final");
-        const kmInicial = kmChegadaPhoto?.kmValue || 0;
-        const kmFinal = kmFinalPhoto?.kmValue || 0;
-        const toBRTe = (d) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-        const scheduledTime = so.scheduledDate ? toBRTe(new Date(so.scheduledDate)) : void 0;
-        const encStepLogs = so.stepLogs || [];
-        const inicioMissaoLog = [...encStepLogs].reverse().find((l) => (l.step === "iniciar_missao" || l.step === "em_transito_destino") && l.timestamp);
-        const inicioMissaoTime = inicioMissaoLog ? toBRTe(new Date(inicioMissaoLog.timestamp)) : void 0;
-        const startTime = inicioMissaoTime || (so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt)) : void 0);
-        const completedDateVal = updated.completedDate || so.completedDate;
-        const endTime = completedDateVal ? toBRTe(new Date(completedDateVal)) : void 0;
-        let contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
-        if (so.escortContractId) {
-          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
-          if (cc?.length) contrato = cc[0];
-        } else if (so.clientId) {
-          const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).limit(1);
-          if (clientContracts?.length) contrato = clientContracts[0];
+        const completedDateVal = updated?.completedDate || so.completedDate;
+        if (!so.escortContractId) {
+          throw new Error("OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria.");
+        }
+        const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).single();
+        if (contractError || !contrato) {
+          throw contractError || new Error("Contrato vinculado \xE0 OS n\xE3o encontrado.");
         }
         {
           const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-          const _splitM = splitMissionCostsForBilling(osMissionCosts);
-          let despPedagio = _splitM.despesas_pedagio;
-          const despCombustivel = _splitM.despesas_combustivel;
-          const despOutras = _splitM.despesas_outras;
-          const receitasOsEnc = _splitM.receitas_os;
-          const pedagioEstimado = Number(so.pedagioEstimado) || 0;
-          if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
-          const kmRotaEnc = extractKmFromText(so.destination) || extractKmFromText(so.route) || void 0;
-          const resultado = calcularEscolta({
-            km_inicial: kmInicial,
-            km_final: kmFinal > kmInicial ? kmFinal : kmInicial,
-            km_vazio: 0,
-            horas_missao: 0,
-            horas_estadia: 0,
-            teve_pernoite: false,
-            horario_inicio: startTime,
-            horario_fim: endTime,
-            horario_agendado: scheduledTime,
-            inicio_ts: so.missionStartedAt ? new Date(so.missionStartedAt).toISOString() : null,
-            fim_ts: completedDateVal ? new Date(completedDateVal).toISOString() : null,
-            scheduled_date: so.scheduledDate ? new Date(so.scheduledDate).toISOString() : null,
-            despesas_pedagio: despPedagio,
-            despesas_combustivel: despCombustivel,
-            despesas_outras: despOutras,
-            receitas_os: receitasOsEnc,
-            contrato,
-            kmRota: kmRotaEnc
-          });
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp2 = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
           const emp22 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
-          const nb = (v) => Number(v) || 0;
-          const billingPayload = {
-            service_order_id: serviceOrderId,
-            client_id: so.clientId,
-            client_name: client?.name || "\u2014",
-            contract_id: contrato.id || null,
-            km_inicial: nb(kmInicial),
-            km_final: nb(kmFinal > kmInicial ? kmFinal : kmInicial),
-            km_vazio: 0,
-            km_carregado: nb(resultado.km_carregado),
-            km_total: nb(resultado.km_total),
-            km_faturado: nb(resultado.km_faturado),
-            km_franquia: nb(resultado.km_franquia),
-            km_excedente: nb(resultado.km_excedente),
-            horario_agendado: scheduledTime || null,
-            horario_inicio: startTime || null,
-            horario_fim: endTime || null,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: nb(resultado.horas_trabalhadas),
-            horas_trabalhadas: nb(resultado.horas_trabalhadas),
-            horas_estadia: 0,
-            teve_pernoite: false,
-            is_noturno: resultado.is_noturno,
-            fat_acionamento: nb(resultado.fat_acionamento),
-            fat_hora_extra: nb(resultado.fat_hora_extra),
-            fat_km: nb(resultado.fat_km),
-            fat_km_carregado: nb(resultado.faturamento.km_carregado),
-            fat_km_vazio: nb(resultado.faturamento.km_vazio),
-            fat_estadia: nb(resultado.fat_estadia),
-            fat_pernoite: nb(resultado.fat_pernoite),
-            fat_diaria: nb(resultado.fat_pernoite),
-            fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
-            fat_total: nb(resultado.fat_total),
-            receitas_os: nb(receitasOsEnc),
-            valor_franquia: nb(resultado.valor_franquia),
-            valor_km_extra: nb(resultado.valor_km_extra),
-            pag_vrp: nb(resultado.pag_vrp),
-            pag_periculosidade: nb(resultado.pag_periculosidade),
-            pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
-            pag_reembolsos: nb(resultado.pag_reembolsos),
-            pag_total: nb(resultado.pag_total),
-            despesas_pedagio: nb(despPedagio),
-            despesas_combustivel: nb(despCombustivel),
-            despesas_outras: nb(despOutras),
-            resultado_bruto: nb(resultado.resultado.bruto),
-            resultado_liquido: nb(resultado.resultado.liquido),
-            margem_percentual: nb(resultado.resultado.margem_pct),
-            vigilante_id: so.assignedEmployeeId,
-            vigilante_name: emp2?.name || user.name,
-            vigilante2_id: so.assignedEmployee2Id || null,
-            vigilante2_name: emp22?.name || null,
-            origem: so.origin || null,
-            destino: so.destination || null,
-            placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
-            placa_escoltado: so.escortedVehiclePlate || null,
-            motorista_escoltado: so.escortedDriverName || null,
-            data_missao: so.scheduledDate || so.missionStartedAt || (/* @__PURE__ */ new Date()).toISOString(),
-            status: "A_VERIFICAR",
-            created_by: user.name
-          };
-          await supabaseAdmin.from("escort_billings").upsert(billingPayload, { onConflict: "service_order_id" });
-          console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const billingPayload = computeBillingPayloadForOs({
+            so: {
+              id: serviceOrderId,
+              os_number: so.osNumber,
+              status: so.status,
+              client_id: so.clientId,
+              escort_contract_id: so.escortContractId,
+              assigned_employee_id: so.assignedEmployeeId,
+              assigned_employee_2_id: so.assignedEmployee2Id,
+              vehicle_id: so.vehicleId,
+              origin: so.origin,
+              destination: so.destination,
+              escorted_vehicle_plate: so.escortedVehiclePlate,
+              escorted_driver_name: so.escortedDriverName,
+              scheduled_date: so.scheduledDate,
+              mission_started_at: so.missionStartedAt,
+              completed_date: completedDateVal
+            },
+            contrato,
+            photos: photos.map((photo) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value
+            })),
+            mCosts: osMissionCosts,
+            horasMissao: 0,
+            clientName: client?.name || "\u2014",
+            empName: emp2?.name || user.name,
+            emp2Name: emp22?.name || null,
+            vehPlate: vehicle?.plate || null
+          });
+          const { data: currentBillings, error: currentBillingsError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", serviceOrderId).limit(1);
+          if (currentBillingsError) throw currentBillingsError;
+          const currentBilling = currentBillings?.[0];
+          if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
+            console.log(`[auto-billing] OS ${so.osNumber}: billing protegido (${currentBilling.status}) preservado`);
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_OFFICIAL",
+              billingId: currentBilling?.id || null,
+              serviceOrderId,
+              expectedVersion: currentBilling ? Number(currentBilling.lock_version) || 0 : null,
+              payload: billingPayload,
+              actor: {
+                userId: user.id,
+                userName: user.name,
+                userRole: user.role,
+                ipAddress: req.ip
+              }
+            });
+            console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${billingPayload.km_inicial} km_fin=${billingPayload.km_final} fat_total=${billingPayload.fat_total}`);
+          }
         }
       } catch (billingErr) {
-        console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
+        console.error("Auto-billing creation failed:", billingErr.message);
+        return res.status(500).json({
+          message: "Miss\xE3o avan\xE7ada, mas o billing oficial n\xE3o p\xF4de ser consolidado.",
+          detail: billingErr.message,
+          serviceOrderId
+        });
       }
       if (so.type === "escolta") {
         try {
@@ -34159,7 +34804,7 @@ function registerMissionRoutes(app2) {
           missing
         });
       }
-      const kmFinalPhoto = photos.find((p) => p.step === "km_final");
+      const kmFinalPhoto = [...photos].reverse().find((p) => p.step === "km_final");
       if (!kmFinalPhoto || !kmFinalPhoto.kmValue || Number(kmFinalPhoto.kmValue) <= 0) {
         return res.status(400).json({ message: "KM Final obrigat\xF3rio (informe a quilometragem do hod\xF4metro)" });
       }
@@ -34382,8 +35027,55 @@ function registerMissionRoutes(app2) {
         custos_congelados_por: `recusada_por_${emp.name}`
       }).eq("id", osId2);
       try {
-        await supabaseAdmin.from("escort_billings").update({ status: "CANCELADA" }).eq("service_order_id", osId2).in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
-      } catch (_e) {
+        const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", osId2).limit(1);
+        if (existingBillError) throw existingBillError;
+        const billing = existingBill?.[0];
+        if (billing && await isBillingProtected(supabaseAdmin, billing)) {
+          console.log(`[acceptance-refuse] OS ${osId2}: billing protegido (${billing.status}) preservado`);
+        } else if (billing) {
+          if (!osCheck.escortContractId) {
+            await writeEscortBillingAtomic({
+              action: "DELETE_OPEN",
+              billingId: billing.id,
+              serviceOrderId: osId2,
+              expectedVersion: Number(billing.lock_version) || 0,
+              actor: {
+                userId,
+                userName: emp.name,
+                userRole: req.user.role,
+                reason: "Recusada sem contrato oficial",
+                ipAddress
+              }
+            });
+          } else {
+            await writeEscortBillingAtomic({
+              action: "WRITE_REFUSED",
+              billingId: billing.id,
+              serviceOrderId: osId2,
+              expectedVersion: Number(billing.lock_version) || 0,
+              payload: {
+                service_order_id: osId2,
+                contract_id: osCheck.escortContractId,
+                km_inicial: 0,
+                km_final: 0,
+                ...buildRecusadaZeroPayload(notes)
+              },
+              actor: {
+                userId,
+                userName: emp.name,
+                userRole: req.user.role,
+                reason: notes,
+                ipAddress
+              }
+            });
+          }
+        }
+      } catch (billingErr) {
+        console.error(`[acceptance-refuse] OS ${osId2}:`, billingErr.message);
+        return res.status(500).json({
+          message: "Recusa n\xE3o conclu\xEDda: falha ao proteger/zerar billing.",
+          detail: billingErr.message
+        });
       }
       try {
         const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions").select("id, asaas_payment_id").eq("origin_type", "service_order").eq("origin_id", String(osId2)).not("asaas_payment_id", "is", null);
@@ -34693,7 +35385,6 @@ init_storage();
 init_supabase();
 init_auth();
 init_audit();
-import { randomBytes } from "crypto";
 init_apibrasil();
 init_helpers();
 import OpenAI5 from "openai";
@@ -35052,15 +35743,28 @@ function matchEmployeeFromHolerite(parsed, employees2) {
   }
   return null;
 }
+function isUsableOpenAIKey(key) {
+  const k = String(key || "").trim();
+  if (!k) return false;
+  if (k.startsWith("_DUMMY_")) return false;
+  if (/^(dummy|changeme|your[-_]?key|xxx+)$/i.test(k)) return false;
+  return true;
+}
+function sanitizeOpenAIBaseURL(url) {
+  const u = String(url || "").trim();
+  if (!u) return void 0;
+  if (/localhost:1106|127\.0\.0\.1:1106|modelfarm|replit/i.test(u)) return void 0;
+  return u;
+}
 function resolveOpenAIConfig() {
   const integrationsKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  const integrationsBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const integrationsBase = sanitizeOpenAIBaseURL(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL);
   const legacyKey = process.env.OPENAI_API_KEY;
-  if (integrationsKey) {
-    return { apiKey: integrationsKey, baseURL: integrationsBase || void 0 };
+  if (isUsableOpenAIKey(integrationsKey)) {
+    return { apiKey: integrationsKey.trim(), baseURL: integrationsBase };
   }
-  if (legacyKey) {
-    return { apiKey: legacyKey, baseURL: void 0 };
+  if (isUsableOpenAIKey(legacyKey)) {
+    return { apiKey: legacyKey.trim(), baseURL: void 0 };
   }
   return null;
 }
@@ -35466,9 +36170,13 @@ function registerHRRoutes(app2) {
       if (!employeeId || !month || !year) return res.status(400).json({ message: "employeeId, month, year required" });
       const emp = (await storage.getEmployees()).find((e) => e.id === employeeId);
       if (!emp) return res.status(404).json({ message: "Funcion\xE1rio n\xE3o encontrado" });
-      const CCT = { salarioBase: 2432.5, periculosidadePct: 30 };
-      const salarioBase = CCT.salarioBase;
-      const periculosidade = +(salarioBase * (CCT.periculosidadePct / 100)).toFixed(2);
+      const { getCctConfigByCargo: getCctConfigByCargo2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+      const CCT = await getCctConfigByCargo2(emp.role);
+      const { data: salRows } = await supabaseAdmin.from("employee_salaries").select("base_salary, periculosidade_pct").eq("employee_id", employeeId).order("id", { ascending: false }).limit(1);
+      const sal = salRows?.[0];
+      const salarioBase = Number(sal?.base_salary) || Number(CCT.salarioBase) || 0;
+      const pericPct = Number(sal?.periculosidade_pct ?? CCT.periculosidadePct) || 0;
+      const periculosidade = +(salarioBase * (pericPct / 100)).toFixed(2);
       const { payrollPeriodRange: _pr1 } = await Promise.resolve().then(() => (init_holidays(), holidays_exports));
       const _p1 = _pr1(year, month);
       const _p1Start = (/* @__PURE__ */ new Date(`${_p1.from}T00:00:00-03:00`)).getTime();
@@ -36021,18 +36729,11 @@ ${pdfText}` : [
   app2.get("/api/users", requireAuth, requireAdminRole, async (req, res) => {
     const allUsers = await storage.getUsers();
     const filtered = req.user.role === "diretoria" ? allUsers : allUsers.filter((u) => u.role !== "diretoria");
-    const safeUsers = filtered.map((u) => {
-      const safe = toSafeUser(u);
-      if (req.user.role !== "diretoria") {
-        delete safe.plainPassword;
-      }
-      return safe;
-    });
-    res.json(safeUsers);
+    res.json(filtered.map((u) => toSafeUser(u)));
   });
   app2.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
-    console.log(`[users] POST /api/users payload:`, JSON.stringify(req.body, null, 2));
     const { email, name, role, employeeId } = req.body;
+    console.log(`[users] POST /api/users op=create role=${role || "funcionario"} hasEmail=${!!email} hasName=${!!name}`);
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigat\xF3rios: email, name" });
     }
@@ -36042,7 +36743,7 @@ ${pdfText}` : [
     const normalizedEmail = email.toLowerCase().trim();
     const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "E-mail j\xE1 cadastrado" });
-    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+    const tempPassword = generateTempPassword();
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
       password: tempPassword,
@@ -36059,15 +36760,19 @@ ${pdfText}` : [
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
-        mustChangePassword: 1,
-        plainPassword: tempPassword
+        mustChangePassword: 1
       });
     } catch (dbErr) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {
       });
       return res.status(500).json({ message: "Erro ao criar usu\xE1rio local: " + dbErr.message });
     }
-    res.status(201).json({ ...toSafeUser(user), tempPassword });
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha n\xE3o ser\xE1 exibida novamente."
+    });
   });
   app2.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
@@ -36100,14 +36805,21 @@ ${pdfText}` : [
     if (user.role === "diretoria" && req.user.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permiss\xE3o para resetar senha de Diretoria" });
     }
-    const newPassword = "torres@123";
+    const newPassword = generateTempPassword();
+    console.log(`[users] PATCH reset-password userId=${id} actorId=${req.user.id}`);
     const { error } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseUid, {
       password: newPassword
     });
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
-    await storage.updateUser(id, { mustChangePassword: 1, plainPassword: newPassword });
+    await storage.updateUser(id, { mustChangePassword: 1 });
     invalidateAuthCacheByUser(user.supabaseUid);
-    res.json({ ...toSafeUser(user), newPassword, mustChangePassword: true });
+    res.json({
+      user: toSafeUser(user),
+      newPassword,
+      mustChangePassword: true,
+      oneShot: true,
+      message: "Copie agora. Esta senha n\xE3o ser\xE1 exibida novamente."
+    });
   });
   app2.get("/api/users/by-employee/:employeeId", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.employeeId);
@@ -36135,7 +36847,7 @@ ${pdfText}` : [
     res.json({ message: "Usu\xE1rio exclu\xEDdo" });
   });
   app2.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
-    const { email, username, name, role, employeeId, password: reqPassword } = req.body;
+    const { email, username, name, role, employeeId } = req.body;
     const emailToUse = email || username;
     if (!emailToUse || !name) {
       return res.status(400).json({ message: "Campos obrigat\xF3rios: email, name" });
@@ -36146,7 +36858,7 @@ ${pdfText}` : [
     const normalizedEmail = emailToUse.toLowerCase().trim();
     const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "Usu\xE1rio j\xE1 existe" });
-    const tempPassword = reqPassword || "torres@123";
+    const tempPassword = generateTempPassword();
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
       password: tempPassword,
@@ -36163,15 +36875,19 @@ ${pdfText}` : [
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
-        mustChangePassword: 1,
-        plainPassword: tempPassword
+        mustChangePassword: 1
       });
     } catch (dbErr) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {
       });
       return res.status(500).json({ message: "Erro ao criar usu\xE1rio local: " + dbErr.message });
     }
-    res.status(201).json({ ...toSafeUser(user), tempPassword });
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha n\xE3o ser\xE1 exibida novamente."
+    });
   });
   app2.post("/api/auth/register-by-cpf", requireAuth, requireAdminRole, async (req, res) => {
     const { cpf, name, employeeId } = req.body;
@@ -36185,10 +36901,10 @@ ${pdfText}` : [
     const syntheticEmail = `cpf_${cleanCpf}@torresseguranca.local`;
     const existing = await storage.getUserByEmail(syntheticEmail);
     if (existing) return res.status(409).json({ message: "J\xE1 existe um acesso para este CPF" });
-    const defaultPassword = "torres@123";
+    const tempPassword = generateTempPassword();
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: syntheticEmail,
-      password: defaultPassword,
+      password: tempPassword,
       email_confirm: true
     });
     if (authError) {
@@ -36202,15 +36918,19 @@ ${pdfText}` : [
         name,
         role: "funcionario",
         employeeId: employeeId || null,
-        mustChangePassword: 1,
-        plainPassword: defaultPassword
+        mustChangePassword: 1
       });
     } catch (dbErr) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {
       });
       return res.status(500).json({ message: "Erro ao criar usu\xE1rio local: " + dbErr.message });
     }
-    res.status(201).json({ ...toSafeUser(user) });
+    res.status(201).json({
+      user: toSafeUser(user),
+      tempPassword,
+      oneShot: true,
+      message: "Copie agora. Esta senha n\xE3o ser\xE1 exibida novamente."
+    });
   });
   app2.get("/api/employee-documents/:employeeId", requireAuth, async (req, res) => {
     const docs = await storage.getEmployeeDocuments(parseInt(req.params.employeeId));
@@ -36490,43 +37210,10 @@ function canCancelAguardando(tx) {
   return { ok: true };
 }
 
-// server/lib/recusada-guard.ts
-async function osIsRecusada(sb, serviceOrderId) {
-  if (serviceOrderId == null || serviceOrderId === "") return false;
-  try {
-    const { data } = await sb.from("service_orders").select("status").eq("id", serviceOrderId).maybeSingle();
-    return data?.status === "recusada";
-  } catch {
-    return false;
-  }
-}
-function buildRecusadaZeroPayload(motivo, observacaoAtual) {
-  let observacoes = "OS RECUSADA";
-  if (observacaoAtual && observacaoAtual.startsWith("OS RECUSADA")) {
-    observacoes = observacaoAtual;
-  } else if (motivo && motivo.trim()) {
-    observacoes = `OS RECUSADA \u2014 ${motivo.trim()}`;
-  }
-  return {
-    status: "CANCELADO",
-    fat_total: 0,
-    fat_acionamento: 0,
-    fat_hora_extra: 0,
-    fat_km: 0,
-    fat_km_carregado: 0,
-    fat_km_vazio: 0,
-    fat_estadia: 0,
-    fat_pernoite: 0,
-    fat_diaria: 0,
-    fat_adicional_noturno: 0,
-    resultado_bruto: 0,
-    resultado_liquido: 0,
-    margem_percentual: 0,
-    observacoes
-  };
-}
-
 // server/routes/escort.ts
+init_cancelada_billing();
+init_atomic_billing();
+init_recusada_guard();
 var SWR_TTL_3H2 = 3 * 60 * 60 * 1e3;
 function canEditTransactionDocs(user, _existing) {
   return user?.role === "diretoria" || user?.role === "admin";
@@ -37973,44 +38660,10 @@ function registerEscortRoutes(app2) {
     }
   });
   app2.post("/api/escort/billings", requireAdminRole, async (req, res) => {
-    try {
-      const user = req.user;
-      const body = req.body;
-      if (Number(body.km_final) < Number(body.km_inicial)) return res.status(400).json({ message: "KM final n\xE3o pode ser menor que KM inicial" });
-      const km_total = Number(body.km_final) - Number(body.km_inicial);
-      if (km_total > 500 && !body.foto_hodometro_fim) return res.status(400).json({ message: "Foto do hod\xF4metro \xE9 obrigat\xF3ria para diferen\xE7a maior que 500 KM" });
-      let clientId = body.client_id;
-      let clientName = body.client_name;
-      if (!clientId && body.route_id) {
-        const { data: route } = await supabaseAdmin.from("escort_routes").select("client_id, client_name").eq("id", body.route_id).single();
-        if (route?.client_id) {
-          clientId = route.client_id;
-          clientName = clientName || route.client_name;
-        }
-      }
-      const now = /* @__PURE__ */ new Date();
-      const boletimNumero = `BO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
-      const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
-      const safeStatus = VALID_BILLING_STATUSES.includes(body.status) ? body.status : "A_VERIFICAR";
-      let payload = {
-        ...body,
-        client_id: clientId,
-        client_name: clientName,
-        status: safeStatus,
-        created_by: user.name,
-        boletim_numero: boletimNumero,
-        boletim_gerado: true
-      };
-      if (await osIsRecusada(supabaseAdmin, body.service_order_id)) {
-        payload = { ...payload, ...buildRecusadaZeroPayload(null, body.observacoes) };
-      }
-      const r = body.service_order_id ? await supabaseAdmin.from("escort_billings").upsert(payload, { onConflict: "service_order_id" }).select().single() : await supabaseAdmin.from("escort_billings").insert(payload).select().single();
-      if (r.error) throw r.error;
-      bustBalancoCaches();
-      res.json(r.data);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
+    res.status(410).json({
+      code: "BILLING_AVULSO_DISABLED",
+      message: "Billing avulso foi descontinuado. Use o c\xE1lculo oficial vinculado \xE0 OS."
+    });
   });
   app2.get("/api/escort/billings", requireAdminRole, async (req, res) => {
     try {
@@ -38048,32 +38701,44 @@ function registerEscortRoutes(app2) {
   });
   app2.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
     try {
-      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status, service_order_id, observacoes").eq("id", req.params.id).single();
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id, status, service_order_id, contract_id, observacoes, lock_version").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
-      const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
-      const STATUS_ONLY_FIELDS = ["status", "observacoes", "notas"];
-      if (LOCKED_STATUSES.includes(existing.status)) {
-        const updateBody2 = { ...req.body };
-        const attemptedFields = Object.keys(updateBody2);
-        const blockedFields = attemptedFields.filter((f) => !STATUS_ONLY_FIELDS.includes(f));
-        if (blockedFields.length > 0) {
-          return res.status(403).json({
-            message: `Boletim aprovado \u2014 valores de c\xE1lculo est\xE3o travados. Apenas status e observa\xE7\xF5es podem ser alterados.`
-          });
-        }
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 altera\xE7\xE3o gen\xE9rica bloqueada."
+        });
       }
       let updateBody = { ...req.body };
       if (updateBody.status) {
-        const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
-        if (!VALID_BILLING_STATUSES.includes(updateBody.status)) {
-          return res.status(400).json({ message: `Status inv\xE1lido: ${updateBody.status}. Valores aceitos: ${VALID_BILLING_STATUSES.join(", ")}` });
+        return res.status(400).json({
+          message: "Status de billing s\xF3 pode mudar pelos fluxos expl\xEDcitos de ciclo de vida."
+        });
+      }
+      const refused = await osIsRecusada(supabaseAdmin, existing.service_order_id);
+      if (refused) {
+        updateBody = {
+          ...updateBody,
+          service_order_id: existing.service_order_id,
+          contract_id: existing.contract_id,
+          km_inicial: 0,
+          km_final: 0,
+          ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes)
+        };
+      }
+      const data = await writeEscortBillingAtomic({
+        action: refused ? "WRITE_REFUSED" : "UPDATE_OPEN",
+        billingId: existing.id,
+        serviceOrderId: existing.service_order_id,
+        expectedVersion: Number(existing.lock_version) || 0,
+        payload: updateBody,
+        actor: {
+          userId: req.user.id,
+          userName: req.user.name,
+          userRole: req.user.role,
+          reason: "PUT gen\xE9rico de billing",
+          ipAddress: req.ip
         }
-      }
-      if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
-        updateBody = { ...updateBody, ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes) };
-      }
-      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      });
       bustBalancoCaches();
       res.json(data);
     } catch (err) {
@@ -38084,16 +38749,44 @@ function registerEscortRoutes(app2) {
     try {
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 altera\xE7\xE3o gen\xE9rica bloqueada."
+        });
+      }
       let updateBody = { ...req.body };
       delete updateBody.id;
       delete updateBody.created_at;
       delete updateBody.created_by;
+      delete updateBody.status;
+      delete updateBody.service_order_id;
+      delete updateBody.contract_id;
       updateBody.edit_reason = updateBody.edit_reason || `Editado via Boletim por ${req.user.name}`;
-      if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
-        updateBody = { ...updateBody, ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes) };
+      const refused = await osIsRecusada(supabaseAdmin, existing.service_order_id);
+      if (refused) {
+        updateBody = {
+          ...updateBody,
+          service_order_id: existing.service_order_id,
+          contract_id: existing.contract_id,
+          km_inicial: 0,
+          km_final: 0,
+          ...buildRecusadaZeroPayload(null, updateBody.observacoes ?? existing.observacoes)
+        };
       }
-      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      const data = await writeEscortBillingAtomic({
+        action: refused ? "WRITE_REFUSED" : "UPDATE_OPEN",
+        billingId: existing.id,
+        serviceOrderId: existing.service_order_id,
+        expectedVersion: Number(existing.lock_version) || 0,
+        payload: updateBody,
+        actor: {
+          userId: req.user.id,
+          userName: req.user.name,
+          userRole: req.user.role,
+          reason: updateBody.edit_reason,
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       console.log(`[billing-edit] Billing ${req.params.id} editado por ${req.user.name}: km_ini=${updateBody.km_inicial}, km_fin=${updateBody.km_final}, km_total=${updateBody.km_total}, fat_total=${updateBody.fat_total}`);
       res.json(data);
@@ -38103,9 +38796,26 @@ function registerEscortRoutes(app2) {
   });
   app2.delete("/api/escort/billings/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
-      await removeAutoTransaction("escort_billing", req.params.id);
-      const { error } = await supabaseAdmin.from("escort_billings").delete().eq("id", req.params.id);
-      if (error) throw error;
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id, status, service_order_id, lock_version").eq("id", req.params.id).single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 exclus\xE3o bloqueada."
+        });
+      }
+      await writeEscortBillingAtomic({
+        action: "DELETE_OPEN",
+        billingId: existing.id,
+        serviceOrderId: existing.service_order_id,
+        expectedVersion: Number(existing.lock_version) || 0,
+        actor: {
+          userId: req.user.id,
+          userName: req.user.name,
+          userRole: req.user.role,
+          reason: "DELETE expl\xEDcito de billing",
+          ipAddress: req.ip
+        }
+      });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -38115,6 +38825,20 @@ function registerEscortRoutes(app2) {
     try {
       const user = req.user;
       const body = req.body;
+      if (!body.service_order_id) {
+        return res.status(410).json({
+          code: "SUBMIT_OS_REQUIRES_SERVICE_ORDER",
+          message: "submit-os exige service_order_id e fatos oficiais da OS."
+        });
+      }
+      const { data: currentBillings, error: currentBillingsError } = await supabaseAdmin.from("escort_billings").select("id, status, lock_version").eq("service_order_id", body.service_order_id).limit(1);
+      if (currentBillingsError) throw currentBillingsError;
+      const currentBilling = currentBillings?.[0];
+      if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 submiss\xE3o bloqueada."
+        });
+      }
       const kmIni = Number(body.km_inicial || 0);
       const kmFin = Number(body.km_final || 0);
       if (kmFin < kmIni) return res.status(400).json({ message: "KM final n\xE3o pode ser menor que KM inicial" });
@@ -38129,111 +38853,136 @@ function registerEscortRoutes(app2) {
       }
       let contrato = null;
       if (body.contract_id) {
-        const { data } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", body.contract_id).single();
+        const { data, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", body.contract_id).single();
+        if (contractError) throw contractError;
         contrato = data;
       }
       if (!contrato) {
         contrato = { valor_km_carregado: 2.8, valor_km_vazio: 1.4, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
       }
       let so_ts_inicio = null, so_ts_fim = null, so_scheduled = null;
+      let linkedSo = null;
       if (body.service_order_id) {
-        const { data: soRow } = await supabaseAdmin.from("service_orders").select("mission_started_at, completed_date, scheduled_date").eq("id", body.service_order_id).maybeSingle();
+        const { data: soRow, error: soRowError } = await supabaseAdmin.from("service_orders").select("id, os_number, status, client_id, escort_contract_id, assigned_employee_id, assigned_employee_2_id, vehicle_id, origin, destination, escorted_vehicle_plate, escorted_driver_name, mission_started_at, completed_date, scheduled_date, step_logs").eq("id", body.service_order_id).maybeSingle();
+        if (soRowError) throw soRowError;
         if (soRow) {
+          linkedSo = soRow;
           so_ts_inicio = soRow.mission_started_at;
           so_ts_fim = soRow.completed_date;
           so_scheduled = soRow.scheduled_date;
         }
       }
-      const resultado = calcularEscolta({
-        km_inicial: kmIni,
-        km_final: kmFin,
-        km_vazio: Number(body.km_vazio || 0),
-        horas_missao: Number(body.horas_missao || 0),
-        horas_estadia: Number(body.horas_estadia || 0),
-        teve_pernoite: !!body.teve_pernoite,
-        horario_inicio: body.horario_inicio,
-        horario_fim: body.horario_fim,
-        horario_agendado: body.horario_agendado,
-        inicio_ts: body.inicio_ts || so_ts_inicio,
-        fim_ts: body.fim_ts || so_ts_fim,
-        scheduled_date: body.scheduled_date || so_scheduled,
-        despesas_pedagio: Number(body.despesas_pedagio || 0),
-        despesas_combustivel: Number(body.despesas_combustivel || 0),
-        despesas_outras: Number(body.despesas_outras || 0),
-        receitas_os: Number(body.receitas_os || 0),
-        contrato
-      });
-      const nb = (v) => Number(v) || 0;
-      const billingPayload2 = {
-        client_id: clientId,
-        client_name: clientName,
-        contract_id: body.contract_id,
-        route_id: body.route_id,
-        service_order_id: body.service_order_id,
-        km_inicial: nb(kmIni),
-        km_final: nb(kmFin),
-        km_vazio: nb(body.km_vazio),
-        km_carregado: nb(resultado.km_carregado),
-        km_total: nb(resultado.km_total),
-        km_faturado: nb(resultado.km_faturado),
-        km_franquia: nb(resultado.km_franquia),
-        km_excedente: nb(resultado.km_excedente),
-        horario_agendado: body.horario_agendado || null,
-        horario_inicio: body.horario_inicio || null,
-        horario_fim: body.horario_fim || null,
-        horario_inicio_considerado: resultado.horario_inicio_considerado,
-        horas_missao: nb(resultado.horas_trabalhadas),
-        horas_estadia: nb(body.horas_estadia),
-        horas_trabalhadas: nb(resultado.horas_trabalhadas),
-        teve_pernoite: !!body.teve_pernoite,
-        is_noturno: resultado.is_noturno,
-        despesas_pedagio: nb(body.despesas_pedagio),
-        despesas_combustivel: nb(body.despesas_combustivel),
-        despesas_outras: nb(body.despesas_outras),
-        receitas_os: nb(resultado.receitas_os),
-        desp_total: nb(resultado.despesas.total),
-        fat_acionamento: nb(resultado.fat_acionamento),
-        fat_hora_extra: nb(resultado.fat_hora_extra),
-        fat_km: nb(resultado.fat_km),
-        fat_km_carregado: nb(resultado.faturamento.km_carregado),
-        fat_km_vazio: nb(resultado.faturamento.km_vazio),
-        fat_estadia: nb(resultado.fat_estadia),
-        fat_pernoite: nb(resultado.fat_pernoite),
-        fat_diaria: nb(resultado.fat_pernoite),
-        fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
-        fat_total: nb(resultado.fat_total),
-        valor_franquia: nb(resultado.valor_franquia),
-        valor_km_extra: nb(resultado.valor_km_extra),
-        pag_vrp: nb(resultado.pag_vrp),
-        pag_periculosidade: nb(resultado.pag_periculosidade),
-        pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
-        pag_reembolsos: nb(resultado.pag_reembolsos),
-        pag_total: nb(resultado.pag_total),
-        resultado_bruto: nb(resultado.resultado.bruto),
-        resultado_liquido: nb(resultado.resultado.liquido),
-        margem_percentual: nb(resultado.resultado.margem_pct),
-        vigilante_id: body.vigilante_id || user.id,
-        vigilante_name: body.vigilante_name || user.name,
-        origem: body.origem,
-        destino: body.destino,
-        placa_viatura: body.placa_viatura,
-        placa_escoltado: body.placa_escoltado,
-        motorista_escoltado: body.motorista_escoltado,
-        data_missao: body.data_missao || (/* @__PURE__ */ new Date()).toISOString(),
-        observacoes: body.observacoes,
-        notas: body.notas,
-        status: "A_VERIFICAR",
-        created_by: user.name
-      };
-      let finalPayload2 = billingPayload2;
-      if (await osIsRecusada(supabaseAdmin, body.service_order_id)) {
-        finalPayload2 = { ...billingPayload2, ...buildRecusadaZeroPayload(null, body.observacoes) };
-        await supabaseAdmin.from("service_orders").update({ fat_calculado: 0 }).eq("id", body.service_order_id);
+      if (!linkedSo) return res.status(404).json({ message: "OS n\xE3o encontrada" });
+      if (!linkedSo.escort_contract_id) {
+        return res.status(422).json({
+          message: "OS sem escort_contract_id: corre\xE7\xE3o operacional necess\xE1ria."
+        });
       }
-      const r22 = body.service_order_id ? await supabaseAdmin.from("escort_billings").upsert(finalPayload2, { onConflict: "service_order_id" }).select().single() : await supabaseAdmin.from("escort_billings").insert(finalPayload2).select().single();
-      if (r22.error) throw r22.error;
-      bustBalancoCaches();
-      res.json({ ...r22.data, resumo_calculo: resultado });
+      if (linkedSo?.status === "cancelada" || linkedSo?.status === "recusada") {
+        let specialPayload = {
+          client_id: clientId,
+          client_name: clientName,
+          service_order_id: body.service_order_id,
+          data_missao: body.data_missao || linkedSo.scheduled_date || (/* @__PURE__ */ new Date()).toISOString(),
+          created_by: user.name
+        };
+        if (linkedSo.status === "recusada") {
+          specialPayload = {
+            ...specialPayload,
+            contract_id: linkedSo.escort_contract_id,
+            km_inicial: 0,
+            km_final: 0,
+            ...buildRecusadaZeroPayload(null, body.observacoes)
+          };
+        } else {
+          const cancelada = await computeCanceladaBilling({
+            serviceOrderId: body.service_order_id,
+            clientId: linkedSo.client_id,
+            escortContractId: linkedSo.escort_contract_id || body.contract_id,
+            scheduledDate: linkedSo.scheduled_date,
+            missionStartedAt: linkedSo.mission_started_at,
+            completedDate: linkedSo.completed_date,
+            stepLogs: linkedSo.step_logs
+          });
+          if (!cancelada) {
+            return res.status(422).json({
+              message: "Cancelada sem tabela 100 km ou contrato utiliz\xE1vel; billing n\xE3o foi alterado."
+            });
+          }
+          specialPayload = {
+            ...specialPayload,
+            contract_id: cancelada.contrato?.id || linkedSo.escort_contract_id || body.contract_id || null,
+            ...cancelada.fatFields,
+            horario_agendado: cancelada.horarios.horario_agendado,
+            horario_inicio: cancelada.horarios.horario_inicio,
+            horario_fim: cancelada.horarios.horario_fim
+          };
+        }
+        const specialWrite = await writeEscortBillingAtomic({
+          action: linkedSo.status === "recusada" ? "WRITE_REFUSED" : "WRITE_CANCELLED",
+          billingId: currentBilling?.id || null,
+          serviceOrderId: body.service_order_id,
+          expectedVersion: currentBilling ? Number(currentBilling.lock_version) || 0 : null,
+          payload: specialPayload,
+          actor: {
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role,
+            reason: body.observacoes || linkedSo.status,
+            ipAddress: req.ip
+          }
+        });
+        bustBalancoCaches();
+        return res.json({ ...specialWrite, resumo_calculo: null });
+      }
+      if (linkedSo) {
+        const { data: linkedContract, error: linkedContractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", linkedSo.escort_contract_id).single();
+        if (linkedContractError || !linkedContract) {
+          throw linkedContractError || new Error("Contrato vinculado \xE0 OS n\xE3o encontrado.");
+        }
+        contrato = linkedContract;
+        const [photos, missionCosts2] = await Promise.all([
+          storage.getMissionPhotosByOS(body.service_order_id),
+          storage.getMissionCostsByOS(body.service_order_id)
+        ]);
+        const canonicalPayload = computeBillingPayloadForOs({
+          so: linkedSo,
+          contrato,
+          photos: (photos || []).map((photo) => ({
+            step: photo.step,
+            km_value: photo.kmValue ?? photo.km_value
+          })),
+          mCosts: missionCosts2 || [],
+          horasMissao: 0,
+          clientName: clientName || null,
+          empName: body.vigilante_name || null,
+          emp2Name: body.vigilante2_name || null,
+          vehPlate: body.placa_viatura || null
+        });
+        const linkedWrite = await writeEscortBillingAtomic({
+          action: "WRITE_OFFICIAL",
+          billingId: currentBilling?.id || null,
+          serviceOrderId: body.service_order_id,
+          expectedVersion: currentBilling ? Number(currentBilling.lock_version) || 0 : null,
+          payload: {
+            ...canonicalPayload,
+            route_id: body.route_id || null,
+            observacoes: body.observacoes,
+            notas: body.notas,
+            created_by: user.name
+          },
+          actor: {
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role,
+            reason: "submit-os oficial",
+            ipAddress: req.ip
+          }
+        });
+        bustBalancoCaches();
+        return res.json({ ...linkedWrite, resumo_calculo: canonicalPayload });
+      }
+      throw new Error("Estado inesperado no submit-os oficial.");
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
@@ -38247,84 +38996,142 @@ function registerEscortRoutes(app2) {
       let success = 0, errors = 0, skipped = 0;
       for (const id of billing_ids) {
         try {
-          const { data: existing } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
+          const { data: existing, error: existingError } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
+          if (existingError) throw existingError;
           if (!existing) {
             errors++;
             continue;
           }
-          if (["FATURADO", "PAGO"].includes(existing.status)) {
+          if (await isBillingProtected(supabaseAdmin, existing)) {
             skipped++;
             continue;
           }
           if (await osIsRecusada(supabaseAdmin, existing.service_order_id)) {
-            await supabaseAdmin.from("escort_billings").update(buildRecusadaZeroPayload(null, existing.observacoes)).eq("id", id);
+            if (!existing.contract_id) {
+              errors++;
+              continue;
+            }
+            await writeEscortBillingAtomic({
+              action: "WRITE_REFUSED",
+              billingId: existing.id,
+              serviceOrderId: existing.service_order_id,
+              expectedVersion: Number(existing.lock_version) || 0,
+              payload: {
+                service_order_id: existing.service_order_id,
+                contract_id: existing.contract_id,
+                km_inicial: 0,
+                km_final: 0,
+                ...buildRecusadaZeroPayload(null, existing.observacoes)
+              },
+              actor: {
+                userId: req.user.id,
+                userName: req.user.name,
+                userRole: req.user.role,
+                reason: "Rec\xE1lculo em lote recusada",
+                ipAddress: req.ip
+              }
+            });
             await supabaseAdmin.from("service_orders").update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
             success++;
             continue;
           }
-          if (!existing.contract_id) {
+          let lotSo = null;
+          if (existing.service_order_id) {
+            const { data: soRow, error: soRowError } = await supabaseAdmin.from("service_orders").select("id, os_number, status, client_id, escort_contract_id, assigned_employee_id, assigned_employee_2_id, vehicle_id, origin, destination, escorted_vehicle_plate, escorted_driver_name, mission_started_at, completed_date, scheduled_date, step_logs").eq("id", existing.service_order_id).maybeSingle();
+            if (soRowError) throw soRowError;
+            if (soRow) lotSo = soRow;
+          }
+          if (lotSo?.status === "cancelada") {
+            const cancelada = await computeCanceladaBilling({
+              serviceOrderId: existing.service_order_id,
+              clientId: lotSo.client_id,
+              escortContractId: lotSo.escort_contract_id || existing.contract_id,
+              scheduledDate: lotSo.scheduled_date,
+              missionStartedAt: lotSo.mission_started_at,
+              completedDate: lotSo.completed_date,
+              stepLogs: lotSo.step_logs
+            });
+            if (!cancelada) {
+              errors++;
+              continue;
+            }
+            await writeEscortBillingAtomic({
+              action: "WRITE_CANCELLED",
+              billingId: existing.id,
+              serviceOrderId: existing.service_order_id,
+              expectedVersion: Number(existing.lock_version) || 0,
+              payload: {
+                ...cancelada.fatFields,
+                service_order_id: existing.service_order_id,
+                contract_id: lotSo.escort_contract_id,
+                horario_agendado: cancelada.horarios.horario_agendado,
+                horario_inicio: cancelada.horarios.horario_inicio,
+                horario_fim: cancelada.horarios.horario_fim
+              },
+              actor: {
+                userId: req.user.id,
+                userName: req.user.name,
+                userRole: req.user.role,
+                reason: "Rec\xE1lculo em lote cancelada",
+                ipAddress: req.ip
+              }
+            });
+            success++;
+            continue;
+          }
+          if (!lotSo || !["concluida", "conclu\xEDda"].includes(lotSo.status)) {
             errors++;
             continue;
           }
-          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
+          const contractId = lotSo.escort_contract_id;
+          if (!contractId) {
+            errors++;
+            continue;
+          }
+          const { data: contrato, error: contractError } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", contractId).single();
+          if (contractError) throw contractError;
           if (!contrato) {
             errors++;
             continue;
           }
-          let lot_ts_ini = null, lot_ts_fim = null, lot_sch = null;
-          if (existing.service_order_id) {
-            const { data: soRow } = await supabaseAdmin.from("service_orders").select("mission_started_at, completed_date, scheduled_date").eq("id", existing.service_order_id).maybeSingle();
-            if (soRow) {
-              lot_ts_ini = soRow.mission_started_at;
-              lot_ts_fim = soRow.completed_date;
-              lot_sch = soRow.scheduled_date;
-            }
-          }
-          const resultado = calcularEscolta({
-            km_inicial: Number(existing.km_inicial || 0),
-            km_final: Math.max(Number(existing.km_inicial || 0), Number(existing.km_final || 0)),
-            km_vazio: Number(existing.km_vazio || 0),
-            horas_missao: Number(existing.horas_missao || 0),
-            horas_estadia: Number(existing.horas_estadia || 0),
-            teve_pernoite: !!existing.teve_pernoite,
-            horario_inicio: existing.horario_inicio || void 0,
-            horario_fim: existing.horario_fim || void 0,
-            horario_agendado: existing.horario_agendado || void 0,
-            inicio_ts: lot_ts_ini,
-            fim_ts: lot_ts_fim,
-            scheduled_date: lot_sch,
-            despesas_pedagio: Number(existing.despesas_pedagio || 0),
-            despesas_combustivel: Number(existing.despesas_combustivel || 0),
-            despesas_outras: Number(existing.despesas_outras || 0),
-            receitas_os: Number(existing.receitas_os || 0),
-            contrato
+          const [photos, missionCosts2] = await Promise.all([
+            storage.getMissionPhotosByOS(existing.service_order_id),
+            storage.getMissionCostsByOS(existing.service_order_id)
+          ]);
+          const canonicalPayload = computeBillingPayloadForOs({
+            so: lotSo,
+            contrato,
+            photos: (photos || []).map((photo) => ({
+              step: photo.step,
+              km_value: photo.kmValue ?? photo.km_value
+            })),
+            mCosts: missionCosts2 || [],
+            horasMissao: 0,
+            clientName: existing.client_name || null,
+            empName: existing.vigilante_name || null,
+            emp2Name: existing.vigilante2_name || null,
+            vehPlate: existing.placa_viatura || null
           });
-          await supabaseAdmin.from("escort_billings").update({
-            fat_total: resultado.fat_total,
-            fat_hora_extra: resultado.fat_hora_extra,
-            fat_km: resultado.fat_km || 0,
-            fat_acionamento: resultado.fat_acionamento,
-            fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
-            fat_estadia: resultado.fat_estadia || 0,
-            fat_pernoite: resultado.fat_pernoite || 0,
-            horas_trabalhadas: resultado.horas_trabalhadas,
-            horas_missao: resultado.horas_trabalhadas,
-            horario_inicio_considerado: resultado.horario_inicio_considerado,
-            km_total: resultado.km_total,
-            km_carregado: resultado.km_carregado,
-            km_faturado: resultado.km_faturado,
-            km_franquia: resultado.km_franquia,
-            km_excedente: resultado.km_excedente,
-            valor_franquia: resultado.valor_franquia,
-            valor_km_extra: resultado.valor_km_extra,
-            resultado_bruto: resultado.resultado.bruto,
-            resultado_liquido: resultado.resultado.liquido,
-            margem_percentual: resultado.resultado.margem_pct
-          }).eq("id", id);
+          await writeEscortBillingAtomic({
+            action: "UPDATE_OPEN",
+            billingId: existing.id,
+            serviceOrderId: existing.service_order_id,
+            expectedVersion: Number(existing.lock_version) || 0,
+            payload: (() => {
+              const payload = { ...canonicalPayload };
+              delete payload.status;
+              return payload;
+            })(),
+            actor: {
+              userId: req.user.id,
+              userName: req.user.name,
+              userRole: req.user.role,
+              reason: "Rec\xE1lculo em lote",
+              ipAddress: req.ip
+            }
+          });
           if (existing.service_order_id) {
-            const n2 = (v) => Number(v) || 0;
-            const totalCalc = n2(resultado.fat_acionamento) + n2(resultado.fat_hora_extra) + n2(resultado.fat_km) + n2(resultado.despesas?.pedagio) + n2(resultado.fat_adicional_noturno) + n2(resultado.fat_estadia) + n2(resultado.fat_pernoite) + n2(resultado.despesas?.outras);
-            await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id);
+            await supabaseAdmin.from("service_orders").update({ fat_calculado: Number(canonicalPayload.fat_total) || 0 }).eq("id", existing.service_order_id);
           }
           success++;
         } catch (err) {
@@ -38354,16 +39161,35 @@ function registerEscortRoutes(app2) {
       const user = req.user;
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
-      const LOCKED_STATUSES = ["FATURADO", "PAGO"];
-      if (LOCKED_STATUSES.includes(existing.status)) {
-        return res.status(403).json({ message: "Boletim faturado \u2014 valores travados. N\xE3o \xE9 poss\xEDvel alterar." });
+      if (await isBillingProtected(supabaseAdmin, existing)) {
+        return res.status(403).json({ message: "Billing congelado ou presente em snapshot comercial \u2014 valores travados." });
       }
       if (existing.service_order_id) {
         const { data: soRow } = await supabaseAdmin.from("service_orders").select("status").eq("id", existing.service_order_id).maybeSingle();
         if (soRow?.status === "recusada") {
-          const zeroPayload = buildRecusadaZeroPayload(null, existing.observacoes);
-          const { data: zeroed, error: zeroErr } = await supabaseAdmin.from("escort_billings").update(zeroPayload).eq("id", req.params.id).select().single();
-          if (zeroErr) throw zeroErr;
+          if (!existing.contract_id) {
+            return res.status(422).json({ message: "OS recusada sem escort_contract_id v\xE1lido." });
+          }
+          const zeroed = await writeEscortBillingAtomic({
+            action: "WRITE_REFUSED",
+            billingId: existing.id,
+            serviceOrderId: existing.service_order_id,
+            expectedVersion: Number(existing.lock_version) || 0,
+            payload: {
+              service_order_id: existing.service_order_id,
+              contract_id: existing.contract_id,
+              km_inicial: 0,
+              km_final: 0,
+              ...buildRecusadaZeroPayload(null, existing.observacoes)
+            },
+            actor: {
+              userId: user.id,
+              userName: user.name,
+              userRole: user.role,
+              reason: "Salvar recusada com zero integral",
+              ipAddress: req.ip
+            }
+          });
           bustBalancoCaches();
           await supabaseAdmin.from("service_orders").update({ fat_calculado: 0 }).eq("id", existing.service_order_id);
           await logSystemAudit({
@@ -38396,6 +39222,11 @@ function registerEscortRoutes(app2) {
         fat_estadia,
         fat_pernoite
       } = req.body;
+      if (recalcular) {
+        return res.status(409).json({
+          message: "Use o rec\xE1lculo oficial vinculado \xE0 OS; salvar n\xE3o aceita fallback de fatos."
+        });
+      }
       const updateData = {};
       if (observacoes !== void 0) updateData.observacoes = observacoes;
       if (despesas_pedagio !== void 0) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
@@ -38411,101 +39242,29 @@ function registerEscortRoutes(app2) {
       if (horario_termino !== void 0) updateData.horario_fim = horario_termino;
       if (despesas_outras !== void 0) updateData.despesas_outras = Number(despesas_outras) || 0;
       if (receitas_os !== void 0) updateData.receitas_os = Number(receitas_os) || 0;
-      if (recalcular && existing.contract_id) {
-        const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
-        if (contrato) {
-          const kmI = km_inicial !== void 0 ? Number(km_inicial) : Number(existing.km_inicial || 0);
-          const kmF = km_final !== void 0 ? Number(km_final) : Number(existing.km_final || 0);
-          const hInicio = horario_inicio !== void 0 ? horario_inicio : existing.horario_inicio;
-          const hFim = horario_termino !== void 0 ? horario_termino : existing.horario_fim;
-          const pedagio = despesas_pedagio !== void 0 ? Number(despesas_pedagio) : Number(existing.despesas_pedagio || 0);
-          const despOutras = despesas_outras !== void 0 ? Number(despesas_outras) : Number(existing.despesas_outras || 0);
-          const receitasOsCalc = receitas_os !== void 0 ? Number(receitas_os) : Number(existing.receitas_os || 0);
-          try {
-            let sv_ts_ini = null, sv_ts_fim = null, sv_sch = null;
-            if (existing.service_order_id) {
-              const { data: soRow } = await supabaseAdmin.from("service_orders").select("mission_started_at, completed_date, scheduled_date").eq("id", existing.service_order_id).maybeSingle();
-              if (soRow) {
-                sv_ts_ini = soRow.mission_started_at;
-                sv_ts_fim = soRow.completed_date;
-                sv_sch = soRow.scheduled_date;
-              }
-            }
-            const resultado = calcularEscolta({
-              km_inicial: kmI,
-              km_final: Math.max(kmI, kmF),
-              km_vazio: Number(existing.km_vazio || 0),
-              horas_missao: Number(existing.horas_missao || 0),
-              horas_estadia: Number(existing.horas_estadia || 0),
-              teve_pernoite: !!existing.teve_pernoite,
-              horario_inicio: hInicio || void 0,
-              horario_fim: hFim || void 0,
-              horario_agendado: existing.horario_agendado || void 0,
-              inicio_ts: sv_ts_ini,
-              fim_ts: sv_ts_fim,
-              scheduled_date: sv_sch,
-              despesas_pedagio: pedagio,
-              despesas_combustivel: Number(existing.despesas_combustivel || 0),
-              despesas_outras: despOutras,
-              receitas_os: receitasOsCalc,
-              contrato
-            });
-            Object.assign(updateData, {
-              km_inicial: kmI,
-              km_final: Math.max(kmI, kmF),
-              km_total: resultado.km_total,
-              km_carregado: resultado.km_carregado,
-              km_faturado: resultado.km_faturado,
-              km_franquia: resultado.km_franquia,
-              km_excedente: resultado.km_excedente,
-              valor_franquia: resultado.valor_franquia,
-              valor_km_extra: resultado.valor_km_extra,
-              fat_acionamento: resultado.fat_acionamento,
-              fat_hora_extra: resultado.fat_hora_extra,
-              fat_km: resultado.fat_km || 0,
-              fat_total: resultado.fat_total || 0,
-              fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
-              fat_estadia: resultado.fat_estadia || 0,
-              fat_pernoite: resultado.fat_pernoite || 0,
-              horas_trabalhadas: resultado.horas_trabalhadas,
-              horario_inicio_considerado: resultado.horario_inicio_considerado,
-              despesas_pedagio: pedagio,
-              receitas_os: receitasOsCalc,
-              resultado_bruto: resultado.resultado?.bruto || 0,
-              resultado_liquido: resultado.resultado?.liquido || 0,
-              margem_percentual: resultado.resultado?.margem_pct || 0
-            });
-            if (hInicio) updateData.horario_inicio = hInicio;
-            if (hFim) updateData.horario_fim = hFim;
-          } catch {
-          }
+      const merged = { ...existing, ...updateData };
+      const fatTotal = Number(merged.fat_acionamento || 0) + Number(merged.fat_hora_extra || 0) + Number(merged.fat_km || 0) + Number(merged.fat_adicional_noturno || 0) + Number(merged.despesas_pedagio || 0) + Number(merged.despesas_outras || 0) + Number(merged.fat_estadia || 0) + Number(merged.fat_pernoite || 0) + Number(merged.receitas_os || 0);
+      const pagTotal = Number(merged.pag_total || 0);
+      Object.assign(updateData, {
+        fat_total: fatTotal,
+        resultado_bruto: fatTotal - pagTotal,
+        resultado_liquido: fatTotal - pagTotal
+      });
+      const data = await writeEscortBillingAtomic({
+        action: "UPDATE_OPEN",
+        billingId: existing.id,
+        serviceOrderId: existing.service_order_id,
+        expectedVersion: Number(existing.lock_version) || 0,
+        payload: updateData,
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          reason: "Edi\xE7\xE3o manual expl\xEDcita de medi\xE7\xE3o",
+          ipAddress: req.ip
         }
-      }
-      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      });
       bustBalancoCaches();
-      if (data && !recalcular) {
-        const fatAcion = Number(data.fat_acionamento || 0);
-        const fatHoraExtra = Number(data.fat_hora_extra || 0);
-        const fatKm = Number(data.fat_km || 0);
-        const pedagio = Number(data.despesas_pedagio || 0);
-        const adNoturno = Number(data.fat_adicional_noturno || 0);
-        const estadia = Number(data.fat_estadia || 0);
-        const pernoite = Number(data.fat_pernoite || 0);
-        const despOutras = Number(data.despesas_outras || 0);
-        const receitasOs = Number(data.receitas_os || 0);
-        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras + receitasOs;
-        const pagTotal = Number(data.pag_total || 0);
-        const resultado = fatTotal - pagTotal;
-        await supabaseAdmin.from("escort_billings").update({
-          fat_total: fatTotal,
-          resultado_bruto: fatTotal - pagTotal,
-          resultado_liquido: resultado
-        }).eq("id", req.params.id);
-        data.fat_total = fatTotal;
-        data.resultado_liquido = resultado;
-        data.resultado_bruto = fatTotal - pagTotal;
-      }
       if (existing.service_order_id) {
         const fatAcion = Number(data?.fat_acionamento || 0);
         const fatHoraExtra = Number(data?.fat_hora_extra || 0);
@@ -38560,6 +39319,11 @@ function registerEscortRoutes(app2) {
       }
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
+      if (await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 revis\xE3o bloqueada."
+        });
+      }
       if (acao === "APROVADA" && billing.status === "APROVADA") return res.json(billing);
       if (billing.status !== "A_VERIFICAR") return res.status(400).json({ message: "Somente OS com status 'A Verificar' podem ser revisadas" });
       const updateData = {
@@ -38567,10 +39331,20 @@ function registerEscortRoutes(app2) {
         revisado_por: user.name,
         revisado_em: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
+      if (acao === "REJEITADA") {
+        Object.assign(updateData, {
+          service_order_id: billing.service_order_id,
+          contract_id: billing.contract_id,
+          km_inicial: 0,
+          km_final: 0,
+          ...buildRecusadaZeroPayload(motivo_rejeicao, billing.observacoes)
+        });
+        if (motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
+      }
       if (acao === "APROVADA") {
         if (billing.service_order_id) {
-          const { data: soRow } = await supabaseAdmin.from("service_orders").select("status").eq("id", billing.service_order_id).maybeSingle();
+          const { data: soRow, error: soRowError } = await supabaseAdmin.from("service_orders").select("status").eq("id", billing.service_order_id).maybeSingle();
+          if (soRowError) throw soRowError;
           if (soRow?.status === "recusada") {
             return res.status(400).json({ message: "OS recusada n\xE3o pode ser aprovada \u2014 o faturamento \xE9 sempre R$ 0,00. Reabra a OS (status conclu\xEDda) antes de aprovar o boletim." });
           }
@@ -38578,73 +39352,21 @@ function registerEscortRoutes(app2) {
         const now = /* @__PURE__ */ new Date();
         updateData.boletim_numero = `BO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
         updateData.boletim_gerado = true;
-        if (billing.contract_id) {
-          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
-          if (contrato) {
-            try {
-              let ap_ts_ini = null, ap_ts_fim = null, ap_sch = null;
-              if (billing.service_order_id) {
-                const { data: soRow } = await supabaseAdmin.from("service_orders").select("mission_started_at, completed_date, scheduled_date").eq("id", billing.service_order_id).maybeSingle();
-                if (soRow) {
-                  ap_ts_ini = soRow.mission_started_at;
-                  ap_ts_fim = soRow.completed_date;
-                  ap_sch = soRow.scheduled_date;
-                }
-              }
-              const resultado = calcularEscolta({
-                km_inicial: Number(billing.km_inicial || 0),
-                km_final: Math.max(Number(billing.km_inicial || 0), Number(billing.km_final || 0)),
-                km_vazio: Number(billing.km_vazio || 0),
-                horas_missao: Number(billing.horas_missao || 0),
-                horas_estadia: Number(billing.horas_estadia || 0),
-                teve_pernoite: !!billing.teve_pernoite,
-                horario_inicio: billing.horario_inicio || void 0,
-                horario_fim: billing.horario_fim || void 0,
-                horario_agendado: billing.horario_agendado || void 0,
-                inicio_ts: ap_ts_ini,
-                fim_ts: ap_ts_fim,
-                scheduled_date: ap_sch,
-                despesas_pedagio: Number(billing.despesas_pedagio || 0),
-                despesas_combustivel: Number(billing.despesas_combustivel || 0),
-                despesas_outras: Number(billing.despesas_outras || 0),
-                receitas_os: Number(billing.receitas_os || 0),
-                contrato
-              });
-              updateData.fat_total = resultado.fat_total;
-              updateData.fat_hora_extra = resultado.fat_hora_extra;
-              updateData.fat_km = resultado.fat_km || 0;
-              updateData.fat_acionamento = resultado.fat_acionamento;
-              updateData.fat_adicional_noturno = resultado.fat_adicional_noturno || 0;
-              updateData.fat_estadia = resultado.fat_estadia || 0;
-              updateData.fat_pernoite = resultado.fat_pernoite || 0;
-              updateData.horas_trabalhadas = resultado.horas_trabalhadas;
-              updateData.horas_missao = resultado.horas_trabalhadas;
-              updateData.horario_inicio_considerado = resultado.horario_inicio_considerado;
-              updateData.km_total = resultado.km_total;
-              updateData.km_carregado = resultado.km_carregado;
-              updateData.km_faturado = resultado.km_faturado;
-              updateData.km_franquia = resultado.km_franquia;
-              updateData.km_excedente = resultado.km_excedente;
-              updateData.valor_franquia = resultado.valor_franquia;
-              updateData.valor_km_extra = resultado.valor_km_extra;
-              updateData.resultado_bruto = resultado.resultado.bruto;
-              updateData.resultado_liquido = resultado.resultado.liquido;
-              updateData.margem_percentual = resultado.resultado.margem_pct;
-              if (billing.service_order_id) {
-                const n2 = (v) => Number(v) || 0;
-                const totalCalc = n2(resultado.fat_acionamento) + n2(resultado.fat_hora_extra) + n2(resultado.fat_km) + n2(resultado.despesas?.pedagio) + n2(resultado.fat_adicional_noturno) + n2(resultado.fat_estadia) + n2(resultado.fat_pernoite) + n2(resultado.despesas?.outras) + n2(resultado.receitas_os);
-                await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", billing.service_order_id);
-              }
-              console.log(`[REVISAR] Recalculado billing ${req.params.id} antes de aprovar. fat_total=${resultado.fat_total}`);
-            } catch (calcErr) {
-              console.error(`[REVISAR] Erro ao recalcular billing ${req.params.id}:`, calcErr.message);
-              return res.status(500).json({ message: `Erro ao recalcular billing antes da aprova\xE7\xE3o: ${calcErr.message}` });
-            }
-          }
-        }
       }
-      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      const data = await writeEscortBillingAtomic({
+        action: acao === "APROVADA" ? "FREEZE_COMMERCIAL" : "WRITE_REFUSED",
+        billingId: billing.id,
+        serviceOrderId: billing.service_order_id,
+        expectedVersion: Number(billing.lock_version) || 0,
+        payload: updateData,
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          reason: motivo_rejeicao || acao,
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       if (acao === "APROVADA" && data) {
         const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.fat_adicional_noturno || 0) + Number(data.despesas_pedagio || 0) + Number(data.despesas_outras || 0) + Number(data.fat_estadia || 0) + Number(data.fat_pernoite || 0) + Number(data.receitas_os || 0);
@@ -38681,7 +39403,16 @@ function registerEscortRoutes(app2) {
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(billing.service_order_id));
         if (billing.service_order_id) {
-          await supabaseAdmin.from("service_orders").update({ status: "recusada", mission_status: "encerrada" }).eq("id", billing.service_order_id);
+          const { error: refuseMirrorError } = await supabaseAdmin.from("service_orders").update({
+            status: "recusada",
+            mission_status: "encerrada",
+            fat_calculado: 0,
+            custo_total_alocado: 0,
+            lucro_calculado: 0,
+            margem_calculada: 0,
+            valor_estimado: 0
+          }).eq("id", billing.service_order_id);
+          if (refuseMirrorError) throw refuseMirrorError;
         }
         await logSystemAudit({
           userId: user.id,
@@ -38705,13 +39436,25 @@ function registerEscortRoutes(app2) {
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
       if (billing.status !== "APROVADA") return res.status(400).json({ message: "Somente OS com status 'APROVADA' podem ser reabertas" });
-      const { data, error } = await supabaseAdmin.from("escort_billings").update({
-        status: "A_VERIFICAR",
-        revisado_por: null,
-        revisado_em: null,
-        boletim_gerado: false
-      }).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      const data = await writeEscortBillingAtomic({
+        action: "REOPEN_APPROVED",
+        billingId: billing.id,
+        serviceOrderId: billing.service_order_id,
+        expectedVersion: Number(billing.lock_version) || 0,
+        payload: {
+          status: "A_VERIFICAR",
+          revisado_por: null,
+          revisado_em: null,
+          boletim_gerado: false
+        },
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          reason: "Reabertura expl\xEDcita de miss\xE3o aprovada",
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
@@ -38743,12 +39486,24 @@ function registerEscortRoutes(app2) {
         return res.status(400).json({ message: "Somente notas com status 'Faturado' ou 'Pago' podem ser liberadas" });
       }
       const previousStatus = billing.status;
-      const { data, error } = await supabaseAdmin.from("escort_billings").update({
-        status: "APROVADA",
-        invoice_id: null,
-        boletim_gerado: false
-      }).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      const data = await writeEscortBillingAtomic({
+        action: "RELEASE_REBILL",
+        billingId: billing.id,
+        serviceOrderId: billing.service_order_id,
+        expectedVersion: Number(billing.lock_version) || 0,
+        payload: {
+          status: "APROVADA",
+          invoice_id: null,
+          boletim_gerado: false
+        },
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          reason: "Libera\xE7\xE3o expl\xEDcita para refaturamento",
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
@@ -38773,15 +39528,32 @@ function registerEscortRoutes(app2) {
   app2.post("/api/escort/billings/:id/zerar-fat-total", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const user = req.user;
-      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id,status,fat_total,client_name,service_order_id").eq("id", req.params.id).single();
+      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("id,status,fat_total,client_name,service_order_id,lock_version").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro n\xE3o encontrado" });
+      if (await isBillingProtected(supabaseAdmin, billing)) {
+        return res.status(409).json({
+          message: "Billing congelado ou presente em snapshot comercial \u2014 zeragem bloqueada."
+        });
+      }
       const st = String(billing.status || "").toUpperCase();
       if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") {
         return res.status(400).json({ message: "N\xE3o \xE9 poss\xEDvel zerar fat_total de OS j\xE1 faturada/paga. Libere o refaturamento primeiro." });
       }
       const valorAnterior = Number(billing.fat_total || 0);
-      const { error } = await supabaseAdmin.from("escort_billings").update({ fat_total: 0 }).eq("id", req.params.id);
-      if (error) throw error;
+      await writeEscortBillingAtomic({
+        action: "UPDATE_OPEN",
+        billingId: billing.id,
+        serviceOrderId: billing.service_order_id,
+        expectedVersion: Number(billing.lock_version) || 0,
+        payload: { fat_total: 0 },
+        actor: {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          reason: "Zerar fat_total explicitamente",
+          ipAddress: req.ip
+        }
+      });
       bustBalancoCaches();
       await logSystemAudit({
         userId: user.id,
@@ -38898,8 +39670,20 @@ function registerEscortRoutes(app2) {
       if (billing.boletim_gerado) return res.json({ ...billing, message: "Boletim j\xE1 gerado anteriormente" });
       const now = /* @__PURE__ */ new Date();
       const boletimNumero = `BO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(billing.id).slice(-4).toUpperCase()}`;
-      const { data, error } = await supabaseAdmin.from("escort_billings").update({ boletim_numero: boletimNumero, boletim_gerado: true }).eq("id", req.params.id).select().single();
-      if (error) throw error;
+      const data = await writeEscortBillingAtomic({
+        action: "METADATA_OPEN",
+        billingId: billing.id,
+        serviceOrderId: billing.service_order_id,
+        expectedVersion: Number(billing.lock_version) || 0,
+        payload: { boletim_numero: boletimNumero, boletim_gerado: true },
+        actor: {
+          userId: req.user.id,
+          userName: req.user.name,
+          userRole: req.user.role,
+          reason: "Gerar n\xFAmero de boletim",
+          ipAddress: req.ip
+        }
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -40565,7 +41349,9 @@ function registerMobileRoutes(app2) {
       });
       const allEmployees = await storage.getEmployees();
       const activeEmployees = allEmployees.filter((e) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
-      const SALARIO_BASE = 2432.5;
+      const { getCctConfig: getCctConfig2 } = await Promise.resolve().then(() => (init_cct_config2(), cct_config_exports));
+      const cct = await getCctConfig2();
+      const SALARIO_BASE = Number(cct.salarioBase) || 2565.31;
       const LIMITE_HORAS = 220;
       const VALOR_HORA = +(SALARIO_BASE / LIMITE_HORAS).toFixed(2);
       const parseTimeToHours = (checkIn, checkOut, checkOutLunch, checkInLunch) => {
@@ -41164,10 +41950,11 @@ var billingTotalForBoletim = (b, osStatus) => {
 
 // server/routes/boletim-approval.ts
 init_balanco_cache();
+init_atomic_billing();
 import crypto3 from "crypto";
 import ExcelJS from "exceljs";
-import path2 from "path";
-import fs2 from "fs";
+import path3 from "path";
+import fs3 from "fs";
 var requireAdminRole2 = (req, res, next) => {
   if (!req.user) return res.status(401).json({ message: "N\xE3o autenticado" });
   next();
@@ -41281,8 +42068,8 @@ async function generateBoletimExcel(clientName, periodStart, periodEnd, billings
   };
   let logoBuffer = null;
   try {
-    const logoPath = path2.resolve("public", "logo-torres-dark.jpeg");
-    if (fs2.existsSync(logoPath)) logoBuffer = fs2.readFileSync(logoPath);
+    const logoPath = path3.resolve("public", "logo-torres-dark.jpeg");
+    if (fs3.existsSync(logoPath)) logoBuffer = fs3.readFileSync(logoPath);
   } catch {
   }
   const emptyArr = Array(colCount).fill(null);
@@ -41701,6 +42488,7 @@ function registerBoletimApprovalRoutes(app2) {
         const comp = (v) => osStatus === "recusada" ? 0 : round2(Number(v || 0));
         return {
           billing_id: String(b.id),
+          billing_version: Number(b.lock_version) || 0,
           service_order_id: b.service_order_id,
           os_number: b.os_number || so.os_number || `OS-${b.service_order_id}`,
           fat_acionamento: comp(b.fat_acionamento),
@@ -41720,22 +42508,20 @@ function registerBoletimApprovalRoutes(app2) {
       const baseUrl = getBaseUrl(req);
       const approvalUrl = `${baseUrl}/aprovacao/${token}`;
       const period = `${(/* @__PURE__ */ new Date(periodStart + "T12:00:00Z")).toLocaleDateString("pt-BR")} a ${(/* @__PURE__ */ new Date(periodEnd + "T12:00:00Z")).toLocaleDateString("pt-BR")}`;
-      const { data, error } = await supabaseAdmin.from("boletim_approvals").insert({
+      const data = await createBoletimApprovalAtomic({
         token,
-        client_id: clientId,
-        client_name: clientName,
-        client_email: clientEmail,
-        period_start: periodStart,
-        period_end: periodEnd,
-        billing_ids: billingIds,
-        total_value: canonicalTotal,
-        billing_snapshot: billingSnapshot,
-        os_count: osCount || billingIds.length,
-        status: "PENDENTE",
-        sent_by: user?.name || user?.username || null,
-        sent_by_user_id: user?.id || null
-      }).select().single();
-      if (error) throw error;
+        clientId,
+        clientName,
+        clientEmail,
+        periodStart,
+        periodEnd,
+        billingIds: billingIds.map(String),
+        totalValue: canonicalTotal,
+        billingSnapshot,
+        osCount: osCount || billingIds.length,
+        sentBy: user?.name || user?.username || null,
+        sentByUserId: user?.id || null
+      });
       const periodShort = `${periodStart.replace(/-/g, "")}_${periodEnd.replace(/-/g, "")}`;
       const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20);
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
@@ -41840,26 +42626,17 @@ function registerBoletimApprovalRoutes(app2) {
         return res.status(410).json({ message: "Este link de aprova\xE7\xE3o expirou." });
       }
       const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket.remoteAddress || "";
-      const { error: updateErr } = await supabaseAdmin.from("boletim_approvals").update({
-        status: "APROVADO",
-        approved_at: (/* @__PURE__ */ new Date()).toISOString(),
-        approved_by_name: nome || "Cliente",
-        approved_by_ip: clientIp
-      }).eq("id", approval.id);
-      if (updateErr) throw updateErr;
       let autoEmitResult = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
-        const { error: billErr } = await supabaseAdmin.from("escort_billings").update({
-          status: "APROVADA",
-          revisado_por: `Cliente: ${nome || approval.client_name}`,
-          revisado_em: (/* @__PURE__ */ new Date()).toISOString()
-        }).in("id", billingIds);
-        if (billErr) console.error("[boletim-approval] Erro ao aprovar billings:", billErr.message);
-        else {
-          console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
-          bustBalancoCaches();
-        }
+        await freezeBoletimBillingsAtomic(
+          Number(approval.id),
+          nome || approval.client_name || "Cliente",
+          clientIp,
+          (/* @__PURE__ */ new Date()).toISOString()
+        );
+        console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
+        bustBalancoCaches();
       }
       try {
         const { data: billingsDetail } = await supabaseAdmin.from("escort_billings").select("*").in("id", billingIds);
@@ -42048,21 +42825,21 @@ init_helpers();
 init_normalize_contact();
 init_platform();
 import cron2 from "node-cron";
-import fs3 from "fs";
-import path3 from "path";
-var AUTOMATION_FILE = path3.resolve(".local/leads-automation.json");
+import fs4 from "fs";
+import path4 from "path";
+var AUTOMATION_FILE = path4.resolve(".local/leads-automation.json");
 var automationEnabled = true;
 try {
-  if (fs3.existsSync(AUTOMATION_FILE)) {
-    const raw = JSON.parse(fs3.readFileSync(AUTOMATION_FILE, "utf-8"));
+  if (fs4.existsSync(AUTOMATION_FILE)) {
+    const raw = JSON.parse(fs4.readFileSync(AUTOMATION_FILE, "utf-8"));
     if (typeof raw.enabled === "boolean") automationEnabled = raw.enabled;
   }
 } catch (_e) {
 }
 function persistAutomation() {
   try {
-    fs3.mkdirSync(path3.dirname(AUTOMATION_FILE), { recursive: true });
-    fs3.writeFileSync(AUTOMATION_FILE, JSON.stringify({ enabled: automationEnabled }, null, 2));
+    fs4.mkdirSync(path4.dirname(AUTOMATION_FILE), { recursive: true });
+    fs4.writeFileSync(AUTOMATION_FILE, JSON.stringify({ enabled: automationEnabled }, null, 2));
   } catch (e) {
     console.error("[leads-automation] persist err:", e.message);
   }
@@ -45932,9 +46709,22 @@ function classifyInterPayment(opts) {
 }
 
 // server/routes/inter.ts
+init_inter_integration();
+function rejectInterIfClosed(res) {
+  const gate = evaluateInterWriteGate({ configured: isInterConfigured() });
+  if (gate.allow) return false;
+  console.warn(`[inter] opera\xE7\xE3o rejeitada (${gate.reason})`);
+  res.status(gate.status).json(gate.body);
+  return true;
+}
 function registerInterRoutes(app2) {
-  console.log("[inter] Rotas Banco Inter registradas (cobran\xE7a + extrato + saldo + pagamentos + webhook)");
+  console.log(
+    `[inter] Rotas registradas (integra\xE7\xE3o ${isInterIntegrationEnabled() ? "HABILITADA" : "DESATIVADA por padr\xE3o"})`
+  );
   app2.get("/api/inter/status", requireAuth, async (_req, res) => {
+    if (!isInterIntegrationEnabled()) {
+      return res.json(interStatusWhenDisabled());
+    }
     if (!isInterConfigured()) {
       return res.json({
         connected: false,
@@ -45956,6 +46746,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/saldo", requireAuth, requireDiretoriaStrict, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await consultarSaldo());
     } catch (e) {
@@ -45963,6 +46754,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/extrato", requireAuth, requireDiretoriaStrict, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const dataInicio = String(req.query.from || "");
       const dataFim = String(req.query.to || "");
@@ -45980,6 +46772,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.post("/api/inter/cobranca", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const { invoiceId, ...input } = req.body || {};
       if (!input.seuNumero || !input.valorNominal || !input.dataVencimento || !input.pagador) {
@@ -46006,6 +46799,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/cobranca/:cod", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await consultarCobranca(req.params.cod));
     } catch (e) {
@@ -46013,6 +46807,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.post("/api/inter/cobranca/:cod/cancelar", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const motivo = String(req.body?.motivo || "ACEITEI_O_RISCO");
       await cancelarCobranca(req.params.cod, motivo);
@@ -46029,6 +46824,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/cobranca/:cod/pdf", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const out = await obterPdfBoleto(req.params.cod);
       const buf = Buffer.from(out.pdf, "base64");
@@ -46040,6 +46836,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/cobrancas", requireAuth, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const query = {
         dataInicial: String(req.query.dataInicial || ""),
@@ -46070,6 +46867,7 @@ function registerInterRoutes(app2) {
     return storagePath;
   }
   app2.post("/api/inter/pagamento/boleto", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const user = req.user;
       const txId = String(req.body?.transactionId || "");
@@ -46105,6 +46903,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.post("/api/inter/pix", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const user = req.user;
       const txId = String(req.body?.transactionId || "");
@@ -46292,6 +47091,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.post("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       const url = String(req.body?.url || "") || `${req.protocol}://${req.get("host")}/api/inter/webhook/cobranca`;
       await cadastrarWebhook(url);
@@ -46302,6 +47102,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.get("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       res.json(await consultarWebhook());
     } catch (e) {
@@ -46309,6 +47110,7 @@ function registerInterRoutes(app2) {
     }
   });
   app2.delete("/api/inter/webhook/setup", requireAuth, requireDiretoria, async (_req, res) => {
+    if (rejectInterIfClosed(res)) return;
     try {
       await excluirWebhook();
       res.json({ ok: true });
@@ -46322,6 +47124,11 @@ function registerInterRoutes(app2) {
     res.json(data || []);
   });
   app2.post("/api/inter/webhook/cobranca", async (req, res) => {
+    const gate = evaluateInterWriteGate({ configured: isInterConfigured() });
+    if (!gate.allow) {
+      console.warn(`[Inter Webhook] rejeitado (${gate.reason}) \u2014 sem muta\xE7\xE3o`);
+      return res.status(gate.status).json(gate.body);
+    }
     try {
       const events = Array.isArray(req.body) ? req.body : [req.body];
       for (const ev of events) {
@@ -49352,51 +50159,6 @@ async function ensureFinancialOriginColumns() {
   } catch (_e) {
     console.log("[Financial] v_resumo_financeiro view creation skipped");
   }
-  try {
-    const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id, placa_viatura").or("vigilante2_id.is.null,placa_viatura.is.null");
-    if (billingsToFix && billingsToFix.length > 0) {
-      const soIds = [...new Set(billingsToFix.map((b) => b.service_order_id).filter(Boolean))];
-      const { data: orders } = await supabaseAdmin.from("service_orders").select("id, assigned_employee_2_id, vehicle_id").in("id", soIds);
-      const soMap = new Map((orders || []).map((o) => [o.id, o]));
-      const empIds = [...new Set((orders || []).map((o) => o.assigned_employee_2_id).filter(Boolean))];
-      const vehIds = [...new Set((orders || []).map((o) => o.vehicle_id).filter(Boolean))];
-      const [{ data: emps }, { data: vehs }] = await Promise.all([
-        empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : { data: [] },
-        vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : { data: [] }
-      ]);
-      const empMap = new Map((emps || []).map((e) => [e.id, e.name]));
-      const vehMap = new Map((vehs || []).map((v) => [v.id, v.plate]));
-      let fixedV2 = 0, fixedPlate = 0;
-      for (const b of billingsToFix) {
-        if (!b.service_order_id) continue;
-        const so = soMap.get(b.service_order_id);
-        if (!so) continue;
-        const updates = {};
-        if (!b.vigilante2_id && so.assigned_employee_2_id) {
-          const name = empMap.get(so.assigned_employee_2_id);
-          if (name) {
-            updates.vigilante2_id = so.assigned_employee_2_id;
-            updates.vigilante2_name = name;
-            fixedV2++;
-          }
-        }
-        if (!b.placa_viatura && so.vehicle_id) {
-          const plate = vehMap.get(so.vehicle_id);
-          if (plate) {
-            updates.placa_viatura = plate;
-            fixedPlate++;
-          }
-        }
-        if (Object.keys(updates).length > 0) {
-          await supabaseAdmin.from("escort_billings").update(updates).eq("id", b.id);
-        }
-      }
-      if (fixedV2 > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixedV2} billings`);
-      if (fixedPlate > 0) console.log(`[Financial] Backfilled placa_viatura on ${fixedPlate} billings`);
-    }
-  } catch (bfErr) {
-    console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
-  }
 }
 if (isServerSupabaseConfigured()) {
   ensureFinancialOriginColumns().catch(
@@ -50134,7 +50896,7 @@ async function registerRoutes(httpServer, app2) {
       const emp = await storage.getEmployee(req.user.employeeId);
       if (emp) matricula = emp.matricula || null;
     }
-    res.json({ ...safe, matricula, termsAcceptedAt: req.user.termsAcceptedAt || null });
+    res.json({ ...safe, matricula });
   });
   app2.post("/api/auth/accept-terms", requireAuth, async (req, res) => {
     const user = req.user;
@@ -50230,7 +50992,7 @@ async function registerRoutes(httpServer, app2) {
     if (error) {
       return res.status(500).json({ message: "Erro ao atualizar senha: " + error.message });
     }
-    await storage.updateUser(req.user.id, { mustChangePassword: 0, plainPassword: newPassword });
+    await storage.updateUser(req.user.id, { mustChangePassword: 0 });
     res.json({ message: "Senha atualizada com sucesso" });
   });
   app2.get("/api/auth/perfil", requireAuth, async (req, res) => {
