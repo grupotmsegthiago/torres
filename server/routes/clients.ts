@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireFinanceiro } from "../auth";
   import { insertClientSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
@@ -9,8 +9,12 @@ import type { Express } from "express";
   import { generateContractPDF } from "../contract-pdf";
 import { listGroups as listZapiGroups } from "../lib/zapi";
 
+function hasWhoPaysEmail(raw: string | null | undefined): boolean {
+  return /[^\s@]+@[^\s@]+\.[^\s@]+/.test(String(raw || ""));
+}
+
   export function registerClientRoutes(app: Express) {
-    app.get("/api/clients", requireAuth, requireAdminRole, async (_req, res) => {
+    app.get("/api/clients", requireAuth, requireFinanceiro, async (_req, res) => {
     const data = await storage.getClients();
     res.json(data);
   });
@@ -40,7 +44,7 @@ import { listGroups as listZapiGroups } from "../lib/zapi";
     }
   });
 
-  app.get("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/clients/:id", requireAuth, requireFinanceiro, async (req, res) => {
     const data = await storage.getClient(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
     res.json(data);
@@ -81,6 +85,9 @@ import { listGroups as listZapiGroups } from "../lib/zapi";
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
+    if (!hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
+      return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
+    }
     const data = await storage.createClient(parsed.data);
     const doc = data.cnpj || data.cpf || "";
     if (doc.replace(/\D/g, "").length >= 11) {
@@ -89,11 +96,14 @@ import { listGroups as listZapiGroups } from "../lib/zapi";
     res.status(201).json(data);
   });
 
-  app.patch("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.patch("/api/clients/:id", requireAuth, requireFinanceiro, async (req, res) => {
     const parsed = insertClientSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
+    if ("emailFinanceiro" in parsed.data && !hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
+      return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
+    }
     try {
       const data = await storage.updateClient(Number(req.params.id), parsed.data);
       if (!data) return res.status(404).json({ message: "Cliente não encontrado" });

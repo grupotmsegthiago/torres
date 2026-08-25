@@ -172,6 +172,11 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   next();
 };
 
+export function canActAsFinanceiro(user?: { role?: string | null } | null): boolean {
+  const role = String(user?.role || "");
+  return role === "diretoria" || role === "admin" || role === "financeiro";
+}
+
 export const requireAdminRole: RequestHandler = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ message: "Não autorizado" });
@@ -179,6 +184,15 @@ export const requireAdminRole: RequestHandler = (req, res, next) => {
   if (req.user.role === "diretoria") return next();
   if (req.user.role === "admin") return next();
   return res.status(403).json({ message: "Acesso restrito a administradores" });
+};
+
+/** Diretoria, admin ou perfil financeiro (baixa / comprovante / ocorrência / relatório de NF). */
+export const requireFinanceiro: RequestHandler = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Não autorizado" });
+  }
+  if (canActAsFinanceiro(req.user)) return next();
+  return res.status(403).json({ message: "Acesso restrito ao financeiro" });
 };
 
 export const requireDiretoria: RequestHandler = (req, res, next) => {

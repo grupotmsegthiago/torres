@@ -23,6 +23,8 @@ import {
   TORRES_CNPJ,
   buildMarkEmittedInvoiceUpdates,
   MARK_EMITTED_INVOICE_COLUMNS,
+  isNfCorrectionError,
+  describeAsaasPaymentNotification,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -454,4 +456,30 @@ test("buildMarkEmittedInvoiceUpdates: número vazio não inclui nfse_number", ()
   });
   assert.equal("nfse_number" in updates, false);
   assert.equal(updates.nfse_status, "AUTHORIZED");
+});
+
+test("isNfCorrectionError: e-mail ausente é correção, não erro de integração", () => {
+  assert.equal(isNfCorrectionError("NF não emitida: e-mail do cliente ausente ou inválido no cadastro."), true);
+  assert.equal(isNfCorrectionError("Timeout Asaas"), false);
+});
+
+test("describeAsaasPaymentNotification: envio e leitura com destinatário", () => {
+  const sent = describeAsaasPaymentNotification({
+    event: "PAYMENT_CREATED",
+    status: "SENT",
+    emailAddress: "pagador@cliente.com",
+    dateCreated: "2026-08-01T12:00:00Z",
+  });
+  assert.equal(sent.kind, "email");
+  assert.match(sent.title, /cobrança enviado/);
+  assert.match(sent.title, /enviado/);
+  assert.equal(sent.detail, "Para: pagador@cliente.com");
+
+  const read = describeAsaasPaymentNotification({
+    event: "PAYMENT_CREATED",
+    status: "READ",
+    scheduleDate: "2026-08-02T09:00:00Z",
+  });
+  assert.match(read.title, /lido/);
+  assert.equal(read.at, "2026-08-02T09:00:00Z");
 });

@@ -1093,6 +1093,10 @@ ${empNames}`,
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
+    const allowedRoles = ["admin", "diretoria", "financeiro", "funcionario"];
+    if (role && !allowedRoles.includes(role)) {
+      return res.status(400).json({ message: "Perfil inválido" });
+    }
     if (role === "diretoria" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
     }

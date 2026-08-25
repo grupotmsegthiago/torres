@@ -1342,17 +1342,49 @@ async function ensureSystemSettingsTable() {
   });
 
   app.get("/api/auth/perfil", requireAuth, async (req, res) => {
+    const { DEFAULT_PROFILE_PERMISSIONS, PROFILE_LABELS, parsePermissions } = await import("../shared/perfis-acesso");
     const perfil = await storage.getPerfilAcesso(req.user!.role);
+    const fallback = DEFAULT_PROFILE_PERMISSIONS[req.user!.role] || [];
+    const permissions = perfil ? parsePermissions(perfil.permissions) : fallback;
     res.json({
       user: toSafeUser(req.user!),
-      permissions: perfil ? JSON.parse(perfil.permissions) : [],
-      role: perfil?.label || req.user!.role,
+      permissions: permissions.length ? permissions : fallback,
+      role: perfil?.label || PROFILE_LABELS[req.user!.role] || req.user!.role,
     });
   });
 
   app.get("/api/auth/perfis", requireAuth, requireAdminRole, async (_req, res) => {
-    const perfis = await storage.getAllPerfis();
-    res.json(perfis);
+    const { DEFAULT_PROFILE_PERMISSIONS, PROFILE_LABELS } = await import("../shared/perfis-acesso");
+    const stored = await storage.getAllPerfis();
+    const byRole = new Map(stored.map((p) => [p.role, p]));
+    for (const [role, perms] of Object.entries(DEFAULT_PROFILE_PERMISSIONS)) {
+      if (!byRole.has(role)) {
+        byRole.set(role, {
+          id: 0,
+          role,
+          label: PROFILE_LABELS[role] || role,
+          permissions: JSON.stringify(perms),
+        } as any);
+      }
+    }
+    res.json(Array.from(byRole.values()));
+  });
+
+  app.put("/api/auth/perfis/:role", requireAuth, requireDiretoria, async (req, res) => {
+    const { parsePermissions, PROFILE_LABELS } = await import("../shared/perfis-acesso");
+    const role = String(req.params.role || "").trim();
+    if (!PROFILE_LABELS[role]) {
+      return res.status(400).json({ message: "Perfil desconhecido" });
+    }
+    if (role === "diretoria") {
+      return res.status(400).json({ message: "O perfil Diretoria permanece com acesso total." });
+    }
+    const permissions = parsePermissions(req.body?.permissions);
+    if (permissions.length === 0) {
+      return res.status(400).json({ message: "Informe ao menos uma permissão" });
+    }
+    const saved = await storage.upsertPerfilAcesso(role, PROFILE_LABELS[role], JSON.stringify(permissions));
+    res.json(saved);
   });
 
 

@@ -119,7 +119,8 @@ export async function ensureDbSchema() {
       INSERT INTO perfis_acesso (role, label, permissions) VALUES
       ('diretoria', 'Diretoria', '["*"]'),
       ('admin', 'Administrador', '["dashboard","clients","employees","vehicles","trips","fueling","maintenance","timesheets","tracker","service_orders","mission","operational_grid","consultas","guia_missao","users"]'),
-      ('funcionario', 'Funcionário', '["dashboard","mission","timesheets","guia_missao"]')
+      ('funcionario', 'Funcionário', '["dashboard","mission","timesheets","guia_missao"]'),
+      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]')
       ON CONFLICT (role) DO NOTHING
     `);
 
@@ -1380,6 +1381,9 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_invoices_provider_cnpj ON invoices (provider_cnpj)`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_error_message TEXT`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_observations TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_url TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_path TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_anexado_em TIMESTAMP`).catch(() => {});
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});

@@ -429,6 +429,15 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           toast({ title: "CEP inválido", description: "CEP deve ter exatamente 8 dígitos.", variant: "destructive" });
           return;
         }
+        const whoPays = (emailFinanceiroRef.current?.flush() ?? form.emailFinanceiro ?? "").trim();
+        if (!whoPays) {
+          toast({
+            title: "E-mail de quem paga é obrigatório",
+            description: "Informe o e-mail de recebimento financeiro do cliente (quem paga as faturas).",
+            variant: "destructive",
+          });
+          return;
+        }
         if (form.emiteNf) {
           const missing: string[] = [];
           const hasDoc = (form.cnpj || form.cpf || "").replace(/\D/g, "").length >= 11;
@@ -598,7 +607,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Financeiro</label>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail para recebimento financeiro (quem paga) <span className="text-red-600">*</span></label>
               <EmailTagInput
                 ref={emailFinanceiroRef}
                 value={form.emailFinanceiro}

@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAdminRole } from "./auth";
+import { requireAdminRole, requireFinanceiro, canActAsFinanceiro } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
@@ -35,8 +35,12 @@ import {
   extractNfErrorMessage,
   resolveNfErrorMessage,
   shouldBlockNfEmission,
+  isNfCorrectionError,
   buildMarkEmittedInvoiceUpdates,
+  describeAsaasPaymentNotification,
 } from "./lib/asaas-helpers";
+import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
+import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
@@ -187,6 +191,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     | "NF_PROCESSANDO"
     | "NF_EMITIDA"
     | "NF_ERRO"
+    | "NF_CORRIGIR"
     | "NF_CANCELADA"
     | "PAGO"
     | "VENCIDO"
@@ -207,6 +212,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
       return "AGUARDANDO_PAGAMENTO";
     }
     if (nfStatus.includes("CANCEL")) return "NF_CANCELADA";
+    if (nfStatus === "AWAITING_CORRECTION" || nfStatus === NF_AWAITING_CORRECTION) return "NF_CORRIGIR";
     if (["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatus)) return "NF_ERRO";
     if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(nfStatus)) return "NF_EMITIDA";
     if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(nfStatus)) return "NF_PROCESSANDO";
@@ -514,6 +520,12 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     if (changed) {
       updates.updated_at = new Date().toISOString();
       await supabaseAdmin.from("invoices").update(updates).eq("id", invoice.id);
+      if (isNfErrorStatus(updates.nfse_status || invoice.nfse_status)) {
+        await notifyNfseIntegrationError({
+          invoice: { ...invoice, ...updates },
+          errorMessage: updates.nfse_error_message || invoice.nfse_error_message || "Erro de NFS-e na integração",
+        });
+      }
     }
 
     // Auto-vínculo OS↔Fatura: roda sempre, independente de mudanças no status,
@@ -884,8 +896,14 @@ export async function emitInvoiceAuto(
       console.log(`[asaas] [auto] NFS-e emitida para fatura #${invoiceId}: ${nfResult.status}`);
     } catch (nfErr: any) {
       console.error(`[asaas] [auto] NFS-e falhou para fatura #${invoiceId}: ${nfErr.message}`);
-      updates.nfse_status = "ERRO";
-      updates.nfse_error_message = String(nfErr?.message || "Erro").slice(0, 1000);
+      if (isNfCorrectionError(nfErr?.message)) {
+        updates.nfse_status = NF_AWAITING_CORRECTION;
+        updates.nfse_error_message = String(nfErr?.message || MISSING_EMAIL_NF_MSG).slice(0, 1000);
+      } else {
+        updates.nfse_status = "ERRO";
+        updates.nfse_error_message = String(nfErr?.message || "Erro").slice(0, 1000);
+        await notifyNfseIntegrationError({ invoice: { ...invoice, ...updates, id: invoiceId }, errorMessage: updates.nfse_error_message });
+      }
     }
   }
 
@@ -1752,11 +1770,11 @@ export function registerAsaasRoutes(app: Express) {
   // O erro mais comum de NFS-e é e-mail do tomador inválido/ausente. Aqui o usuário informa
   // o e-mail correto, gravamos no cadastro, forçamos a atualização no customer do Asaas
   // (PUT incondicional) e re-emitimos a nota no mesmo passo.
-  app.post("/api/invoices/:id/resolver-nf-erro", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/invoices/:id/resolver-nf-erro", requireFinanceiro, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
-      if (user?.role !== "diretoria") {
-        return res.status(403).json({ message: "Somente a diretoria pode reprocessar Notas Fiscais." });
+      if (!canActAsFinanceiro(user)) {
+        return res.status(403).json({ message: "Somente financeiro, admin ou diretoria pode reprocessar Notas Fiscais." });
       }
 
       const id = parseInt(req.params.id);
@@ -1777,7 +1795,7 @@ export function registerAsaasRoutes(app: Express) {
       // re-emissão de uma nota já autorizada/emitida (evita duplicidade fiscal).
       // Espelha a classificação de normalizeInvoiceStatus (ERROR/REJECTED/etc. = erro).
       const nfStatusUp = String(invoice.nfse_status || "").toUpperCase();
-      const emErro = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatusUp) || !!invoice.nfse_error_message;
+      const emErro = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA", "AWAITING_CORRECTION"].includes(nfStatusUp) || !!invoice.nfse_error_message;
       const jaEmitida = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(nfStatusUp);
       if (!emErro || jaEmitida) {
         return res.status(409).json({ message: "Esta fatura não está com NF em erro — reprocessar não é permitido para evitar emissão duplicada. Cancele a NF atual primeiro, se necessário." });
@@ -2088,8 +2106,14 @@ export function registerAsaasRoutes(app: Express) {
           console.log(`[asaas] NFS-e emitida para fatura #${id}: ${nfResult.status}`);
         } catch (nfErr: any) {
           console.error(`[asaas] NFS-e falhou para fatura #${id}: ${nfErr.message}`);
-          updates.nfse_status = "ERRO";
-          updates.nfse_error_message = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
+          if (isNfCorrectionError(nfErr?.message)) {
+            updates.nfse_status = NF_AWAITING_CORRECTION;
+            updates.nfse_error_message = String(nfErr?.message || MISSING_EMAIL_NF_MSG).slice(0, 1000);
+          } else {
+            updates.nfse_status = "ERRO";
+            updates.nfse_error_message = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
+            await notifyNfseIntegrationError({ invoice: { ...invoice, ...updates, id }, errorMessage: updates.nfse_error_message });
+          }
         }
       }
 
@@ -2146,7 +2170,7 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
-  app.get("/api/invoices/:id/notifications", requireAdminRole, async (req: Request, res: Response) => {
+  app.get("/api/invoices/:id/notifications", requireFinanceiro, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
@@ -2167,7 +2191,7 @@ export function registerAsaasRoutes(app: Express) {
       } catch {}
 
       const { data: auditLogs } = await supabaseAdmin
-        .from("system_audit_log")
+        .from("system_audit_logs")
         .select("action, details, created_at")
         .or(`target_id.eq.${invoice.asaas_payment_id},and(target_type.eq.invoice,target_id.eq.${invoice.id})`)
         .order("created_at", { ascending: true })
@@ -3182,7 +3206,7 @@ export function registerAsaasRoutes(app: Express) {
     // ============================================================
     // GET /api/relatorio-nf — visão unificada (boletins + invoices)
     // ============================================================
-    app.get("/api/relatorio-nf", requireAdminRole, async (req: Request, res: Response) => {
+    app.get("/api/relatorio-nf", requireFinanceiro, async (req: Request, res: Response) => {
       try {
         const from = (req.query.from as string) || "";
         const to = (req.query.to as string) || "";
@@ -3264,6 +3288,27 @@ export function registerAsaasRoutes(app: Express) {
             openInvoicesAdded.push(inv);
           }
         }
+
+        const creatorIds = Array.from(new Set(
+          [...invoiceMap.values()]
+            .map((inv: any) => Number(inv.created_by))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ));
+        const creatorNameMap = new Map<number, string>();
+        if (creatorIds.length > 0) {
+          const { data: creators } = await supabaseAdmin
+            .from("users")
+            .select("id, name, email")
+            .in("id", creatorIds);
+          for (const u of creators || []) {
+            creatorNameMap.set(Number(u.id), String(u.name || u.email || "").trim() || "Usuário");
+          }
+        }
+        const invoiceCreatorName = (inv: any) =>
+          resolveActorName({
+            createdBy: inv.created_by,
+            userName: inv.created_by ? (creatorNameMap.get(Number(inv.created_by)) || null) : null,
+          });
 
         // Filtra invoices da Torres (oculta quando provider_cnpj é outro CNPJ)
         const invoiceIsTorres = (inv: any) => {
@@ -3393,6 +3438,9 @@ export function registerAsaasRoutes(app: Express) {
             approvalUrl: null,
             reminderCount: inv.reminder_count || 0,
             lastReminderSentAt: inv.last_reminder_sent_at || null,
+            createdBy: inv.created_by || null,
+            createdByName: invoiceCreatorName(inv),
+            launchedAt: inv.created_at || null,
           });
         }
 
@@ -3521,6 +3569,9 @@ export function registerAsaasRoutes(app: Express) {
             approvalUrl: null,
             reminderCount: inv.reminder_count || 0,
             lastReminderSentAt: inv.last_reminder_sent_at || null,
+            createdBy: inv.created_by || null,
+            createdByName: invoiceCreatorName(inv),
+            launchedAt: inv.created_at || null,
           });
         }
 
@@ -3534,7 +3585,7 @@ export function registerAsaasRoutes(app: Express) {
         // OS aprovadas sem fatura emitida agora aparecem somente nas telas
         // de origem (Boletim de Medição e Relatório de Faturamento).
 
-        const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "AGUARDANDO_PAGAMENTO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
+        const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "AGUARDANDO_PAGAMENTO", "NF_PROCESSANDO", "NF_CORRIGIR", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
         const totals: Record<string, { count: number; value: number }> = {};
         for (const st of STATUSES) {
           const subset = rows.filter(r => r.normalizedStatus === st);
@@ -3690,7 +3741,7 @@ export function registerAsaasRoutes(app: Express) {
     // (não via Asaas). Sincroniza no Asaas via /payments/:id/receiveInCash
     // para refletir lá também.
     // ============================================================
-    app.post("/api/invoices/:id/receive-in-cash", requireAdminRole, async (req: Request, res: Response) => {
+    app.post("/api/invoices/:id/receive-in-cash", requireFinanceiro, async (req: Request, res: Response) => {
       try {
         const user = (req as any).user;
         const invoiceId = Number(req.params.id);
@@ -3815,6 +3866,80 @@ export function registerAsaasRoutes(app: Express) {
       }
     });
 
+    app.post("/api/invoices/:id/comprovante", requireFinanceiro, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        const invoiceId = Number(req.params.id);
+        const { comprovanteBase64, comprovanteFileName, comprovanteContentType } = req.body || {};
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+        if (!comprovanteBase64 || !comprovanteFileName) {
+          return res.status(400).json({ message: "Comprovante é obrigatório (PDF, JPG ou PNG)" });
+        }
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        const ext = String(comprovanteFileName).split(".").pop()?.toLowerCase() || "pdf";
+        if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) {
+          return res.status(400).json({ message: "Formato inválido. Use PDF, JPG ou PNG." });
+        }
+        const buffer = Buffer.from(String(comprovanteBase64).replace(/^data:[^;]+;base64,/, ""), "base64");
+        if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Arquivo maior que 5 MB" });
+        const storagePath = `invoices/${invoiceId}/${Date.now()}.${ext}`;
+        const { error: upErr } = await supabaseAdmin.storage
+          .from("comprovantes-pagamento")
+          .upload(storagePath, buffer, { contentType: comprovanteContentType || "application/octet-stream", upsert: true });
+        if (upErr) throw upErr;
+
+        const now = new Date().toISOString();
+        const note = `[Comprovante anexado por ${user.email} em ${now}]`;
+        const { error } = await supabaseAdmin.from("invoices").update({
+          comprovante_url: storagePath,
+          comprovante_path: storagePath,
+          comprovante_anexado_em: now,
+          nfse_observations: `${note}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
+          updated_at: now,
+        }).eq("id", invoiceId);
+        if (error) throw error;
+        await logSystemAudit({
+          userId: user.id, userName: user.name || user.email, userRole: user.role,
+          action: "INVOICE_COMPROVANTE", targetType: "invoice", targetId: String(invoiceId),
+          details: storagePath, ipAddress: (req as any).ip,
+        });
+        res.json({ success: true, path: storagePath });
+      } catch (err: any) {
+        console.error("[invoice-comprovante]", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    app.post("/api/invoices/:id/ocorrencia", requireFinanceiro, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        const invoiceId = Number(req.params.id);
+        const note = String(req.body?.note || "").trim().slice(0, 500);
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+        if (!note) return res.status(400).json({ message: "Informe a ocorrência" });
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("id, nfse_observations").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+        const now = new Date().toISOString();
+        const chunk = `[Ocorrência por ${user.email} em ${now} — ${note}]`;
+        const { error } = await supabaseAdmin.from("invoices").update({
+          nfse_observations: `${chunk}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
+          updated_at: now,
+        }).eq("id", invoiceId);
+        if (error) throw error;
+        await logSystemAudit({
+          userId: user.id, userName: user.name || user.email, userRole: user.role,
+          action: "INVOICE_OCORRENCIA", targetType: "invoice", targetId: String(invoiceId),
+          details: note, ipAddress: (req as any).ip,
+        });
+        res.json({ success: true });
+      } catch (err: any) {
+        console.error("[invoice-ocorrencia]", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     // ============================================================
     // RASTREIO COMPLETO DA FATURA ("rota do dinheiro").
     // Agrega numa única timeline cronológica TODAS as fontes de
@@ -3829,7 +3954,7 @@ export function registerAsaasRoutes(app: Express) {
     // Responde a "quem marcou recebido em dinheiro" e "quando foi a
     // transferência dessa nota fiscal".
     // ============================================================
-    app.get("/api/invoices/:id/rastreio", requireAdminRole, async (req: Request, res: Response) => {
+    app.get("/api/invoices/:id/rastreio", requireFinanceiro, async (req: Request, res: Response) => {
       try {
         const invoiceId = Number(req.params.id);
         if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
@@ -3861,9 +3986,9 @@ export function registerAsaasRoutes(app: Express) {
           ts: toMs(invoice.created_at),
           at: invoice.created_at || null,
           kind: "criada",
-          who: creatorName,
+          who: resolveActorName({ createdBy: invoice.created_by, userName: creatorName }),
           title: "Fatura criada",
-          detail: `Valor ${Number(invoice.value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · venc. ${invoice.due_date || "—"} · ${invoice.gateway === "inter" ? "Banco Inter" : "Asaas"}`,
+          detail: `Valor ${Number(invoice.value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · lançamento ${invoice.created_at || "—"} · venc. ${invoice.due_date || "—"} · ${invoice.gateway === "inter" ? "Banco Inter" : "Asaas"}`,
           value: Number(invoice.value || 0) || null,
         });
 
@@ -3884,7 +4009,7 @@ export function registerAsaasRoutes(app: Express) {
             ts: toMs(a.created_at),
             at: a.created_at || null,
             kind: "auditoria",
-            who: a.user_name || null,
+            who: resolveActorName({ userName: a.user_name, createdBy: a.user_name ? 1 : null }),
             title: String(a.action || "Ação").replace(/_/g, " "),
             detail: [detail, a.ip_address ? `IP ${a.ip_address}` : null].filter(Boolean).join(" · ") || null,
             value: null,
@@ -3902,15 +4027,18 @@ export function registerAsaasRoutes(app: Express) {
             const valM = inner.match(/R\$\s?([\d.]+)/);
             const isBaixa = /^Baixa manual/i.test(inner);
             const isVenc = /^Vencimento alterado/i.test(inner);
+            const isOcorrencia = /^Ocorrência/i.test(inner);
+            const isComprovanteNota = /^Comprovante anexado/i.test(inner);
+            if (isComprovanteNota) continue;
             const methodM = inner.match(/^Baixa manual (\w+)/i);
             events.push({
               ts: toMs(tsM?.[1]),
               at: tsM?.[1] || null,
-              kind: isBaixa ? "baixa" : isVenc ? "vencimento" : "nota",
+              kind: isBaixa ? "baixa" : isVenc ? "vencimento" : isOcorrencia ? "ocorrencia" : "nota",
               who: whoM?.[1]?.trim() || null,
               title: isBaixa
                 ? `Baixa manual${methodM ? ` em ${methodM[1].toUpperCase()}` : ""}`
-                : isVenc ? "Vencimento alterado" : "Anotação",
+                : isVenc ? "Vencimento alterado" : isOcorrencia ? "Ocorrência" : "Anotação",
               detail: inner,
               value: valM ? Number(valM[1]) || null : null,
             });
@@ -3952,6 +4080,92 @@ export function registerAsaasRoutes(app: Express) {
             title: String(f.type || "").toUpperCase() === "INCOME" ? "Receita registrada no caixa" : "Lançamento financeiro",
             detail: [f.description, f.category].filter(Boolean).join(" · ") || null,
             value: Number(f.amount || 0) || null,
+          });
+        }
+
+        if (invoice.invoice_url || invoice.bank_slip_url || invoice.asaas_payment_id) {
+          events.push({
+            ts: toMs(invoice.created_at) + 1,
+            at: invoice.created_at || null,
+            kind: "boleto",
+            who: resolveActorName({ createdBy: invoice.created_by, userName: creatorName }),
+            title: "Boleto / link de cobrança gerado",
+            detail: [
+              invoice.billing_type,
+              invoice.asaas_payment_id ? `Asaas ${invoice.asaas_payment_id}` : null,
+            ].filter(Boolean).join(" · ") || null,
+            value: null,
+          });
+        }
+
+        let asaasEmailEvents = 0;
+        if (invoice.asaas_payment_id) {
+          try {
+            const notifData = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/notifications`);
+            const notifications = notifData?.data || (Array.isArray(notifData) ? notifData : []);
+            for (const n of notifications) {
+              const d = describeAsaasPaymentNotification(n);
+              events.push({
+                ts: toMs(d.at),
+                at: d.at,
+                kind: d.kind,
+                who: INTEGRATION_ACTOR,
+                title: d.title,
+                detail: d.detail,
+                value: null,
+              });
+              asaasEmailEvents += 1;
+            }
+            try {
+              const paymentDetails = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+              if (paymentDetails?.lastInvoiceViewedDate) {
+                events.push({
+                  ts: toMs(paymentDetails.lastInvoiceViewedDate),
+                  at: paymentDetails.lastInvoiceViewedDate,
+                  kind: "leitura",
+                  who: INTEGRATION_ACTOR,
+                  title: "Cobrança visualizada pelo cliente",
+                  detail: paymentDetails.customer?.email ? `Cliente: ${paymentDetails.customer.email}` : null,
+                  value: null,
+                });
+              }
+            } catch { /* leitura é opcional */ }
+          } catch (e: any) {
+            console.warn(`[invoice-rastreio] notificações Asaas fatura #${invoiceId}: ${e?.message || e}`);
+          }
+        }
+
+        if (invoice.email_sent_at && asaasEmailEvents === 0) {
+          events.push({
+            ts: toMs(invoice.email_sent_at),
+            at: invoice.email_sent_at,
+            kind: "email",
+            who: INTEGRATION_ACTOR,
+            title: "E-mail enviado",
+            detail: invoice.email_sent_to ? `Para: ${invoice.email_sent_to}` : null,
+            value: null,
+          });
+        }
+        if (invoice.nfse_status) {
+          events.push({
+            ts: toMs(invoice.updated_at || invoice.created_at),
+            at: invoice.updated_at || null,
+            kind: "nf",
+            who: resolveActorName({ createdBy: invoice.created_by, userName: creatorName }),
+            title: `NFS-e ${invoice.nfse_status}`,
+            detail: invoice.nfse_number ? `Nº ${invoice.nfse_number}` : (invoice.nfse_error_message || null),
+            value: null,
+          });
+        }
+        if (invoice.comprovante_anexado_em || invoice.comprovante_url) {
+          events.push({
+            ts: toMs(invoice.comprovante_anexado_em),
+            at: invoice.comprovante_anexado_em || null,
+            kind: "comprovante",
+            who: null,
+            title: "Comprovante de pagamento anexado",
+            detail: invoice.comprovante_path || invoice.comprovante_url || null,
+            value: null,
           });
         }
 

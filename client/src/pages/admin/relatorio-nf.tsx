@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench, History,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench, History, Paperclip, MessageSquare,
 } from "lucide-react";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,7 +22,7 @@ import AdminLayout from "@/components/admin/layout";
 type NormalizedStatus =
   | "AGUARDANDO_BOLETIM"
   | "PENDENTE_APROVACAO" | "AUTORIZADO" | "AGUARDANDO_PAGAMENTO" | "NF_PROCESSANDO" | "NF_EMITIDA"
-  | "NF_ERRO" | "NF_CANCELADA" | "PAGO" | "VENCIDO" | "OUTRO";
+  | "NF_CORRIGIR" | "NF_ERRO" | "NF_CANCELADA" | "PAGO" | "VENCIDO" | "OUTRO";
 
 type RelatorioRow = {
   id: string;
@@ -57,6 +57,9 @@ type RelatorioRow = {
   approvalUrl: string | null;
   reminderCount: number;
   lastReminderSentAt: string | null;
+  createdBy?: number | null;
+  createdByName?: string | null;
+  launchedAt?: string | null;
 };
 
 type RelatorioResponse = {
@@ -82,6 +85,7 @@ const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: st
   AUTORIZADO:         { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
   NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
+  NF_CORRIGIR:        { label: "Corrigir cadastro", cls: "text-amber-800",   bg: "bg-amber-50 border-amber-300",       icon: Wrench },
   NF_EMITIDA:         { label: "NF emitida",        cls: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200",   icon: FileText },
   NF_ERRO:            { label: "NF com erro",       cls: "text-red-700",     bg: "bg-red-50 border-red-200",           icon: AlertTriangle },
   NF_CANCELADA:       { label: "NF cancelada",      cls: "text-neutral-600", bg: "bg-neutral-100 border-neutral-200",  icon: XCircle },
@@ -108,6 +112,7 @@ export default function RelatorioNFPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
+  const isFinanceiro = user?.role === "diretoria" || user?.role === "admin" || user?.role === "financeiro";
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; contentType: string | null; htmlText: string | null; loading: boolean; error: string | null } | null>(null);
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
@@ -115,7 +120,7 @@ export default function RelatorioNFPage() {
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
   const [resolverModal, setResolverModal] = useState<{ invoiceId: number; clientName: string; email: string; errorMsg: string | null } | null>(null);
   const [osModal, setOsModal] = useState<{ clientName: string; nfNumber: string | null; total: number; osList: Array<{ id: number; osNumber: string; value?: number }> } | null>(null);
-  const [traceModal, setTraceModal] = useState<{ invoiceId: number; clientName: string; value: number; netValue: number | null; status: string | null; paymentDate: string | null } | null>(null);
+  const [traceModal, setTraceModal] = useState<{ invoiceId: number; clientName: string; value: number; netValue: number | null; status: string | null; paymentDate: string | null; dueDate: string | null; launchedAt: string | null; createdByName: string | null } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -245,6 +250,8 @@ export default function RelatorioNFPage() {
   });
 
   const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
+  const [ocorrenciaModal, setOcorrenciaModal] = useState<{ invoiceId: number; clientName: string; note: string } | null>(null);
+  const [comprovanteModal, setComprovanteModal] = useState<{ invoiceId: number; clientName: string; fileName: string; base64: string; contentType: string } | null>(null);
   const [dueDateModal, setDueDateModal] = useState<{ invoiceId: number; clientName: string; value: number; currentDueDate: string; newDueDate: string; reason: string } | null>(null);
   const [cleanupModal, setCleanupModal] = useState<{ loading: boolean; orphans: Array<{ id: number; client_name: string; value: number; description: string | null; status: string; due_date: string | null; nfse_number: string | null }>; totalValue: number } | null>(null);
 
@@ -303,6 +310,42 @@ export default function RelatorioNFPage() {
       invalidateRelatedQueries("invoice");
     },
     onError: (e: any) => toast({ title: "Erro ao baixar fatura", description: e?.message, variant: "destructive" }),
+  });
+
+  const ocorrenciaMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; note: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/ocorrencia`, {
+        method: "POST",
+        body: JSON.stringify({ note: payload.note }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Ocorrência registrada" });
+      setOcorrenciaModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro ao registrar ocorrência", description: e?.message, variant: "destructive" }),
+  });
+
+  const comprovanteMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; comprovanteBase64: string; comprovanteFileName: string; comprovanteContentType: string }) => {
+      const r = await authFetch(`/api/invoices/${payload.invoiceId}/comprovante`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Comprovante anexado" });
+      setComprovanteModal(null);
+      invalidateRelatedQueries("invoice");
+    },
+    onError: (e: any) => toast({ title: "Erro ao anexar comprovante", description: e?.message, variant: "destructive" }),
   });
 
   const changeDueDateMutation = useMutation({
@@ -522,6 +565,7 @@ export default function RelatorioNFPage() {
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
     { key: "VENCIDO",            label: "Vencido",           icon: AlertOctagon,   cls: "from-red-600 to-red-800 text-white" },
+    { key: "NF_CORRIGIR",       label: "Corrigir cadastro", icon: Wrench,        cls: "from-amber-500 to-orange-700 text-white" },
     { key: "NF_ERRO",            label: "Com erro",          icon: AlertTriangle,  cls: "from-red-500 to-red-700 text-white" },
     { key: "NF_CANCELADA",       label: "Cancelada",         icon: XCircle,        cls: "from-neutral-500 to-neutral-700 text-white" },
   ];
@@ -604,6 +648,7 @@ export default function RelatorioNFPage() {
                   <SelectItem value="AGUARDANDO_PAGAMENTO">Aguard. pagto (sem NF)</SelectItem>
                   <SelectItem value="NF_EMITIDA">NF emitida</SelectItem>
                   <SelectItem value="PAGO">Pago</SelectItem>
+                  <SelectItem value="NF_CORRIGIR">Corrigir cadastro</SelectItem>
                   <SelectItem value="NF_ERRO">Com erro</SelectItem>
                   <SelectItem value="NF_CANCELADA">Cancelada</SelectItem>
                   <SelectItem value="VENCIDO">Vencido</SelectItem>
@@ -681,7 +726,7 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-left px-3 py-2 font-semibold">Período</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
-                  <th className="text-left px-3 py-2 font-semibold">Criado em</th>
+                  <th className="text-left px-3 py-2 font-semibold">Lançamento / autor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-center px-3 py-2 font-semibold">Dias</th>
                   <th className="text-center px-3 py-2 font-semibold">Status</th>
@@ -802,7 +847,12 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-right font-semibold tabular-nums" data-testid={`text-value-${r.id}`}>
                         {fmtBRL(r.value)}
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">{fmtDate(r.createdAt)}</td>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {fmtDate(r.launchedAt || r.createdAt)}
+                        <div className="text-[10px] text-slate-400 mt-0.5" title="Quem criou a fatura">
+                          {r.createdByName || "Integração"}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-xs whitespace-nowrap">
                         {!r.dueDate ? (
                           <span className="text-slate-300">—</span>
@@ -866,7 +916,7 @@ export default function RelatorioNFPage() {
                             {r.nfseErrorMessage}
                           </button>
                         )}
-                        {isDiretoria && r.normalizedStatus === "NF_ERRO" && r.source === "INVOICE" && r.invoiceId && (
+                        {isFinanceiro && (r.normalizedStatus === "NF_ERRO" || r.normalizedStatus === "NF_CORRIGIR") && r.source === "INVOICE" && r.invoiceId && (
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
@@ -939,7 +989,7 @@ export default function RelatorioNFPage() {
                           {r.source === "INVOICE" && r.invoiceId && (
                             <button
                               type="button"
-                              onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate })}
+                              onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate, dueDate: r.dueDate || null, launchedAt: r.launchedAt || r.createdAt || null, createdByName: r.createdByName || null })}
                               className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
                               title="Rastreio completo (rota do dinheiro)"
                               data-testid={`button-trace-${r.id}`}
@@ -973,7 +1023,7 @@ export default function RelatorioNFPage() {
                               <FileCheck2 className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
                             <button
                               type="button"
                               onClick={() => {
@@ -985,6 +1035,28 @@ export default function RelatorioNFPage() {
                               data-testid={`button-receive-cash-${r.id}`}
                             >
                               <Banknote className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && (
+                            <button
+                              type="button"
+                              onClick={() => setComprovanteModal({ invoiceId: r.invoiceId!, clientName: r.clientName, fileName: "", base64: "", contentType: "" })}
+                              className="h-7 w-7 inline-flex items-center justify-center text-sky-700 hover:bg-sky-50 hover:text-sky-800 transition-colors"
+                              title="Anexar comprovante de pagamento"
+                              data-testid={`button-comprovante-${r.id}`}
+                            >
+                              <Paperclip className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && (
+                            <button
+                              type="button"
+                              onClick={() => setOcorrenciaModal({ invoiceId: r.invoiceId!, clientName: r.clientName, note: "" })}
+                              className="h-7 w-7 inline-flex items-center justify-center text-violet-700 hover:bg-violet-50 hover:text-violet-800 transition-colors"
+                              title="Informar ocorrência"
+                              data-testid={`button-ocorrencia-${r.id}`}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
                             </button>
                           )}
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
@@ -1181,7 +1253,7 @@ export default function RelatorioNFPage() {
                         {r.source === "INVOICE" && r.invoiceId && (
                           <button
                             type="button"
-                            onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate })}
+                            onClick={() => setTraceModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: r.value, netValue: r.netValue, status: r.rawStatus, paymentDate: r.paymentDate, dueDate: r.dueDate || null, launchedAt: r.launchedAt || r.createdAt || null, createdByName: r.createdByName || null })}
                             className="h-7 w-7 inline-flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
                             title="Rastreio completo (rota do dinheiro)"
                             data-testid={`button-paid-trace-${r.id}`}
@@ -1775,6 +1847,87 @@ export default function RelatorioNFPage() {
         </DialogContent>
       </Dialog>
 
+      </Dialog>
+
+      <Dialog open={!!ocorrenciaModal} onOpenChange={open => { if (!open && !ocorrenciaMutation.isPending) setOcorrenciaModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Ocorrência da fatura</DialogTitle>
+            <DialogDescription>Fica no histórico da fatura com o seu nome e a data.</DialogDescription>
+          </DialogHeader>
+          {ocorrenciaModal && (
+            <div className="space-y-3">
+              <p className="text-sm"><span className="text-slate-500">Cliente:</span> <strong>{ocorrenciaModal.clientName}</strong></p>
+              <Textarea
+                value={ocorrenciaModal.note}
+                onChange={e => setOcorrenciaModal({ ...ocorrenciaModal, note: e.target.value })}
+                placeholder="Descreva a ocorrência"
+                maxLength={500}
+                data-testid="textarea-ocorrencia"
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOcorrenciaModal(null)}>Cancelar</Button>
+            <Button
+              onClick={() => ocorrenciaModal && ocorrenciaMutation.mutate({ invoiceId: ocorrenciaModal.invoiceId, note: ocorrenciaModal.note.trim() })}
+              disabled={ocorrenciaMutation.isPending || !ocorrenciaModal?.note.trim()}
+              data-testid="button-confirm-ocorrencia"
+            >
+              {ocorrenciaMutation.isPending ? "Salvando…" : "Registrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!comprovanteModal} onOpenChange={open => { if (!open && !comprovanteMutation.isPending) setComprovanteModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Paperclip className="h-4 w-4" /> Comprovante de pagamento</DialogTitle>
+            <DialogDescription>PDF, JPG ou PNG até 5 MB. Reutiliza o mesmo armazenamento dos comprovantes do financeiro.</DialogDescription>
+          </DialogHeader>
+          {comprovanteModal && (
+            <div className="space-y-3">
+              <p className="text-sm"><span className="text-slate-500">Cliente:</span> <strong>{comprovanteModal.clientName}</strong></p>
+              <Input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"
+                data-testid="input-comprovante-file"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const buf = await file.arrayBuffer();
+                  const bytes = new Uint8Array(buf);
+                  let binary = "";
+                  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                  setComprovanteModal({
+                    ...comprovanteModal,
+                    fileName: file.name,
+                    contentType: file.type || "application/octet-stream",
+                    base64: btoa(binary),
+                  });
+                }}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setComprovanteModal(null)}>Cancelar</Button>
+            <Button
+              onClick={() => comprovanteModal && comprovanteMutation.mutate({
+                invoiceId: comprovanteModal.invoiceId,
+                comprovanteBase64: comprovanteModal.base64,
+                comprovanteFileName: comprovanteModal.fileName,
+                comprovanteContentType: comprovanteModal.contentType,
+              })}
+              disabled={comprovanteMutation.isPending || !comprovanteModal?.base64}
+              data-testid="button-confirm-comprovante"
+            >
+              {comprovanteMutation.isPending ? "Enviando…" : "Anexar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal: auditoria das OS que compõem a fatura */}
       <Dialog open={!!osModal} onOpenChange={open => { if (!open) setOsModal(null); }}>
         <DialogContent className="max-w-lg" aria-describedby={undefined}>
@@ -1895,6 +2048,9 @@ export default function RelatorioNFPage() {
           netValue={traceModal.netValue}
           status={traceModal.status}
           paymentDate={traceModal.paymentDate}
+          dueDate={traceModal.dueDate}
+          launchedAt={traceModal.launchedAt}
+          createdByName={traceModal.createdByName}
           onClose={() => setTraceModal(null)}
         />
       )}

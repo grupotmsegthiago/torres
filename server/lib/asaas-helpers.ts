@@ -348,8 +348,9 @@ export const MISSING_EMAIL_NF_MSG =
  * causa de e-mail do cliente faltando/inválido. Opt-in: `undefined` = caller
  * legado que não informou e-mail ⇒ não bloqueia (mantém comportamento antigo).
  */
-export function shouldBlockNfEmission(clientEmail: string | undefined): boolean {
-  return clientEmail !== undefined && !isValidEmail(clientEmail);
+export function isNfCorrectionError(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  return m.includes("e-mail do cliente ausente") || m.includes("e-mail do tomador") || m.includes("nf_correction_required");
 }
 
 /** Status de NFS-e que indicam erro/rejeição (espelha normalizeInvoiceStatus). */
@@ -446,4 +447,42 @@ export function buildMarkEmittedInvoiceUpdates(opts: {
   const nfNumber = String(opts.nfNumber || "").trim().slice(0, 60);
   if (nfNumber) updates.nfse_number = nfNumber;
   return updates;
+}
+
+const ASAAS_NOTIFICATION_EVENT_LABEL: Record<string, string> = {
+  PAYMENT_CREATED: "E-mail de cobrança enviado",
+  PAYMENT_RECEIVED: "E-mail de confirmação de pagamento",
+  PAYMENT_OVERDUE: "E-mail de cobrança vencida",
+  PAYMENT_DUEDATE_WARNING: "E-mail de lembrete de vencimento",
+  PAYMENT_DELETED: "E-mail de cobrança cancelada",
+};
+
+const ASAAS_NOTIFICATION_STATUS_LABEL: Record<string, string> = {
+  READ: "lido",
+  SENT: "enviado",
+  DELIVERED: "enviado",
+  BOUNCED: "falhou (bounce)",
+  FAILED: "falhou",
+  QUEUED: "agendado",
+  SCHEDULED: "agendado",
+};
+
+/** Rótulo estável da notificação Asaas para a timeline da fatura. */
+export function describeAsaasPaymentNotification(n: {
+  event?: string | null;
+  status?: string | null;
+  emailAddress?: string | null;
+  scheduleDate?: string | null;
+  dateCreated?: string | null;
+}): { kind: "email"; title: string; detail: string | null; at: string | null } {
+  const eventKey = String(n.event || "").toUpperCase();
+  const eventLabel = ASAAS_NOTIFICATION_EVENT_LABEL[eventKey] || `Notificação: ${n.event || "desconhecido"}`;
+  const st = String(n.status || "").toUpperCase();
+  const statusLabel = ASAAS_NOTIFICATION_STATUS_LABEL[st] || (st ? st.toLowerCase() : "registrado");
+  return {
+    kind: "email",
+    title: `${eventLabel} (${statusLabel})`,
+    detail: n.emailAddress ? `Para: ${n.emailAddress}` : null,
+    at: n.scheduleDate || n.dateCreated || null,
+  };
 }

@@ -294,6 +294,7 @@ export interface IStorage {
   createFirstAdmin(data: { supabaseUid: string; email: string; name: string }): Promise<User>;
   getPerfilAcesso(role: string): Promise<PerfilAcesso | undefined>;
   getAllPerfis(): Promise<PerfilAcesso[]>;
+  upsertPerfilAcesso(role: string, label: string, permissions: string): Promise<PerfilAcesso>;
 
   getClients(): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
@@ -475,6 +476,15 @@ export class DatabaseStorage implements IStorage {
   async getAllPerfis(): Promise<PerfilAcesso[]> {
     return resilientList<PerfilAcesso>("perfis_acesso", () =>
       supabaseAdmin.from("perfis_acesso").select("*"));
+  }
+
+  async upsertPerfilAcesso(role: string, label: string, permissions: string): Promise<PerfilAcesso> {
+    const existing = await this.getPerfilAcesso(role);
+    if (existing?.id) {
+      const updated = await resilientUpdate<PerfilAcesso>("perfis_acesso", { label, permissions }, { id: existing.id });
+      if (updated) return updated;
+    }
+    return resilientInsert<PerfilAcesso>("perfis_acesso", { role, label, permissions });
   }
 
   async getClients(): Promise<Client[]> {
