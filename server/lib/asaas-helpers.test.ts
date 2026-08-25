@@ -21,6 +21,8 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   DESCRICAO_SERVICO_FIXA,
   TORRES_CNPJ,
+  buildMarkEmittedInvoiceUpdates,
+  MARK_EMITTED_INVOICE_COLUMNS,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -419,4 +421,37 @@ test("buildNfClientEmail: sem INSS não mostra linhas de retenção", () => {
   });
   assert.equal(/Retenção INSS/.test(html), false);
   assert.equal(/Valor líquido a pagar/.test(html), false);
+});
+
+test("buildMarkEmittedInvoiceUpdates: grava AUTHORIZED e observação, sem nfse_authorized_at", () => {
+  const updates = buildMarkEmittedInvoiceUpdates({
+    invoice: { nfse_observations: "histórica" },
+    email: "thiago@example.com",
+    nfNumber: "2562",
+    note: "PAGO DIA 04/08",
+    nowIso: "2026-08-25T16:00:00.000Z",
+  });
+  assert.equal(updates.nfse_status, "AUTHORIZED");
+  assert.equal(updates.nfse_number, "2562");
+  assert.match(updates.nfse_observations, /thiago@example.com/);
+  assert.match(updates.nfse_observations, /PAGO DIA 04\/08/);
+  assert.match(updates.nfse_observations, /histórica/);
+  assert.equal("nfse_authorized_at" in updates, false);
+  for (const key of Object.keys(updates)) {
+    assert.ok(
+      (MARK_EMITTED_INVOICE_COLUMNS as readonly string[]).includes(key),
+      `coluna inesperada no payload: ${key}`,
+    );
+  }
+});
+
+test("buildMarkEmittedInvoiceUpdates: número vazio não inclui nfse_number", () => {
+  const updates = buildMarkEmittedInvoiceUpdates({
+    invoice: {},
+    email: "a@b.c",
+    nfNumber: "   ",
+    nowIso: "2026-08-25T16:00:00.000Z",
+  });
+  assert.equal("nfse_number" in updates, false);
+  assert.equal(updates.nfse_status, "AUTHORIZED");
 });

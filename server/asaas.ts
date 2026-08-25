@@ -35,6 +35,7 @@ import {
   extractNfErrorMessage,
   resolveNfErrorMessage,
   shouldBlockNfEmission,
+  buildMarkEmittedInvoiceUpdates,
 } from "./lib/asaas-helpers";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
@@ -3666,12 +3667,12 @@ export function registerAsaasRoutes(app: Express) {
         const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
         if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
 
-        const updates: any = {
-          nfse_status: "AUTHORIZED",
-          nfse_observations: `[Marcada manualmente como emitida por ${user.email} em ${new Date().toISOString()}]${note ? ` ${note}` : ""}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 1000),
-        };
-        if (nfNumber) updates.nfse_number = nfNumber;
-        if (!invoice.nfse_authorized_at) updates.nfse_authorized_at = new Date().toISOString();
+        const updates = buildMarkEmittedInvoiceUpdates({
+          invoice,
+          email: user.email,
+          nfNumber,
+          note,
+        });
 
         const { error } = await supabaseAdmin.from("invoices").update(updates).eq("id", invoiceId);
         if (error) throw error;

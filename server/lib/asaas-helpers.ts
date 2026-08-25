@@ -417,3 +417,33 @@ export function resolveNfErrorMessage(
   if (prev) return prev;
   return genericNfErrorMessage(status || nfObj?.status);
 }
+
+/** Colunas reais de `invoices` usadas ao marcar NF emitida fora do Asaas. */
+export const MARK_EMITTED_INVOICE_COLUMNS = [
+  "nfse_status",
+  "nfse_observations",
+  "nfse_number",
+] as const;
+
+/**
+ * Payload de UPDATE para `/api/relatorio-nf/mark-emitted`.
+ * Só inclui colunas que existem em `invoices` (não grava `nfse_authorized_at`).
+ * O relatório classifica NF emitida por `nfse_status` AUTHORIZED/SYNCHRONIZED/ISSUED.
+ */
+export function buildMarkEmittedInvoiceUpdates(opts: {
+  invoice: { nfse_observations?: string | null };
+  email: string;
+  nfNumber?: string | null;
+  note?: string;
+  nowIso?: string;
+}): Record<string, string> {
+  const nowIso = opts.nowIso ?? new Date().toISOString();
+  const note = String(opts.note || "").slice(0, 500);
+  const updates: Record<string, string> = {
+    nfse_status: "AUTHORIZED",
+    nfse_observations: `[Marcada manualmente como emitida por ${opts.email} em ${nowIso}]${note ? ` ${note}` : ""}${opts.invoice.nfse_observations ? ` | ${opts.invoice.nfse_observations}` : ""}`.slice(0, 1000),
+  };
+  const nfNumber = String(opts.nfNumber || "").trim().slice(0, 60);
+  if (nfNumber) updates.nfse_number = nfNumber;
+  return updates;
+}
