@@ -45,15 +45,36 @@ export const VEHICLE_ICON_SRC: Record<string, string> = Object.fromEntries(
   VEHICLE_ICON_OPTIONS.map((o) => [o.key, o.src]),
 );
 
-export function vehicleIconSrc(iconType?: string | null): string {
+export function isVehicleIconKey(key: string): key is VehicleIconKey {
+  return VEHICLE_ICON_OPTIONS.some((o) => o.key === key);
+}
+
+/** Ícone para mapa/grid: tipo gravado, senão inferência por marca/modelo (ex.: Mobi ainda com default polo). */
+export function resolveVehicleIcon(
+  iconType?: string | null,
+  brand?: string | null,
+  model?: string | null,
+): VehicleIconKey {
   const key = String(iconType || "").trim().toLowerCase();
-  return VEHICLE_ICON_SRC[key] || VEHICLE_ICON_SRC.polo;
+  const inferred = inferVehicleIcon(brand, model);
+  if (key && key !== "polo" && isVehicleIconKey(key)) return key;
+  if (inferred) return inferred;
+  if (isVehicleIconKey(key)) return key;
+  return "polo";
+}
+
+export function vehicleIconSrc(
+  iconType?: string | null,
+  brand?: string | null,
+  model?: string | null,
+): string {
+  return VEHICLE_ICON_SRC[resolveVehicleIcon(iconType, brand, model)] || VEHICLE_ICON_SRC.polo;
 }
 
 export function inferVehicleIcon(brand?: string | null, model?: string | null): VehicleIconKey | null {
   const b = String(brand || "").toUpperCase();
   const m = String(model || "").toUpperCase();
-  if ((b.includes("FIAT") || m.includes("FIAT")) && m.includes("MOBI")) return "mobi";
+  if (m.includes("MOBI")) return "mobi";
   if (m.includes("KWID") || (b.includes("RENAULT") && m.includes("KWID"))) return "kwid";
   if (m.includes("POLO")) return "polo";
   return null;

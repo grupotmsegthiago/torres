@@ -31,7 +31,7 @@ import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
-import { VEHICLE_ICON_OPTIONS, vehicleIconSrc } from "@shared/vehicle-icons";
+import { VEHICLE_ICON_OPTIONS, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -1468,6 +1468,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const initialBoundsDoneRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const [carIconsReady, setCarIconsReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
   const [activeRouteOsId, setActiveRouteOsId] = useState<number | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -1477,12 +1478,17 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const [radiusKm, setRadiusKm] = useState(20);
 
   useEffect(() => {
-    const sources: Record<string, string> = Object.fromEntries(VEHICLE_ICON_OPTIONS.map((o) => [o.key, o.src]));
-    Object.entries(sources).forEach(([key, src]) => {
+    let pending = VEHICLE_ICON_OPTIONS.length;
+    const markDone = () => {
+      pending -= 1;
+      if (pending <= 0) setCarIconsReady(true);
+    };
+    VEHICLE_ICON_OPTIONS.forEach((o) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = src;
-      carImagesRef.current[key] = img;
+      img.onload = markDone;
+      img.onerror = markDone;
+      img.src = o.src;
+      carImagesRef.current[o.key] = img;
     });
   }, []);
 
@@ -1558,12 +1564,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
       const isSpy = v.deviceType === "spy";
 
-      const getCarImageKey = (iconType?: string | null) => {
-        const key = String(iconType || "").toLowerCase();
-        return VEHICLE_ICON_OPTIONS.some((o) => o.key === key) ? key : "polo";
-      };
-
-      const buildCarIcon = (statusColor: string, plate: string, iconType?: string | null) => {
+      const buildCarIcon = (statusColor: string, plate: string, iconType?: string | null, brand?: string | null, model?: string | null) => {
         const canvas = document.createElement("canvas");
         const size = 56;
         const labelH = 16;
@@ -1591,7 +1592,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
 
-        const imgKey = getCarImageKey(iconType);
+        const imgKey = resolveVehicleIcon(iconType, brand, model);
         const img = carImagesRef.current[imgKey];
         if (img && img.complete && img.naturalWidth > 0) {
           ctx.save();
@@ -1657,7 +1658,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
           else if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista") statusColor = "#0891b2";
         }
         markerIcon = {
-          url: buildCarIcon(statusColor, v.plate, v.iconType),
+          url: buildCarIcon(statusColor, v.plate, v.iconType, v.brand, v.model),
           scaledSize: new window.google.maps.Size(48, 62),
           anchor: new window.google.maps.Point(24, 48),
         };
@@ -1865,7 +1866,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         initialBoundsDoneRef.current = true;
       }
     }
-  }, [mapReady, vehicles]);
+  }, [mapReady, vehicles, carIconsReady]);
 
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current || !window.google?.maps) return;
@@ -5373,8 +5374,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: statusColor }}>
-                          <img src={vehicleIconSrc(v.iconType)} alt="VTR" className="w-full h-full object-cover" />
+                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white" style={{ borderColor: statusColor }}>
+                          <img src={vehicleIconSrc(v.iconType, v.brand, v.model)} alt="VTR" className="w-full h-full object-cover" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -6191,7 +6192,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             style={{ borderColor: statusColor }}
                           >
                             <img
-                              src={vehicleIconSrc(v.iconType)}
+                              src={vehicleIconSrc(v.iconType, v.brand, v.model)}
                               alt={v.plate}
                               className="w-full h-full object-cover"
                             />
@@ -7472,8 +7473,8 @@ function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
                   className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-lg px-3 py-2.5 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left group shadow-sm"
                   data-testid={`proximity-vehicle-${v.id}`}
                 >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8" }}>
-                    <img src={vehicleIconSrc(v.iconType)} alt="VTR" className="w-full h-full object-cover" />
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8" }}>
+                    <img src={vehicleIconSrc(v.iconType, v.brand, v.model)} alt="VTR" className="w-full h-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">

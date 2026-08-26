@@ -7,6 +7,7 @@ import type { Express } from "express";
   import { nominatimGeocode } from "../db-init";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
   import { haversineDist } from "./_helpers";
+  import { resolveVehicleIcon } from "@shared/vehicle-icons";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
 
@@ -1095,7 +1096,7 @@ import type { Express } from "express";
           trackerType: v.trackerType || "none",
           truckscontrolIdentifier: v.truckscontrolIdentifier,
           ssxIntegrationCode: (v as any).ssxIntegrationCode ?? null,
-          iconType: v.iconType || "polo",
+          iconType: resolveVehicleIcon(v.iconType, v.brand, v.model),
           photoFront: v.photoFront || null,
           noSignalSince,
           deviceType: "vehicle" as const,
