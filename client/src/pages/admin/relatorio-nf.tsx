@@ -1847,8 +1847,6 @@ export default function RelatorioNFPage() {
         </DialogContent>
       </Dialog>
 
-      </Dialog>
-
       <Dialog open={!!ocorrenciaModal} onOpenChange={open => { if (!open && !ocorrenciaMutation.isPending) setOcorrenciaModal(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
