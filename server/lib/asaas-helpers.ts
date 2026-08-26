@@ -348,6 +348,11 @@ export const MISSING_EMAIL_NF_MSG =
  * causa de e-mail do cliente faltando/inválido. Opt-in: `undefined` = caller
  * legado que não informou e-mail ⇒ não bloqueia (mantém comportamento antigo).
  */
+export function shouldBlockNfEmission(clientEmail: string | undefined): boolean {
+  if (clientEmail === undefined) return false;
+  return !isValidEmail(clientEmail);
+}
+
 export function isNfCorrectionError(message: string | null | undefined): boolean {
   const m = String(message || "").toLowerCase();
   return m.includes("e-mail do cliente ausente") || m.includes("e-mail do tomador") || m.includes("nf_correction_required");
@@ -363,6 +368,48 @@ export function isNfErrorStatus(status: string | null | undefined): boolean {
 
 export function isNfOkStatus(status: string | null | undefined): boolean {
   return NF_OK_STATUSES.includes(String(status || "").toUpperCase());
+}
+
+/** Número municipal real — ignora o id interno do Asaas (`inv_...`). */
+export function isFinalNfNumber(nfseNumber: unknown): boolean {
+  const n = String(nfseNumber || "").trim();
+  return n.length > 0 && !/^inv_/i.test(n);
+}
+
+/** NF de fato emitida na prefeitura: status ok + número municipal (não só o id Asaas). */
+export function isNfFullyIssued(nfseStatus: unknown, nfseNumber: unknown): boolean {
+  return isNfOkStatus(nfseStatus) && isFinalNfNumber(nfseNumber);
+}
+
+/**
+ * Relatório de NF: AUTHORIZED/ISSUED sem número municipal = ainda processando
+ * (igual ao fluxo TM SEG / Asaas — a nota só existe quando a prefeitura devolve o nº).
+ */
+export function classifyIssuedOrProcessing(
+  nfseStatus: unknown,
+  nfseNumber: unknown,
+): "NF_EMITIDA" | "NF_PROCESSANDO" | null {
+  const st = String(nfseStatus || "").toUpperCase();
+  if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(st)) {
+    return isFinalNfNumber(nfseNumber) ? "NF_EMITIDA" : "NF_PROCESSANDO";
+  }
+  if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(st)) {
+    return "NF_PROCESSANDO";
+  }
+  return null;
+}
+
+/** Persiste o retorno do POST /invoices (Asaas). Nunca inventa AUTHORIZED. */
+export function nfseFieldsFromEmitResult(result: {
+  id?: string;
+  status?: string;
+  number?: string;
+}): { nfse_status: string; nfse_number?: string } {
+  const status = String(result.status || "").trim() || "SCHEDULED";
+  const fields: { nfse_status: string; nfse_number?: string } = { nfse_status: status };
+  if (result.number) fields.nfse_number = String(result.number);
+  else if (result.id) fields.nfse_number = String(result.id);
+  return fields;
 }
 
 /**

@@ -25,6 +25,10 @@ import {
   MARK_EMITTED_INVOICE_COLUMNS,
   isNfCorrectionError,
   describeAsaasPaymentNotification,
+  isFinalNfNumber,
+  isNfFullyIssued,
+  classifyIssuedOrProcessing,
+  nfseFieldsFromEmitResult,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -482,4 +486,40 @@ test("describeAsaasPaymentNotification: envio e leitura com destinatário", () =
   });
   assert.match(read.title, /lido/);
   assert.equal(read.at, "2026-08-02T09:00:00Z");
+});
+
+test("isFinalNfNumber: ignora id interno Asaas e vazio", () => {
+  assert.equal(isFinalNfNumber(null), false);
+  assert.equal(isFinalNfNumber(""), false);
+  assert.equal(isFinalNfNumber("inv_abc123"), false);
+  assert.equal(isFinalNfNumber("INV_ABC"), false);
+  assert.equal(isFinalNfNumber("2562"), true);
+  assert.equal(isFinalNfNumber("RPS-99"), true);
+});
+
+test("isNfFullyIssued: AUTHORIZED sem número municipal NÃO é emitida", () => {
+  assert.equal(isNfFullyIssued("AUTHORIZED", null), false);
+  assert.equal(isNfFullyIssued("AUTHORIZED", "inv_xyz"), false);
+  assert.equal(isNfFullyIssued("AUTHORIZED", "2562"), true);
+  assert.equal(isNfFullyIssued("SYNCHRONIZED", "100"), true);
+});
+
+test("classifyIssuedOrProcessing: FAT sem nº fica processando (não emitida)", () => {
+  assert.equal(classifyIssuedOrProcessing("AUTHORIZED", null), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("ISSUED", "inv_x"), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("AUTHORIZED", "2562"), "NF_EMITIDA");
+  assert.equal(classifyIssuedOrProcessing("SCHEDULED", "inv_x"), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("ERROR", null), null);
+});
+
+test("nfseFieldsFromEmitResult: não inventa AUTHORIZED; guarda inv_ para sync", () => {
+  assert.deepEqual(nfseFieldsFromEmitResult({ id: "inv_1", status: "SCHEDULED" }), {
+    nfse_status: "SCHEDULED",
+    nfse_number: "inv_1",
+  });
+  assert.deepEqual(nfseFieldsFromEmitResult({ id: "inv_1", status: "AUTHORIZED", number: "88" }), {
+    nfse_status: "AUTHORIZED",
+    nfse_number: "88",
+  });
+  assert.deepEqual(nfseFieldsFromEmitResult({}), { nfse_status: "SCHEDULED" });
 });

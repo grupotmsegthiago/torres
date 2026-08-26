@@ -1562,7 +1562,7 @@ export default function RelatorioNFPage() {
                 <div><span className="text-slate-500">Valor:</span> <strong>{fmtBRL(emitModal.value)}</strong></div>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-700 mb-1 block">Número da NF (opcional)</label>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Número da NF (obrigatório)</label>
                 <Input
                   value={emitModal.nfNumber}
                   onChange={e => setEmitModal({ ...emitModal, nfNumber: e.target.value })}
@@ -1592,7 +1592,7 @@ export default function RelatorioNFPage() {
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => emitModal && markEmittedMutation.mutate({ invoiceId: emitModal.invoiceId, nfNumber: emitModal.nfNumber, note: emitModal.note })}
-              disabled={markEmittedMutation.isPending || !emitModal}
+              disabled={markEmittedMutation.isPending || !emitModal || !String(emitModal?.nfNumber || "").trim()}
               data-testid="button-confirm-emit"
             >
               {markEmittedMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Marcando…</> : <><FileCheck2 className="h-4 w-4 mr-1" /> Confirmar como emitida</>}

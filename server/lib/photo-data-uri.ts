@@ -1,4 +1,5 @@
 const MIME_RE = /^image\/[\w.+-]+$/;
+const DOC_MIME_RE = /^(image\/[\w.+-]+|application\/pdf)$/i;
 
 /**
  * Normaliza o payload de foto vindo do cliente para um data URI completo.
@@ -24,4 +25,33 @@ export function normalizePhotoDataUri(photoData: unknown, mime?: unknown): strin
   if (photoData.startsWith("data:")) return photoData;
   const safeMime = typeof mime === "string" && MIME_RE.test(mime) ? mime : "image/jpeg";
   return `data:${safeMime};base64,${photoData}`;
+}
+
+/**
+ * Mesmo contrato WAF-safe de `normalizePhotoDataUri`, mas aceita também PDF
+ * (OCR de cadastro de funcionário: CNH/CNV/comprovante).
+ *
+ * Preferir `imageBase64` cru + `mime` no POST. `imageData` data-URI completo
+ * continua aceito (legado / ambiente local sem WAF).
+ */
+export function normalizeDocumentDataUri(data: unknown, mime?: unknown): string | null {
+  if (typeof data !== "string" || data.length === 0) return null;
+  if (data.startsWith("data:")) return data;
+  const safeMime = typeof mime === "string" && DOC_MIME_RE.test(mime) ? mime : "image/jpeg";
+  return `data:${safeMime};base64,${data}`;
+}
+
+/** Resolve o payload de OCR (WAF-safe ou legado) para data URI + flag PDF. */
+export function resolveOcrDocumentPayload(body: {
+  imageData?: unknown;
+  imageBase64?: unknown;
+  mime?: unknown;
+}): { dataUri: string; isPdf: boolean } | null {
+  const raw =
+    typeof body?.imageBase64 === "string" && body.imageBase64.length > 0
+      ? body.imageBase64
+      : body?.imageData;
+  const dataUri = normalizeDocumentDataUri(raw, body?.mime);
+  if (!dataUri) return null;
+  return { dataUri, isPdf: /^data:application\/pdf/i.test(dataUri) };
 }

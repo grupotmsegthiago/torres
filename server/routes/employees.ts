@@ -21,6 +21,9 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
   import { toDecimalString } from "../lib/parse-money";
   import { generateTempPassword } from "../lib/temp-password";
+import { resolveOpenAIConfig } from "../lib/holerite-parse";
+import { extractPdfText } from "../lib/pdf-text";
+import { resolveOcrDocumentPayload } from "../lib/photo-data-uri";
 
   // TODAS as colunas do tipo `date` da tabela employees (nomes camelCase do
   // schema). Inputs vazios ("") precisam virar null antes de gravar no Supabase,
@@ -30,6 +33,79 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   export const EMPLOYEE_DATE_FIELDS = [
     "birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry", "cnvIssueDate", "vestExpiry",
   ];
+
+const EMPLOYEE_OCR_SYSTEM = `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CNV, CTPS, Certificado de Reservista, comprovantes de residência, etc).
+Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem markdown, sem texto extra):
+{
+  "name": "nome completo da pessoa",
+  "cpf": "CPF no formato 000.000.000-00",
+  "rg": "número do RG (apenas o número, sem órgão emissor)",
+  "orgaoEmissor": "órgão emissor do RG (ex: SSP, DETRAN, IFP, IIRGD) — apenas a sigla",
+  "ufEmissor": "UF do órgão emissor do RG (sigla de 2 letras, ex: SP, RJ)",
+  "cnhNumber": "número da CNH se for CNH",
+  "cnhCategoria": "categoria da CNH se for CNH (ex: A, B, AB, C, D, E, ACC)",
+  "cnhExpiry": "data de validade da CNH no formato YYYY-MM-DD (se for CNH)",
+  "birthDate": "data de nascimento no formato YYYY-MM-DD",
+  "motherName": "nome da mãe",
+  "fatherName": "nome do pai",
+  "nationality": "nacionalidade (ex: Brasileira)",
+  "maritalStatus": "estado civil se visível",
+  "address": "logradouro/rua sem número, complemento ou bairro (ex: Rua das Flores)",
+  "addressNumber": "número do endereço (apenas dígitos, ex: 123)",
+  "addressComplement": "complemento do endereço (ex: Apto 45, Bloco B) se houver",
+  "bairro": "bairro do endereço",
+  "city": "cidade do endereço",
+  "state": "UF do endereço (sigla de 2 letras, ex: SP)",
+  "zip": "CEP no formato 00000-000",
+  "notes": "tipo do documento identificado e informações adicionais relevantes"
+}
+Se um campo não for encontrado no documento, retorne string vazia "". Nunca invente dados.
+Para datas, sempre converta para o formato YYYY-MM-DD.
+Para CPF, formate como 000.000.000-00.
+Para CEP, formate como 00000-000.
+Para categoria CNH, retorne apenas a letra/sigla (sem "Categoria" ou similar).
+Para endereço: quebre o endereço completo em logradouro, número, complemento, bairro, cidade, UF e CEP em campos separados. Não duplique o número ou bairro no campo "address".`;
+
+function parseOcrJson(text: string): any {
+  const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+  return JSON.parse(cleaned);
+}
+
+async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParams["messages"]) {
+  const aiCfg = resolveOpenAIConfig();
+  if (!aiCfg) {
+    const err: any = new Error("Chave de API de IA não configurada (defina OPENAI_API_KEY na Vercel).");
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const run = (cfg: { apiKey: string; baseURL?: string }) => {
+    const openai = new OpenAI({
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL,
+      timeout: 45000,
+      maxRetries: 1,
+    });
+    return openai.chat.completions.create({
+      model: "gpt-5-mini",
+      reasoning_effort: "minimal",
+      messages,
+    });
+  };
+
+  try {
+    console.log(`[ocr] Enviando para OpenAI (base=${aiCfg.baseURL || "api.openai.com"})...`);
+    return await run(aiCfg);
+  } catch (aiErr: any) {
+    const msg = String(aiErr?.message || aiErr || "");
+    console.error("[ocr] OpenAI falhou:", msg);
+    const legacy = process.env.OPENAI_API_KEY;
+    if (aiCfg.baseURL && legacy && /connection|ENOTFOUND|ECONN|timeout|fetch failed/i.test(msg)) {
+      return await run({ apiKey: legacy, baseURL: undefined });
+    }
+    throw aiErr;
+  }
+}
 
   export function registerEmployeeRoutes(app: Express) {
     app.get("/api/employees", requireAuth, async (req, res) => {
@@ -940,96 +1016,73 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
 
   app.post("/api/employees/ocr", requireAdminRole, async (req, res) => {
     try {
-      const { imageData } = req.body;
-      if (!imageData || typeof imageData !== "string") {
-        return res.status(400).json({ message: "Envie imageData (base64 data URL da imagem)" });
+      const payload = resolveOcrDocumentPayload(req.body || {});
+      if (!payload) {
+        return res.status(400).json({ message: "Envie imageBase64 (base64 cru) + mime, ou imageData (data URL)" });
       }
+      const { dataUri, isPdf } = payload;
 
-      console.log(`[ocr] Employee OCR request received, imageData length: ${imageData.length}, user: ${req.user?.email}`);
+      console.log(`[ocr] Employee OCR request received, dataUri length: ${dataUri.length}, pdf=${isPdf}, user: ${req.user?.email}`);
 
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-
-      if (!apiKey) {
-        console.error("[ocr] AI_INTEGRATIONS_OPENAI_API_KEY not set");
-        return res.status(500).json({ message: "Chave de API de IA não configurada" });
-      }
-
-      const openai = new OpenAI({ apiKey, baseURL });
-
-      console.log("[ocr] Sending to OpenAI...");
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        reasoning_effort: "minimal",
-        messages: [
-          {
-            role: "system",
-            content: `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CNV, CTPS, Certificado de Reservista, comprovantes de residência, etc).
-Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem markdown, sem texto extra):
-{
-  "name": "nome completo da pessoa",
-  "cpf": "CPF no formato 000.000.000-00",
-  "rg": "número do RG (apenas o número, sem órgão emissor)",
-  "orgaoEmissor": "órgão emissor do RG (ex: SSP, DETRAN, IFP, IIRGD) — apenas a sigla",
-  "ufEmissor": "UF do órgão emissor do RG (sigla de 2 letras, ex: SP, RJ)",
-  "cnhNumber": "número da CNH se for CNH",
-  "cnhCategoria": "categoria da CNH se for CNH (ex: A, B, AB, C, D, E, ACC)",
-  "cnhExpiry": "data de validade da CNH no formato YYYY-MM-DD (se for CNH)",
-  "birthDate": "data de nascimento no formato YYYY-MM-DD",
-  "motherName": "nome da mãe",
-  "fatherName": "nome do pai",
-  "nationality": "nacionalidade (ex: Brasileira)",
-  "maritalStatus": "estado civil se visível",
-  "address": "logradouro/rua sem número, complemento ou bairro (ex: Rua das Flores)",
-  "addressNumber": "número do endereço (apenas dígitos, ex: 123)",
-  "addressComplement": "complemento do endereço (ex: Apto 45, Bloco B) se houver",
-  "bairro": "bairro do endereço",
-  "city": "cidade do endereço",
-  "state": "UF do endereço (sigla de 2 letras, ex: SP)",
-  "zip": "CEP no formato 00000-000",
-  "notes": "tipo do documento identificado e informações adicionais relevantes"
-}
-Se um campo não for encontrado no documento, retorne string vazia "". Nunca invente dados.
-Para datas, sempre converta para o formato YYYY-MM-DD.
-Para CPF, formate como 000.000.000-00.
-Para CEP, formate como 00000-000.
-Para categoria CNH, retorne apenas a letra/sigla (sem "Categoria" ou similar).
-Para endereço: quebre o endereço completo em logradouro, número, complemento, bairro, cidade, UF e CEP em campos separados. Não duplique o número ou bairro no campo "address".`
-          },
+      let messages: OpenAI.Chat.ChatCompletionCreateParams["messages"];
+      if (isPdf) {
+        let pdfText = "";
+        try {
+          const b64 = dataUri.split(",")[1] || "";
+          pdfText = await extractPdfText(Buffer.from(b64, "base64"));
+        } catch (pdfErr: any) {
+          console.error("[ocr] PDF text extraction error:", pdfErr.message);
+          return res.status(400).json({
+            message: "Não foi possível ler o PDF. Envie uma foto (JPG/PNG) do documento.",
+          });
+        }
+        if (!pdfText || pdfText.length < 20) {
+          return res.status(400).json({
+            message: "PDF sem texto legível (scan). Envie uma foto (JPG/PNG) do documento para preencher automaticamente.",
+          });
+        }
+        console.log(`[ocr] PDF text extracted (${pdfText.length} chars)`);
+        messages = [
+          { role: "system", content: EMPLOYEE_OCR_SYSTEM },
+          { role: "user", content: `Extraia os dados pessoais deste documento de identificação brasileiro. Texto extraído do PDF:\n\n${pdfText}` },
+        ];
+      } else {
+        messages = [
+          { role: "system", content: EMPLOYEE_OCR_SYSTEM },
           {
             role: "user",
             content: [
               { type: "text", text: "Extraia os dados pessoais deste documento de identificação brasileiro:" },
-              { type: "image_url", image_url: { url: imageData } },
+              { type: "image_url", image_url: { url: dataUri } },
             ],
           },
-        ],
-      });
+        ];
+      }
 
+      const response = await runEmployeeOpenAI(messages);
       const text = response.choices?.[0]?.message?.content || "";
       console.log("[ocr] OpenAI raw response:", text.substring(0, 500));
-      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      const parsed = JSON.parse(cleaned);
+      const parsed = parseOcrJson(text);
       console.log("[ocr] Parsed result:", JSON.stringify(parsed));
       res.json(parsed);
     } catch (err: any) {
-      console.error("[ocr] Employee OCR error:", err.message || err);
-      res.status(500).json({ message: "Erro ao processar documento: " + (err.message || "Erro desconhecido") });
+      const raw = String(err?.message || "Erro desconhecido");
+      console.error("[ocr] Employee OCR error:", raw);
+      const friendly = /connection|ENOTFOUND|ECONN|fetch failed|timeout/i.test(raw)
+        ? "Falha ao conectar na IA de OCR. Verifique OPENAI_API_KEY na Vercel."
+        : raw;
+      res.status(err?.statusCode || 500).json({ message: "Erro ao processar documento: " + friendly });
     }
   });
 
   app.post("/api/employees/ocr-document", requireAdminRole, async (req, res) => {
     try {
-      const { imageData, docType } = req.body;
-      if (!imageData || typeof imageData !== "string") {
-        return res.status(400).json({ message: "Envie imageData (base64 data URL)" });
+      const payload = resolveOcrDocumentPayload(req.body || {});
+      if (!payload) {
+        return res.status(400).json({ message: "Envie imageBase64 (base64 cru) + mime, ou imageData (data URL)" });
       }
-
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-      if (!apiKey) return res.status(500).json({ message: "Chave de API de IA não configurada" });
-
-      const openai = new OpenAI({ apiKey, baseURL });
+      const { dataUri, isPdf } = payload;
+      const docType = req.body?.docType;
 
       const systemPrompt = `Você é um sistema especializado em extrair dados de documentos brasileiros.
 O documento sendo analisado é do tipo: "${docType || 'Documento geral'}".
@@ -1043,30 +1096,24 @@ Extraia os seguintes campos e retorne APENAS um JSON válido (sem markdown):
 Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.
 Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
-      const isPdf = imageData.startsWith("data:application/pdf");
-      let messages: any[];
-
+      let messages: OpenAI.Chat.ChatCompletionCreateParams["messages"];
       if (isPdf) {
-        const base64Content = imageData.split(",")[1];
-        const pdfBuffer = Buffer.from(base64Content, "base64");
-
         let pdfText = "";
         try {
-          const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-          const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
-          const numPages = Math.min(doc.numPages, 3);
-          for (let i = 1; i <= numPages; i++) {
-            const page = await doc.getPage(i);
-            const content = await page.getTextContent();
-            pdfText += content.items.map((item: any) => item.str).join(" ") + "\n";
-          }
+          const b64 = dataUri.split(",")[1] || "";
+          pdfText = await extractPdfText(Buffer.from(b64, "base64"));
         } catch (pdfErr: any) {
           console.error("[ocr-document] PDF text extraction error:", pdfErr.message);
-          pdfText = "Não foi possível extrair texto do PDF";
+          return res.status(400).json({
+            message: "Não foi possível ler o PDF. Envie uma foto (JPG/PNG) do documento.",
+          });
         }
-
-        console.log(`[ocr-document] PDF text extracted (${pdfText.length} chars): ${pdfText.substring(0, 300)}...`);
-
+        if (!pdfText || pdfText.length < 20) {
+          return res.status(400).json({
+            message: "PDF sem texto legível (scan). Envie uma foto (JPG/PNG) do documento.",
+          });
+        }
+        console.log(`[ocr-document] PDF text extracted (${pdfText.length} chars)`);
         messages = [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Extraia os dados deste documento (${docType || "documento"}). Texto extraído do PDF:\n\n${pdfText}` },
@@ -1078,26 +1125,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             role: "user",
             content: [
               { type: "text", text: `Extraia os dados deste documento (${docType || "documento"}):` },
-              { type: "image_url", image_url: { url: imageData } },
+              { type: "image_url", image_url: { url: dataUri } },
             ],
           },
         ];
       }
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        reasoning_effort: "minimal",
-        messages,
-      });
-
+      const response = await runEmployeeOpenAI(messages);
       const text = response.choices?.[0]?.message?.content || "";
       console.log("[ocr-document] AI response:", text.substring(0, 300));
-      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      res.json(parsed);
+      res.json(parseOcrJson(text));
     } catch (err: any) {
-      console.error("[ocr-document] Error:", err.message || err);
-      res.status(500).json({ message: "Erro ao processar documento" });
+      const raw = String(err?.message || "Erro desconhecido");
+      console.error("[ocr-document] Error:", raw);
+      const friendly = /connection|ENOTFOUND|ECONN|fetch failed|timeout/i.test(raw)
+        ? "Falha ao conectar na IA de OCR. Verifique OPENAI_API_KEY na Vercel."
+        : raw;
+      res.status(err?.statusCode || 500).json({ message: "Erro ao processar documento: " + friendly });
     }
   });
 
