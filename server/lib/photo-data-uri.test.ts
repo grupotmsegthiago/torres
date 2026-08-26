@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizePhotoDataUri } from "./photo-data-uri.ts";
+import {
+  normalizePhotoDataUri,
+  normalizeDocumentDataUri,
+  resolveOcrDocumentPayload,
+} from "./photo-data-uri.ts";
 
 // REGRESSÃO bug 04/06/2026 (WAF bloqueava data:image;base64 → 403 na selfie de login).
 // O cliente agora manda base64 cru + mime; o servidor remonta o data URI.
@@ -32,4 +36,33 @@ test("rejeita entrada vazia ou não-string", () => {
   assert.equal(normalizePhotoDataUri(undefined), null);
   assert.equal(normalizePhotoDataUri(null), null);
   assert.equal(normalizePhotoDataUri(123), null);
+});
+
+test("normalizeDocumentDataUri aceita PDF e imagem (OCR cadastro)", () => {
+  assert.equal(
+    normalizeDocumentDataUri("JVBERi0", "application/pdf"),
+    "data:application/pdf;base64,JVBERi0",
+  );
+  assert.equal(
+    normalizeDocumentDataUri("AAAABBBB", "image/jpeg"),
+    "data:image/jpeg;base64,AAAABBBB",
+  );
+  const legacyPdf = "data:application/pdf;base64,JVBERi0";
+  assert.equal(normalizeDocumentDataUri(legacyPdf), legacyPdf);
+});
+
+test("resolveOcrDocumentPayload prefere imageBase64 cru (WAF-safe)", () => {
+  const fromRaw = resolveOcrDocumentPayload({
+    imageBase64: "AAAABBBB",
+    mime: "image/jpeg",
+    imageData: "data:image/png;base64,IGNORAR",
+  });
+  assert.deepEqual(fromRaw, { dataUri: "data:image/jpeg;base64,AAAABBBB", isPdf: false });
+
+  const fromLegacy = resolveOcrDocumentPayload({
+    imageData: "data:application/pdf;base64,JVBERi0",
+  });
+  assert.deepEqual(fromLegacy, { dataUri: "data:application/pdf;base64,JVBERi0", isPdf: true });
+
+  assert.equal(resolveOcrDocumentPayload({}), null);
 });

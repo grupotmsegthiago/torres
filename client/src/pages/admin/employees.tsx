@@ -1087,16 +1087,21 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 
   const runOcrAndFillForm = useCallback(async (dataUrl: string, docType: string) => {
     try {
+      // WAF do edge bloqueia POST com prefixo `data:image/...;base64,` (403 HTML).
+      // Mesmo padrão da selfie de login: base64 cru + mime; o servidor remonta.
+      const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+      const mime = m?.[1] || "image/jpeg";
+      const imageBase64 = m?.[2] ?? dataUrl;
       const res = await authFetch("/api/employees/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageData: dataUrl }),
+        body: JSON.stringify({ imageBase64, mime }),
       });
 
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+        const errBody = await res.json().catch(() => ({ message: res.status === 403 ? "Upload bloqueado no servidor. Tente novamente." : "Erro desconhecido" }));
         console.error("OCR error response:", errBody);
-        return null;
+        throw new Error(errBody.message || `OCR falhou (${res.status})`);
       }
 
       const extracted = await res.json();
@@ -1104,7 +1109,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       return extracted;
     } catch (err) {
       console.error("OCR fetch error:", err);
-      return null;
+      throw err;
     }
   }, []);
 
@@ -1190,13 +1195,21 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         [docType]: { fileData: dataUrl, fileName: file.name, scanning: true },
       }));
 
-      const compressedUrl = await compressImage(dataUrl);
-      const extracted = await runOcrAndFillForm(compressedUrl, docType);
-
-      if (extracted) {
-        applyOcrToForm(extracted, docType);
-      } else {
-        toast({ title: `${docType} anexada`, description: "Documento salvo. Leitura automática indisponível." });
+      try {
+        const compressedUrl = await compressImage(dataUrl);
+        const extracted = await runOcrAndFillForm(compressedUrl, docType);
+        if (extracted) {
+          applyOcrToForm(extracted, docType);
+        } else {
+          toast({ title: `${docType} anexada`, description: "Documento salvo. Leitura automática indisponível." });
+        }
+      } catch (ocrErr: any) {
+        console.error("OCR error:", ocrErr);
+        toast({
+          title: `${docType} anexada`,
+          description: `Leitura automática falhou: ${ocrErr?.message || "Tente uma foto nítida"}. Preencha os dados manualmente.`,
+          variant: "destructive",
+        });
       }
     } catch (err: any) {
       console.error("Doc attachment error:", err);

@@ -51,6 +51,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
     "/api/mission/photo-inspections-batch",
     "/api/mission/update",
     "/api/employee-documents",
+    "/api/employees/ocr",
+    "/api/employees/ocr-document",
     /^\/api\/employees\/\d+\/dependents$/,
     // PATCH/POST de funcionário pode levar foto em data-URL
     /^\/api\/employees(\/\d+)?$/,
