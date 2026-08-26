@@ -346,7 +346,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
                 }`}
                 data-testid={`btn-icon-${opt.key}`}
               >
-                <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex-shrink-0 bg-neutral-900 ${
+                <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex-shrink-0 bg-white ${
                   form.iconType === opt.key ? "border-neutral-900" : "border-neutral-300"
                 }`}>
                   <img src={opt.src} alt={opt.label} className="w-full h-full object-cover" />
