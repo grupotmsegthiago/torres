@@ -11,8 +11,19 @@
           "value": "torres-grupotmsegs-projects.vercel.app"
         }
       ],
-      "destination": "https://torresseguranca.vercel.app/:path*",
-      "permanent": false
+      "destination": "https://www.torresseguranca.com.br/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "torresseguranca.vercel.app"
+        }
+      ],
+      "destination": "https://www.torresseguranca.com.br/:path*",
+      "permanent": true
     }
   ],
   "rewrites": [
