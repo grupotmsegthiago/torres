@@ -41,6 +41,20 @@ export function normalizeDocumentDataUri(data: unknown, mime?: unknown): string 
   return `data:${safeMime};base64,${data}`;
 }
 
+/**
+ * Resolve uma imagem de assinatura/selfie.
+ * Prefere base64 cru + mime (WAF-safe) e aceita data URI legado.
+ */
+export function resolveWafSafeImage(rawBase64: unknown, mime: unknown, legacyDataUri?: unknown): string | null {
+  if (typeof rawBase64 === "string" && rawBase64.length > 0) {
+    return normalizePhotoDataUri(rawBase64, mime);
+  }
+  if (typeof legacyDataUri === "string" && legacyDataUri.length > 0) {
+    return normalizePhotoDataUri(legacyDataUri, mime);
+  }
+  return null;
+}
+
 /** Resolve o payload de OCR (WAF-safe ou legado) para data URI + flag PDF. */
 export function resolveOcrDocumentPayload(body: {
   imageData?: unknown;

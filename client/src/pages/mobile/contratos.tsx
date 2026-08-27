@@ -1,10 +1,39 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MobileLayout from "@/components/mobile/layout";
 import { Button } from "@/components/ui/button";
 import { FileText, CheckCircle2, ShieldCheck, Camera, Eraser, Loader2, FileX, AlertCircle, X, Calendar } from "lucide-react";
+
+// WAF-safe: nunca POSTar "data:image..." literal (Cloud Armor devolve 403).
+function splitDataUri(dataUri: string): { base64: string; mime: string } {
+  const m = dataUri.match(/^data:([^;]+);base64,(.*)$/);
+  if (m) return { mime: m[1], base64: m[2] };
+  return { mime: "image/jpeg", base64: dataUri };
+}
+
+function signErrorMessage(e: unknown): string {
+  const raw = String((e as any)?.message || "");
+  if (/\b403\b/.test(raw) && /<!DOCTYPE|Forbidden|cloud armor|blocked/i.test(raw)) {
+    return "O envio foi bloqueado. Feche e tente assinar novamente.";
+  }
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart));
+      if (parsed?.message) return String(parsed.message);
+    } catch { /* texto cru */ }
+  }
+  const cleaned = raw.replace(/^\d{3}:\s*/, "").trim();
+  return cleaned || "Não foi possível registrar a assinatura. Tente novamente.";
+}
+
+function contractPdfUrl(contrato: { kind?: string; id: number }) {
+  return contrato.kind === "permanent"
+    ? `/api/permanent-contracts/${contrato.id}/pdf`
+    : `/api/probation-contracts/${contrato.id}/pdf`;
+}
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -158,19 +187,63 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function PdfViewer({ contrato, onClose }: { contrato: any; onClose: () => void }) {
-  const isPermanent = contrato.kind === "permanent";
-  const url = isPermanent
-    ? `/api/permanent-contracts/${contrato.id}/pdf`
-    : `/api/probation-contracts/${contrato.id}/pdf`;
+function AuthPdfFrame({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    let created: string | null = null;
+    (async () => {
+      try {
+        const res = await authFetch(url);
+        if (!res.ok) throw new Error("Não foi possível abrir o contrato.");
+        const blob = await res.blob();
+        if (cancelled) return;
+        created = URL.createObjectURL(blob);
+        setBlobUrl(created);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Erro ao abrir o PDF");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [url]);
+
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="fixed inset-0 z-[60] bg-white flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 text-white">
-        <h3 className="font-black text-sm">{isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}</h3>
+        <h3 className="font-black text-sm">{title}</h3>
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-viewer"><X className="w-5 h-5" /></button>
       </div>
-      <iframe src={url} className="flex-1 w-full" title="Contrato" />
+      {loading && (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
+        </div>
+      )}
+      {error && (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <p className="text-sm text-red-700 text-center">{error}</p>
+        </div>
+      )}
+      {blobUrl && <iframe src={blobUrl} className="flex-1 w-full" title="Contrato" />}
     </div>
+  );
+}
+
+function PdfViewer({ contrato, onClose }: { contrato: any; onClose: () => void }) {
+  const isPermanent = contrato.kind === "permanent";
+  return (
+    <AuthPdfFrame
+      url={contractPdfUrl(contrato)}
+      title={isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}
+      onClose={onClose}
+    />
   );
 }
 
@@ -190,16 +263,32 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
   const queryKey = isPermanent ? "/api/mobile/my-permanent-contracts" : "/api/mobile/my-probation-contracts";
 
   const submitMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", endpoint, {
-      facialFoto, assinaturaDesenho, termoAceito, termoTexto: TERMO_TEXTO,
-    }),
+    mutationFn: async (assinaturaDataUri: string) => {
+      // Guardas: setState é assíncrono — nunca enviar a assinatura do state no 1º toque.
+      if (!termoAceito) throw new Error("É necessário aceitar o termo antes de assinar.");
+      if (!facialFoto || !/^data:image\//.test(facialFoto)) {
+        throw new Error("Foto facial ausente. Volte e capture/envie sua selfie.");
+      }
+      if (!assinaturaDataUri || !/^data:image\//.test(assinaturaDataUri)) {
+        throw new Error("Assinatura ausente. Desenhe sua assinatura no campo antes de confirmar.");
+      }
+      const facial = splitDataUri(facialFoto);
+      const sig = splitDataUri(assinaturaDataUri);
+      return apiRequest("POST", endpoint, {
+        facialFotoBase64: facial.base64, facialFotoMime: facial.mime,
+        assinaturaBase64: sig.base64, assinaturaMime: sig.mime,
+        termoAceito, termoTexto: TERMO_TEXTO,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [queryKey] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mobile/my-probation-contracts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mobile/my-permanent-contracts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/contract-gate"] });
       toast({ title: "Contrato assinado!", description: "Sua assinatura foi registrada com sucesso." });
       onClose();
     },
-    onError: (e: any) => toast({ title: "Erro ao assinar", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Erro ao assinar", description: signErrorMessage(e), variant: "destructive" }),
   });
 
   return (
@@ -235,7 +324,7 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
             assinatura={assinaturaDesenho}
             setAssinatura={setAssinaturaDesenho}
             onBack={() => setStep(2)}
-            onSubmit={() => submitMutation.mutate()}
+            onSubmit={(sig: string) => submitMutation.mutate(sig)}
             isPending={submitMutation.isPending}
           />
         )}
@@ -246,10 +335,8 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
 
 function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
   const [pdfChecked, setPdfChecked] = useState(false);
+  const [showPdf, setShowPdf] = useState(false);
   const isPermanent = contrato.kind === "permanent";
-  const pdfUrl = isPermanent
-    ? `/api/permanent-contracts/${contrato.id}/pdf`
-    : `/api/probation-contracts/${contrato.id}/pdf`;
   return (
     <div className="space-y-4">
       <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-200">
@@ -275,13 +362,20 @@ function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
       </div>
 
       <Button
-        onClick={() => { window.open(pdfUrl, "_blank"); setPdfChecked(true); }}
+        onClick={() => { setShowPdf(true); setPdfChecked(true); }}
         variant="outline"
         className="w-full h-11"
         data-testid="button-ler-pdf-completo"
       >
         <FileText className="w-4 h-4 mr-1" /> Ler contrato completo (PDF)
       </Button>
+      {showPdf && (
+        <AuthPdfFrame
+          url={contractPdfUrl(contrato)}
+          title={isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}
+          onClose={() => setShowPdf(false)}
+        />
+      )}
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
         <p className="text-[11px] font-black uppercase text-amber-700 mb-2 flex items-center gap-1">
@@ -308,23 +402,43 @@ function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
   );
 }
 
+function stampFacial(source: CanvasImageSource, srcW: number, srcH: number): string {
+  const size = Math.min(Math.min(srcW, srcH) || 480, 1280);
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const ctx = c.getContext("2d")!;
+  const crop = Math.min(srcW, srcH);
+  const sx = (srcW - crop) / 2;
+  const sy = (srcH - crop) / 2;
+  ctx.drawImage(source, sx, sy, crop, crop, 0, 0, size, size);
+  const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, size - 28, size, 28);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillText(`Assinatura facial · ${stamp}`, 8, size - 8);
+  return c.toDataURL("image/jpeg", 0.85);
+}
+
 function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (foto) return;
     let cancelled = false;
     (async () => {
       try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("no-camera");
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 } }, audio: false });
         if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = s;
         if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); }
       } catch {
-        setError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+        setError("Câmera ao vivo indisponível. Use o botão abaixo para tirar/enviar uma selfie.");
       }
     })();
     return () => {
@@ -334,25 +448,35 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
   }, [foto]);
 
   const capturar = () => {
-    const v = videoRef.current; const c = canvasRef.current;
-    if (!v || !c) return;
-    const size = Math.min(v.videoWidth, v.videoHeight) || 480;
-    c.width = size; c.height = size;
-    const ctx = c.getContext("2d")!;
-    const sx = (v.videoWidth - size) / 2;
-    const sy = (v.videoHeight - size) / 2;
-    ctx.drawImage(v, sx, sy, size, size, 0, 0, size, size);
-    const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(0, size - 28, size, 28);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText(`Assinatura facial · ${stamp}`, 8, size - 8);
-    setFoto(c.toDataURL("image/jpeg", 0.85));
+    const v = videoRef.current;
+    if (!v) return;
+    setFoto(stampFacial(v, v.videoWidth, v.videoHeight));
     streamRef.current?.getTracks().forEach(t => t.stop());
   };
 
-  const refazer = () => setFoto(null);
+  const handleUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setUploadError("Selecione um arquivo de imagem."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          setFoto(stampFacial(img, img.naturalWidth, img.naturalHeight));
+          streamRef.current?.getTracks().forEach(t => t.stop());
+        } catch {
+          setUploadError("Não foi possível processar a imagem. Tente outra foto.");
+        }
+      };
+      img.onerror = () => setUploadError("Não foi possível ler a imagem. Tente outra foto.");
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => setUploadError("Falha ao ler o arquivo. Tente novamente.");
+    reader.readAsDataURL(file);
+  };
 
   return (
     <div className="space-y-4">
@@ -362,7 +486,8 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
         <p className="text-xs text-neutral-500">Centralize seu rosto e capture uma foto nítida</p>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">{error}</div>}
+      {error && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700" data-testid="text-facial-error">{error}</div>}
+      {uploadError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">{uploadError}</div>}
 
       <div className="aspect-square bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
         {foto ? (
@@ -370,22 +495,40 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
         ) : (
           <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" data-testid="video-facial" />
         )}
-        <canvas ref={canvasRef} className="hidden" />
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="user"
+        onChange={handleUpload}
+        className="hidden"
+        data-testid="input-facial-upload"
+      />
 
       <div className="flex gap-2">
         <Button onClick={onBack} variant="outline" className="flex-1 h-12" data-testid="button-step-back">Voltar</Button>
         {foto ? (
           <>
-            <Button onClick={refazer} variant="outline" className="flex-1 h-12" data-testid="button-refazer-facial">Refazer</Button>
+            <Button onClick={() => setFoto(null)} variant="outline" className="flex-1 h-12" data-testid="button-refazer-facial">Refazer</Button>
             <Button onClick={onNext} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">Avançar</Button>
           </>
+        ) : error ? (
+          <Button onClick={() => fileInputRef.current?.click()} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-enviar-facial">
+            <Camera className="w-4 h-4 mr-1" /> Tirar / Enviar Selfie
+          </Button>
         ) : (
-          <Button onClick={capturar} disabled={!!error} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-capturar-facial">
+          <Button onClick={capturar} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-capturar-facial">
             <Camera className="w-4 h-4 mr-1" /> Capturar Foto
           </Button>
         )}
       </div>
+      {!foto && !error && (
+        <Button onClick={() => fileInputRef.current?.click()} variant="ghost" className="w-full h-9 text-xs text-neutral-500" data-testid="button-enviar-facial-alt">
+          Câmera não funciona? Tirar / enviar foto
+        </Button>
+      )}
     </div>
   );
 }
@@ -447,8 +590,9 @@ function Step3Assinatura({ assinatura, setAssinatura, onBack, onSubmit, isPendin
 
   const confirmar = () => {
     if (!hasInk) return;
-    setAssinatura(canvasRef.current!.toDataURL("image/png"));
-    onSubmit();
+    const sig = canvasRef.current!.toDataURL("image/png");
+    setAssinatura(sig);
+    onSubmit(sig);
   };
 
   return (

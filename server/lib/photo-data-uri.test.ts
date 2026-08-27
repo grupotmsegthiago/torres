@@ -4,6 +4,7 @@ import {
   normalizePhotoDataUri,
   normalizeDocumentDataUri,
   resolveOcrDocumentPayload,
+  resolveWafSafeImage,
 } from "./photo-data-uri.ts";
 
 // REGRESSÃO bug 04/06/2026 (WAF bloqueava data:image;base64 → 403 na selfie de login).
@@ -65,4 +66,17 @@ test("resolveOcrDocumentPayload prefere imageBase64 cru (WAF-safe)", () => {
   assert.deepEqual(fromLegacy, { dataUri: "data:application/pdf;base64,JVBERi0", isPdf: true });
 
   assert.equal(resolveOcrDocumentPayload({}), null);
+});
+
+test("resolveWafSafeImage prefere base64 cru (WAF-safe) e aceita legado", () => {
+  assert.equal(
+    resolveWafSafeImage("AAAABBBB", "image/jpeg", "data:image/png;base64,IGNORAR"),
+    "data:image/jpeg;base64,AAAABBBB",
+  );
+  assert.equal(
+    resolveWafSafeImage(undefined, undefined, "data:image/png;base64,LEGA"),
+    "data:image/png;base64,LEGA",
+  );
+  assert.equal(resolveWafSafeImage("", "image/jpeg", null), null);
+  assert.equal(resolveWafSafeImage(undefined, "image/jpeg"), null);
 });
