@@ -457,7 +457,7 @@ export function describeNfProcessingWait(
   const hours = hoursSince(invoice.updated_at || invoice.created_at, now);
   const age = formatNfWaitAge(hours);
   if (isNfOkStatus(st)) {
-    return `Asaas: ${st}, sem número da prefeitura${age}. O Torres consulta e reprocessa no Asaas a cada poucos minutos até a NF sair.`;
+    return `Asaas: ${st}, sem número da prefeitura${age}. O Torres consulta o Asaas até o número sair; não reenvia emissão.`;
   }
   return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.`;
 }
@@ -540,9 +540,11 @@ export function nfseUpdatesFromAsaasObject(
 }
 
 /**
- * Mesmo botão "Reprocessar" do site Asaas: POST /invoices/{id}/authorize
- * na nota JÁ existente (não cria outra). Vale para SCHEDULED, ERROR e
- * processando sem número municipal.
+ * POST /invoices/{id}/authorize só quando a nota ainda NÃO entrou em emissão.
+ * AUTHORIZED / PROCESSING / ISSUED = Asaas já está emitindo ou já emitiu —
+ * repetir authorize nesses status reprocessa sem parar (lista do Asaas
+ * muitas vezes vem sem `number`, e o Torres tratava como “ainda processando”).
+ * Erro / SCHEDULED: equivalente ao botão Reprocessar do site.
  */
 export function shouldNudgeNfseAuthorize(status: unknown, nfseNumber?: unknown): boolean {
   if (isNfFullyIssued(status, nfseNumber)) return false;
@@ -550,10 +552,10 @@ export function shouldNudgeNfseAuthorize(status: unknown, nfseNumber?: unknown):
   if (!st || st.includes("CANCEL") || st === "PROCESSING_CANCELLATION" || st === "CANCELLATION_DENIED") {
     return false;
   }
-  if (["SCHEDULED", "PENDING", "ERROR", "ERRO", "FAILED", "FALHA", "REJECTED", "DENIED"].includes(st)) {
-    return true;
+  if (isNfOkStatus(st) || ["PROCESSING", "WAITING_MUNICIPAL_PROCESSING"].includes(st)) {
+    return false;
   }
-  return classifyIssuedOrProcessing(st, nfseNumber) === "NF_PROCESSANDO";
+  return ["SCHEDULED", "PENDING", "ERROR", "ERRO", "FAILED", "FALHA", "REJECTED", "DENIED"].includes(st);
 }
 
 export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o POST inicial
@@ -571,7 +573,8 @@ export function shouldAutoEmitMissingNfse(
   if (!opts.paymentLookupEmpty || !opts.emiteNf) return false;
   const pay = String(invoice.status || "").toUpperCase();
   if (["CANCELLED", "CANCELED"].includes(pay)) return false;
-  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) return false;
+  // Já houve documento/tentativa local — nunca criar segunda NFS-e no cron.
+  if (invoice.nfse_number || invoice.nfse_status) return false;
   const hours = hoursSince(invoice.created_at, opts.now ?? new Date());
   return hours != null && hours >= NF_AUTO_EMIT_MIN_AGE_HOURS;
 }
@@ -587,6 +590,93 @@ export function isOpenNfFollowUpStatus(invoice: {
   const nf = String(invoice.nfse_status || "").toUpperCase();
   if (nf.includes("CANCEL")) return false;
   return true;
+}
+
+/** Só o e-mail de cobrança criada; lembretes de vencimento/atraso ficam desligados. */
+export const ASAAS_CUSTOMER_EMAIL_EVENTS = ["PAYMENT_CREATED"] as const;
+
+export function asaasCustomerEmailAllowed(event: unknown): boolean {
+  return String(event || "").toUpperCase() === "PAYMENT_CREATED";
+}
+
+export function isAsaasNotificationPolicyCompliant(n: {
+  event?: string | null;
+  enabled?: boolean | null;
+  emailEnabledForCustomer?: boolean | null;
+  smsEnabledForCustomer?: boolean | null;
+  whatsappEnabledForCustomer?: boolean | null;
+  phoneCallEnabledForCustomer?: boolean | null;
+}): boolean {
+  const allow = asaasCustomerEmailAllowed(n.event);
+  const sms = n.smsEnabledForCustomer === true;
+  const wa = n.whatsappEnabledForCustomer === true;
+  const phone = n.phoneCallEnabledForCustomer === true;
+  if (sms || wa || phone) return false;
+  if (allow) return n.enabled !== false && n.emailEnabledForCustomer === true;
+  return n.enabled === false || n.emailEnabledForCustomer !== true;
+}
+
+export function buildAsaasNotificationPolicyUpdate(n: {
+  id: string;
+  event?: string | null;
+  scheduleOffset?: number | null;
+}): Record<string, unknown> {
+  const allow = asaasCustomerEmailAllowed(n.event);
+  const patch: Record<string, unknown> = {
+    id: n.id,
+    enabled: allow,
+    emailEnabledForCustomer: allow,
+    smsEnabledForCustomer: false,
+    phoneCallEnabledForCustomer: false,
+    whatsappEnabledForCustomer: false,
+    emailEnabledForProvider: false,
+    smsEnabledForProvider: false,
+  };
+  if (n.scheduleOffset != null) patch.scheduleOffset = n.scheduleOffset;
+  return patch;
+}
+
+/** Copia o vencimento vivo do boleto Asaas para a fatura local, se divergir. */
+export function asaasDueDateIfDifferent(asaasDueDate: unknown, localDueDate: unknown): string | null {
+  const next = String(asaasDueDate || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return null;
+  const cur = String(localDueDate || "").slice(0, 10);
+  return next !== cur ? next : null;
+}
+
+export function isManualInvoiceDueDate(invoice: {
+  nfse_observations?: string | null;
+  notes?: string | null;
+}): boolean {
+  const text = `${invoice.nfse_observations || ""}\n${invoice.notes || ""}`;
+  return /\[Vencimento alterado/i.test(text);
+}
+
+export type DueDateReconcilePlan =
+  | { action: "none" }
+  | { action: "pull"; dueDate: string }
+  | { action: "push"; dueDate: string };
+
+/**
+ * Manual: a data do Torres é a do boleto — empurra para o Asaas, nunca sobrescreve local.
+ * Automático: espelha o vencimento vivo do Asaas.
+ */
+export function planDueDateReconcile(opts: {
+  localDueDate: unknown;
+  asaasDueDate: unknown;
+  manual: boolean;
+}): DueDateReconcilePlan {
+  const local = String(opts.localDueDate || "").slice(0, 10);
+  const asaas = String(opts.asaasDueDate || "").slice(0, 10);
+  const localOk = /^\d{4}-\d{2}-\d{2}$/.test(local);
+  const asaasOk = /^\d{4}-\d{2}-\d{2}$/.test(asaas);
+  if (localOk && asaasOk && local === asaas) return { action: "none" };
+  if (opts.manual && localOk) {
+    if (!asaasOk || asaas !== local) return { action: "push", dueDate: local };
+    return { action: "none" };
+  }
+  if (asaasOk && asaas !== local) return { action: "pull", dueDate: asaas };
+  return { action: "none" };
 }
 
 /** Prefere NF emitida; depois processando; erro; por último cancelada. */

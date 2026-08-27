@@ -39,6 +39,12 @@ import {
   shouldAutoEmitMissingNfse,
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
+  asaasCustomerEmailAllowed,
+  isAsaasNotificationPolicyCompliant,
+  buildAsaasNotificationPolicyUpdate,
+  asaasDueDateIfDifferent,
+  isManualInvoiceDueDate,
+  planDueDateReconcile,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -627,11 +633,12 @@ test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
   assert.equal(pickPreferredAsaasNf([]), null);
 });
 
-test("shouldNudgeNfseAuthorize: reprocessa ERROR e processando; não mexe em emitida/cancelada", () => {
+test("shouldNudgeNfseAuthorize: reprocessa ERROR/SCHEDULED; não reenvia se já emitida ou em emissão", () => {
   assert.equal(shouldNudgeNfseAuthorize("ERROR", null), true);
   assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), true);
-  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), true);
+  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), false);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", "2562"), false);
+  assert.equal(shouldNudgeNfseAuthorize("PROCESSING", null), false);
   assert.equal(shouldNudgeNfseAuthorize("CANCELED", null), false);
 });
 
@@ -643,10 +650,56 @@ test("shouldAutoEmitMissingNfse: só com lista vazia confirmada, emite_nf e idad
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: false }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "CANCELLED", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "AUTHORIZED", nfse_number: "309", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_number: "inv_abc", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "ERRO", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
 });
 
 test("isOpenNfFollowUpStatus: acompanha processando/erro em aberto", () => {
   assert.equal(isOpenNfFollowUpStatus({ status: "PENDING", nfse_status: "ERROR", nfse_number: null }), true);
   assert.equal(isOpenNfFollowUpStatus({ status: "PENDING", nfse_status: "AUTHORIZED", nfse_number: "99" }), false);
   assert.equal(isOpenNfFollowUpStatus({ status: "CANCELED", nfse_status: "ERROR" }), false);
+});
+
+test("asaasCustomerEmailAllowed: só cobrança criada", () => {
+  assert.equal(asaasCustomerEmailAllowed("PAYMENT_CREATED"), true);
+  assert.equal(asaasCustomerEmailAllowed("PAYMENT_DUEDATE_WARNING"), false);
+  assert.equal(asaasCustomerEmailAllowed("PAYMENT_OVERDUE"), false);
+  assert.equal(asaasCustomerEmailAllowed("PAYMENT_UPDATED"), false);
+});
+
+test("política de e-mail Asaas: desliga lembrete/atraso; mantém só CREATED", () => {
+  assert.equal(isAsaasNotificationPolicyCompliant({
+    event: "PAYMENT_CREATED", enabled: true, emailEnabledForCustomer: true,
+  }), true);
+  assert.equal(isAsaasNotificationPolicyCompliant({
+    event: "PAYMENT_DUEDATE_WARNING", enabled: true, emailEnabledForCustomer: true,
+  }), false);
+  assert.equal(isAsaasNotificationPolicyCompliant({
+    event: "PAYMENT_OVERDUE", enabled: false, emailEnabledForCustomer: false,
+  }), true);
+  const patch = buildAsaasNotificationPolicyUpdate({ id: "not_1", event: "PAYMENT_DUEDATE_WARNING", scheduleOffset: 10 });
+  assert.equal(patch.enabled, false);
+  assert.equal(patch.emailEnabledForCustomer, false);
+  const created = buildAsaasNotificationPolicyUpdate({ id: "not_2", event: "PAYMENT_CREATED" });
+  assert.equal(created.enabled, true);
+  assert.equal(created.emailEnabledForCustomer, true);
+});
+
+test("asaasDueDateIfDifferent: só devolve se o boleto Asaas divergir", () => {
+  assert.equal(asaasDueDateIfDifferent("2026-09-01", "2026-09-18"), "2026-09-01");
+  assert.equal(asaasDueDateIfDifferent("2026-09-18", "2026-09-18"), null);
+  assert.equal(asaasDueDateIfDifferent(null, "2026-09-18"), null);
+});
+
+test("isManualInvoiceDueDate: marca de alteração de vencimento", () => {
+  assert.equal(isManualInvoiceDueDate({ nfse_observations: "[Vencimento alterado por x: 2026-09-18 → 2026-09-01]" }), true);
+  assert.equal(isManualInvoiceDueDate({ notes: "Aprovado por TAINA" }), false);
+});
+
+test("planDueDateReconcile: manual empurra Torres→Asaas; automático espelha boleto", () => {
+  assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-18", asaasDueDate: "2026-09-01", manual: true }), { action: "push", dueDate: "2026-09-18" });
+  assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-18", asaasDueDate: "2026-09-18", manual: true }), { action: "none" });
+  assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-18", asaasDueDate: "2026-09-01", manual: false }), { action: "pull", dueDate: "2026-09-01" });
+  assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-01", asaasDueDate: "2026-09-01", manual: false }), { action: "none" });
 });

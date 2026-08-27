@@ -52,6 +52,11 @@ import {
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
   isOpenNfFollowUpStatus,
+  asaasCustomerEmailAllowed,
+  isAsaasNotificationPolicyCompliant,
+  buildAsaasNotificationPolicyUpdate,
+  isManualInvoiceDueDate,
+  planDueDateReconcile,
 } from "./lib/asaas-helpers";
 import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
 import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
@@ -288,9 +293,9 @@ async function fetchNfseFromAsaas(invoice: any): Promise<{ nf: any | null; sourc
 }
 
 /** Reprocessa a NFS-e JÁ existente no Asaas (equivalente ao botão Reprocessar do site). */
-async function nudgeNfseUntilIssued(nf: any): Promise<any> {
+async function nudgeNfseUntilIssued(nf: any, localNfseNumber?: unknown): Promise<any> {
   const id = nf?.id ? String(nf.id) : "";
-  if (!id || !shouldNudgeNfseAuthorize(nf?.status, nf?.number)) return nf;
+  if (!id || !shouldNudgeNfseAuthorize(nf?.status, nf?.number || localNfseNumber)) return nf;
   try {
     const auth = await asaasRequest("POST", `/invoices/${id}/authorize`);
     console.log(`[asaas] reprocessar NFS-e ${id}: ${nf?.status} → ${auth?.status || nf?.status}`);
@@ -344,7 +349,9 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   const fetched = await fetchNfseFromAsaas(invoice);
   let { nf, source, paymentLookupEmpty } = fetched;
   if (nf) {
-    nf = await nudgeNfseUntilIssued(nf);
+    if (!isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) {
+      nf = await nudgeNfseUntilIssued(nf, invoice.nfse_number);
+    }
     const updates = nfseUpdatesFromAsaasObject(nf, invoice);
     if (nf._authorizeError && !isNfFullyIssued(updates.nfse_status || nf.status, updates.nfse_number || invoice.nfse_number)) {
       if (isNfErrorStatus(nf.status) || isNfErrorStatus(invoice.nfse_status)) {
@@ -627,6 +634,24 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
       const bsUrl = payment?.bankSlip?.url || payment?.bankSlipUrl;
       if (bsUrl && bsUrl !== invoice.bank_slip_url) { updates.bank_slip_url = bsUrl; changed = true; }
       if (payment?.paymentDate && payment.paymentDate !== invoice.payment_date) { updates.payment_date = payment.paymentDate; changed = true; }
+      const duePlan = planDueDateReconcile({
+        localDueDate: invoice.due_date,
+        asaasDueDate: payment?.dueDate,
+        manual: isManualInvoiceDueDate(invoice),
+      });
+      if (duePlan.action === "pull") {
+        updates.due_date = duePlan.dueDate;
+        changed = true;
+        console.log(`[reconcile] invoice #${invoice.id} vencimento local ${String(invoice.due_date || "").slice(0, 10)} → boleto Asaas ${duePlan.dueDate}`);
+      } else if (duePlan.action === "push") {
+        try {
+          await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}`, { dueDate: duePlan.dueDate });
+          console.log(`[reconcile] invoice #${invoice.id} vencimento manual ${duePlan.dueDate} enviado ao Asaas`);
+        } catch (e: any) {
+          console.log(`[reconcile] invoice #${invoice.id} push vencimento manual falhou: ${e.message}`);
+        }
+      }
+      await applyAsaasPaymentEmailPolicy(invoice.asaas_payment_id);
     } catch (e: any) {
       console.log(`[reconcile] payment fetch invoice #${invoice.id} (${invoice.asaas_payment_id}): ${e.message}`);
     }
@@ -883,6 +908,39 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   return data;
 }
 
+async function applyAsaasEmailPolicyFromList(items: any[]): Promise<void> {
+  const list = Array.isArray(items) ? items : [];
+  for (const n of list) {
+    if (!n?.id || isAsaasNotificationPolicyCompliant(n)) continue;
+    try {
+      await asaasRequest("POST", `/notifications/${n.id}`, buildAsaasNotificationPolicyUpdate(n));
+      console.log(`[asaas] e-mail Asaas ${n.event} (${n.id}): ${asaasCustomerEmailAllowed(n.event) ? "mantido (cobrança criada)" : "desligado (lembrete/atraso)"}`);
+    } catch (e: any) {
+      console.log(`[asaas] política e-mail ${n.id} (${n.event}): ${e.message}`);
+    }
+  }
+}
+
+async function applyAsaasCustomerEmailPolicy(customerId: string | null | undefined): Promise<void> {
+  if (!customerId) return;
+  try {
+    const data = await asaasRequest("GET", `/customers/${customerId}/notifications`);
+    await applyAsaasEmailPolicyFromList(data?.data || data);
+  } catch (e: any) {
+    console.log(`[asaas] GET notifications customer ${customerId}: ${e.message}`);
+  }
+}
+
+async function applyAsaasPaymentEmailPolicy(paymentId: string | null | undefined): Promise<void> {
+  if (!paymentId) return;
+  try {
+    const data = await asaasRequest("GET", `/payments/${paymentId}/notifications`);
+    await applyAsaasEmailPolicyFromList(data?.data || data);
+  } catch (e: any) {
+    console.log(`[asaas] GET notifications payment ${paymentId}: ${e.message}`);
+  }
+}
+
 export async function getAsaasBalance(): Promise<{ connected: boolean; balance?: number; saldoAtual?: number; saldoAReceber?: number; message?: string }> {
   try {
     if (!process.env.ASAAS_API_KEY) {
@@ -965,6 +1023,7 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
           console.log(`[asaas] Falha ao atualizar customer: ${e.message}`);
         }
       }
+      await applyAsaasCustomerEmailPolicy(existing.id);
       return existing.id;
     }
   } catch {}
@@ -992,6 +1051,7 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   if (opts.stateInscription) customerPayload.stateInscription = opts.stateInscription;
 
   const customer = await asaasRequest("POST", "/customers", customerPayload);
+  await applyAsaasCustomerEmailPolicy(customer.id);
   return customer.id;
 }
 
@@ -1072,6 +1132,7 @@ export async function emitInvoiceAuto(
 
   console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${opts.dueDate}`);
   const payment = await asaasRequest("POST", "/payments", paymentPayload);
+  await applyAsaasPaymentEmailPolicy(payment.id);
 
   const updates: any = {
     asaas_customer_id: asaasCustomerId,
@@ -1560,6 +1621,7 @@ export function registerAsaasRoutes(app: Express) {
         try {
           const payment = await asaasRequest("POST", "/payments", paymentPayload);
           asaasPaymentId = payment.id;
+          await applyAsaasPaymentEmailPolicy(payment.id);
           invoiceUrl = payment.invoiceUrl;
           bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
           status = payment.status || "PENDING";
@@ -2278,6 +2340,7 @@ export function registerAsaasRoutes(app: Express) {
 
       console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${dueDate}`);
       const payment = await asaasRequest("POST", "/payments", paymentPayload);
+      await applyAsaasPaymentEmailPolicy(payment.id);
 
       const updates: any = {
         asaas_customer_id: asaasCustomerId,
@@ -3062,6 +3125,7 @@ export function registerAsaasRoutes(app: Express) {
               console.log(`[asaas] SPLIT ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}, Valor R$${splitValue.toFixed(2)}. Payload:`, JSON.stringify(payload));
               const payment = await asaasRequest("POST", "/payments", payload);
               spAsaasPaymentId = payment.id;
+              await applyAsaasPaymentEmailPolicy(payment.id);
               spInvoiceUrl = payment.invoiceUrl;
               spBankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
               spInvoiceStatus = payment.status || "PENDING";
@@ -3249,6 +3313,7 @@ export function registerAsaasRoutes(app: Express) {
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
           asaasPaymentId = payment.id;
+          await applyAsaasPaymentEmailPolicy(payment.id);
           invoiceUrl = payment.invoiceUrl;
           bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
           invoiceStatus = payment.status || "PENDING";
@@ -4462,13 +4527,19 @@ export function registerAsaasRoutes(app: Express) {
 
         let asaasOk = false;
         let asaasMsg = "";
-        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+        if (invoice.asaas_payment_id) {
+          if (!process.env.ASAAS_API_KEY) {
+            return res.status(503).json({ message: "Cobrança existe no Asaas, mas a API não está configurada. O vencimento manual precisa gravar nos dois lados." });
+          }
           try {
             await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}`, { dueDate: newDueDate });
             asaasOk = true;
           } catch (e: any) {
             asaasMsg = e?.message || String(e);
             console.log(`[change-due-date] Asaas falhou p/ invoice #${invoiceId}: ${asaasMsg}`);
+            return res.status(502).json({
+              message: `O boleto no Asaas não aceitou o novo vencimento (${asaasMsg}). Nada foi alterado no Torres para os dois lados não ficarem diferentes.`,
+            });
           }
         }
 

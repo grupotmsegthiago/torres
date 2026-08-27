@@ -15,6 +15,7 @@ import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
+import { formatDateOnlyBR } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
@@ -99,7 +100,9 @@ const fmtBRL = (v: number) =>
   (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDate = (s?: string | null) => {
   if (!s) return "—";
-  const d = new Date(s);
+  const raw = String(s).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDateOnlyBR(raw);
+  const d = new Date(raw);
   if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 };

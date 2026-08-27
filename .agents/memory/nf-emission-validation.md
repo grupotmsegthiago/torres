@@ -42,9 +42,17 @@ AUTHORIZED/SCHEDULED/ERROR sem número municipal **não** é emitida. O Torres d
 2. senão `GET /invoices?payment={asaas_payment_id}`;
 3. persistir o `inv_...` até chegar o nº municipal;
 4. persistir `statusDescription` do Asaas em `nfse_error_message` quando status = ERROR;
-5. **reprocessar a mesma nota** com `POST /invoices/{id}/authorize` (botão Reprocessar do site Asaas) em SCHEDULED, ERROR e processando sem nº — nunca criar segunda NF;
+5. **reprocessar a mesma nota** com `POST /invoices/{id}/authorize` só em SCHEDULED/PENDING/ERROR (botão Reprocessar). AUTHORIZED/PROCESSING/ISSUED = já em emissão ou emitida: só consultar, nunca reenviar authorize — a lista do Asaas muitas vezes vem sem `number` e o cron reprocessava sem parar;
 6. cron a cada 5 min (`reconcileStuckNfses`) nas faturas em aberto incompletas; full reconcile a cada 15 min;
-7. se a lista por payment vier vazia, cliente `emite_nf` e a cobrança tem >10 min → emitir;
+7. se a lista por payment vier vazia, cliente `emite_nf`, cobrança >10 min **e ainda não houver** `nfse_status`/`nfse_number` local → emitir uma vez; nunca auto-emitir de novo se já houve tentativa ou NF emitida;
 8. se cobrança em aberto, status processando, >2h e **nenhuma** NFS-e no Asaas → gravar ERRO com motivo visível.
 
 A UI do Relatório de NF mostra o status bruto do Asaas, o motivo e o botão **Sincronizar** por linha (`POST /api/invoices/:id/sync`).
+
+## E-mail Asaas (cliente)
+O cliente recebe **um** e-mail na criação da cobrança (`PAYMENT_CREATED`) e o e-mail da NFS-e quando a nota **realmente sai**. Lembretes de vencimento, atraso, atualização, SMS e WhatsApp do Asaas ficam **desligados** (`applyAsaasCustomerEmailPolicy` / `applyAsaasPaymentEmailPolicy`). Reprocessar authorize em NF já AUTHORIZED também disparava e-mail — não fazer isso.
+
+## Vencimento
+Alteração **manual** (`[Vencimento alterado`): a data do Torres é a do boleto — grava nos dois lados; se o Asaas recusar, não altera o Torres. O reconcile **empurra** essa data para o Asaas e **não** puxa outra data por cima.
+Sem alteração manual: `invoices.due_date` espelha o boleto vivo (`payments.dueDate`).
+Data-pura na UI: `formatDateOnlyBR`, nunca `new Date("YYYY-MM-DD")` (recua 1 dia no BRT).
