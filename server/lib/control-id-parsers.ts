@@ -327,6 +327,18 @@ export function rhidNumericCore(externalId: string | null | undefined): string |
 }
 
 /**
+ * Person ID no RHID é numérico. "0030" e "30" são a mesma pessoa no aparelho;
+ * guardar/comparar com zero à esquerda cria mapping fantasma que nunca casa
+ * com o AFD (que devolve o id sem padding).
+ */
+export function canonicalRhidPersonId(id: string | number | null | undefined): string {
+  const s = String(id ?? "").trim();
+  if (!s) return "";
+  if (/^\d+$/.test(s)) return String(Number(s));
+  return s;
+}
+
+/**
  * Colapsa, PARA EXIBIÇÃO (espelho/folha), a duplicata "hard": a mesma batida
  * gravada 2x — uma que NÓS criamos via POST (`external_id` numérico puro, ex.
  * "14506") e a reexportação do AFD do RHID (`rhid_14506_{ts}`) do MESMO id no

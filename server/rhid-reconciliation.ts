@@ -16,7 +16,7 @@
 import nodemailer from "nodemailer";
 import { supabaseAdmin } from "./supabase";
 import { fetchAllEvents, syncDevice, createRhidPunch, type DeviceRow } from "./control-id";
-import { monthToFechamento, nameMatchScore, minuteKeyBRT } from "./lib/control-id-parsers";
+import { monthToFechamento, nameMatchScore, minuteKeyBRT, canonicalRhidPersonId } from "./lib/control-id-parsers";
 import { getLockedPeriods, isDateLocked } from "./lib/locked-periods";
 
 export type MarkStatus = "validado" | "faltando_no_rhid" | "faltando_no_local" | "duplicada";
@@ -161,9 +161,10 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
     for (const ev of events) {
       const t = new Date(ev.time).getTime();
       if (t < start.getTime() || t >= end.getTime()) continue;
-      const arr = rhidByUser.get(String(ev.userId)) || [];
+      const uid = canonicalRhidPersonId(ev.userId) || String(ev.userId);
+      const arr = rhidByUser.get(uid) || [];
       arr.push({ minute: minuteKeyBRT(new Date(ev.time)), source: ev.source || "facial" });
-      rhidByUser.set(String(ev.userId), arr);
+      rhidByUser.set(uid, arr);
     }
   }
 
@@ -177,7 +178,7 @@ export async function buildReconciliation(opts: { fromYmd?: string; toYmd?: stri
 
   for (const emp of employees) {
     const map = mapByEmp.get(Number(emp.id)) || null;
-    const rhidUserId = map ? String(map.control_id_user_id) : null;
+    const rhidUserId = map ? (canonicalRhidPersonId(map.control_id_user_id) || String(map.control_id_user_id)) : null;
 
     // Identidade
     const cpfD = onlyDigits(emp.cpf);

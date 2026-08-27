@@ -3,6 +3,7 @@ import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
+import { canonicalRhidPersonId } from "../lib/control-id-parsers";
 import { isAtivo } from "./fixed-costs";
 
 export function registerControlIdRoutes(app: Express) {
@@ -184,10 +185,11 @@ export function registerControlIdRoutes(app: Express) {
     if (!deviceId || !employeeId || !controlIdUserId) {
       return res.status(400).json({ message: "deviceId, employeeId e controlIdUserId são obrigatórios" });
     }
+    const userId = canonicalRhidPersonId(controlIdUserId) || String(controlIdUserId);
     const { data, error } = await supabaseAdmin.from("control_id_users_map").insert({
       device_id: Number(deviceId),
       employee_id: Number(employeeId),
-      control_id_user_id: String(controlIdUserId),
+      control_id_user_id: userId,
       control_id_user_name: controlIdUserName || null,
       matricula: matricula || null,
       ativo: ativo !== false,
@@ -198,7 +200,7 @@ export function registerControlIdRoutes(app: Express) {
     await supabaseAdmin.from("control_id_punches")
       .update({ employee_id: Number(employeeId) })
       .eq("device_id", Number(deviceId))
-      .eq("control_id_user_id", String(controlIdUserId))
+      .eq("control_id_user_id", userId)
       .is("employee_id", null);
 
     res.status(201).json(data);
@@ -209,7 +211,7 @@ export function registerControlIdRoutes(app: Express) {
     const { employeeId, controlIdUserId, controlIdUserName, matricula, ativo } = req.body;
     const upd: any = {};
     if (employeeId !== undefined) upd.employee_id = Number(employeeId);
-    if (controlIdUserId !== undefined) upd.control_id_user_id = String(controlIdUserId);
+    if (controlIdUserId !== undefined) upd.control_id_user_id = canonicalRhidPersonId(controlIdUserId) || String(controlIdUserId);
     if (controlIdUserName !== undefined) upd.control_id_user_name = controlIdUserName;
     if (matricula !== undefined) upd.matricula = matricula;
     if (ativo !== undefined) upd.ativo = ativo;

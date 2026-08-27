@@ -27,6 +27,7 @@ import {
   workedMinutesBetween,
   decideImport,
   rhidNumericCore,
+  canonicalRhidPersonId,
   dedupPunchesByCore,
   selectCanonicalDayPunches,
   stripIllegalDeviceReentries,
@@ -316,7 +317,7 @@ async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; na
   }
 
   return persons.map((p: any) => ({
-    id: String(p.id || p.Id || p.PersonId || ""),
+    id: canonicalRhidPersonId(p.id || p.Id || p.PersonId || ""),
     name: String(p.name || p.Name || p.PersonName || ""),
     matricula: p.registration || p.Registration || p.pis || p.Pis || undefined,
     cpf: p.cpf != null ? String(p.cpf).replace(/\D/g, "") : undefined,
@@ -411,7 +412,13 @@ export async function updateRhidPerson(deviceId: number, personId: string | numb
     timeoutMs: 10000,
   });
   const current = getR.ok ? await getR.json().catch(() => ({})) : {};
-  const payload = { ...current, ...fields, id: Number(personId) };
+  const merged = { ...current, ...fields, id: Number(personId) };
+  // RHID rejeita null ("Nullable object must have a value.") — omite, não envia.
+  const payload: Record<string, any> = {};
+  for (const [k, v] of Object.entries(merged)) {
+    if (v === null || v === undefined) continue;
+    payload[k] = v;
+  }
   const r = await tryFetch(url, {
     method: "PUT",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
@@ -504,7 +511,7 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
   if (existingMap) {
     return {
       status: "already_mapped",
-      rhidPersonId: String(existingMap.control_id_user_id),
+      rhidPersonId: canonicalRhidPersonId(existingMap.control_id_user_id) || String(existingMap.control_id_user_id),
       deviceId: targetDeviceId,
       mappingId: Number(existingMap.id),
       punchesBackfilled: 0,
@@ -519,7 +526,7 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
   let status: "created" | "linked_existing";
 
   if (existingPerson) {
-    rhidPersonId = String(existingPerson.id);
+    rhidPersonId = canonicalRhidPersonId(existingPerson.id);
     status = "linked_existing";
     // Ativa pessoa se estiver inativa (status=0) no RHID
     if ((existingPerson as any).status === 0 || (existingPerson as any).status === false) {
@@ -543,9 +550,9 @@ export async function registerEmployeeInRhid(employeeId: number, deviceId?: numb
       const refetched = await fetchUsers(device as DeviceRow);
       const found = refetched.find(p => p.cpf && p.cpf === cpfDigits);
       if (!found) throw new Error("Pessoa criada no RHID mas id não retornado");
-      rhidPersonId = String(found.id);
+      rhidPersonId = canonicalRhidPersonId(found.id);
     } else {
-      rhidPersonId = String(newId);
+      rhidPersonId = canonicalRhidPersonId(newId);
     }
     status = "created";
   }
@@ -648,7 +655,10 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     .select("control_id_user_id, employee_id")
     .eq("device_id", deviceId).eq("ativo", true);
   const mapByUserId = new Map<string, number>();
-  (mappings || []).forEach((m: any) => mapByUserId.set(String(m.control_id_user_id), Number(m.employee_id)));
+  (mappings || []).forEach((m: any) => {
+    const uid = canonicalRhidPersonId(m.control_id_user_id);
+    if (uid) mapByUserId.set(uid, Number(m.employee_id));
+  });
 
   // Carrega externalIds já existentes pra dedup
   const externalIds = events.map(e => e.id);
@@ -694,7 +704,7 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
   // Nosso sistema é a verdade: se já temos uma batida nesse minuto pro funcionário,
   // não importamos outra do RHID.
   const mappedEmpIds = Array.from(new Set(
-    events.map(e => mapByUserId.get(e.userId)).filter((x): x is number => !!x),
+    events.map(e => mapByUserId.get(canonicalRhidPersonId(e.userId))).filter((x): x is number => !!x),
   ));
   // emp → (minuteKeyBRT → batida local existente nesse minuto). Guardamos id + external_id
   // pra poder ADOTAR o id canônico do AFD na batida local (em vez de inserir duplicata).
@@ -735,7 +745,7 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     seenInBatch.add(ev.id);
     // Período fechado por folha: ignora a batida por completo (não insere nem adota id).
     if (isDateLocked(ev.time, lockedPeriods)) { skipped++; skippedLocked++; continue; }
-    const employeeId = mapByUserId.get(ev.userId) || null;
+    const employeeId = mapByUserId.get(canonicalRhidPersonId(ev.userId)) || null;
     const externalIdExists = existingSet.has(ev.id);
 
     // 1ª passada de dedup: pelo ID NUMÉRICO da RHID. Se já temos localmente a
@@ -793,7 +803,7 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
     if (employeeId) mapped++;
     toInsert.push({
       device_id: deviceId,
-      control_id_user_id: ev.userId,
+      control_id_user_id: canonicalRhidPersonId(ev.userId) || ev.userId,
       employee_id: employeeId,
       punch_at: ev.time,
       direction: ev.direction || "unknown",
@@ -959,7 +969,7 @@ export async function autoImportPersons(deviceId: number): Promise<{
   const { data: existingMappings } = await supabaseAdmin
     .from("control_id_users_map").select("control_id_user_id")
     .eq("device_id", deviceId).eq("ativo", true);
-  const mappedIds = new Set((existingMappings || []).map((m: any) => String(m.control_id_user_id)));
+  const mappedIds = new Set((existingMappings || []).map((m: any) => canonicalRhidPersonId(m.control_id_user_id)));
 
   const matched: any[] = [];
   const unmatched: any[] = [];
@@ -1049,11 +1059,13 @@ export async function createManualPunch(params: {
   let mapping: any = null;
   if (params.deviceId) {
     const { data } = await supabaseAdmin.from("control_id_users_map")
-      .select("*").eq("employee_id", employeeId).eq("device_id", params.deviceId).eq("ativo", true).maybeSingle();
+      .select("*").eq("employee_id", employeeId).eq("device_id", params.deviceId).eq("ativo", true)
+      .order("id", { ascending: false }).limit(1).maybeSingle();
     mapping = data;
   } else {
     const { data } = await supabaseAdmin.from("control_id_users_map")
-      .select("*").eq("employee_id", employeeId).eq("ativo", true).limit(1).maybeSingle();
+      .select("*").eq("employee_id", employeeId).eq("ativo", true)
+      .order("id", { ascending: false }).limit(1).maybeSingle();
     mapping = data;
   }
 

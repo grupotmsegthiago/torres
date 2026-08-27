@@ -21,6 +21,7 @@ import {
   stripIllegalDeviceReentries,
   detectFolhaDayAnomalies,
   folhaObservation,
+  canonicalRhidPersonId,
 } from "./control-id-parsers.ts";
 
 // ============================================================================
@@ -612,4 +613,17 @@ test("detectFolhaDayAnomalies: dia normal 4 batidas sem alerta grave", () => {
   const canon = selectCanonicalDayPunches(punches);
   const anomalies = detectFolhaDayAnomalies(punches, canon);
   assert.equal(anomalies.filter((a) => a.severity === "erro").length, 0);
+});
+
+test("canonicalRhidPersonId: 0030 e 30 são a mesma pessoa", () => {
+  assert.equal(canonicalRhidPersonId("0030"), "30");
+  assert.equal(canonicalRhidPersonId("30"), "30");
+  assert.equal(canonicalRhidPersonId(30), "30");
+  assert.equal(canonicalRhidPersonId("00030"), "30");
+});
+
+test("canonicalRhidPersonId: vazio e não-numérico permanecem previsíveis", () => {
+  assert.equal(canonicalRhidPersonId(""), "");
+  assert.equal(canonicalRhidPersonId(null), "");
+  assert.equal(canonicalRhidPersonId("abc"), "abc");
 });
