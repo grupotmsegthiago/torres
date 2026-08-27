@@ -56,6 +56,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
     /^\/api\/employees\/\d+\/dependents$/,
     // PATCH/POST de funcionário pode levar foto em data-URL
     /^\/api\/employees(\/\d+)?$/,
+    // Assinatura de contrato: selfie + desenho (base64)
+    /^\/api\/permanent-contracts\/\d+\/sign$/,
+    /^\/api\/probation-contracts\/\d+\/sign$/,
   ];
   const rawBodyVerify = (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
     req.rawBody = buf;
