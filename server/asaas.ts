@@ -49,8 +49,6 @@ import {
   canReemitNfse,
   pickPreferredAsaasNf,
   isAsaasInvoiceId,
-  shouldNudgeNfseAuthorize,
-  shouldAutoEmitMissingNfse,
   isOpenNfFollowUpStatus,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
@@ -292,82 +290,13 @@ async function fetchNfseFromAsaas(invoice: any): Promise<{ nf: any | null; sourc
   return { nf: null, source: "none", paymentLookupEmpty };
 }
 
-/** Reprocessa a NFS-e JÁ existente no Asaas (equivalente ao botão Reprocessar do site). */
-async function nudgeNfseUntilIssued(nf: any, localNfseNumber?: unknown): Promise<any> {
-  const id = nf?.id ? String(nf.id) : "";
-  if (!id || !shouldNudgeNfseAuthorize(nf?.status, nf?.number || localNfseNumber)) return nf;
-  try {
-    const auth = await asaasRequest("POST", `/invoices/${id}/authorize`);
-    console.log(`[asaas] reprocessar NFS-e ${id}: ${nf?.status} → ${auth?.status || nf?.status}`);
-    let latest = { ...nf, ...auth, id };
-    try {
-      const refreshed = await asaasRequest("GET", `/invoices/${id}`);
-      if (refreshed?.id || refreshed?.status) latest = refreshed;
-    } catch {
-      // mantém o retorno do authorize
-    }
-    return latest;
-  } catch (e: any) {
-    console.log(`[asaas] reprocessar NFS-e ${id} falhou: ${e.message}`);
-    return { ...nf, _authorizeError: String(e.message || "").slice(0, 1000) };
-  }
-}
-
-async function tryAutoEmitMissingNfse(invoice: any): Promise<Record<string, any>> {
-  if (!invoice?.asaas_payment_id || !invoice?.client_id) return {};
-  const { data: cli } = await supabaseAdmin
-    .from("clients")
-    .select("emite_nf, email, email_financeiro, email_contratual, email_operacional, retem_inss, inss_aliquota")
-    .eq("id", invoice.client_id)
-    .maybeSingle();
-  const emiteNf = cli?.emite_nf === true;
-  if (!shouldAutoEmitMissingNfse(invoice, { paymentLookupEmpty: true, emiteNf })) return {};
-
-  const clientEmail = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || undefined;
-  try {
-    const result = await emitNfseImmediate({
-      paymentId: invoice.asaas_payment_id,
-      value: parseFloat(invoice.value),
-      description: invoice.description || DESCRICAO_SERVICO_FIXA,
-      clientEmail,
-      retemInss: cli?.retem_inss === true,
-      inssAliquota: cli?.retem_inss ? Number(cli?.inss_aliquota ?? 11) : undefined,
-    });
-    console.log(`[asaas] auto-emit NFS-e fatura #${invoice.id}: ${result.status} id=${result.id}`);
-    return nfseFieldsFromEmitResult(result);
-  } catch (e: any) {
-    console.error(`[asaas] auto-emit NFS-e fatura #${invoice.id} falhou: ${e.message}`);
-    return {
-      nfse_status: "ERRO",
-      nfse_error_message: String(e.message || "Falha ao emitir NFS-e no Asaas").slice(0, 1000),
-    };
-  }
-}
-
-/** Consulta Asaas, reprocessa se travada/erro, emite se a cobrança não tem NF. */
+/** Consulta o Asaas e grava status/número. Nunca emite nem reprocessa — isso manda e-mail ao cliente. */
 async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<string, any>; source: string }> {
   const fetched = await fetchNfseFromAsaas(invoice);
-  let { nf, source, paymentLookupEmpty } = fetched;
+  const { nf, source } = fetched;
   if (nf) {
-    if (!isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) {
-      nf = await nudgeNfseUntilIssued(nf, invoice.nfse_number);
-    }
     const updates = nfseUpdatesFromAsaasObject(nf, invoice);
-    if (nf._authorizeError && !isNfFullyIssued(updates.nfse_status || nf.status, updates.nfse_number || invoice.nfse_number)) {
-      if (isNfErrorStatus(nf.status) || isNfErrorStatus(invoice.nfse_status)) {
-        if (nf._authorizeError !== invoice.nfse_error_message) {
-          updates.nfse_error_message = nf._authorizeError;
-        }
-      } else if (!invoice.nfse_error_message && !updates.nfse_error_message) {
-        // processando: não vira ERRO só porque o authorize foi recusado (já está no fluxo)
-        console.log(`[asaas] fatura #${invoice.id}: authorize recusado em ${nf.status}: ${nf._authorizeError}`);
-      }
-    }
     return { updates, source };
-  }
-  if (paymentLookupEmpty) {
-    const emitted = await tryAutoEmitMissingNfse(invoice);
-    if (Object.keys(emitted).length > 0) return { updates: emitted, source: "auto-emit" };
   }
   const updates: Record<string, any> = {};
   if (shouldMarkMissingNfAsError(invoice)) {

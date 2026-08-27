@@ -633,19 +633,19 @@ test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
   assert.equal(pickPreferredAsaasNf([]), null);
 });
 
-test("shouldNudgeNfseAuthorize: reprocessa ERROR/SCHEDULED; não reenvia se já emitida ou em emissão", () => {
-  assert.equal(shouldNudgeNfseAuthorize("ERROR", null), true);
-  assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), true);
+test("shouldNudgeNfseAuthorize: cron nunca reenvia authorize (dispara e-mail no Asaas)", () => {
+  assert.equal(shouldNudgeNfseAuthorize("ERROR", null), false);
+  assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), false);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), false);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", "2562"), false);
   assert.equal(shouldNudgeNfseAuthorize("PROCESSING", null), false);
   assert.equal(shouldNudgeNfseAuthorize("CANCELED", null), false);
 });
 
-test("shouldAutoEmitMissingNfse: só com lista vazia confirmada, emite_nf e idade mínima", () => {
+test("shouldAutoEmitMissingNfse: cron nunca cria NFS-e sozinho", () => {
   const old = new Date(Date.now() - 30 * 60_000).toISOString();
   const fresh = new Date(Date.now() - 2 * 60_000).toISOString();
-  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: false, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: false }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), false);

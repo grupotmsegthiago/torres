@@ -540,43 +540,27 @@ export function nfseUpdatesFromAsaasObject(
 }
 
 /**
- * POST /invoices/{id}/authorize só quando a nota ainda NÃO entrou em emissão.
- * AUTHORIZED / PROCESSING / ISSUED = Asaas já está emitindo ou já emitiu —
- * repetir authorize nesses status reprocessa sem parar (lista do Asaas
- * muitas vezes vem sem `number`, e o Torres tratava como “ainda processando”).
- * Erro / SCHEDULED: equivalente ao botão Reprocessar do site.
+ * Cron / sync automático NÃO deve autorizar. Cada POST /invoices/{id}/authorize
+ * manda e-mail ao cliente (“tentando emitir”). Emissão só na criação da fatura
+ * ou no botão explícito (emit-nfse / resolver-nf-erro).
  */
-export function shouldNudgeNfseAuthorize(status: unknown, nfseNumber?: unknown): boolean {
-  if (isNfFullyIssued(status, nfseNumber)) return false;
-  const st = String(status || "").toUpperCase();
-  if (!st || st.includes("CANCEL") || st === "PROCESSING_CANCELLATION" || st === "CANCELLATION_DENIED") {
-    return false;
-  }
-  if (isNfOkStatus(st) || ["PROCESSING", "WAITING_MUNICIPAL_PROCESSING"].includes(st)) {
-    return false;
-  }
-  return ["SCHEDULED", "PENDING", "ERROR", "ERRO", "FAILED", "FALHA", "REJECTED", "DENIED"].includes(st);
+export function shouldNudgeNfseAuthorize(_status?: unknown, _nfseNumber?: unknown): boolean {
+  return false;
 }
 
 export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o POST inicial
 
-/** Confirmação de lista vazia no Asaas + cobrança aberta + idade mínima → pode emitir. */
+/** Cron nunca cria NFS-e. Emissão só na criação da fatura ou ação explícita. */
 export function shouldAutoEmitMissingNfse(
-  invoice: {
+  _invoice?: {
     status?: string | null;
     nfse_status?: string | null;
     nfse_number?: string | null;
     created_at?: string | null;
   },
-  opts: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
+  _opts?: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
 ): boolean {
-  if (!opts.paymentLookupEmpty || !opts.emiteNf) return false;
-  const pay = String(invoice.status || "").toUpperCase();
-  if (["CANCELLED", "CANCELED"].includes(pay)) return false;
-  // Já houve documento/tentativa local — nunca criar segunda NFS-e no cron.
-  if (invoice.nfse_number || invoice.nfse_status) return false;
-  const hours = hoursSince(invoice.created_at, opts.now ?? new Date());
-  return hours != null && hours >= NF_AUTO_EMIT_MIN_AGE_HOURS;
+  return false;
 }
 
 export function isOpenNfFollowUpStatus(invoice: {
