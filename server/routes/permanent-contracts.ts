@@ -8,6 +8,7 @@ import {
   type PermanentContractTemplate,
   DEFAULT_PERMANENT_TEMPLATE,
 } from "../permanent-contract-pdf";
+import { resolveWafSafeImage } from "../lib/photo-data-uri";
 
 async function loadPermanentTemplate(): Promise<PermanentContractTemplate> {
   try {
@@ -205,7 +206,10 @@ export function registerPermanentContractRoutes(app: Express) {
   app.post("/api/permanent-contracts/:id/sign", requireAuth, async (req: any, res) => {
     try {
       const id = Number(req.params.id);
-      const { facialFoto, assinaturaDesenho, termoAceito, termoTexto } = req.body || {};
+      const body = req.body || {};
+      const { termoAceito, termoTexto } = body;
+      const facialFoto = resolveWafSafeImage(body.facialFotoBase64, body.facialFotoMime, body.facialFoto);
+      const assinaturaDesenho = resolveWafSafeImage(body.assinaturaBase64, body.assinaturaMime, body.assinaturaDesenho);
 
       if (!facialFoto || !/^data:image\//i.test(facialFoto)) {
         return res.status(400).json({ message: "Foto facial obrigatória" });
@@ -224,7 +228,7 @@ export function registerPermanentContractRoutes(app: Express) {
         .limit(1);
       if (!rows?.length) return res.status(404).json({ message: "Contrato não encontrado" });
       const contract = rows[0];
-      if (!req.user.employeeId || contract.employee_id !== req.user.employeeId) {
+      if (!req.user.employeeId || Number(contract.employee_id) !== Number(req.user.employeeId)) {
         return res.status(403).json({ message: "Contrato não pertence a este funcionário" });
       }
       if (contract.assinatura_status === "assinado") {
