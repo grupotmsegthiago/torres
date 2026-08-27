@@ -82,11 +82,16 @@ test("shouldBlockNfEmission: e-mail inválido/vazio bloqueia; válido não", () 
   assert.equal(shouldBlockNfEmission("a@x.com, b@y.com"), false);
 });
 
-test("extractConcreteNfErrorMessage: retorna null quando não há mensagem real", () => {
+test("extractConcreteNfErrorMessage: usa statusDescription do Asaas; ignora observations fiscais", () => {
   assert.equal(extractConcreteNfErrorMessage({}), null);
   assert.equal(extractConcreteNfErrorMessage(null), null);
   assert.equal(extractConcreteNfErrorMessage({ status: "ERROR" }), null);
   assert.equal(extractConcreteNfErrorMessage({ rejectionReason: "X inválido" }), "X inválido");
+  assert.equal(extractConcreteNfErrorMessage({ statusDescription: "E-mail do tomador inválido" }), "E-mail do tomador inválido");
+  assert.equal(extractConcreteNfErrorMessage({
+    status: "ERROR",
+    observations: "CNAE 7870. Vigilância, segurança ou monitoramento de bens",
+  }), null);
 });
 
 test("resolveNfErrorMessage: prioriza mensagem concreta do Asaas", () => {

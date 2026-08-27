@@ -29,6 +29,16 @@ import {
   isNfFullyIssued,
   classifyIssuedOrProcessing,
   nfseFieldsFromEmitResult,
+  nfseUpdatesFromAsaasObject,
+  describeNfProcessingWait,
+  shouldMarkMissingNfAsError,
+  canReemitNfse,
+  pickPreferredAsaasNf,
+  isAsaasInvoiceId,
+  shouldNudgeNfseAuthorize,
+  shouldAutoEmitMissingNfse,
+  isOpenNfFollowUpStatus,
+  NF_PROCESSING_STALE_HOURS,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -522,4 +532,121 @@ test("nfseFieldsFromEmitResult: não inventa AUTHORIZED; guarda inv_ para sync",
     nfse_number: "88",
   });
   assert.deepEqual(nfseFieldsFromEmitResult({}), { nfse_status: "SCHEDULED" });
+});
+
+test("isAsaasInvoiceId", () => {
+  assert.equal(isAsaasInvoiceId("inv_abc"), true);
+  assert.equal(isAsaasInvoiceId("2562"), false);
+  assert.equal(isAsaasInvoiceId(null), false);
+});
+
+test("nfseUpdatesFromAsaasObject: guarda inv_ quando ainda não há nº municipal", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "AUTHORIZED", number: null },
+    { nfse_status: "AUTHORIZED", nfse_number: null, nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_number, "inv_xyz");
+  assert.equal(u.nfse_status, undefined);
+});
+
+test("nfseUpdatesFromAsaasObject: nº municipal substitui inv_", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "AUTHORIZED", number: "2562", pdfUrl: "https://nf.pdf" },
+    { nfse_status: "AUTHORIZED", nfse_number: "inv_xyz", nfse_url: null, nfse_error_message: "x" },
+  );
+  assert.equal(u.nfse_number, "2562");
+  assert.equal(u.nfse_url, "https://nf.pdf");
+  assert.equal(u.nfse_error_message, null);
+});
+
+test("describeNfProcessingWait: explica AUTHORIZED sem número", () => {
+  const msg = describeNfProcessingWait({
+    nfse_status: "AUTHORIZED",
+    nfse_number: null,
+    created_at: "2026-08-26T13:38:39.000-03:00",
+    updated_at: "2026-08-26T19:00:40.000-03:00",
+  }, new Date("2026-08-27T12:17:00-03:00"));
+  assert.ok(msg && /AUTHORIZED/.test(msg) && /Asaas/.test(msg));
+  assert.equal(describeNfProcessingWait({ nfse_status: "AUTHORIZED", nfse_number: "2562" }), null);
+});
+
+test("shouldMarkMissingNfAsError: só cobrança em aberto e stale, não fatura paga antiga", () => {
+  const staleCreated = new Date(Date.now() - (NF_PROCESSING_STALE_HOURS + 1) * 3600_000).toISOString();
+  assert.equal(shouldMarkMissingNfAsError({
+    status: "PENDING",
+    nfse_status: "AUTHORIZED",
+    nfse_number: null,
+    created_at: staleCreated,
+  }), true);
+  assert.equal(shouldMarkMissingNfAsError({
+    status: "RECEIVED",
+    nfse_status: "AUTHORIZED",
+    nfse_number: null,
+    created_at: staleCreated,
+  }), false);
+  assert.equal(shouldMarkMissingNfAsError({
+    status: "PENDING",
+    nfse_status: "AUTHORIZED",
+    nfse_number: "2562",
+    created_at: staleCreated,
+  }), false);
+});
+
+test("canReemitNfse: AUTHORIZED sem nº municipal NÃO bloqueia como já emitida", () => {
+  const blocked = canReemitNfse({ nfse_status: "AUTHORIZED", nfse_number: "2562" });
+  assert.equal(blocked.allowed, false);
+  assert.match(blocked.reason, /duplicidade/);
+
+  const waiting = canReemitNfse({ nfse_status: "AUTHORIZED", nfse_number: null });
+  assert.equal(waiting.allowed, false);
+  assert.match(waiting.reason, /Sincronizar/);
+
+  const erro = canReemitNfse({ nfse_status: "ERRO", nfse_number: null, nfse_error_message: "tomador" });
+  assert.equal(erro.allowed, true);
+
+  const authorizedGhost = canReemitNfse({
+    nfse_status: "AUTHORIZED",
+    nfse_number: null,
+    nfse_error_message: "NFS-e não encontrada no Asaas",
+  });
+  assert.equal(authorizedGhost.allowed, true);
+});
+
+test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
+  const picked = pickPreferredAsaasNf([
+    { id: "inv_c", status: "CANCELED" },
+    { id: "inv_p", status: "SCHEDULED" },
+    { id: "inv_ok", status: "AUTHORIZED", number: "99" },
+  ]);
+  assert.equal(picked.id, "inv_ok");
+  const processing = pickPreferredAsaasNf([
+    { id: "inv_c", status: "CANCELED" },
+    { id: "inv_p", status: "PROCESSING" },
+  ]);
+  assert.equal(processing.id, "inv_p");
+  assert.equal(pickPreferredAsaasNf([]), null);
+});
+
+test("shouldNudgeNfseAuthorize: reprocessa ERROR e processando; não mexe em emitida/cancelada", () => {
+  assert.equal(shouldNudgeNfseAuthorize("ERROR", null), true);
+  assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), true);
+  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), true);
+  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", "2562"), false);
+  assert.equal(shouldNudgeNfseAuthorize("CANCELED", null), false);
+});
+
+test("shouldAutoEmitMissingNfse: só com lista vazia confirmada, emite_nf e idade mínima", () => {
+  const old = new Date(Date.now() - 30 * 60_000).toISOString();
+  const fresh = new Date(Date.now() - 2 * 60_000).toISOString();
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: false, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: false }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "CANCELLED", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+});
+
+test("isOpenNfFollowUpStatus: acompanha processando/erro em aberto", () => {
+  assert.equal(isOpenNfFollowUpStatus({ status: "PENDING", nfse_status: "ERROR", nfse_number: null }), true);
+  assert.equal(isOpenNfFollowUpStatus({ status: "PENDING", nfse_status: "AUTHORIZED", nfse_number: "99" }), false);
+  assert.equal(isOpenNfFollowUpStatus({ status: "CANCELED", nfse_status: "ERROR" }), false);
 });

@@ -412,6 +412,226 @@ export function nfseFieldsFromEmitResult(result: {
   return fields;
 }
 
+export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
+  return /^inv_/i.test(String(nfseNumber || "").trim());
+}
+
+/** Horas em aberto sem nº municipal para tratar “AUTHORIZED fantasma” como erro. */
+export const NF_PROCESSING_STALE_HOURS = 2;
+
+export const NF_MISSING_AT_ASAAS_MSG =
+  "NFS-e não encontrada no Asaas para esta cobrança. O status local não tem nota correspondente na prefeitura. Use Resolver agora para emitir.";
+
+export function hoursSince(iso: string | null | undefined, now: Date = new Date()): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  return (now.getTime() - t) / 3_600_000;
+}
+
+export function isStuckNfWithoutNumber(invoice: {
+  nfse_status?: string | null;
+  nfse_number?: string | null;
+}): boolean {
+  return classifyIssuedOrProcessing(invoice.nfse_status, invoice.nfse_number) === "NF_PROCESSANDO";
+}
+
+function formatNfWaitAge(hours: number | null): string {
+  if (hours == null || hours < 0) return "";
+  if (hours < 1) return ` há ${Math.max(1, Math.round(hours * 60))} min`;
+  return ` há ${Math.round(hours)}h`;
+}
+
+/** Texto de espera para a UI — NÃO grava em nfse_error_message (isso é só erro real). */
+export function describeNfProcessingWait(
+  invoice: {
+    nfse_status?: string | null;
+    nfse_number?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  },
+  now: Date = new Date(),
+): string | null {
+  if (!isStuckNfWithoutNumber(invoice)) return null;
+  const st = String(invoice.nfse_status || "").toUpperCase() || "SEM STATUS";
+  const hours = hoursSince(invoice.updated_at || invoice.created_at, now);
+  const age = formatNfWaitAge(hours);
+  if (isNfOkStatus(st)) {
+    return `Asaas: ${st}, sem número da prefeitura${age}. O Torres consulta e reprocessa no Asaas a cada poucos minutos até a NF sair.`;
+  }
+  return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.`;
+}
+
+const PAID_OR_CANCELED_PAY = ["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH", "CANCELLED", "CANCELED"];
+
+/**
+ * AUTHORIZED/PROCESSANDO sem nº, cobrança em aberto, e já passou o prazo:
+ * se o Asaas não devolver a nota, vira erro visível (não fica “processando” para sempre).
+ * Não aplica em faturas já pagas (histórico antigo sem nº).
+ */
+export function shouldMarkMissingNfAsError(
+  invoice: {
+    status?: string | null;
+    nfse_status?: string | null;
+    nfse_number?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  },
+  now: Date = new Date(),
+): boolean {
+  const pay = String(invoice.status || "").toUpperCase();
+  if (PAID_OR_CANCELED_PAY.includes(pay)) return false;
+  if (!isStuckNfWithoutNumber(invoice)) return false;
+  const hours = hoursSince(invoice.created_at || invoice.updated_at, now);
+  return hours != null && hours >= NF_PROCESSING_STALE_HOURS;
+}
+
+export function missingNfAtAsaasMessage(nfseStatus?: string | null): string {
+  const st = String(nfseStatus || "").toUpperCase();
+  if (st) return `${NF_MISSING_AT_ASAAS_MSG} (status local: ${st})`;
+  return NF_MISSING_AT_ASAAS_MSG;
+}
+
+/**
+ * Aplica o objeto NFS-e do Asaas nos campos locais.
+ * Guarda o id `inv_...` quando ainda não há número municipal — senão o próximo
+ * sync não consegue dar GET /invoices/{id}.
+ */
+export function nfseUpdatesFromAsaasObject(
+  nf: any,
+  current: {
+    nfse_number?: string | null;
+    nfse_url?: string | null;
+    nfse_error_message?: string | null;
+    nfse_status?: string | null;
+  },
+): Record<string, any> {
+  const next: Record<string, any> = {};
+  if (nf?.status && String(nf.status) !== String(current.nfse_status || "")) {
+    next.nfse_status = String(nf.status);
+  }
+
+  let desiredNumber: string | null = null;
+  if (isFinalNfNumber(nf?.number)) desiredNumber = String(nf.number);
+  else if (!isFinalNfNumber(current.nfse_number) && nf?.id) desiredNumber = String(nf.id);
+  if (desiredNumber && desiredNumber !== String(current.nfse_number || "")) {
+    next.nfse_number = desiredNumber;
+  }
+
+  const desiredUrl = nf?.pdfUrl || nf?.externalUrl || (!current.nfse_url && nf?.xmlUrl ? nf.xmlUrl : null);
+  if (desiredUrl && String(desiredUrl) !== String(current.nfse_url || "")) {
+    next.nfse_url = String(desiredUrl);
+  }
+
+  const st = String(next.nfse_status || nf?.status || current.nfse_status || "");
+  if (isNfErrorStatus(st)) {
+    const msg = resolveNfErrorMessage(nf, st, current.nfse_error_message);
+    if (msg !== current.nfse_error_message) next.nfse_error_message = msg;
+  } else if (
+    (isNfFullyIssued(st, next.nfse_number || current.nfse_number) || classifyIssuedOrProcessing(st, next.nfse_number || current.nfse_number) === "NF_PROCESSANDO")
+    && current.nfse_error_message
+    && isNfErrorStatus(current.nfse_status)
+  ) {
+    next.nfse_error_message = null;
+  } else if (isNfOkStatus(st) && isFinalNfNumber(next.nfse_number || current.nfse_number) && current.nfse_error_message) {
+    next.nfse_error_message = null;
+  }
+  return next;
+}
+
+/**
+ * Mesmo botão "Reprocessar" do site Asaas: POST /invoices/{id}/authorize
+ * na nota JÁ existente (não cria outra). Vale para SCHEDULED, ERROR e
+ * processando sem número municipal.
+ */
+export function shouldNudgeNfseAuthorize(status: unknown, nfseNumber?: unknown): boolean {
+  if (isNfFullyIssued(status, nfseNumber)) return false;
+  const st = String(status || "").toUpperCase();
+  if (!st || st.includes("CANCEL") || st === "PROCESSING_CANCELLATION" || st === "CANCELLATION_DENIED") {
+    return false;
+  }
+  if (["SCHEDULED", "PENDING", "ERROR", "ERRO", "FAILED", "FALHA", "REJECTED", "DENIED"].includes(st)) {
+    return true;
+  }
+  return classifyIssuedOrProcessing(st, nfseNumber) === "NF_PROCESSANDO";
+}
+
+export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o POST inicial
+
+/** Confirmação de lista vazia no Asaas + cobrança aberta + idade mínima → pode emitir. */
+export function shouldAutoEmitMissingNfse(
+  invoice: {
+    status?: string | null;
+    nfse_status?: string | null;
+    nfse_number?: string | null;
+    created_at?: string | null;
+  },
+  opts: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
+): boolean {
+  if (!opts.paymentLookupEmpty || !opts.emiteNf) return false;
+  const pay = String(invoice.status || "").toUpperCase();
+  if (["CANCELLED", "CANCELED"].includes(pay)) return false;
+  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) return false;
+  const hours = hoursSince(invoice.created_at, opts.now ?? new Date());
+  return hours != null && hours >= NF_AUTO_EMIT_MIN_AGE_HOURS;
+}
+
+export function isOpenNfFollowUpStatus(invoice: {
+  status?: string | null;
+  nfse_status?: string | null;
+  nfse_number?: string | null;
+}): boolean {
+  const pay = String(invoice.status || "").toUpperCase();
+  if (["CANCELLED", "CANCELED"].includes(pay)) return false;
+  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) return false;
+  const nf = String(invoice.nfse_status || "").toUpperCase();
+  if (nf.includes("CANCEL")) return false;
+  return true;
+}
+
+/** Prefere NF emitida; depois processando; erro; por último cancelada. */
+export function pickPreferredAsaasNf(items: any[]): any | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const score = (x: any) => {
+    const st = String(x?.status || "").toUpperCase();
+    if (isNfFullyIssued(st, x?.number)) return 4;
+    if (classifyIssuedOrProcessing(st, x?.number) === "NF_PROCESSANDO") return 3;
+    if (isNfErrorStatus(st)) return 2;
+    if (st.includes("CANCEL")) return 0;
+    return 1;
+  };
+  return [...items].sort((a, b) => score(b) - score(a))[0] || null;
+}
+
+/**
+ * Re-emitir só quando NÃO há NF municipal e há erro confirmado.
+ * AUTHORIZED sem número NÃO é “já emitida” — senão a fatura trava para sempre.
+ */
+export function canReemitNfse(invoice: {
+  nfse_status?: string | null;
+  nfse_number?: string | null;
+  nfse_error_message?: string | null;
+}): { allowed: boolean; reason: string } {
+  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) {
+    return {
+      allowed: false,
+      reason: "Esta fatura já tem NF emitida com número — reprocessar geraria duplicidade fiscal. Cancele a NF atual primeiro, se necessário.",
+    };
+  }
+  const st = String(invoice.nfse_status || "").toUpperCase();
+  const emErro =
+    isNfErrorStatus(st) ||
+    st === "AWAITING_CORRECTION" ||
+    !!invoice.nfse_error_message;
+  if (!emErro) {
+    return {
+      allowed: false,
+      reason: "Esta fatura não está com NF em erro — use Sincronizar para consultar o Asaas. Reprocessar só é permitido após erro confirmado, para evitar nota duplicada.",
+    };
+  }
+  return { allowed: true, reason: "" };
+}
+
 /**
  * Extrai SÓ a mensagem concreta de erro presente no objeto do Asaas, varrendo
  * os campos conhecidos. Retorna `null` quando o Asaas não mandou nenhuma
@@ -419,6 +639,7 @@ export function nfseFieldsFromEmitResult(result: {
  * em vez de sobrescrevê-la por um texto genérico.
  */
 export function extractConcreteNfErrorMessage(nfObj: any): string | null {
+  // `observations` costuma ser o texto fiscal nosso (CNAE/serviço), não o erro da prefeitura.
   const candidates = [
     nfObj?.rejectionReason,
     nfObj?.rejectionMessage,
@@ -426,7 +647,6 @@ export function extractConcreteNfErrorMessage(nfObj: any): string | null {
     nfObj?.errorMessage,
     nfObj?.error,
     Array.isArray(nfObj?.errors) ? (nfObj.errors[0]?.description || nfObj.errors[0]?.message || nfObj.errors[0]?.code) : undefined,
-    nfObj?.observations,
   ];
   for (const c of candidates) {
     const s = String(c || "").trim();

@@ -35,3 +35,16 @@ o detalhe. **How to apply:** em capture sites use `resolveNfErrorMessage`, não
 Estas mudanças NÃO tocam cálculo de valor de billing (INTOCÁVEL §8). São só
 validação + captura de mensagem. Helpers cobertos por
 `server/lib/asaas-nfse-validation.test.ts`.
+
+## NF travada em "processando"
+AUTHORIZED/SCHEDULED/ERROR sem número municipal **não** é emitida. O Torres deve:
+1. `GET /invoices/{inv_id}` se `nfse_number` começa com `inv_`;
+2. senão `GET /invoices?payment={asaas_payment_id}`;
+3. persistir o `inv_...` até chegar o nº municipal;
+4. persistir `statusDescription` do Asaas em `nfse_error_message` quando status = ERROR;
+5. **reprocessar a mesma nota** com `POST /invoices/{id}/authorize` (botão Reprocessar do site Asaas) em SCHEDULED, ERROR e processando sem nº — nunca criar segunda NF;
+6. cron a cada 5 min (`reconcileStuckNfses`) nas faturas em aberto incompletas; full reconcile a cada 15 min;
+7. se a lista por payment vier vazia, cliente `emite_nf` e a cobrança tem >10 min → emitir;
+8. se cobrança em aberto, status processando, >2h e **nenhuma** NFS-e no Asaas → gravar ERRO com motivo visível.
+
+A UI do Relatório de NF mostra o status bruto do Asaas, o motivo e o botão **Sincronizar** por linha (`POST /api/invoices/:id/sync`).

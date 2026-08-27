@@ -50,6 +50,7 @@ type RelatorioRow = {
   rawStatus: string | null;
   rawNfseStatus: string | null;
   nfseErrorMessage: string | null;
+  nfProcessingDetail?: string | null;
   rawBoletimStatus: string | null;
   normalizedStatus: NormalizedStatus;
   invoiceId: number | null;
@@ -82,7 +83,7 @@ type RelatorioResponse = {
 const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: string; icon: any }> = {
   AGUARDANDO_BOLETIM: { label: "Sem fatura",        cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
-  AUTORIZADO:         { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
+  AUTORIZADO:         { label: "NF não emitida",    cls: "text-indigo-700",  bg: "bg-indigo-50 border-indigo-200",     icon: FileText },
   AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
   NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
   NF_CORRIGIR:        { label: "Corrigir cadastro", cls: "text-amber-800",   bg: "bg-amber-50 border-amber-300",       icon: Wrench },
@@ -401,6 +402,24 @@ export default function RelatorioNFPage() {
     onError: (e: any) => toast({ title: "Não foi possível resolver", description: e?.message, variant: "destructive" }),
   });
 
+  const [syncingInvoiceId, setSyncingInvoiceId] = useState<number | null>(null);
+  const syncInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      setSyncingInvoiceId(invoiceId);
+      const r = await authFetch(`/api/invoices/${invoiceId}/sync`, { method: "POST" });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "NF consultada no Asaas", description: data?.message || "Status atualizado." });
+      invalidateRelatedQueries("invoice");
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+    },
+    onError: (e: any) => toast({ title: "Falha ao sincronizar NF", description: e?.message, variant: "destructive" }),
+    onSettled: () => setSyncingInvoiceId(null),
+  });
+
   const openNfMirror = async (id: number) => {
     setNfModal({ id, url: null, contentType: null, htmlText: null, loading: true, error: null });
     try {
@@ -560,7 +579,8 @@ export default function RelatorioNFPage() {
     { key: "TOTAL",              label: "Total no período",  icon: Receipt,        cls: "from-slate-700 to-slate-900 text-white" },
     { key: "AGUARDANDO_BOLETIM", label: "Sem fatura",        icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
-    { key: "AUTORIZADO",         label: "NF processando",    icon: Hourglass,      cls: "from-blue-500 to-blue-700 text-white" },
+    { key: "AUTORIZADO",         label: "NF não emitida",    icon: FileText,       cls: "from-indigo-500 to-indigo-700 text-white" },
+    { key: "NF_PROCESSANDO",     label: "NF processando",    icon: Hourglass,      cls: "from-blue-500 to-blue-700 text-white" },
     { key: "AGUARDANDO_PAGAMENTO", label: "Aguard. pagto (s/ NF)", icon: Banknote, cls: "from-indigo-500 to-indigo-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
@@ -644,7 +664,8 @@ export default function RelatorioNFPage() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="AGUARDANDO_BOLETIM">Sem fatura</SelectItem>
                   <SelectItem value="PENDENTE_APROVACAO">Aguardando aprovação</SelectItem>
-                  <SelectItem value="AUTORIZADO">NF processando</SelectItem>
+                  <SelectItem value="AUTORIZADO">NF não emitida</SelectItem>
+                  <SelectItem value="NF_PROCESSANDO">NF processando</SelectItem>
                   <SelectItem value="AGUARDANDO_PAGAMENTO">Aguard. pagto (sem NF)</SelectItem>
                   <SelectItem value="NF_EMITIDA">NF emitida</SelectItem>
                   <SelectItem value="PAGO">Pago</SelectItem>
@@ -899,13 +920,29 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-center">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}${r.normalizedStatus === "NF_ERRO" ? " alerta-piscando" : ""}`}
-                          title={r.normalizedStatus === "NF_ERRO" && r.nfseErrorMessage ? r.nfseErrorMessage : undefined}
+                          title={r.nfseErrorMessage || r.nfProcessingDetail || (r.rawNfseStatus ? `Asaas: ${r.rawNfseStatus}` : undefined)}
                           data-testid={`status-${r.id}`}
                         >
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </span>
-                        {r.normalizedStatus === "NF_ERRO" && r.nfseErrorMessage && (
+                        {r.rawNfseStatus && r.normalizedStatus === "NF_PROCESSANDO" && (
+                          <div className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-nf-raw-${r.id}`}>
+                            Asaas: {r.rawNfseStatus}
+                          </div>
+                        )}
+                        {r.normalizedStatus === "NF_PROCESSANDO" && r.nfProcessingDetail && !r.nfseErrorMessage && (
+                          <button
+                            type="button"
+                            className="block mx-auto mt-1 text-[10px] text-blue-700 hover:text-blue-900 hover:underline max-w-[200px]"
+                            title={r.nfProcessingDetail}
+                            onClick={() => alert(r.nfProcessingDetail)}
+                            data-testid={`button-nf-wait-${r.id}`}
+                          >
+                            {r.nfProcessingDetail}
+                          </button>
+                        )}
+                        {(r.normalizedStatus === "NF_ERRO" || r.normalizedStatus === "NF_CORRIGIR" || r.normalizedStatus === "NF_PROCESSANDO") && r.nfseErrorMessage && (
                           <button
                             type="button"
                             className="block mx-auto mt-1 text-[10px] text-red-600 hover:text-red-800 hover:underline max-w-[180px] truncate"
@@ -914,6 +951,19 @@ export default function RelatorioNFPage() {
                             data-testid={`button-nfse-error-${r.id}`}
                           >
                             {r.nfseErrorMessage}
+                          </button>
+                        )}
+                        {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && (r.normalizedStatus === "NF_PROCESSANDO" || r.normalizedStatus === "AUTORIZADO" || r.normalizedStatus === "NF_ERRO") && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
+                            disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
+                            onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
+                            data-testid={`button-sync-nf-${r.id}`}
+                          >
+                            {syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId
+                              ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Consultando…</>
+                              : <><RefreshCw className="h-2.5 w-2.5" /> Sincronizar</>}
                           </button>
                         )}
                         {isFinanceiro && (r.normalizedStatus === "NF_ERRO" || r.normalizedStatus === "NF_CORRIGIR") && r.source === "INVOICE" && r.invoiceId && (

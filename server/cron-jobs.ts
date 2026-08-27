@@ -126,6 +126,22 @@ export async function runNfReconcileCron(): Promise<void> {
   }
 }
 
+export async function runStuckNfCron(): Promise<void> {
+  if (!isSupabaseHealthy()) return;
+  try {
+    const { reconcileStuckNfses } = await import("./asaas");
+    const result = await reconcileStuckNfses({ limit: 30 });
+    if (result.processed > 0) {
+      log(
+        `CRON NF-Stuck: ${result.processed} em aberto, ${result.updated} atualizada(s), ${result.errors} erro(s)`,
+        "cron",
+      );
+    }
+  } catch (e: any) {
+    log(`CRON NF-Stuck: Erro: ${e.message}`, "cron");
+  }
+}
+
 export async function runControlIdCron(): Promise<void> {
   await withCronLock("control-id", async () => {
     if (!isSupabaseHealthy()) return;
