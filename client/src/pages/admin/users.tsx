@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { PerfisAcessoPanel } from "@/pages/admin/perfis-acesso-panel";
 import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet } from "lucide-react";
 
@@ -292,7 +293,8 @@ export default function UsersPage() {
     enabled: isAdmin,
   });
 
-  const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const list = Array.isArray(users) ? users : [];
+  const sortedUsers = [...list].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
   const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro");
   const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
@@ -430,7 +432,7 @@ export default function UsersPage() {
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-3 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
           </div>
-        ) : users.length === 0 ? (
+        ) : list.length === 0 ? (
           <Card className="p-12 text-center">
             <UserCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
             <p className="text-neutral-500">Nenhum usuário cadastrado</p>
