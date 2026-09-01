@@ -330,7 +330,10 @@ async function main() {
         if (APPLY) {
           const { error: soErr } = await supabaseAdmin
             .from("service_orders")
-            .update({ escort_contract_id: String(target.id) })
+            .update({
+              escort_contract_id: String(target.id),
+              valor_estimado: sel.estimadoFromAcionamento(target),
+            })
             .eq("id", so.id);
           if (soErr) throw soErr;
         }

@@ -2,8 +2,8 @@
 
 **Data:** 2026-09-01
 **Branch:** `cursor/ajuste-tabela-tmseg-sul-ago2026-4118`
-**Commit(s):** (preenchido após push)
-**Ambiente validado:** [x] local  [ ] preview  [ ] produção (dry-run / apply)
+**Commit(s):** `223f222a` + follow-up
+**Ambiente validado:** [x] local  [ ] preview  [x] produção (dry-run + apply)
 **Publicou?** [x] Não
 
 ### Reutilização (D11 / P13)
@@ -37,10 +37,22 @@
 | `npx tsx --test server/lib/ajuste-tabela-origem.test.ts` | 12/12 pass |
 | `npx tsx --test server/lib/ajuste-tabela-sul-calc.test.ts` | 2/2 pass |
 | dry-run do script | 39 OS; 16 already_ok; 9 FATURADO/snapshot; 5 APROVADA a recalcular; 1 cancelada; 8 recusadas ponteiro; Δ previsto R$ 15.326,60 |
-| `--apply` | a preencher |
+| `--apply` | Aplicado=14 falhas=0. Conferido no banco: 5 APROVADA + TOR-0717 cancelada com totais oficiais; 8 recusadas só ponteiro; TOR-0558 FATURADO intacto |
 
 ### Resultados (negócio)
-Missões TM SEG de agosto que saíram de Florianópolis/Palhoça e ainda não foram faturadas passam a `OP. DEDICADA SUL`. DHL e boletim já aprovado não mudam.
+Missões TM SEG de agosto que saíram de Florianópolis/Palhoça e ainda não foram faturadas passaram a `OP. DEDICADA SUL`. DHL e boletim já aprovado não mudaram.
+
+Recalculadas (2ª quinzena):
+- TOR-0655 R$ 2.235,00 → R$ 5.451,50
+- TOR-0690 R$ 2.127,00 → R$ 5.482,73
+- TOR-0707 R$ 2.160,60 → R$ 5.796,40
+- TOR-0712 R$ 679,83 → R$ 1.436,17
+- TOR-0718 R$ 2.150,70 → R$ 5.792,93
+- TOR-0717 (cancelada) R$ 480,00 → R$ 1.200,00
+- 8 recusadas: ponteiro da tabela, R$ 0
+- 9 FATURADO/snapshot (boletim 106): sem mudança de valor
+
+Δ aplicado nas recalculáveis: R$ 15.326,60.
 
 ### Segurança
 - Secrets no diff? [x] Não
