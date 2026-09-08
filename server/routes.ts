@@ -21,6 +21,8 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
 import { normalizePhotoDataUri } from "./lib/photo-data-uri";
+import { fetchAllSupabaseRows } from "./lib/supabase-page";
+import { collectLinkedFuelingIds, fuelingTagMatchPattern } from "./lib/fueling-mission-cost";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats, setSupabaseRef } from "./pg-fallback";
 import OpenAI from "openai";
@@ -584,19 +586,27 @@ async function syncFuelingMissionCosts() {
       }
     }
 
-    // Conjunto único de IDs de fueling já vinculados como mission_cost ([F#id]).
-    const linkedFuelingIds = new Set<number>();
-    {
-      const { data: mcRows } = await supabaseAdmin
-        .from("mission_costs")
-        .select("description")
-        .ilike("description", "%[F#%");
-      const re = /\[F#(\d+)\]/g;
-      for (const row of (mcRows || [])) {
-        const s = String((row as any).description || "");
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(s))) linkedFuelingIds.add(Number(m[1]));
+    // Conjunto de IDs de fueling já vinculados ([F#id]).
+    // NÃO usar um único .ilike("%[F#%") sem paginar: PostgREST corta em 1000
+    // linhas e o sync recria o mesmo abastecimento a cada boot (TOR-0785/0789).
+    const candidateFuelingIds: number[] = [];
+    for (const arr of fuelingsByVehicleDate.values()) {
+      for (const f of arr) {
+        const id = Number((f as any).id);
+        if (Number.isFinite(id) && id > 0) candidateFuelingIds.push(id);
       }
+    }
+    const linkedFuelingIds = new Set<number>();
+    const matchPat = fuelingTagMatchPattern(candidateFuelingIds);
+    if (matchPat) {
+      const mcRows = await fetchAllSupabaseRows<{ description: string }>((from, to) =>
+        supabaseAdmin
+          .from("mission_costs")
+          .select("description")
+          .filter("description", "match", matchPat)
+          .range(from, to),
+      );
+      for (const id of collectLinkedFuelingIds(mcRows)) linkedFuelingIds.add(id);
     }
 
     for (const os of eligibleOs) {
@@ -624,6 +634,8 @@ async function syncFuelingMissionCosts() {
         if (!error) {
           linkedFuelingIds.add(Number(f.id));
           console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${(os as any).os_number} (date: ${osDateBRT})`);
+        } else if (String((error as any).message || "").includes("idx_mc_fueling_tag_unique")) {
+          linkedFuelingIds.add(Number(f.id));
         }
       }
     }

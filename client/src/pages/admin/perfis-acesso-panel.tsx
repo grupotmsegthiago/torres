@@ -53,7 +53,7 @@ export function PerfisAcessoPanel({ canEdit }: { canEdit: boolean }) {
       <div>
         <h2 className="text-base font-semibold text-neutral-900">O que cada perfil pode ver e fazer</h2>
         <p className="text-xs text-neutral-500 mt-1">
-          Diretoria permanece com acesso total. O perfil Financeiro já nasce com Relatório de NFs, baixa, comprovante e ocorrência.
+          Diretoria permanece com acesso total. Financeiro e Comercial nascem com um conjunto mínimo; a diretoria marca o que cada perfil pode ver.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

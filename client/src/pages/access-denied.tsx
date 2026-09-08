@@ -1,8 +1,9 @@
 import { ShieldAlert, Smartphone, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
-export default function AccessDeniedPage() {
+export default function AccessDeniedPage({ variant = "funcionario" }: { variant?: "funcionario" | "screen" }) {
   const { logoutMutation } = useAuth();
+  const isScreen = variant === "screen";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-neutral-900 to-neutral-800 flex items-center justify-center p-6">
@@ -16,11 +17,18 @@ export default function AccessDeniedPage() {
             Acesso Negado
           </h1>
           <p className="text-neutral-400 mt-2 text-sm leading-relaxed">
-            Sua conta é de <span className="text-amber-400 font-semibold">Agente de Campo</span>.
-            O acesso ao painel administrativo é restrito a administradores.
+            {isScreen ? (
+              <>Este perfil não tem permissão para esta tela. Peça à diretoria para liberar o acesso em Usuários e perfis.</>
+            ) : (
+              <>Sua conta é de <span className="text-amber-400 font-semibold">Agente de Campo</span>.
+              O acesso ao painel administrativo é restrito a administradores.</>
+            )}
           </p>
         </div>
 
+        {isScreen ? (
+          <p className="text-neutral-500 text-xs">Você continua logado. Use o menu lateral para abrir uma tela liberada para o seu perfil.</p>
+        ) : (
         <div className="bg-neutral-800/50 border border-neutral-700 rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-3 text-left">
             <Smartphone className="w-8 h-8 text-blue-400 flex-shrink-0" />
@@ -32,6 +40,7 @@ export default function AccessDeniedPage() {
             </div>
           </div>
         </div>
+        )}
 
         <button
           onClick={() => logoutMutation.mutate()}

@@ -120,7 +120,8 @@ export async function ensureDbSchema() {
       ('diretoria', 'Diretoria', '["*"]'),
       ('admin', 'Administrador', '["dashboard","clients","employees","vehicles","trips","fueling","maintenance","timesheets","tracker","service_orders","mission","operational_grid","consultas","guia_missao","users"]'),
       ('funcionario', 'Funcionário', '["dashboard","mission","timesheets","guia_missao"]'),
-      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]')
+      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]'),
+      ('comercial', 'Comercial', '["dashboard","leads","clients","service_orders","boletim_medicao"]')
       ON CONFLICT (role) DO NOTHING
     `);
 
@@ -1458,14 +1459,15 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_unread ON mission_updates(read_by_admin, created_at DESC) WHERE read_by_admin = 0`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_created_at ON mission_updates(created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_employee ON mission_updates(employee_id)`).catch(() => {});
-    // Índice GIN trigram pra ILIKE '%...%' em description (usado por
-    // syncFuelingMissionCosts no padrão "%[F#%"). text_pattern_ops NÃO
-    // ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
+    // Índice GIN trigram pra ILIKE '%...%' em description.
+    // text_pattern_ops NÃO ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
     await execSql(`CREATE EXTENSION IF NOT EXISTS pg_trgm`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mc_description_trgm ON mission_costs USING gin (description gin_trgm_ops)`).catch(() => {});
     // Se a versão errada tiver sido criada num boot anterior, remove pra
     // não confundir o planner.
     await execSql(`DROP INDEX IF EXISTS idx_mc_description_trgm_btree`).catch(() => {});
+    // Um abastecimento (vehicle_fueling.id) só pode virar um mission_cost.
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_fueling_tag_unique ON mission_costs ((substring(description from '\\[F#(\\d+)\\]'))) WHERE description ~ '\\[F#\\d+\\]'`).catch(() => {});
 
     // Tabelas geridas anteriormente via exec_sql em runtime (leads.ts, asaas.ts).
     // Movidas pra cá em 2026-05 — runtime exec_sql derrubava o pool.

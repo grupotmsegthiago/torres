@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireComercial } from "../auth";
   import { insertServiceOrderSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
@@ -169,7 +169,7 @@ import type { Express } from "express";
     }
   });
 
-  app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireAdminRole, async (_req, res) => {
+  app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireComercial, async (_req, res) => {
     try {
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
@@ -306,7 +306,7 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/boletim-medicao/calcular/:osId", requireAdminRole, async (req, res) => {
+  app.post("/api/boletim-medicao/calcular/:osId", requireComercial, async (req, res) => {
     try {
       const serviceOrderId = Number(req.params.osId);
       const so = await storage.getServiceOrder(serviceOrderId);
@@ -923,7 +923,7 @@ import type { Express } from "express";
     }
   });
 
-  app.post("/api/service-orders", requireAuth, requireAdminRole, async (req, res) => {
+  app.post("/api/service-orders", requireAuth, requireComercial, async (req, res) => {
     console.log(`[DEBUG-OS] POST body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
@@ -1220,7 +1220,7 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/service-orders/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.patch("/api/service-orders/:id", requireAuth, requireComercial, async (req, res) => {
     console.log(`[DEBUG-OS] PATCH body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });

@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
-import { requireAdminRole } from "../auth";
+import { requireComercial } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
 import { normalizePhone, normalizeZip, validateContactFields } from "../lib/normalize-contact";
 import cron from "node-cron";
@@ -1066,10 +1066,10 @@ export function registerLeadRoutes(app: Express) {
     console.log("[leads] CRONs desativados (ambiente serverless/Vercel)");
   }
 
-  app.get("/api/leads/automation", requireAdminRole, (_req: Request, res: Response) => {
+  app.get("/api/leads/automation", requireComercial, (_req: Request, res: Response) => {
     res.json({ enabled: automationEnabled });
   });
-  app.post("/api/leads/automation", requireAdminRole, (req: Request, res: Response) => {
+  app.post("/api/leads/automation", requireComercial, (req: Request, res: Response) => {
     const enabled = !!req.body?.enabled;
     automationEnabled = enabled;
     persistAutomation();
@@ -1183,7 +1183,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
         .from("leads")
@@ -1200,7 +1200,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/stats", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/stats", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from("leads").select("status, temperatura, valor_estimado, setor, origem");
       if (error) throw error;
@@ -1225,7 +1225,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads", requireComercial, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
       const body = req.body;
@@ -1254,7 +1254,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/leads/:id", requireAdminRole, async (req: Request, res: Response) => {
+  app.patch("/api/leads/:id", requireComercial, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const user = (req as any).user;
@@ -1297,7 +1297,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/leads/:id", requireAdminRole, async (req: Request, res: Response) => {
+  app.delete("/api/leads/:id", requireComercial, async (req: Request, res: Response) => {
     try {
       const { error } = await supabaseAdmin.from("leads").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -1307,7 +1307,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/:id/enviar-apresentacao", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/:id/enviar-apresentacao", requireComercial, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { data: lead, error } = await supabaseAdmin.from("leads").select("*").eq("id", id).single();
@@ -1344,7 +1344,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/enfileirar-todos", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/enfileirar-todos", requireComercial, async (req: Request, res: Response) => {
     try {
       const { setores, cidades, temperatura, status_filter } = req.body;
       const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -1395,7 +1395,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/email-queue", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/email-queue", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from("email_queue")
         .select("id, lead_id, to_email, to_name, empresa, subject, status, tracking_id, opened_at, opened_count, replied, replied_at, error_message, sent_at, created_at, campaign_tag")
@@ -1408,7 +1408,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/email-stats", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/email-stats", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data: queue, error } = await supabaseAdmin.from("email_queue")
         .select("status, sent_at, opened_at, replied, created_at");
@@ -1478,7 +1478,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/dispatch-log", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/dispatch-log", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data: emails, error } = await supabaseAdmin.from("email_queue")
         .select("id, empresa, to_email, subject, status, created_at, sent_at, opened_at, opened_count, replied, replied_at, error_message, lead_id")
@@ -1491,7 +1491,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/email-queue/:id/marcar-respondido", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/email-queue/:id/marcar-respondido", requireComercial, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       await supabaseAdmin.from("email_queue").update({
@@ -1525,7 +1525,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/leads/email-queue/:id", requireAdminRole, async (req: Request, res: Response) => {
+  app.delete("/api/leads/email-queue/:id", requireComercial, async (req: Request, res: Response) => {
     try {
       await supabaseAdmin.from("email_queue").delete().eq("id", req.params.id);
       res.json({ ok: true });
@@ -1534,7 +1534,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/email-queue/limpar-fila", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/leads/email-queue/limpar-fila", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { error } = await supabaseAdmin.from("email_queue").delete().eq("status", "pendente");
       if (error) throw error;
@@ -1544,7 +1544,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/disparar-agora", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/leads/disparar-agora", requireComercial, async (_req: Request, res: Response) => {
     try {
       await autoEnqueueLeads();
       await processEmailQueue();
@@ -1554,7 +1554,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/import-csv", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/import-csv", requireComercial, async (req: Request, res: Response) => {
     try {
       const { leads: csvLeads } = req.body;
       if (!Array.isArray(csvLeads) || csvLeads.length === 0) {
@@ -1633,7 +1633,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/auto-enqueue", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/leads/auto-enqueue", requireComercial, async (_req: Request, res: Response) => {
     try {
       await autoEnqueueLeads();
       res.json({ ok: true, message: "Auto-enqueue executado" });
@@ -1642,7 +1642,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/enviar-relatorio", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/leads/enviar-relatorio", requireComercial, async (_req: Request, res: Response) => {
     try {
       await sendDailyEmailReport();
       res.json({ ok: true, message: "Relatório enviado para diretoria" });
@@ -1651,11 +1651,11 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/cargos-sugeridos", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/cargos-sugeridos", requireComercial, async (_req: Request, res: Response) => {
     res.json({ cargos: CONTATO_CARGOS, emailPrefixes: EMAIL_PREFIXES });
   });
 
-  app.post("/api/leads/:id/converter", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/:id/converter", requireComercial, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const user = (req as any).user;
@@ -1711,11 +1711,11 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.get("/api/leads/setores", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/setores", requireComercial, async (_req: Request, res: Response) => {
     res.json({ setores: SETORES_ALVO, origens: ORIGENS, statuses: LEAD_STATUSES });
   });
 
-  app.get("/api/leads/auto-prospect/status", requireAdminRole, async (_req: Request, res: Response) => {
+  app.get("/api/leads/auto-prospect/status", requireComercial, async (_req: Request, res: Response) => {
     try {
       const { data: state } = await supabaseAdmin.from("auto_prospect_state")
         .select("*").eq("id", 1).single();
@@ -1756,7 +1756,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/auto-prospect/trigger", requireAdminRole, async (_req: Request, res: Response) => {
+  app.post("/api/leads/auto-prospect/trigger", requireComercial, async (_req: Request, res: Response) => {
     try {
       autoProspectGoogle().catch(err => console.error("[auto-prospect-manual]", err.message));
       res.json({ ok: true, message: "Prospecção automática disparada" });
@@ -1765,7 +1765,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/buscar-google", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/buscar-google", requireComercial, async (req: Request, res: Response) => {
     try {
       const { setor, cidade, estado } = req.body;
       const query = `${setor} ${cidade || "São Paulo"} ${estado || "SP"}`;
@@ -1799,7 +1799,7 @@ export function registerLeadRoutes(app: Express) {
     }
   });
 
-  app.post("/api/leads/importar-google", requireAdminRole, async (req: Request, res: Response) => {
+  app.post("/api/leads/importar-google", requireComercial, async (req: Request, res: Response) => {
     try {
       const { leads: leadsToImport, setor, origem } = req.body;
       const user = (req as any).user;

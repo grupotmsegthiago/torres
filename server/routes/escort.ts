@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago, requireComercial } from "../auth";
   import { logSystemAudit } from "../audit";
   import { withSwrCache, bustSwrCache } from "../lib/swr-cache";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
@@ -1609,7 +1609,7 @@ import type { Express } from "express";
   });
 
   // ==================== SERVICE CONTRACTS ====================
-  app.get("/api/service-contracts", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/service-contracts", requireAuth, requireComercial, async (req, res) => {
     try {
       const { client_id } = req.query;
       let query = supabaseAdmin.from("service_contracts").select("*").order("created_at", { ascending: false });
@@ -1649,7 +1649,7 @@ import type { Express } from "express";
 
 
   // Escort Contracts CRUD
-  app.get("/api/escort/contracts", requireAdminRole, async (req, res) => {
+  app.get("/api/escort/contracts", requireComercial, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").order("client_name");
       if (error) throw error;
@@ -1733,7 +1733,7 @@ import type { Express } from "express";
   });
 
   // Escort Billings - List
-  app.get("/api/escort/billings", requireAdminRole, async (req, res) => {
+  app.get("/api/escort/billings", requireComercial, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
       // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista

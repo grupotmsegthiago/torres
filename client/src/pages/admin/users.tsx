@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { PerfisAcessoPanel } from "@/pages/admin/perfis-acesso-panel";
-import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet, Briefcase } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -34,6 +34,7 @@ const ALL_ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
   { value: "diretoria", label: "Diretoria", icon: Crown },
   { value: "financeiro", label: "Financeiro", icon: Wallet },
+  { value: "comercial", label: "Comercial", icon: Briefcase },
   { value: "funcionario", label: "Funcionário", icon: UserCircle },
 ];
 
@@ -127,6 +128,7 @@ function UserListSection({
                       u.role === "diretoria" ? "bg-amber-50 text-amber-600" :
                       u.role === "admin" ? "bg-blue-50 text-blue-600" :
                       u.role === "financeiro" ? "bg-emerald-50 text-emerald-600" :
+                      u.role === "comercial" ? "bg-sky-50 text-sky-600" :
                       "bg-neutral-100 text-neutral-500"
                     }`}>
                       <RoleIcon className="w-4 h-4" />
@@ -145,6 +147,7 @@ function UserListSection({
                           u.role === "diretoria" ? "bg-neutral-900 text-white" :
                           u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
                           u.role === "financeiro" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                          u.role === "comercial" ? "bg-sky-50 text-sky-700 border border-sky-200" :
                           "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`} data-testid={`text-user-role-${u.id}`}>
                           {roleInfo.label}
@@ -308,7 +311,7 @@ export default function UsersPage() {
 
   const list = Array.isArray(users) ? users : [];
   const sortedUsers = [...list].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
-  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro");
+  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro" || u.role === "comercial");
   const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
   const createMutation = useMutation({

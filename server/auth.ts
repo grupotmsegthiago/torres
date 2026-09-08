@@ -177,6 +177,23 @@ export function canActAsFinanceiro(user?: { role?: string | null } | null): bool
   return role === "diretoria" || role === "admin" || role === "financeiro";
 }
 
+export function canActAsComercial(user?: { role?: string | null } | null): boolean {
+  const role = String(user?.role || "");
+  return role === "diretoria" || role === "admin" || role === "comercial";
+}
+
+export function requireRoles(...roles: string[]): RequestHandler {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Não autorizado" });
+    }
+    const role = String(req.user.role || "");
+    if (role === "diretoria" || role === "admin") return next();
+    if (roles.includes(role)) return next();
+    return res.status(403).json({ message: "Acesso restrito a este perfil" });
+  };
+}
+
 export const requireAdminRole: RequestHandler = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ message: "Não autorizado" });
@@ -194,6 +211,9 @@ export const requireFinanceiro: RequestHandler = (req, res, next) => {
   if (canActAsFinanceiro(req.user)) return next();
   return res.status(403).json({ message: "Acesso restrito ao financeiro" });
 };
+
+/** Diretoria, admin ou perfil comercial (leads, clientes, OS, boletim). */
+export const requireComercial = requireRoles("comercial");
 
 export const requireDiretoria: RequestHandler = (req, res, next) => {
   if (!req.user) {

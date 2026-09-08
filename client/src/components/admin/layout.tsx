@@ -1,7 +1,7 @@
 import { useState, memo, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { canSeePath, parsePermissions } from "@shared/perfis-acesso";
+import { canSeePath, parsePermissions, PROFILE_LABELS, usesAclMenu } from "@shared/perfis-acesso";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -345,7 +345,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
   );
 });
 
-const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isFinanceiroRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isFinanceiroRole: boolean; aclPermissions: string[] }) {
+const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isAclRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isAclRole: boolean; aclPermissions: string[] }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
 
@@ -358,7 +358,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
   }, []);
 
   const filterItem = useCallback((item: MenuItem): boolean => {
-    if (isFinanceiroRole) {
+    if (isAclRole) {
       if (item.children?.length) return item.children.some(filterItem);
       if (item.path) return canSeePath(aclPermissions, item.path);
       return false;
@@ -366,7 +366,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
     if (item.diretoriaOnly) return isDiretoria;
     if (item.adminOnly) return isAdmin;
     return true;
-  }, [isAdmin, isDiretoria, isFinanceiroRole, aclPermissions]);
+  }, [isAdmin, isDiretoria, isAclRole, aclPermissions]);
 
   return (
     <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
@@ -393,7 +393,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
       ))}
 
       {menuSections.filter(s => {
-        if (isFinanceiroRole) return s.items.some(filterItem);
+        if (isAclRole) return s.items.some(filterItem);
         return s.diretoriaOnly ? isDiretoria : (!s.adminOnly || isAdmin);
       }).map((section) => {
         const isSectionOpen = openSections[section.title] ?? true;
@@ -494,7 +494,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const unreadCount = chatUnread?.total || 0;
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";
   const isDiretoria = user?.role === "diretoria";
-  const isFinanceiroRole = user?.role === "financeiro";
+  const isAclRole = usesAclMenu(user?.role);
   const aclPermissions = parsePermissions(perfilData?.permissions as any);
 
   return (
@@ -514,7 +514,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isFinanceiroRole={isFinanceiroRole} aclPermissions={aclPermissions} />
+        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isAclRole={isAclRole} aclPermissions={aclPermissions} />
 
         <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}
@@ -530,7 +530,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate" data-testid="text-admin-username">{user?.name}</p>
                 <p className={`text-xs ${user?.role === "diretoria" ? "text-amber-400 font-semibold" : "text-white/40"}`}>
-                  {user?.role === "diretoria" ? "DIRETORIA" : user?.role}
+                  {user?.role === "diretoria" ? "DIRETORIA" : (PROFILE_LABELS[user?.role || ""] || user?.role)}
                 </p>
               </div>
               <Button
@@ -566,7 +566,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Menu className="w-5 h-5" />
           </Button>
           <span className="font-bold text-sm flex-1">TORRES - Área Interna</span>
-          <PendingComprovanteBell />
+          {canSeePath(aclPermissions, "/admin/financeiro") ? <PendingComprovanteBell /> : null}
           {isDiretoria && <SystemStatusBadge compact />}
         </header>
 

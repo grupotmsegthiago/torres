@@ -10,6 +10,8 @@ import type { Express } from "express";
   import { generateTempPassword } from "../lib/temp-password";
 import { applySyntheticCpfEmailChange, syntheticCpfEmail } from "../lib/cpf-login";
 import { enqueueRhidSync } from "../control-id";
+import { ALLOWED_USER_ROLES } from "../../shared/perfis-acesso";
+import { enqueueRhidSync } from "../control-id";
   import {
     isUsableHoleriteParse,
     matchEmployeeFromHolerite,
@@ -1095,7 +1097,7 @@ ${empNames}`,
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
-    const allowedRoles = ["admin", "diretoria", "financeiro", "funcionario"];
+    const allowedRoles = ALLOWED_USER_ROLES;
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({ message: "Perfil inválido" });
     }
@@ -1155,6 +1157,9 @@ ${empNames}`,
     const updateData: any = {};
     if (name) updateData.name = name;
     if (role) {
+      if (!ALLOWED_USER_ROLES.includes(role)) {
+        return res.status(400).json({ message: "Perfil inválido" });
+      }
       if (role === "diretoria" && req.user!.role !== "diretoria") {
         return res.status(403).json({ message: "Sem permissão para atribuir role Diretoria" });
       }
@@ -1253,6 +1258,9 @@ ${empNames}`,
     const emailToUse = email || username;
     if (!emailToUse || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
+    }
+    if (role && !ALLOWED_USER_ROLES.includes(role)) {
+      return res.status(400).json({ message: "Perfil inválido" });
     }
     if (role === "diretoria" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
