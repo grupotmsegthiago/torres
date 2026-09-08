@@ -174,6 +174,12 @@ describe("API/UI contratos (fonte)", () => {
     assert.match(storage, /\.select\(USER_SAFE_SELECT\)/);
   });
 
+  it("UsersPage importa useAuth — sem isso /admin/usuarios fica em tela branca", () => {
+    const ui = readFileSync(path.join(root, "client/src/pages/admin/users.tsx"), "utf8");
+    assert.match(ui, /import \{ useAuth \} from "@\/hooks\/use-auth"/);
+    assert.match(ui, /useAuth\(\)/);
+  });
+
   it("UI não renderiza plainPassword nem fallback torres@123", () => {
     const ui = readFileSync(path.join(root, "client/src/pages/admin/users.tsx"), "utf8");
     assert.doesNotMatch(ui, /plainPassword/);
