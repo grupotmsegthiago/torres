@@ -1392,6 +1392,12 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_created ON service_orders (status, created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_client_id ON service_orders (client_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_url TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_path TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_anexado_em TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_diretoria BOOLEAN DEFAULT FALSE`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_por TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
     // Trava de duplicação: uma OS só pode ter UM billing. Previne race condition em UPSERTs concorrentes

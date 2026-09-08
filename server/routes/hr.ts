@@ -8,6 +8,8 @@ import type { Express } from "express";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
   import { generateTempPassword } from "../lib/temp-password";
+import { applySyntheticCpfEmailChange, syntheticCpfEmail } from "../lib/cpf-login";
+import { enqueueRhidSync } from "../control-id";
   import {
     isUsableHoleriteParse,
     matchEmployeeFromHolerite,
@@ -1149,7 +1151,7 @@ ${empNames}`,
       return res.status(403).json({ message: "Sem permissão para editar usuários Diretoria" });
     }
 
-    const { name, role, employeeId } = req.body;
+    const { name, role, employeeId, cpf, login } = req.body;
     const updateData: any = {};
     if (name) updateData.name = name;
     if (role) {
@@ -1160,9 +1162,31 @@ ${empNames}`,
     }
     if (employeeId !== undefined) updateData.employeeId = employeeId || null;
 
-    const updated = await storage.updateUser(id, updateData);
+    const cpfRaw = cpf ?? login;
+    if (cpfRaw !== undefined && String(cpfRaw).trim() !== "") {
+      console.log(`[users] PATCH cpf-login userId=${id} actorId=${req.user!.id}`);
+      const cpfResult = await applySyntheticCpfEmailChange({
+        userId: id,
+        currentEmail: target.email,
+        supabaseUid: target.supabaseUid,
+        employeeId: target.employeeId,
+        newCpf: String(cpfRaw),
+        syncEmployeeCpf: true,
+      });
+      if (!cpfResult.ok) return res.status(cpfResult.status).json({ message: cpfResult.message });
+      if (cpfResult.changed) {
+        invalidateAuthCacheByUser(target.supabaseUid);
+        if (target.employeeId) {
+          enqueueRhidSync({ kind: "employee", op: "update", refId: target.employeeId, employeeId: target.employeeId }).catch(() => {});
+        }
+      }
+    }
+
+    const updated = Object.keys(updateData).length
+      ? await storage.updateUser(id, updateData)
+      : await storage.getUser(id);
     if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
-    // Mudança de role/employee invalida cache de auth (efeito imediato, não espera TTL)
+    // Mudança de role/employee/login invalida cache de auth (efeito imediato, não espera TTL)
     if (updateData.role !== undefined || updateData.employeeId !== undefined) {
       invalidateAuthCacheByUser(target.supabaseUid);
     }
@@ -1278,12 +1302,12 @@ ${empNames}`,
     if (!cpf || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: cpf, name" });
     }
-    const cleanCpf = cpf.replace(/\D/g, "");
+    const cleanCpf = String(cpf).replace(/\D/g, "");
     if (cleanCpf.length !== 11) {
       return res.status(400).json({ message: "CPF inválido" });
     }
 
-    const syntheticEmail = `cpf_${cleanCpf}@torresseguranca.local`;
+    const syntheticEmail = syntheticCpfEmail(cleanCpf);
     const existing = await storage.getUserByEmail(syntheticEmail);
     if (existing) return res.status(409).json({ message: "Já existe um acesso para este CPF" });
 

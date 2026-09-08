@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, invalidateAuthCacheByUser } from "../auth";
   import { insertEmployeeSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
@@ -21,6 +21,7 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
   import { toDecimalString } from "../lib/parse-money";
   import { generateTempPassword } from "../lib/temp-password";
+import { syntheticCpfEmail, syncLinkedUserSyntheticEmail } from "../lib/cpf-login";
 import { resolveOpenAIConfig } from "../lib/holerite-parse";
 import { extractPdfText } from "../lib/pdf-text";
 import { resolveOcrDocumentPayload } from "../lib/photo-data-uri";
@@ -228,7 +229,7 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
     if (data.cpf) {
       const cleanCpf = data.cpf.replace(/\D/g, "");
       if (cleanCpf.length === 11) {
-        const syntheticEmail = `cpf_${cleanCpf}@torresseguranca.local`;
+        const syntheticEmail = syntheticCpfEmail(cleanCpf);
         const existingUser = await storage.getUserByEmail(syntheticEmail);
         if (existingUser) {
           autoUserError = "Já existe um login para este CPF";
@@ -314,6 +315,15 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
+    if (parsed.data.cpf) {
+      const loginSync = await syncLinkedUserSyntheticEmail(Number(req.params.id), parsed.data.cpf);
+      if (loginSync && "ok" in loginSync && loginSync.ok === false) {
+        return res.status(loginSync.status).json({ message: loginSync.message });
+      }
+      if (loginSync && "changed" in loginSync && loginSync.changed) {
+        invalidateAuthCacheByUser(loginSync.supabaseUid);
+      }
+    }
     // Enfileira sync pro RHID (atualiza nome/matricula/status — registerEmployeeInRhid é idempotente)
     enqueueRhidSync({ kind: "employee", op: "update", refId: Number(req.params.id), employeeId: Number(req.params.id) }).catch(() => {});
     res.json(data);

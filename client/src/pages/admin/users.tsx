@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { PerfisAcessoPanel } from "@/pages/admin/perfis-acesso-panel";
 import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet } from "lucide-react";
 
@@ -46,12 +47,24 @@ function getRoleInfo(role: string) {
 }
 
 function getLoginFromEmail(email: string): string {
-  const cpfMatch = email.match(/^cpf_(\d+)@torresseguranca\.local$/);
+  const cpfMatch = email.match(/^cpf_(\d+)@torresseguranca\.local$/i);
   if (cpfMatch) {
     const cpf = cpfMatch[1].padStart(11, "0");
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   }
   return email;
+}
+
+function isCpfLoginEmail(email: string): boolean {
+  return /^cpf_\d+@torresseguranca\.local$/i.test(email);
+}
+
+function formatCpf(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
 function UserListSection({
@@ -282,6 +295,7 @@ export default function UsersPage() {
   const [tab, setTab] = useState<"users" | "perfis">("users");
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formLogin, setFormLogin] = useState("");
   const [formRole, setFormRole] = useState("funcionario");
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "diretoria";
@@ -357,6 +371,7 @@ export default function UsersPage() {
     setEditingUser(null);
     setFormName("");
     setFormEmail("");
+    setFormLogin("");
     setFormRole("funcionario");
     setDialogOpen(true);
   }
@@ -365,6 +380,7 @@ export default function UsersPage() {
     setEditingUser(u);
     setFormName(u.name);
     setFormEmail(u.email);
+    setFormLogin(getLoginFromEmail(u.email));
     setFormRole(u.role);
     setDialogOpen(true);
   }
@@ -381,7 +397,16 @@ export default function UsersPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editingUser) {
-      updateMutation.mutate({ id: editingUser.id, data: { name: formName, role: formRole } });
+      const data: { name: string; role: string; cpf?: string } = { name: formName, role: formRole };
+      if (isCpfLoginEmail(editingUser.email)) {
+        const digits = formLogin.replace(/\D/g, "");
+        if (digits.length !== 11) {
+          toast({ title: "CPF inválido", description: "Digite os 11 dígitos do CPF.", variant: "destructive" });
+          return;
+        }
+        data.cpf = digits;
+      }
+      updateMutation.mutate({ id: editingUser.id, data });
     } else {
       createMutation.mutate({
         email: formEmail,
@@ -493,7 +518,11 @@ export default function UsersPage() {
                 data-testid="input-user-email"
               />
               {editingUser ? (
-                <p className="text-xs text-neutral-400 mt-1">O e-mail não pode ser alterado</p>
+                <p className="text-xs text-neutral-400 mt-1">
+                  {isCpfLoginEmail(editingUser.email)
+                    ? "Atualizado automaticamente pelo CPF"
+                    : "O e-mail não pode ser alterado"}
+                </p>
               ) : (
                 <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada e exibida uma única vez</p>
               )}
@@ -505,11 +534,26 @@ export default function UsersPage() {
                     <LogIn className="w-3.5 h-3.5" /> Login
                   </label>
                   <Input
-                    value={getLoginFromEmail(editingUser.email)}
-                    disabled
-                    className="font-mono bg-neutral-50"
+                    value={formLogin}
+                    onChange={(e) => {
+                      const next = isCpfLoginEmail(editingUser.email) ? formatCpf(e.target.value) : e.target.value;
+                      setFormLogin(next);
+                      if (isCpfLoginEmail(editingUser.email)) {
+                        const digits = next.replace(/\D/g, "");
+                        if (digits.length === 11) {
+                          setFormEmail(`cpf_${digits}@torresseguranca.local`);
+                        }
+                      }
+                    }}
+                    disabled={!isCpfLoginEmail(editingUser.email)}
+                    className={`font-mono ${isCpfLoginEmail(editingUser.email) ? "" : "bg-neutral-50"}`}
+                    placeholder="000.000.000-00"
+                    inputMode="numeric"
                     data-testid="input-user-login"
                   />
+                  {isCpfLoginEmail(editingUser.email) ? (
+                    <p className="text-xs text-neutral-400 mt-1">CPF usado para entrar no app</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-neutral-700 mb-1.5 block flex items-center gap-1">
