@@ -19,6 +19,7 @@ type SafeUser = {
   role: string;
   employeeId: number | null;
   username: string | null;
+  comercialId?: string | null;
 };
 
 /** Resposta one-shot de create/reset — senha só neste momento. */
@@ -300,6 +301,7 @@ export default function UsersPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formLogin, setFormLogin] = useState("");
   const [formRole, setFormRole] = useState("funcionario");
+  const [formComercialId, setFormComercialId] = useState("");
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "diretoria";
   const isDiretoria = currentUser?.role === "diretoria";
@@ -314,8 +316,19 @@ export default function UsersPage() {
   const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro" || u.role === "comercial");
   const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
+  const { data: comerciaisData } = useQuery<{
+    ok: boolean;
+    comerciais: Array<{ id: string; nome: string }>;
+  }>({
+    queryKey: ["/api/comerciais"],
+    enabled: isAdmin && dialogOpen && formRole === "comercial",
+    staleTime: 60_000,
+    retry: false,
+  });
+  const comerciais = comerciaisData?.comerciais || [];
+
   const createMutation = useMutation({
-    mutationFn: async (data: { email: string; name: string; role: string }) => {
+    mutationFn: async (data: { email: string; name: string; role: string; comercialId?: string | null }) => {
       const res = await apiRequest("POST", "/api/users", data);
       return res.json() as Promise<OneShotCredentials>;
     },
@@ -377,6 +390,7 @@ export default function UsersPage() {
     setFormEmail("");
     setFormLogin("");
     setFormRole("funcionario");
+    setFormComercialId("");
     setDialogOpen(true);
   }
 
@@ -386,6 +400,7 @@ export default function UsersPage() {
     setFormEmail(u.email);
     setFormLogin(getLoginFromEmail(u.email));
     setFormRole(u.role);
+    setFormComercialId(u.comercialId || "");
     setDialogOpen(true);
   }
 
@@ -401,7 +416,7 @@ export default function UsersPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editingUser) {
-      const data: { name: string; role: string; cpf?: string } = { name: formName, role: formRole };
+      const data: { name: string; role: string; cpf?: string; comercialId?: string | null } = { name: formName, role: formRole };
       if (isCpfLoginEmail(editingUser.email)) {
         const digits = formLogin.replace(/\D/g, "");
         if (digits.length !== 11) {
@@ -410,12 +425,14 @@ export default function UsersPage() {
         }
         data.cpf = digits;
       }
+      data.comercialId = formRole === "comercial" ? (formComercialId || null) : null;
       updateMutation.mutate({ id: editingUser.id, data });
     } else {
       createMutation.mutate({
         email: formEmail,
         name: formName,
         role: formRole,
+        comercialId: formRole === "comercial" ? (formComercialId || null) : null,
       });
     }
   }
@@ -587,6 +604,28 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {formRole === "comercial" && (
+              <div>
+                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Comercial TM SEG</label>
+                <select
+                  value={formComercialId}
+                  onChange={(e) => setFormComercialId(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  data-testid="select-user-comercial"
+                >
+                  <option value="">Não vinculado</option>
+                  {formComercialId && !comerciais.some((c) => c.id === formComercialId) && (
+                    <option value={formComercialId}>UUID atual (fora da lista ativa)</option>
+                  )}
+                  {comerciais.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Sem este vínculo o comercial só vê clientes que ele mesmo cadastrar.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="outline" onClick={closeDialog} data-testid="button-cancel">
                 Cancelar

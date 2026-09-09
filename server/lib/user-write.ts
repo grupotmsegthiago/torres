@@ -11,6 +11,7 @@ const USER_WRITE_KEYS = [
   "name",
   "role",
   "employeeId",
+  "comercialId",
   "mustChangePassword",
   "avatarUrl",
   "termsAcceptedAt",

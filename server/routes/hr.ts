@@ -11,6 +11,7 @@ import type { Express } from "express";
 import { applySyntheticCpfEmailChange, syntheticCpfEmail } from "../lib/cpf-login";
 import { enqueueRhidSync } from "../control-id";
 import { ALLOWED_USER_ROLES } from "../../shared/perfis-acesso";
+import { parseOptionalComercialUuid } from "../lib/comercial-scope";
 import { enqueueRhidSync } from "../control-id";
   import {
     isUsableHoleriteParse,
@@ -1092,17 +1093,22 @@ ${empNames}`,
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
-    const { email, name, role, employeeId } = req.body;
+    const { email, name, role, employeeId, comercialId, comercial_id } = req.body;
     console.log(`[users] POST /api/users op=create role=${role || "funcionario"} hasEmail=${!!email} hasName=${!!name}`);
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
-    const allowedRoles = ALLOWED_USER_ROLES;
+  const allowedRoles = ALLOWED_USER_ROLES;
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({ message: "Perfil inválido" });
     }
     if (role === "diretoria" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
+    }
+
+    const comercialParsed = parseOptionalComercialUuid(comercialId ?? comercial_id);
+    if (comercialParsed.present && "error" in comercialParsed) {
+      return res.status(400).json({ message: comercialParsed.error });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -1129,6 +1135,7 @@ ${empNames}`,
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
+        comercialId: comercialParsed.present && !("error" in comercialParsed) ? comercialParsed.value : null,
         mustChangePassword: 1,
       });
     } catch (dbErr: any) {
@@ -1153,7 +1160,7 @@ ${empNames}`,
       return res.status(403).json({ message: "Sem permissão para editar usuários Diretoria" });
     }
 
-    const { name, role, employeeId, cpf, login } = req.body;
+    const { name, role, employeeId, cpf, login, comercialId, comercial_id } = req.body;
     const updateData: any = {};
     if (name) updateData.name = name;
     if (role) {
@@ -1166,6 +1173,13 @@ ${empNames}`,
       updateData.role = role;
     }
     if (employeeId !== undefined) updateData.employeeId = employeeId || null;
+    const comercialParsed = parseOptionalComercialUuid(comercialId ?? comercial_id);
+    if (comercialParsed.present && "error" in comercialParsed) {
+      return res.status(400).json({ message: comercialParsed.error });
+    }
+    if (comercialParsed.present && !("error" in comercialParsed)) {
+      updateData.comercialId = comercialParsed.value;
+    }
 
     const cpfRaw = cpf ?? login;
     if (cpfRaw !== undefined && String(cpfRaw).trim() !== "") {
@@ -1192,7 +1206,7 @@ ${empNames}`,
       : await storage.getUser(id);
     if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
     // Mudança de role/employee/login invalida cache de auth (efeito imediato, não espera TTL)
-    if (updateData.role !== undefined || updateData.employeeId !== undefined) {
+    if (updateData.role !== undefined || updateData.employeeId !== undefined || updateData.comercialId !== undefined) {
       invalidateAuthCacheByUser(target.supabaseUid);
     }
     res.json(toSafeUser(updated));
@@ -1254,7 +1268,7 @@ ${empNames}`,
   });
 
   app.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
-    const { email, username, name, role, employeeId } = req.body;
+    const { email, username, name, role, employeeId, comercialId, comercial_id } = req.body;
     const emailToUse = email || username;
     if (!emailToUse || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
@@ -1264,6 +1278,11 @@ ${empNames}`,
     }
     if (role === "diretoria" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
+    }
+
+    const comercialParsed = parseOptionalComercialUuid(comercialId ?? comercial_id);
+    if (comercialParsed.present && "error" in comercialParsed) {
+      return res.status(400).json({ message: comercialParsed.error });
     }
 
     const normalizedEmail = emailToUse.toLowerCase().trim();
@@ -1290,6 +1309,7 @@ ${empNames}`,
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
+        comercialId: comercialParsed.present && !("error" in comercialParsed) ? comercialParsed.value : null,
         mustChangePassword: 1,
       });
     } catch (dbErr: any) {

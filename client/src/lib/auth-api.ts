@@ -9,6 +9,7 @@ export type AuthProfile = {
   username: string | null;
   avatarUrl: string | null;
   employeeId: number | null;
+  comercialId: string | null;
   mustChangePassword: boolean;
   termsAcceptedAt: string | null;
   matricula: string | null;

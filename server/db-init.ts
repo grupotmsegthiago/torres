@@ -725,6 +725,8 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_user_agent TEXT`).catch(() => {});
+    // UUID do comercial TM SEG no usuário TORRES. Sem tabela local e SEM FK.
+    await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS comercial_id UUID`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS audit_logs (
@@ -784,6 +786,9 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_group_id TEXT`).catch(() => {});
     // UUID do comercial TM SEG. Sem tabela local e SEM FK (SSOT na TM SEG).
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS responsavel_comercial_id UUID`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_responsavel_comercial_id ON clients (responsavel_comercial_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_created_by_user_id ON clients (created_by_user_id)`).catch(() => {});
     // Tabela de controle do "Agente Central": rastreia última cobrança de
     // atualização enviada via WhatsApp pra cada OS, pra não spamar (intervalo
     // mínimo de 30min entre cobranças). Linha é deletada quando o vigilante

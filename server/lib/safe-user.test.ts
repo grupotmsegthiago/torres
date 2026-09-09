@@ -57,6 +57,7 @@ describe("toSafeUser (allowlist)", () => {
       termsIpAddress: "1.1.1.1",
       termsUserAgent: "ua",
       createdAt: "2026-01-02",
+      comercialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     });
     assert.equal(safe.id, 7);
     assert.equal(safe.email, "x@y.com");
@@ -66,6 +67,7 @@ describe("toSafeUser (allowlist)", () => {
     assert.equal(safe.employeeId, 9);
     assert.equal(safe.supabaseUid, "uid-1");
     assert.equal(safe.avatarUrl, "http://a");
+    assert.equal(safe.comercialId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
   });
 
   it("funciona com snake_case", () => {
@@ -100,6 +102,7 @@ describe("toSafeUser (allowlist)", () => {
     const keys = Object.keys(safe).sort();
     assert.deepEqual(keys, [
       "avatarUrl",
+      "comercialId",
       "createdAt",
       "email",
       "employeeId",

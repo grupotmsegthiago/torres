@@ -10,7 +10,8 @@
 
 | Domínio | Dono oficial | Tipo | Tabela / função | Escritores autorizados | Consumidores | Caches / espelhos | Fontes concorrentes atuais | Risco |
 |---------|--------------|------|-----------------|------------------------|--------------|-------------------|----------------------------|-------|
-| Clientes | `clients` | FATO | `clients` | `routes/clients`, storage | OS, contratos, invoices, WhatsApp, Comissões TM SEG (`responsavel_comercial_id`) | `memCache["clients"]` | — | Baixo |
+| Clientes | `clients` | FATO | `clients` | `routes/clients`, storage | OS, contratos, invoices, WhatsApp, Comissões TM SEG (`responsavel_comercial_id`); escopo comercial (`created_by_user_id`) | `memCache["clients"]` | — | Baixo |
+| Usuário TORRES ↔ comercial TM SEG | `users` | FATO (mapeamento UUID, sem FK) | `users.comercial_id` | `routes/hr` | `server/lib/comercial-scope.ts` (ACL de linha do perfil comercial) | cache auth 60s | match por nome (**proibido**) | Médio |
 | Contrato tarifário | `escort_contracts` | FATO (regra de preço) | `escort_contracts` | rotas escort/clients | motor, OS, billing, cancelada | cache in-memory no grid | `service_contracts` (outro papel) | Médio (nomenclatura) |
 | Contrato documental | `service_contracts` | FATO documental | `service_contracts` | `/api/service-contracts` | UI cliente / PDF | — | confundido com tarifa | Médio |
 | Funcionários | `employees` | FATO | `employees` | `routes/employees` | OS, RH, missão, Control iD | `memCache["employees"]` | `users.employee_id` | Baixo |
@@ -46,7 +47,7 @@
 | Holerite | `employee_payslips` | FATO documental | payslips | routes/hr | FT se pago | OCR transitório | — | Baixo |
 | WhatsApp | `whatsapp_messages` / `whatsapp_chats` | FATO de produto | tabelas locais | webhook + send | UI, Agent Central | caches Z-API identity | Z-API parcial | Médio |
 | Asaas | API Asaas → `invoices` | SATELITE → FATO interno | `server/asaas.ts` | emit/reconcile/webhook | faturas, NF | customer/payment ids | Inter no mesmo invoice | Médio |
-| TM SEG Comissões | Painel central TM SEG | SATELITE | `server/lib/comissao-ingest.ts` | GET lista comerciais; POST FATURADO/PAGO/CANCELADO (fail-soft) | cadastro cliente (`responsavel_comercial_id` UUID, sem FK); ingestão de fatura | — | tabela/FK locais de comerciais (**proibido**) | Médio |
+| TM SEG Comissões | Painel central TM SEG | SATELITE | `server/lib/comissao-ingest.ts` | GET lista comerciais; POST FATURADO/PAGO/CANCELADO (fail-soft) | cadastro cliente (`responsavel_comercial_id`) e usuário TORRES (`users.comercial_id`) UUID, sem FK; ingestão de fatura; ACL comercial (`comercial-scope`) | — | tabela/FK locais de comerciais (**proibido**) | Médio |
 | Inter | API Inter → `invoices` + `inter_*` | SATELITE → espelhos (**DESATIVADO** por padrão) | `routes/inter.ts` + `lib/inter-integration.ts` | legado / leitura histórica | labels, tabelas `inter_*` | `inter_extrato_*`, `inter_pagamentos`, `inter_webhook_events` | Asaas | Baixo (off) |
 | IA / OpenAI | nenhum (assistente) | PROJECAO auxiliar | `openai` SDK, campos `ai_*` | endpoints OCR/agent | UI/WhatsApp | — | uso como SSOT (proibido) | Médio |
 | Operational Grid | — | PROJECAO | `/api/operational-grid` | side-effects GPS/freeze | UI ops, balanço (canônico) | SWR 3h / `swr_cache_snapshots` | dual live+canônico | **Alto** |

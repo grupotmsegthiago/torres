@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-09 — ACL de linha do perfil comercial
+
+- Perfil `comercial` só lê clientes com `responsavel_comercial_id = users.comercial_id` **ou** `created_by_user_id = users.id`.
+- Sem vínculo e sem cadastro próprio: lista vazia (fail-closed). Recurso fora do escopo responde 404.
+- Sem tabela `comerciais` e sem FK. Relatório: `docs/governanca/RELATORIO-ENTREGA-ACL-COMERCIAL-ESCOPO-2026-09-09.md`.
+
 ## 2026-09-09 — vínculo comercial + ingestão de comissões (TORRES → TM SEG)
 
 - Cadastro de cliente passa a gravar `clients.responsavel_comercial_id` (UUID, sem FK/tabela `comerciais`).

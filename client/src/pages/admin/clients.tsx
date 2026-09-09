@@ -262,6 +262,8 @@ const EmailTagInput = forwardRef<EmailTagInputHandle, EmailTagInputProps>(functi
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isComercialUser = user?.role === "comercial";
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const emailContratualRef = useRef<EmailTagInputHandle>(null);
@@ -335,7 +337,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     retemInss: (client as any)?.retemInss ?? (client as any)?.retem_inss ?? false,
     inssAliquota: String((client as any)?.inssAliquota ?? (client as any)?.inss_aliquota ?? "11.00"),
     whatsappGroupId: (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id || "",
-    responsavelComercialId: (client as any)?.responsavelComercialId || (client as any)?.responsavel_comercial_id || "",
+    responsavelComercialId: user?.role === "comercial"
+      ? (user?.comercialId || "")
+      : ((client as any)?.responsavelComercialId || (client as any)?.responsavel_comercial_id || ""),
   });
 
   const { data: comerciaisData, isLoading: comerciaisLoading } = useQuery<{
@@ -780,9 +784,10 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <User className="w-4 h-4 text-indigo-600" /> Responsável Comercial
           </label>
           <select
-            value={form.responsavelComercialId}
+            value={isComercialUser ? (user?.comercialId || form.responsavelComercialId) : form.responsavelComercialId}
             onChange={(e) => setForm({ ...form, responsavelComercialId: e.target.value })}
-            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            disabled={isComercialUser}
+            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 disabled:bg-neutral-50 disabled:text-neutral-500"
             data-testid="select-responsavel-comercial"
           >
             <option value="">{comerciaisLoading ? "Carregando comerciais…" : "Não definido"}</option>
@@ -800,7 +805,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             </p>
           )}
           <p className="text-[10px] text-neutral-400 mt-1">
-            Lista ativa do painel de Comissões da TM SEG. O TORRES grava só o UUID — sem cadastro local de comerciais.
+            {isComercialUser
+              ? "No perfil comercial o vínculo é sempre o seu usuário. Clientes sem vínculo ou de outro comercial ficam ocultos."
+              : "Lista ativa do painel de Comissões da TM SEG. O TORRES grava só o UUID — sem cadastro local de comerciais."}
           </p>
         </div>
         <div className="md:col-span-2">

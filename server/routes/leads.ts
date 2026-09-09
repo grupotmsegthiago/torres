@@ -3,6 +3,10 @@ import { supabaseAdmin } from "../supabase";
 import { requireComercial } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
 import { normalizePhone, normalizeZip, validateContactFields } from "../lib/normalize-contact";
+import {
+  applyComercialCreateClientPayload,
+  denyIfComercialClientOutOfScope,
+} from "../lib/comercial-scope";
 import cron from "node-cron";
 import fs from "fs";
 import path from "path";
@@ -1668,6 +1672,12 @@ export function registerLeadRoutes(app: Express) {
         .maybeSingle();
 
       if (existingClient) {
+        if (await denyIfComercialClientOutOfScope(
+          req,
+          res,
+          existingClient.id,
+          "Este CNPJ já pertence a um cliente cadastrado. Solicite o vínculo ao administrador.",
+        )) return;
         await supabaseAdmin.from("leads").update({
           status: "ganho",
           convertido_client_id: existingClient.id,
@@ -1676,7 +1686,7 @@ export function registerLeadRoutes(app: Express) {
         return res.json({ clientId: existingClient.id, existing: true });
       }
 
-      const { data: newClient, error: clientErr } = await supabaseAdmin.from("clients").insert({
+      const insertPayload = applyComercialCreateClientPayload(user, {
         name: lead.empresa,
         cnpj: lead.cnpj || null,
         address: lead.endereco || null,
@@ -1687,6 +1697,20 @@ export function registerLeadRoutes(app: Express) {
         email: lead.email || null,
         contact_person: lead.contato_nome || null,
         segment: lead.setor || null,
+      });
+      const { data: newClient, error: clientErr } = await supabaseAdmin.from("clients").insert({
+        name: insertPayload.name,
+        cnpj: insertPayload.cnpj || null,
+        address: insertPayload.address || null,
+        city: insertPayload.city || "São Paulo",
+        state: insertPayload.state || "SP",
+        zip: insertPayload.zip,
+        phone: insertPayload.phone,
+        email: insertPayload.email || null,
+        contact_person: insertPayload.contact_person || insertPayload.contactPerson || null,
+        segment: insertPayload.segment || null,
+        created_by_user_id: insertPayload.createdByUserId || null,
+        responsavel_comercial_id: insertPayload.responsavelComercialId || null,
       }).select().single();
       if (clientErr) throw clientErr;
 

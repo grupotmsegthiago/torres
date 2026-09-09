@@ -5,6 +5,13 @@ import type { Express } from "express";
   import { insertClientSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
+  import {
+    allowedClientIdsFromRequest,
+    applyComercialCreateClientPayload,
+    applyComercialPatchClientPayload,
+    denyIfComercialClientOutOfScope,
+    filterComerciaisForUser,
+  } from "../lib/comercial-scope";
 
   import { generateContractPDF } from "../contract-pdf";
 import { listGroups as listZapiGroups } from "../lib/zapi";
@@ -28,21 +35,26 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     app.get("/api/comerciais", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
       try {
         const bypass = req.query.refresh === "1" || req.query.refresh === "true";
-        if (!bypass && comerciaisCache && Date.now() - comerciaisCache.ts < COMERCIAIS_CACHE_TTL_MS) {
-          return res.json({ ...comerciaisCache.payload, cached: true });
+        const cacheHit = !bypass && comerciaisCache && Date.now() - comerciaisCache.ts < COMERCIAIS_CACHE_TTL_MS;
+        let payload = cacheHit ? comerciaisCache!.payload : null;
+        if (!payload) {
+          const { fetchComerciaisAtivos } = await import("../lib/comissao-ingest");
+          payload = await fetchComerciaisAtivos();
+          if (payload.ok) comerciaisCache = { ts: Date.now(), payload };
         }
-        const { fetchComerciaisAtivos } = await import("../lib/comissao-ingest");
-        const payload = await fetchComerciaisAtivos();
-        if (payload.ok) comerciaisCache = { ts: Date.now(), payload };
-        res.json(payload);
+        const comerciais = filterComerciaisForUser(payload.comerciais || [], req.user as any);
+        res.json({ ...payload, comerciais, cached: !!cacheHit });
       } catch (e: any) {
         res.json({ ok: false, comerciais: [], error: e?.message || "TM SEG indisponível" });
       }
     });
 
-    app.get("/api/clients", requireAuth, requireRoles("financeiro", "comercial"), async (_req, res) => {
+    app.get("/api/clients", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
+    const allowed = await allowedClientIdsFromRequest(req);
     const data = await storage.getClients();
-    res.json(data);
+    if (allowed == null) return res.json(data);
+    const set = new Set(allowed);
+    res.json(data.filter((c: any) => set.has(Number(c.id))));
   });
 
   // Lista grupos do WhatsApp via Z-API pra popular o select no cadastro
@@ -71,6 +83,7 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   });
 
   app.get("/api/clients/:id", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
+    if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
     const data = await storage.getClient(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
     res.json(data);
@@ -78,6 +91,7 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
 
   app.get("/api/clients/:id/contrato-pdf", requireAuth, async (req, res) => {
     try {
+      if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
       const client = await storage.getClient(Number(req.params.id));
       if (!client) return res.status(404).json({ message: "Cliente não encontrado" });
 
@@ -114,7 +128,9 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     if (!hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
       return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
     }
-    const data = await storage.createClient(parsed.data);
+    const data = await storage.createClient(
+      applyComercialCreateClientPayload(req.user as any, parsed.data) as any,
+    );
     const doc = data.cnpj || data.cpf || "";
     if (doc.replace(/\D/g, "").length >= 11) {
       apibrasil.autoConsultaCliente(doc, req.user!.id).catch(() => {});
@@ -130,8 +146,12 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     if ("emailFinanceiro" in parsed.data && !hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
       return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
     }
+    if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
     try {
-      const data = await storage.updateClient(Number(req.params.id), parsed.data);
+      const data = await storage.updateClient(
+        Number(req.params.id),
+        applyComercialPatchClientPayload(req.user as any, parsed.data) as any,
+      );
       if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
       res.json(data);
     } catch (err: any) {
@@ -153,12 +173,14 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   });
 
   app.get("/api/clients/:id/vehicles", requireAuth, requireComercial, async (req, res) => {
+    if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
     const data = await storage.getClientVehicles(Number(req.params.id));
     res.json(data);
   });
 
   app.post("/api/clients/:id/vehicles", requireAuth, requireComercial, async (req, res) => {
     const clientId = Number(req.params.id);
+    if (await denyIfComercialClientOutOfScope(req, res, clientId)) return;
     const { plate, model, brand, color, driverName, driverPhone, notes } = req.body;
     if (!plate) return res.status(400).json({ message: "Placa é obrigatória" });
     const existing = await storage.getClientVehicleByPlate(clientId, plate);
@@ -170,6 +192,7 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   app.patch("/api/client-vehicles/:id", requireAuth, requireComercial, async (req, res) => {
     const existing = await storage.getClientVehicle(Number(req.params.id));
     if (!existing) return res.status(404).json({ message: "Veículo não encontrado" });
+    if (await denyIfComercialClientOutOfScope(req, res, existing.clientId, "Veículo não encontrado")) return;
     if (req.body.plate && req.body.plate.toUpperCase() !== existing.plate) {
       const dup = await storage.getClientVehicleByPlate(existing.clientId, req.body.plate.toUpperCase());
       if (dup) return res.status(400).json({ message: "Placa já cadastrada para este cliente" });
@@ -185,6 +208,7 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
 
   app.get("/api/clients/:id/billing-config", requireAuth, requireComercial, async (req, res) => {
     try {
+      if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
       const { id } = req.params;
       const { data, error } = await supabaseAdmin
         .from("clients")

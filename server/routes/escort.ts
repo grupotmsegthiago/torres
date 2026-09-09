@@ -16,6 +16,10 @@ import type { Express } from "express";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
+  import {
+    allowedClientIdsFromRequest,
+    clientIdAllowed,
+  } from "../lib/comercial-scope";
 
   // Trava de edição de anexos (boleto/NF/comprovante/protocolo): QUALQUER pessoa do
   // administrativo (role "admin" ou "diretoria") pode anexar/trocar anexos de
@@ -1612,8 +1616,12 @@ import type { Express } from "express";
   app.get("/api/service-contracts", requireAuth, requireComercial, async (req, res) => {
     try {
       const { client_id } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       let query = supabaseAdmin.from("service_contracts").select("*").order("created_at", { ascending: false });
       if (client_id) query = query.eq("client_id", client_id);
+      else if (allowed) query = query.in("client_id", allowed);
       const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
@@ -1651,7 +1659,16 @@ import type { Express } from "express";
   // Escort Contracts CRUD
   app.get("/api/escort/contracts", requireComercial, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").order("client_name");
+      const allowed = await allowedClientIdsFromRequest(req);
+      let query = supabaseAdmin.from("escort_contracts").select("*").order("client_name");
+      if (allowed) {
+        if (allowed.length === 0) {
+          query = query.is("client_id", null);
+        } else {
+          query = query.or(`client_id.is.null,client_id.in.(${allowed.join(",")})`);
+        }
+      }
+      const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1736,12 +1753,16 @@ import type { Express } from "express";
   app.get("/api/escort/billings", requireComercial, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista
       // (ordenada DESC) perde billings antigos; o Boletim "parece ok" só porque
       // os recentes cabem na 1ª página — o Balanço (ASC) perdia os recentes.
       const list = await fetchAllSupabaseRows((offset, limitTo) => {
         let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
         if (client_id) query = query.eq("client_id", client_id);
+        else if (allowed) query = query.in("client_id", allowed);
         if (status) query = query.eq("status", status as string);
         if (from) query = query.gte("data_missao", from as string);
         if (to) query = query.lte("data_missao", to as string);
@@ -2702,8 +2723,12 @@ import type { Express } from "express";
   app.get("/api/escort/routes", requireAuth, async (req, res) => {
     try {
       const { client_id } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       let query = supabaseAdmin.from("escort_routes").select("*").order("name");
       if (client_id) query = query.eq("client_id", client_id);
+      else if (allowed) query = query.in("client_id", allowed);
       const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);

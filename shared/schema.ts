@@ -11,6 +11,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("funcionario"),
   employeeId: integer("employee_id"),
+  /** UUID do comercial ativo na TM SEG. Sem FK — SSOT é o painel de Comissões. */
+  comercialId: uuid("comercial_id"),
   mustChangePassword: integer("must_change_password").default(0),
   // plain_password removido do schema TS (PR4A). Coluna física permanece até aplicação controlada do DROP (PR4B preparado, não aplicado).
   termsAcceptedAt: timestamp("terms_accepted_at"),
@@ -20,7 +22,9 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users, {
+  comercialId: z.string().uuid().nullable().optional(),
+}).omit({ id: true, createdAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -69,11 +73,14 @@ export const clients = pgTable("clients", {
   whatsappGroupId: text("whatsapp_group_id"),
   /** UUID do comercial ativo na TM SEG. Sem FK — SSOT é o painel de Comissões. */
   responsavelComercialId: uuid("responsavel_comercial_id"),
+  /** Usuário TORRES que cadastrou o cliente (escopo do perfil comercial). Sem FK. */
+  createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertClientSchema = createInsertSchema(clients, {
   responsavelComercialId: z.string().uuid().nullable().optional(),
+  createdByUserId: z.number().int().nullable().optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
