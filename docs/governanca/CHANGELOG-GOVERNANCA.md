@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-09-09 — NFS-e Discriminacao (Asaas / prefeitura SP)
+
+- `serviceDescription` da NFS-e passa a ser sempre o texto CNAE oficial; nome do cliente e período ficam em `observations`, sem travessão tipográfico.
+- Reprocesso de NF em ERROR reutiliza o `inv_*` existente (`PUT` + `authorize`) — não cria segunda nota na mesma cobrança.
+- Catch-up automático só para rejeição de schema Discriminacao e cliente `emite_nf=true`. Processando (ex.: FAT #171) continua só consulta. Inscrição municipal da empresa no Asaas (MULTILOG) não é auto-retry.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-DISCRIMINACAO-ASAAS-2026-09-09.md`.
+
 ## 2026-09-09 — ACL de linha do perfil comercial
 
 - Perfil `comercial` só lê clientes com `responsavel_comercial_id = users.comercial_id` **ou** `created_by_user_id = users.id`.

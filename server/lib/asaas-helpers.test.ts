@@ -35,6 +35,11 @@ import {
   canReemitNfse,
   pickPreferredAsaasNf,
   isAsaasInvoiceId,
+  sanitizeNfDiscriminacao,
+  isDiscriminacaoSchemaError,
+  buildNfsePutPayload,
+  existingAsaasNfIdToRetry,
+  shouldAutoRetryDiscriminacaoError,
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
   isOpenNfFollowUpStatus,
@@ -233,9 +238,74 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   });
   assert.equal(p.payment, "pay_123");
   assert.equal(p.value, 100);
-  assert.equal(p.serviceDescription, "Desc teste");
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.match(p.observations, /Desc teste/);
   assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.equal(p.municipalServiceName, DESCRICAO_SERVICO_FIXA);
+});
+
+test("buildNfseInvoicePayload: Discriminacao nunca leva nome do cliente nem travessão", () => {
+  const p = buildNfseInvoicePayload({
+    paymentId: "pay_1",
+    value: 4254.3,
+    description: "Escolta Armada — R.F.M. LOGISTICA E TRANSPORTES",
+  });
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(p.serviceDescription.includes("—"), false);
+  assert.equal(p.serviceDescription.includes("R.F.M."), false);
+  assert.match(p.observations, /R\.F\.M\. LOGISTICA/);
+  assert.equal(p.observations.includes("—"), false);
+});
+
+test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () => {
+  const post = buildNfseInvoicePayload({
+    paymentId: "pay_1", value: 100, description: "X", customerId: "cus_1",
+  });
+  const put = buildNfsePutPayload(post);
+  assert.equal("payment" in put, false);
+  assert.equal("customer" in put, false);
+  assert.equal(put.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(put.updatePayment, false);
+  assert.equal(put.taxes.iss, 0);
+  assert.equal(put.taxes.retainIss, false);
+});
+
+test("sanitizeNfDiscriminacao: troca travessão e control chars", () => {
+  assert.equal(sanitizeNfDiscriminacao("A — B"), "A - B");
+  assert.equal(sanitizeNfDiscriminacao(""), DESCRICAO_SERVICO_FIXA);
+  assert.equal(sanitizeNfDiscriminacao("   "), DESCRICAO_SERVICO_FIXA);
+});
+
+test("isDiscriminacaoSchemaError: detecta rejeição da prefeitura SP", () => {
+  assert.equal(isDiscriminacaoSchemaError("Retorno da prefeitura de São Paulo-SP: XML não compatível com Schema. The 'Discriminacao' element is invalid"), true);
+  assert.equal(isDiscriminacaoSchemaError("Inscrição municipal inválida"), false);
+  assert.equal(isDiscriminacaoSchemaError(null), false);
+});
+
+test("existingAsaasNfIdToRetry: só ERROR com inv_", () => {
+  assert.equal(existingAsaasNfIdToRetry({ id: "inv_000022571641", status: "ERROR" }), "inv_000022571641");
+  assert.equal(existingAsaasNfIdToRetry({ id: "inv_1", status: "SYNCHRONIZED" }), null);
+  assert.equal(existingAsaasNfIdToRetry({ id: "2562", status: "ERROR" }), null);
+});
+
+test("shouldAutoRetryDiscriminacaoError: só schema + emite_nf", () => {
+  const inv = {
+    nfse_status: "ERROR",
+    nfse_number: "inv_1",
+    nfse_error_message: "XML não compatível com Schema. Discriminacao",
+  };
+  assert.equal(shouldAutoRetryDiscriminacaoError(inv, true), true);
+  assert.equal(shouldAutoRetryDiscriminacaoError(inv, false), false);
+  assert.equal(shouldAutoRetryDiscriminacaoError({
+    nfse_status: "ERROR",
+    nfse_number: "inv_1",
+    nfse_error_message: "Inscrição municipal inválida",
+  }, true), false);
+  assert.equal(shouldAutoRetryDiscriminacaoError({
+    nfse_status: "SYNCHRONIZED",
+    nfse_number: "inv_1",
+    nfse_error_message: null,
+  }, true), false);
 });
 
 test("buildNfseInvoicePayload: omite payment quando paymentId vazio", () => {

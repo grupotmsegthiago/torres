@@ -28,6 +28,7 @@ import {
   buildFiscalPayload,
   todayDateStr,
   buildNfseInvoicePayload as buildNfseInvoicePayloadBase,
+  buildNfsePutPayload,
   fmtBRL as fmt,
   isValidEmail,
   MISSING_EMAIL_NF_MSG,
@@ -50,6 +51,8 @@ import {
   canReemitNfse,
   pickPreferredAsaasNf,
   isAsaasInvoiceId,
+  existingAsaasNfIdToRetry,
+  shouldAutoRetryDiscriminacaoError,
   isOpenNfFollowUpStatus,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
@@ -173,7 +176,18 @@ async function sendBillingEmail(invoice: {
   }
 }
 
-async function emitNfseImmediate(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number; clientEmail?: string }): Promise<{ id: string; status: string; number?: string }> {
+async function emitNfseImmediate(opts: {
+  paymentId: string;
+  value: number;
+  description: string;
+  observations?: string;
+  customerId?: string;
+  retemInss?: boolean;
+  inssAliquota?: number;
+  clientEmail?: string;
+  existingNfId?: string | null;
+  existingNfStatus?: string | null;
+}): Promise<{ id: string; status: string; number?: string }> {
   // Validação preventiva: se o caller informa o e-mail do cliente e ele está
   // ausente/inválido, nem chamamos o Asaas — a NF seria rejeitada de qualquer
   // forma ("E-mail do tomador inválido"). Falhamos cedo com mensagem clara.
@@ -182,9 +196,23 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
     throw new Error(MISSING_EMAIL_NF_MSG);
   }
   const payload = buildNfseInvoicePayload(opts);
-  const result = await asaasRequest("POST", "/invoices", payload);
-  const nfId = result.id;
-  console.log(`[asaas] NFS-e criada via /invoices: id=${nfId}, status=${result.status}`);
+  const reuseId = existingAsaasNfIdToRetry({
+    id: opts.existingNfId,
+    status: opts.existingNfStatus,
+  });
+
+  let result: any;
+  let nfId: string;
+
+  if (reuseId) {
+    result = await asaasRequest("PUT", `/invoices/${reuseId}`, buildNfsePutPayload(payload));
+    nfId = String(result.id || reuseId);
+    console.log(`[asaas] NFS-e atualizada via PUT /invoices/${reuseId}: status=${result.status}`);
+  } else {
+    result = await asaasRequest("POST", "/invoices", payload);
+    nfId = result.id;
+    console.log(`[asaas] NFS-e criada via /invoices: id=${nfId}, status=${result.status}`);
+  }
 
   if (nfId && result.status !== "AUTHORIZED" && result.status !== "PROCESSING") {
     try {
@@ -683,6 +711,99 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
     running: false,
   };
 
+  /**
+   * Reprocessa NFS-e rejeitada só por Discriminacao inválida (schema SP).
+   * PUT na nota ERROR existente + authorize. Não cria segunda /invoices.
+   * Não cobre inscrição municipal da empresa nem NF em processamento.
+   */
+  export async function retryDiscriminacaoErrorNfses(opts?: { limit?: number }): Promise<{ processed: number; retried: number; errors: number }> {
+    const result = { processed: 0, retried: 0, errors: 0 };
+    if (!process.env.ASAAS_API_KEY) return result;
+    const limit = Math.max(1, Math.min(opts?.limit ?? 10, 20));
+
+    const { data: invoices, error } = await supabaseAdmin.from("invoices")
+      .select("id, value, description, asaas_payment_id, nfse_number, nfse_status, nfse_error_message, client_id")
+      .not("asaas_payment_id", "is", null)
+      .in("nfse_status", ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"])
+      .order("updated_at", { ascending: true, nullsFirst: true } as any)
+      .limit(80);
+    if (error) {
+      console.log(`[nfse-discriminacao] query: ${error.message}`);
+      result.errors += 1;
+      return result;
+    }
+
+    for (const inv of invoices || []) {
+      if (result.retried >= limit) break;
+      if (!shouldAutoRetryDiscriminacaoError(inv, true)) continue;
+
+      let emiteNf = false;
+      let retemInss = false;
+      let inssAliquota = 0;
+      if (inv.client_id) {
+        const { data: cli } = await supabaseAdmin
+          .from("clients")
+          .select("emite_nf, retem_inss, inss_aliquota")
+          .eq("id", inv.client_id)
+          .maybeSingle();
+        emiteNf = cli?.emite_nf === true;
+        retemInss = cli?.retem_inss === true;
+        inssAliquota = retemInss ? Number(cli?.inss_aliquota ?? 11) : 0;
+      }
+      if (!shouldAutoRetryDiscriminacaoError(inv, emiteNf)) continue;
+
+      result.processed += 1;
+      try {
+        const existing = await fetchNfseFromAsaas(inv);
+        const reuseId = existingAsaasNfIdToRetry({
+          id: existing.nf?.id || inv.nfse_number,
+          status: existing.nf?.status || inv.nfse_status,
+        });
+        if (!reuseId) {
+          console.log(`[nfse-discriminacao] fatura #${inv.id}: sem NFS-e ERROR reutilizável no Asaas — não cria duplicata`);
+          continue;
+        }
+        if (existing.nf && isNfFullyIssued(existing.nf.status, existing.nf.number)) {
+          const nfSync = await collectNfseSyncUpdates(inv);
+          if (Object.keys(nfSync.updates).length > 0) {
+            await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", inv.id);
+            result.retried += 1;
+          }
+          continue;
+        }
+
+        const nfResult = await emitNfseImmediate({
+          paymentId: inv.asaas_payment_id,
+          value: parseFloat(inv.value),
+          description: inv.description || DESCRICAO_SERVICO_FIXA,
+          existingNfId: reuseId,
+          existingNfStatus: existing.nf?.status || inv.nfse_status,
+          retemInss,
+          inssAliquota,
+        });
+        await supabaseAdmin.from("invoices").update({
+          ...nfseFieldsFromEmitResult(nfResult),
+          nfse_error_message: null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", inv.id);
+        result.retried += 1;
+        console.log(`[nfse-discriminacao] fatura #${inv.id}: PUT+authorize ${reuseId} → ${nfResult.status}`);
+      } catch (e: any) {
+        result.errors += 1;
+        console.log(`[nfse-discriminacao] fatura #${inv.id}: ${e?.message}`);
+        await supabaseAdmin.from("invoices").update({
+          nfse_error_message: String(e?.message || inv.nfse_error_message || "").slice(0, 1000),
+          updated_at: new Date().toISOString(),
+        }).eq("id", inv.id);
+      }
+    }
+
+    if (result.processed > 0) {
+      console.log(`[nfse-discriminacao] processadas=${result.processed} reemitidas=${result.retried} erros=${result.errors}`);
+    }
+    return result;
+  }
+
   export async function reconcileStuckNfses(opts?: { limit?: number }): Promise<{ processed: number; updated: number; errors: number }> {
     const result = { processed: 0, updated: 0, errors: 0 };
     if (!process.env.ASAAS_API_KEY) return result;
@@ -697,9 +818,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
     if (error) {
       console.log(`[reconcile-stuck] query: ${error.message}`);
       result.errors += 1;
-      return result;
-    }
-
+    } else {
     const stuck = (invoices || []).filter(isOpenNfFollowUpStatus).slice(0, limit);
     for (const inv of stuck) {
       try {
@@ -716,6 +835,17 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
     }
     if (result.processed > 0) {
       console.log(`[reconcile-stuck] processadas=${result.processed} atualizadas=${result.updated} erros=${result.errors}`);
+    }
+    }
+
+    try {
+      const retry = await retryDiscriminacaoErrorNfses({ limit: 10 });
+      result.processed += retry.processed;
+      result.updated += retry.retried;
+      result.errors += retry.errors;
+    } catch (e: any) {
+      result.errors += 1;
+      console.log(`[reconcile-stuck] retry Discriminacao: ${e?.message}`);
     }
     return result;
   }
@@ -1942,6 +2072,8 @@ export function registerAsaasRoutes(app: Express) {
           value: parseFloat(invoice.value),
           description: invoice.description || DESCRICAO_SERVICO_FIXA,
           clientEmail,
+          existingNfId: existingNf.nf?.id || invoice.nfse_number,
+          existingNfStatus: existingNf.nf?.status || invoice.nfse_status,
         });
       } catch (emitErr: any) {
         throw new Error(`Erro ao emitir NFS-e: ${emitErr.message}`);
@@ -2050,6 +2182,8 @@ export function registerAsaasRoutes(app: Express) {
           value: parseFloat(invoice.value),
           description: invoice.description || DESCRICAO_SERVICO_FIXA,
           clientEmail: emails[0],
+          existingNfId: existingNf.nf?.id || invoice.nfse_number,
+          existingNfStatus: existingNf.nf?.status || invoice.nfse_status,
         });
       } catch (emitErr: any) {
         // Persiste o novo erro pra UI continuar sinalizando

@@ -12,6 +12,9 @@ export const ISS_ALIQUOTA = 0;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
 
+/** Limite típico do elemento Discriminacao no XML municipal (SP). */
+export const NF_DISCRIMINACAO_MAX = 2000;
+
 export const INSS_OBSERVACAO_LEGAL =
   "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
 export const INSS_DISPENSA_OBSERVACAO =
@@ -281,6 +284,37 @@ export function todayDateStr(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+/**
+ * Discriminacao da NFS-e (SP/ABRASF): sem travessão tipográfico, sem XML
+ * control chars. A descrição da fatura (cliente/período) NÃO vai neste campo —
+ * a prefeitura rejeita o schema. Período fica em observations.
+ */
+export function sanitizeNfDiscriminacao(raw: string | null | undefined): string {
+  let s = String(raw || "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) s = DESCRICAO_SERVICO_FIXA;
+  return s.slice(0, NF_DISCRIMINACAO_MAX);
+}
+
+export function nfDiscriminacaoOficial(): string {
+  return sanitizeNfDiscriminacao(DESCRICAO_SERVICO_FIXA);
+}
+
+export function isDiscriminacaoSchemaError(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("discriminacao") ||
+    m.includes("discriminação") ||
+    m.includes("xml não compatível") ||
+    m.includes("xml nao compativel")
+  );
+}
+
 export function buildNfseInvoicePayload(opts: {
   paymentId: string;
   value: number;
@@ -295,11 +329,13 @@ export function buildNfseInvoicePayload(opts: {
   const inssAliquota = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
   const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
   const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
-  const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
-  const serviceDescription =
-    (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
+  const desc = sanitizeNfDiscriminacao(opts.description || "");
+  const oficial = nfDiscriminacaoOficial();
+  const baseObs = opts.observations
+    ? sanitizeNfDiscriminacao(opts.observations)
+    : `CNAE ${CNAE_PRINCIPAL}. ${oficial}.${desc && desc !== oficial ? ` ${desc}` : ""}`.trim();
   const payload: Record<string, any> = {
-    serviceDescription,
+    serviceDescription: oficial,
     observations: `${baseObs} ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(opts.value, retemInss, inssAliquota)}`.trim(),
     value: opts.value,
     deductions: 0,
@@ -318,6 +354,27 @@ export function buildNfseInvoicePayload(opts: {
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;
+}
+
+/**
+ * PUT /invoices/{id} no Asaas é substituição (só SCHEDULED ou ERROR).
+ * Sem payment/customer — não cria segunda nota na mesma cobrança.
+ */
+export function buildNfsePutPayload(postPayload: Record<string, any>): Record<string, any> {
+  const put: Record<string, any> = {
+    serviceDescription: postPayload.serviceDescription,
+    observations: postPayload.observations,
+    value: postPayload.value,
+    deductions: postPayload.deductions ?? 0,
+    effectiveDate: postPayload.effectiveDate,
+    municipalServiceCode: postPayload.municipalServiceCode,
+    municipalServiceName: postPayload.municipalServiceName,
+    taxes: postPayload.taxes,
+    updatePayment: false,
+  };
+  if (postPayload.municipalServiceId) put.municipalServiceId = postPayload.municipalServiceId;
+  if (postPayload.externalReference) put.externalReference = postPayload.externalReference;
+  return put;
 }
 
 export function fmtBRL(val: number): string {
@@ -414,6 +471,20 @@ export function nfseFieldsFromEmitResult(result: {
 
 export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
   return /^inv_/i.test(String(nfseNumber || "").trim());
+}
+
+/**
+ * Reusa a NFS-e já criada no Asaas (ERROR) em vez de POST /invoices de novo.
+ * SYNCHRONIZED/AUTHORIZED sem nº municipal NÃO entram — isso é processamento.
+ */
+export function existingAsaasNfIdToRetry(opts: {
+  id?: string | null;
+  status?: string | null;
+}): string | null {
+  const id = String(opts.id || "").trim();
+  if (!isAsaasInvoiceId(id)) return null;
+  if (!isNfErrorStatus(opts.status)) return null;
+  return id;
 }
 
 /** Horas em aberto sem nº municipal para tratar “AUTHORIZED fantasma” como erro. */
@@ -704,6 +775,24 @@ export function canReemitNfse(invoice: {
     };
   }
   return { allowed: true, reason: "" };
+}
+
+/**
+ * Catch-up automático só para rejeição de schema Discriminacao (prefeitura SP).
+ * Não cobre inscrição municipal da empresa no Asaas nem NF em processamento.
+ */
+export function shouldAutoRetryDiscriminacaoError(
+  invoice: {
+    nfse_status?: string | null;
+    nfse_number?: string | null;
+    nfse_error_message?: string | null;
+  },
+  emiteNf: boolean,
+): boolean {
+  if (emiteNf !== true) return false;
+  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) return false;
+  if (!isNfErrorStatus(invoice.nfse_status) && !invoice.nfse_error_message) return false;
+  return isDiscriminacaoSchemaError(invoice.nfse_error_message);
 }
 
 /**
