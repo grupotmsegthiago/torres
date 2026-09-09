@@ -27,8 +27,8 @@ Este documento define **como o sistema DEVE funcionar**, não apenas como está 
 
 ```text
 0. SATÉLITES EXTERNOS
-   Asaas · Inter · Z-API · RHID · APIBrasil · SSX · OpenAI
-        ↓ só sincronizam para dentro
+   Asaas · Inter · Z-API · RHID · APIBrasil · SSX · OpenAI · TM SEG Comissões
+        ↓ só sincronizam para dentro (Comissões: GET lista + POST ingest outbound fail-soft)
 
 1. FATOS MESTRES
    clients · employees · vehicles · escort_contracts · service_contracts (documental)
@@ -125,6 +125,7 @@ Detalhamento RACI em [`08-MATRIZ-RACI.md`](./08-MATRIZ-RACI.md). SSOT expandido 
 
 ### Integrações
 - Satélites: sincronizam status/eventos para dentro; autenticados; fail-closed.
+- Exceção documentada: ingestão de comissões TM SEG é **outbound fail-soft** (`server/lib/comissao-ingest.ts`) — instabilidade da TM SEG não bloqueia fatura/baixa/cancelamento no TORRES. Token só no servidor (`COMISSAO_INGEST_TOKEN`). Sem tabela `comerciais` e sem FK.
 
 ### Módulos órfãos (fora da arquitetura ativa)
 Código/UI sem rota registrada no app **não é arquitetura ativa** até admissão formal:

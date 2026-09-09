@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, date, timestamp, serial, real, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, date, timestamp, serial, real, boolean, jsonb, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -67,10 +67,14 @@ export const clients = pgTable("clients", {
   retemInss: boolean("retem_inss").default(true),
   inssAliquota: decimal("inss_aliquota", { precision: 5, scale: 2 }).default("11.00"),
   whatsappGroupId: text("whatsapp_group_id"),
+  /** UUID do comercial ativo na TM SEG. Sem FK — SSOT é o painel de Comissões. */
+  responsavelComercialId: uuid("responsavel_comercial_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
+export const insertClientSchema = createInsertSchema(clients, {
+  responsavelComercialId: z.string().uuid().nullable().optional(),
+}).omit({ id: true, createdAt: true });
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
 

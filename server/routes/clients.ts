@@ -13,7 +13,33 @@ function hasWhoPaysEmail(raw: string | null | undefined): boolean {
   return /[^\s@]+@[^\s@]+\.[^\s@]+/.test(String(raw || ""));
 }
 
+function coerceComercialId(body: Record<string, any>): Record<string, any> {
+  const raw = body.responsavelComercialId ?? body.responsavel_comercial_id;
+  if (raw === "") {
+    return { ...body, responsavelComercialId: null, responsavel_comercial_id: null };
+  }
+  return body;
+}
+
   export function registerClientRoutes(app: Express) {
+    let comerciaisCache: { ts: number; payload: any } | null = null;
+    const COMERCIAIS_CACHE_TTL_MS = 60_000;
+
+    app.get("/api/comerciais", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
+      try {
+        const bypass = req.query.refresh === "1" || req.query.refresh === "true";
+        if (!bypass && comerciaisCache && Date.now() - comerciaisCache.ts < COMERCIAIS_CACHE_TTL_MS) {
+          return res.json({ ...comerciaisCache.payload, cached: true });
+        }
+        const { fetchComerciaisAtivos } = await import("../lib/comissao-ingest");
+        const payload = await fetchComerciaisAtivos();
+        if (payload.ok) comerciaisCache = { ts: Date.now(), payload };
+        res.json(payload);
+      } catch (e: any) {
+        res.json({ ok: false, comerciais: [], error: e?.message || "TM SEG indisponível" });
+      }
+    });
+
     app.get("/api/clients", requireAuth, requireRoles("financeiro", "comercial"), async (_req, res) => {
     const data = await storage.getClients();
     res.json(data);
@@ -81,7 +107,7 @@ function hasWhoPaysEmail(raw: string | null | undefined): boolean {
   });
 
   app.post("/api/clients", requireAuth, requireComercial, async (req, res) => {
-    const parsed = insertClientSchema.safeParse(req.body);
+    const parsed = insertClientSchema.safeParse(coerceComercialId(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
@@ -97,7 +123,7 @@ function hasWhoPaysEmail(raw: string | null | undefined): boolean {
   });
 
   app.patch("/api/clients/:id", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
-    const parsed = insertClientSchema.partial().safeParse(req.body);
+    const parsed = insertClientSchema.partial().safeParse(coerceComercialId(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });

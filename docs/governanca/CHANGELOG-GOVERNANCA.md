@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-09-09 — vínculo comercial + ingestão de comissões (TORRES → TM SEG)
+
+- Cadastro de cliente passa a gravar `clients.responsavel_comercial_id` (UUID, sem FK/tabela `comerciais`).
+- Lista de comerciais ativos via proxy autenticado `GET /api/comerciais` (token só no servidor).
+- Emissão/baixa/cancelamento de fatura disparam POST fail-soft `FATURADO`/`PAGO`/`CANCELADO` para a TM SEG.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-COMISSAO-INGEST-TMSEG-2026-09-09.md`.
+
 ## 2026-08-06 — security(users): close plain password removal (PR4C / Fase 4.9)
 
 - PR4B confirmado pelo proprietário como aplicado no projeto Torres (`erjhxwbutjyylxdthuuz`) via migration versionada `20260805210000_drop_users_plain_password`.

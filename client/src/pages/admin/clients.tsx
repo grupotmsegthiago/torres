@@ -335,7 +335,19 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     retemInss: (client as any)?.retemInss ?? (client as any)?.retem_inss ?? false,
     inssAliquota: String((client as any)?.inssAliquota ?? (client as any)?.inss_aliquota ?? "11.00"),
     whatsappGroupId: (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id || "",
+    responsavelComercialId: (client as any)?.responsavelComercialId || (client as any)?.responsavel_comercial_id || "",
   });
+
+  const { data: comerciaisData, isLoading: comerciaisLoading } = useQuery<{
+    ok: boolean;
+    comerciais: Array<{ id: string; nome: string }>;
+    error?: string | null;
+  }>({
+    queryKey: ["/api/comerciais"],
+    staleTime: 60_000,
+    retry: false,
+  });
+  const comerciais = comerciaisData?.comerciais || [];
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
     const digits = cnpj.replace(/\D/g, "");
@@ -394,6 +406,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : null,
         billingCutoffDay: data.billingCutoffDay ? Number(data.billingCutoffDay) : null,
         billingCycle: data.billingCycle || null,
+        responsavelComercialId: data.responsavelComercialId || null,
       };
       if (client) {
         await apiRequest("PATCH", `/api/clients/${client.id}`, payload);
@@ -761,6 +774,34 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <p className="text-[10px] text-neutral-400 mt-1">Dia do mês em que o lote trava e avisa se algo ficou fora</p>
             </div>
           </div>
+        </div>
+        <div className="md:col-span-2">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-600" /> Responsável Comercial
+          </label>
+          <select
+            value={form.responsavelComercialId}
+            onChange={(e) => setForm({ ...form, responsavelComercialId: e.target.value })}
+            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            data-testid="select-responsavel-comercial"
+          >
+            <option value="">{comerciaisLoading ? "Carregando comerciais…" : "Não definido"}</option>
+            {form.responsavelComercialId
+              && !comerciais.some((c) => c.id === form.responsavelComercialId) && (
+              <option value={form.responsavelComercialId}>Comercial atual (fora da lista ativa)</option>
+            )}
+            {comerciais.map((c) => (
+              <option key={c.id} value={c.id}>{c.nome}</option>
+            ))}
+          </select>
+          {comerciaisData?.ok === false && (
+            <p className="text-[10px] text-amber-700 mt-1">
+              {comerciaisData.error || "Não foi possível listar os comerciais da TM SEG. O cadastro continua salvável."}
+            </p>
+          )}
+          <p className="text-[10px] text-neutral-400 mt-1">
+            Lista ativa do painel de Comissões da TM SEG. O TORRES grava só o UUID — sem cadastro local de comerciais.
+          </p>
         </div>
         <div className="md:col-span-2">
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
