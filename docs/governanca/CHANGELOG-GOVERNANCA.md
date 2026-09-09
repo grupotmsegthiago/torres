@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-09 — Grid: origem/destino ao lado da placa + % da missão
+
+- Card de atualizações e identidade da viatura passam a mostrar cliente + origem / destino da OS (campos já existentes na API).
+- Barra no padrão TMSEG (Acompanhamento KM + % salvo + carro na trilha), cores Torres (âmbar → índigo → negro). Cálculo continua `getRouteProgress`.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-GRID-ORIGEM-DESTINO-PROGRESSO-2026-09-09.md`.
+
 ## 2026-09-09 — CCM do tomador no Sincronizar (não é nº da NFS-e)
 
 - `07930` no cadastro Pacheco é CCM do tomador (`clients.inscricao_municipal`), não o número da NFS-e da fatura.
