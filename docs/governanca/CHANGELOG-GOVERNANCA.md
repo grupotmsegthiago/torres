@@ -1,5 +1,31 @@
 # Changelog — Governança Torres
 
+## 2026-09-09 — CCM do tomador no Sincronizar (não é nº da NFS-e)
+
+- `07930` no cadastro Pacheco é CCM do tomador (`clients.inscricao_municipal`), não o número da NFS-e da fatura.
+- Customer Asaas passa a receber CCM se o valor Torres for diferente (antes só preenchia se estivesse vazio).
+- `/sync` e reconcile enviam CCM ao tomador; **não** reemitem NF já na prefeitura. Sem botão Reemitir em NF processando (esperado).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e lacunas #171/#170 (erro visível, PUT, sem segundo POST)
+
+- #171 (SYNCHRONIZED, sem RPS, Discriminacao antiga) = rejeição escondida: `ERROR` local + Resolver; cancel só no painel Asaas; quando ERROR, PUT na mesma `inv_*`.
+- #170 (oficial + RPS 295) = só poll. Sem cancel, sem segundo POST.
+- `/sync` não zera relógio em no-op; “Sincronizar c/ Asaas” solta `running` após 3 min.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e #171 Discriminacao antiga travada em SYNCHRONIZED
+
+- FAT #171 ainda tinha `serviceDescription` = Escolta Armada/cliente/OS (payload que a SP já rejeitou na #170). Asaas `SYNCHRONIZED` sem RPS; **recusa cancelar** (“Processando emissão”).
+- FAT #170 já está com Discriminacao oficial + RPS 295 — fila real da prefeitura.
+- Catch-up: cancel+POST só se Discriminacao antiga e Asaas deixar cancelar; se recusar, espera 30 min. Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e processando: sync não reemite; relógio e rejeição oculta
+
+- `SYNCHRONIZED` sem nº municipal continua só consulta (satélite Asaas). Rejeição escondida em `statusDescription` vira `ERROR` local.
+- `/sync` não grava `updated_at` em no-op; `nfReconcileState.running` solta após 3 min se o isolate morrer.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
 ## 2026-09-09 — NFS-e Discriminacao (Asaas / prefeitura SP)
 
 - `serviceDescription` da NFS-e passa a ser sempre o texto CNAE oficial; nome do cliente e período ficam em `observations`, sem travessão tipográfico.

@@ -167,7 +167,10 @@ export default function RelatorioNFPage() {
       return r.json();
     },
     onSuccess: () => {
-      toast({ title: "Sincronização iniciada", description: "Buscando status atualizados no Asaas. A página será atualizada em alguns segundos." });
+      toast({
+        title: "Consulta ao Asaas iniciada",
+        description: "Atualiza status de pagamento e NFS-e. Não reemite nota. Se o CCM do cadastro estiver diferente, envia ao tomador Asaas — isso não altera NF já na prefeitura.",
+      });
       // Refetch após 8s para dar tempo do Asaas responder
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
@@ -606,6 +609,7 @@ export default function RelatorioNFPage() {
             <Button
               variant="outline"
               size="sm"
+              title="Consulta pagamento e NFS-e no Asaas. Não reemite nota nem gera segundo RPS."
               onClick={() => reconcileMutation.mutate(false)}
               disabled={reconcileMutation.isPending || lastSync?.running}
               data-testid="button-sync-asaas"
@@ -613,7 +617,14 @@ export default function RelatorioNFPage() {
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${(reconcileMutation.isPending || lastSync?.running) ? "animate-spin" : ""}`} />
               {lastSync?.running ? "Sincronizando…" : "Sincronizar c/ Asaas"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="button-refresh">
+            <Button
+              variant="outline"
+              size="sm"
+              title="Recarrega a lista salva no Torres. Não consulta o Asaas."
+              onClick={() => refetch()}
+              disabled={isFetching}
+              data-testid="button-refresh"
+            >
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
@@ -960,6 +971,7 @@ export default function RelatorioNFPage() {
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
+                            title="Consulta esta NF no Asaas. Não reemite. Envia o CCM do cadastro ao tomador se estiver diferente."
                             disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
                             onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
                             data-testid={`button-sync-nf-${r.id}`}

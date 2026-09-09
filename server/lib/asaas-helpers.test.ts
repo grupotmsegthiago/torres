@@ -31,12 +31,25 @@ import {
   nfseFieldsFromEmitResult,
   nfseUpdatesFromAsaasObject,
   describeNfProcessingWait,
+  extractAsaasMunicipalNumber,
+  municipalInscriptionIfChanged,
+  isAsaasPrefeituraRejection,
+  invoiceUpdatesAreMaterial,
+  unstickStaleNfReconcile,
+  NF_RECONCILE_STALE_MS,
   shouldMarkMissingNfAsError,
   canReemitNfse,
   pickPreferredAsaasNf,
   isAsaasInvoiceId,
   sanitizeNfDiscriminacao,
   isDiscriminacaoSchemaError,
+  isLegacyEscoltaDiscriminacao,
+  isHiddenDiscriminacaoRejection,
+  shouldCancelRescheduleLegacyDiscriminacao,
+  asaasNfIdForOfficialPut,
+  hasAsaasRps,
+  LEGACY_DISCRIMINACAO_STUCK_MSG,
+  isAsaasNfCancelBlockedProcessing,
   buildNfsePutPayload,
   existingAsaasNfIdToRetry,
   shouldAutoRetryDiscriminacaoError,
@@ -306,6 +319,102 @@ test("shouldAutoRetryDiscriminacaoError: só schema + emite_nf", () => {
     nfse_number: "inv_1",
     nfse_error_message: null,
   }, true), false);
+});
+
+test("isLegacyEscoltaDiscriminacao: texto da fatura ≠ CNAE oficial", () => {
+  assert.equal(isLegacyEscoltaDiscriminacao("Vigilância, segurança ou monitoramento de bens, pessoas e semoventes"), false);
+  assert.equal(isLegacyEscoltaDiscriminacao("Escolta Armada — TRANSPACHECO — Período: 20/08/2026 a 28/08/2026"), true);
+  assert.equal(isLegacyEscoltaDiscriminacao(null), false);
+});
+
+test("isHiddenDiscriminacaoRejection: #171 sim; #170 com RPS não; emitida não", () => {
+  const descAntiga = "Escolta Armada — TRANSPACHECO — Período: 20/08/2026 a 28/08/2026";
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: null,
+    serviceDescription: descAntiga,
+  }, true), true);
+  assert.equal(hasAsaasRps({ rpsNumber: "295" }), true);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: "295",
+    serviceDescription: "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes",
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: "295",
+    serviceDescription: descAntiga,
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "AUTHORIZED",
+    number: "309",
+    serviceDescription: descAntiga,
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    serviceDescription: descAntiga,
+  }, false), false);
+  assert.equal(shouldCancelRescheduleLegacyDiscriminacao({
+    status: "SYNCHRONIZED",
+    number: null,
+    serviceDescription: descAntiga,
+  }, true), true);
+});
+
+test("asaasNfIdForOfficialPut: ERROR e SCHEDULED antigo; SYNCHRONIZED não", () => {
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "ERROR", number: null, serviceDescription: "Escolta Armada — X",
+  }, true), "inv_1");
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "SCHEDULED", number: null,
+    serviceDescription: "Escolta Armada — X — Período: 01/01/2026",
+  }, true), "inv_1");
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "SYNCHRONIZED", number: null,
+    serviceDescription: "Escolta Armada — X — Período: 01/01/2026",
+  }, true), null);
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "ERROR", number: "309",
+  }, true), null);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com Discriminacao antiga vira ERROR local", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    {
+      id: "inv_171",
+      status: "SYNCHRONIZED",
+      number: null,
+      rpsNumber: null,
+      serviceDescription: "Escolta Armada — TRANSPACHECO TRANSPORTE — Período: 20/08/2026 a 28/08/2026",
+    },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_171", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.equal(u.nfse_error_message, LEGACY_DISCRIMINACAO_STUCK_MSG);
+});
+
+test("nfseUpdatesFromAsaasObject: #170 oficial com RPS permanece processando", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    {
+      id: "inv_170",
+      status: "SYNCHRONIZED",
+      number: null,
+      rpsNumber: "295",
+      serviceDescription: "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes",
+    },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_170", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, undefined);
+  assert.equal(u.nfse_error_message, undefined);
+});
+
+test("isAsaasNfCancelBlockedProcessing", () => {
+  assert.equal(isAsaasNfCancelBlockedProcessing("A Nota fiscal está com status Processando emissão e não pode ser cancelada."), true);
+  assert.equal(isAsaasNfCancelBlockedProcessing("Inscrição municipal inválida"), false);
 });
 
 test("buildNfseInvoicePayload: omite payment quando paymentId vazio", () => {
@@ -635,6 +744,72 @@ test("nfseUpdatesFromAsaasObject: nº municipal substitui inv_", () => {
   assert.equal(u.nfse_error_message, null);
 });
 
+test("extractAsaasMunicipalNumber: aceita number numérico e ignora RPS", () => {
+  assert.equal(extractAsaasMunicipalNumber({ number: 2562 }), "2562");
+  assert.equal(extractAsaasMunicipalNumber({ nfeNumber: "88" }), "88");
+  assert.equal(extractAsaasMunicipalNumber({ number: null, rpsNumber: "123" }), null);
+  assert.equal(extractAsaasMunicipalNumber({ number: "inv_abc" }), null);
+});
+
+test("municipalInscriptionIfChanged: CCM do tomador, não número da NFS-e", () => {
+  assert.equal(municipalInscriptionIfChanged(null, null), null);
+  assert.equal(municipalInscriptionIfChanged("07930", ""), null);
+  assert.equal(municipalInscriptionIfChanged("07930", "07930"), null);
+  assert.equal(municipalInscriptionIfChanged("7.930", "07930"), null);
+  assert.equal(municipalInscriptionIfChanged("07930", "7.930"), null);
+  assert.equal(municipalInscriptionIfChanged("", "07930"), "07930");
+  assert.equal(municipalInscriptionIfChanged("00000", "07930"), "07930");
+});
+
+test("isAsaasPrefeituraRejection: rejeição ≠ fila da prefeitura", () => {
+  assert.equal(isAsaasPrefeituraRejection("Aguardando processamento da prefeitura"), false);
+  assert.equal(isAsaasPrefeituraRejection("Enviado para a prefeitura"), false);
+  assert.equal(isAsaasPrefeituraRejection("The 'Discriminacao' element is invalid"), true);
+  assert.equal(isAsaasPrefeituraRejection("Inscrição municipal inválida"), true);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com rejeição vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "SYNCHRONIZED", number: null, statusDescription: "The 'Discriminacao' element is invalid" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_xyz", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.match(String(u.nfse_error_message), /Discriminacao/);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED aguardando prefeitura não vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "SYNCHRONIZED", number: null, statusDescription: "Aguardando processamento da prefeitura" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_xyz", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, undefined);
+  assert.equal(u.nfse_error_message, undefined);
+});
+
+test("invoiceUpdatesAreMaterial: ignora só updated_at", () => {
+  assert.equal(invoiceUpdatesAreMaterial(
+    { status: "PENDING", nfse_status: "SYNCHRONIZED" },
+    { status: "PENDING", nfse_status: "SYNCHRONIZED", updated_at: "2026-09-09T16:00:00-03:00" },
+  ), false);
+  assert.equal(invoiceUpdatesAreMaterial(
+    { status: "PENDING", nfse_number: "inv_1" },
+    { status: "PENDING", nfse_number: "2562" },
+  ), true);
+  assert.equal(invoiceUpdatesAreMaterial(
+    { net_value: "4254.30", status: "PENDING" },
+    { net_value: 4254.3, status: "PENDING" },
+  ), false);
+});
+
+test("unstickStaleNfReconcile: libera running após timeout", () => {
+  const stale = { running: true, startedAt: new Date(Date.now() - NF_RECONCILE_STALE_MS - 1000).toISOString() };
+  assert.equal(unstickStaleNfReconcile(stale, new Date()), true);
+  assert.equal(stale.running, false);
+  const fresh = { running: true, startedAt: new Date().toISOString() };
+  assert.equal(unstickStaleNfReconcile(fresh, new Date()), false);
+  assert.equal(fresh.running, true);
+});
+
 test("describeNfProcessingWait: explica AUTHORIZED sem número", () => {
   const msg = describeNfProcessingWait({
     nfse_status: "AUTHORIZED",
@@ -644,6 +819,13 @@ test("describeNfProcessingWait: explica AUTHORIZED sem número", () => {
   }, new Date("2026-08-27T12:17:00-03:00"));
   assert.ok(msg && /AUTHORIZED/.test(msg) && /Asaas/.test(msg));
   assert.equal(describeNfProcessingWait({ nfse_status: "AUTHORIZED", nfse_number: "2562" }), null);
+  const withRps = describeNfProcessingWait({
+    nfse_status: "SYNCHRONIZED",
+    nfse_number: null,
+    created_at: "2026-09-09T12:00:00-03:00",
+    updated_at: "2026-09-09T12:00:00-03:00",
+  }, new Date("2026-09-09T13:00:00-03:00"), null, 296);
+  assert.ok(withRps && /RPS 296/.test(withRps));
 });
 
 test("shouldMarkMissingNfAsError: só cobrança em aberto e stale, não fatura paga antiga", () => {
@@ -686,6 +868,13 @@ test("canReemitNfse: AUTHORIZED sem nº municipal NÃO bloqueia como já emitida
     nfse_error_message: "NFS-e não encontrada no Asaas",
   });
   assert.equal(authorizedGhost.allowed, true);
+
+  const hidden171 = canReemitNfse({
+    nfse_status: "ERROR",
+    nfse_number: "inv_000022684480",
+    nfse_error_message: LEGACY_DISCRIMINACAO_STUCK_MSG,
+  });
+  assert.equal(hidden171.allowed, true);
 });
 
 test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {

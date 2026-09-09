@@ -735,8 +735,8 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
                 Inscrição Municipal {form.emiteNf && <span className="text-red-600">*</span>}
               </label>
-              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura" data-testid="input-client-inscricao-municipal" />
-              <p className="text-[10px] text-neutral-500 mt-1">Exigida pela prefeitura para emitir NFS-e (tomador PJ)</p>
+              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="CCM do tomador (não é o nº da NFS-e)" data-testid="input-client-inscricao-municipal" />
+              <p className="text-[10px] text-neutral-500 mt-1">Inscrição municipal do <b>cliente</b> na prefeitura (CCM). Não é o número da nota da fatura. Alterar aqui não reemite NFS-e já enviada.</p>
             </div>
             <div className="md:col-span-6">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Inscrição Estadual</label>

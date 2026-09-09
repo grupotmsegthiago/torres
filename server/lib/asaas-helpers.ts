@@ -315,6 +315,77 @@ export function isDiscriminacaoSchemaError(message: string | null | undefined): 
   );
 }
 
+/** Discriminacao da fatura (Escolta Armada / cliente / período) — SP rejeita ou trava SYNCHRONIZED. */
+export function isLegacyEscoltaDiscriminacao(serviceDescription: string | null | undefined): boolean {
+  const s = String(serviceDescription || "");
+  if (!s.trim()) return false;
+  if (sanitizeNfDiscriminacao(s) === nfDiscriminacaoOficial()) return false;
+  return /escolta\s+armada/i.test(s) || /[\u2010-\u2015\u2212]/.test(s) || /per[ií]odo\s*:/i.test(s);
+}
+
+export const LEGACY_DISCRIMINACAO_STUCK_MSG =
+  "Discriminacao antiga sem RPS nem número municipal — não é espera da prefeitura. Cancele esta NF no painel Asaas (Notas fiscais). Quando o Asaas ficar ERROR ou cancelada, use Resolver agora: o Torres faz PUT na mesma inv_* com o texto oficial. Não clique Emitir enquanto essa inv_* existir.";
+
+export function hasAsaasRps(nf: { rpsNumber?: string | number | null } | null | undefined): boolean {
+  return String(nf?.rpsNumber ?? "").trim() !== "";
+}
+
+/**
+ * SYNCHRONIZED/AUTHORIZED sem RPS, sem nº municipal, Discriminacao ≠ CNAE oficial.
+ * É rejeição escondida (#171), não fila da prefeitura (#170 tem RPS + texto oficial).
+ */
+export function isHiddenDiscriminacaoRejection(
+  nf: {
+    status?: string | null;
+    number?: string | null;
+    nfeNumber?: string | null;
+    rpsNumber?: string | number | null;
+    serviceDescription?: string | null;
+  } | null | undefined,
+  emiteNf: boolean,
+): boolean {
+  if (emiteNf !== true || !nf) return false;
+  if (isNfFullyIssued(nf.status, nf.number) || isNfFullyIssued(nf.status, nf.nfeNumber)) return false;
+  if (extractAsaasMunicipalNumber(nf)) return false;
+  if (hasAsaasRps(nf)) return false;
+  const st = String(nf.status || "").toUpperCase();
+  if (st !== "SYNCHRONIZED" && st !== "AUTHORIZED") return false;
+  return isLegacyEscoltaDiscriminacao(nf.serviceDescription);
+}
+
+/** @deprecated nome antigo — equivalente a isHiddenDiscriminacaoRejection (não cancela via API). */
+export function shouldCancelRescheduleLegacyDiscriminacao(
+  nf: Parameters<typeof isHiddenDiscriminacaoRejection>[0],
+  emiteNf: boolean,
+): boolean {
+  return isHiddenDiscriminacaoRejection(nf, emiteNf);
+}
+
+/**
+ * PUT /invoices/{id} só SCHEDULED ou ERROR. Mesma inv_*; nunca segundo POST.
+ */
+export function asaasNfIdForOfficialPut(
+  nf: {
+    id?: string | null;
+    status?: string | null;
+    number?: string | null;
+    nfeNumber?: string | null;
+    serviceDescription?: string | null;
+  } | null | undefined,
+  emiteNf: boolean,
+): string | null {
+  if (emiteNf !== true || !nf) return null;
+  const id = String(nf.id || "").trim();
+  if (!isAsaasInvoiceId(id)) return null;
+  if (extractAsaasMunicipalNumber(nf) || isNfFullyIssued(nf.status, nf.number)) return null;
+  const st = String(nf.status || "").toUpperCase();
+  if (st.includes("CANCEL")) return null;
+  const retry = existingAsaasNfIdToRetry({ id, status: st });
+  if (retry) return retry;
+  if (st === "SCHEDULED" && isLegacyEscoltaDiscriminacao(nf.serviceDescription)) return id;
+  return null;
+}
+
 export function buildNfseInvoicePayload(opts: {
   paymentId: string;
   value: number;
@@ -473,6 +544,59 @@ export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
   return /^inv_/i.test(String(nfseNumber || "").trim());
 }
 
+/** Número municipal no objeto Asaas (number pode vir numérico). RPS não conta. */
+export function extractAsaasMunicipalNumber(nf: any): string | null {
+  const candidates = [nf?.number, nf?.nfeNumber];
+  for (const c of candidates) {
+    if (c == null || c === "") continue;
+    if (isFinalNfNumber(c)) return String(c).trim();
+  }
+  return null;
+}
+
+/** CCM do tomador: só envia ao Asaas se o cadastro Torres tiver valor diferente. */
+export function municipalInscriptionIfChanged(
+  existingAtAsaas: string | null | undefined,
+  fromClient: string | null | undefined,
+): string | null {
+  const next = String(fromClient || "").trim();
+  if (!next) return null;
+  const digits = (s: string) => String(s || "").replace(/\D/g, "");
+  const norm = (s: string) => {
+    const d = digits(s);
+    if (!d) return "";
+    return d.replace(/^0+/, "") || "0";
+  };
+  const a = norm(existingAtAsaas || "");
+  const b = norm(next);
+  if (b && a === b) return null;
+  if (!b && String(existingAtAsaas || "").trim() === next) return null;
+  return next;
+}
+
+/**
+ * Rejeição real da prefeitura/Asaas — não confundir com “aguardando fila”.
+ * SYNCHRONIZED às vezes traz o erro só em statusDescription.
+ */
+export function isAsaasPrefeituraRejection(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  if (!m.trim()) return false;
+  if (/aguardand|em fila|processando|enviad[oa] para a prefeitura|sincroniz/.test(m)) return false;
+  if (isDiscriminacaoSchemaError(m)) return true;
+  return (
+    m.includes("inscrição municipal") ||
+    m.includes("inscricao municipal") ||
+    m.includes("informações fiscais") ||
+    m.includes("informacoes fiscais") ||
+    m.includes("falha na autenticação") ||
+    m.includes("falha na autenticacao") ||
+    m.includes("rejeit") ||
+    m.includes("xml não compatível") ||
+    m.includes("xml nao compativel") ||
+    m.includes("the 'discriminacao'")
+  );
+}
+
 /**
  * Reusa a NFS-e já criada no Asaas (ERROR) em vez de POST /invoices de novo.
  * SYNCHRONIZED/AUTHORIZED sem nº municipal NÃO entram — isso é processamento.
@@ -489,6 +613,7 @@ export function existingAsaasNfIdToRetry(opts: {
 
 /** Horas em aberto sem nº municipal para tratar “AUTHORIZED fantasma” como erro. */
 export const NF_PROCESSING_STALE_HOURS = 2;
+export const NF_RECONCILE_STALE_MS = 3 * 60 * 1000;
 
 export const NF_MISSING_AT_ASAAS_MSG =
   "NFS-e não encontrada no Asaas para esta cobrança. O status local não tem nota correspondente na prefeitura. Use Resolver agora para emitir.";
@@ -498,6 +623,29 @@ export function hoursSince(iso: string | null | undefined, now: Date = new Date(
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
   return (now.getTime() - t) / 3_600_000;
+}
+
+/** Asaas recusa cancelar NFS-e ainda “em processamento”. Não martelar cancel a cada cron. */
+export function isAsaasNfCancelBlockedProcessing(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("não pode ser cancelada")
+    || m.includes("nao pode ser cancelada")
+    || m.includes("processando emissão")
+    || m.includes("processando emissao")
+  );
+}
+
+/** Isolates serverless/cron: se o reconcile ficou `running` após timeout, libera o botão. */
+export function unstickStaleNfReconcile(state: {
+  running: boolean;
+  startedAt: string | null;
+}, now: Date = new Date()): boolean {
+  if (!state.running || !state.startedAt) return false;
+  const t = new Date(state.startedAt).getTime();
+  if (!Number.isFinite(t) || now.getTime() - t < NF_RECONCILE_STALE_MS) return false;
+  state.running = false;
+  return true;
 }
 
 export function isStuckNfWithoutNumber(invoice: {
@@ -522,15 +670,43 @@ export function describeNfProcessingWait(
     created_at?: string | null;
   },
   now: Date = new Date(),
+  liveAsaasDetail?: string | null,
+  rpsNumber?: string | number | null,
 ): string | null {
   if (!isStuckNfWithoutNumber(invoice)) return null;
   const st = String(invoice.nfse_status || "").toUpperCase() || "SEM STATUS";
   const hours = hoursSince(invoice.updated_at || invoice.created_at, now);
   const age = formatNfWaitAge(hours);
+  const live = String(liveAsaasDetail || "").trim();
+  const liveBit = live && !isAsaasPrefeituraRejection(live) ? ` Detalhe Asaas: ${live.slice(0, 180)}.` : "";
+  const rps = String(rpsNumber ?? "").trim();
+  const rpsBit = rps ? ` RPS ${rps} já na prefeitura; falta o nº da NFS-e.` : "";
   if (isNfOkStatus(st)) {
-    return `Asaas: ${st}, sem número da prefeitura${age}. O Torres consulta o Asaas até o número sair; não reenvia emissão.`;
+    return `Asaas: ${st}, sem número da prefeitura${age}. Em fila na prefeitura — o Torres só consulta o Asaas; não reenvia a emissão.${rpsBit}${liveBit}`;
   }
-  return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.`;
+  return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.${rpsBit}${liveBit}`;
+}
+
+function sameInvoiceField(current: unknown, next: unknown): boolean {
+  if ((next == null || next === "") && (current == null || current === "")) return true;
+  if (typeof next === "number" || typeof current === "number" || (typeof next === "string" && typeof current === "string" && /^-?\d+(\.\d+)?$/.test(String(next).trim()) && /^-?\d+(\.\d+)?$/.test(String(current).trim()))) {
+    const na = Number(next);
+    const nb = Number(current);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 0.005;
+  }
+  return String(next ?? "") === String(current ?? "");
+}
+
+/** UPDATE de /sync sem mudança real não deve gravar só `updated_at` (zera o relógio de espera). */
+export function invoiceUpdatesAreMaterial(
+  current: Record<string, any>,
+  updates: Record<string, any>,
+): boolean {
+  for (const [k, v] of Object.entries(updates)) {
+    if (k === "updated_at") continue;
+    if (!sameInvoiceField(current[k], v)) return true;
+  }
+  return false;
 }
 
 const PAID_OR_CANCELED_PAY = ["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH", "CANCELLED", "CANCELED"];
@@ -578,12 +754,13 @@ export function nfseUpdatesFromAsaasObject(
   },
 ): Record<string, any> {
   const next: Record<string, any> = {};
+  const municipal = extractAsaasMunicipalNumber(nf);
   if (nf?.status && String(nf.status) !== String(current.nfse_status || "")) {
     next.nfse_status = String(nf.status);
   }
 
   let desiredNumber: string | null = null;
-  if (isFinalNfNumber(nf?.number)) desiredNumber = String(nf.number);
+  if (municipal) desiredNumber = municipal;
   else if (!isFinalNfNumber(current.nfse_number) && nf?.id) desiredNumber = String(nf.id);
   if (desiredNumber && desiredNumber !== String(current.nfse_number || "")) {
     next.nfse_number = desiredNumber;
@@ -595,7 +772,23 @@ export function nfseUpdatesFromAsaasObject(
   }
 
   const st = String(next.nfse_status || nf?.status || current.nfse_status || "");
-  if (isNfErrorStatus(st)) {
+  if (isHiddenDiscriminacaoRejection(nf, true)) {
+    next.nfse_status = "ERROR";
+    if (current.nfse_error_message !== LEGACY_DISCRIMINACAO_STUCK_MSG) {
+      next.nfse_error_message = LEGACY_DISCRIMINACAO_STUCK_MSG;
+    }
+    return next;
+  }
+  const rejectionText = extractConcreteNfErrorMessage(nf);
+  if (
+    !isNfFullyIssued(st, next.nfse_number || current.nfse_number)
+    && isAsaasPrefeituraRejection(rejectionText)
+  ) {
+    next.nfse_status = "ERROR";
+    if (rejectionText && rejectionText !== current.nfse_error_message) {
+      next.nfse_error_message = rejectionText.slice(0, 1000);
+    }
+  } else if (isNfErrorStatus(st)) {
     const msg = resolveNfErrorMessage(nf, st, current.nfse_error_message);
     if (msg !== current.nfse_error_message) next.nfse_error_message = msg;
   } else if (
