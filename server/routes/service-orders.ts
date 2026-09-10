@@ -5,7 +5,8 @@ import type { Express } from "express";
   import { insertServiceOrderSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
-  import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
+  import { clientOutboundMail } from "../../shared/client-emails";
   import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
@@ -16,7 +17,7 @@ import type { Express } from "express";
   import { randomUUID } from "crypto";
   import { estimateTolls, estimateTollsAlongPath, getAllTollPlazas } from "../toll-engine";
   import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
-  import { computeRouteTolls } from "../lib/google-routes-tolls";
+  import { computeRouteTolls, googleMapsServerKey } from "../lib/google-routes-tolls";
   import {
     allowedClientIdsFromRequest,
     clientIdAllowed,
@@ -288,7 +289,7 @@ import type { Express } from "express";
           ...os,
           clientName: client?.name || "—",
           clientCnpj: client?.cnpj || null,
-          clientEmail: (client as any)?.email || null,
+          clientEmail: clientOutboundMail(client, "medicao")?.to.join(", ") || null,
           clientBillingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || null,
           clientPrazoAprovacaoDias: (client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || null,
           clientPaymentTermsDays: (client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || null,
@@ -2026,11 +2027,9 @@ import type { Express } from "express";
     if (!osData.scheduledDate) return { sent: false, reason: "Data agendada não definida" };
 
     const client = await storage.getClient(osData.clientId);
-    const operacionalEmails = parseEmailList(client?.emailOperacional);
-    const geralEmails = parseEmailList(client?.email);
-    const recipientEmails = operacionalEmails.length > 0 ? operacionalEmails : geralEmails;
-    if (recipientEmails.length === 0) return { sent: false, reason: "Cliente sem email cadastrado" };
-    const recipientEmail = recipientEmails.join(", ");
+    const mail = clientOutboundMail(client, "operacional");
+    if (!mail) return { sent: false, reason: "Cliente sem e-mail operacional cadastrado" };
+    const recipientEmail = mail.to.join(", ");
 
     const transporter = createSmtpTransporter();
     if (!transporter) return { sent: false, reason: "SMTP não configurado" };
@@ -2126,7 +2125,8 @@ import type { Express } from "express";
 
     const mailOptions: any = {
       from: getSmtpFrom(),
-      to: recipientEmail,
+      to: mail.to,
+      cc: mail.cc,
       bcc: SMTP_BCC_OS,
       subject: `Confirmação de Escolta — ${osData.osNumber}`,
       html: htmlBody,
@@ -2775,7 +2775,7 @@ import type { Express } from "express";
         return res.json({ distKm: cached.distKm, durationMin: cached.durationMin, source: "cache" });
       }
 
-      const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+      const apiKey = googleMapsServerKey();
       if (!apiKey) {
         const haversine = (() => {
           const R = 6371;
@@ -3052,7 +3052,7 @@ import type { Express } from "express";
       }
 
       if (!plannedRoute && (hasOrigin || hasDest)) {
-        const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+        const apiKey = googleMapsServerKey();
         if (apiKey) {
           try {
             let dirOrigin = "";

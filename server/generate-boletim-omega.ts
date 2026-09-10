@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import path from "path";
 import { createSmtpTransporter, getSmtpFrom } from "./routes/_helpers";
+import { withTorresAlwaysCc } from "../shared/client-emails";
 
 const LOGO_PATH = path.resolve("attached_assets/image_1772056652908.png");
 
@@ -244,14 +245,16 @@ export async function sendBoletimEmail(xlsxBuffer: Buffer): Promise<void> {
   if (!transporter) throw new Error("SMTP não configurado");
 
   const from = getSmtpFrom();
-  const to = "mariaeduarda.nogueira@omegasolutions.com.br";
-  const cc = "gr.transportes@omegasolutions.com.br";
-  const bcc = ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"];
+  const envelope = withTorresAlwaysCc(
+    ["mariaeduarda.nogueira@omegasolutions.com.br"],
+    ["gr.transportes@omegasolutions.com.br"],
+  );
+  const bcc = ["thiago@grupotmseg.com.br"];
 
   await transporter.sendMail({
     from,
-    to,
-    cc,
+    to: envelope.to,
+    cc: envelope.cc,
     bcc,
     subject: "Boletim de Medição — Abril/2026 — Torres Vigilância Patrimonial",
     html: `

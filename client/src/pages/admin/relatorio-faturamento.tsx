@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
+import { clientEmailsJoined } from "@shared/client-emails";
 import { OsDetailModal, NumInput } from "./boletim-medicao";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -273,7 +274,7 @@ export default function RelatorioFaturamentoPage() {
 
   const openSendDialog = () => {
     const cd = clients.find((c: any) => c.id.toString() === selectedClient);
-    setSendEmail(cd?.email || cd?.contact_email || "");
+    setSendEmail(clientEmailsJoined(cd, "medicao"));
     setSendDialog(true);
   };
 
@@ -2035,13 +2036,14 @@ export default function RelatorioFaturamentoPage() {
             <div>
               <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail do Cliente</Label>
               <Input
-                type="email"
+                type="text"
                 value={sendEmail}
                 onChange={(e) => setSendEmail(e.target.value)}
                 placeholder="email@cliente.com.br"
                 className="mt-1 text-sm font-mono"
                 data-testid="input-send-email"
               />
+              <p className="text-[10px] text-gray-400 mt-1">E-mail de medição do cadastro. A Torres vai em cópia.</p>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1.5">

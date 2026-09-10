@@ -155,7 +155,7 @@ const EXPECTED_PRODUCTION_CALLS: Record<string, Record<string, number>> = {
   computeBillingPayloadForOs: {
     "server/cron.ts": 1,
     "server/routes/escort.ts": 2,
-    "server/routes/mission.ts": 1,
+    "server/routes/mission.ts": 2,
     "server/routes/service-orders.ts": 4,
   },
   calcularFaturamentoLive: {
@@ -220,11 +220,11 @@ describe("PR5B.1 — inventário imutável de call-sites", () => {
     });
   }
 
-  test("totais de call-sites: canônico=6, builder=8, live=4, cancelada=6", () => {
+  test("totais de call-sites: canônico=6, builder=9, live=4, cancelada=6", () => {
     const total = (values: Record<string, number>) =>
       Object.values(values).reduce((sum, value) => sum + value, 0);
     assert.equal(total(countProductionCalls("calcularEscolta")), 6);
-    assert.equal(total(countProductionCalls("computeBillingPayloadForOs")), 8);
+    assert.equal(total(countProductionCalls("computeBillingPayloadForOs")), 9);
     assert.equal(total(countProductionCalls("calcularFaturamentoLive")), 4);
     assert.equal(total(countProductionCalls("computeCanceladaBilling")), 6);
   });

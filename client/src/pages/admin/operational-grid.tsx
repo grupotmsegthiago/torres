@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
-import html2canvas from "-ohtml2canvas";
+import html2canvas from "html2canvas";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,6 +32,7 @@ import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
 import { VEHICLE_ICON_OPTIONS, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
+import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -552,7 +553,7 @@ function getRouteProgress(opts: {
 }
 
 function shortPlaceName(value?: string | null, maxLen = 36): string {
-  if (!value) return "";
+  if (typeof value !== "string" || !value) return "";
   const first = value.split(",")[0].trim();
   if (!first) return "";
   if (first.length <= maxLen) return first;
@@ -1521,27 +1522,17 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey) return;
 
-    if (window.google?.maps?.Map) {
-      setMapReady(true);
-      return;
-    }
-
-    if (document.querySelector('script[src*="maps.googleapis.com/maps/api"]')) {
-      const checkLoaded = setInterval(() => {
-        if (window.google?.maps?.Map) {
-          setMapReady(true);
-          clearInterval(checkLoaded);
-        }
-      }, 200);
-      return;
-    }
-
-    window.initGridMap = () => setMapReady(true);
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async&callback=initGridMap`;
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
+    loadGoogleMapsScript(() => {
+      const finish = () => setMapReady(true);
+      const maps = window.google?.maps;
+      if (maps?.importLibrary) {
+        Promise.all([maps.importLibrary("geometry"), maps.importLibrary("places")])
+          .catch(() => null)
+          .finally(finish);
+        return;
+      }
+      finish();
+    });
   }, []);
 
   useEffect(() => {
@@ -1989,18 +1980,23 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         });
         routePolylinesRef.current.push(remainingLine);
         data.remainingRoute.forEach((p: any) => bounds.extend(p));
-      } else if (data.plannedRoute && window.google.maps.geometry?.encoding) {
-        const path = window.google.maps.geometry.encoding.decodePath(data.plannedRoute);
-        const plannedLine = new window.google.maps.Polyline({
-          path,
-          strokeColor: "#000000",
-          strokeOpacity: 0.5,
-          strokeWeight: 4,
-          map: mapInstanceRef.current,
-          zIndex: 1,
-        });
-        routePolylinesRef.current.push(plannedLine);
-        path.forEach((p: any) => bounds.extend(p));
+      } else if (data.plannedRoute) {
+        if (!window.google.maps.geometry?.encoding && window.google.maps.importLibrary) {
+          await window.google.maps.importLibrary("geometry").catch(() => null);
+        }
+        if (window.google.maps.geometry?.encoding) {
+          const path = window.google.maps.geometry.encoding.decodePath(data.plannedRoute);
+          const plannedLine = new window.google.maps.Polyline({
+            path,
+            strokeColor: "#000000",
+            strokeOpacity: 0.5,
+            strokeWeight: 4,
+            map: mapInstanceRef.current,
+            zIndex: 1,
+          });
+          routePolylinesRef.current.push(plannedLine);
+          path.forEach((p: any) => bounds.extend(p));
+        }
       }
 
       if (data.segments && data.segments.length > 0) {

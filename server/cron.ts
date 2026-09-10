@@ -10,6 +10,7 @@ import { writeEscortBillingAtomic } from "./lib/atomic-billing";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
 import { shouldRunBackgroundJobs } from "./platform";
 import { runCronBucket, type CronBucket } from "./cron-buckets";
+import { clientOutboundMail } from "../shared/client-emails";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -733,13 +734,13 @@ async function sendOverdueReminders() {
     try {
       const { data: clientData } = await supabaseAdmin
         .from("clients")
-        .select("email, email_financeiro, name")
+        .select("email, email_financeiro, email_contratual, email_operacional, email_medicao, name")
         .eq("id", inv.client_id)
         .single();
 
-      const clientEmail = clientData?.email_financeiro || clientData?.email;
-      if (!clientEmail) {
-        log(`CRON CobrançaVencidos: Fatura #${inv.id} (${inv.client_name}) — cliente sem e-mail cadastrado`, "cron");
+      const mail = clientOutboundMail(clientData, "financeiro");
+      if (!mail) {
+        log(`CRON CobrançaVencidos: Fatura #${inv.id} (${inv.client_name}) — cliente sem e-mail financeiro cadastrado`, "cron");
         skipped++;
         continue;
       }
@@ -826,8 +827,9 @@ async function sendOverdueReminders() {
 
       await transporter.sendMail({
         from,
-        to: clientEmail,
-        bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
+        to: mail.to,
+        cc: mail.cc,
+        bcc: ["thiago@grupotmseg.com.br"],
         subject: `⚠️ ${urgencyLabel}: Fatura vencida há ${diasAtraso} dias — ${valueFmt} — Torres Segurança`,
         html,
       });
