@@ -427,6 +427,10 @@ export async function runBillingAlertsCron(): Promise<void> {
             cutoff: lastDay,
           },
         ];
+      } else if (cycle === "diario") {
+        const yest = new Date(Date.UTC(brYear, brMonth - 1, brDay - 1));
+        const ys = yest.toISOString().slice(0, 10);
+        periods = [{ start: ys, end: ys, cutoff: Number(ys.slice(8, 10)) }];
       }
 
       for (const period of periods) {

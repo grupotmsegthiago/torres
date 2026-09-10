@@ -38,6 +38,7 @@ test("hasPermission: * libera tudo; financeiro só o que está no perfil", () =>
 
 test("canSeePath: relatório de NF no perfil financeiro", () => {
   assert.equal(canSeePath(DEFAULT_PROFILE_PERMISSIONS.financeiro, "/admin/relatorio-nf"), true);
+  assert.equal(canSeePath(DEFAULT_PROFILE_PERMISSIONS.financeiro, "/admin/faturamento"), true);
   assert.equal(canSeePath(DEFAULT_PROFILE_PERMISSIONS.financeiro, "/admin/database"), false);
 });
 
@@ -51,7 +52,7 @@ test("comercial: vê telas comerciais e não vê controladoria/RH/sistema", () =
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/financeiro"), false);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/employees"), false);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/usuarios"), false);
-  assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/balanco-gerencial"), false);
+  assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/faturamento"), false);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/perfil"), true);
 });
 

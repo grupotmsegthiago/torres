@@ -3,8 +3,10 @@ import { requireAdminRole, requireFinanceiro, canActAsFinanceiro } from "./auth"
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
+import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, withTorresAlwaysCc, parseEmailList } from "../shared/client-emails";
 import { bustBalancoCaches } from "./lib/balanco-cache";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
+import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
 import {
   markBillingsInvoicedAtomic,
   transitionInvoiceBillingsAtomic,
@@ -155,7 +157,8 @@ async function sendBillingEmail(invoice: {
   inss_aliquota?: number | string | null;
 }, clientEmail: string) {
   const transporter = createSmtpTransporter();
-  if (!transporter || !clientEmail) {
+  const envelope = withTorresAlwaysCc(parseEmailList(clientEmail));
+  if (!transporter || envelope.to.length === 0) {
     console.log(`[billing-email] Skipped: ${!transporter ? "SMTP not configured" : "No client email"}`);
     return;
   }
@@ -165,8 +168,9 @@ async function sendBillingEmail(invoice: {
   try {
     await transporter.sendMail({
       from: getSmtpFrom(),
-      to: clientEmail,
-      bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
+      to: envelope.to,
+      cc: envelope.cc,
+      bcc: ["thiago@grupotmseg.com.br"],
       subject,
       html,
     });
@@ -1211,7 +1215,7 @@ export async function emitInvoiceAuto(
   }
 
   const clientId = invoice.client_id;
-  const clientCols = "id, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, name, inscricao_municipal, inscricao_estadual";
+  const clientCols = `id, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, ${CLIENT_EMAIL_COLUMNS}, phone, name, inscricao_municipal, inscricao_estadual`;
   let clientData: any = null;
   if (clientId) {
     const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
@@ -1225,7 +1229,7 @@ export async function emitInvoiceAuto(
   if (!cpfCnpj || cpfCnpj.length < 11) return { success: false, message: "Cliente sem CPF/CNPJ cadastrado", nfEmitted: false };
 
   const clientName = clientData?.name || invoice.client_name;
-  const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
+  const clientEmail = asaasTomadorEmail(clientData);
   const clientPhone = clientData?.phone || undefined;
   const emiteNf = clientData?.emite_nf === true;
   const retemInss = clientData?.retem_inss === true;
@@ -1701,7 +1705,7 @@ export function registerAsaasRoutes(app: Express) {
       let clientZip: string | undefined;
       if (clientId) {
         const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
-        if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || cliInfo?.email_contratual || cliInfo?.email_operacional || undefined;
+        if (!clientEmail) clientEmail = asaasTomadorEmail(cliInfo);
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
         clientCity = cliInfo?.city || undefined;
@@ -1948,7 +1952,7 @@ export function registerAsaasRoutes(app: Express) {
         let clientEmail = "";
         if (existing.client_id) {
           const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", existing.client_id).single();
-          clientEmail = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || "";
+          clientEmail = asaasTomadorEmail(cli) || "";
         }
         if (clientEmail) {
           sendBillingEmail({
@@ -2006,7 +2010,7 @@ export function registerAsaasRoutes(app: Express) {
       let email = req.body.email || "";
       if (!email && invoice.client_id) {
         const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", invoice.client_id).single();
-        email = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || "";
+        email = asaasTomadorEmail(cli) || "";
       }
       if (!email) return res.status(400).json({ message: "E-mail do cliente não encontrado. Informe no campo 'email'." });
 
@@ -2173,7 +2177,7 @@ export function registerAsaasRoutes(app: Express) {
           .select("email, email_financeiro, email_contratual, email_operacional")
           .eq("id", invoice.client_id)
           .single();
-        clientEmail = cli?.email_financeiro || cli?.email || cli?.email_contratual || cli?.email_operacional || undefined;
+        clientEmail = asaasTomadorEmail(cli);
       }
 
       let result: { id: string; status: string; number?: string };
@@ -2489,7 +2493,7 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const clientName = clientData?.name || invoice.client_name;
-      const clientEmail = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
+      const clientEmail = asaasTomadorEmail(clientData);
       const clientPhone = clientData?.phone || undefined;
       const emiteNf = clientData?.emite_nf === true;
       const totalValue = parseFloat(invoice.value);
@@ -3240,7 +3244,7 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
+  const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, email_medicao, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const retemInssConsolidado = clientData?.retem_inss === true;
@@ -3278,7 +3282,7 @@ export function registerAsaasRoutes(app: Express) {
         }
         console.log(`[asaas] Validação quinzenal OK para cliente ${clientId}: 0 OS pendentes no período ${startDate} a ${endDate}.`);
       }
-      const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || clientData?.email_contratual || clientData?.email_operacional || undefined;
+      const clientEmailConsolidado = asaasTomadorEmail(clientData);
       const clientPhoneConsolidado = clientData?.phone || undefined;
 
       // ============================================================
@@ -3851,7 +3855,7 @@ export function registerAsaasRoutes(app: Express) {
             .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, email_financeiro, email, email_contratual, email_operacional")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false, email: c.email_financeiro || c.email || c.email_contratual || c.email_operacional || null });
+            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false, email: asaasTomadorEmail(c) || null });
           }
         }
 
@@ -5311,9 +5315,8 @@ export function registerAsaasRoutes(app: Express) {
 
         for (const b of (billings || [])) {
           const cli = clientMap.get(b.client_id);
-          const cycle = String(cli?.billing_cycle || "mensal").toLowerCase();
-          const isQuinz = cycle === "quinzenal" || cycle === "quinzena";
-          const period = isQuinz ? quinzenaInfo(b.data_missao) : mensalInfo(b.data_missao);
+          const cycle = normalizeBillingCycle(cli?.billing_cycle);
+          const period = periodForDate(cycle === "indefinido" ? "mensal" : cycle, b.data_missao);
           const inv = b.invoice_id ? invoiceMap.get(b.invoice_id) : null;
           const so = b.service_order_id ? soMap.get(b.service_order_id) : null;
           const valorBilling = valorOf(b);
@@ -5333,8 +5336,8 @@ export function registerAsaasRoutes(app: Express) {
             dataMissao: b.data_missao,
             clientId: b.client_id,
             clientName: b.client_name || cli?.name || "—",
-            billingCycle: isQuinz ? "quinzenal" : "mensal",
-            quinzena: isQuinz ? `Q${(period as any).q}` : "M",
+            billingCycle: period.cycle,
+            quinzena: period.label,
             periodoStart: period.start,
             periodoEnd: period.end,
             dueBy: period.dueBy,
@@ -5360,11 +5363,10 @@ export function registerAsaasRoutes(app: Express) {
         for (const s of (sosCompleted || [])) {
           if (billedSoIds.has(s.id)) continue;
           const cli = clientMap.get(s.client_id);
-          const cycle = String(cli?.billing_cycle || "mensal").toLowerCase();
-          const isQuinz = cycle === "quinzenal" || cycle === "quinzena";
+          const cycle = normalizeBillingCycle(cli?.billing_cycle);
           const dataRef = (s.completed_date || s.scheduled_date || "").slice(0, 10);
           if (!dataRef) continue;
-          const period = isQuinz ? quinzenaInfo(dataRef) : mensalInfo(dataRef);
+          const period = periodForDate(cycle === "indefinido" ? "mensal" : cycle, dataRef);
           rows.push({
             tipo: "OS_ESQUECIDA" as const,
             billingId: null,
@@ -5373,8 +5375,8 @@ export function registerAsaasRoutes(app: Express) {
             dataMissao: dataRef,
             clientId: s.client_id,
             clientName: cli?.name || "—",
-            billingCycle: isQuinz ? "quinzenal" : "mensal",
-            quinzena: isQuinz ? `Q${(period as any).q}` : "M",
+            billingCycle: period.cycle,
+            quinzena: period.label,
             periodoStart: period.start,
             periodoEnd: period.end,
             dueBy: period.dueBy,

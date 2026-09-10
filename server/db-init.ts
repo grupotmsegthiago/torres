@@ -120,7 +120,7 @@ export async function ensureDbSchema() {
       ('diretoria', 'Diretoria', '["*"]'),
       ('admin', 'Administrador', '["dashboard","clients","employees","vehicles","trips","fueling","maintenance","timesheets","tracker","service_orders","mission","operational_grid","consultas","guia_missao","users"]'),
       ('funcionario', 'Funcionário', '["dashboard","mission","timesheets","guia_missao"]'),
-      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]'),
+      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","controle_faturamento","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]'),
       ('comercial', 'Comercial', '["dashboard","leads","clients","service_orders","boletim_medicao"]')
       ON CONFLICT (role) DO NOTHING
     `);

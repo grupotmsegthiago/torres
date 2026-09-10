@@ -1,6 +1,7 @@
 import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
+import { clientOutboundMail, withTorresAlwaysCc, parseEmailList } from "../../shared/client-emails";
 import { emitInvoiceAuto } from "../asaas";
 import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
 import { bustBalancoCaches } from "../lib/balanco-cache";
@@ -17,6 +18,7 @@ import {
   planContractHeals,
 } from "../lib/boletim-send-prepare";
 import { logSystemAudit } from "../audit";
+import { assessBoletimCoverage, normalizeBillingCycle, periodForDate } from "../../shared/billing-cycle";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -398,9 +400,10 @@ async function generateBoletimExcel(
 }
 
 async function sendApprovalEmailWithExcel(
-  to: string, clientName: string, approvalUrl: string, period: string,
+  to: string | string[], clientName: string, approvalUrl: string, period: string,
   osCount: number, totalValue: number, excelBuffer: Buffer, fileName: string,
   processoNumbers: string[] = [],
+  cc: string[] = [],
 ) {
   const isOmegaSubject = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
   const processosLabel = processoNumbers.length > 0
@@ -479,9 +482,12 @@ async function sendApprovalEmailWithExcel(
     ? `${subjectBase} — ${processosLabel}`
     : subjectBase;
 
+  const envelope = withTorresAlwaysCc(parseEmailList(Array.isArray(to) ? to.join(",") : to), cc);
+
   await transporter.sendMail({
     from: getSmtpFrom(),
-    to,
+    to: envelope.to,
+    cc: envelope.cc,
     subject,
     headers: isOmegaSubject && processoNumbers.length > 0
       ? {
@@ -507,9 +513,20 @@ export function registerBoletimApprovalRoutes(app: Express) {
       let { periodStart, periodEnd } = req.body;
       const user = req.user as any;
 
-      if (!clientId || !clientEmail || !billingIds?.length) {
-        return res.status(400).json({ message: "Dados incompletos. Informe cliente, e-mail e IDs dos boletins." });
+      if (!clientId || !billingIds?.length) {
+        return res.status(400).json({ message: "Dados incompletos. Informe cliente e IDs dos boletins." });
       }
+
+      const { data: clientRow } = await supabaseAdmin
+        .from("clients")
+        .select("id, name, email, email_financeiro, email_contratual, email_operacional, email_medicao, billing_cycle")
+        .eq("id", clientId)
+        .maybeSingle();
+      const mail = clientOutboundMail(clientRow, "medicao", clientEmail);
+      if (!mail) {
+        return res.status(400).json({ message: "Cliente sem e-mail de medição cadastrado." });
+      }
+      const resolvedClientEmail = mail.to.join(", ");
 
       // ============================================================
       // Regra unificada: período do boletim é derivado da data_missao
@@ -518,7 +535,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       // ============================================================
       const { data: billingsForPeriod } = await supabaseAdmin
         .from("escort_billings")
-        .select("id, data_missao, created_at")
+        .select("id, data_missao, created_at, service_order_id")
         .in("id", billingIds);
 
       const missionDates = (billingsForPeriod || [])
@@ -543,6 +560,81 @@ export function registerBoletimApprovalRoutes(app: Express) {
 
         periodStart = computedStart;
         periodEnd = computedEnd;
+      }
+
+      // Cobertura do ciclo do cadastro: todas as OS faturáveis do período
+      // e internamente APROVADAS. Recusada fica de fora (§8.1).
+      {
+        const cycle = normalizeBillingCycle(clientRow?.billing_cycle);
+        if (cycle === "quinzenal" || cycle === "mensal" || cycle === "diario") {
+          const seed = (periodStart || missionDates[0] || "").slice(0, 10);
+          if (seed) {
+            const period = periodForDate(cycle, seed);
+            periodStart = period.start;
+            periodEnd = period.end;
+
+            const { data: osWindow } = await supabaseAdmin
+              .from("service_orders")
+              .select("id, os_number, status, scheduled_date, completed_date")
+              .eq("client_id", clientId)
+              .gte("scheduled_date", `${period.start}T00:00:00`)
+              .lte("scheduled_date", `${period.end}T23:59:59`)
+              .limit(2000);
+
+            const { data: billsWindow } = await supabaseAdmin
+              .from("escort_billings")
+              .select("id, service_order_id, status, data_missao")
+              .eq("client_id", clientId)
+              .gte("data_missao", period.start)
+              .lte("data_missao", period.end)
+              .limit(2000);
+
+            const billByOs = new Map<number, any>();
+            for (const b of billsWindow || []) {
+              const soId = Number(b.service_order_id || 0);
+              if (soId) billByOs.set(soId, b);
+            }
+
+            const osById = new Map<number, any>();
+            for (const o of osWindow || []) osById.set(Number(o.id), o);
+            const extraIds = [...billByOs.keys()].filter((id) => !osById.has(id));
+            if (extraIds.length > 0) {
+              const { data: extraOs } = await supabaseAdmin
+                .from("service_orders")
+                .select("id, os_number, status, scheduled_date, completed_date")
+                .in("id", extraIds);
+              for (const o of extraOs || []) osById.set(Number(o.id), o);
+            }
+
+            const allOsInWindow = [...osById.values()].map((o: any) => {
+              const bill = billByOs.get(Number(o.id));
+              const date = String(bill?.data_missao || o.scheduled_date || o.completed_date || "").slice(0, 10);
+              return {
+                id: Number(o.id),
+                osNumber: String(o.os_number || `OS-${o.id}`),
+                status: String(o.status || ""),
+                date,
+                billingId: bill?.id ?? null,
+                billingStatus: bill?.status ?? null,
+              };
+            }).filter((o) => o.date >= period.start && o.date <= period.end);
+
+            const selectedOsIds = (billingsForPeriod || [])
+              .map((b: any) => Number(b.service_order_id))
+              .filter(Boolean);
+
+            const coverage = assessBoletimCoverage({ cycle, selectedOsIds, allOsInWindow });
+            if (!coverage.ok) {
+              return res.status(400).json({
+                code: coverage.code,
+                message: coverage.message,
+                missing: coverage.missing,
+                notApproved: coverage.notApproved,
+                period: coverage.period,
+              });
+            }
+          }
+        }
       }
 
         // Bloqueia reenvio se já existir aprovação ativa (PENDENTE/APROVADO) cobrindo qualquer um dos billings
@@ -759,7 +851,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         token,
         clientId,
         clientName,
-        clientEmail,
+        clientEmail: resolvedClientEmail,
         periodStart,
         periodEnd,
         billingIds: sendBillingIds,
@@ -775,8 +867,8 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
-        console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
+        await sendApprovalEmailWithExcel(mail.to, clientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
+        console.log(`[boletim-approval] E-mail com Excel enviado para ${resolvedClientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);
         return res.json({ ...data, emailError: emailErr.message, approvalUrl });
@@ -1113,9 +1205,11 @@ export function registerBoletimApprovalRoutes(app: Express) {
               </div>
             </div>`;
 
+          const notif = withTorresAlwaysCc(["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"]);
           await transporter.sendMail({
             from: getSmtpFrom(),
-            to: "thiago@grupotmseg.com.br, operacional@grupotmseg.com.br",
+            to: notif.to,
+            cc: notif.cc,
             subject: `✅ MEDIÇÃO APROVADA — ${approval.client_name} — ${totalFmt}`,
             html: notifHtml,
           });

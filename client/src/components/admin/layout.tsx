@@ -117,6 +117,7 @@ const PREFETCH_MAP: Record<string, string[]> = {
   "/admin/operational-grid": ["/api/operational-grid", "/api/vehicle-tracking"],
   "/admin/fueling": ["/api/fueling", "/api/vehicles"],
   "/admin/boletim-medicao": ["/api/boletim-medicao/os-concluidas"],
+  "/admin/faturamento": ["/api/controle-faturamento"],
   "/admin/balanco-gerencial": ["/api/financial/dashboard"],
   "/admin/relatorio-abastecimento": ["/api/fueling", "/api/vehicles", "/api/financial/dashboard"],
   "/admin/timesheets": ["/api/timesheets", "/api/employees"],
@@ -183,6 +184,15 @@ const menuSections: MenuSection[] = [
           { path: "/admin/documentos-rh", label: "Documentos RH", icon: FileSignature, adminOnly: true },
         ],
       },
+    ],
+  },
+  {
+    title: "DIRETORIA",
+    icon: Crown,
+    iconColor: "text-amber-400",
+    adminOnly: true,
+    items: [
+      { path: "/admin/faturamento", label: "Faturamento", icon: Receipt },
     ],
   },
   {
@@ -347,7 +357,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
 
 const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isAclRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isAclRole: boolean; aclPermissions: string[] }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "DIRETORIA": true, "CONTROLADORIA": true, "SISTEMA": true });
 
   const toggleGroup = useCallback((label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));

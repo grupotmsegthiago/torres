@@ -1,5 +1,17 @@
 # Changelog — Governança Torres
 
+## 2026-09-10 — Controle de Faturamento (Diretoria)
+
+- KPI de cobertura por ciclo do cadastro (quinzenal 1–15/16–fim, mensal, diário). Projeção: OS + billing oficial + fatura.
+- Gate no boletim: não envia se faltar OS do período ou se não estiver APROVADA (recusada fora).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-CONTROLE-FATURAMENTO-2026-09-10.md`.
+
+## 2026-09-09 — Grid Maps: loader único + chave de servidor na rota
+
+- Causa: dois loaders do Google (Places sem `geometry`) e `/route` no servidor usando só `VITE_GOOGLE_MAPS_API_KEY` (restrita por site).
+- Loader único `places+geometry` + `importLibrary`; Directions no servidor usa `googleMapsServerKey()` (mesma cascata do pedágio).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-GRID-MAPS-LOADER-2026-09-09.md`.
+
 ## 2026-09-09 — Grid: origem/destino ao lado da placa + % da missão
 
 - Card de atualizações e identidade da viatura passam a mostrar cliente + origem / destino da OS (campos já existentes na API).

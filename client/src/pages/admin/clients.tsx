@@ -19,11 +19,13 @@ import {
   Upload, Send, Check, Paperclip, History, Settings2, Download,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
+import { clientEmailsJoined } from "@shared/client-emails";
 import { generatePresentation } from "@/lib/presentation";
 import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 import { WhatsappGroupPicker } from "@/components/admin/whatsapp-group-picker";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
+import { billingCycleLabel, normalizeBillingCycle } from "@shared/billing-cycle";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
@@ -555,8 +557,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                 colorScheme="orange"
                 testId="input-client-email-operacional"
               />
+              <p className="text-[10px] text-neutral-500 mt-1">Usado na OS e atualizações de escolta</p>
             </div>
           </div>
+
+          <p className="text-[10px] text-neutral-500 mb-4">
+            Cada categoria recebe só o que é dela. Cópia interna sempre: diretoria, Mickael, financeiro e adm da Torres.
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
@@ -758,8 +765,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <select value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" data-testid="select-billing-cycle">
                 <option value="">Não definido</option>
                 <option value="por_missao">Por Missão</option>
-                <option value="quinzenal">Quinzenal (1-15 / 16-30)</option>
-                <option value="mensal">Mensal (Fechamento Mês)</option>
+                <option value="diario">Diário</option>
+                <option value="quinzenal">Quinzenal (1-15 / 16-30 ou 31)</option>
+                <option value="mensal">Mensal (dia 01 até o último dia)</option>
               </select>
             </div>
             <div>
@@ -2151,7 +2159,7 @@ const DOC_TYPES = [
 
 function HomologacaoTab({ client }: { client: Client }) {
   const { toast } = useToast();
-  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState(() => clientEmailsJoined(client, "contratual"));
   const [recipientName, setRecipientName] = useState(client.contactPerson || "");
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [includePresentation, setIncludePresentation] = useState(true);
@@ -2408,7 +2416,8 @@ function HomologacaoTab({ client }: { client: Client }) {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 block mb-1">E-mail do Destinatário *</label>
-                <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="homologacao@empresa.com.br" className="h-9 text-xs" data-testid="input-recipient-email" />
+                <Input type="text" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="homologacao@empresa.com.br" className="h-9 text-xs" data-testid="input-recipient-email" />
+                <p className="text-[10px] text-neutral-400 mt-1">Pré-preenchido com o e-mail contratual. A Torres vai em cópia.</p>
               </div>
             </div>
             <div className="bg-neutral-50 rounded-lg p-3">
@@ -2902,7 +2911,7 @@ export default function ClientsPage() {
                     <td className="p-3 text-neutral-600 text-xs">
                       {(c as any).billingCycle || (c as any).billing_cycle ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
-                          {((c as any).billingCycle || (c as any).billing_cycle) === "quinzenal" ? "Quinzenal" : ((c as any).billingCycle || (c as any).billing_cycle) === "mensal" ? "Mensal" : "Por Missão"}
+                          {billingCycleLabel(normalizeBillingCycle((c as any).billingCycle || (c as any).billing_cycle))}
                           {((c as any).paymentTermsDays || (c as any).payment_terms_days) ? ` D+${(c as any).paymentTermsDays || (c as any).payment_terms_days}` : ""}
                         </span>
                       ) : <span className="text-neutral-300">—</span>}

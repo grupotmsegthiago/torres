@@ -34,6 +34,7 @@ import {
   toSafeUser, logFinancialAudit,
   createAutoTransaction, removeAutoTransaction,
 } from "./routes/_helpers";
+import { clientOutboundMail, withTorresAlwaysCc } from "../shared/client-emails";
 
 
 async function ensureInterTables() {
@@ -741,6 +742,7 @@ async function ensureSystemSettingsTable() {
   import { registerFornecedoresRoutes } from "./routes/fornecedores";
   import { registerSsxRoutes } from "./routes/ssx";
   import { registerConferenciaTmsegRoutes } from "./routes/conferencia-tmseg";
+  import { registerControleFaturamentoRoutes } from "./routes/controle-faturamento";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -1363,7 +1365,10 @@ async function ensureSystemSettingsTable() {
     const { DEFAULT_PROFILE_PERMISSIONS, PROFILE_LABELS, parsePermissions } = await import("../shared/perfis-acesso");
     const perfil = await storage.getPerfilAcesso(req.user!.role);
     const fallback = DEFAULT_PROFILE_PERMISSIONS[req.user!.role] || [];
-    const permissions = perfil ? parsePermissions(perfil.permissions) : fallback;
+    const permissions = [...(perfil ? parsePermissions(perfil.permissions) : fallback)];
+    if (req.user!.role === "financeiro" && !permissions.includes("controle_faturamento")) {
+      permissions.push("controle_faturamento");
+    }
     res.json({
       user: toSafeUser(req.user!),
       permissions: permissions.length ? permissions : fallback,
@@ -1430,6 +1435,7 @@ async function ensureSystemSettingsTable() {
     registerConferenciaTmsegRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
+    registerControleFaturamentoRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
@@ -2072,9 +2078,6 @@ Regras:
   app.post("/api/homologation/send", requireAuth, async (req, res) => {
     try {
       const { clientId, clientName, recipientEmail, recipientName, documentTypes, includePresentation, includeValues, sentBy, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
-      if (!recipientEmail) {
-        return res.status(400).json({ message: "E-mail do destinatário é obrigatório" });
-      }
       if ((!documentTypes || documentTypes.length === 0) && !includePresentation && !includeValues) {
         return res.status(400).json({ message: "Selecione ao menos um documento para enviar" });
       }
@@ -2140,9 +2143,19 @@ Regras:
 </body>
 </html>`;
 
+      const { data: homoClient } = clientId
+        ? await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, email_medicao").eq("id", clientId).maybeSingle()
+        : { data: null };
+      const homoMail = clientOutboundMail(homoClient, "contratual", recipientEmail);
+      const envelope = homoMail || withTorresAlwaysCc(parseEmailList(recipientEmail));
+      if (envelope.to.length === 0) {
+        return res.status(400).json({ message: "E-mail do destinatário é obrigatório" });
+      }
+
       await homoTransporter.sendMail({
         from: getSmtpFrom(),
-        to: recipientEmail,
+        to: envelope.to,
+        cc: envelope.cc,
         subject: `Documentação para Homologação — Torres Vigilância Patrimonial LTDA`,
         html: htmlBody,
         attachments,
@@ -2151,7 +2164,7 @@ Regras:
       await supabaseAdmin.from("homologation_logs").insert({
         client_id: clientId,
         client_name: clientName || null,
-        recipient_email: recipientEmail,
+        recipient_email: envelope.to.join(", "),
         recipient_name: recipientName || null,
         documents_sent: docLabels,
         sent_by: sentBy || null,
