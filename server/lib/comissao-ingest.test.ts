@@ -246,6 +246,7 @@ describe("comissao-ingest sync bulk TM SEG", () => {
     });
     assert.equal(r.ok, true);
     assert.equal(r.clientesComComercial, 1);
+    assert.equal(r.clientes[0].nome, "TECHTRANS TRANSPORTES");
     assert.equal(r.faturados, 1);
     assert.equal(posted[0].evento, "FATURADO");
     assert.equal(posted[0].origemFaturaId, "os:1191");
@@ -254,8 +255,10 @@ describe("comissao-ingest sync bulk TM SEG", () => {
   it("cron de 6 horas chama o sync para a TM SEG", () => {
     const buckets = fs.readFileSync(new URL("../cron-buckets.ts", import.meta.url), "utf8");
     const jobs = fs.readFileSync(new URL("../cron-jobs.ts", import.meta.url), "utf8");
+    const push = fs.readFileSync(new URL("../routes/comissao-push.ts", import.meta.url), "utf8");
     assert.match(buckets, /hour % 6 === 0/);
     assert.match(buckets, /runComissaoTmSegSyncCron/);
     assert.match(jobs, /syncAllComissoesToTmSeg/);
+    assert.match(push, /\/api\/comissoes\/push-tm-seg/);
   });
 });

@@ -386,6 +386,7 @@ export type SyncAllComissoesResult = {
   ok: boolean;
   configured: boolean;
   clientesComComercial: number;
+  clientes: Array<{ id: number; nome: string; comercialId: string }>;
   faturados: number;
   pagos: number;
   erros: number;
@@ -625,6 +626,7 @@ export async function syncAllComissoesToTmSeg(deps?: ComissaoIngestDeps & {
     ok: false,
     configured: cfg.configured,
     clientesComComercial: 0,
+    clientes: [],
     faturados: 0,
     pagos: 0,
     erros: 0,
@@ -637,7 +639,14 @@ export async function syncAllComissoesToTmSeg(deps?: ComissaoIngestDeps & {
     const universe = deps?.loadUniverse
       ? await deps.loadUniverse()
       : await loadUniverseDefault();
-    const clientesComComercial = (universe.clients || []).filter((c) => isUuid(c.responsavel_comercial_id)).length;
+    const clientes = (universe.clients || [])
+      .filter((c) => isUuid(c.responsavel_comercial_id))
+      .map((c) => ({
+        id: Number(c.id),
+        nome: String(c.nome_fantasia || c.name || c.razao_social || "").trim() || `Cliente ${c.id}`,
+        comercialId: String(c.responsavel_comercial_id),
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     const items = collectComissaoBulkPayloads({
       clients: universe.clients || [],
       invoices: universe.invoices || [],
@@ -663,7 +672,8 @@ export async function syncAllComissoesToTmSeg(deps?: ComissaoIngestDeps & {
     return {
       ok: erros === 0,
       configured: true,
-      clientesComComercial,
+      clientesComComercial: clientes.length,
+      clientes,
       faturados,
       pagos,
       erros,

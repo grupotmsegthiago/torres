@@ -743,6 +743,7 @@ async function ensureSystemSettingsTable() {
   import { registerSsxRoutes } from "./routes/ssx";
   import { registerConferenciaTmsegRoutes } from "./routes/conferencia-tmseg";
   import { registerControleFaturamentoRoutes } from "./routes/controle-faturamento";
+  import { registerComissaoPushRoutes } from "./routes/comissao-push";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -1436,6 +1437,7 @@ async function ensureSystemSettingsTable() {
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
     registerControleFaturamentoRoutes(app);
+    registerComissaoPushRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
