@@ -983,6 +983,21 @@ export async function runAgentCentralCron(): Promise<void> {
   });
 }
 
+export async function runComissaoTmSegSyncCron(): Promise<void> {
+  await withCronLock("comissao-tmseg-sync", async () => {
+    try {
+      const { syncAllComissoesToTmSeg } = await import("./lib/comissao-ingest");
+      const r = await syncAllComissoesToTmSeg();
+      log(
+        `CRON ComissaoTmSeg: clientes=${r.clientesComComercial} faturados=${r.faturados} pagos=${r.pagos} erros=${r.erros}${r.error ? ` — ${r.error}` : ""}`,
+        "cron",
+      );
+    } catch (e: any) {
+      log(`CRON ComissaoTmSeg: fail-soft ${e?.message || e}`, "cron");
+    }
+  });
+}
+
 export async function runAgentCentralEscalationCron(): Promise<void> {
   await withCronLock("agent-central-escalation", async () => {
     try {

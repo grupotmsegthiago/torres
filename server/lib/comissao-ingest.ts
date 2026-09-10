@@ -29,6 +29,7 @@ export type ComissaoIngestPayload = {
   dataFaturamento: string;
   faturaNumero: string;
   dataRecebimento?: string;
+  ordemServicoId?: string;
 };
 
 export type InvoiceForComissao = {
@@ -41,6 +42,7 @@ export type InvoiceForComissao = {
   payment_date?: string | null;
   nfse_number?: string | null;
   status?: string | null;
+  service_order_id?: number | string | null;
 };
 
 export type ComissaoIngestDeps = {
@@ -127,6 +129,7 @@ export function buildComissaoIngestPayload(opts: {
   comercialId: string;
   clienteNome?: string | null;
   dataRecebimento?: string;
+  ordemServicoId?: string | null;
   now?: Date;
 }): ComissaoIngestPayload | null {
   const invoiceId = opts.invoice?.id;
@@ -158,6 +161,8 @@ export function buildComissaoIngestPayload(opts: {
     dataFaturamento,
     faturaNumero: String(opts.invoice.nfse_number || invoiceId),
   };
+  const osId = String(opts.ordemServicoId || opts.invoice.service_order_id || "").trim();
+  if (osId) payload.ordemServicoId = osId;
   if (opts.evento === "PAGO") {
     payload.dataRecebimento = dateOnly(
       opts.dataRecebimento || opts.invoice.payment_date,
@@ -333,4 +338,339 @@ export function notifyComissaoInvoiceEvent(
   deps?: ComissaoIngestDeps,
 ): void {
   void ingestComissaoInvoice(evento, source, extras, deps);
+}
+
+export const COMISSAO_BULK_MAX = 400;
+
+export type ClienteComissaoCadastro = {
+  id: number | string;
+  name?: string | null;
+  nome_fantasia?: string | null;
+  razao_social?: string | null;
+  responsavel_comercial_id?: string | null;
+};
+
+export type EscortBillingForComissao = {
+  invoice_id?: number | string | null;
+  os_number?: string | number | null;
+  service_order_id?: number | string | null;
+  pago_em?: string | null;
+  fat_total?: number | string | null;
+  data_missao?: string | null;
+  faturado_em?: string | null;
+  created_at?: string | null;
+  status?: string | null;
+  client_id?: number | string | null;
+  client_name?: string | null;
+};
+
+export type IncomeTxForComissao = {
+  id?: string | number | null;
+  entity_name?: string | null;
+  entity_id?: number | string | null;
+  amount?: number | string | null;
+  status?: string | null;
+  due_date?: string | null;
+  payment_date?: string | null;
+  origin_type?: string | null;
+  origin_id?: string | number | null;
+  type?: string | null;
+};
+
+export type ComissaoBulkItem = {
+  evento: ComissaoEvento;
+  payload: ComissaoIngestPayload;
+};
+
+export type SyncAllComissoesResult = {
+  ok: boolean;
+  configured: boolean;
+  clientesComComercial: number;
+  faturados: number;
+  pagos: number;
+  erros: number;
+  pulados: number;
+  error?: string;
+};
+
+function dateOnlyOrEmpty(value: unknown): string {
+  const m = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : "";
+}
+
+function inPeriod(date: string, start: string, end: string): boolean {
+  return !!date && date >= start && date <= end;
+}
+
+function statusCancelado(status: unknown): boolean {
+  const s = String(status || "").toUpperCase();
+  return s.includes("CANCEL") || s === "REFUNDED";
+}
+
+export function periodoSyncComissoesTorres(todayIso: string, monthsBack = 18): { start: string; end: string } {
+  const end = String(todayIso || "").slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(end);
+  if (!m) return { start: "2025-01-01", end: end || "2025-01-01" };
+  let year = Number(m[1]);
+  let month = Number(m[2]) - monthsBack;
+  while (month <= 0) {
+    month += 12;
+    year -= 1;
+  }
+  return { start: `${year}-${String(month).padStart(2, "0")}-01`, end };
+}
+
+function comercialDoCliente(
+  clientsById: Map<number, ClienteComissaoCadastro>,
+  clientId: unknown,
+): string {
+  const id = Number(clientId);
+  if (!Number.isFinite(id)) return "";
+  return String(clientsById.get(id)?.responsavel_comercial_id || "").trim();
+}
+
+export function collectComissaoBulkPayloads(opts: {
+  clients: ClienteComissaoCadastro[];
+  invoices: InvoiceForComissao[];
+  billings?: EscortBillingForComissao[];
+  transactions?: IncomeTxForComissao[];
+  periodStart: string;
+  periodEnd: string;
+  now?: Date;
+}): ComissaoBulkItem[] {
+  const start = opts.periodStart;
+  const end = opts.periodEnd;
+  const now = opts.now ?? new Date();
+  const byId = new Map<number, ClienteComissaoCadastro>();
+  for (const c of opts.clients || []) {
+    const id = Number(c.id);
+    if (Number.isFinite(id)) byId.set(id, c);
+  }
+  const out: ComissaoBulkItem[] = [];
+  const invoiceIds = new Set<string>();
+  const osContadas = new Set<string>();
+
+  const pushInvoiceLike = (
+    invoice: InvoiceForComissao,
+    comercialId: string,
+    clienteNome: string | null | undefined,
+    ordemServicoId?: string | null,
+  ) => {
+    const fat = buildComissaoIngestPayload({
+      evento: "FATURADO",
+      invoice,
+      comercialId,
+      clienteNome,
+      ordemServicoId,
+      now,
+    });
+    if (!fat) return;
+    out.push({ evento: "FATURADO", payload: fat });
+    if (String(invoice.payment_date || "").trim()) {
+      const pago = buildComissaoIngestPayload({
+        evento: "PAGO",
+        invoice,
+        comercialId,
+        clienteNome,
+        ordemServicoId,
+        dataRecebimento: String(invoice.payment_date),
+        now,
+      });
+      if (pago) out.push({ evento: "PAGO", payload: pago });
+    }
+  };
+
+  for (const inv of opts.invoices || []) {
+    if (statusCancelado(inv.status)) continue;
+    const date = dateOnlyOrEmpty(inv.due_date || inv.created_at);
+    if (!inPeriod(date, start, end)) continue;
+    const comercialId = comercialDoCliente(byId, inv.client_id);
+    if (!isUuid(comercialId)) continue;
+    const id = String(inv.id ?? "").trim();
+    if (id) invoiceIds.add(id);
+    const osId = inv.service_order_id != null ? String(inv.service_order_id).trim() : "";
+    if (osId) osContadas.add(osId);
+    const cli = byId.get(Number(inv.client_id));
+    pushInvoiceLike(inv, comercialId, cli?.nome_fantasia || cli?.name || inv.client_name, osId || null);
+  }
+
+  for (const tx of opts.transactions || []) {
+    if (String(tx.type || "").toUpperCase() !== "INCOME") continue;
+    if (statusCancelado(tx.status)) continue;
+    const date = dateOnlyOrEmpty(tx.due_date);
+    if (!inPeriod(date, start, end)) continue;
+    const originId = String(tx.origin_id || "").trim();
+    if (String(tx.origin_type || "") === "invoice" && originId && invoiceIds.has(originId)) continue;
+    const clientId = Number(tx.entity_id);
+    const comercialId = comercialDoCliente(byId, clientId);
+    if (!isUuid(comercialId)) continue;
+    const txId = String(tx.id || "").trim();
+    if (!txId) continue;
+    const cli = byId.get(clientId);
+    const osId = String(tx.origin_type || "") === "service_order" && originId ? originId : "";
+    if (osId) osContadas.add(osId);
+    pushInvoiceLike(
+      {
+        id: txId,
+        client_id: clientId,
+        client_name: tx.entity_name || cli?.name,
+        value: tx.amount,
+        created_at: date,
+        due_date: date,
+        payment_date: tx.payment_date,
+        nfse_number: originId || txId,
+        status: tx.payment_date ? "RECEIVED" : "PENDING",
+        service_order_id: osId || null,
+      },
+      comercialId,
+      tx.entity_name || cli?.nome_fantasia || cli?.name,
+      osId || null,
+    );
+  }
+
+  for (const bill of opts.billings || []) {
+    if (statusCancelado(bill.status)) continue;
+    const valor = Number(bill.fat_total);
+    if (!Number.isFinite(valor) || valor <= 0) continue;
+    const date = dateOnlyOrEmpty(bill.data_missao || bill.faturado_em || bill.created_at);
+    if (!inPeriod(date, start, end)) continue;
+    const invoiceId = String(bill.invoice_id || "").trim();
+    if (invoiceId && invoiceIds.has(invoiceId)) continue;
+    const osId = String(bill.os_number || bill.service_order_id || "").trim();
+    if (osId && osContadas.has(osId)) continue;
+    const clientId = Number(bill.client_id);
+    const comercialId = comercialDoCliente(byId, clientId);
+    if (!isUuid(comercialId)) continue;
+    if (osId) osContadas.add(osId);
+    const cli = byId.get(clientId);
+    pushInvoiceLike(
+      {
+        id: `os:${osId || bill.service_order_id || date}`,
+        client_id: clientId,
+        client_name: bill.client_name || cli?.name,
+        value: valor,
+        created_at: date,
+        due_date: date,
+        payment_date: bill.pago_em,
+        nfse_number: osId,
+        status: bill.pago_em ? "RECEIVED" : "PENDING",
+        service_order_id: osId || null,
+      },
+      comercialId,
+      bill.client_name || cli?.nome_fantasia || cli?.name,
+      osId || null,
+    );
+  }
+
+  return out;
+}
+
+async function fetchAllAdmin(
+  table: string,
+  columns: string,
+  configure?: (q: any) => any,
+): Promise<any[]> {
+  const { supabaseAdmin } = await import("../supabase");
+  const rows: any[] = [];
+  let from = 0;
+  const page = 1000;
+  while (true) {
+    let q = supabaseAdmin.from(table).select(columns);
+    if (configure) q = configure(q);
+    const { data, error } = await q.range(from, from + page - 1);
+    if (error) {
+      console.error(`[comissao-ingest] fetch ${table}:`, error.message);
+      throw new Error(`${table}: ${error.message}`);
+    }
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < page) return rows;
+    from += batch.length;
+  }
+}
+
+async function loadUniverseDefault(): Promise<{
+  clients: ClienteComissaoCadastro[];
+  invoices: InvoiceForComissao[];
+  billings: EscortBillingForComissao[];
+  transactions: IncomeTxForComissao[];
+}> {
+  const [clients, invoices, billings, transactions] = await Promise.all([
+    fetchAllAdmin("clients", "id, name, nome_fantasia, razao_social, responsavel_comercial_id"),
+    fetchAllAdmin("invoices", "id, client_id, client_name, value, created_at, due_date, payment_date, nfse_number, status, service_order_id"),
+    fetchAllAdmin(
+      "escort_billings",
+      "invoice_id, os_number, service_order_id, pago_em, fat_total, data_missao, faturado_em, created_at, status, client_id, client_name",
+    ),
+    fetchAllAdmin(
+      "financial_transactions",
+      "id, entity_name, entity_id, amount, status, due_date, payment_date, origin_type, origin_id, type",
+      (q) => q.eq("type", "INCOME"),
+    ),
+  ]);
+  return { clients, invoices, billings, transactions };
+}
+
+export async function syncAllComissoesToTmSeg(deps?: ComissaoIngestDeps & {
+  todayIso?: string;
+  loadUniverse?: () => Promise<{
+    clients: ClienteComissaoCadastro[];
+    invoices: InvoiceForComissao[];
+    billings?: EscortBillingForComissao[];
+    transactions?: IncomeTxForComissao[];
+  }>;
+}): Promise<SyncAllComissoesResult> {
+  const cfg = getComissaoIngestConfig(envOf(deps));
+  const empty: SyncAllComissoesResult = {
+    ok: false,
+    configured: cfg.configured,
+    clientesComComercial: 0,
+    faturados: 0,
+    pagos: 0,
+    erros: 0,
+    pulados: 0,
+  };
+  if (!cfg.configured) return { ...empty, error: "COMISSAO_INGEST_TOKEN não configurado" };
+  try {
+    const today = String(deps?.todayIso || todayBrtDate(deps?.now?.() ?? new Date())).slice(0, 10);
+    const periodo = periodoSyncComissoesTorres(today);
+    const universe = deps?.loadUniverse
+      ? await deps.loadUniverse()
+      : await loadUniverseDefault();
+    const clientesComComercial = (universe.clients || []).filter((c) => isUuid(c.responsavel_comercial_id)).length;
+    const items = collectComissaoBulkPayloads({
+      clients: universe.clients || [],
+      invoices: universe.invoices || [],
+      billings: universe.billings || [],
+      transactions: universe.transactions || [],
+      periodStart: periodo.start,
+      periodEnd: periodo.end,
+      now: deps?.now?.() ?? new Date(),
+    });
+    const limited = items.slice(0, COMISSAO_BULK_MAX);
+    let faturados = 0;
+    let pagos = 0;
+    let erros = 0;
+    let pulados = items.length - limited.length;
+    for (const item of limited) {
+      const r = await postComissaoIngest(item.payload, deps);
+      if (r.sent) {
+        if (item.evento === "PAGO") pagos += 1;
+        else faturados += 1;
+      } else if (r.skipped) pulados += 1;
+      else erros += 1;
+    }
+    return {
+      ok: erros === 0,
+      configured: true,
+      clientesComComercial,
+      faturados,
+      pagos,
+      erros,
+      pulados,
+    };
+  } catch (err: any) {
+    console.error("[comissao-ingest] syncAll fail-soft:", err?.message || err);
+    return { ...empty, error: err?.message || String(err) };
+  }
 }
