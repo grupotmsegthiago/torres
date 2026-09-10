@@ -4,6 +4,8 @@ import {
   vehicleIconSrc,
   inferVehicleIcon,
   resolveVehicleIcon,
+  vehicleRequiresInsuranceDocs,
+  isMobiInsuranceIncomplete,
   VEHICLE_ICON_OPTIONS,
 } from "./vehicle-icons.ts";
 
@@ -26,6 +28,31 @@ test("resolveVehicleIcon: Mobi com icon_type default polo usa marca/modelo", () 
   assert.equal(vehicleIconSrc("polo", "Fiat", "Mobi Like"), "/mobi-icon.webp");
   assert.equal(resolveVehicleIcon("mobi", "VW", "POLO TRACK"), "mobi");
   assert.equal(resolveVehicleIcon("polo", "VW", "POLO TRACK"), "polo");
+});
+
+test("vehicleRequiresInsuranceDocs: só MOBI", () => {
+  assert.equal(vehicleRequiresInsuranceDocs("mobi", "FIAT", "MOBI"), true);
+  assert.equal(vehicleRequiresInsuranceDocs("polo", "FIAT", "MOBI"), true);
+  assert.equal(vehicleRequiresInsuranceDocs("polo", "VW", "POLO TRACK"), false);
+  assert.equal(vehicleRequiresInsuranceDocs("kwid", "RENAULT", "KWID"), false);
+});
+
+test("isMobiInsuranceIncomplete: MOBI vermelho sem apólice ou contrato; Polo nunca", () => {
+  assert.equal(isMobiInsuranceIncomplete({
+    iconType: "mobi", brand: "FIAT", model: "MOBI",
+  }), true);
+  assert.equal(isMobiInsuranceIncomplete({
+    iconType: "mobi", brand: "FIAT", model: "MOBI",
+    insurancePolicyFile: "1/apolice.pdf",
+  }), true);
+  assert.equal(isMobiInsuranceIncomplete({
+    iconType: "mobi", brand: "FIAT", model: "MOBI",
+    insurancePolicyFile: "1/apolice.pdf",
+    insuranceContractFile: "1/contrato.pdf",
+  }), false);
+  assert.equal(isMobiInsuranceIncomplete({
+    iconType: "polo", brand: "VW", model: "POLO TRACK",
+  }), false);
 });
 
 test("Fiat Mobi tem adesivagem nas 4 vistas", () => {

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
+import { classifyIssuedOrProcessing } from "@shared/nfse-status";
 
 interface Invoice {
   id: number;
@@ -566,14 +567,14 @@ export default function FaturasPage() {
                               ) : (
                                 <span className="text-[10px] text-neutral-400">Local</span>
                               )}
-                              {(inv.nfse_status === "AUTHORIZED" || inv.nfse_status === "SYNCHRONIZED") && (
+                              {classifyIssuedOrProcessing(inv.nfse_status, inv.nfse_number) === "NF_EMITIDA" && (
                                 <Badge className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200">
                                   NFS-e ✓
                                 </Badge>
                               )}
-                              {inv.nfse_status === "SCHEDULED" && (
-                                <Badge className="text-[9px] bg-amber-50 text-amber-600 border border-amber-200">
-                                  NF Agendada
+                              {classifyIssuedOrProcessing(inv.nfse_status, inv.nfse_number) === "NF_PROCESSANDO" && (
+                                <Badge className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200">
+                                  NF prefeitura
                                 </Badge>
                               )}
                               {inv.nfse_status === "ERROR" && (
@@ -1013,11 +1014,13 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
 }
 
 const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  SCHEDULED:          { label: "Agendada",      color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
+  SCHEDULED:          { label: "Na prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
   AUTHORIZED:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-  SYNCHRONIZED:       { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  SYNCHRONIZED:       { label: "Na prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
   CANCELLED:          { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
+  CANCELED:           { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
   ERROR:              { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
+  ERRO:               { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
   PROCESSING:         { label: "Processando",   color: "bg-blue-50 text-blue-700 border-blue-200",       icon: Loader2 },
   WAITING_MUNICIPAL_PROCESSING: { label: "Aguardando Prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock },
 };
@@ -1027,11 +1030,17 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
   const [emitting, setEmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
 
-  const nfStatus = invoice.nfse_status ? (NFSE_STATUS_MAP[invoice.nfse_status] || { label: invoice.nfse_status, color: "bg-neutral-100 text-neutral-600 border-neutral-200", icon: FileText }) : null;
+  const issuedKind = classifyIssuedOrProcessing(invoice.nfse_status, invoice.nfse_number);
+  const fullyIssued = issuedKind === "NF_EMITIDA";
+  const inPrefecture = issuedKind === "NF_PROCESSANDO";
+  const nfStatus = fullyIssued
+    ? { label: "Autorizada", color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 }
+    : inPrefecture
+      ? { label: "Na prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock }
+      : (invoice.nfse_status ? (NFSE_STATUS_MAP[invoice.nfse_status] || { label: invoice.nfse_status, color: "bg-neutral-100 text-neutral-600 border-neutral-200", icon: FileText }) : null);
   const hasNfse = !!invoice.nfse_status;
-  const isAuthorized = invoice.nfse_status === "AUTHORIZED" || invoice.nfse_status === "SYNCHRONIZED";
-  const isError = invoice.nfse_status === "ERROR";
-  const canEmit = invoice.asaas_payment_id && !isAuthorized && invoice.status !== "CANCELLED";
+  const isError = invoice.nfse_status === "ERROR" || invoice.nfse_status === "ERRO";
+  const canEmit = invoice.asaas_payment_id && !fullyIssued && !inPrefecture && invoice.status !== "CANCELLED";
 
   const handleCancelNfse = async () => {
     if (!confirm(`Tem certeza que deseja CANCELAR a NFS-e desta fatura?\n\nEsta ação solicitará o cancelamento da nota junto à prefeitura via Asaas. Não pode ser desfeita.`)) return;
@@ -1077,13 +1086,13 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
         )}
       </div>
 
-      {isAuthorized && (
+      {fullyIssued && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-2">
           <div className="flex items-center gap-2 text-xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <div>
               <span className="text-emerald-700 font-bold">NFS-e emitida com sucesso</span>
-              {invoice.nfse_number && !invoice.nfse_number.startsWith("inv_") && (
+              {invoice.nfse_number && (
                 <span className="text-emerald-600 ml-2 font-mono text-[10px]">N° {invoice.nfse_number}</span>
               )}
             </div>
@@ -1112,30 +1121,20 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
               </div>
             </div>
           ) : (
-            <p className="text-[10px] text-emerald-600">NF autorizada pelo Asaas. Aguardando processamento da prefeitura para liberar o PDF/XML. Clique em "Sincronizar" no rodapé desta tela para atualizar — pode levar alguns minutos.</p>
+            <p className="text-[10px] text-emerald-600">NF autorizada. Clique em Sincronizar no Relatório de NFs se o PDF ainda não apareceu.</p>
           )}
         </div>
       )}
 
-      {invoice.nfse_status === "SCHEDULED" && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-          <div className="flex items-center gap-2 text-xs">
-            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <div>
-              <p className="text-amber-700 font-medium">NFS-e agendada para emissão automática</p>
-              <p className="text-amber-600 text-[10px] mt-0.5">O Asaas emitirá a nota fiscal automaticamente após confirmação do pagamento. A NFS-e será enviada por e-mail junto com o boleto/comprovante.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {(invoice.nfse_status === "PROCESSING" || invoice.nfse_status === "WAITING_MUNICIPAL_PROCESSING") && (
+      {inPrefecture && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5">
           <div className="flex items-center gap-2 text-xs">
             <Loader2 className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
             <div>
-              <p className="text-blue-700 font-medium">NFS-e em processamento</p>
-              <p className="text-blue-600 text-[10px] mt-0.5">Aguardando autorização da prefeitura. Sincronize para atualizar o status.</p>
+              <p className="text-blue-700 font-medium">NFS-e na fila da prefeitura</p>
+              <p className="text-blue-600 text-[10px] mt-0.5">
+                O boleto já existe no Asaas. A nota ainda não tem número municipal — use Sincronizar no Relatório de NFs. Não reemita (gera duplicidade).
+              </p>
             </div>
           </div>
         </div>

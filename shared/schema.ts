@@ -264,6 +264,8 @@ export const vehicles = pgTable("vehicles", {
   photoRear: text("photo_rear"),
   photoRight: text("photo_right"),
   iconType: text("icon_type").default("polo"),
+  insurancePolicyFile: text("insurance_policy_file"),
+  insuranceContractFile: text("insurance_contract_file"),
   lastLatitude: real("last_latitude"),
   lastLongitude: real("last_longitude"),
   lastIgnition: integer("last_ignition"),

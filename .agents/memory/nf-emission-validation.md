@@ -47,10 +47,13 @@ AUTHORIZED/SCHEDULED/ERROR sem número municipal **não** é emitida. O Torres d
 7. cron **não** auto-emite se a lista vier vazia; emissão só na criação da fatura ou ação explícita;
 8. se cobrança em aberto, status processando, >2h e **nenhuma** NFS-e no Asaas → gravar ERRO com motivo visível.
 
-A UI do Relatório de NF mostra o status bruto do Asaas, o motivo e o botão **Sincronizar** por linha (`POST /api/invoices/:id/sync`).
+`SYNCHRONIZED` **sem** nº municipal **não** é NF emitida. A UI de Faturas e o Relatório de NFs usam `classifyIssuedOrProcessing` (`shared/nfse-status.ts`). Badge verde só com número da prefeitura.
 
 ## E-mail Asaas (cliente)
-O cliente recebe **um** e-mail na criação da cobrança (`PAYMENT_CREATED`) e o e-mail da NFS-e quando a nota **realmente sai**. Lembretes de vencimento, atraso, atualização, SMS e WhatsApp do Asaas ficam **desligados** (`applyAsaasCustomerEmailPolicy` / `applyAsaasPaymentEmailPolicy`). Reprocessar authorize em NF já AUTHORIZED também disparava e-mail — não fazer isso.
+O cliente recebe **um** e-mail na criação da cobrança (`PAYMENT_CREATED`) e o e-mail da NFS-e quando a nota **realmente sai**. Lembretes de vencimento, atraso, atualização, SMS e WhatsApp do Asaas ficam **desligados** (`applyAsaasCustomerEmailPolicy` / `applyAsaasPaymentEmailPolicy`). `payments.notificationDisabled` deve ser **false** — se for true, o Asaas não manda nem o boleto. A API `GET /payments/{id}/notifications` retorna 404; o fallback é a política no customer.
+
+## PIX no boleto
+Cobrança `BOLETO` no Asaas também tem QR PIX (`GET /payments/{id}/pixQrCode`). Gravar `pix_copia_e_cola` em **todos** os caminhos de criação e no reconcile/`/sync` se estiver vazio. Não limitar a `billingType=PIX|UNDEFINED`.
 
 ## Vencimento
 Alteração **manual** (`[Vencimento alterado`): a data do Torres é a do boleto — grava nos dois lados; se o Asaas recusar, não altera o Torres. O reconcile **empurra** essa data para o Asaas e **não** puxa outra data por cima.

@@ -330,6 +330,7 @@ if (isServerSupabaseConfigured()) {
   );
   import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
   import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
+  import("./lib/vehicle-doc-storage").then(m => m.ensureVehicleDocsBucket()).catch(() => {});
   ensureCategoryHierarchy().catch((e: any) =>
     console.warn("[categories] ensureCategoryHierarchy skipped:", e?.message),
   );

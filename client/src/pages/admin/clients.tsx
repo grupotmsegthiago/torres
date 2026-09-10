@@ -656,6 +656,11 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                   {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
                 </span>
               </div>
+              {form.emiteNf && (
+                <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">
+                  Na NFS-e o tomador retém <b>ISS 2%</b> e, se o INSS estiver ativo, <b>50% da alíquota legal</b> (11% → 5,5%).
+                </p>
+              )}
             </div>
           </div>
 
@@ -676,7 +681,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                 </span>
               </div>
               <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">
-                Quando ativo, a NF emitida pelo Asaas terá <b>{form.inssAliquota}% de INSS retido</b> sobre o valor do serviço, com observação legal (IN RFB nº 2.110/2022, Art. 111, II). O valor retido pode ser abatido no DAS.
+                Quando ativo, a NF retém <b>50% da alíquota legal</b> (padrão {form.inssAliquota}% → {(Number(form.inssAliquota || 11) * 0.5).toFixed(2).replace(".", ",")}% do valor do serviço) e <b>ISS 2% retido</b> pelo tomador, com observação legal (IN RFB nº 2.110/2022, Art. 111, II). O INSS retido pode ser abatido no DAS.
               </p>
             </div>
             <div>

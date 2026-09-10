@@ -19,12 +19,10 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   ISS_ALIQUOTA,
   DESCRICAO_SERVICO_FIXA,
-  INSS_OBSERVACAO_LEGAL,
-  INSS_DISPENSA_OBSERVACAO,
   MESES_PT,
   cleanCnpj,
   buildInvoiceDescription,
-  buildInssObservation,
+  buildNfseObservations,
   netBoletoValue,
   buildNfClientEmail,
   buildFiscalPayload,
@@ -35,7 +33,6 @@ import {
   isValidEmail,
   MISSING_EMAIL_NF_MSG,
   isNfErrorStatus,
-  isNfOkStatus,
   extractNfErrorMessage,
   resolveNfErrorMessage,
   shouldBlockNfEmission,
@@ -282,23 +279,16 @@ async function applyAsaasNfseWebhook(invoiceObj: any): Promise<void> {
     return;
   }
 
-  const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-  if (invoiceObj.status) updates.nfse_status = String(invoiceObj.status);
-  if (isFinalNfNumber(invoiceObj.number)) {
-    updates.nfse_number = String(invoiceObj.number);
-  } else if (!isFinalNfNumber(row.nfse_number) && nfId) {
-    updates.nfse_number = nfId;
+  const nfObj = {
+    ...invoiceObj,
+    id: invoiceObj?.id || nfId,
+  };
+  const updates = nfseUpdatesFromAsaasObject(nfObj, row);
+  if (!invoiceUpdatesAreMaterial(row, updates)) {
+    console.log(`[asaas] webhook NFS-e fatura #${row.id}: sem mudança material`);
+    return;
   }
-  if (invoiceObj.pdfUrl) updates.nfse_url = String(invoiceObj.pdfUrl);
-  else if (invoiceObj.externalUrl) updates.nfse_url = String(invoiceObj.externalUrl);
-  else if (invoiceObj.xmlUrl && !row.nfse_url) updates.nfse_url = String(invoiceObj.xmlUrl);
-
-  if (isNfErrorStatus(invoiceObj.status)) {
-    updates.nfse_error_message = resolveNfErrorMessage(invoiceObj, invoiceObj.status, row.nfse_error_message);
-  } else if (isNfOkStatus(invoiceObj.status) && isFinalNfNumber(updates.nfse_number || row.nfse_number)) {
-    updates.nfse_error_message = null;
-  }
-
+  updates.updated_at = new Date().toISOString();
   await supabaseAdmin.from("invoices").update(updates).eq("id", row.id);
   console.log(`[asaas] webhook NFS-e fatura #${row.id}: status=${updates.nfse_status || row.nfse_status} number=${updates.nfse_number || row.nfse_number || "—"}`);
 }
@@ -613,6 +603,13 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
       const bsUrl = payment?.bankSlip?.url || payment?.bankSlipUrl;
       if (bsUrl && bsUrl !== invoice.bank_slip_url) { updates.bank_slip_url = bsUrl; changed = true; }
       if (payment?.paymentDate && payment.paymentDate !== invoice.payment_date) { updates.payment_date = payment.paymentDate; changed = true; }
+      if (!invoice.pix_copia_e_cola) {
+        const pix = await fetchAsaasPix(invoice.asaas_payment_id);
+        if (pix.pix_copia_e_cola) {
+          assignAsaasPix(updates, pix);
+          changed = true;
+        }
+      }
       const duePlan = planDueDateReconcile({
         localDueDate: invoice.due_date,
         asaasDueDate: payment?.dueDate,
@@ -1019,6 +1016,24 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   return data;
 }
 
+async function fetchAsaasPix(paymentId: string): Promise<{ pix_qr_code: string | null; pix_copia_e_cola: string | null }> {
+  try {
+    const pixData = await asaasRequest("GET", `/payments/${paymentId}/pixQrCode`);
+    return {
+      pix_qr_code: pixData?.encodedImage || null,
+      pix_copia_e_cola: pixData?.payload || null,
+    };
+  } catch (e: any) {
+    console.log(`[asaas] pixQrCode ${paymentId}: ${e.message}`);
+    return { pix_qr_code: null, pix_copia_e_cola: null };
+  }
+}
+
+function assignAsaasPix(target: Record<string, any>, pix: { pix_qr_code: string | null; pix_copia_e_cola: string | null }) {
+  if (pix.pix_copia_e_cola) target.pix_copia_e_cola = pix.pix_copia_e_cola;
+  if (pix.pix_qr_code) target.pix_qr_code = pix.pix_qr_code;
+}
+
 async function applyAsaasEmailPolicyFromList(items: any[]): Promise<void> {
   const list = Array.isArray(items) ? items : [];
   for (const n of list) {
@@ -1047,8 +1062,25 @@ async function applyAsaasPaymentEmailPolicy(paymentId: string | null | undefined
   try {
     const data = await asaasRequest("GET", `/payments/${paymentId}/notifications`);
     await applyAsaasEmailPolicyFromList(data?.data || data);
+    return;
   } catch (e: any) {
-    console.log(`[asaas] GET notifications payment ${paymentId}: ${e.message}`);
+    const msg = String(e?.message || "");
+    if (!/404|not found|não encontrad/i.test(msg)) {
+      console.log(`[asaas] GET notifications payment ${paymentId}: ${e.message}`);
+    }
+  }
+  try {
+    const payment = await asaasRequest("GET", `/payments/${paymentId}`);
+    if (payment?.notificationDisabled === true) {
+      try {
+        await asaasRequest("POST", `/payments/${paymentId}`, { notificationDisabled: false });
+      } catch (e2: any) {
+        console.log(`[asaas] payment ${paymentId} notificationDisabled=false: ${e2.message}`);
+      }
+    }
+    await applyAsaasCustomerEmailPolicy(payment?.customer);
+  } catch (e: any) {
+    console.log(`[asaas] fallback notifications payment ${paymentId}: ${e.message}`);
   }
 }
 
@@ -1113,7 +1145,9 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
         updatePayload.email = emails[0].trim();
         const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",");
         if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
-        updatePayload.notificationDisabled = true;
+      }
+      if (existing.notificationDisabled === true) {
+        updatePayload.notificationDisabled = false;
       }
       if (!existing.addressNumber && finalAddress) {
         updatePayload.address = finalAddress;
@@ -1164,6 +1198,11 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
 
   const customer = await asaasRequest("POST", "/customers", customerPayload);
   await applyAsaasCustomerEmailPolicy(customer.id);
+  try {
+    await asaasRequest("PUT", `/customers/${customer.id}`, { notificationDisabled: false });
+  } catch (e: any) {
+    console.log(`[asaas] customer ${customer.id} notificationDisabled=false: ${e.message}`);
+  }
   return customer.id;
 }
 
@@ -1239,9 +1278,8 @@ export async function emitInvoiceAuto(
 
   if (totalValue <= 0) return { success: false, message: "Valor da fatura é R$ 0,00", nfEmitted: false };
 
-  // Boleto sai LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; a NF
-  // continua bruta (com a observação legal da retenção). invoice.value = bruto.
-  const { boleto: boletoValue, inssValor } = netBoletoValue(totalValue, { retemInss, inssAliquota });
+  // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF). invoice.value = bruto.
+  const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
 
   const asaasCustomerId = await findOrCreateAsaasCustomer(
     clientName, cpfCnpj, clientEmail, clientPhone,
@@ -1262,12 +1300,16 @@ export async function emitInvoiceAuto(
     dueDate: opts.dueDate,
     description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
     externalReference: invoice.external_reference || `FATURA-${invoiceId}`,
-    notificationDisabled: true,
+    notificationDisabled: false,
   };
   if (emiteNf) {
     paymentPayload.postalService = false;
-    const inssObs = retemInss ? ` ${buildInssObservation(true, inssAliquota, inssValor)}` : "";
-    paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.${inssObs}`.substring(0, 500);
+    paymentPayload.fiscalObservations = buildNfseObservations({
+      value: totalValue,
+      description: invoice.description,
+      retemInss,
+      inssAliquota,
+    });
   }
 
   console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${opts.dueDate}`);
@@ -1284,9 +1326,10 @@ export async function emitInvoiceAuto(
     invoice_url: payment.invoiceUrl,
     bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
     valor_inss_retido: retemInss ? inssValor : null,
-    inss_aliquota: retemInss ? inssAliquota : null,
+    inss_aliquota: retemInss ? inssAliquotaNf : null,
     updated_at: new Date().toISOString(),
   };
+  assignAsaasPix(updates, await fetchAsaasPix(payment.id));
 
   let nfEmitted = false;
   if (emiteNf) {
@@ -1696,6 +1739,9 @@ export function registerAsaasRoutes(app: Express) {
       let status = "PENDING";
       let nfseStatus: string | null = null;
       let nfseNumber: string | null = null;
+      let emiteNf = false;
+      let retemInss = false;
+      let inssAliquota = 11;
 
       let clientEmail: string | undefined = bodyClientEmail || undefined;
       let clientPhone: string | undefined;
@@ -1704,13 +1750,16 @@ export function registerAsaasRoutes(app: Express) {
       let clientState: string | undefined;
       let clientZip: string | undefined;
       if (clientId) {
-        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual, emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
         if (!clientEmail) clientEmail = asaasTomadorEmail(cliInfo);
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
         clientCity = cliInfo?.city || undefined;
         clientState = cliInfo?.state || undefined;
         clientZip = cliInfo?.zip || undefined;
+        emiteNf = cliInfo?.emite_nf === true;
+        retemInss = cliInfo?.retem_inss === true;
+        inssAliquota = Number(cliInfo?.inss_aliquota ?? 11);
         (clientPhone as any); // keep TS happy
         var clientOpts: AsaasCustomerOpts = {
           addressNumber: cliInfo?.address_number || undefined,
@@ -1724,16 +1773,6 @@ export function registerAsaasRoutes(app: Express) {
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
         asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientOpts);
 
-        let emiteNf = false;
-        let retemInss = false;
-        let inssAliquota = 11;
-        if (clientId) {
-          const { data: cliData } = await supabaseAdmin.from("clients").select("emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
-          emiteNf = cliData?.emite_nf === true;
-          retemInss = cliData?.retem_inss === true;
-          inssAliquota = Number(cliData?.inss_aliquota ?? 11);
-        }
-
         const parsedValue = parseFloat(value);
         if (!parsedValue || parsedValue <= 0) {
           return res.status(400).json({ message: "Valor da cobrança deve ser maior que R$ 0,00. OS recusada/cancelada não pode gerar cobrança." });
@@ -1741,7 +1780,7 @@ export function registerAsaasRoutes(app: Express) {
 
         // Boleto LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; NF
         // continua bruta (value=parsedValue mais abaixo). invoice.value = bruto.
-        const { boleto: boletoValue, inssValor: inssValorBoleto } = netBoletoValue(parsedValue, { retemInss, inssAliquota });
+        const { boleto: boletoValue, inssValor: inssValorBoleto } = netBoletoValue(parsedValue, { retemInss, inssAliquota, retainIss: emiteNf });
         if (retemInss) {
           console.log(`[asaas] Cobrança c/ retenção INSS: bruto=R$${parsedValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)} (INSS R$${inssValorBoleto.toFixed(2)} @ ${inssAliquota}%)`);
         }
@@ -1753,11 +1792,16 @@ export function registerAsaasRoutes(app: Express) {
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
-          notificationDisabled: true,
+          notificationDisabled: false,
         };
         if (emiteNf) {
           paymentPayload.postalService = false;
-          paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada`;
+          paymentPayload.fiscalObservations = buildNfseObservations({
+            value: parsedValue,
+            description,
+            retemInss,
+            inssAliquota,
+          });
         }
 
         try {
@@ -1768,13 +1812,9 @@ export function registerAsaasRoutes(app: Express) {
           bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
           status = payment.status || "PENDING";
 
-          if (billingType === "PIX" || billingType === "UNDEFINED") {
-            try {
-              const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
-              pixQrCode = pixData.encodedImage;
-              pixCopiaECola = pixData.payload;
-            } catch {}
-          }
+          const pix = await fetchAsaasPix(payment.id);
+          pixQrCode = pix.pix_qr_code;
+          pixCopiaECola = pix.pix_copia_e_cola;
 
           if (asaasPaymentId && emiteNf) {
             try {
@@ -1818,12 +1858,10 @@ export function registerAsaasRoutes(app: Express) {
 
       let inssAliquotaPersist: number | null = null;
       let inssValorPersist: number | null = null;
-      if (clientId) {
-        const { data: cliInss } = await supabaseAdmin.from("clients").select("retem_inss, inss_aliquota").eq("id", clientId).single();
-        if (cliInss?.retem_inss === true) {
-          inssAliquotaPersist = Number(cliInss.inss_aliquota ?? 11);
-          inssValorPersist = Number((parseFloat(value) * inssAliquotaPersist / 100).toFixed(2));
-        }
+      if (retemInss) {
+        const net = netBoletoValue(parseFloat(value), { retemInss: true, inssAliquota, retainIss: emiteNf });
+        inssAliquotaPersist = net.inssAliquota;
+        inssValorPersist = net.inssValor;
       }
 
       const { data, error } = await supabaseAdmin.from("invoices").insert({
@@ -2089,6 +2127,9 @@ export function registerAsaasRoutes(app: Express) {
       };
       if (willRegress) console.log(`[asaas] /sync invoice #${id}: mantendo status local ${invoice.status} (Asaas reportou ${payment.status} — regressão bloqueada).`);
       if (payment.paymentDate && !willRegress) updates.payment_date = payment.paymentDate;
+      if (!invoice.pix_copia_e_cola) {
+        assignAsaasPix(updates, await fetchAsaasPix(invoice.asaas_payment_id));
+      }
 
       const nfSync = await collectNfseSyncUpdates(invoice);
       Object.assign(updates, nfSync.updates);
@@ -2499,8 +2540,8 @@ export function registerAsaasRoutes(app: Express) {
       const totalValue = parseFloat(invoice.value);
       const retemInss = clientData?.retem_inss === true;
       const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
-      // Boleto sai LÍQUIDO (bruto − INSS retido); NF e invoices.value continuam BRUTOS.
-      const { boleto: boletoValue, inssValor } = netBoletoValue(totalValue, { retemInss, inssAliquota });
+      // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF); NF e invoices.value continuam BRUTOS.
+      const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
 
       if (totalValue <= 0) return res.status(400).json({ message: "Valor da fatura é R$ 0,00." });
 
@@ -2533,13 +2574,17 @@ export function registerAsaasRoutes(app: Express) {
         dueDate,
         description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
         externalReference: invoice.external_reference || `FATURA-${id}`,
-        notificationDisabled: true,
+        notificationDisabled: false,
       };
 
       if (emiteNf) {
         paymentPayload.postalService = false;
-        const inssObs = retemInss ? ` ${buildInssObservation(true, inssAliquota, inssValor)}` : "";
-        paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.${inssObs}`.substring(0, 500);
+        paymentPayload.fiscalObservations = buildNfseObservations({
+          value: totalValue,
+          description: invoice.description,
+          retemInss,
+          inssAliquota,
+        });
       }
 
       console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${dueDate}`);
@@ -2556,17 +2601,11 @@ export function registerAsaasRoutes(app: Express) {
         invoice_url: payment.invoiceUrl,
         bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
         valor_inss_retido: retemInss ? inssValor : null,
-        inss_aliquota: retemInss ? inssAliquota : null,
+        inss_aliquota: retemInss ? inssAliquotaNf : null,
         updated_at: new Date().toISOString(),
       };
 
-      if (billingType === "PIX" || billingType === "UNDEFINED") {
-        try {
-          const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
-          updates.pix_qr_code = pixData.encodedImage;
-          updates.pix_copia_e_cola = pixData.payload;
-        } catch {}
-      }
+      assignAsaasPix(updates, await fetchAsaasPix(payment.id));
 
       if (emiteNf) {
         try {
@@ -2575,6 +2614,8 @@ export function registerAsaasRoutes(app: Express) {
             value: totalValue,
             description: invoice.description || DESCRICAO_SERVICO_FIXA,
             clientEmail,
+            retemInss,
+            inssAliquota,
           });
           Object.assign(updates, nfseFieldsFromEmitResult(nfResult));
           console.log(`[asaas] NFS-e emitida para fatura #${id}: ${nfResult.status}`);
@@ -3248,8 +3289,14 @@ export function registerAsaasRoutes(app: Express) {
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const retemInssConsolidado = clientData?.retem_inss === true;
-      const inssAliquotaConsolidado = Number(clientData?.inss_aliquota ?? 11);
-      const inssValorConsolidado = retemInssConsolidado ? Number((totalValue * inssAliquotaConsolidado / 100).toFixed(2)) : 0;
+      const inssAliquotaConsolidadoLegal = Number(clientData?.inss_aliquota ?? 11);
+      const netConsolidado = netBoletoValue(totalValue, {
+        retemInss: retemInssConsolidado,
+        inssAliquota: inssAliquotaConsolidadoLegal,
+        retainIss: emiteNfConsolidado,
+      });
+      const inssAliquotaConsolidado = netConsolidado.inssAliquota;
+      const inssValorConsolidado = netConsolidado.inssValor;
 
       if (clientData?.billing_cycle === "quinzenal") {
         const { data: allInPeriod } = await supabaseAdmin
@@ -3310,7 +3357,12 @@ export function registerAsaasRoutes(app: Express) {
           let spNfseNumber: string | null = null;
           let spNfseErrorMessage: string | null = null;
 
-          const spInssValor = retemInssConsolidado ? Number((splitValue * inssAliquotaConsolidado / 100).toFixed(2)) : 0;
+          const spNet = netBoletoValue(splitValue, {
+            retemInss: retemInssConsolidado,
+            inssAliquota: inssAliquotaConsolidadoLegal,
+            retainIss: emiteNfConsolidado,
+          });
+          const spInssValor = spNet.inssValor;
 
           if (sendToAsaas && process.env.ASAAS_API_KEY && splitCnpj) {
             try {
@@ -3324,18 +3376,20 @@ export function registerAsaasRoutes(app: Express) {
               const payload: any = {
                 customer: spAsaasCustomerId,
                 billingType: billingType || "BOLETO",
-                value: Number((splitValue - spInssValor).toFixed(2)),
+                value: spNet.boleto,
                 dueDate: invoiceDueDate,
                 description: splitDescricao.substring(0, 500),
                 externalReference: `FATURA-SPLIT-${clientId}-${idx + 1}de${splits.length}-${now.getTime()}`,
-                notificationDisabled: true,
+                notificationDisabled: false,
               };
               if (emiteNfConsolidado) {
                 payload.postalService = false;
-                const inssObs = retemInssConsolidado
-                  ? ` ${INSS_OBSERVACAO_LEGAL} Alíquota: ${inssAliquotaConsolidado.toFixed(2)}%. Valor retido: R$ ${spInssValor.toFixed(2).replace(".", ",")}.`
-                  : "";
-                payload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.${inssObs}`;
+                payload.fiscalObservations = buildNfseObservations({
+                  value: splitValue,
+                  description: splitDescricao,
+                  retemInss: retemInssConsolidado,
+                  inssAliquota: inssAliquotaConsolidadoLegal,
+                });
               }
               console.log(`[asaas] SPLIT ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}, Valor R$${splitValue.toFixed(2)}. Payload:`, JSON.stringify(payload));
               const payment = await asaasRequest("POST", "/payments", payload);
@@ -3344,13 +3398,9 @@ export function registerAsaasRoutes(app: Express) {
               spInvoiceUrl = payment.invoiceUrl;
               spBankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
               spInvoiceStatus = payment.status || "PENDING";
-              if (billingType === "PIX" || billingType === "UNDEFINED") {
-                try {
-                  const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
-                  spPixQrCode = pixData.encodedImage;
-                  spPixCopiaECola = pixData.payload;
-                } catch {}
-              }
+              const spPix = await fetchAsaasPix(payment.id);
+              spPixQrCode = spPix.pix_qr_code;
+              spPixCopiaECola = spPix.pix_copia_e_cola;
               if (spAsaasPaymentId && emiteNfConsolidado) {
                 try {
                   const nfResult = await emitNfseImmediate({
@@ -3360,7 +3410,7 @@ export function registerAsaasRoutes(app: Express) {
                     observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões). Split ${idx + 1}/${splits.length}.`,
                     clientEmail: clientEmailConsolidado,
                     retemInss: retemInssConsolidado,
-                    inssAliquota: inssAliquotaConsolidado,
+                    inssAliquota: inssAliquotaConsolidadoLegal,
                   });
                   const spNf = nfseFieldsFromEmitResult(nfResult);
                   spNfseStatus = spNf.nfse_status;
@@ -3413,7 +3463,7 @@ export function registerAsaasRoutes(app: Express) {
             external_reference: `BOLETIM-${clientId}-${billingIds.length}OS-SPLIT${idx + 1}`,
             provider_cnpj: TORRES_CNPJ,
             valor_inss_retido: retemInssConsolidado ? spInssValor : null,
-            inss_aliquota: retemInssConsolidado ? inssAliquotaConsolidado : null,
+            inss_aliquota: retemInssConsolidado ? spNet.inssAliquota : null,
             created_by: user?.id,
           }).select().single();
 
@@ -3513,18 +3563,20 @@ export function registerAsaasRoutes(app: Express) {
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",
-            value: Number((totalValue - inssValorConsolidado).toFixed(2)),
+            value: netConsolidado.boleto,
             dueDate: invoiceDueDate,
             description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
-            notificationDisabled: true,
+            notificationDisabled: false,
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
-            const inssObsPayment = retemInssConsolidado
-              ? ` ${INSS_OBSERVACAO_LEGAL} Alíquota: ${inssAliquotaConsolidado.toFixed(2)}%. Valor retido: R$ ${inssValorConsolidado.toFixed(2).replace(".", ",")}.`
-              : "";
-            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.${inssObsPayment}`;
+            consolidadoPayload.fiscalObservations = buildNfseObservations({
+              value: totalValue,
+              description: descricaoFiscal,
+              retemInss: retemInssConsolidado,
+              inssAliquota: inssAliquotaConsolidadoLegal,
+            });
           }
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
@@ -3533,13 +3585,9 @@ export function registerAsaasRoutes(app: Express) {
           invoiceUrl = payment.invoiceUrl;
           bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
           invoiceStatus = payment.status || "PENDING";
-          if (billingType === "PIX" || billingType === "UNDEFINED") {
-            try {
-              const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
-              pixQrCode = pixData.encodedImage;
-              pixCopiaECola = pixData.payload;
-            } catch {}
-          }
+          const consPix = await fetchAsaasPix(payment.id);
+          pixQrCode = consPix.pix_qr_code;
+          pixCopiaECola = consPix.pix_copia_e_cola;
 
           if (asaasPaymentId && emiteNfConsolidado) {
             try {
@@ -3550,7 +3598,7 @@ export function registerAsaasRoutes(app: Express) {
                 observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`,
                 clientEmail: clientEmailConsolidado,
                 retemInss: retemInssConsolidado,
-                inssAliquota: inssAliquotaConsolidado,
+                inssAliquota: inssAliquotaConsolidadoLegal,
               });
               const consNf = nfseFieldsFromEmitResult(nfResult);
               nfseStatus = consNf.nfse_status;

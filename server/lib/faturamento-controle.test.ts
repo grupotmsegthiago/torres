@@ -123,6 +123,74 @@ test("alerta de ciclo ainda vigente não entra na tela", () => {
   assert.equal(r.alertas[0].id, 2);
 });
 
+test("boletim PENDENTE: encaminhado / aguardando aprovação, não conta como OS sem fatura", () => {
+  const r = buildControleFaturamento({
+    today: "2026-09-10",
+    from: "2026-08-01",
+    to: "2026-09-10",
+    clients: [{ id: 8, name: "TM", billing_cycle: "quinzenal" }],
+    orders: [
+      { id: 80, os_number: "TOR-80", status: "concluida", client_id: 8, scheduled_date: "2026-08-20" },
+    ],
+    billings: [
+      { id: "bill-80", service_order_id: 80, data_missao: "2026-08-20", status: "APROVADA", fat_total: 1000, invoice_id: null },
+    ],
+    invoices: [],
+    boletins: [{
+      id: 111,
+      client_id: 8,
+      status: "PENDENTE",
+      sent_at: "2026-09-08",
+      billing_ids: ["bill-80"],
+      period_start: "2026-08-16",
+      period_end: "2026-08-31",
+    }],
+  });
+  assert.equal(r.rows[0].status, "AGUARDANDO_APROVACAO");
+  assert.equal(r.rows[0].semaforo, "amarelo");
+  assert.equal(r.rows[0].dataEncaminhado, "2026-09-08");
+  assert.equal(r.kpis.osSemFaturar, 0);
+});
+
+test("boletim APROVADO sem pagamento = Aprovado; pago = PAGO", () => {
+  const base = {
+    today: "2026-09-10" as const,
+    from: "2026-08-01",
+    to: "2026-09-10",
+    clients: [{ id: 9, name: "Unika", billing_cycle: "quinzenal" }],
+    orders: [
+      { id: 90, os_number: "TOR-90", status: "concluida", client_id: 9, scheduled_date: "2026-08-03" },
+    ],
+    boletins: [{
+      id: 101,
+      client_id: 9,
+      status: "APROVADO",
+      sent_at: "2026-08-19",
+      approved_at: "2026-08-19",
+      billing_ids: ["bill-90"],
+    }],
+  };
+  const aberto = buildControleFaturamento({
+    ...base,
+    billings: [
+      { id: "bill-90", service_order_id: 90, data_missao: "2026-08-03", status: "APROVADA", fat_total: 500, invoice_id: 163 },
+    ],
+    invoices: [{ id: 163, status: "PENDING", value: 500, due_date: "2026-09-15", created_at: "2026-08-19" }],
+  });
+  assert.equal(aberto.rows[0].status, "APROVADO_CLIENTE");
+  assert.equal(aberto.rows[0].dataAprovado, "2026-08-19");
+
+  const pago = buildControleFaturamento({
+    ...base,
+    billings: [
+      { id: "bill-90", service_order_id: 90, data_missao: "2026-08-03", status: "FATURADO", fat_total: 500, invoice_id: 163 },
+    ],
+    invoices: [{ id: 163, status: "RECEIVED", value: 500, due_date: "2026-09-15", payment_date: "2026-09-10", created_at: "2026-08-19" }],
+  });
+  assert.equal(pago.rows[0].status, "PAGO");
+  assert.equal(pago.rows[0].semaforo, "verde");
+});
+
 test("mensal em aberto no prazo = amarelo EM_ABERTO", () => {
   const r = buildControleFaturamento({
     today: "2026-09-08",

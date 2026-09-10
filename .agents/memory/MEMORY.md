@@ -41,7 +41,7 @@
 - [Coluna nova em service_orders some da lista](service-orders-list-allowlist.md) — list endpoint usa allowlist explícita SO_LIST_COLS; coluna nova precisa ser adicionada lá ou volta NULL na listagem (POST/PATCH/getById usam select * e funcionam).
 - [tsc não é gate limpo](tsc-not-clean-gate.md) — `npm run check`/tsc tem ~425 erros pré-existentes (ex: parseInt(req.params.id) string|string[]); foque só em erros NOVOS dos arquivos editados.
 - [SWR server cache opt-in](swr-server-cache.md) — cachear endpoint pesado compartilhado com tela ao vivo via `withSwrCache` GATED por `?cached=1` (passthrough p/ demais); não muda número, só quando roda; tem singleflight+LRU+force.
-- [Boleto líquido com retenção de INSS](boleto-liquido-inss.md) — cliente retem_inss: boleto Asaas LÍQUIDO (netBoletoValue); NF+invoices.value BRUTOS; aplicar nos 5 caminhos de cobrança em asaas.ts.
+- [Boleto líquido com retenção de INSS](boleto-liquido-inss.md) — boleto líquido = bruto − INSS efetivo (50% de 11% = 5,5%) − ISS 2% se emite NF; NF e invoices.value BRUTOS; 5 caminhos em asaas.ts.
 - [Lista de veículos é leve (sem base64)](vehicles-list-lightweight.md) — GET /api/vehicles exclui documento+fotos laterais/traseira (mantém photo_front); tela que edita DEVE buscar o full antes de salvar senão apaga foto.
 - [Auth stale-while-error](auth-stale-while-error.md) — cache serve last-known-good por ~30min SÓ quando Supabase unhealthy; gate !isSupabaseHealthy() obrigatório em todo ramo de erro (até no catch) senão estende sessão revogada.
 - [NF Asaas: validação de e-mail + erro mudo](nf-emission-validation.md) — emissão tem ~7 call-sites; validação pré-Asaas é opt-in por call-site (clientEmail), e capture usa resolveNfErrorMessage p/ não sobrescrever msg específica por genérica.

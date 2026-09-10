@@ -300,6 +300,8 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS insurance_policy_file TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS insurance_contract_file TEXT`);
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS full_tank BOOLEAN DEFAULT true`);
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS receipt_photo TEXT`);
 

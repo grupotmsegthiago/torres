@@ -72,6 +72,19 @@ export function registerControleFaturamentoRoutes(app: Express) {
       const invoiceIds = Array.from(new Set(billings.map((b: any) => b.invoice_id).filter(Boolean)));
       const invoices = invoiceIds.length ? await fetchByIds("invoices", "id", invoiceIds, INV_COLS) : [];
 
+      const clientIds = Array.from(new Set((clients || []).map((c: any) => Number(c.id)).filter(Boolean)));
+      let boletins: any[] = [];
+      if (clientIds.length) {
+        const { data: boletimRows, error: bolErr } = await supabaseAdmin
+          .from("boletim_approvals")
+          .select("id, client_id, status, sent_at, approved_at, period_start, period_end, billing_ids")
+          .in("status", ["PENDENTE", "APROVADO", "CONFIRMADO"])
+          .in("client_id", clientIds.slice(0, 400))
+          .limit(800);
+        if (bolErr) throw bolErr;
+        boletins = boletimRows || [];
+      }
+
       const { data: alerts } = await supabaseAdmin
         .from("billing_alerts")
         .select("id, client_id, client_name, alert_type, message, os_numbers, period_start, period_end, resolved")
@@ -89,6 +102,7 @@ export function registerControleFaturamentoRoutes(app: Express) {
         orders,
         billings,
         invoices,
+        boletins,
         alerts: visible.map((a) => ({
           id: a.id,
           client_name: a.clientName,

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 type Semaforo = "verde" | "amarelo" | "vermelho";
-type RowStatus = "FALTA_OS" | "SEM_APROVACAO" | "A_FATURAR" | "EM_ABERTO" | "ATRASADO" | "PAGO" | "CICLO_ABERTO";
+type RowStatus = "FALTA_OS" | "SEM_APROVACAO" | "A_FATURAR" | "AGUARDANDO_APROVACAO" | "APROVADO_CLIENTE" | "EM_ABERTO" | "ATRASADO" | "PAGO" | "CICLO_ABERTO";
 
 type OsItem = {
   id: number;
@@ -46,6 +46,8 @@ type Row = {
   valorPago: number;
   dataFaturamento: string | null;
   dataPagamento: string | null;
+  dataEncaminhado: string | null;
+  dataAprovado: string | null;
   diasAtraso: number | null;
   status: RowStatus;
   semaforo: Semaforo;
@@ -80,6 +82,8 @@ const STATUS_LABEL: Record<RowStatus, string> = {
   FALTA_OS: "OS fora",
   SEM_APROVACAO: "Sem aprovação",
   A_FATURAR: "A faturar",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
+  APROVADO_CLIENTE: "Aprovado",
   EM_ABERTO: "Em aberto",
   ATRASADO: "Atrasado",
   PAGO: "Pago",
@@ -119,8 +123,18 @@ export default function FaturamentoDiretoriaPage() {
   const kpis = data?.kpis;
   const rows = data?.rows || [];
   const filtered = useMemo(() => {
-    if (filtro === "problema") return rows.filter((r) => r.semaforo !== "verde" && r.status !== "CICLO_ABERTO");
-    if (filtro === "aberto") return rows.filter((r) => r.status === "EM_ABERTO" || r.status === "ATRASADO" || r.status === "A_FATURAR");
+    if (filtro === "problema") {
+      return rows.filter((r) => r.semaforo !== "verde" && r.status !== "CICLO_ABERTO");
+    }
+    if (filtro === "aberto") {
+      return rows.filter((r) =>
+        r.status === "EM_ABERTO"
+        || r.status === "ATRASADO"
+        || r.status === "A_FATURAR"
+        || r.status === "AGUARDANDO_APROVACAO"
+        || r.status === "APROVADO_CLIENTE"
+      );
+    }
     if (filtro === "pago") return rows.filter((r) => r.status === "PAGO");
     return rows;
   }, [rows, filtro]);
@@ -128,7 +142,7 @@ export default function FaturamentoDiretoriaPage() {
   const hero = kpis?.semaforo || "verde";
   const heroCopy =
     hero === "vermelho" ? "Tem OS sem faturar ou ciclo atrasado"
-    : hero === "amarelo" ? "Há ciclo em aberto ou aguardando pagamento"
+    : hero === "amarelo" ? "Há boletim com o cliente ou pagamento em aberto"
     : "Nada fora do prazo do ciclo";
 
   return (
@@ -241,14 +255,25 @@ export default function FaturamentoDiretoriaPage() {
                           {cobertura}
                         </td>
                         <td className="px-2 py-2.5 whitespace-nowrap">{fmtDate(r.dataFaturamento)}</td>
-                        <td className="px-2 py-2.5 whitespace-nowrap">{fmtDate(r.dataPagamento)}</td>
+                        <td className="px-2 py-2.5 whitespace-nowrap">{r.status === "PAGO" ? fmtDate(r.dataPagamento) : fmtDate(r.dataPagamento)}</td>
                         <td className={`px-2 py-2.5 text-center font-bold ${r.diasAtraso ? "text-red-700" : "text-neutral-400"}`}>
                           {r.diasAtraso ? r.diasAtraso : "—"}
                         </td>
                         <td className="px-2 py-2.5">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-bold">
-                            <Circle className={`w-3 h-3 ${DOT[r.semaforo]}`} />
-                            {STATUS_LABEL[r.status]}
+                          <span className="inline-flex items-start gap-1.5 text-xs font-bold">
+                            <Circle className={`w-3 h-3 mt-0.5 ${DOT[r.semaforo]}`} />
+                            <span>
+                              {r.status === "AGUARDANDO_APROVACAO" ? (
+                                <>
+                                  <span className="block">Encaminhado</span>
+                                  <span className="block text-[10px] font-semibold text-neutral-500 uppercase tracking-wide">Aguardando aprovação</span>
+                                </>
+                              ) : r.status === "PAGO" ? (
+                                <span className="text-emerald-700">PAGO</span>
+                              ) : (
+                                STATUS_LABEL[r.status]
+                              )}
+                            </span>
                           </span>
                         </td>
                       </tr>

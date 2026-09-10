@@ -1,5 +1,30 @@
 # Changelog — Governança Torres
 
+## 2026-09-10 — Observação da NFS-e (modelo financeiro, ≤250)
+
+- `observations` da NFS-e: CNAE, Escolta Armada, período, INSS Anexo IV, Simples Nacional, bruto/ISS/líquido. Discriminacao municipal permanece o texto CNAE oficial.
+- SSOT: `buildNfseObservations` em `asaas-helpers.ts`. Teto `NF_OBSERVATIONS_MAX = 250`.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-OBSERVACOES-2026-09-10.md`.
+
+## 2026-09-10 — Seguro do Mobi (apólice + contrato no cadastro da viatura)
+
+- Só Fiat Mobi: anexar apólice e contrato de seguro no cadastro. Polo não exige.
+- Arquivos no bucket privado `vehicle-docs` (caminho curto em `vehicles`); lista em vermelho se faltar.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-VTR-SEGURO-MOBI-2026-09-10.md`.
+
+## 2026-09-10 — NFS-e: INSS 5,5% (50% de 11%) + ISS 2% retido
+
+- Pedido do dono: reter na NF 50% dos 11% de INSS e 2% de ISS (`retainIss: true`).
+- Motor único: `buildNfseInvoicePayload` / `netBoletoValue` em `asaas-helpers.ts`. Cadastro `inss_aliquota` continua a alíquota legal.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-RETENCOES-2026-09-10.md`.
+
+## 2026-09-10 — NF e boleto Asaas (SYNCHRONIZED, PIX, e-mail)
+
+- Faturas: `SYNCHRONIZED` sem nº municipal não é mais “NFS-e emitida”.
+- Boleto: `notificationDisabled: false` + fallback da política de e-mail no customer (GET notifications do payment dá 404).
+- PIX copia-e-cola também no tipo BOLETO; reconcile/`/sync` preenchem se faltar.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-ASAAS-NF-BOLETO-2026-09-10.md`.
+
 ## 2026-09-10 — Controle de Faturamento (Diretoria)
 
 - KPI de cobertura por ciclo do cadastro (quinzenal 1–15/16–fim, mensal, diário). Projeção: OS + billing oficial + fatura.

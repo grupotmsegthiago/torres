@@ -5,7 +5,7 @@ description: Por que GET /api/vehicles não traz documento/fotos e o que QUALQUE
 
 # Lista de veículos não traz colunas base64 pesadas
 
-`getVehicles()` (server/storage.ts) seleciona uma allowlist explícita que EXCLUI `document_file`, `photo_left`, `photo_rear`, `photo_right` e MANTÉM `photo_front` (miniatura do grid em tempo real). `getVehicle(id)` continua `select("*")` (traz tudo).
+`getVehicles()` (server/storage.ts) seleciona uma allowlist explícita que EXCLUI `document_file`, `photo_left`, `photo_rear`, `photo_right` e MANTÉM `photo_front` (miniatura do grid em tempo real). Caminhos curtos de seguro (`insurance_policy_file`, `insurance_contract_file`) entram na lista — não são base64. `getVehicle(id)` continua `select("*")` (traz tudo).
 
 **Why:** essas 5 colunas base64 inflavam a resposta da lista a ponto de estourar o timeout de 12s (JSON truncado nos logs), derrubar o circuito do Supabase e levar o sistema à contingência. Mesmo padrão de `fueling-list-heavy-base64.md`: lista leve + detalhe sob demanda.
 

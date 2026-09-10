@@ -3,17 +3,36 @@
  * de runtime (Supabase / Express). Extraídos para permitir testes unitários.
  */
 
+import {
+  isNfOkStatus,
+  isFinalNfNumber,
+  isNfFullyIssued,
+  classifyIssuedOrProcessing,
+} from "../../shared/nfse-status";
+
+export {
+  isNfOkStatus,
+  isFinalNfNumber,
+  isNfFullyIssued,
+  classifyIssuedOrProcessing,
+};
+
 export const TORRES_CNPJ = "36982392000189";
 
 export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
-export const ISS_ALIQUOTA = 0;
+/** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
+export const ISS_ALIQUOTA = 2;
+export const ISS_RETAIN = true;
+/** INSS legal 11%; na NF/boleto retemos 50% dessa alíquota (5,5% do bruto). */
+export const INSS_BASE_FRACTION = 0.5;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
 
-/** Limite típico do elemento Discriminacao no XML municipal (SP). */
+/** Discriminacao municipal (SP) — texto do serviço. Observações da NF: 250 caracteres. */
 export const NF_DISCRIMINACAO_MAX = 2000;
+export const NF_OBSERVATIONS_MAX = 250;
 
 export const INSS_OBSERVACAO_LEGAL =
   "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
@@ -63,12 +82,17 @@ export function parseInvoicePeriodInfo(
 ): { competencia: string; dataExecucao: string } {
   const desc = String(description || "");
   const m = desc.match(
-    /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})\s*\(([^)]+)\)/i,
+    /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})(?:\s*\(([^)]+)\))?/i,
   );
   if (m) {
     const inicio = m[1];
     const fim = m[2];
-    const competencia = m[3].trim();
+    let competencia = (m[3] || "").trim();
+    if (!competencia) {
+      const mm = Number(inicio.slice(3, 5)) - 1;
+      const yyyy = inicio.slice(6, 10);
+      if (mm >= 0 && mm < 12) competencia = `${MESES_PT[mm]}/${yyyy}`;
+    }
     const dataExecucao = inicio === fim ? inicio : `${inicio} a ${fim}`;
     return { competencia, dataExecucao };
   }
@@ -115,15 +139,23 @@ export function buildNfClientEmail(invoice: {
   pix_copia_e_cola?: string | null;
   valor_inss_retido?: number | string | null;
   inss_aliquota?: number | string | null;
+  valor_iss_retido?: number | string | null;
+  iss_aliquota?: number | string | null;
 }): { subject: string; html: string } {
   const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
   const valueFormatted = fmtBRL(invoice.value);
   const inssRetido = Number(invoice.valor_inss_retido || 0);
+  const issRetido = invoice.valor_iss_retido != null && invoice.valor_iss_retido !== ""
+    ? Number(invoice.valor_iss_retido)
+    : Number((Number(invoice.value || 0) * ISS_ALIQUOTA / 100).toFixed(2));
   const temInss = inssRetido > 0.005;
+  const temIss = issRetido > 0.005;
   const inssAliq = Number(invoice.inss_aliquota || 0);
-  const liquidoPagar = temInss ? Number((invoice.value - inssRetido).toFixed(2)) : invoice.value;
+  const issAliq = Number(invoice.iss_aliquota || ISS_ALIQUOTA);
+  const liquidoPagar = Number((invoice.value - inssRetido - issRetido).toFixed(2));
   const liquidoFormatted = fmtBRL(liquidoPagar);
   const inssFormatted = fmtBRL(inssRetido);
+  const issFormatted = fmtBRL(issRetido);
 
   const pixCode = String(invoice.pix_copia_e_cola || "").trim();
   const { competencia, dataExecucao } = parseInvoicePeriodInfo(invoice.description, invoice.due_date);
@@ -163,10 +195,9 @@ export function buildNfClientEmail(invoice: {
         ${infoRow("Nº da Nota Fiscal:", nfNumber || "—")}
         ${infoRow("Serviço Prestado:", "Escolta Armada")}
         ${infoRow("Valor Total da Prestação de Serviço:", valueFormatted)}
-        ${temInss ? `
-        ${infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`)}
-        ${infoRow("Valor líquido a pagar:", liquidoFormatted)}
-        ` : ``}
+        ${temInss ? infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`) : ""}
+        ${temIss ? infoRow(`(-) Retenção ISS${issAliq ? ` (${issAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${issFormatted}`) : ""}
+        ${(temInss || temIss) ? infoRow("Valor líquido a pagar:", liquidoFormatted) : ""}
         ${infoRow("Vencimento:", dueDateFormatted)}
       </table>
     </div>
@@ -204,52 +235,151 @@ export function buildNfClientEmail(invoice: {
   return { subject, html };
 }
 
+export function inssAliquotaEfetiva(retemInss: boolean, legalAliquota?: number): number {
+  if (!retemInss) return 0;
+  return Number((Number(legalAliquota ?? 11) * INSS_BASE_FRACTION).toFixed(2));
+}
+
+export function nfPeriodoPhrase(description?: string | null, extra?: string | null): string {
+  const from = (text: string) => {
+    const m = String(text || "").match(
+      /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})(?:\s*\(([^)]+)\))?/i,
+    );
+    if (!m) return "";
+    let comp = (m[3] || "").trim();
+    if (!comp) {
+      const mm = Number(m[1].slice(3, 5)) - 1;
+      const yyyy = m[1].slice(6, 10);
+      if (mm >= 0 && mm < 12) comp = `${MESES_PT[mm]}/${yyyy}`;
+    }
+    return `${m[1]} a ${m[2]} (${comp})`;
+  };
+  return from(description || "") || from(extra || "");
+}
+
+function nfObsBRL(v: number): string {
+  return `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
+}
+
+/**
+ * Observação da NFS-e (Asaas): resumo do modelo do financeiro, ≤ 250 caracteres.
+ * Parametriza período, alíquota e valores; Discriminacao continua o CNAE oficial.
+ */
+export function buildNfseObservations(opts: {
+  value: number;
+  description?: string | null;
+  observationsHint?: string | null;
+  retemInss?: boolean;
+  inssAliquota?: number;
+  retainIss?: boolean;
+}): string {
+  const value = Number(opts.value || 0);
+  const periodo = nfPeriodoPhrase(opts.description, opts.observationsHint);
+  const retemInss = !!opts.retemInss;
+  const legal = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
+  const efetiva = inssAliquotaEfetiva(retemInss, legal);
+  const inssValor = Number((value * efetiva / 100).toFixed(2));
+  const retainIss = opts.retainIss !== false && ISS_RETAIN;
+  const issAliq = retainIss ? ISS_ALIQUOTA : 0;
+  const issValor = Number((value * issAliq / 100).toFixed(2));
+  const liquido = Number((value - inssValor - issValor).toFixed(2));
+  const aliqTxt = efetiva.toFixed(2).replace(".", ",");
+  const servico = periodo
+    ? `Referente aos serviços de Escolta Armada - Período: ${periodo}`
+    : "Referente aos serviços de Escolta Armada";
+  const servicoCurto = periodo
+    ? `Escolta Armada - Período: ${periodo}`
+    : "Escolta Armada";
+  const inssLong = retemInss
+    ? `INSS Anexo IV Art.111 II IN RFB 2.110/2022. Alíquota: ${aliqTxt}%. Valor retido: ${nfObsBRL(inssValor)}.`
+    : "Sem retenção INSS (Art.115 IN RFB 2.110/2022).";
+  const inssCurto = retemInss
+    ? `INSS Anexo IV Art.111 II IN 2.110/2022 Aliq ${aliqTxt}% ret. ${nfObsBRL(inssValor)}.`
+    : "Sem ret. INSS (Art.115 IN 2.110/2022).";
+  const issBit = issValor > 0.005 ? ` ISS ${issAliq.toFixed(0)}% ret. ${nfObsBRL(issValor)}.` : "";
+  const valoresLong = `Valor bruto: ${nfObsBRL(value)}.${retemInss ? ` INSS retido (${aliqTxt}%): ${nfObsBRL(inssValor)}.` : ""}${issValor > 0.005 ? ` ISS retido (${issAliq.toFixed(0)}%): ${nfObsBRL(issValor)}.` : ""}${inssValor > 0.005 || issValor > 0.005 ? ` Valor líquido: ${nfObsBRL(liquido)}.` : ""}`;
+  const valoresMini = `Bruto ${nfObsBRL(value)}.${issValor > 0.005 ? ` ISS ${nfObsBRL(issValor)}.` : ""}${inssValor > 0.005 || issValor > 0.005 ? ` Liq ${nfObsBRL(liquido)}.` : ""}`;
+  const simplesLong = "Empresa optante pelo Simples Nacional. Dispensada da retenção de PIS, COFINS e CSLL (Lei 10.833/03 art.30).";
+  const simplesCurto = "Simples Nac. s/ PIS/COFINS/CSLL (Lei 10.833/03 art.30).";
+
+  const pack = (...parts: string[]) => parts.join(" ").replace(/\s+/g, " ").trim();
+  const candidates = [
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servico}.`, inssLong, simplesLong, valoresLong),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servico}.`, inssCurto + issBit, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto + issBit, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto, simplesCurto, `Bruto ${nfObsBRL(value)}. Liq ${nfObsBRL(liquido)}.`),
+  ];
+  const fit = candidates.find((c) => c.length <= NF_OBSERVATIONS_MAX);
+  if (fit) return fit;
+  return candidates[candidates.length - 1].slice(0, NF_OBSERVATIONS_MAX).trim();
+}
+
+export function buildIssObservation(issValor: number, issAliquota: number = ISS_ALIQUOTA): string {
+  if (issValor <= 0.005) return "";
+  return `ISS ${issAliquota.toFixed(2)}% retido pelo tomador: R$ ${issValor.toFixed(2).replace(".", ",")}.`;
+}
+
 export function buildInssObservation(
   retemInss: boolean,
-  aliquota: number,
+  aliquotaLegal: number,
   valor: number,
 ): string {
   if (!retemInss) return INSS_DISPENSA_OBSERVACAO;
-  return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
+  const efetiva = inssAliquotaEfetiva(true, aliquotaLegal);
+  return `${INSS_OBSERVACAO_LEGAL} Alíquota legal: ${aliquotaLegal.toFixed(2)}% sobre ${Math.round(INSS_BASE_FRACTION * 100)}% da base (efetivo ${efetiva.toFixed(2)}%). Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
 }
 
 /**
  * Texto com valor BRUTO e LÍQUIDO pro corpo da NF (exigência fiscal).
  * Sem retenção de INSS: bruto == líquido (mostra só o bruto).
  * Com retenção: bruto, INSS retido e líquido (= bruto − INSS).
- * O ISS NÃO é tratado aqui (decisão do dono 23/06/2026: não mexer no ISS).
+ * ISS 2% retido na NF (pedido 2026-09-10; substitui a decisão de 23/06/2026 de não mexer no ISS).
  */
 export function buildValoresObservation(
   grossValue: number,
   retemInss: boolean,
-  inssAliquota: number,
+  inssAliquotaLegal: number,
+  opts?: { retainIss?: boolean; issAliquota?: number },
 ): string {
   const brl = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-  if (!retemInss) return `Valor bruto: ${brl(grossValue)}.`;
-  const inssValor = Number((grossValue * inssAliquota / 100).toFixed(2));
-  const liquido = Number((grossValue - inssValor).toFixed(2));
-  return `Valor bruto: ${brl(grossValue)}. INSS retido (${inssAliquota.toFixed(2)}%): ${brl(inssValor)}. Valor líquido: ${brl(liquido)}.`;
+  const inssAliq = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
+  const inssValor = Number((grossValue * inssAliq / 100).toFixed(2));
+  const retainIss = opts?.retainIss !== false && ISS_RETAIN;
+  const issAliq = retainIss ? Number(opts?.issAliquota ?? ISS_ALIQUOTA) : 0;
+  const issValor = Number((grossValue * issAliq / 100).toFixed(2));
+  const liquido = Number((grossValue - inssValor - issValor).toFixed(2));
+  const parts = [`Valor bruto: ${brl(grossValue)}.`];
+  if (inssValor > 0.005) {
+    parts.push(`INSS retido (${inssAliq.toFixed(2)}% = ${Number(inssAliquotaLegal || 11).toFixed(2)}% sobre ${Math.round(INSS_BASE_FRACTION * 100)}% da base): ${brl(inssValor)}.`);
+  }
+  if (issValor > 0.005) {
+    parts.push(`ISS retido (${issAliq.toFixed(2)}%): ${brl(issValor)}.`);
+  }
+  if (inssValor > 0.005 || issValor > 0.005) {
+    parts.push(`Valor líquido: ${brl(liquido)}.`);
+  }
+  return parts.join(" ");
 }
 
 /**
- * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga) quando
- * há retenção de INSS. A NF continua sendo emitida pelo valor BRUTO (com a
- * observação legal da retenção); só a cobrança sai líquida (bruto − INSS retido).
- *
- * - Sem retenção: boleto = bruto, inssValor = 0.
- * - Com retenção: inssValor = bruto × alíquota%, boleto = bruto − inssValor.
+ * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga).
+ * A NF continua no valor BRUTO; o boleto desconta as retenções da NF:
+ * INSS efetivo (50% da alíquota legal, se retemInss) e ISS 2% (se retainIss).
  */
 export function netBoletoValue(
   grossValue: number,
-  opts?: { retemInss?: boolean; inssAliquota?: number },
-): { boleto: number; inssValor: number; inssAliquota: number } {
+  opts?: { retemInss?: boolean; inssAliquota?: number; retainIss?: boolean; issAliquota?: number },
+): { boleto: number; inssValor: number; inssAliquota: number; issValor: number; issAliquota: number } {
   const retemInss = !!opts?.retemInss;
-  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss
-    ? Number((grossValue * inssAliquota / 100).toFixed(2))
-    : 0;
-  const boleto = Number((grossValue - inssValor).toFixed(2));
-  return { boleto, inssValor, inssAliquota };
+  const inssAliquotaLegal = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssAliquota = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
+  const inssValor = Number((grossValue * inssAliquota / 100).toFixed(2));
+  const retainIss = opts?.retainIss === true;
+  const issAliquota = retainIss ? Number(opts?.issAliquota ?? ISS_ALIQUOTA) : 0;
+  const issValor = Number((grossValue * issAliquota / 100).toFixed(2));
+  const boleto = Number((grossValue - inssValor - issValor).toFixed(2));
+  return { boleto, inssValor, inssAliquota, issValor, issAliquota };
 }
 
 export function buildFiscalPayload(
@@ -258,22 +388,21 @@ export function buildFiscalPayload(
   opts?: { retemInss?: boolean; inssAliquota?: number },
 ): Record<string, any> {
   const retemInss = !!opts?.retemInss;
-  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
+  const inssAliquotaLegal = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
   return {
     serviceListItem: CODIGO_SERVICO_MUNICIPAL,
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(value, retemInss, inssAliquota)}`.trim(),
+    observations: buildNfseObservations({ value, retemInss, inssAliquota: inssAliquotaLegal || 11 }),
     taxes: {
-      retainIss: false,
+      retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
       cofins: 0,
       csll: 0,
-      inss: inssAliquota,
+      inss: inssAliquotaNf,
       ir: 0,
       pis: 0,
     },
@@ -397,26 +526,27 @@ export function buildNfseInvoicePayload(opts: {
   municipalServiceIdOverride?: number;
 }): Record<string, any> {
   const retemInss = !!opts.retemInss;
-  const inssAliquota = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
-  const desc = sanitizeNfDiscriminacao(opts.description || "");
+  const inssAliquotaLegal = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
+  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
   const oficial = nfDiscriminacaoOficial();
-  const baseObs = opts.observations
-    ? sanitizeNfDiscriminacao(opts.observations)
-    : `CNAE ${CNAE_PRINCIPAL}. ${oficial}.${desc && desc !== oficial ? ` ${desc}` : ""}`.trim();
   const payload: Record<string, any> = {
     serviceDescription: oficial,
-    observations: `${baseObs} ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(opts.value, retemInss, inssAliquota)}`.trim(),
+    observations: buildNfseObservations({
+      value: opts.value,
+      description: opts.description,
+      observationsHint: opts.observations,
+      retemInss,
+      inssAliquota: inssAliquotaLegal || 11,
+    }),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     municipalServiceName: DESCRICAO_SERVICO_FIXA,
     taxes: {
-      retainIss: false,
+      retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
-      cofins: 0, csll: 0, inss: inssAliquota, ir: 0, pis: 0,
+      cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
     },
   };
   if (opts.municipalServiceIdOverride) {
@@ -488,43 +618,9 @@ export function isNfCorrectionError(message: string | null | undefined): boolean
 
 /** Status de NFS-e que indicam erro/rejeição (espelha normalizeInvoiceStatus). */
 const NF_ERROR_STATUSES = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"];
-const NF_OK_STATUSES = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"];
 
 export function isNfErrorStatus(status: string | null | undefined): boolean {
   return NF_ERROR_STATUSES.includes(String(status || "").toUpperCase());
-}
-
-export function isNfOkStatus(status: string | null | undefined): boolean {
-  return NF_OK_STATUSES.includes(String(status || "").toUpperCase());
-}
-
-/** Número municipal real — ignora o id interno do Asaas (`inv_...`). */
-export function isFinalNfNumber(nfseNumber: unknown): boolean {
-  const n = String(nfseNumber || "").trim();
-  return n.length > 0 && !/^inv_/i.test(n);
-}
-
-/** NF de fato emitida na prefeitura: status ok + número municipal (não só o id Asaas). */
-export function isNfFullyIssued(nfseStatus: unknown, nfseNumber: unknown): boolean {
-  return isNfOkStatus(nfseStatus) && isFinalNfNumber(nfseNumber);
-}
-
-/**
- * Relatório de NF: AUTHORIZED/ISSUED sem número municipal = ainda processando
- * (igual ao fluxo TM SEG / Asaas — a nota só existe quando a prefeitura devolve o nº).
- */
-export function classifyIssuedOrProcessing(
-  nfseStatus: unknown,
-  nfseNumber: unknown,
-): "NF_EMITIDA" | "NF_PROCESSANDO" | null {
-  const st = String(nfseStatus || "").toUpperCase();
-  if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(st)) {
-    return isFinalNfNumber(nfseNumber) ? "NF_EMITIDA" : "NF_PROCESSANDO";
-  }
-  if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(st)) {
-    return "NF_PROCESSANDO";
-  }
-  return null;
 }
 
 /** Persiste o retorno do POST /invoices (Asaas). Nunca inventa AUTHORIZED. */

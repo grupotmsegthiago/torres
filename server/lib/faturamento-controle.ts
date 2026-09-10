@@ -25,6 +25,8 @@ export type RowStatus =
   | "FALTA_OS"
   | "SEM_APROVACAO"
   | "A_FATURAR"
+  | "AGUARDANDO_APROVACAO"
+  | "APROVADO_CLIENTE"
   | "EM_ABERTO"
   | "ATRASADO"
   | "PAGO"
@@ -35,6 +37,7 @@ export interface ControleOsItem {
   osNumber: string;
   date: string;
   status: string;
+  billingId: string | null;
   billingStatus: string | null;
   ready: boolean;
   invoiced: boolean;
@@ -62,6 +65,8 @@ export interface ControlePeriodoRow {
   valorPago: number;
   dataFaturamento: string | null;
   dataPagamento: string | null;
+  dataEncaminhado: string | null;
+  dataAprovado: string | null;
   diasAtraso: number | null;
   status: RowStatus;
   semaforo: Semaforo;
@@ -148,6 +153,17 @@ export interface ControleAlert {
   resolved?: boolean | null;
 }
 
+export interface ControleBoletim {
+  id: number;
+  client_id?: number | null;
+  status?: string | null;
+  sent_at?: string | null;
+  approved_at?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  billing_ids?: string[] | null;
+}
+
 function ymd(v: unknown): string {
   const s = String(v || "");
   const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -174,8 +190,13 @@ function classifyRow(args: {
   osPagas: number;
   dueDate: string | null;
   paymentDate: string | null;
+  boletimStatus: string | null;
 }): { status: RowStatus; semaforo: Semaforo; diasAtraso: number | null } {
   const closed = periodClosed(args.period, args.today);
+  const boletim = String(args.boletimStatus || "").toUpperCase();
+  const aguardandoCliente = boletim === "PENDENTE";
+  const aprovadoCliente = boletim === "APROVADO" || boletim === "CONFIRMADO";
+
   if (args.osPagas >= args.osTotal && args.osTotal > 0) {
     let dias: number | null = null;
     if (args.paymentDate && args.dueDate && args.paymentDate > args.dueDate) {
@@ -183,10 +204,23 @@ function classifyRow(args: {
     }
     return { status: "PAGO", semaforo: "verde", diasAtraso: dias && dias > 0 ? dias : null };
   }
-  // Ciclo ainda em curso (ex.: quinzena 1–15 com hoje dia 10): não é problema.
-  if (!closed && args.osFaturadas < args.osTotal) {
+
+  if (!closed && args.osFaturadas < args.osTotal && !aguardandoCliente && !aprovadoCliente) {
     return { status: "CICLO_ABERTO", semaforo: "verde", diasAtraso: null };
   }
+
+  if (aguardandoCliente) {
+    return { status: "AGUARDANDO_APROVACAO", semaforo: "amarelo", diasAtraso: null };
+  }
+
+  if (aprovadoCliente) {
+    const due = args.dueDate || args.period.dueBy;
+    if (due && args.today > due && args.osFaturadas > 0) {
+      return { status: "ATRASADO", semaforo: "vermelho", diasAtraso: daysBetween(due, args.today) };
+    }
+    return { status: "APROVADO_CLIENTE", semaforo: "amarelo", diasAtraso: null };
+  }
+
   if (args.osFaltando > 0) {
     return { status: "FALTA_OS", semaforo: "vermelho", diasAtraso: Math.max(0, daysBetween(args.period.dueBy, args.today)) };
   }
@@ -204,6 +238,26 @@ function classifyRow(args: {
   return { status: "EM_ABERTO", semaforo: "amarelo", diasAtraso: null };
 }
 
+function pickBoletim(
+  clientId: number,
+  items: ControleOsItem[],
+  boletins: ControleBoletim[],
+): ControleBoletim | null {
+  const ids = new Set(items.map((i) => String(i.billingId || "")).filter((id) => id && id !== "null"));
+  let best: ControleBoletim | null = null;
+  let bestCount = 0;
+  for (const b of boletins) {
+    if (Number(b.client_id) !== clientId) continue;
+    const bids = (b.billing_ids || []).map((x) => String(x));
+    const n = bids.filter((id) => ids.has(id)).length;
+    if (n > bestCount) {
+      best = b;
+      bestCount = n;
+    }
+  }
+  return bestCount > 0 ? best : null;
+}
+
 export function buildControleFaturamento(input: {
   today: string;
   from: string;
@@ -212,6 +266,7 @@ export function buildControleFaturamento(input: {
   orders: ControleOs[];
   billings: ControleBilling[];
   invoices: ControleInvoice[];
+  boletins?: ControleBoletim[];
   alerts?: ControleAlert[];
 }): ControleFaturamentoResult {
   const clientMap = new Map(input.clients.map((c) => [Number(c.id), c]));
@@ -243,6 +298,7 @@ export function buildControleFaturamento(input: {
       osNumber: String(os.os_number || `OS-${os.id}`),
       date,
       status: String(os.status || ""),
+      billingId: billing?.id != null ? String(billing.id) : null,
       billingStatus: billing?.status ? String(billing.status) : null,
       ready: isOsReadyForBoletim(os.status, billing?.status),
       invoiced: !!liveInv,
@@ -297,6 +353,9 @@ export function buildControleFaturamento(input: {
     const allPaid = osPagas === osTotal && osTotal > 0;
     const dataPagamento = allPaid ? (payDates[payDates.length - 1] || null) : null;
     const dueDate = dueDates[0] || g.period.dueBy;
+    const boletim = pickBoletim(Number(g.client.id), g.items, input.boletins || []);
+    const dataEncaminhado = ymd(boletim?.sent_at) || null;
+    const dataAprovado = ymd(boletim?.approved_at) || null;
 
     const classif = classifyRow({
       today: input.today,
@@ -308,6 +367,7 @@ export function buildControleFaturamento(input: {
       osPagas,
       dueDate,
       paymentDate: dataPagamento,
+      boletimStatus: boletim?.status || null,
     });
 
     const cycleKind = normalizeBillingCycle(g.client.billing_cycle);
@@ -329,8 +389,10 @@ export function buildControleFaturamento(input: {
       valorTotal,
       valorAberto,
       valorPago,
-      dataFaturamento,
+      dataFaturamento: dataFaturamento || dataEncaminhado,
       dataPagamento,
+      dataEncaminhado,
+      dataAprovado,
       diasAtraso: classif.diasAtraso,
       status: classif.status,
       semaforo: classif.semaforo,
@@ -346,7 +408,10 @@ export function buildControleFaturamento(input: {
   });
 
   const vencidos = rows.filter((r) => r.status !== "CICLO_ABERTO");
-  const osSemFaturar = vencidos.reduce((s, r) => s + Math.max(0, r.osTotal - r.osFaturadas), 0);
+  const semFaturaStatus = new Set<RowStatus>(["FALTA_OS", "A_FATURAR", "SEM_APROVACAO"]);
+  const osSemFaturar = vencidos
+    .filter((r) => semFaturaStatus.has(r.status))
+    .reduce((s, r) => s + Math.max(0, r.osTotal - r.osFaturadas), 0);
   const osSemAprovacao = vencidos.reduce((s, r) => s + r.osSemAprovacao, 0);
   const ciclosAtrasados = vencidos.filter((r) => r.status === "ATRASADO" || (r.semaforo === "vermelho" && r.status !== "PAGO")).length;
   const valorAberto = round2(vencidos.reduce((s, r) => s + r.valorAberto, 0));
