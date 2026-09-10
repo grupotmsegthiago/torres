@@ -119,7 +119,7 @@ export default function FaturamentoDiretoriaPage() {
   const kpis = data?.kpis;
   const rows = data?.rows || [];
   const filtered = useMemo(() => {
-    if (filtro === "problema") return rows.filter((r) => r.semaforo !== "verde");
+    if (filtro === "problema") return rows.filter((r) => r.semaforo !== "verde" && r.status !== "CICLO_ABERTO");
     if (filtro === "aberto") return rows.filter((r) => r.status === "EM_ABERTO" || r.status === "ATRASADO" || r.status === "A_FATURAR");
     if (filtro === "pago") return rows.filter((r) => r.status === "PAGO");
     return rows;
@@ -129,7 +129,7 @@ export default function FaturamentoDiretoriaPage() {
   const heroCopy =
     hero === "vermelho" ? "Tem OS sem faturar ou ciclo atrasado"
     : hero === "amarelo" ? "Há ciclo em aberto ou aguardando pagamento"
-    : "Tudo faturado e em dia";
+    : "Nada fora do prazo do ciclo";
 
   return (
     <AdminLayout>
@@ -293,7 +293,7 @@ export default function FaturamentoDiretoriaPage() {
 
         <p className="text-[11px] text-neutral-400 flex items-center gap-1">
           <FileSpreadsheet className="w-3 h-3" />
-          Fonte: OS + billing oficial + fatura. Recusada não entra. Quinzenal 1–15 / 16–fim · Mensal 1–último dia · Diário = o dia.
+          Fonte: OS + billing oficial + fatura. Recusada não entra. Quinzenal 1–15 / 16–fim · Mensal 1–último dia · Diário = o dia. Ciclo em andamento não entra em “o que está errado”.
         </p>
       </div>
     </AdminLayout>

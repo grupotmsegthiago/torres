@@ -176,23 +176,26 @@ function classifyRow(args: {
   paymentDate: string | null;
 }): { status: RowStatus; semaforo: Semaforo; diasAtraso: number | null } {
   const closed = periodClosed(args.period, args.today);
-  if (args.osFaltando > 0) {
-    return { status: "FALTA_OS", semaforo: "vermelho", diasAtraso: closed ? Math.max(0, daysBetween(args.period.dueBy, args.today)) : null };
-  }
-  if (args.osSemAprovacao > 0) {
-    return { status: "SEM_APROVACAO", semaforo: closed ? "vermelho" : "amarelo", diasAtraso: closed ? Math.max(0, daysBetween(args.period.dueBy, args.today)) : null };
-  }
-  if (args.osFaturadas < args.osTotal) {
-    if (!closed) return { status: "CICLO_ABERTO", semaforo: "amarelo", diasAtraso: null };
-    const dias = Math.max(0, daysBetween(args.period.dueBy, args.today));
-    return { status: "A_FATURAR", semaforo: dias > 0 ? "vermelho" : "amarelo", diasAtraso: dias || null };
-  }
   if (args.osPagas >= args.osTotal && args.osTotal > 0) {
     let dias: number | null = null;
     if (args.paymentDate && args.dueDate && args.paymentDate > args.dueDate) {
       dias = daysBetween(args.dueDate, args.paymentDate);
     }
     return { status: "PAGO", semaforo: "verde", diasAtraso: dias && dias > 0 ? dias : null };
+  }
+  // Ciclo ainda em curso (ex.: quinzena 1–15 com hoje dia 10): não é problema.
+  if (!closed && args.osFaturadas < args.osTotal) {
+    return { status: "CICLO_ABERTO", semaforo: "verde", diasAtraso: null };
+  }
+  if (args.osFaltando > 0) {
+    return { status: "FALTA_OS", semaforo: "vermelho", diasAtraso: Math.max(0, daysBetween(args.period.dueBy, args.today)) };
+  }
+  if (args.osSemAprovacao > 0) {
+    return { status: "SEM_APROVACAO", semaforo: "vermelho", diasAtraso: Math.max(0, daysBetween(args.period.dueBy, args.today)) };
+  }
+  if (args.osFaturadas < args.osTotal) {
+    const dias = Math.max(0, daysBetween(args.period.dueBy, args.today));
+    return { status: "A_FATURAR", semaforo: dias > 0 ? "vermelho" : "amarelo", diasAtraso: dias || null };
   }
   const due = args.dueDate || args.period.dueBy;
   if (due && args.today > due) {
@@ -342,15 +345,21 @@ export function buildControleFaturamento(input: {
     return a.clientName.localeCompare(b.clientName, "pt-BR") || a.periodStart.localeCompare(b.periodStart);
   });
 
-  const osSemFaturar = rows.reduce((s, r) => s + Math.max(0, r.osTotal - r.osFaturadas), 0);
-  const osSemAprovacao = rows.reduce((s, r) => s + r.osSemAprovacao, 0);
-  const ciclosAtrasados = rows.filter((r) => r.status === "ATRASADO" || (r.semaforo === "vermelho" && r.status !== "PAGO")).length;
-  const valorAberto = round2(rows.reduce((s, r) => s + r.valorAberto, 0));
+  const vencidos = rows.filter((r) => r.status !== "CICLO_ABERTO");
+  const osSemFaturar = vencidos.reduce((s, r) => s + Math.max(0, r.osTotal - r.osFaturadas), 0);
+  const osSemAprovacao = vencidos.reduce((s, r) => s + r.osSemAprovacao, 0);
+  const ciclosAtrasados = vencidos.filter((r) => r.status === "ATRASADO" || (r.semaforo === "vermelho" && r.status !== "PAGO")).length;
+  const valorAberto = round2(vencidos.reduce((s, r) => s + r.valorAberto, 0));
   const valorPago = round2(rows.reduce((s, r) => s + r.valorPago, 0));
-  const atrasos = rows.map((r) => r.diasAtraso).filter((n): n is number => n != null && n > 0);
+  const atrasos = vencidos.map((r) => r.diasAtraso).filter((n): n is number => n != null && n > 0);
   const diasAtrasoMedio = atrasos.length ? Math.round(atrasos.reduce((s, n) => s + n, 0) / atrasos.length) : null;
   const alertas = (input.alerts || [])
-    .filter((a) => !a.resolved)
+    .filter((a) => {
+      if (a.resolved) return false;
+      const end = a.period_end ? ymd(a.period_end) : "";
+      if (end && input.today <= end) return false;
+      return true;
+    })
     .map((a) => ({
       id: a.id,
       clientName: String(a.client_name || "—"),
@@ -360,9 +369,9 @@ export function buildControleFaturamento(input: {
       periodEnd: a.period_end ? ymd(a.period_end) : null,
     }));
 
-  const worst: Semaforo = rows.some((r) => r.semaforo === "vermelho")
+  const worst: Semaforo = vencidos.some((r) => r.semaforo === "vermelho")
     ? "vermelho"
-    : rows.some((r) => r.semaforo === "amarelo")
+    : vencidos.some((r) => r.semaforo === "amarelo")
       ? "amarelo"
       : "verde";
 

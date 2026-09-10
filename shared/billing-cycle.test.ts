@@ -7,6 +7,7 @@ import {
   isOsReadyForBoletim,
   lastDayOfMonth,
   normalizeBillingCycle,
+  periodClosed,
   periodForDate,
 } from "./billing-cycle.ts";
 
@@ -92,6 +93,13 @@ test("assessBoletimCoverage: recusada não entra nem falta", () => {
   });
   assert.equal(r.ok, true);
   assert.equal(r.recusadas.length, 1);
+});
+
+test("periodClosed: quinzena vigente ainda não venceu", () => {
+  const q1 = periodForDate("quinzenal", "2026-09-09");
+  assert.equal(periodClosed(q1, "2026-09-10"), false);
+  assert.equal(periodClosed(q1, "2026-09-15"), false);
+  assert.equal(periodClosed(q1, "2026-09-16"), true);
 });
 
 test("daysBetween: atraso de pagamento", () => {
