@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireFinanceiro } from "../auth";
 import { buildControleFaturamento } from "../lib/faturamento-controle";
+import { listVisibleBillingAlerts } from "../lib/billing-alert-live";
 
 const OS_COLS = "id, os_number, status, client_id, scheduled_date, completed_date";
 const BILLING_COLS = "id, client_id, service_order_id, data_missao, status, invoice_id, fat_total, fat_acionamento, fat_hora_extra, fat_km, fat_adicional_noturno, fat_estadia, fat_pernoite, despesas_pedagio, despesas_outras, receitas_os";
@@ -73,10 +74,12 @@ export function registerControleFaturamentoRoutes(app: Express) {
 
       const { data: alerts } = await supabaseAdmin
         .from("billing_alerts")
-        .select("id, client_name, alert_type, message, period_start, period_end, resolved")
+        .select("id, client_id, client_name, alert_type, message, os_numbers, period_start, period_end, resolved")
         .eq("resolved", false)
         .order("created_at", { ascending: false })
         .limit(80);
+
+      const visible = await listVisibleBillingAlerts(alerts || []);
 
       const payload = buildControleFaturamento({
         today,
@@ -86,7 +89,15 @@ export function registerControleFaturamentoRoutes(app: Express) {
         orders,
         billings,
         invoices,
-        alerts: alerts || [],
+        alerts: visible.map((a) => ({
+          id: a.id,
+          client_name: a.clientName,
+          alert_type: a.alertType,
+          message: a.message,
+          period_start: a.periodStart,
+          period_end: a.periodEnd,
+          resolved: false,
+        })),
       });
 
       res.json(payload);

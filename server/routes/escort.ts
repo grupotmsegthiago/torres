@@ -2694,11 +2694,15 @@ import type { Express } from "express";
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw error;
+      const { leftoverMapForAlerts } = await import("../lib/billing-alert-live");
+      const leftover = await leftoverMapForAlerts(data || []);
       const filtered = (data || []).filter((a: any) => {
         if (a.alert_type === "OS_ESQUECIDA") {
           const os = String(a.os_numbers || "").trim();
           if (!os || os.toLowerCase() === "null") return false;
         }
+        const left = leftover.get(String(a.id));
+        if (left !== undefined && left.length === 0) return false;
         return true;
       });
       res.json(filtered);

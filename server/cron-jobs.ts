@@ -13,6 +13,8 @@ import { runDailyReconciliation } from "./rhid-reconciliation";
 import { snapshotFolhaMes, snapshotFolhaMesIfMissing, prevMonthRef } from "./lib/folha-historico";
 import { countBusinessDays, loadHolidaySet, monthRange } from "./routes/holidays";
 import { sendVencimentosDoDiaEmail } from "./email-vencimentos";
+import { FATURAMENTO_ALERT_TYPES } from "./lib/billing-alert-coverage";
+import { billingStillNeedsAlert, leftoverMapForAlerts, loadActiveBoletimBillingIds } from "./lib/billing-alert-live";
 
 const locks = new Set<string>();
 
@@ -363,6 +365,7 @@ export async function runBillingAlertsCron(): Promise<void> {
 
     const clientsWithCycle = allClients.filter((c: any) => c.billing_cycle && c.billing_cycle !== "por_missao");
     let alertsCreated = 0;
+    const inActiveBoletim = await loadActiveBoletimBillingIds();
 
     const insertAlert = async (
       clientId: number,
@@ -454,8 +457,19 @@ export async function runBillingAlertsCron(): Promise<void> {
 
         if (!missionsInPeriod.length) continue;
 
-        const notApproved = missionsInPeriod.filter((b: any) => b.status === "A_VERIFICAR");
-        const approvedNotInvoiced = missionsInPeriod.filter((b: any) => b.status === "APROVADA");
+        const soIds = missionsInPeriod.map((b: any) => b.service_order_id).filter(Boolean);
+        const osStatus = new Map<number, string>();
+        if (soIds.length) {
+          const { data: osRows } = await supabaseAdmin.from("service_orders").select("id, status").in("id", soIds);
+          for (const o of osRows || []) osStatus.set(Number(o.id), String(o.status || ""));
+        }
+        const stillOut = missionsInPeriod.filter((b: any) =>
+          billingStillNeedsAlert(b, osStatus.get(Number(b.service_order_id)) || null, inActiveBoletim),
+        );
+        if (!stillOut.length) continue;
+
+        const notApproved = stillOut.filter((b: any) => b.status === "A_VERIFICAR");
+        const approvedNotInvoiced = stillOut.filter((b: any) => b.status === "APROVADA" || b.status === "CANCELADO");
         const osNums = (arr: any[]) => arr.map((b: any) => b.os_number).filter(Boolean).join(", ");
         const bIds = (arr: any[]) => arr.map((b: any) => b.id).join(",");
 
@@ -487,7 +501,7 @@ export async function runBillingAlertsCron(): Promise<void> {
         }
 
         if (daysSinceCutoff >= limiteEmissao - period.cutoff || daysSinceCutoff >= 25) {
-          const allUnfatured = missionsInPeriod.filter((b: any) => !["FATURADO", "PAGO"].includes(b.status));
+          const allUnfatured = stillOut.filter((b: any) => !["FATURADO", "PAGO"].includes(b.status));
           if (allUnfatured.length > 0) {
             const msg = `🔴 URGENTE: ${client.name} — ${allUnfatured.length} OS do ciclo ${period.start} a ${period.end} ainda não faturada(s)! O prazo de emissão vence hoje. OS: ${osNums(allUnfatured)}`;
             if (
@@ -530,14 +544,24 @@ export async function runBillingAlertsCron(): Promise<void> {
 
     const { data: allBillings } = await supabaseAdmin
       .from("escort_billings")
-      .select("id, client_id, client_name, os_number, status, data_missao")
+      .select("id, client_id, client_name, os_number, status, data_missao, service_order_id")
       .in("status", ["A_VERIFICAR", "APROVADA"])
       .is("invoice_id", null);
 
     if (allBillings?.length) {
+      const soIdsEs = allBillings.map((b: any) => b.service_order_id).filter(Boolean);
+      const osStatusEs = new Map<number, string>();
+      if (soIdsEs.length) {
+        for (let i = 0; i < soIdsEs.length; i += 200) {
+          const slice = soIdsEs.slice(i, i + 200);
+          const { data: osRows } = await supabaseAdmin.from("service_orders").select("id, status").in("id", slice);
+          for (const o of osRows || []) osStatusEs.set(Number(o.id), String(o.status || ""));
+        }
+      }
       for (const billing of allBillings) {
         if (!billing.data_missao || !billing.client_id) continue;
         if (!billing.os_number) continue;
+        if (!billingStillNeedsAlert(billing, osStatusEs.get(Number(billing.service_order_id)) || null, inActiveBoletim)) continue;
         const mDate = new Date(billing.data_missao);
         const daysSince = Math.floor((now.getTime() - mDate.getTime()) / (1000 * 60 * 60 * 24));
         if (daysSince <= 30) continue;
@@ -561,6 +585,26 @@ export async function runBillingAlertsCron(): Promise<void> {
           os_numbers: billing.os_number,
         });
         alertsCreated++;
+      }
+    }
+
+    const { data: openAlerts } = await supabaseAdmin
+      .from("billing_alerts")
+      .select("id, client_id, client_name, alert_type, message, os_numbers, period_start, period_end, resolved")
+      .eq("resolved", false)
+      .limit(500);
+    if (openAlerts?.length) {
+      const leftover = await leftoverMapForAlerts(openAlerts);
+      const stale = openAlerts
+        .filter((a: any) => FATURAMENTO_ALERT_TYPES.has(String(a.alert_type || "")))
+        .filter((a: any) => (leftover.get(String(a.id)) || []).length === 0)
+        .map((a: any) => a.id);
+      if (stale.length) {
+        await supabaseAdmin
+          .from("billing_alerts")
+          .update({ resolved: true, resolved_at: new Date().toISOString(), resolved_by: "cron-boletim" })
+          .in("id", stale);
+        log(`CRON BillingAlerts: ${stale.length} alerta(s) resolvido(s) — já no boletim/fatura ou recusada`, "cron");
       }
     }
 
