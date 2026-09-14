@@ -24,7 +24,11 @@ export const TORRES_CNPJ = "36982392000189";
 export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
-/** ID do serviço 07870 na conta Asaas da Torres (GET /invoices/municipalServices). */
+/**
+ * ID interno Asaas (lista municipal). No Portal Nacional NÃO enviar:
+ * o portal devolve `_NFe002` (código de serviço municipal ausente).
+ * Só use se GET /fiscalInfo/services devolver lista (prefeitura própria).
+ */
 export const MUNICIPAL_SERVICE_ID_DEFAULT = 402;
 /** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
 export const ISS_ALIQUOTA = 2;
@@ -33,6 +37,11 @@ export const ISS_RETAIN = true;
 export const INSS_BASE_FRACTION = 0.5;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
+
+/** Nome do serviço no padrão TM SEG: "07870 - descrição". Código NÃO vai na discriminação (NFe003). */
+export function municipalServiceNameOficial(): string {
+  return `${CODIGO_SERVICO_MUNICIPAL_CODE} - ${DESCRICAO_SERVICO_FIXA}`;
+}
 
 /** Discriminacao municipal (SP) — texto do serviço. Observações da NF: 250 caracteres. */
 export const NF_DISCRIMINACAO_MAX = 2000;
@@ -556,16 +565,19 @@ export function buildNfseInvoicePayload(opts: {
     deductions: 0,
     effectiveDate: todayDateStr(),
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
-    municipalServiceName: DESCRICAO_SERVICO_FIXA,
+    municipalServiceName: municipalServiceNameOficial(),
     taxes: {
       retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
       cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
     },
   };
-  const serviceId = opts.municipalServiceIdOverride ?? MUNICIPAL_SERVICE_ID_DEFAULT;
-  if (Number.isFinite(serviceId) && serviceId > 0) {
-    payload.municipalServiceId = serviceId;
+  // Portal Nacional: municipalServiceCode + municipalServiceId null.
+  // ID interno (ex. 402) faz o portal ignorar o código e devolver _NFe002.
+  if (opts.municipalServiceIdOverride && Number.isFinite(opts.municipalServiceIdOverride) && opts.municipalServiceIdOverride > 0) {
+    payload.municipalServiceId = opts.municipalServiceIdOverride;
+  } else {
+    payload.municipalServiceId = null;
   }
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
@@ -585,10 +597,10 @@ export function buildNfsePutPayload(postPayload: Record<string, any>): Record<st
     effectiveDate: postPayload.effectiveDate,
     municipalServiceCode: postPayload.municipalServiceCode,
     municipalServiceName: postPayload.municipalServiceName,
+    municipalServiceId: postPayload.municipalServiceId ?? null,
     taxes: postPayload.taxes,
     updatePayment: false,
   };
-  if (postPayload.municipalServiceId) put.municipalServiceId = postPayload.municipalServiceId;
   if (postPayload.externalReference) put.externalReference = postPayload.externalReference;
   return put;
 }

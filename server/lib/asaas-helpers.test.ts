@@ -60,7 +60,7 @@ import {
   assertFiscalAddressForNf,
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
-  MUNICIPAL_SERVICE_ID_DEFAULT,
+  municipalServiceNameOficial,
   todayDateStr,
   isMissingMunicipalServiceCode,
   isQueuedAtPrefecture,
@@ -286,7 +286,8 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   assert.match(p.observations, /CNAE 7870/);
   assert.match(p.observations, /Escolta Armada/);
   assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
-  assert.equal(p.municipalServiceName, DESCRICAO_SERVICO_FIXA);
+  assert.equal(p.municipalServiceName, municipalServiceNameOficial());
+  assert.equal(p.municipalServiceId, null);
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
@@ -312,6 +313,9 @@ test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () =
   assert.equal("payment" in put, false);
   assert.equal("customer" in put, false);
   assert.equal(put.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(put.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal(put.municipalServiceName, municipalServiceNameOficial());
+  assert.equal(put.municipalServiceId, null);
   assert.equal(put.updatePayment, false);
   assert.equal(put.taxes.iss, 2);
   assert.equal(put.taxes.retainIss, true);
@@ -490,10 +494,13 @@ test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
   assert.equal(p.municipalServiceId, 999);
 });
 
-test("buildNfseInvoicePayload: sem override usa o ID 402 da conta Torres", () => {
+test("buildNfseInvoicePayload: Portal Nacional omite ID interno e manda código 07870", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
-  assert.equal(p.municipalServiceId, MUNICIPAL_SERVICE_ID_DEFAULT);
+  assert.equal(p.municipalServiceId, null);
   assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal(p.municipalServiceName, "07870 - Vigilância, segurança ou monitoramento de bens, pessoas e semoventes");
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(String(p.serviceDescription).startsWith("07870"), false);
 });
 
 test("buildNfseInvoicePayload: observations custom não sobrescreve o modelo oficial", () => {

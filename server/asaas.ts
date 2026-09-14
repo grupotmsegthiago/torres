@@ -19,7 +19,6 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   ISS_ALIQUOTA,
   DESCRICAO_SERVICO_FIXA,
-  MUNICIPAL_SERVICE_ID_DEFAULT,
   MESES_PT,
   cleanCnpj,
   buildInvoiceDescription,
@@ -137,27 +136,17 @@ function getApiKey(): string {
 }
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  // Valida env var: se inválida (NaN/0/negativa), loga warning gritante e
-  // omite. Sem essa guarda, parseInt silenciosamente vira NaN e o Asaas
-  // cai pro default da conta (= 01481 pedágio). Falha visível > regressão silenciosa.
+  // Portal Nacional: NÃO enviar municipalServiceId (FAQ Asaas / padrão TM SEG).
+  // ASAAS_MUNICIPAL_SERVICE_ID=402 na Vercel provocava _NFe002 — ignorar de propósito.
   const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
-  let override: number | undefined = MUNICIPAL_SERVICE_ID_DEFAULT;
   if (raw && raw.trim()) {
-    const n = parseInt(raw, 10);
-    if (Number.isFinite(n) && n > 0) {
-      override = n;
-    } else {
-      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — usando ${MUNICIPAL_SERVICE_ID_DEFAULT} (código 07870).`);
-    }
+    console.warn("[asaas] ASAAS_MUNICIPAL_SERVICE_ID ignorada — Portal Nacional exige municipalServiceCode (07870). Enviar ID interno provoca _NFe002.");
   }
-  const payload = buildNfseInvoicePayloadBase({
-    ...opts,
-    municipalServiceIdOverride: override,
-  });
+  const payload = buildNfseInvoicePayloadBase({ ...opts });
   console.log("[asaas] NFS-e payload:", JSON.stringify({
     municipalServiceCode: payload.municipalServiceCode,
     municipalServiceName: payload.municipalServiceName,
-    municipalServiceId: payload.municipalServiceId ?? "(omitido)",
+    municipalServiceId: payload.municipalServiceId,
   }));
   return payload;
 }

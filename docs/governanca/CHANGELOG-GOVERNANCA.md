@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-14 — NFS-e Asaas: `_NFe002` código municipal ausente
+
+- Causa: Torres no Portal Nacional enviava `municipalServiceId` 402; o portal ignora o código `07870` e devolve `_NFe002`.
+- Correção (padrão TM SEG + FAQ Asaas): `municipalServiceCode` 07870, `municipalServiceName` `"07870 - …"`, `municipalServiceId: null`. Código da Torres permanece 07870 (não copiar 07930).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-NFE002-CODIGO-MUNICIPAL-2026-09-14.md`.
+
 ## 2026-09-14 — NFS-e Asaas: emissão não conclui (PROCESSING eterno)
 
 - Causa: `setTimeout` da NF isolada morre no Vercel; timeout 8s abortava `POST /invoices`; SYNCHRONIZED + “falha ao comunicar” / `_NFe002` ficava só em consulta; PROCESSING local escondia o botão Emitir.
