@@ -1938,6 +1938,7 @@ export function registerAsaasRoutes(app: Express) {
       let clientState: string | undefined;
       let clientZip: string | undefined;
       let clientFiscal: any = null;
+      let clientOpts: AsaasCustomerOpts = {};
       if (clientId) {
         const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual, emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
         clientFiscal = cliInfo;
@@ -1950,16 +1951,13 @@ export function registerAsaasRoutes(app: Express) {
         emiteNf = cliInfo?.emite_nf === true;
         retemInss = cliInfo?.retem_inss === true;
         inssAliquota = Number(cliInfo?.inss_aliquota ?? 11);
-        (clientPhone as any); // keep TS happy
-        var clientOpts: AsaasCustomerOpts = {
+        clientOpts = {
           addressNumber: cliInfo?.address_number || undefined,
           complement: cliInfo?.address_complement || undefined,
           province: cliInfo?.bairro || undefined,
           municipalInscription: cliInfo?.inscricao_municipal || undefined,
           stateInscription: cliInfo?.inscricao_estadual || undefined,
         };
-      }
-
       }
 
       if (sendToAsaas && hasAsaasApiKey()) {
