@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
+import { authFetch, queryClient, invalidateRelatedQueries, kickNfRetry } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { formatDateOnlyBR } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -230,6 +230,7 @@ export default function RelatorioNFPage() {
       return json;
     },
     onSuccess: (data) => {
+      kickNfRetry(data?.invoice?.id || data?.id);
       toast({ title: "Fatura emitida", description: data?.message || "Cobrança gerada no Asaas." });
       setEmitirFaturaModal(null);
       invalidateRelatedQueries("invoice");

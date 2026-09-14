@@ -56,8 +56,15 @@ import {
   shouldAutoRetryDiscriminacaoError,
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
+  fiscalAddressMissingFields,
+  assertFiscalAddressForNf,
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
+  MUNICIPAL_SERVICE_ID_DEFAULT,
+  todayDateStr,
+  isMissingMunicipalServiceCode,
+  isQueuedAtPrefecture,
+  isLocalNfProcessingPlaceholder,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
   buildAsaasNotificationPolicyUpdate,
@@ -483,9 +490,10 @@ test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
   assert.equal(p.municipalServiceId, 999);
 });
 
-test("buildNfseInvoicePayload: sem override de municipalServiceId não inclui o campo", () => {
+test("buildNfseInvoicePayload: sem override usa o ID 402 da conta Torres", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
-  assert.equal("municipalServiceId" in p, false);
+  assert.equal(p.municipalServiceId, MUNICIPAL_SERVICE_ID_DEFAULT);
+  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
 });
 
 test("buildNfseInvoicePayload: observations custom não sobrescreve o modelo oficial", () => {
@@ -848,6 +856,9 @@ test("isAsaasPrefeituraRejection: rejeição ≠ fila da prefeitura", () => {
   assert.equal(isAsaasPrefeituraRejection("Enviado para a prefeitura"), false);
   assert.equal(isAsaasPrefeituraRejection("The 'Discriminacao' element is invalid"), true);
   assert.equal(isAsaasPrefeituraRejection("Inscrição municipal inválida"), true);
+  assert.equal(isAsaasPrefeituraRejection("Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura"), true);
+  assert.equal(isAsaasPrefeituraRejection("Código: _NFe002\nDescrição: O Código de Serviço municipal deve ser informado"), true);
+  assert.equal(isMissingMunicipalServiceCode("_NFe002 código de serviço municipal deve ser informado"), true);
 });
 
 test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com rejeição vira ERROR", () => {
@@ -974,26 +985,67 @@ test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
   assert.equal(pickPreferredAsaasNf([]), null);
 });
 
-test("shouldNudgeNfseAuthorize: cron nunca reenvia authorize (dispara e-mail no Asaas)", () => {
+test("shouldNudgeNfseAuthorize: falha de comunicação ou código municipal na mesma inv_*", () => {
   assert.equal(shouldNudgeNfseAuthorize("ERROR", null), false);
   assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), false);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), false);
-  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", "2562"), false);
-  assert.equal(shouldNudgeNfseAuthorize("PROCESSING", null), false);
-  assert.equal(shouldNudgeNfseAuthorize("CANCELED", null), false);
+  assert.equal(shouldNudgeNfseAuthorize("ERROR", "inv_x"), false);
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "ERROR",
+      "inv_000022722108",
+      "Retorno da prefeitura de São Paulo-SP: Falha ao comunicar com o sistema da prefeitura",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "SYNCHRONIZED",
+      "inv_000022722111",
+      "Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "ERROR",
+      "inv_000022684480",
+      "Código: _NFe002 — O Código de Serviço municipal deve ser informado",
+    ),
+    true,
+  );
 });
 
-test("shouldAutoEmitMissingNfse: cron nunca cria NFS-e sozinho", () => {
+test("fiscalAddressMissingFields: CEP 8 dígitos + logradouro, número, cidade, UF", () => {
+  assert.deepEqual(
+    fiscalAddressMissingFields({
+      address: "Rua A",
+      address_number: "10",
+      city: "São Paulo",
+      state: "SP",
+      zip: "01310-100",
+    }),
+    [],
+  );
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", city: "São Paulo", state: "SP", zip: "01310100" }).includes("número"));
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "SP", state: "S", zip: "01310100" }).includes("UF"));
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "São Paulo", state: "SP", zip: "01310" }).includes("CEP (8 dígitos)"));
+  assert.equal(assertFiscalAddressForNf({ address: "Rua A" }, false), null);
+  assert.match(String(assertFiscalAddressForNf({ address: "Rua A" }, true)), /Falta:/);
+});
+
+test("shouldAutoEmitMissingNfse: worker cria NFS-e se a cobrança existe e o Asaas ainda não tem nota", () => {
   const old = new Date(Date.now() - 30 * 60_000).toISOString();
   const fresh = new Date(Date.now() - 2 * 60_000).toISOString();
-  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: false, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: false }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "CANCELLED", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "AUTHORIZED", nfse_number: "309", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_number: "inv_abc", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
-  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "ERRO", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "PROCESSING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "PROCESSING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), true);
 });
 
 test("isOpenNfFollowUpStatus: acompanha processando/erro em aberto", () => {
@@ -1044,3 +1096,26 @@ test("planDueDateReconcile: manual empurra Torres→Asaas; automático espelha b
   assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-18", asaasDueDate: "2026-09-01", manual: false }), { action: "pull", dueDate: "2026-09-01" });
   assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-01", asaasDueDate: "2026-09-01", manual: false }), { action: "none" });
 });
+
+test("todayDateStr: data civil BRT, não UTC", () => {
+  assert.match(todayDateStr(new Date("2026-09-15T02:30:00.000Z")), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(todayDateStr(new Date("2026-09-15T02:30:00.000Z")), "2026-09-14");
+});
+
+test("isQueuedAtPrefecture: PROCESSING local sem inv_* não é fila da prefeitura", () => {
+  assert.equal(isLocalNfProcessingPlaceholder("PROCESSING", null), true);
+  assert.equal(isQueuedAtPrefecture("PROCESSING", null), false);
+  assert.equal(isQueuedAtPrefecture("PROCESSING", "inv_abc"), true);
+  assert.equal(isQueuedAtPrefecture("SYNCHRONIZED", "inv_abc"), true);
+  assert.equal(isQueuedAtPrefecture("AUTHORIZED", "309"), false);
+});
+
+test("nfseUpdatesFromAsaasObject: falha de comunicação do portal vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_omega", status: "SYNCHRONIZED", number: null, statusDescription: "Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_omega", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.match(String(u.nfse_error_message), /Falha ao comunicar/);
+});
+

@@ -134,10 +134,10 @@ export async function runCronBucket(bucket: CronBucket): Promise<void> {
       break;
     }
     case "five-min": {
+      await jobs.runStuckNfCron();
       await jobs.runRhidQueueCron();
       await jobs.runInterReconcileFastCron();
       await jobs.runAgentCentralCron();
-      await jobs.runStuckNfCron();
       break;
     }
     case "ten-min": {

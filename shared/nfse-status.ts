@@ -11,6 +11,29 @@ export function isFinalNfNumber(nfseNumber: unknown): boolean {
   return n.length > 0 && !/^inv_/i.test(n);
 }
 
+export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
+  return /^inv_/i.test(String(nfseNumber || "").trim());
+}
+
+/**
+ * PROCESSING/PENDING local sem `inv_*`: o Torres ainda não criou a NFS-e no Asaas.
+ * Não é fila da prefeitura — esconder o botão Emitir aqui trava a fatura para sempre.
+ */
+export function isLocalNfProcessingPlaceholder(
+  nfseStatus: unknown,
+  nfseNumber: unknown,
+): boolean {
+  if (isAsaasInvoiceId(nfseNumber) || isFinalNfNumber(nfseNumber)) return false;
+  const st = String(nfseStatus || "").toUpperCase();
+  return st === "" || ["PROCESSING", "PENDING", "SCHEDULED"].includes(st);
+}
+
+/** Já existe documento no Asaas (inv_* ou status de fila) — só consultar, não POST. */
+export function isQueuedAtPrefecture(nfseStatus: unknown, nfseNumber: unknown): boolean {
+  return classifyIssuedOrProcessing(nfseStatus, nfseNumber) === "NF_PROCESSANDO"
+    && !isLocalNfProcessingPlaceholder(nfseStatus, nfseNumber);
+}
+
 /** NF de fato emitida na prefeitura: status ok + número municipal (não só o id Asaas). */
 export function isNfFullyIssued(nfseStatus: unknown, nfseNumber: unknown): boolean {
   return isNfOkStatus(nfseStatus) && isFinalNfNumber(nfseNumber);

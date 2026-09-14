@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
-import { authFetch, apiRequest, invalidateRelatedQueries, queryClient } from "@/lib/queryClient";
+import { authFetch, apiRequest, invalidateRelatedQueries, queryClient, kickNfRetryFromInvoicePayload } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -194,6 +194,7 @@ export default function RelatorioFaturamentoPage() {
     },
     onSuccess: async (response: any) => {
       const data = await response.json?.() || response;
+      kickNfRetryFromInvoicePayload(data);
       const count = data?.missionsCount || 0;
       const val = data?.totalValue ? fmt(data.totalValue) : "";
       const splitCount = data?.splitCount || 0;

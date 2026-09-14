@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries, kickNfRetry, kickNfRetryFromInvoicePayload } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
-import { classifyIssuedOrProcessing } from "@shared/nfse-status";
+import { classifyIssuedOrProcessing, isQueuedAtPrefecture } from "@shared/nfse-status";
 
 interface Invoice {
   id: number;
@@ -260,8 +260,9 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: (data) => {
+      kickNfRetry(data?.invoice?.id || data?.id);
       invalidateRelatedQueries("invoice");
-      toast({ title: "Fatura emitida com sucesso!", description: data.message || "Boleto e NF-e gerados." });
+      toast({ title: "Fatura emitida com sucesso!", description: data.message || "Boleto gerado. NFS-e na fila." });
       setShowDetail(null);
     },
     onError: (err: Error) => toast({ title: "Erro ao emitir fatura", description: err.message, variant: "destructive" }),
@@ -572,7 +573,7 @@ export default function FaturasPage() {
                                   NFS-e ✓
                                 </Badge>
                               )}
-                              {classifyIssuedOrProcessing(inv.nfse_status, inv.nfse_number) === "NF_PROCESSANDO" && (
+                              {isQueuedAtPrefecture(inv.nfse_status, inv.nfse_number) && (
                                 <Badge className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200">
                                   NF prefeitura
                                 </Badge>
@@ -740,7 +741,8 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      kickNfRetryFromInvoicePayload(data);
       invalidateRelatedQueries("invoice");
       toast({ title: "Fatura criada com sucesso" });
       onClose();
@@ -1032,7 +1034,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
 
   const issuedKind = classifyIssuedOrProcessing(invoice.nfse_status, invoice.nfse_number);
   const fullyIssued = issuedKind === "NF_EMITIDA";
-  const inPrefecture = issuedKind === "NF_PROCESSANDO";
+  const inPrefecture = isQueuedAtPrefecture(invoice.nfse_status, invoice.nfse_number);
   const nfStatus = fullyIssued
     ? { label: "Autorizada", color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 }
     : inPrefecture

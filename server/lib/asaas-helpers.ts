@@ -15,13 +15,17 @@ export {
   isFinalNfNumber,
   isNfFullyIssued,
   classifyIssuedOrProcessing,
-};
+  isLocalNfProcessingPlaceholder,
+  isQueuedAtPrefecture,
+} from "../../shared/nfse-status";
 
 export const TORRES_CNPJ = "36982392000189";
 
 export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
+/** ID do serviço 07870 na conta Asaas da Torres (GET /invoices/municipalServices). */
+export const MUNICIPAL_SERVICE_ID_DEFAULT = 402;
 /** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
 export const ISS_ALIQUOTA = 2;
 export const ISS_RETAIN = true;
@@ -409,8 +413,18 @@ export function buildFiscalPayload(
   };
 }
 
-export function todayDateStr(): string {
-  return new Date().toISOString().split("T")[0];
+/** Data civil BRT. UTC (`toISOString`) depois das 21h vira o dia seguinte e a NFS-e fica SCHEDULED. */
+export function todayDateStr(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -549,8 +563,9 @@ export function buildNfseInvoicePayload(opts: {
       cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
     },
   };
-  if (opts.municipalServiceIdOverride) {
-    payload.municipalServiceId = opts.municipalServiceIdOverride;
+  const serviceId = opts.municipalServiceIdOverride ?? MUNICIPAL_SERVICE_ID_DEFAULT;
+  if (Number.isFinite(serviceId) && serviceId > 0) {
+    payload.municipalServiceId = serviceId;
   }
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
@@ -677,8 +692,11 @@ export function municipalInscriptionIfChanged(
 export function isAsaasPrefeituraRejection(message: string | null | undefined): boolean {
   const m = String(message || "").toLowerCase();
   if (!m.trim()) return false;
-  if (/aguardand|em fila|processando|enviad[oa] para a prefeitura|sincroniz/.test(m)) return false;
+  if (/aguardand|em fila|processando|enviad[oa] para a prefeitura|sincroniz/.test(m) && !isMunicipalCommFailure(m) && !isMissingMunicipalServiceCode(m)) {
+    return false;
+  }
   if (isDiscriminacaoSchemaError(m)) return true;
+  if (isMunicipalCommFailure(m) || isMissingMunicipalServiceCode(m)) return true;
   return (
     m.includes("inscrição municipal") ||
     m.includes("inscricao municipal") ||
@@ -899,28 +917,94 @@ export function nfseUpdatesFromAsaasObject(
   return next;
 }
 
+export function isMunicipalCommFailure(message: string | null | undefined): boolean {
+  return /falha ao comunicar/i.test(String(message || ""));
+}
+
+export function isMissingMunicipalServiceCode(message: string | null | undefined): boolean {
+  const m = String(message || "");
+  return /_nfe002/i.test(m) || /c[oó]digo de servi[cç]o municipal deve ser informado/i.test(m);
+}
+
 /**
- * Cron / sync automático NÃO deve autorizar. Cada POST /invoices/{id}/authorize
- * manda e-mail ao cliente (“tentando emitir”). Emissão só na criação da fatura
- * ou no botão explícito (emit-nfse / resolver-nf-erro).
+ * Cron / sync automático NÃO autoriza NF em fila (cada authorize manda e-mail).
+ * Exceção TM-like: ERROR com “falha ao comunicar com a prefeitura” na mesma inv_* —
+ * isso é retry de transporte, não segunda emissão.
  */
-export function shouldNudgeNfseAuthorize(_status?: unknown, _nfseNumber?: unknown): boolean {
+export function shouldNudgeNfseAuthorize(
+  status?: unknown,
+  nfseNumber?: unknown,
+  message?: string | null,
+): boolean {
+  if (isFinalNfNumber(nfseNumber)) return false;
+  if (!isAsaasInvoiceId(nfseNumber)) return false;
+  if (isMunicipalCommFailure(message) || isMissingMunicipalServiceCode(message)) return true;
+  if (!isNfErrorStatus(status)) return false;
   return false;
 }
 
-export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o POST inicial
+export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o kick isolado
 
-/** Cron nunca cria NFS-e. Emissão só na criação da fatura ou ação explícita. */
+export const INCOMPLETE_FISCAL_ADDRESS_MSG =
+  "Endereço fiscal incompleto. Cadastre CEP (8 dígitos), logradouro, número, cidade e UF. A Prefeitura rejeita a NFS-e sem isso — o sistema não completa pela Receita.";
+
+export function fiscalAddressMissingFields(client?: {
+  address?: string | null;
+  address_number?: string | null;
+  addressNumber?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+} | null): string[] {
+  const missing: string[] = [];
+  if (!String(client?.address || "").trim()) missing.push("logradouro");
+  const num = client?.address_number || client?.addressNumber;
+  if (!String(num || "").trim()) missing.push("número");
+  if (!String(client?.city || "").trim()) missing.push("cidade");
+  const uf = String(client?.state || "").trim();
+  if (uf.length !== 2) missing.push("UF");
+  if (String(client?.zip || "").replace(/\D/g, "").length !== 8) missing.push("CEP (8 dígitos)");
+  return missing;
+}
+
+/** Bloqueia cobrança+NF quando o cliente emite NFS-e e o cadastro fiscal está incompleto. */
+export function assertFiscalAddressForNf(
+  client: Parameters<typeof fiscalAddressMissingFields>[0],
+  emiteNf: boolean,
+): string | null {
+  if (!emiteNf) return null;
+  const missing = fiscalAddressMissingFields(client);
+  if (missing.length === 0) return null;
+  return `${INCOMPLETE_FISCAL_ADDRESS_MSG} Falta: ${missing.join(", ")}.`;
+}
+
+/**
+ * Worker/cron pode POST /invoices quando a cobrança existe, o cliente emite NF
+ * e o Asaas ainda não tem nota (fila TM: NF isolada). Não cria segunda nota.
+ */
 export function shouldAutoEmitMissingNfse(
-  _invoice?: {
+  invoice?: {
     status?: string | null;
     nfse_status?: string | null;
     nfse_number?: string | null;
     created_at?: string | null;
   },
-  _opts?: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
+  opts?: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
 ): boolean {
-  return false;
+  if (!opts?.emiteNf) return false;
+  if (!opts.paymentLookupEmpty) return false;
+  const pay = String(invoice?.status || "").toUpperCase();
+  if (["CANCELLED", "CANCELED"].includes(pay)) return false;
+  if (isNfFullyIssued(invoice?.nfse_status, invoice?.nfse_number)) return false;
+  if (isAsaasInvoiceId(invoice?.nfse_number)) return false;
+  const nf = String(invoice?.nfse_status || "").toUpperCase();
+  if (nf.includes("CANCEL")) return false;
+  const placeholder = nf === "PROCESSING";
+  if (!placeholder) {
+    const ageH = hoursSince(invoice?.created_at, opts.now);
+    if (ageH != null && ageH < NF_AUTO_EMIT_MIN_AGE_HOURS) return false;
+  }
+  return true;
 }
 
 export function isOpenNfFollowUpStatus(invoice: {

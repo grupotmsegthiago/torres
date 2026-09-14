@@ -19,6 +19,7 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   ISS_ALIQUOTA,
   DESCRICAO_SERVICO_FIXA,
+  MUNICIPAL_SERVICE_ID_DEFAULT,
   MESES_PT,
   cleanCnpj,
   buildInvoiceDescription,
@@ -60,6 +61,9 @@ import {
   isAsaasInvoiceId,
   shouldAutoRetryDiscriminacaoError,
   isOpenNfFollowUpStatus,
+  shouldNudgeNfseAuthorize,
+  shouldAutoEmitMissingNfse,
+  assertFiscalAddressForNf,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
   buildAsaasNotificationPolicyUpdate,
@@ -69,7 +73,30 @@ import {
 import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
 import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
 
-const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
+const ASAAS_REQUEST_TIMEOUT_MS = 20_000;
+const ASAAS_INVOICE_TIMEOUT_MS = 45_000;
+
+function resolveAsaasApiKey(): string | null {
+  for (const name of ["ASAAS_API_KEY", "ASAAS_TORRES_API", "ASAAS_API_KEY_TORRES"] as const) {
+    const k = String(process.env[name] || "").trim();
+    if (k) return k;
+  }
+  return null;
+}
+
+function hasAsaasApiKey(): boolean {
+  return !!resolveAsaasApiKey();
+}
+
+function getAsaasBaseUrl(): string {
+  const override = String(
+    process.env.ASAAS_API_BASE_URL || process.env.ASAAS_BASE_URL || process.env.ASAAS_API_URL || "",
+  ).trim().replace(/\/$/, "");
+  if (override) return override;
+  const key = resolveAsaasApiKey() || "";
+  if (/_hmlg_|_sandbox_/i.test(key)) return "https://sandbox.asaas.com/api/v3";
+  return "https://www.asaas.com/api/v3";
+}
 
 // Status terminais "pagos" — uma fatura nesses estados NUNCA pode ser
 // sobrescrita por um status "em aberto" vindo do Asaas. Caso de uso:
@@ -104,7 +131,7 @@ export function isAlreadyPaidStatus(status: string | null | undefined): boolean 
 }
 
 function getApiKey(): string {
-  const key = process.env.ASAAS_API_KEY;
+  const key = resolveAsaasApiKey();
   if (!key) throw new Error("ASAAS_API_KEY não configurada");
   return key;
 }
@@ -114,16 +141,14 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
   // omite. Sem essa guarda, parseInt silenciosamente vira NaN e o Asaas
   // cai pro default da conta (= 01481 pedágio). Falha visível > regressão silenciosa.
   const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
-  let override: number | undefined;
+  let override: number | undefined = MUNICIPAL_SERVICE_ID_DEFAULT;
   if (raw && raw.trim()) {
     const n = parseInt(raw, 10);
     if (Number.isFinite(n) && n > 0) {
       override = n;
     } else {
-      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — NFS-e pode sair com código errado. Esperado: número positivo (ex: 402 para código 07870).`);
+      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — usando ${MUNICIPAL_SERVICE_ID_DEFAULT} (código 07870).`);
     }
-  } else {
-    console.warn("[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID não definida — Asaas usará o serviço default da conta (risco de emitir com código errado).");
   }
   const payload = buildNfseInvoicePayloadBase({
     ...opts,
@@ -221,18 +246,27 @@ async function emitNfseImmediate(opts: {
 
   let result: any;
   let nfId: string;
+  const existingId = String(opts.existingNfId || "").trim();
 
   if (putId) {
     result = await asaasRequest("PUT", `/invoices/${putId}`, buildNfsePutPayload(payload));
     nfId = String(result.id || putId);
     console.log(`[asaas] NFS-e atualizada via PUT /invoices/${putId}: status=${result.status}`);
+  } else if (isAsaasInvoiceId(existingId) && !String(opts.existingNfStatus || "").toUpperCase().includes("CANCEL")) {
+    nfId = existingId;
+    result = {
+      id: nfId,
+      status: opts.existingNfStatus || "SCHEDULED",
+      number: opts.existingNfNumber,
+    };
+    console.log(`[asaas] NFS-e ${nfId} já existe no Asaas (${result.status}) — sem segundo POST`);
   } else {
     result = await asaasRequest("POST", "/invoices", payload);
     nfId = result.id;
     console.log(`[asaas] NFS-e criada via /invoices: id=${nfId}, status=${result.status}`);
   }
 
-  if (nfId && result.status !== "AUTHORIZED" && result.status !== "PROCESSING") {
+  if (nfId && !isNfFullyIssued(result.status, result.number || opts.existingNfNumber)) {
     try {
       const authResult = await asaasRequest("POST", `/invoices/${nfId}/authorize`);
       console.log(`[asaas] NFS-e ${nfId} authorize called: status=${authResult.status}`);
@@ -328,6 +362,164 @@ async function fetchNfseFromAsaas(invoice: any): Promise<{ nf: any | null; sourc
   }
 
   return { nf: null, source: "none", paymentLookupEmpty };
+}
+
+const nfRetryLocks = new Set<number>();
+
+/** Vercel mata setTimeout após o response — a NFS-e tem que ir na mesma isolate, depois do boleto. */
+export async function emitIsolatedNfse(invoiceId: number, source = "isolated"): Promise<void> {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return;
+  try {
+    await retryNfseForInvoice(id, { source, bypassAge: true });
+  } catch (e: any) {
+    console.error(`[nf-retry] fatura #${id}: ${e?.message || e}`);
+  }
+}
+
+/** Compat: callers síncronos. Preferir `await emitIsolatedNfse`. */
+export function enqueueIsolatedNfse(invoiceId: number): void {
+  void emitIsolatedNfse(invoiceId, "isolated");
+}
+
+/**
+ * Worker NFS-e: cria a nota se o Asaas ainda não tem, ou reprocessa ERROR
+ * (PUT/authorize na mesma inv_*). Não cria segunda NF em SYNCHRONIZED com RPS.
+ */
+export async function retryNfseForInvoice(
+  invoiceId: number,
+  opts?: { source?: string; bypassAge?: boolean },
+): Promise<{ ok: boolean; message: string; status?: string }> {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
+  if (nfRetryLocks.has(id)) return { ok: false, message: "NFS-e desta fatura já está em processamento" };
+  nfRetryLocks.add(id);
+  try {
+    const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
+    if (!invoice) return { ok: false, message: "Fatura não encontrada" };
+    if (!invoice.asaas_payment_id) return { ok: false, message: "Fatura sem cobrança Asaas" };
+    if (["CANCELLED", "CANCELED"].includes(String(invoice.status || "").toUpperCase())) {
+      return { ok: false, message: "Cobrança cancelada" };
+    }
+
+    let emiteNf = true;
+    let retemInss = false;
+    let inssAliquota = 11;
+    let clientEmail: string | undefined;
+    if (invoice.client_id) {
+      const { data: cli } = await supabaseAdmin
+        .from("clients")
+        .select(`emite_nf, retem_inss, inss_aliquota, ${CLIENT_EMAIL_COLUMNS}`)
+        .eq("id", invoice.client_id)
+        .maybeSingle();
+      emiteNf = cli?.emite_nf === true;
+      retemInss = cli?.retem_inss === true;
+      inssAliquota = Number(cli?.inss_aliquota ?? 11);
+      clientEmail = asaasTomadorEmail(cli);
+    }
+    if (!emiteNf) return { ok: false, message: "Cliente isento de NFS-e" };
+
+    if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) {
+      return { ok: true, message: "NFS-e já emitida", status: invoice.nfse_status };
+    }
+
+    const existing = await fetchNfseFromAsaas(invoice);
+    if (existing.nf && isNfFullyIssued(existing.nf.status, existing.nf.number)) {
+      const nfSync = await collectNfseSyncUpdates(invoice);
+      if (Object.keys(nfSync.updates).length > 0) {
+        await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", id);
+      }
+      return { ok: true, message: "NFS-e já emitida no Asaas", status: existing.nf.status };
+    }
+
+    if (isHiddenDiscriminacaoRejection(existing.nf, true)) {
+      const nfSync = await collectNfseSyncUpdates(invoice);
+      if (Object.keys(nfSync.updates).length > 0) {
+        await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", id);
+      }
+      return { ok: false, message: LEGACY_DISCRIMINACAO_STUCK_MSG };
+    }
+
+    const liveMsg = existing.nf?.statusDescription || invoice.nfse_error_message;
+    const putId = asaasNfIdForOfficialPut(existing.nf, true);
+    const nudge = shouldNudgeNfseAuthorize(
+      existing.nf?.status || invoice.nfse_status,
+      existing.nf?.id || invoice.nfse_number,
+      liveMsg,
+    );
+    const missing = shouldAutoEmitMissingNfse(invoice, {
+      paymentLookupEmpty: existing.paymentLookupEmpty,
+      emiteNf: true,
+    });
+    const kickMissing = opts?.bypassAge === true && existing.paymentLookupEmpty;
+
+    if (!putId && !nudge && !missing && !kickMissing) {
+      const nfSync = await collectNfseSyncUpdates(invoice);
+      if (Object.keys(nfSync.updates).length > 0) {
+        await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", id);
+      }
+      return { ok: true, message: "NFS-e em fila na prefeitura — só consulta", status: existing.nf?.status || invoice.nfse_status };
+    }
+
+    const result = await emitNfseImmediate({
+      paymentId: invoice.asaas_payment_id,
+      value: parseFloat(invoice.value),
+      description: invoice.description || DESCRICAO_SERVICO_FIXA,
+      clientEmail,
+      retemInss,
+      inssAliquota,
+      existingNfId: existing.nf?.id || invoice.nfse_number,
+      existingNfStatus: existing.nf?.status || invoice.nfse_status,
+      existingNfNumber: existing.nf?.number ?? null,
+      existingServiceDescription: existing.nf?.serviceDescription ?? null,
+      existingRpsNumber: existing.nf?.rpsNumber ?? null,
+    });
+    await supabaseAdmin.from("invoices").update({
+      ...nfseFieldsFromEmitResult(result),
+      nfse_error_message: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    console.log(`[nf-retry] fatura #${id} (${opts?.source || "worker"}): ${result.status} ${result.id}`);
+    return { ok: true, message: `NFS-e ${result.status}`, status: result.status };
+  } catch (e: any) {
+    const msg = String(e?.message || "Erro ao emitir NFS-e").slice(0, 1000);
+    await supabaseAdmin.from("invoices").update({
+      nfse_status: "ERROR",
+      nfse_error_message: msg,
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    return { ok: false, message: msg };
+  } finally {
+    nfRetryLocks.delete(id);
+  }
+}
+
+export async function runIsolatedNfRetryQueue(opts?: { limit?: number }): Promise<{ processed: number; retried: number; errors: number }> {
+  const result = { processed: 0, retried: 0, errors: 0 };
+  if (!hasAsaasApiKey()) return result;
+  const limit = Math.max(1, Math.min(opts?.limit ?? 10, 20));
+  const { data: invoices, error } = await supabaseAdmin.from("invoices")
+    .select("id, status, nfse_status, nfse_number, created_at, asaas_payment_id")
+    .not("asaas_payment_id", "is", null)
+    .in("nfse_status", ["PROCESSING", "PENDING", "ERROR", "ERRO", "SCHEDULED"])
+    .order("updated_at", { ascending: true, nullsFirst: true } as any)
+    .limit(40);
+  if (error) {
+    result.errors += 1;
+    return result;
+  }
+  for (const inv of invoices || []) {
+    if (result.retried >= limit) break;
+    if (isNfFullyIssued(inv.nfse_status, inv.nfse_number)) continue;
+    result.processed += 1;
+    const r = await retryNfseForInvoice(inv.id, { source: "cron" });
+    if (r.ok && r.message !== "NFS-e em fila na prefeitura — só consulta") result.retried += 1;
+    if (!r.ok && r.message !== "NFS-e em fila na prefeitura — só consulta") result.errors += 1;
+  }
+  if (result.processed > 0) {
+    console.log(`[nf-retry] fila: processadas=${result.processed} ok=${result.retried} erros=${result.errors}`);
+  }
+  return result;
 }
 
 /** Consulta o Asaas e grava status/número. Nunca emite nem reprocessa — isso manda e-mail ao cliente. */
@@ -580,7 +772,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   // Reconciliação de status com o Asaas (payment + NFS-e)
   // ============================================================
   export async function reconcileInvoiceFromAsaas(invoice: any): Promise<{ updated: boolean; changes?: Record<string, any> }> {
-    if (!invoice?.asaas_payment_id || !process.env.ASAAS_API_KEY) return { updated: false };
+    if (!invoice?.asaas_payment_id || !hasAsaasApiKey()) return { updated: false };
 
     const updates: Record<string, any> = {};
     let changed = false;
@@ -750,7 +942,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
    */
   export async function retryDiscriminacaoErrorNfses(opts?: { limit?: number }): Promise<{ processed: number; retried: number; errors: number }> {
     const result = { processed: 0, retried: 0, errors: 0 };
-    if (!process.env.ASAAS_API_KEY) return result;
+    if (!hasAsaasApiKey()) return result;
     const limit = Math.max(1, Math.min(opts?.limit ?? 10, 20));
 
     const { data: invoices, error } = await supabaseAdmin.from("invoices")
@@ -853,7 +1045,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
 
   export async function reconcileStuckNfses(opts?: { limit?: number }): Promise<{ processed: number; updated: number; errors: number }> {
     const result = { processed: 0, updated: 0, errors: 0 };
-    if (!process.env.ASAAS_API_KEY) return result;
+    if (!hasAsaasApiKey()) return result;
 
     const limit = Math.max(1, Math.min(opts?.limit ?? 30, 80));
     const { data: invoices, error } = await supabaseAdmin.from("invoices")
@@ -894,11 +1086,21 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
       result.errors += 1;
       console.log(`[reconcile-stuck] retry Discriminacao: ${e?.message}`);
     }
+
+    try {
+      const queued = await runIsolatedNfRetryQueue({ limit: 10 });
+      result.processed += queued.processed;
+      result.updated += queued.retried;
+      result.errors += queued.errors;
+    } catch (e: any) {
+      result.errors += 1;
+      console.log(`[reconcile-stuck] nf-retry: ${e?.message}`);
+    }
     return result;
   }
 
   export async function reconcileAllInvoicesAsaas(opts?: { force?: boolean; limit?: number }): Promise<typeof nfReconcileState> {
-    if (!process.env.ASAAS_API_KEY) {
+    if (!hasAsaasApiKey()) {
       nfReconcileState.lastError = "ASAAS_API_KEY não configurada";
       return nfReconcileState;
     }
@@ -987,7 +1189,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
 
   async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
   const apiKey = getApiKey();
-  const url = `${ASAAS_API_URL}${path}`;
+  const url = `${getAsaasBaseUrl()}${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "access_token": apiKey,
@@ -999,7 +1201,18 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
     opts.body = JSON.stringify(body);
   }
 
-  const resp = await fetch(url, opts);
+  const timeoutMs = /\/invoices/.test(path) ? ASAAS_INVOICE_TIMEOUT_MS : ASAAS_REQUEST_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let resp: Response;
+  try {
+    resp = await fetch(url, { ...opts, signal: controller.signal });
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw new Error(`Asaas timeout (${Math.round(timeoutMs / 1000)}s)`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await resp.text();
   let data: any;
   try { data = JSON.parse(text); } catch { data = { rawText: text }; }
@@ -1086,7 +1299,7 @@ async function applyAsaasPaymentEmailPolicy(paymentId: string | null | undefined
 
 export async function getAsaasBalance(): Promise<{ connected: boolean; balance?: number; saldoAtual?: number; saldoAReceber?: number; message?: string }> {
   try {
-    if (!process.env.ASAAS_API_KEY) {
+    if (!hasAsaasApiKey()) {
       return { connected: false, message: "ASAAS_API_KEY não configurada" };
     }
     const result = await asaasRequest("GET", "/finance/balance");
@@ -1243,7 +1456,7 @@ export async function emitInvoiceAuto(
   invoiceId: number,
   opts: { dueDate: string; billingType?: string; actorName?: string }
 ): Promise<{ success: boolean; message: string; nfEmitted: boolean; paymentId?: string }> {
-  if (!process.env.ASAAS_API_KEY) {
+  if (!hasAsaasApiKey()) {
     return { success: false, message: "Asaas não configurado (ASAAS_API_KEY)", nfEmitted: false };
   }
 
@@ -1280,6 +1493,9 @@ export async function emitInvoiceAuto(
 
   // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF). invoice.value = bruto.
   const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
+
+  const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
+  if (fiscalAddrErr) return { success: false, message: fiscalAddrErr, nfEmitted: false };
 
   const asaasCustomerId = await findOrCreateAsaasCustomer(
     clientName, cpfCnpj, clientEmail, clientPhone,
@@ -1333,32 +1549,15 @@ export async function emitInvoiceAuto(
 
   let nfEmitted = false;
   if (emiteNf) {
-    try {
-      const nfResult = await emitNfseImmediate({
-        paymentId: payment.id,
-        value: totalValue,
-        description: invoice.description || DESCRICAO_SERVICO_FIXA,
-        clientEmail,
-        retemInss,
-        inssAliquota,
-      });
-      Object.assign(updates, nfseFieldsFromEmitResult(nfResult));
-      nfEmitted = true;
-      console.log(`[asaas] [auto] NFS-e emitida para fatura #${invoiceId}: ${nfResult.status}`);
-    } catch (nfErr: any) {
-      console.error(`[asaas] [auto] NFS-e falhou para fatura #${invoiceId}: ${nfErr.message}`);
-      if (isNfCorrectionError(nfErr?.message)) {
-        updates.nfse_status = NF_AWAITING_CORRECTION;
-        updates.nfse_error_message = String(nfErr?.message || MISSING_EMAIL_NF_MSG).slice(0, 1000);
-      } else {
-        updates.nfse_status = "ERRO";
-        updates.nfse_error_message = String(nfErr?.message || "Erro").slice(0, 1000);
-        await notifyNfseIntegrationError({ invoice: { ...invoice, ...updates, id: invoiceId }, errorMessage: updates.nfse_error_message });
-      }
-    }
+    updates.nfse_status = "PROCESSING";
   }
 
   await supabaseAdmin.from("invoices").update(updates).eq("id", invoiceId);
+  if (emiteNf) {
+    await emitIsolatedNfse(invoiceId, "auto");
+    const { data: afterNf } = await supabaseAdmin.from("invoices").select("nfse_status, nfse_number").eq("id", invoiceId).maybeSingle();
+    nfEmitted = isNfFullyIssued(afterNf?.nfse_status, afterNf?.nfse_number) || isAsaasInvoiceId(afterNf?.nfse_number);
+  }
 
   const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
   if (billingIdsMatch) {
@@ -1396,7 +1595,7 @@ export function registerAsaasRoutes(app: Express) {
       if (user?.role !== "diretoria") {
         return res.status(403).json({ connected: false, message: "Acesso restrito à diretoria." });
       }
-      const hasKey = !!process.env.ASAAS_API_KEY;
+      const hasKey = !!hasAsaasApiKey();
       if (!hasKey) {
         return res.json({ connected: false, message: "ASAAS_API_KEY não configurada" });
       }
@@ -1506,7 +1705,7 @@ export function registerAsaasRoutes(app: Express) {
       if (user?.role !== "diretoria") {
         return res.status(403).json({ message: "Acesso restrito à diretoria." });
       }
-      if (!process.env.ASAAS_API_KEY) {
+      if (!hasAsaasApiKey()) {
         return res.json({ pending: [], count: 0, total: 0 });
       }
       const result = await asaasRequest("GET", "/transfers?status=PENDING&limit=20");
@@ -1525,10 +1724,10 @@ export function registerAsaasRoutes(app: Express) {
       if (user?.role !== "diretoria") {
         return res.status(403).json({ message: "Somente a diretoria pode realizar transferências." });
       }
-      const apiKey = process.env.ASAAS_API_KEY;
-      if (!apiKey) {
+      if (!hasAsaasApiKey()) {
         return res.status(400).json({ message: "ASAAS_API_KEY não configurada" });
       }
+      const apiKey = getApiKey();
 
       const balRes = await asaasRequest("GET", "/finance/balance");
       const saldo = Number(balRes?.balance ?? balRes?.currentBalance ?? 0);
@@ -1550,7 +1749,7 @@ export function registerAsaasRoutes(app: Express) {
         description: "Transferencia automatica de saldo",
       };
 
-      const url = `${ASAAS_API_URL}/transfers`;
+      const url = `${getAsaasBaseUrl()}/transfers`;
       console.log(`[asaas-transfer] >>> POST ${url}`);
       console.log(`[asaas-transfer] >>> Body:`, JSON.stringify(transferBody));
 
@@ -1652,7 +1851,7 @@ export function registerAsaasRoutes(app: Express) {
       if (error) throw error;
       const invoices = data || [];
 
-      if (process.env.ASAAS_API_KEY && invoices.length > 0) {
+      if (hasAsaasApiKey() && invoices.length > 0) {
         // Auto-sync só roda em status ABERTOS (PENDING/CONFIRMED/OVERDUE).
         // Faturas já pagas (RECEIVED/RECEIVED_IN_CASH) ficam fora do filtro,
         // então nunca terão o status sobrescrito por esse caminho.
@@ -1749,8 +1948,10 @@ export function registerAsaasRoutes(app: Express) {
       let clientCity: string | undefined;
       let clientState: string | undefined;
       let clientZip: string | undefined;
+      let clientFiscal: any = null;
       if (clientId) {
         const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual, emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
+        clientFiscal = cliInfo;
         if (!clientEmail) clientEmail = asaasTomadorEmail(cliInfo);
         clientPhone = cliInfo?.phone || undefined;
         clientAddress = cliInfo?.address || undefined;
@@ -1770,7 +1971,11 @@ export function registerAsaasRoutes(app: Express) {
         };
       }
 
-      if (sendToAsaas && process.env.ASAAS_API_KEY) {
+      }
+
+      if (sendToAsaas && hasAsaasApiKey()) {
+        const fiscalAddrErr = assertFiscalAddressForNf(clientFiscal, emiteNf);
+        if (fiscalAddrErr) return res.status(400).json({ message: fiscalAddrErr });
         asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientOpts);
 
         const parsedValue = parseFloat(value);
@@ -1817,22 +2022,7 @@ export function registerAsaasRoutes(app: Express) {
           pixCopiaECola = pix.pix_copia_e_cola;
 
           if (asaasPaymentId && emiteNf) {
-            try {
-              const nfResult = await emitNfseImmediate({
-                paymentId: asaasPaymentId,
-                value: parsedValue,
-                description: description || DESCRICAO_SERVICO_FIXA,
-                clientEmail,
-                retemInss,
-                inssAliquota,
-              });
-              const nfFields = nfseFieldsFromEmitResult(nfResult);
-              nfseStatus = nfFields.nfse_status;
-              nfseNumber = nfFields.nfse_number || null;
-              console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}: id=${nfResult.id}, status=${nfResult.status}`);
-            } catch (nfErr: any) {
-              console.log(`[asaas] NFS-e auto-emission (individual) non-blocking: ${nfErr.message}`);
-            }
+            nfseStatus = "PROCESSING";
           } else if (asaasPaymentId && !emiteNf) {
             console.log(`[asaas] NFS-e NÃO emitida (cliente ${clientId} com emite_nf=false). Apenas boleto/cobrança gerada.`);
           }
@@ -1913,8 +2103,10 @@ export function registerAsaasRoutes(app: Express) {
       console.log(`[billing-email] Fatura #${data.id} criada — aguardando anexo de NF para envio.`);
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: data.id, invoice: data });
+      if (emiteNf && asaasPaymentId) await emitIsolatedNfse(data.id, "create");
 
-      res.json(data);
+      const { data: withNf } = await supabaseAdmin.from("invoices").select("*").eq("id", data.id).maybeSingle();
+      res.json(withNf || data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -1933,7 +2125,7 @@ export function registerAsaasRoutes(app: Express) {
         return res.status(403).json({ message: "Somente a diretoria pode cancelar faturas." });
       }
 
-      if (updates.status === "CANCELLED" && existing.asaas_payment_id && process.env.ASAAS_API_KEY) {
+      if (updates.status === "CANCELLED" && existing.asaas_payment_id && hasAsaasApiKey()) {
         try {
           await asaasRequest("DELETE", `/payments/${existing.asaas_payment_id}`);
         } catch (e: any) {
@@ -2087,7 +2279,7 @@ export function registerAsaasRoutes(app: Express) {
       const { data: existing } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!existing) return res.status(404).json({ message: "Fatura não encontrada" });
 
-      if (existing.asaas_payment_id && process.env.ASAAS_API_KEY) {
+      if (existing.asaas_payment_id && hasAsaasApiKey()) {
         try {
           await asaasRequest("DELETE", `/payments/${existing.asaas_payment_id}`);
         } catch (e: any) {
@@ -2198,6 +2390,18 @@ export function registerAsaasRoutes(app: Express) {
         && !isNfErrorStatus(existingNf.nf.status)
         && !String(existingNf.nf.status || "").toUpperCase().includes("CANCEL")
       ) {
+        const liveMsg = existingNf.nf?.statusDescription || invoice.nfse_error_message;
+        const nudge = shouldNudgeNfseAuthorize(
+          existingNf.nf?.status || invoice.nfse_status,
+          existingNf.nf?.id || invoice.nfse_number,
+          liveMsg,
+        );
+        if (nudge) {
+          const r = await retryNfseForInvoice(id, { source: "emit-nfse", bypassAge: true });
+          const { data: after } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
+          if (!r.ok) return res.status(400).json({ message: r.message, invoice: after });
+          return res.json({ ...after, nfseResult: { status: r.status }, message: r.message });
+        }
         const nfSync = await collectNfseSyncUpdates(invoice);
         if (Object.keys(nfSync.updates).length > 0) {
           await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", id);
@@ -2258,6 +2462,25 @@ export function registerAsaasRoutes(app: Express) {
       res.json({ ...data, nfseResult: result });
     } catch (err: any) {
       console.error("[asaas] Erro NFS-e:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  /** Kick isolado (TM SEG): POST /invoices fora da request do boleto. Cron reprocessa a mesma fila. */
+  app.post("/api/nf/retry/:invoiceId", requireFinanceiro, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.invoiceId, 10);
+      const r = await retryNfseForInvoice(id, { source: "kick", bypassAge: true });
+      if (!r.ok && /não encontrada/i.test(r.message)) {
+        return res.status(404).json({ ok: false, message: r.message });
+      }
+      if (!r.ok && /já está em processamento/i.test(r.message)) {
+        return res.json({ ok: true, message: r.message, status: r.status });
+      }
+      if (!r.ok) return res.status(400).json({ ok: false, message: r.message, status: r.status });
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
+      res.json({ ok: true, message: r.message, status: r.status, invoice });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
@@ -2545,7 +2768,10 @@ export function registerAsaasRoutes(app: Express) {
 
       if (totalValue <= 0) return res.status(400).json({ message: "Valor da fatura é R$ 0,00." });
 
-      if (!process.env.ASAAS_API_KEY) return res.status(400).json({ message: "Asaas não configurado (ASAAS_API_KEY)." });
+      const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
+      if (fiscalAddrErr) return res.status(400).json({ message: fiscalAddrErr });
+
+      if (!hasAsaasApiKey()) return res.status(400).json({ message: "Asaas não configurado (ASAAS_API_KEY)." });
 
       const asaasCustomerId = await findOrCreateAsaasCustomer(
         clientName, cpfCnpj, clientEmail, clientPhone,
@@ -2608,32 +2834,12 @@ export function registerAsaasRoutes(app: Express) {
       assignAsaasPix(updates, await fetchAsaasPix(payment.id));
 
       if (emiteNf) {
-        try {
-          const nfResult = await emitNfseImmediate({
-            paymentId: payment.id,
-            value: totalValue,
-            description: invoice.description || DESCRICAO_SERVICO_FIXA,
-            clientEmail,
-            retemInss,
-            inssAliquota,
-          });
-          Object.assign(updates, nfseFieldsFromEmitResult(nfResult));
-          console.log(`[asaas] NFS-e emitida para fatura #${id}: ${nfResult.status}`);
-        } catch (nfErr: any) {
-          console.error(`[asaas] NFS-e falhou para fatura #${id}: ${nfErr.message}`);
-          if (isNfCorrectionError(nfErr?.message)) {
-            updates.nfse_status = NF_AWAITING_CORRECTION;
-            updates.nfse_error_message = String(nfErr?.message || MISSING_EMAIL_NF_MSG).slice(0, 1000);
-          } else {
-            updates.nfse_status = "ERRO";
-            updates.nfse_error_message = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
-            await notifyNfseIntegrationError({ invoice: { ...invoice, ...updates, id }, errorMessage: updates.nfse_error_message });
-          }
-        }
+        updates.nfse_status = "PROCESSING";
       }
 
       const { data: updated, error: updateErr } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
       if (updateErr) throw updateErr;
+      if (emiteNf) await emitIsolatedNfse(id, "emitir");
 
       const billingIdsMatch = (invoice.notes || "").match(/Billing IDs: (.+)$/);
       if (billingIdsMatch) {
@@ -2657,7 +2863,14 @@ export function registerAsaasRoutes(app: Express) {
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: id, invoice: updated });
 
-      res.json({ success: true, message: `Boleto gerado${emiteNf ? " + NF-e emitida" : ""}. Asaas: ${payment.id}`, invoice: updated });
+      const { data: afterNf } = emiteNf
+        ? await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle()
+        : { data: updated };
+      res.json({
+        success: true,
+        message: `Boleto gerado${emiteNf ? " — NFS-e na fila" : ""}. Asaas: ${payment.id}`,
+        invoice: afterNf || updated,
+      });
     } catch (err: any) {
       console.error("[asaas] Erro ao emitir fatura aprovada:", err.message);
       res.status(500).json({ message: err.message });
@@ -3298,6 +3511,12 @@ export function registerAsaasRoutes(app: Express) {
       const inssAliquotaConsolidado = netConsolidado.inssAliquota;
       const inssValorConsolidado = netConsolidado.inssValor;
 
+      const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNfConsolidado);
+      if (fiscalAddrErr) {
+        gerarFaturaLocks.delete(clientId);
+        return res.status(400).json({ message: fiscalAddrErr });
+      }
+
       if (clientData?.billing_cycle === "quinzenal") {
         const { data: allInPeriod } = await supabaseAdmin
           .from("escort_billings")
@@ -3364,7 +3583,7 @@ export function registerAsaasRoutes(app: Express) {
           });
           const spInssValor = spNet.inssValor;
 
-          if (sendToAsaas && process.env.ASAAS_API_KEY && splitCnpj) {
+          if (sendToAsaas && hasAsaasApiKey() && splitCnpj) {
             try {
               spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, {
                 addressNumber: clientData?.address_number || undefined,
@@ -3402,25 +3621,7 @@ export function registerAsaasRoutes(app: Express) {
               spPixQrCode = spPix.pix_qr_code;
               spPixCopiaECola = spPix.pix_copia_e_cola;
               if (spAsaasPaymentId && emiteNfConsolidado) {
-                try {
-                  const nfResult = await emitNfseImmediate({
-                    paymentId: spAsaasPaymentId,
-                    value: splitValue,
-                    description: splitDescricao.substring(0, 500),
-                    observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões). Split ${idx + 1}/${splits.length}.`,
-                    clientEmail: clientEmailConsolidado,
-                    retemInss: retemInssConsolidado,
-                    inssAliquota: inssAliquotaConsolidadoLegal,
-                  });
-                  const spNf = nfseFieldsFromEmitResult(nfResult);
-                  spNfseStatus = spNf.nfse_status;
-                  if (spNf.nfse_number) spNfseNumber = spNf.nfse_number;
-                  console.log(`[asaas] NFS-e split ${idx + 1} emitida para payment ${spAsaasPaymentId}. ID: ${nfResult.id}`);
-                } catch (nfErr: any) {
-                  spNfseStatus = "ERROR";
-                  spNfseErrorMessage = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
-                  console.log(`[asaas] NFS-e split ${idx + 1} error: ${nfErr.message}`);
-                }
+                spNfseStatus = "PROCESSING";
               } else if (spAsaasPaymentId && !emiteNfConsolidado) {
                 console.log(`[asaas] NFS-e split ${idx + 1} NÃO emitida (cliente ${clientId} com emite_nf=false).`);
               }
@@ -3470,6 +3671,7 @@ export function registerAsaasRoutes(app: Express) {
           if (spInvErr) throw spInvErr;
           createdInvoices.push(spInvoice);
           notifyComissaoInvoiceEvent("FATURADO", { invoiceId: spInvoice.id, invoice: spInvoice });
+          if (emiteNfConsolidado && spAsaasPaymentId) await emitIsolatedNfse(spInvoice.id, "split");
 
           await supabaseAdmin.from("billing_splits").insert({
             invoice_id: spInvoice.id,
@@ -3551,7 +3753,7 @@ export function registerAsaasRoutes(app: Express) {
       let nfseNumber: string | null = null;
       let nfseErrorMessage: string | null = null;
 
-      if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
+      if (sendToAsaas && hasAsaasApiKey() && cpfCnpj) {
         try {
           asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip, {
             addressNumber: clientData?.address_number || undefined,
@@ -3590,25 +3792,7 @@ export function registerAsaasRoutes(app: Express) {
           pixCopiaECola = consPix.pix_copia_e_cola;
 
           if (asaasPaymentId && emiteNfConsolidado) {
-            try {
-              const nfResult = await emitNfseImmediate({
-                paymentId: asaasPaymentId,
-                value: totalValue,
-                description: descricaoFiscal.substring(0, 500),
-                observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`,
-                clientEmail: clientEmailConsolidado,
-                retemInss: retemInssConsolidado,
-                inssAliquota: inssAliquotaConsolidadoLegal,
-              });
-              const consNf = nfseFieldsFromEmitResult(nfResult);
-              nfseStatus = consNf.nfse_status;
-              if (consNf.nfse_number) nfseNumber = consNf.nfse_number;
-              console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
-            } catch (nfErr: any) {
-              nfseStatus = "ERROR";
-              nfseErrorMessage = String(nfErr?.message || "Erro desconhecido ao emitir NFS-e").slice(0, 1000);
-              console.log(`[asaas] NFS-e auto-emission error (non-blocking): ${nfErr.message}`);
-            }
+            nfseStatus = "PROCESSING";
           } else if (asaasPaymentId && !emiteNfConsolidado) {
             console.log(`[asaas] NFS-e NÃO emitida (cliente ${clientId} com emite_nf=false). Apenas cobrança consolidada gerada.`);
           }
@@ -3659,6 +3843,7 @@ export function registerAsaasRoutes(app: Express) {
       if (invErr) throw invErr;
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: invoice.id, invoice });
+      if (emiteNfConsolidado && asaasPaymentId) await emitIsolatedNfse(invoice.id, "consolidado");
 
       try {
         await markBillingsInvoicedAtomic(
@@ -3686,7 +3871,9 @@ export function registerAsaasRoutes(app: Express) {
         totalValue,
         missionsCount: billings.length,
       });
+      gerarFaturaLocks.delete(clientId);
     } catch (err: any) {
+      gerarFaturaLocks.delete(clientId);
       console.error("[billing] Erro ao gerar fatura:", err.message);
       res.status(500).json({ message: err.message });
     }
@@ -3721,7 +3908,7 @@ export function registerAsaasRoutes(app: Express) {
         bustBalancoCaches();
       }
 
-      if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+      if (invoice.asaas_payment_id && hasAsaasApiKey()) {
         try {
           await asaasRequest("DELETE", `/payments/${invoice.asaas_payment_id}`);
         } catch (e: any) {
@@ -4227,7 +4414,7 @@ export function registerAsaasRoutes(app: Express) {
         if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
 
         // Tentativa best-effort de excluir cobrança no Asaas
-        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+        if (invoice.asaas_payment_id && hasAsaasApiKey()) {
           try { await asaasRequest("DELETE", `/payments/${invoice.asaas_payment_id}`); }
           catch (e: any) { console.log("[asaas] delete payment err:", e.message); }
         }
@@ -4334,7 +4521,7 @@ export function registerAsaasRoutes(app: Express) {
         let relinkedPaymentId: string | null = null;
         let relinkedNetValue: number | null = null;
         let relinkedPaymentDate: string | null = null;
-        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+        if (invoice.asaas_payment_id && hasAsaasApiKey()) {
           try {
             await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/receiveInCash`, {
               paymentDate,
@@ -4804,7 +4991,7 @@ export function registerAsaasRoutes(app: Express) {
         let asaasOk = false;
         let asaasMsg = "";
         if (invoice.asaas_payment_id) {
-          if (!process.env.ASAAS_API_KEY) {
+          if (!hasAsaasApiKey()) {
             return res.status(503).json({ message: "Cobrança existe no Asaas, mas a API não está configurada. O vencimento manual precisa gravar nos dois lados." });
           }
           try {

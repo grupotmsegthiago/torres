@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries, kickNfRetryFromInvoicePayload } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1532,6 +1532,10 @@ export default function BoletimMedicaoPage() {
                       dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
                       startDate: aprovarFaturarDialog.minDate,
                       endDate: aprovarFaturarDialog.maxDate,
+                    }).then(async (res) => {
+                      const json = await res.json().catch(() => ({}));
+                      kickNfRetryFromInvoicePayload(json);
+                      return json;
                     });
                     invalidateAllRelated();
                     setCheckedOsIds(new Set());

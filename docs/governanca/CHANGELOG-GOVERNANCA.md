@@ -1,5 +1,18 @@
 # Changelog — Governança Torres
 
+## 2026-09-14 — NFS-e Asaas: emissão não conclui (PROCESSING eterno)
+
+- Causa: `setTimeout` da NF isolada morre no Vercel; timeout 8s abortava `POST /invoices`; SYNCHRONIZED + “falha ao comunicar” / `_NFe002` ficava só em consulta; PROCESSING local escondia o botão Emitir.
+- Correção: `await emitIsolatedNfse` na mesma isolate; timeout 45s em `/invoices`; `municipalServiceId` 402 padrão; `effectiveDate` BRT; authorize na mesma `inv_*` sem segundo POST; cron NF primeiro no bucket de 5 min.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-TRAVADA-PROCESSANDO-2026-09-14.md`.
+
+
+## 2026-09-10 — NFS-e isolada (cobrança + worker, espelho TM SEG)
+
+- Cobrança Asaas e NFS-e deixam de ir na mesma request. Fatura local fica `PROCESSING`; `POST /invoices` sai no kick `/api/nf/retry/:id` e no cron de 5 min.
+- Sem segundo POST em NF já na prefeitura. Código municipal da Torres permanece `07870` (não o `07930` da TM).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-ISOLADA-2026-09-10.md`.
+
 ## 2026-09-10 — Observação da NFS-e (modelo financeiro, ≤250)
 
 - `observations` da NFS-e: CNAE, Escolta Armada, período, INSS Anexo IV, Simples Nacional, bruto/ISS/líquido. Discriminacao municipal permanece o texto CNAE oficial.
