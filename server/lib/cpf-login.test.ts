@@ -5,6 +5,8 @@ import path from "node:path";
 import {
   cleanCpfDigits,
   formatCpfMasked,
+  isEnforceableEmployeeCpf,
+  isPlaceholderEmployeeCpf,
   isSyntheticCpfEmail,
   isValidCpfDigits,
   parseCpfFromSyntheticEmail,
@@ -25,6 +27,15 @@ describe("cpf-login helpers", () => {
     assert.equal(isSyntheticCpfEmail("cpf_10421843802@torresseguranca.local"), true);
     assert.equal(isSyntheticCpfEmail("admin@torresseguranca.com.br"), false);
   });
+
+  it("distingue CPF placeholder de CPF real para unicidade", () => {
+    assert.equal(isPlaceholderEmployeeCpf("000.000.000-00"), true);
+    assert.equal(isPlaceholderEmployeeCpf("000.000.000-24"), true);
+    assert.equal(isPlaceholderEmployeeCpf("781.119.275-68"), false);
+    assert.equal(isEnforceableEmployeeCpf("000.000.000-00"), false);
+    assert.equal(isEnforceableEmployeeCpf("781.119.275-68"), true);
+    assert.equal(isEnforceableEmployeeCpf("123"), false);
+  });
 });
 
 describe("cpf-login contratos de fonte", () => {
@@ -38,6 +49,19 @@ describe("cpf-login contratos de fonte", () => {
   it("PATCH employees sincroniza login sintético quando o CPF muda", () => {
     const emp = readFileSync(path.join(root, "server/routes/employees.ts"), "utf8");
     assert.match(emp, /syncLinkedUserSyntheticEmail/);
+  });
+
+  it("POST/PATCH employees bloqueiam CPF duplicado via findEmployeeCpfConflict", () => {
+    const emp = readFileSync(path.join(root, "server/routes/employees.ts"), "utf8");
+    assert.match(emp, /findEmployeeCpfConflict/);
+    assert.match(emp, /isEnforceableEmployeeCpf/);
+    assert.match(emp, /Já existe funcionário com este CPF/);
+    assert.match(emp, /status\(409\)/);
+  });
+
+  it("boot SQL garante índice único parcial de CPF em employees", () => {
+    const routes = readFileSync(path.join(root, "server/routes.ts"), "utf8");
+    assert.match(routes, /uniq_employees_cpf_digits/);
   });
 
   it("UI de usuários permite editar login de CPF", () => {

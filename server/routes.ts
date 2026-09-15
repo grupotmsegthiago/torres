@@ -176,6 +176,8 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS uf TEXT",
     "ALTER TABLE fornecedores ALTER COLUMN cnpj_cpf SET NOT NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS uniq_fornecedores_cnpj_cpf ON fornecedores(REGEXP_REPLACE(cnpj_cpf, '[^0-9]', '', 'g'))",
+    // CPF real único em employees (placeholders 000.000.000-XX ficam de fora do índice parcial)
+    `CREATE UNIQUE INDEX IF NOT EXISTS uniq_employees_cpf_digits ON employees ((REGEXP_REPLACE(cpf, '[^0-9]', '', 'g'))) WHERE length(REGEXP_REPLACE(cpf, '[^0-9]', '', 'g')) = 11 AND REGEXP_REPLACE(cpf, '[^0-9]', '', 'g') !~ '^0{9}'`,
     "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",

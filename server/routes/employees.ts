@@ -21,7 +21,13 @@ import { syncEmployeeStatusToRhid, enqueueRhidSync } from "../control-id";
   import { bustRhSummaryCache } from "../lib/balanco-cache";
   import { toDecimalString } from "../lib/parse-money";
   import { generateTempPassword } from "../lib/temp-password";
-import { syntheticCpfEmail, syncLinkedUserSyntheticEmail } from "../lib/cpf-login";
+import {
+  findEmployeeCpfConflict,
+  formatCpfMasked,
+  isEnforceableEmployeeCpf,
+  syntheticCpfEmail,
+  syncLinkedUserSyntheticEmail,
+} from "../lib/cpf-login";
 import { resolveOpenAIConfig } from "../lib/holerite-parse";
 import { extractPdfText } from "../lib/pdf-text";
 import { resolveOcrDocumentPayload } from "../lib/photo-data-uri";
@@ -217,6 +223,16 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     console.log("[emp-debug POST] parsed.rg:", JSON.stringify(parsed.data.rg));
+    if (isEnforceableEmployeeCpf(parsed.data.cpf)) {
+      const conflict = await findEmployeeCpfConflict(parsed.data.cpf, null);
+      if (conflict) {
+        return res.status(409).json({
+          message: `Já existe funcionário com este CPF: ${conflict.name}${conflict.matricula ? ` (${conflict.matricula})` : ""}`,
+          conflictEmployeeId: conflict.id,
+        });
+      }
+      parsed.data.cpf = formatCpfMasked(parsed.data.cpf);
+    }
     const data = await storage.createEmployee(parsed.data);
     console.log("[emp-debug POST] saved.rg:", JSON.stringify((data as any).rg));
     if (data.cpf) {
@@ -312,11 +328,22 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
     const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
     console.log(`[emp-debug PATCH ${req.params.id}] parsed.rg:`, JSON.stringify(parsed.data.rg));
-    const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
+    const empId = Number(req.params.id);
+    if (parsed.data.cpf !== undefined && isEnforceableEmployeeCpf(parsed.data.cpf)) {
+      const conflict = await findEmployeeCpfConflict(parsed.data.cpf, empId);
+      if (conflict) {
+        return res.status(409).json({
+          message: `Já existe funcionário com este CPF: ${conflict.name}${conflict.matricula ? ` (${conflict.matricula})` : ""}`,
+          conflictEmployeeId: conflict.id,
+        });
+      }
+      parsed.data.cpf = formatCpfMasked(parsed.data.cpf);
+    }
+    const data = await storage.updateEmployee(empId, parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
     if (parsed.data.cpf) {
-      const loginSync = await syncLinkedUserSyntheticEmail(Number(req.params.id), parsed.data.cpf);
+      const loginSync = await syncLinkedUserSyntheticEmail(empId, parsed.data.cpf);
       if (loginSync && "ok" in loginSync && loginSync.ok === false) {
         return res.status(loginSync.status).json({ message: loginSync.message });
       }
