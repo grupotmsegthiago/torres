@@ -8,6 +8,13 @@ export const TORRES_CNPJ = "36982392000189";
 export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
+/**
+ * ID do serviço municipal na prefeitura (Asaas GET /invoices/municipalServices).
+ * 07870 | 11.02 — Vigilância, segurança ou monitoramento de bens e pessoas.
+ * Emissão via prefeitura usa municipalServiceId; municipalServiceCode é só Portal Nacional.
+ */
+export const MUNICIPAL_SERVICE_ID = 402;
+export const MUNICIPAL_SERVICE_EXTERNAL_ID = 402;
 export const ISS_ALIQUOTA = 0;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
@@ -298,13 +305,20 @@ export function buildNfseInvoicePayload(opts: {
   const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
   const serviceDescription =
     (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
+  const municipalServiceId =
+    opts.municipalServiceIdOverride && opts.municipalServiceIdOverride > 0
+      ? opts.municipalServiceIdOverride
+      : MUNICIPAL_SERVICE_ID;
+  // Prefeitura: municipalServiceId (+ externalId). NÃO enviar municipalServiceCode
+  // (esse campo é só Portal Nacional e faz a NF sair com serviço errado).
   const payload: Record<string, any> = {
     serviceDescription,
     observations: `${baseObs} ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(opts.value, retemInss, inssAliquota)}`.trim(),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
-    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
+    municipalServiceId,
+    municipalServiceExternalId: MUNICIPAL_SERVICE_EXTERNAL_ID,
     municipalServiceName: DESCRICAO_SERVICO_FIXA,
     taxes: {
       retainIss: false,
@@ -312,9 +326,6 @@ export function buildNfseInvoicePayload(opts: {
       cofins: 0, csll: 0, inss: inssAliquota, ir: 0, pis: 0,
     },
   };
-  if (opts.municipalServiceIdOverride) {
-    payload.municipalServiceId = opts.municipalServiceIdOverride;
-  }
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;

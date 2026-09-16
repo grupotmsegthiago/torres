@@ -12,8 +12,7 @@ import {
 import {
   TORRES_CNPJ,
   CNAE_PRINCIPAL,
-  CODIGO_SERVICO_MUNICIPAL,
-  CODIGO_SERVICO_MUNICIPAL_CODE,
+  MUNICIPAL_SERVICE_ID,
   ISS_ALIQUOTA,
   DESCRICAO_SERVICO_FIXA,
   INSS_OBSERVACAO_LEGAL,
@@ -100,9 +99,7 @@ function getApiKey(): string {
 }
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  // Valida env var: se inválida (NaN/0/negativa), loga warning gritante e
-  // omite. Sem essa guarda, parseInt silenciosamente vira NaN e o Asaas
-  // cai pro default da conta (= 01481 pedágio). Falha visível > regressão silenciosa.
+  // Prefeitura: ID 402 (07870 | 11.02). Env só sobrescreve; se inválida, cai no default.
   const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
   let override: number | undefined;
   if (raw && raw.trim()) {
@@ -110,19 +107,18 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
     if (Number.isFinite(n) && n > 0) {
       override = n;
     } else {
-      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — NFS-e pode sair com código errado. Esperado: número positivo (ex: 402 para código 07870).`);
+      console.error(`[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — usando default ${MUNICIPAL_SERVICE_ID} (07870 | 11.02).`);
     }
-  } else {
-    console.warn("[asaas] ⚠️  ASAAS_MUNICIPAL_SERVICE_ID não definida — Asaas usará o serviço default da conta (risco de emitir com código errado).");
   }
   const payload = buildNfseInvoicePayloadBase({
     ...opts,
     municipalServiceIdOverride: override,
   });
   console.log("[asaas] NFS-e payload:", JSON.stringify({
-    municipalServiceCode: payload.municipalServiceCode,
+    municipalServiceId: payload.municipalServiceId,
+    municipalServiceExternalId: payload.municipalServiceExternalId,
     municipalServiceName: payload.municipalServiceName,
-    municipalServiceId: payload.municipalServiceId ?? "(omitido)",
+    municipalServiceCode: payload.municipalServiceCode ?? "(omitido — prefeitura)",
   }));
   return payload;
 }

@@ -19,6 +19,8 @@ import {
   CNAE_PRINCIPAL,
   CODIGO_SERVICO_MUNICIPAL,
   CODIGO_SERVICO_MUNICIPAL_CODE,
+  MUNICIPAL_SERVICE_ID,
+  MUNICIPAL_SERVICE_EXTERNAL_ID,
   DESCRICAO_SERVICO_FIXA,
   TORRES_CNPJ,
   buildMarkEmittedInvoiceUpdates,
@@ -234,8 +236,10 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   assert.equal(p.payment, "pay_123");
   assert.equal(p.value, 100);
   assert.equal(p.serviceDescription, "Desc teste");
-  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal(p.municipalServiceId, MUNICIPAL_SERVICE_ID);
+  assert.equal(p.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
   assert.equal(p.municipalServiceName, DESCRICAO_SERVICO_FIXA);
+  assert.equal("municipalServiceCode" in p, false);
 });
 
 test("buildNfseInvoicePayload: omite payment quando paymentId vazio", () => {
@@ -273,11 +277,14 @@ test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
     paymentId: "p", value: 100, description: "X", municipalServiceIdOverride: 999,
   });
   assert.equal(p.municipalServiceId, 999);
+  assert.equal("municipalServiceCode" in p, false);
 });
 
-test("buildNfseInvoicePayload: sem override de municipalServiceId não inclui o campo", () => {
+test("buildNfseInvoicePayload: sem override usa ID 402 da prefeitura (07870 | 11.02)", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
-  assert.equal("municipalServiceId" in p, false);
+  assert.equal(p.municipalServiceId, 402);
+  assert.equal(p.municipalServiceExternalId, 402);
+  assert.equal("municipalServiceCode" in p, false);
 });
 
 test("buildNfseInvoicePayload: observations custom sobrescreve base", () => {
