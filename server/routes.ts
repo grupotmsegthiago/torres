@@ -21,6 +21,8 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
 import { normalizePhotoDataUri } from "./lib/photo-data-uri";
+import { fetchAllSupabaseRows } from "./lib/supabase-page";
+import { collectLinkedFuelingIds, fuelingTagMatchPattern } from "./lib/fueling-mission-cost";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats, setSupabaseRef } from "./pg-fallback";
 import OpenAI from "openai";
@@ -32,6 +34,7 @@ import {
   toSafeUser, logFinancialAudit,
   createAutoTransaction, removeAutoTransaction,
 } from "./routes/_helpers";
+import { clientOutboundMail, withTorresAlwaysCc } from "../shared/client-emails";
 
 
 async function ensureInterTables() {
@@ -123,6 +126,12 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS nf_url TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS nf_path TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS nf_anexado_em TIMESTAMP",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_url TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_path TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_anexado_em TIMESTAMP",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_diretoria BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_por TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS solicitado_por TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_por TEXT",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMP",
@@ -167,6 +176,8 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS uf TEXT",
     "ALTER TABLE fornecedores ALTER COLUMN cnpj_cpf SET NOT NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS uniq_fornecedores_cnpj_cpf ON fornecedores(REGEXP_REPLACE(cnpj_cpf, '[^0-9]', '', 'g'))",
+    // CPF real único em employees (placeholders 000.000.000-XX ficam de fora do índice parcial)
+    `CREATE UNIQUE INDEX IF NOT EXISTS uniq_employees_cpf_digits ON employees ((REGEXP_REPLACE(cpf, '[^0-9]', '', 'g'))) WHERE length(REGEXP_REPLACE(cpf, '[^0-9]', '', 'g')) = 11 AND REGEXP_REPLACE(cpf, '[^0-9]', '', 'g') !~ '^0{9}'`,
     "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",
@@ -321,6 +332,7 @@ if (isServerSupabaseConfigured()) {
   );
   import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
   import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
+  import("./lib/vehicle-doc-storage").then(m => m.ensureVehicleDocsBucket()).catch(() => {});
   ensureCategoryHierarchy().catch((e: any) =>
     console.warn("[categories] ensureCategoryHierarchy skipped:", e?.message),
   );
@@ -578,19 +590,27 @@ async function syncFuelingMissionCosts() {
       }
     }
 
-    // Conjunto único de IDs de fueling já vinculados como mission_cost ([F#id]).
-    const linkedFuelingIds = new Set<number>();
-    {
-      const { data: mcRows } = await supabaseAdmin
-        .from("mission_costs")
-        .select("description")
-        .ilike("description", "%[F#%");
-      const re = /\[F#(\d+)\]/g;
-      for (const row of (mcRows || [])) {
-        const s = String((row as any).description || "");
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(s))) linkedFuelingIds.add(Number(m[1]));
+    // Conjunto de IDs de fueling já vinculados ([F#id]).
+    // NÃO usar um único .ilike("%[F#%") sem paginar: PostgREST corta em 1000
+    // linhas e o sync recria o mesmo abastecimento a cada boot (TOR-0785/0789).
+    const candidateFuelingIds: number[] = [];
+    for (const arr of fuelingsByVehicleDate.values()) {
+      for (const f of arr) {
+        const id = Number((f as any).id);
+        if (Number.isFinite(id) && id > 0) candidateFuelingIds.push(id);
       }
+    }
+    const linkedFuelingIds = new Set<number>();
+    const matchPat = fuelingTagMatchPattern(candidateFuelingIds);
+    if (matchPat) {
+      const mcRows = await fetchAllSupabaseRows<{ description: string }>((from, to) =>
+        supabaseAdmin
+          .from("mission_costs")
+          .select("description")
+          .filter("description", "match", matchPat)
+          .range(from, to),
+      );
+      for (const id of collectLinkedFuelingIds(mcRows)) linkedFuelingIds.add(id);
     }
 
     for (const os of eligibleOs) {
@@ -618,6 +638,8 @@ async function syncFuelingMissionCosts() {
         if (!error) {
           linkedFuelingIds.add(Number(f.id));
           console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${(os as any).os_number} (date: ${osDateBRT})`);
+        } else if (String((error as any).message || "").includes("idx_mc_fueling_tag_unique")) {
+          linkedFuelingIds.add(Number(f.id));
         }
       }
     }
@@ -723,6 +745,8 @@ async function ensureSystemSettingsTable() {
   import { registerFornecedoresRoutes } from "./routes/fornecedores";
   import { registerSsxRoutes } from "./routes/ssx";
   import { registerConferenciaTmsegRoutes } from "./routes/conferencia-tmseg";
+  import { registerControleFaturamentoRoutes } from "./routes/controle-faturamento";
+  import { registerComissaoPushRoutes } from "./routes/comissao-push";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -1345,7 +1369,10 @@ async function ensureSystemSettingsTable() {
     const { DEFAULT_PROFILE_PERMISSIONS, PROFILE_LABELS, parsePermissions } = await import("../shared/perfis-acesso");
     const perfil = await storage.getPerfilAcesso(req.user!.role);
     const fallback = DEFAULT_PROFILE_PERMISSIONS[req.user!.role] || [];
-    const permissions = perfil ? parsePermissions(perfil.permissions) : fallback;
+    const permissions = [...(perfil ? parsePermissions(perfil.permissions) : fallback)];
+    if (req.user!.role === "financeiro" && !permissions.includes("controle_faturamento")) {
+      permissions.push("controle_faturamento");
+    }
     res.json({
       user: toSafeUser(req.user!),
       permissions: permissions.length ? permissions : fallback,
@@ -1412,6 +1439,8 @@ async function ensureSystemSettingsTable() {
     registerConferenciaTmsegRoutes(app);
     registerChatRoutes(app);
     registerBoletimApprovalRoutes(app);
+    registerControleFaturamentoRoutes(app);
+    registerComissaoPushRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
@@ -2054,9 +2083,6 @@ Regras:
   app.post("/api/homologation/send", requireAuth, async (req, res) => {
     try {
       const { clientId, clientName, recipientEmail, recipientName, documentTypes, includePresentation, includeValues, sentBy, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
-      if (!recipientEmail) {
-        return res.status(400).json({ message: "E-mail do destinatário é obrigatório" });
-      }
       if ((!documentTypes || documentTypes.length === 0) && !includePresentation && !includeValues) {
         return res.status(400).json({ message: "Selecione ao menos um documento para enviar" });
       }
@@ -2122,9 +2148,19 @@ Regras:
 </body>
 </html>`;
 
+      const { data: homoClient } = clientId
+        ? await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, email_medicao").eq("id", clientId).maybeSingle()
+        : { data: null };
+      const homoMail = clientOutboundMail(homoClient, "contratual", recipientEmail);
+      const envelope = homoMail || withTorresAlwaysCc(parseEmailList(recipientEmail));
+      if (envelope.to.length === 0) {
+        return res.status(400).json({ message: "E-mail do destinatário é obrigatório" });
+      }
+
       await homoTransporter.sendMail({
         from: getSmtpFrom(),
-        to: recipientEmail,
+        to: envelope.to,
+        cc: envelope.cc,
         subject: `Documentação para Homologação — Torres Vigilância Patrimonial LTDA`,
         html: htmlBody,
         attachments,
@@ -2133,7 +2169,7 @@ Regras:
       await supabaseAdmin.from("homologation_logs").insert({
         client_id: clientId,
         client_name: clientName || null,
-        recipient_email: recipientEmail,
+        recipient_email: envelope.to.join(", "),
         recipient_name: recipientName || null,
         documents_sent: docLabels,
         sent_by: sentBy || null,

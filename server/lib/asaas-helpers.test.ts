@@ -8,6 +8,8 @@ import {
   buildFiscalPayload,
   buildNfseInvoicePayload,
   buildValoresObservation,
+  buildNfseObservations,
+  NF_OBSERVATIONS_MAX,
   fmtBRL,
   EMPRESA_PIX_ALEATORIA,
   parseInvoicePeriodInfo,
@@ -15,11 +17,10 @@ import {
   buildNfClientEmail,
   INSS_DISPENSA_OBSERVACAO,
   INSS_OBSERVACAO_LEGAL,
-  SIMPLES_NACIONAL_OBSERVACAO,
   CNAE_PRINCIPAL,
   CODIGO_SERVICO_MUNICIPAL,
   CODIGO_SERVICO_MUNICIPAL_CODE,
-  MUNICIPAL_SERVICE_ID,
+  MUNICIPAL_SERVICE_ID_DEFAULT,
   MUNICIPAL_SERVICE_EXTERNAL_ID,
   DESCRICAO_SERVICO_FIXA,
   TORRES_CNPJ,
@@ -33,14 +34,39 @@ import {
   nfseFieldsFromEmitResult,
   nfseUpdatesFromAsaasObject,
   describeNfProcessingWait,
+  extractAsaasMunicipalNumber,
+  municipalInscriptionIfChanged,
+  isAsaasPrefeituraRejection,
+  invoiceUpdatesAreMaterial,
+  unstickStaleNfReconcile,
+  NF_RECONCILE_STALE_MS,
   shouldMarkMissingNfAsError,
   canReemitNfse,
   pickPreferredAsaasNf,
   isAsaasInvoiceId,
+  sanitizeNfDiscriminacao,
+  isDiscriminacaoSchemaError,
+  isLegacyEscoltaDiscriminacao,
+  isHiddenDiscriminacaoRejection,
+  shouldCancelRescheduleLegacyDiscriminacao,
+  asaasNfIdForOfficialPut,
+  hasAsaasRps,
+  LEGACY_DISCRIMINACAO_STUCK_MSG,
+  isAsaasNfCancelBlockedProcessing,
+  buildNfsePutPayload,
+  existingAsaasNfIdToRetry,
+  shouldAutoRetryDiscriminacaoError,
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
+  fiscalAddressMissingFields,
+  assertFiscalAddressForNf,
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
+  municipalServiceNameOficial,
+  todayDateStr,
+  isMissingMunicipalServiceCode,
+  isQueuedAtPrefecture,
+  isLocalNfProcessingPlaceholder,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
   buildAsaasNotificationPolicyUpdate,
@@ -98,11 +124,13 @@ test("buildInssObservation: sem retenção retorna texto de dispensa", () => {
   assert.equal(buildInssObservation(false, 0, 0), INSS_DISPENSA_OBSERVACAO);
 });
 
-test("buildInssObservation: com retenção inclui alíquota e valor formatados BRL", () => {
-  const obs = buildInssObservation(true, 11, 110);
+test("buildInssObservation: com retenção inclui alíquota legal, base 50% e valor formatados BRL", () => {
+  const obs = buildInssObservation(true, 11, 55);
   assert.ok(obs.startsWith(INSS_OBSERVACAO_LEGAL));
-  assert.match(obs, /Alíquota: 11\.00%/);
-  assert.match(obs, /R\$ 110,00/);
+  assert.match(obs, /Alíquota legal: 11\.00%/);
+  assert.match(obs, /50% da base/);
+  assert.match(obs, /efetivo 5\.50%/);
+  assert.match(obs, /R\$ 55,00/);
 });
 
 test("buildInssObservation: valor com centavos é formatado com vírgula", () => {
@@ -128,99 +156,120 @@ test("netBoletoValue: opts ausente = sem retenção", () => {
   assert.equal(r.inssValor, 0);
 });
 
-test("netBoletoValue: com retenção 11% desconta o INSS do boleto", () => {
+test("netBoletoValue: com retenção 11% desconta 50% da alíquota (5,5%)", () => {
   const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 11 });
-  assert.equal(r.inssValor, 110);
-  assert.equal(r.boleto, 890);
-  assert.equal(r.inssAliquota, 11);
+  assert.equal(r.inssValor, 55);
+  assert.equal(r.boleto, 945);
+  assert.equal(r.inssAliquota, 5.5);
+  assert.equal(r.issValor, 0);
 });
 
-test("netBoletoValue: retenção sem alíquota explícita usa 11% padrão", () => {
+test("netBoletoValue: retenção sem alíquota explícita usa 11% legal → 5,5% efetivo", () => {
   const r = netBoletoValue(2000, { retemInss: true });
-  assert.equal(r.inssAliquota, 11);
-  assert.equal(r.inssValor, 220);
-  assert.equal(r.boleto, 1780);
+  assert.equal(r.inssAliquota, 5.5);
+  assert.equal(r.inssValor, 110);
+  assert.equal(r.boleto, 1890);
 });
 
 test("netBoletoValue: arredonda INSS e boleto a 2 casas (sem dízima)", () => {
   const r = netBoletoValue(1234.56, { retemInss: true, inssAliquota: 11 });
-  // 1234.56 * 0.11 = 135.8016 -> 135.80 ; 1234.56 - 135.80 = 1098.76
-  assert.equal(r.inssValor, 135.8);
-  assert.equal(r.boleto, 1098.76);
-  // bruto reconstituível a partir do boleto + INSS retido
+  // 1234.56 * 0.055 = 67.9008 -> 67.90 ; 1234.56 - 67.90 = 1166.66
+  assert.equal(r.inssValor, 67.9);
+  assert.equal(r.boleto, 1166.66);
   assert.equal(Number((r.boleto + r.inssValor).toFixed(2)), 1234.56);
 });
 
-test("netBoletoValue: alíquota diferente de 11% (ex.: 3,5%)", () => {
+test("netBoletoValue: alíquota legal diferente de 11% também aplica 50% da base", () => {
   const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 3.5 });
-  assert.equal(r.inssValor, 35);
-  assert.equal(r.boleto, 965);
+  assert.equal(r.inssAliquota, 1.75);
+  assert.equal(r.inssValor, 17.5);
+  assert.equal(r.boleto, 982.5);
+});
+
+test("netBoletoValue: emite NF desconta ISS 2% além do INSS efetivo", () => {
+  const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 11, retainIss: true });
+  assert.equal(r.inssValor, 55);
+  assert.equal(r.issValor, 20);
+  assert.equal(r.issAliquota, 2);
+  assert.equal(r.boleto, 925);
 });
 
 // ============================================================================
 // buildFiscalPayload
 // ============================================================================
 
-test("buildFiscalPayload: padrão sem INSS zera inss e usa dispensa", () => {
+test("buildFiscalPayload: padrão sem INSS zera inss e retém ISS 2%", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ);
   assert.equal(p.serviceListItem, CODIGO_SERVICO_MUNICIPAL);
   assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.equal(p.deductions, 0);
   assert.equal(p.effectiveDatePeriod, "MONTHLY");
   assert.equal(p.taxes.inss, 0);
-  assert.equal(p.taxes.iss, 0);
-  assert.equal(p.taxes.retainIss, false);
+  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.retainIss, true);
   assert.ok(p.observations.includes(`CNAE ${CNAE_PRINCIPAL}`));
-  assert.ok(p.observations.includes(INSS_DISPENSA_OBSERVACAO));
+  assert.match(p.observations, /Sem ret\. INSS|Sem retenção INSS/);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: retemInss=true usa alíquota default 11%", () => {
+test("buildFiscalPayload: retemInss=true usa 50% de 11% (5,5%)", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ, { retemInss: true });
-  assert.equal(p.taxes.inss, 11);
-  assert.match(p.observations, /Alíquota: 11\.00%/);
-  // 1000 * 11% = 110.00
-  assert.match(p.observations, /R\$ 110,00/);
+  assert.equal(p.taxes.inss, 5.5);
+  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.retainIss, true);
+  assert.match(p.observations, /5,50%/);
+  // 1000 * 5.5% = 55.00
+  assert.match(p.observations, /R\$ 55,00/);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: alíquota INSS customizada é respeitada", () => {
+test("buildFiscalPayload: alíquota INSS customizada aplica 50% da base", () => {
   const p = buildFiscalPayload(2000, TORRES_CNPJ, { retemInss: true, inssAliquota: 4.5 });
-  assert.equal(p.taxes.inss, 4.5);
-  // 2000 * 4.5% = 90.00
-  assert.match(p.observations, /R\$ 90,00/);
+  assert.equal(p.taxes.inss, 2.25);
+  // 2000 * 2.25% = 45.00
+  assert.match(p.observations, /R\$ 45,00/);
 });
 
 test("buildFiscalPayload: valor zero gera retenção zero", () => {
   const p = buildFiscalPayload(0, TORRES_CNPJ, { retemInss: true });
-  assert.equal(p.taxes.inss, 11);
+  assert.equal(p.taxes.inss, 5.5);
   assert.match(p.observations, /R\$ 0,00/);
 });
 
-test("buildFiscalPayload: inclui texto do Simples Nacional e valor bruto", () => {
+test("buildFiscalPayload: inclui Simples Nacional resumido e valor bruto", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ);
-  assert.ok(p.observations.includes(SIMPLES_NACIONAL_OBSERVACAO));
-  assert.match(p.observations, /Valor bruto: R\$ 1000,00/);
+  assert.match(p.observations, /Simples Nac\.|Simples Nacional/);
+  assert.match(p.observations, /10\.833/);
+  assert.match(p.observations, /R\$ 1000,00/);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: com INSS mostra bruto, retido e líquido", () => {
+test("buildFiscalPayload: com INSS mostra bruto, INSS 5,5%, ISS e líquido em até 250 chars", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ, { retemInss: true });
-  assert.match(p.observations, /Valor bruto: R\$ 1000,00/);
-  assert.match(p.observations, /INSS retido \(11\.00%\): R\$ 110,00/);
-  assert.match(p.observations, /Valor líquido: R\$ 890,00/);
+  assert.match(p.observations, /R\$ 1000,00/);
+  assert.match(p.observations, /R\$ 55,00/);
+  assert.match(p.observations, /R\$ 20,00/);
+  assert.match(p.observations, /R\$ 925,00/);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
 // ============================================================================
 // buildValoresObservation
 // ============================================================================
 
-test("buildValoresObservation: sem INSS mostra só o bruto", () => {
-  assert.equal(buildValoresObservation(1500, false, 0), "Valor bruto: R$ 1500,00.");
+test("buildValoresObservation: sem INSS ainda mostra ISS 2% e líquido", () => {
+  const out = buildValoresObservation(1500, false, 0);
+  assert.match(out, /Valor bruto: R\$ 1500,00/);
+  assert.match(out, /ISS retido \(2\.00%\): R\$ 30,00/);
+  assert.match(out, /Valor líquido: R\$ 1470,00/);
 });
 
-test("buildValoresObservation: com INSS calcula líquido = bruto − retido", () => {
+test("buildValoresObservation: com INSS calcula líquido = bruto − INSS efetivo − ISS", () => {
   const out = buildValoresObservation(2000, true, 11);
   assert.match(out, /Valor bruto: R\$ 2000,00/);
-  assert.match(out, /INSS retido \(11\.00%\): R\$ 220,00/);
-  assert.match(out, /Valor líquido: R\$ 1780,00/);
+  assert.match(out, /INSS retido \(5\.50%/);
+  assert.match(out, /ISS retido \(2\.00%\): R\$ 40,00/);
+  assert.match(out, /Valor líquido: R\$ 1850,00/);
 });
 
 // ============================================================================
@@ -235,11 +284,179 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   });
   assert.equal(p.payment, "pay_123");
   assert.equal(p.value, 100);
-  assert.equal(p.serviceDescription, "Desc teste");
-  assert.equal(p.municipalServiceId, MUNICIPAL_SERVICE_ID);
-  assert.equal(p.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
-  assert.equal(p.municipalServiceName, DESCRICAO_SERVICO_FIXA);
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.match(p.observations, /CNAE 7870/);
+  assert.match(p.observations, /Escolta Armada/);
   assert.equal("municipalServiceCode" in p, false);
+  assert.equal(p.municipalServiceName, municipalServiceNameOficial());
+  assert.equal(p.municipalServiceId, MUNICIPAL_SERVICE_ID_DEFAULT);
+  assert.equal(p.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
+});
+
+test("buildNfseInvoicePayload: Discriminacao nunca leva nome do cliente nem travessão", () => {
+  const p = buildNfseInvoicePayload({
+    paymentId: "pay_1",
+    value: 4254.3,
+    description: "Escolta Armada — R.F.M. LOGISTICA E TRANSPORTES",
+  });
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(p.serviceDescription.includes("—"), false);
+  assert.equal(p.serviceDescription.includes("R.F.M."), false);
+  assert.equal(p.observations.includes("R.F.M."), false);
+  assert.equal(p.observations.includes("—"), false);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
+});
+
+test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () => {
+  const post = buildNfseInvoicePayload({
+    paymentId: "pay_1", value: 100, description: "X", customerId: "cus_1",
+  });
+  const put = buildNfsePutPayload(post);
+  assert.equal("payment" in put, false);
+  assert.equal("customer" in put, false);
+  assert.equal(put.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal("municipalServiceCode" in put, false);
+  assert.equal(put.municipalServiceName, municipalServiceNameOficial());
+  assert.equal(put.municipalServiceId, MUNICIPAL_SERVICE_ID_DEFAULT);
+  assert.equal(put.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
+  assert.equal(put.updatePayment, false);
+  assert.equal(put.taxes.iss, 2);
+  assert.equal(put.taxes.retainIss, true);
+});
+
+test("sanitizeNfDiscriminacao: troca travessão e control chars", () => {
+  assert.equal(sanitizeNfDiscriminacao("A — B"), "A - B");
+  assert.equal(sanitizeNfDiscriminacao(""), DESCRICAO_SERVICO_FIXA);
+  assert.equal(sanitizeNfDiscriminacao("   "), DESCRICAO_SERVICO_FIXA);
+});
+
+test("isDiscriminacaoSchemaError: detecta rejeição da prefeitura SP", () => {
+  assert.equal(isDiscriminacaoSchemaError("Retorno da prefeitura de São Paulo-SP: XML não compatível com Schema. The 'Discriminacao' element is invalid"), true);
+  assert.equal(isDiscriminacaoSchemaError("Inscrição municipal inválida"), false);
+  assert.equal(isDiscriminacaoSchemaError(null), false);
+});
+
+test("existingAsaasNfIdToRetry: só ERROR com inv_", () => {
+  assert.equal(existingAsaasNfIdToRetry({ id: "inv_000022571641", status: "ERROR" }), "inv_000022571641");
+  assert.equal(existingAsaasNfIdToRetry({ id: "inv_1", status: "SYNCHRONIZED" }), null);
+  assert.equal(existingAsaasNfIdToRetry({ id: "2562", status: "ERROR" }), null);
+});
+
+test("shouldAutoRetryDiscriminacaoError: só schema + emite_nf", () => {
+  const inv = {
+    nfse_status: "ERROR",
+    nfse_number: "inv_1",
+    nfse_error_message: "XML não compatível com Schema. Discriminacao",
+  };
+  assert.equal(shouldAutoRetryDiscriminacaoError(inv, true), true);
+  assert.equal(shouldAutoRetryDiscriminacaoError(inv, false), false);
+  assert.equal(shouldAutoRetryDiscriminacaoError({
+    nfse_status: "ERROR",
+    nfse_number: "inv_1",
+    nfse_error_message: "Inscrição municipal inválida",
+  }, true), false);
+  assert.equal(shouldAutoRetryDiscriminacaoError({
+    nfse_status: "SYNCHRONIZED",
+    nfse_number: "inv_1",
+    nfse_error_message: null,
+  }, true), false);
+});
+
+test("isLegacyEscoltaDiscriminacao: texto da fatura ≠ CNAE oficial", () => {
+  assert.equal(isLegacyEscoltaDiscriminacao("Vigilância, segurança ou monitoramento de bens, pessoas e semoventes"), false);
+  assert.equal(isLegacyEscoltaDiscriminacao("Escolta Armada — TRANSPACHECO — Período: 20/08/2026 a 28/08/2026"), true);
+  assert.equal(isLegacyEscoltaDiscriminacao(null), false);
+});
+
+test("isHiddenDiscriminacaoRejection: #171 sim; #170 com RPS não; emitida não", () => {
+  const descAntiga = "Escolta Armada — TRANSPACHECO — Período: 20/08/2026 a 28/08/2026";
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: null,
+    serviceDescription: descAntiga,
+  }, true), true);
+  assert.equal(hasAsaasRps({ rpsNumber: "295" }), true);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: "295",
+    serviceDescription: "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes",
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    rpsNumber: "295",
+    serviceDescription: descAntiga,
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "AUTHORIZED",
+    number: "309",
+    serviceDescription: descAntiga,
+  }, true), false);
+  assert.equal(isHiddenDiscriminacaoRejection({
+    status: "SYNCHRONIZED",
+    number: null,
+    serviceDescription: descAntiga,
+  }, false), false);
+  assert.equal(shouldCancelRescheduleLegacyDiscriminacao({
+    status: "SYNCHRONIZED",
+    number: null,
+    serviceDescription: descAntiga,
+  }, true), true);
+});
+
+test("asaasNfIdForOfficialPut: ERROR e SCHEDULED antigo; SYNCHRONIZED não", () => {
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "ERROR", number: null, serviceDescription: "Escolta Armada — X",
+  }, true), "inv_1");
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "SCHEDULED", number: null,
+    serviceDescription: "Escolta Armada — X — Período: 01/01/2026",
+  }, true), "inv_1");
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "SYNCHRONIZED", number: null,
+    serviceDescription: "Escolta Armada — X — Período: 01/01/2026",
+  }, true), null);
+  assert.equal(asaasNfIdForOfficialPut({
+    id: "inv_1", status: "ERROR", number: "309",
+  }, true), null);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com Discriminacao antiga vira ERROR local", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    {
+      id: "inv_171",
+      status: "SYNCHRONIZED",
+      number: null,
+      rpsNumber: null,
+      serviceDescription: "Escolta Armada — TRANSPACHECO TRANSPORTE — Período: 20/08/2026 a 28/08/2026",
+    },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_171", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.equal(u.nfse_error_message, LEGACY_DISCRIMINACAO_STUCK_MSG);
+});
+
+test("nfseUpdatesFromAsaasObject: #170 oficial com RPS permanece processando", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    {
+      id: "inv_170",
+      status: "SYNCHRONIZED",
+      number: null,
+      rpsNumber: "295",
+      serviceDescription: "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes",
+    },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_170", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, undefined);
+  assert.equal(u.nfse_error_message, undefined);
+});
+
+test("isAsaasNfCancelBlockedProcessing", () => {
+  assert.equal(isAsaasNfCancelBlockedProcessing("A Nota fiscal está com status Processando emissão e não pode ser cancelada."), true);
+  assert.equal(isAsaasNfCancelBlockedProcessing("Inscrição municipal inválida"), false);
 });
 
 test("buildNfseInvoicePayload: omite payment quando paymentId vazio", () => {
@@ -264,12 +481,14 @@ test("buildNfseInvoicePayload: description só com espaços cai para descrição
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
 });
 
-test("buildNfseInvoicePayload: retemInss=true seta INSS e valor parcial", () => {
+test("buildNfseInvoicePayload: retemInss=true seta INSS efetivo 5,5% e ISS 2%", () => {
   const p = buildNfseInvoicePayload({
     paymentId: "p", value: 1000, description: "X", retemInss: true,
   });
-  assert.equal(p.taxes.inss, 11);
-  assert.match(p.observations, /R\$ 110,00/);
+  assert.equal(p.taxes.inss, 5.5);
+  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.retainIss, true);
+  assert.match(p.observations, /R\$ 55,00/);
 });
 
 test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
@@ -280,18 +499,47 @@ test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
   assert.equal("municipalServiceCode" in p, false);
 });
 
-test("buildNfseInvoicePayload: sem override usa ID 402 da prefeitura (07870 | 11.02)", () => {
+test("buildNfseInvoicePayload: prefeitura usa ID 402 e omite municipalServiceCode", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
   assert.equal(p.municipalServiceId, 402);
   assert.equal(p.municipalServiceExternalId, 402);
   assert.equal("municipalServiceCode" in p, false);
+  assert.equal(p.municipalServiceName, "07870 - Vigilância, segurança ou monitoramento de bens, pessoas e semoventes");
+  assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
+  assert.equal(String(p.serviceDescription).startsWith("07870"), false);
 });
 
-test("buildNfseInvoicePayload: observations custom sobrescreve base", () => {
+test("buildNfseInvoicePayload: observations custom não sobrescreve o modelo oficial", () => {
   const p = buildNfseInvoicePayload({
     paymentId: "p", value: 100, description: "X", observations: "Custom obs",
   });
-  assert.ok(p.observations.startsWith("Custom obs"));
+  assert.equal(p.observations.includes("Custom obs"), false);
+  assert.match(p.observations, /CNAE 7870/);
+  assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
+});
+
+test("buildNfseObservations: modelo do financeiro com período, INSS, Simples e valores ≤ 250", () => {
+  const desc = buildInvoiceDescription("Cliente X", "2026-07-17", "2026-07-17");
+  const obs = buildNfseObservations({
+    value: 632.80,
+    description: desc,
+    retemInss: true,
+    inssAliquota: 11,
+  });
+  assert.match(obs, /CNAE 7870/);
+  assert.match(obs, /Escolta Armada/);
+  assert.match(obs, /17\/07\/2026 a 17\/07\/2026 \(Julho\/2026\)/);
+  assert.match(obs, /Anexo IV/);
+  assert.match(obs, /2\.110\/2022/);
+  assert.match(obs, /5,50%/);
+  assert.match(obs, /R\$ 34,80/); // 632.80 * 5.5%
+  assert.match(obs, /Simples Nac\./);
+  assert.match(obs, /PIS\/COFINS\/CSLL/);
+  assert.match(obs, /10\.833/);
+  assert.match(obs, /R\$ 632,80/);
+  assert.match(obs, /R\$ 12,66/); // ISS 2%
+  assert.match(obs, /R\$ 585,34/); // líquido
+  assert.ok(obs.length <= 250, `observations ${obs.length}: ${obs}`);
 });
 
 // ============================================================================
@@ -329,6 +577,25 @@ test("parseInvoicePeriodInfo: mesmo dia mostra só a data (sem 'a')", () => {
   assert.equal(r.dataExecucao, "15/06/2026");
 });
 
+test("parseInvoicePeriodInfo: descrição com travessão (sem parêntese de competência)", () => {
+  const r = parseInvoicePeriodInfo(
+    "Escolta Armada — RFM — Período: 28/07/2026 a 28/07/2026 — 2 OS(s)",
+    "2026-10-04",
+  );
+  assert.equal(r.competencia, "Julho/2026");
+  assert.equal(r.dataExecucao, "28/07/2026");
+});
+
+test("buildNfseObservations: período da fatura legado (travessão) entra no texto ≤ 250", () => {
+  const obs = buildNfseObservations({
+    value: 3428.16,
+    description: "Escolta Armada — RFM — Período: 28/07/2026 a 28/07/2026 — 2 OS(s)",
+    retemInss: true,
+    inssAliquota: 11,
+  });
+  assert.match(obs, /28\/07\/2026 a 28\/07\/2026 \(Julho\/2026\)/);
+  assert.ok(obs.length <= NF_OBSERVATIONS_MAX, `len ${obs.length}: ${obs}`);
+});
 test("parseInvoicePeriodInfo: fallback de competência pelo vencimento quando descrição não casa", () => {
   const r = parseInvoicePeriodInfo("Descrição sem período", "2026-03-20");
   assert.equal(r.competencia, "Março/2026");
@@ -426,22 +693,26 @@ test("buildNfClientEmail: sem número fiscal usa assunto genérico e '—'", () 
   assert.match(html, /Nº da Nota Fiscal:<\/td><td[^>]*>—/);
 });
 
-test("buildNfClientEmail: com retenção de INSS mostra retenção e líquido a pagar", () => {
+test("buildNfClientEmail: com retenção de INSS mostra retenção, ISS e líquido a pagar", () => {
   const { html } = buildNfClientEmail({
     value: 1000,
     due_date: "2026-07-10",
     description: "x",
     nfse_number: "789",
-    valor_inss_retido: 110,
-    inss_aliquota: 11,
+    valor_inss_retido: 55,
+    inss_aliquota: 5.5,
+    valor_iss_retido: 20,
+    iss_aliquota: 2,
   });
   assert.match(html, /Retenção INSS/);
+  assert.match(html, /Retenção ISS/);
   assert.match(html, /Valor líquido a pagar:/);
-  assert.match(html, /110,00/);
-  assert.match(html, /890,00/);
+  assert.match(html, /55,00/);
+  assert.match(html, /20,00/);
+  assert.match(html, /925,00/);
 });
 
-test("buildNfClientEmail: sem INSS não mostra linhas de retenção", () => {
+test("buildNfClientEmail: sem INSS ainda mostra ISS 2% padrão da NF", () => {
   const { html } = buildNfClientEmail({
     value: 500,
     due_date: "2026-07-10",
@@ -449,7 +720,8 @@ test("buildNfClientEmail: sem INSS não mostra linhas de retenção", () => {
     nfse_number: "1",
   });
   assert.equal(/Retenção INSS/.test(html), false);
-  assert.equal(/Valor líquido a pagar/.test(html), false);
+  assert.match(html, /Retenção ISS/);
+  assert.match(html, /Valor líquido a pagar/);
 });
 
 test("buildMarkEmittedInvoiceUpdates: grava AUTHORIZED e observação, sem nfse_authorized_at", () => {
@@ -530,6 +802,9 @@ test("isNfFullyIssued: AUTHORIZED sem número municipal NÃO é emitida", () => 
 test("classifyIssuedOrProcessing: FAT sem nº fica processando (não emitida)", () => {
   assert.equal(classifyIssuedOrProcessing("AUTHORIZED", null), "NF_PROCESSANDO");
   assert.equal(classifyIssuedOrProcessing("ISSUED", "inv_x"), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("SYNCHRONIZED", "inv_x"), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("SYNCHRONIZED", null), "NF_PROCESSANDO");
+  assert.equal(classifyIssuedOrProcessing("SYNCHRONIZED", "318"), "NF_EMITIDA");
   assert.equal(classifyIssuedOrProcessing("AUTHORIZED", "2562"), "NF_EMITIDA");
   assert.equal(classifyIssuedOrProcessing("SCHEDULED", "inv_x"), "NF_PROCESSANDO");
   assert.equal(classifyIssuedOrProcessing("ERROR", null), null);
@@ -572,6 +847,75 @@ test("nfseUpdatesFromAsaasObject: nº municipal substitui inv_", () => {
   assert.equal(u.nfse_error_message, null);
 });
 
+test("extractAsaasMunicipalNumber: aceita number numérico e ignora RPS", () => {
+  assert.equal(extractAsaasMunicipalNumber({ number: 2562 }), "2562");
+  assert.equal(extractAsaasMunicipalNumber({ nfeNumber: "88" }), "88");
+  assert.equal(extractAsaasMunicipalNumber({ number: null, rpsNumber: "123" }), null);
+  assert.equal(extractAsaasMunicipalNumber({ number: "inv_abc" }), null);
+});
+
+test("municipalInscriptionIfChanged: CCM do tomador, não número da NFS-e", () => {
+  assert.equal(municipalInscriptionIfChanged(null, null), null);
+  assert.equal(municipalInscriptionIfChanged("07930", ""), null);
+  assert.equal(municipalInscriptionIfChanged("07930", "07930"), null);
+  assert.equal(municipalInscriptionIfChanged("7.930", "07930"), null);
+  assert.equal(municipalInscriptionIfChanged("07930", "7.930"), null);
+  assert.equal(municipalInscriptionIfChanged("", "07930"), "07930");
+  assert.equal(municipalInscriptionIfChanged("00000", "07930"), "07930");
+});
+
+test("isAsaasPrefeituraRejection: rejeição ≠ fila da prefeitura", () => {
+  assert.equal(isAsaasPrefeituraRejection("Aguardando processamento da prefeitura"), false);
+  assert.equal(isAsaasPrefeituraRejection("Enviado para a prefeitura"), false);
+  assert.equal(isAsaasPrefeituraRejection("The 'Discriminacao' element is invalid"), true);
+  assert.equal(isAsaasPrefeituraRejection("Inscrição municipal inválida"), true);
+  assert.equal(isAsaasPrefeituraRejection("Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura"), true);
+  assert.equal(isAsaasPrefeituraRejection("Código: _NFe002\nDescrição: O Código de Serviço municipal deve ser informado"), true);
+  assert.equal(isMissingMunicipalServiceCode("_NFe002 código de serviço municipal deve ser informado"), true);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com rejeição vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "SYNCHRONIZED", number: null, statusDescription: "The 'Discriminacao' element is invalid" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_xyz", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.match(String(u.nfse_error_message), /Discriminacao/);
+});
+
+test("nfseUpdatesFromAsaasObject: SYNCHRONIZED aguardando prefeitura não vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_xyz", status: "SYNCHRONIZED", number: null, statusDescription: "Aguardando processamento da prefeitura" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_xyz", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, undefined);
+  assert.equal(u.nfse_error_message, undefined);
+});
+
+test("invoiceUpdatesAreMaterial: ignora só updated_at", () => {
+  assert.equal(invoiceUpdatesAreMaterial(
+    { status: "PENDING", nfse_status: "SYNCHRONIZED" },
+    { status: "PENDING", nfse_status: "SYNCHRONIZED", updated_at: "2026-09-09T16:00:00-03:00" },
+  ), false);
+  assert.equal(invoiceUpdatesAreMaterial(
+    { status: "PENDING", nfse_number: "inv_1" },
+    { status: "PENDING", nfse_number: "2562" },
+  ), true);
+  assert.equal(invoiceUpdatesAreMaterial(
+    { net_value: "4254.30", status: "PENDING" },
+    { net_value: 4254.3, status: "PENDING" },
+  ), false);
+});
+
+test("unstickStaleNfReconcile: libera running após timeout", () => {
+  const stale = { running: true, startedAt: new Date(Date.now() - NF_RECONCILE_STALE_MS - 1000).toISOString() };
+  assert.equal(unstickStaleNfReconcile(stale, new Date()), true);
+  assert.equal(stale.running, false);
+  const fresh = { running: true, startedAt: new Date().toISOString() };
+  assert.equal(unstickStaleNfReconcile(fresh, new Date()), false);
+  assert.equal(fresh.running, true);
+});
+
 test("describeNfProcessingWait: explica AUTHORIZED sem número", () => {
   const msg = describeNfProcessingWait({
     nfse_status: "AUTHORIZED",
@@ -581,6 +925,13 @@ test("describeNfProcessingWait: explica AUTHORIZED sem número", () => {
   }, new Date("2026-08-27T12:17:00-03:00"));
   assert.ok(msg && /AUTHORIZED/.test(msg) && /Asaas/.test(msg));
   assert.equal(describeNfProcessingWait({ nfse_status: "AUTHORIZED", nfse_number: "2562" }), null);
+  const withRps = describeNfProcessingWait({
+    nfse_status: "SYNCHRONIZED",
+    nfse_number: null,
+    created_at: "2026-09-09T12:00:00-03:00",
+    updated_at: "2026-09-09T12:00:00-03:00",
+  }, new Date("2026-09-09T13:00:00-03:00"), null, 296);
+  assert.ok(withRps && /RPS 296/.test(withRps));
 });
 
 test("shouldMarkMissingNfAsError: só cobrança em aberto e stale, não fatura paga antiga", () => {
@@ -623,6 +974,13 @@ test("canReemitNfse: AUTHORIZED sem nº municipal NÃO bloqueia como já emitida
     nfse_error_message: "NFS-e não encontrada no Asaas",
   });
   assert.equal(authorizedGhost.allowed, true);
+
+  const hidden171 = canReemitNfse({
+    nfse_status: "ERROR",
+    nfse_number: "inv_000022684480",
+    nfse_error_message: LEGACY_DISCRIMINACAO_STUCK_MSG,
+  });
+  assert.equal(hidden171.allowed, true);
 });
 
 test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
@@ -640,26 +998,67 @@ test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
   assert.equal(pickPreferredAsaasNf([]), null);
 });
 
-test("shouldNudgeNfseAuthorize: cron nunca reenvia authorize (dispara e-mail no Asaas)", () => {
+test("shouldNudgeNfseAuthorize: falha de comunicação ou código municipal na mesma inv_*", () => {
   assert.equal(shouldNudgeNfseAuthorize("ERROR", null), false);
   assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), false);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), false);
-  assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", "2562"), false);
-  assert.equal(shouldNudgeNfseAuthorize("PROCESSING", null), false);
-  assert.equal(shouldNudgeNfseAuthorize("CANCELED", null), false);
+  assert.equal(shouldNudgeNfseAuthorize("ERROR", "inv_x"), false);
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "ERROR",
+      "inv_000022722108",
+      "Retorno da prefeitura de São Paulo-SP: Falha ao comunicar com o sistema da prefeitura",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "SYNCHRONIZED",
+      "inv_000022722111",
+      "Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura",
+    ),
+    true,
+  );
+  assert.equal(
+    shouldNudgeNfseAuthorize(
+      "ERROR",
+      "inv_000022684480",
+      "Código: _NFe002 — O Código de Serviço municipal deve ser informado",
+    ),
+    true,
+  );
 });
 
-test("shouldAutoEmitMissingNfse: cron nunca cria NFS-e sozinho", () => {
+test("fiscalAddressMissingFields: CEP 8 dígitos + logradouro, número, cidade, UF", () => {
+  assert.deepEqual(
+    fiscalAddressMissingFields({
+      address: "Rua A",
+      address_number: "10",
+      city: "São Paulo",
+      state: "SP",
+      zip: "01310-100",
+    }),
+    [],
+  );
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", city: "São Paulo", state: "SP", zip: "01310100" }).includes("número"));
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "SP", state: "S", zip: "01310100" }).includes("UF"));
+  assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "São Paulo", state: "SP", zip: "01310" }).includes("CEP (8 dígitos)"));
+  assert.equal(assertFiscalAddressForNf({ address: "Rua A" }, false), null);
+  assert.match(String(assertFiscalAddressForNf({ address: "Rua A" }, true)), /Falta:/);
+});
+
+test("shouldAutoEmitMissingNfse: worker cria NFS-e se a cobrança existe e o Asaas ainda não tem nota", () => {
   const old = new Date(Date.now() - 30 * 60_000).toISOString();
   const fresh = new Date(Date.now() - 2 * 60_000).toISOString();
-  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: false, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: old }, { paymentLookupEmpty: true, emiteNf: false }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "CANCELLED", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "AUTHORIZED", nfse_number: "309", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
   assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_number: "inv_abc", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
-  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "ERRO", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), false);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "PROCESSING", created_at: old }, { paymentLookupEmpty: true, emiteNf: true }), true);
+  assert.equal(shouldAutoEmitMissingNfse({ status: "PENDING", nfse_status: "PROCESSING", created_at: fresh }, { paymentLookupEmpty: true, emiteNf: true }), true);
 });
 
 test("isOpenNfFollowUpStatus: acompanha processando/erro em aberto", () => {
@@ -710,3 +1109,26 @@ test("planDueDateReconcile: manual empurra Torres→Asaas; automático espelha b
   assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-18", asaasDueDate: "2026-09-01", manual: false }), { action: "pull", dueDate: "2026-09-01" });
   assert.deepEqual(planDueDateReconcile({ localDueDate: "2026-09-01", asaasDueDate: "2026-09-01", manual: false }), { action: "none" });
 });
+
+test("todayDateStr: data civil BRT, não UTC", () => {
+  assert.match(todayDateStr(new Date("2026-09-15T02:30:00.000Z")), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(todayDateStr(new Date("2026-09-15T02:30:00.000Z")), "2026-09-14");
+});
+
+test("isQueuedAtPrefecture: PROCESSING local sem inv_* não é fila da prefeitura", () => {
+  assert.equal(isLocalNfProcessingPlaceholder("PROCESSING", null), true);
+  assert.equal(isQueuedAtPrefecture("PROCESSING", null), false);
+  assert.equal(isQueuedAtPrefecture("PROCESSING", "inv_abc"), true);
+  assert.equal(isQueuedAtPrefecture("SYNCHRONIZED", "inv_abc"), true);
+  assert.equal(isQueuedAtPrefecture("AUTHORIZED", "309"), false);
+});
+
+test("nfseUpdatesFromAsaasObject: falha de comunicação do portal vira ERROR", () => {
+  const u = nfseUpdatesFromAsaasObject(
+    { id: "inv_omega", status: "SYNCHRONIZED", number: null, statusDescription: "Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura" },
+    { nfse_status: "SYNCHRONIZED", nfse_number: "inv_omega", nfse_url: null, nfse_error_message: null },
+  );
+  assert.equal(u.nfse_status, "ERROR");
+  assert.match(String(u.nfse_error_message), /Falha ao comunicar/);
+});
+

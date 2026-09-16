@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireDiretoriaStrict, requireThiago, isThiago, requireComercial } from "../auth";
   import { logSystemAudit } from "../audit";
   import { withSwrCache, bustSwrCache } from "../lib/swr-cache";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
@@ -16,8 +16,12 @@ import type { Express } from "express";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
+  import {
+    allowedClientIdsFromRequest,
+    clientIdAllowed,
+  } from "../lib/comercial-scope";
 
-  // Trava de edição de anexos (boleto/NF/comprovante): QUALQUER pessoa do
+  // Trava de edição de anexos (boleto/NF/comprovante/protocolo): QUALQUER pessoa do
   // administrativo (role "admin" ou "diretoria") pode anexar/trocar anexos de
   // QUALQUER lançamento, independentemente de quem criou. Decisão do dono
   // (20/06/2026) — antes só quem criou (ou diretoria) podia, mas a equipe
@@ -296,9 +300,10 @@ import type { Express } from "express";
     try {
       const user = req.user!;
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments, fornecedor_id, funcionario_id,
-        payment_method, has_nf, nf_motivo_ausencia,
+        payment_method, has_nf, nf_motivo_ausencia, conferido_diretoria,
         boleto_base64, boleto_fileName, boleto_contentType,
-        nf_base64, nf_fileName, nf_contentType } = req.body;
+        nf_base64, nf_fileName, nf_contentType,
+        protocolo_base64, protocolo_fileName, protocolo_contentType } = req.body;
       if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
       if (type === "EXPENSE" && !fornecedor_id && !funcionario_id) {
         return res.status(400).json({ message: "Selecione um Fornecedor ou Funcionário para Despesa." });
@@ -326,7 +331,7 @@ import type { Express } from "express";
       }
 
       // helper de upload reutilizado para boleto/NF
-      const uploadDoc = async (transactionId: string, kind: "boleto" | "nf", b64: string, fileName: string, contentType?: string): Promise<string> => {
+      const uploadDoc = async (transactionId: string, kind: "boleto" | "nf" | "protocolo", b64: string, fileName: string, contentType?: string): Promise<string> => {
         const cleanBase64 = String(b64).replace(/^data:[^;]+;base64,/, "");
         const buffer = Buffer.from(cleanBase64, "base64");
         if (buffer.length > 5 * 1024 * 1024) throw new Error(`${kind.toUpperCase()} excede 5 MB`);
@@ -349,6 +354,8 @@ import type { Express } from "express";
         return status || "PENDING";
       })();
 
+      const nowCreateBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const wantConferido = type === "EXPENSE" && conferido_diretoria === true;
       const baseExtras: any = {
         fornecedor_id: fornecedor_id || null,
         funcionario_id: funcionario_id || null,
@@ -356,6 +363,9 @@ import type { Express } from "express";
         payment_method: payment_method || null,
         has_nf: typeof has_nf === "boolean" ? has_nf : null,
         nf_motivo_ausencia: (has_nf === false && nf_motivo_ausencia) ? String(nf_motivo_ausencia).trim() : null,
+        conferido_diretoria: wantConferido,
+        conferido_por: wantConferido ? user.name : null,
+        conferido_em: wantConferido ? nowCreateBrt : null,
       };
 
       // helper: anexa boleto/NF a uma transação já criada e atualiza paths
@@ -372,6 +382,12 @@ import type { Express } from "express";
           upd.nf_url = p;
           upd.nf_path = p;
           upd.nf_anexado_em = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        }
+        if (protocolo_base64) {
+          const p = await uploadDoc(String(transactionId), "protocolo", protocolo_base64, protocolo_fileName || "protocolo.jpg", protocolo_contentType);
+          upd.protocolo_url = p;
+          upd.protocolo_path = p;
+          upd.protocolo_anexado_em = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
         }
         if (Object.keys(upd).length > 0) {
           await supabaseAdmin.from("financial_transactions").update(upd).eq("id", transactionId);
@@ -724,6 +740,92 @@ import type { Express } from "express";
     }
   });
 
+  // ─── Anexar PROTOCOLO DE ASSINATURA (foto/PDF das contas assinadas) ───
+  app.post("/api/financial/transactions/:id/protocolo", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { fileBase64, fileName, contentType } = req.body || {};
+      if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (!canEditTransactionDocs(user, existing)) {
+        return res.status(403).json({ message: "Sem permissão para alterar anexos deste lançamento." });
+      }
+
+      const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(cleanBase64, "base64");
+      if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Arquivo excede 5 MB" });
+      const ext = String(fileName).split(".").pop()?.toLowerCase() || "bin";
+      if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) return res.status(400).json({ message: "Apenas PDF, JPG ou PNG" });
+      const safeName = `protocolo_${req.params.id}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const storagePath = `${existing.id}/${safeName}`;
+
+      const { error: upErr } = await supabaseAdmin.storage.from("comprovantes-pagamento")
+        .upload(storagePath, buffer, { contentType: contentType || "application/octet-stream", upsert: true });
+      if (upErr) throw upErr;
+
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin.from("financial_transactions")
+        .update({ protocolo_url: storagePath, protocolo_path: storagePath, protocolo_anexado_em: nowBrt })
+        .eq("id", req.params.id).select().single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "protocolo_path", old: existing.protocolo_path, new_val: storagePath }],
+        user.name, user.id, "Protocolo de assinatura anexado");
+
+      res.json(data);
+    } catch (err: any) {
+      console.error("[protocolo-upload]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/transactions/:id/protocolo-url", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: tx, error } = await supabaseAdmin.from("financial_transactions").select("protocolo_path,protocolo_url").eq("id", req.params.id).single();
+      if (error || !tx) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const path = tx.protocolo_path || tx.protocolo_url;
+      if (!path) return res.status(404).json({ message: "Protocolo não anexado" });
+      const { data, error: signErr } = await supabaseAdmin.storage.from("comprovantes-pagamento").createSignedUrl(path, 60);
+      if (signErr) throw signErr;
+      res.json({ url: data?.signedUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Tick de conferência da diretoria (não altera status PAGO / ledger)
+  app.patch("/api/financial/transactions/:id/conferir", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "diretoria" && user.role !== "admin") {
+        return res.status(403).json({ message: "Somente diretoria ou admin podem marcar conferido." });
+      }
+      const want = req.body?.conferido === true;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const { data, error } = await supabaseAdmin.from("financial_transactions")
+        .update({
+          conferido_diretoria: want,
+          conferido_por: want ? user.name : null,
+          conferido_em: want ? nowBrt : null,
+        })
+        .eq("id", req.params.id).select().single();
+      if (error) throw error;
+
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
+        [{ field: "conferido_diretoria", old: existing.conferido_diretoria, new_val: want }],
+        user.name, user.id, want ? "Conferido diretoria" : "Conferência diretoria desmarcada");
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.put("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
@@ -741,7 +843,7 @@ import type { Express } from "express";
           && newStatus && newStatus !== existing.status) {
         return res.status(403).json({ message: "Status só pode ser alterado pelo fluxo de aprovação da Diretoria." });
       }
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope, fornecedor_id, funcionario_id, payment_method, has_nf, nf_motivo_ausencia } = req.body;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope, fornecedor_id, funcionario_id, payment_method, has_nf, nf_motivo_ausencia, conferido_diretoria } = req.body;
 
       const auditChanges: { field: string; old: any; new_val: any }[] = [];
       const auditFields = ["description", "amount", "type", "status", "due_date", "category_name", "account_name", "entity_name"];
@@ -766,6 +868,12 @@ import type { Express } from "express";
       if (payment_method !== undefined) updatePayload.payment_method = payment_method || null;
       if (has_nf !== undefined) updatePayload.has_nf = typeof has_nf === "boolean" ? has_nf : null;
       if (nf_motivo_ausencia !== undefined) updatePayload.nf_motivo_ausencia = nf_motivo_ausencia ? String(nf_motivo_ausencia).trim() : null;
+      if (conferido_diretoria !== undefined) {
+        const want = conferido_diretoria === true;
+        updatePayload.conferido_diretoria = want;
+        updatePayload.conferido_por = want ? user.name : null;
+        updatePayload.conferido_em = want ? new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T") : null;
+      }
 
       if (update_scope === "future" && existing.installment_group && existing.installment_number) {
         const { data: siblings, error: sibErr } = await supabaseAdmin
@@ -1505,11 +1613,15 @@ import type { Express } from "express";
   });
 
   // ==================== SERVICE CONTRACTS ====================
-  app.get("/api/service-contracts", requireAuth, requireAdminRole, async (req, res) => {
+  app.get("/api/service-contracts", requireAuth, requireComercial, async (req, res) => {
     try {
       const { client_id } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       let query = supabaseAdmin.from("service_contracts").select("*").order("created_at", { ascending: false });
       if (client_id) query = query.eq("client_id", client_id);
+      else if (allowed) query = query.in("client_id", allowed);
       const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
@@ -1545,9 +1657,18 @@ import type { Express } from "express";
 
 
   // Escort Contracts CRUD
-  app.get("/api/escort/contracts", requireAdminRole, async (req, res) => {
+  app.get("/api/escort/contracts", requireComercial, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").order("client_name");
+      const allowed = await allowedClientIdsFromRequest(req);
+      let query = supabaseAdmin.from("escort_contracts").select("*").order("client_name");
+      if (allowed) {
+        if (allowed.length === 0) {
+          query = query.is("client_id", null);
+        } else {
+          query = query.or(`client_id.is.null,client_id.in.(${allowed.join(",")})`);
+        }
+      }
+      const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1629,15 +1750,19 @@ import type { Express } from "express";
   });
 
   // Escort Billings - List
-  app.get("/api/escort/billings", requireAdminRole, async (req, res) => {
+  app.get("/api/escort/billings", requireComercial, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista
       // (ordenada DESC) perde billings antigos; o Boletim "parece ok" só porque
       // os recentes cabem na 1ª página — o Balanço (ASC) perdia os recentes.
       const list = await fetchAllSupabaseRows((offset, limitTo) => {
         let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
         if (client_id) query = query.eq("client_id", client_id);
+        else if (allowed) query = query.in("client_id", allowed);
         if (status) query = query.eq("status", status as string);
         if (from) query = query.gte("data_missao", from as string);
         if (to) query = query.lte("data_missao", to as string);
@@ -2569,11 +2694,15 @@ import type { Express } from "express";
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw error;
+      const { leftoverMapForAlerts } = await import("../lib/billing-alert-live");
+      const leftover = await leftoverMapForAlerts(data || []);
       const filtered = (data || []).filter((a: any) => {
         if (a.alert_type === "OS_ESQUECIDA") {
           const os = String(a.os_numbers || "").trim();
           if (!os || os.toLowerCase() === "null") return false;
         }
+        const left = leftover.get(String(a.id));
+        if (left !== undefined && left.length === 0) return false;
         return true;
       });
       res.json(filtered);
@@ -2598,8 +2727,12 @@ import type { Express } from "express";
   app.get("/api/escort/routes", requireAuth, async (req, res) => {
     try {
       const { client_id } = req.query;
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
+      if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       let query = supabaseAdmin.from("escort_routes").select("*").order("name");
       if (client_id) query = query.eq("client_id", client_id);
+      else if (allowed) query = query.in("client_id", allowed);
       const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);

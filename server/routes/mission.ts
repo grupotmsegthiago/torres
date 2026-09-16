@@ -6,7 +6,8 @@ import type { Express } from "express";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
-  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, parseEmailList, SMTP_BCC_OS, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
+  import { withTorresAlwaysCc } from "../../shared/client-emails";
   import { computeBillingPayloadForOs, extractKmFromText } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
@@ -1418,9 +1419,13 @@ Responda APENAS com JSON: {"km_lido": number}`;
   </div>
 </body></html>`;
 
+      const fwd = withTorresAlwaysCc(parseEmailList(recipientEmail));
+      if (fwd.to.length === 0) return res.status(400).json({ message: "Email do destinatário é obrigatório" });
+
       await transporter.sendMail({
         from: getSmtpFrom(),
-        to: recipientEmail,
+        to: fwd.to,
+        cc: fwd.cc,
         bcc: SMTP_BCC_OS,
         subject: `Atualização de Escolta — ${os.osNumber} — ${stepLabel}`,
         html: htmlBody,

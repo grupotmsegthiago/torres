@@ -37,20 +37,26 @@ validação + captura de mensagem. Helpers cobertos por
 `server/lib/asaas-nfse-validation.test.ts`.
 
 ## NF travada em "processando"
-AUTHORIZED/SCHEDULED/ERROR sem número municipal **não** é emitida. O Torres deve:
-1. `GET /invoices/{inv_id}` se `nfse_number` começa com `inv_`;
-2. senão `GET /invoices?payment={asaas_payment_id}`;
-3. persistir o `inv_...` até chegar o nº municipal;
-4. persistir `statusDescription` do Asaas em `nfse_error_message` quando status = ERROR;
-5. cron e Sincronizar **só consultam** (GET). Nunca `POST /invoices/{id}/authorize` nem auto-emit — cada authorize manda e-mail ao cliente. Reprocessar só nos botões emit-nfse / resolver-nf-erro;
-6. cron a cada 5 min (`reconcileStuckNfses`) nas faturas em aberto incompletas; full reconcile a cada 15 min;
-7. cron **não** auto-emite se a lista vier vazia; emissão só na criação da fatura ou ação explícita;
-8. se cobrança em aberto, status processando, >2h e **nenhuma** NFS-e no Asaas → gravar ERRO com motivo visível.
+AUTHORIZED/SCHEDULED/ERROR sem número municipal **não** é emitida por um segundo POST.
+O Torres segue o fluxo isolado da TM:
+1. `POST /payments` grava a fatura local com `nfse_status=PROCESSING`.
+2. **Na mesma isolate** (`await emitIsolatedNfse`) — Vercel mata `setTimeout` após o response. Kick `POST /api/nf/retry/:invoiceId` continua como backup.
+3. Cron a cada 5 min (`runStuckNfCron` **primeiro** no bucket five-min) reprocessa PROCESSING/ERROR.
+4. GET: `/invoices/{inv_id}` se `nfse_number` começa com `inv_`; senão `GET /invoices?payment=...`.
+5. Persist `inv_...` até o nº municipal; `statusDescription` em `nfse_error_message` quando ERROR.
+6. `SYNCHRONIZED` com RPS **não** gera segundo POST. Retry de transporte = PUT (se ERROR) ou `/authorize` na mesma `inv_*` se “falha ao comunicar” **ou** `_NFe002` (código municipal).
+7. Webhook de pagamento (`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`) **não** emite NF.
+8. Sem endereço fiscal completo (CEP 8 dígitos, logradouro, número, cidade, UF) a cobrança com `emite_nf` é bloqueada no servidor.
+9. `effectiveDate` é data civil BRT (`todayDateStr`). Timeout Asaas `/invoices` = 45s. Portal Nacional: `municipalServiceCode` `07870` + `municipalServiceName` `"07870 - …"` + `municipalServiceId: null`. **Não** enviar ID 402 (provoca `_NFe002`). Código da Torres é 07870 (CNAE 7870), **não** 07930 da TM. Discriminação (`serviceDescription`) **sem** o código (NFe003). `ASAAS_MUNICIPAL_SERVICE_ID` no env é ignorada.
+10. UI: PROCESSING local sem `inv_*` **não** é “fila da prefeitura” — o botão Emitir permanece.
 
-A UI do Relatório de NF mostra o status bruto do Asaas, o motivo e o botão **Sincronizar** por linha (`POST /api/invoices/:id/sync`).
+`SYNCHRONIZED` **sem** nº municipal **não** é NF emitida. Badge verde só com número da prefeitura. `isQueuedAtPrefecture` em `shared/nfse-status.ts`.
 
 ## E-mail Asaas (cliente)
-O cliente recebe **um** e-mail na criação da cobrança (`PAYMENT_CREATED`) e o e-mail da NFS-e quando a nota **realmente sai**. Lembretes de vencimento, atraso, atualização, SMS e WhatsApp do Asaas ficam **desligados** (`applyAsaasCustomerEmailPolicy` / `applyAsaasPaymentEmailPolicy`). Reprocessar authorize em NF já AUTHORIZED também disparava e-mail — não fazer isso.
+O cliente recebe **um** e-mail na criação da cobrança (`PAYMENT_CREATED`) e o e-mail da NFS-e quando a nota **realmente sai**. Lembretes de vencimento, atraso, atualização, SMS e WhatsApp do Asaas ficam **desligados** (`applyAsaasCustomerEmailPolicy` / `applyAsaasPaymentEmailPolicy`). `payments.notificationDisabled` deve ser **false** — se for true, o Asaas não manda nem o boleto. A API `GET /payments/{id}/notifications` retorna 404; o fallback é a política no customer.
+
+## PIX no boleto
+Cobrança `BOLETO` no Asaas também tem QR PIX (`GET /payments/{id}/pixQrCode`). Gravar `pix_copia_e_cola` em **todos** os caminhos de criação e no reconcile/`/sync` se estiver vazio. Não limitar a `billingType=PIX|UNDEFINED`.
 
 ## Vencimento
 Alteração **manual** (`[Vencimento alterado`): a data do Torres é a do boleto — grava nos dois lados; se o Asaas recusar, não altera o Torres. O reconcile **empurra** essa data para o Asaas e **não** puxa outra data por cima.

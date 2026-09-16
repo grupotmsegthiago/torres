@@ -79,3 +79,29 @@ export function inferVehicleIcon(brand?: string | null, model?: string | null): 
   if (m.includes("POLO")) return "polo";
   return null;
 }
+
+/** MOBI precisa de apólice + contrato de seguro; Polo (e Kwid) não. */
+export function vehicleRequiresInsuranceDocs(
+  iconType?: string | null,
+  brand?: string | null,
+  model?: string | null,
+): boolean {
+  return resolveVehicleIcon(iconType, brand, model) === "mobi";
+}
+
+export function isInsuranceDocPresent(value?: string | null): boolean {
+  const v = String(value || "").trim();
+  return v.length > 0 && v !== "null" && v !== "undefined";
+}
+
+/** True = MOBI sem apólice ou sem contrato (lista em vermelho). Polo nunca entra. */
+export function isMobiInsuranceIncomplete(opts: {
+  iconType?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  insurancePolicyFile?: string | null;
+  insuranceContractFile?: string | null;
+}): boolean {
+  if (!vehicleRequiresInsuranceDocs(opts.iconType, opts.brand, opts.model)) return false;
+  return !isInsuranceDocPresent(opts.insurancePolicyFile) || !isInsuranceDocPresent(opts.insuranceContractFile);
+}

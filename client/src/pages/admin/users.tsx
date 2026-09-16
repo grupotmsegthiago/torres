@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { PerfisAcessoPanel } from "@/pages/admin/perfis-acesso-panel";
-import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, LogIn, Lock, Wallet, Briefcase } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -18,6 +19,7 @@ type SafeUser = {
   role: string;
   employeeId: number | null;
   username: string | null;
+  comercialId?: string | null;
 };
 
 /** Resposta one-shot de create/reset — senha só neste momento. */
@@ -33,6 +35,7 @@ const ALL_ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
   { value: "diretoria", label: "Diretoria", icon: Crown },
   { value: "financeiro", label: "Financeiro", icon: Wallet },
+  { value: "comercial", label: "Comercial", icon: Briefcase },
   { value: "funcionario", label: "Funcionário", icon: UserCircle },
 ];
 
@@ -46,12 +49,24 @@ function getRoleInfo(role: string) {
 }
 
 function getLoginFromEmail(email: string): string {
-  const cpfMatch = email.match(/^cpf_(\d+)@torresseguranca\.local$/);
+  const cpfMatch = email.match(/^cpf_(\d+)@torresseguranca\.local$/i);
   if (cpfMatch) {
     const cpf = cpfMatch[1].padStart(11, "0");
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   }
   return email;
+}
+
+function isCpfLoginEmail(email: string): boolean {
+  return /^cpf_\d+@torresseguranca\.local$/i.test(email);
+}
+
+function formatCpf(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
 function UserListSection({
@@ -114,6 +129,7 @@ function UserListSection({
                       u.role === "diretoria" ? "bg-amber-50 text-amber-600" :
                       u.role === "admin" ? "bg-blue-50 text-blue-600" :
                       u.role === "financeiro" ? "bg-emerald-50 text-emerald-600" :
+                      u.role === "comercial" ? "bg-sky-50 text-sky-600" :
                       "bg-neutral-100 text-neutral-500"
                     }`}>
                       <RoleIcon className="w-4 h-4" />
@@ -132,6 +148,7 @@ function UserListSection({
                           u.role === "diretoria" ? "bg-neutral-900 text-white" :
                           u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
                           u.role === "financeiro" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                          u.role === "comercial" ? "bg-sky-50 text-sky-700 border border-sky-200" :
                           "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`} data-testid={`text-user-role-${u.id}`}>
                           {roleInfo.label}
@@ -282,7 +299,9 @@ export default function UsersPage() {
   const [tab, setTab] = useState<"users" | "perfis">("users");
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formLogin, setFormLogin] = useState("");
   const [formRole, setFormRole] = useState("funcionario");
+  const [formComercialId, setFormComercialId] = useState("");
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "diretoria";
   const isDiretoria = currentUser?.role === "diretoria";
@@ -292,12 +311,24 @@ export default function UsersPage() {
     enabled: isAdmin,
   });
 
-  const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro");
+  const list = Array.isArray(users) ? users : [];
+  const sortedUsers = [...list].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
+  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin" || u.role === "financeiro" || u.role === "comercial");
   const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
+  const { data: comerciaisData } = useQuery<{
+    ok: boolean;
+    comerciais: Array<{ id: string; nome: string }>;
+  }>({
+    queryKey: ["/api/comerciais"],
+    enabled: isAdmin && dialogOpen && formRole === "comercial",
+    staleTime: 60_000,
+    retry: false,
+  });
+  const comerciais = comerciaisData?.comerciais || [];
+
   const createMutation = useMutation({
-    mutationFn: async (data: { email: string; name: string; role: string }) => {
+    mutationFn: async (data: { email: string; name: string; role: string; comercialId?: string | null }) => {
       const res = await apiRequest("POST", "/api/users", data);
       return res.json() as Promise<OneShotCredentials>;
     },
@@ -357,7 +388,9 @@ export default function UsersPage() {
     setEditingUser(null);
     setFormName("");
     setFormEmail("");
+    setFormLogin("");
     setFormRole("funcionario");
+    setFormComercialId("");
     setDialogOpen(true);
   }
 
@@ -365,7 +398,9 @@ export default function UsersPage() {
     setEditingUser(u);
     setFormName(u.name);
     setFormEmail(u.email);
+    setFormLogin(getLoginFromEmail(u.email));
     setFormRole(u.role);
+    setFormComercialId(u.comercialId || "");
     setDialogOpen(true);
   }
 
@@ -381,12 +416,23 @@ export default function UsersPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editingUser) {
-      updateMutation.mutate({ id: editingUser.id, data: { name: formName, role: formRole } });
+      const data: { name: string; role: string; cpf?: string; comercialId?: string | null } = { name: formName, role: formRole };
+      if (isCpfLoginEmail(editingUser.email)) {
+        const digits = formLogin.replace(/\D/g, "");
+        if (digits.length !== 11) {
+          toast({ title: "CPF inválido", description: "Digite os 11 dígitos do CPF.", variant: "destructive" });
+          return;
+        }
+        data.cpf = digits;
+      }
+      data.comercialId = formRole === "comercial" ? (formComercialId || null) : null;
+      updateMutation.mutate({ id: editingUser.id, data });
     } else {
       createMutation.mutate({
         email: formEmail,
         name: formName,
         role: formRole,
+        comercialId: formRole === "comercial" ? (formComercialId || null) : null,
       });
     }
   }
@@ -430,7 +476,7 @@ export default function UsersPage() {
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-3 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
           </div>
-        ) : users.length === 0 ? (
+        ) : list.length === 0 ? (
           <Card className="p-12 text-center">
             <UserCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
             <p className="text-neutral-500">Nenhum usuário cadastrado</p>
@@ -493,7 +539,11 @@ export default function UsersPage() {
                 data-testid="input-user-email"
               />
               {editingUser ? (
-                <p className="text-xs text-neutral-400 mt-1">O e-mail não pode ser alterado</p>
+                <p className="text-xs text-neutral-400 mt-1">
+                  {isCpfLoginEmail(editingUser.email)
+                    ? "Atualizado automaticamente pelo CPF"
+                    : "O e-mail não pode ser alterado"}
+                </p>
               ) : (
                 <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada e exibida uma única vez</p>
               )}
@@ -505,11 +555,26 @@ export default function UsersPage() {
                     <LogIn className="w-3.5 h-3.5" /> Login
                   </label>
                   <Input
-                    value={getLoginFromEmail(editingUser.email)}
-                    disabled
-                    className="font-mono bg-neutral-50"
+                    value={formLogin}
+                    onChange={(e) => {
+                      const next = isCpfLoginEmail(editingUser.email) ? formatCpf(e.target.value) : e.target.value;
+                      setFormLogin(next);
+                      if (isCpfLoginEmail(editingUser.email)) {
+                        const digits = next.replace(/\D/g, "");
+                        if (digits.length === 11) {
+                          setFormEmail(`cpf_${digits}@torresseguranca.local`);
+                        }
+                      }
+                    }}
+                    disabled={!isCpfLoginEmail(editingUser.email)}
+                    className={`font-mono ${isCpfLoginEmail(editingUser.email) ? "" : "bg-neutral-50"}`}
+                    placeholder="000.000.000-00"
+                    inputMode="numeric"
                     data-testid="input-user-login"
                   />
+                  {isCpfLoginEmail(editingUser.email) ? (
+                    <p className="text-xs text-neutral-400 mt-1">CPF usado para entrar no app</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-neutral-700 mb-1.5 block flex items-center gap-1">
@@ -539,6 +604,28 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {formRole === "comercial" && (
+              <div>
+                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Comercial TM SEG</label>
+                <select
+                  value={formComercialId}
+                  onChange={(e) => setFormComercialId(e.target.value)}
+                  className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  data-testid="select-user-comercial"
+                >
+                  <option value="">Não vinculado</option>
+                  {formComercialId && !comerciais.some((c) => c.id === formComercialId) && (
+                    <option value={formComercialId}>UUID atual (fora da lista ativa)</option>
+                  )}
+                  {comerciais.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Sem este vínculo o comercial só vê clientes que ele mesmo cadastrar.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="outline" onClick={closeDialog} data-testid="button-cancel">
                 Cancelar

@@ -19,11 +19,13 @@ import {
   Upload, Send, Check, Paperclip, History, Settings2, Download,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
+import { clientEmailsJoined } from "@shared/client-emails";
 import { generatePresentation } from "@/lib/presentation";
 import { formatPhoneBR as displayPhoneBR, formatCepBR as displayCepBR } from "@/lib/format-contact";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 import { WhatsappGroupPicker } from "@/components/admin/whatsapp-group-picker";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
+import { billingCycleLabel, normalizeBillingCycle } from "@shared/billing-cycle";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
@@ -262,6 +264,8 @@ const EmailTagInput = forwardRef<EmailTagInputHandle, EmailTagInputProps>(functi
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isComercialUser = user?.role === "comercial";
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const emailContratualRef = useRef<EmailTagInputHandle>(null);
@@ -335,7 +339,21 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     retemInss: (client as any)?.retemInss ?? (client as any)?.retem_inss ?? false,
     inssAliquota: String((client as any)?.inssAliquota ?? (client as any)?.inss_aliquota ?? "11.00"),
     whatsappGroupId: (client as any)?.whatsappGroupId || (client as any)?.whatsapp_group_id || "",
+    responsavelComercialId: user?.role === "comercial"
+      ? (user?.comercialId || "")
+      : ((client as any)?.responsavelComercialId || (client as any)?.responsavel_comercial_id || ""),
   });
+
+  const { data: comerciaisData, isLoading: comerciaisLoading } = useQuery<{
+    ok: boolean;
+    comerciais: Array<{ id: string; nome: string }>;
+    error?: string | null;
+  }>({
+    queryKey: ["/api/comerciais"],
+    staleTime: 60_000,
+    retry: false,
+  });
+  const comerciais = comerciaisData?.comerciais || [];
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
     const digits = cnpj.replace(/\D/g, "");
@@ -394,6 +412,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : null,
         billingCutoffDay: data.billingCutoffDay ? Number(data.billingCutoffDay) : null,
         billingCycle: data.billingCycle || null,
+        responsavelComercialId: data.responsavelComercialId || null,
       };
       if (client) {
         await apiRequest("PATCH", `/api/clients/${client.id}`, payload);
@@ -538,8 +557,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                 colorScheme="orange"
                 testId="input-client-email-operacional"
               />
+              <p className="text-[10px] text-neutral-500 mt-1">Usado na OS e atualizações de escolta</p>
             </div>
           </div>
+
+          <p className="text-[10px] text-neutral-500 mb-4">
+            Cada categoria recebe só o que é dela. Cópia interna sempre: diretoria, Mickael, financeiro e adm da Torres.
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
@@ -632,6 +656,11 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                   {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
                 </span>
               </div>
+              {form.emiteNf && (
+                <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">
+                  Na NFS-e o tomador retém <b>ISS 2%</b> e, se o INSS estiver ativo, <b>50% da alíquota legal</b> (11% → 5,5%).
+                </p>
+              )}
             </div>
           </div>
 
@@ -652,7 +681,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                 </span>
               </div>
               <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">
-                Quando ativo, a NF emitida pelo Asaas terá <b>{form.inssAliquota}% de INSS retido</b> sobre o valor do serviço, com observação legal (IN RFB nº 2.110/2022, Art. 111, II). O valor retido pode ser abatido no DAS.
+                Quando ativo, a NF retém <b>50% da alíquota legal</b> (padrão {form.inssAliquota}% → {(Number(form.inssAliquota || 11) * 0.5).toFixed(2).replace(".", ",")}% do valor do serviço) e <b>ISS 2% retido</b> pelo tomador, com observação legal (IN RFB nº 2.110/2022, Art. 111, II). O INSS retido pode ser abatido no DAS.
               </p>
             </div>
             <div>
@@ -718,8 +747,8 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">
                 Inscrição Municipal {form.emiteNf && <span className="text-red-600">*</span>}
               </label>
-              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="Nº na prefeitura" data-testid="input-client-inscricao-municipal" />
-              <p className="text-[10px] text-neutral-500 mt-1">Exigida pela prefeitura para emitir NFS-e (tomador PJ)</p>
+              <Input value={form.inscricaoMunicipal} onChange={(e) => setForm({ ...form, inscricaoMunicipal: e.target.value })} placeholder="CCM do tomador (não é o nº da NFS-e)" data-testid="input-client-inscricao-municipal" />
+              <p className="text-[10px] text-neutral-500 mt-1">Inscrição municipal do <b>cliente</b> na prefeitura (CCM). Não é o número da nota da fatura. Alterar aqui não reemite NFS-e já enviada.</p>
             </div>
             <div className="md:col-span-6">
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Inscrição Estadual</label>
@@ -741,8 +770,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <select value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" data-testid="select-billing-cycle">
                 <option value="">Não definido</option>
                 <option value="por_missao">Por Missão</option>
-                <option value="quinzenal">Quinzenal (1-15 / 16-30)</option>
-                <option value="mensal">Mensal (Fechamento Mês)</option>
+                <option value="diario">Diário</option>
+                <option value="quinzenal">Quinzenal (1-15 / 16-30 ou 31)</option>
+                <option value="mensal">Mensal (dia 01 até o último dia)</option>
               </select>
             </div>
             <div>
@@ -761,6 +791,37 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               <p className="text-[10px] text-neutral-400 mt-1">Dia do mês em que o lote trava e avisa se algo ficou fora</p>
             </div>
           </div>
+        </div>
+        <div className="md:col-span-2">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-600" /> Responsável Comercial
+          </label>
+          <select
+            value={isComercialUser ? (user?.comercialId || form.responsavelComercialId) : form.responsavelComercialId}
+            onChange={(e) => setForm({ ...form, responsavelComercialId: e.target.value })}
+            disabled={isComercialUser}
+            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 disabled:bg-neutral-50 disabled:text-neutral-500"
+            data-testid="select-responsavel-comercial"
+          >
+            <option value="">{comerciaisLoading ? "Carregando comerciais…" : "Não definido"}</option>
+            {form.responsavelComercialId
+              && !comerciais.some((c) => c.id === form.responsavelComercialId) && (
+              <option value={form.responsavelComercialId}>Comercial atual (fora da lista ativa)</option>
+            )}
+            {comerciais.map((c) => (
+              <option key={c.id} value={c.id}>{c.nome}</option>
+            ))}
+          </select>
+          {comerciaisData?.ok === false && (
+            <p className="text-[10px] text-amber-700 mt-1">
+              {comerciaisData.error || "Não foi possível listar os comerciais da TM SEG. O cadastro continua salvável."}
+            </p>
+          )}
+          <p className="text-[10px] text-neutral-400 mt-1">
+            {isComercialUser
+              ? "No perfil comercial o vínculo é sempre o seu usuário. Clientes sem vínculo ou de outro comercial ficam ocultos."
+              : "Lista ativa do painel de Comissões da TM SEG. O TORRES grava só o UUID — sem cadastro local de comerciais."}
+          </p>
         </div>
         <div className="md:col-span-2">
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block flex items-center gap-2">
@@ -2103,7 +2164,7 @@ const DOC_TYPES = [
 
 function HomologacaoTab({ client }: { client: Client }) {
   const { toast } = useToast();
-  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState(() => clientEmailsJoined(client, "contratual"));
   const [recipientName, setRecipientName] = useState(client.contactPerson || "");
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [includePresentation, setIncludePresentation] = useState(true);
@@ -2360,7 +2421,8 @@ function HomologacaoTab({ client }: { client: Client }) {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 block mb-1">E-mail do Destinatário *</label>
-                <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="homologacao@empresa.com.br" className="h-9 text-xs" data-testid="input-recipient-email" />
+                <Input type="text" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="homologacao@empresa.com.br" className="h-9 text-xs" data-testid="input-recipient-email" />
+                <p className="text-[10px] text-neutral-400 mt-1">Pré-preenchido com o e-mail contratual. A Torres vai em cópia.</p>
               </div>
             </div>
             <div className="bg-neutral-50 rounded-lg p-3">
@@ -2854,7 +2916,7 @@ export default function ClientsPage() {
                     <td className="p-3 text-neutral-600 text-xs">
                       {(c as any).billingCycle || (c as any).billing_cycle ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
-                          {((c as any).billingCycle || (c as any).billing_cycle) === "quinzenal" ? "Quinzenal" : ((c as any).billingCycle || (c as any).billing_cycle) === "mensal" ? "Mensal" : "Por Missão"}
+                          {billingCycleLabel(normalizeBillingCycle((c as any).billingCycle || (c as any).billing_cycle))}
                           {((c as any).paymentTermsDays || (c as any).payment_terms_days) ? ` D+${(c as any).paymentTermsDays || (c as any).payment_terms_days}` : ""}
                         </span>
                       ) : <span className="text-neutral-300">—</span>}

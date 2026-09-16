@@ -39,10 +39,7 @@ export function nowBRTString(): string {
   return new Date().toISOString();
 }
 
-export function parseEmailList(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  return raw.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-}
+export { parseEmailList } from "../../shared/client-emails";
 
 // ─── ANTI-PATTERNS (NÃO REINTRODUZIR) ───
 // ❌ Criar transporter novo a cada e-mail: leak de socket + handshake repetido.

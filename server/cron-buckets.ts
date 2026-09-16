@@ -106,6 +106,7 @@ async function runBrtScheduledJobs(brt: BrtClock): Promise<void> {
   if (hour === 15 && minute === 0 && isWeekday) await jobs.runResumoFinanceiroCron();
   if (hour === 16 && minute === 30 && isWeekday) await jobs.runRodizioCron();
   if (hour === 18 && minute === 0 && isWeekday) await jobs.runResumoFinanceiroCron();
+  if (minute === 0 && hour % 6 === 0) await jobs.runComissaoTmSegSyncCron();
 }
 
 async function runBillingWithMeta(): Promise<void> {
@@ -133,10 +134,10 @@ export async function runCronBucket(bucket: CronBucket): Promise<void> {
       break;
     }
     case "five-min": {
+      await jobs.runStuckNfCron();
       await jobs.runRhidQueueCron();
       await jobs.runInterReconcileFastCron();
       await jobs.runAgentCentralCron();
-      await jobs.runStuckNfCron();
       break;
     }
     case "ten-min": {

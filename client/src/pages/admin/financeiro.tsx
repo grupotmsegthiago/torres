@@ -94,6 +94,11 @@ interface FinancialTransaction {
   nf_motivo_ausencia: string | null;
   nf_url: string | null;
   nf_anexado_em: string | null;
+  protocolo_url: string | null;
+  protocolo_anexado_em: string | null;
+  conferido_diretoria: boolean | null;
+  conferido_por: string | null;
+  conferido_em: string | null;
   solicitado_por: string | null;
   aprovado_por: string | null;
   aprovado_em: string | null;
@@ -172,6 +177,8 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   employees: EmployeeLite[];
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canConferir = user?.role === "diretoria" || user?.role === "admin";
   const isEdit = !!editingTransaction;
   const isSeries = isEdit && !!editingTransaction.installment_group && (editingTransaction.installment_total || 0) > 1;
   const [type, setType] = useState<TransactionType>(editingTransaction?.type || "EXPENSE");
@@ -205,6 +212,8 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [nfMotivo, setNfMotivo] = useState<string>(editingTransaction?.nf_motivo_ausencia || "");
   const [boletoFile, setBoletoFile] = useState<{ base64: string; name: string; type: string } | null>(null);
   const [nfFile, setNfFile] = useState<{ base64: string; name: string; type: string } | null>(null);
+  const [protocoloFile, setProtocoloFile] = useState<{ base64: string; name: string; type: string } | null>(null);
+  const [conferidoDiretoria, setConferidoDiretoria] = useState(!!editingTransaction?.conferido_diretoria);
 
   const fileToBase64 = (file: File): Promise<{ base64: string; name: string; type: string }> =>
     new Promise((resolve, reject) => {
@@ -257,11 +266,15 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       payment_method: type === "EXPENSE" ? (paymentMethod || null) : null,
       has_nf: type === "EXPENSE" ? (hasNf === "yes" ? true : hasNf === "no" ? false : null) : null,
       nf_motivo_ausencia: type === "EXPENSE" && hasNf === "no" ? (nfMotivo || null) : null,
+      conferido_diretoria: type === "EXPENSE" ? conferidoDiretoria : false,
       ...(!isEdit && boletoFile ? {
         boleto_base64: boletoFile.base64, boleto_fileName: boletoFile.name, boleto_contentType: boletoFile.type
       } : {}),
       ...(!isEdit && nfFile ? {
         nf_base64: nfFile.base64, nf_fileName: nfFile.name, nf_contentType: nfFile.type
+      } : {}),
+      ...(!isEdit && protocoloFile ? {
+        protocolo_base64: protocoloFile.base64, protocolo_fileName: protocoloFile.name, protocolo_contentType: protocoloFile.type
       } : {}),
       ...(!isEdit && recurrence === "INSTALLMENT" ? { installments } : {}),
       ...(isEdit && isSeries && scope ? { update_scope: scope } : {}),
@@ -549,6 +562,21 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               <option value="PAID">Liquidado (Pago/Recebido)</option>
             </select>
           </div>
+          {type === "EXPENSE" && canConferir && (
+            <button
+              type="button"
+              onClick={() => setConferidoDiretoria(v => !v)}
+              className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest border-2 flex items-center justify-center gap-2 ${
+                conferidoDiretoria
+                  ? "bg-emerald-600 text-white border-emerald-600"
+                  : "bg-white text-neutral-500 border-neutral-200 hover:border-emerald-400"
+              }`}
+              data-testid="button-conferido-diretoria"
+            >
+              <CheckCircle2 size={14} />
+              {conferidoDiretoria ? "Conferido (diretoria) ✓" : "Marcar conferido (diretoria)"}
+            </button>
+          )}
 
           {type === "EXPENSE" && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-3" data-testid="block-checklist-docs">
@@ -679,9 +707,26 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                 </div>
               )}
 
+              {!isEdit && (
+                <div>
+                  <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Protocolo de assinatura (foto/PDF, máx 5MB)</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => pickFile(setProtocoloFile)} className="px-3 py-2 rounded-lg border-2 border-indigo-300 bg-white text-[10px] font-black uppercase text-indigo-700 hover:bg-indigo-50" data-testid="button-pick-protocolo">
+                      {protocoloFile ? "Trocar arquivo" : "Anexar protocolo"}
+                    </button>
+                    {protocoloFile && (
+                      <span className="text-[10px] font-bold text-emerald-700 truncate" data-testid="text-protocolo-filename">
+                        ✓ {protocoloFile.name}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[9px] font-bold text-neutral-400 mt-1">Foto das contas assinadas. Opcional neste momento — também pode anexar depois na listagem.</p>
+                </div>
+              )}
+
               {isEdit && (
                 <p className="text-[9px] font-bold text-neutral-500 italic">
-                  Para anexar boleto/NF nesta edição, use os botões da listagem após salvar.
+                  Para anexar boleto/NF/protocolo nesta edição, use os botões da listagem após salvar.
                 </p>
               )}
             </div>
@@ -1968,7 +2013,7 @@ export default function FinanceiroPage() {
   };
 
   const uploadDocMutation = useMutation({
-    mutationFn: async ({ id, kind, file }: { id: string; kind: "boleto" | "nf"; file: File }) => {
+    mutationFn: async ({ id, kind, file }: { id: string; kind: "boleto" | "nf" | "protocolo"; file: File }) => {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
       let binary = "";
@@ -1978,11 +2023,14 @@ export default function FinanceiroPage() {
         fileBase64, fileName: file.name, contentType: file.type || "application/octet-stream",
       });
     },
-    onSuccess: () => { invalidateRelatedQueries("financial"); toast({ title: "Documento anexado" }); },
+    onSuccess: (_d, vars) => {
+      invalidateRelatedQueries("financial");
+      toast({ title: vars.kind === "protocolo" ? "Protocolo anexado" : "Documento anexado" });
+    },
     onError: (err: Error) => toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" }),
   });
 
-  const handleUploadDoc = (id: string, kind: "boleto" | "nf") => {
+  const handleUploadDoc = (id: string, kind: "boleto" | "nf" | "protocolo") => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/jpeg,image/jpg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf";
@@ -2004,7 +2052,7 @@ export default function FinanceiroPage() {
     input.click();
   };
 
-  const openDoc = async (id: string, kind: "boleto" | "nf") => {
+  const openDoc = async (id: string, kind: "boleto" | "nf" | "protocolo") => {
     try {
       const res = await apiRequest("GET", `/api/financial/transactions/${id}/${kind}-url`);
       const json = await res.json();
@@ -2064,6 +2112,16 @@ export default function FinanceiroPage() {
     onSuccess: () => {
       invalidateRelatedQueries("financial");
     },
+  });
+
+  const conferirMutation = useMutation({
+    mutationFn: ({ id, conferido }: { id: string; conferido: boolean }) =>
+      apiRequest("PATCH", `/api/financial/transactions/${id}/conferir`, { conferido }),
+    onSuccess: (_d, vars) => {
+      invalidateRelatedQueries("financial");
+      toast({ title: vars.conferido ? "Conferido (diretoria)" : "Conferência desmarcada" });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao conferir", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -2282,6 +2340,7 @@ export default function FinanceiroPage() {
               <th className="px-4 py-3">Vencimento</th>
               <th className="px-4 py-3 text-center">Status</th>
               <th className="px-4 py-3 text-center">Conferência</th>
+              <th className="px-4 py-3 text-center">Dir</th>
               <th className="px-4 py-3">Lançado por</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3 text-right">Ações</th>
@@ -2289,9 +2348,9 @@ export default function FinanceiroPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {isLoading ? (
-              <tr><td colSpan={10} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
+              <tr><td colSpan={11} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={10} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
+              <tr><td colSpan={11} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
             ) : list.map(t => {
               const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < brtTodayStr();
               return (
@@ -2366,7 +2425,7 @@ export default function FinanceiroPage() {
                   </td>
                   <td className="px-4 py-3 text-center" data-testid={`cell-conferencia-${t.id}`}>
                     {t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura") ? (
-                      <div className="inline-flex items-center gap-1">
+                      <div className="inline-flex items-center gap-1 flex-wrap justify-center">
                         {/* 1 — BOLETO (só obrigatório se método=boleto) */}
                         {t.payment_method === "boleto" ? (
                           t.boleto_url ? (
@@ -2399,9 +2458,41 @@ export default function FinanceiroPage() {
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Após pagamento" data-testid={`badge-comp-na-${t.id}`}>3-COMP —</span>
                         )}
+                        {/* 4 — PROTOCOLO DE ASSINATURA */}
+                        {t.protocolo_url ? (
+                          <button onClick={() => openDoc(t.id, "protocolo")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Protocolo anexado" data-testid={`badge-prot-ok-${t.id}`}>4-PROT ✓</button>
+                        ) : (
+                          <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "protocolo") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title={canEditDocs(t) ? "Anexar protocolo de assinatura" : "Sem permissão para anexar"} data-testid={`badge-prot-pend-${t.id}`}>4-PROT ?</button>
+                        )}
                       </div>
                     ) : (
                       <span className="text-[9px] font-bold text-neutral-300 italic">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center" data-testid={`cell-dir-${t.id}`}>
+                    {t.type === "EXPENSE" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!(user?.role === "diretoria" || user?.role === "admin")) {
+                            toast({ title: "Somente diretoria", description: "O tick de conferência é da diretoria.", variant: "destructive" });
+                            return;
+                          }
+                          conferirMutation.mutate({ id: t.id, conferido: !t.conferido_diretoria });
+                        }}
+                        disabled={conferirMutation.isPending}
+                        className={`w-8 h-8 rounded-md border-2 inline-flex items-center justify-center transition-all ${
+                          t.conferido_diretoria
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "bg-white text-neutral-300 border-neutral-300 hover:border-emerald-500 hover:text-emerald-600"
+                        }`}
+                        title={t.conferido_diretoria ? `Conferido por ${t.conferido_por || "diretoria"}` : "Marcar conferido (diretoria)"}
+                        data-testid={`button-tick-dir-${t.id}`}
+                      >
+                        {t.conferido_diretoria ? <CheckCircle2 size={16} strokeWidth={3} /> : <span className="text-[11px] font-black">✓</span>}
+                      </button>
+                    ) : (
+                      <span className="text-[9px] font-bold text-neutral-300">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -3202,7 +3293,12 @@ export default function FinanceiroPage() {
                               <FileText size={10} /> Compr.
                             </button>
                           )}
-                          {!t.boleto_url && !t.nf_url && !t.comprovante_url && (
+                          {t.protocolo_url && (
+                            <button onClick={() => openDoc(t.id, "protocolo")} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200" title="Ver protocolo anexado" data-testid={`link-protocolo-aguardando-${t.id}`}>
+                              <FileText size={10} /> Prot.
+                            </button>
+                          )}
+                          {!t.boleto_url && !t.nf_url && !t.comprovante_url && !t.protocolo_url && (
                             <span className="text-[9px] font-bold text-neutral-300 italic" data-testid={`text-sem-doc-aguardando-${t.id}`}>—</span>
                           )}
                         </div>

@@ -1,5 +1,113 @@
 # Changelog — Governança Torres
 
+## 2026-09-14 — NFS-e Asaas: `_NFe002` código municipal ausente
+
+- Causa: Torres no Portal Nacional enviava `municipalServiceId` 402; o portal ignora o código `07870` e devolve `_NFe002`.
+- Correção (padrão TM SEG + FAQ Asaas): `municipalServiceCode` 07870, `municipalServiceName` `"07870 - …"`, `municipalServiceId: null`. Código da Torres permanece 07870 (não copiar 07930).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-NFE002-CODIGO-MUNICIPAL-2026-09-14.md`.
+
+## 2026-09-14 — NFS-e Asaas: emissão não conclui (PROCESSING eterno)
+
+- Causa: `setTimeout` da NF isolada morre no Vercel; timeout 8s abortava `POST /invoices`; SYNCHRONIZED + “falha ao comunicar” / `_NFe002` ficava só em consulta; PROCESSING local escondia o botão Emitir.
+- Correção: `await emitIsolatedNfse` na mesma isolate; timeout 45s em `/invoices`; `municipalServiceId` 402 padrão; `effectiveDate` BRT; authorize na mesma `inv_*` sem segundo POST; cron NF primeiro no bucket de 5 min.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-TRAVADA-PROCESSANDO-2026-09-14.md`.
+
+
+## 2026-09-10 — NFS-e isolada (cobrança + worker, espelho TM SEG)
+
+- Cobrança Asaas e NFS-e deixam de ir na mesma request. Fatura local fica `PROCESSING`; `POST /invoices` sai no kick `/api/nf/retry/:id` e no cron de 5 min.
+- Sem segundo POST em NF já na prefeitura. Código municipal da Torres permanece `07870` (não o `07930` da TM).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-ISOLADA-2026-09-10.md`.
+
+## 2026-09-10 — Observação da NFS-e (modelo financeiro, ≤250)
+
+- `observations` da NFS-e: CNAE, Escolta Armada, período, INSS Anexo IV, Simples Nacional, bruto/ISS/líquido. Discriminacao municipal permanece o texto CNAE oficial.
+- SSOT: `buildNfseObservations` em `asaas-helpers.ts`. Teto `NF_OBSERVATIONS_MAX = 250`.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-OBSERVACOES-2026-09-10.md`.
+
+## 2026-09-10 — Seguro do Mobi (apólice + contrato no cadastro da viatura)
+
+- Só Fiat Mobi: anexar apólice e contrato de seguro no cadastro. Polo não exige.
+- Arquivos no bucket privado `vehicle-docs` (caminho curto em `vehicles`); lista em vermelho se faltar.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-VTR-SEGURO-MOBI-2026-09-10.md`.
+
+## 2026-09-10 — NFS-e: INSS 5,5% (50% de 11%) + ISS 2% retido
+
+- Pedido do dono: reter na NF 50% dos 11% de INSS e 2% de ISS (`retainIss: true`).
+- Motor único: `buildNfseInvoicePayload` / `netBoletoValue` em `asaas-helpers.ts`. Cadastro `inss_aliquota` continua a alíquota legal.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-RETENCOES-2026-09-10.md`.
+
+## 2026-09-10 — NF e boleto Asaas (SYNCHRONIZED, PIX, e-mail)
+
+- Faturas: `SYNCHRONIZED` sem nº municipal não é mais “NFS-e emitida”.
+- Boleto: `notificationDisabled: false` + fallback da política de e-mail no customer (GET notifications do payment dá 404).
+- PIX copia-e-cola também no tipo BOLETO; reconcile/`/sync` preenchem se faltar.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-ASAAS-NF-BOLETO-2026-09-10.md`.
+
+## 2026-09-10 — Controle de Faturamento (Diretoria)
+
+- KPI de cobertura por ciclo do cadastro (quinzenal 1–15/16–fim, mensal, diário). Projeção: OS + billing oficial + fatura.
+- Gate no boletim: não envia se faltar OS do período ou se não estiver APROVADA (recusada fora).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-CONTROLE-FATURAMENTO-2026-09-10.md`.
+
+## 2026-09-09 — Grid Maps: loader único + chave de servidor na rota
+
+- Causa: dois loaders do Google (Places sem `geometry`) e `/route` no servidor usando só `VITE_GOOGLE_MAPS_API_KEY` (restrita por site).
+- Loader único `places+geometry` + `importLibrary`; Directions no servidor usa `googleMapsServerKey()` (mesma cascata do pedágio).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-GRID-MAPS-LOADER-2026-09-09.md`.
+
+## 2026-09-09 — Grid: origem/destino ao lado da placa + % da missão
+
+- Card de atualizações e identidade da viatura passam a mostrar cliente + origem / destino da OS (campos já existentes na API).
+- Barra no padrão TMSEG (Acompanhamento KM + % salvo + carro na trilha), cores Torres (âmbar → índigo → negro). Cálculo continua `getRouteProgress`.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-GRID-ORIGEM-DESTINO-PROGRESSO-2026-09-09.md`.
+
+## 2026-09-09 — CCM do tomador no Sincronizar (não é nº da NFS-e)
+
+- `07930` no cadastro Pacheco é CCM do tomador (`clients.inscricao_municipal`), não o número da NFS-e da fatura.
+- Customer Asaas passa a receber CCM se o valor Torres for diferente (antes só preenchia se estivesse vazio).
+- `/sync` e reconcile enviam CCM ao tomador; **não** reemitem NF já na prefeitura. Sem botão Reemitir em NF processando (esperado).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e lacunas #171/#170 (erro visível, PUT, sem segundo POST)
+
+- #171 (SYNCHRONIZED, sem RPS, Discriminacao antiga) = rejeição escondida: `ERROR` local + Resolver; cancel só no painel Asaas; quando ERROR, PUT na mesma `inv_*`.
+- #170 (oficial + RPS 295) = só poll. Sem cancel, sem segundo POST.
+- `/sync` não zera relógio em no-op; “Sincronizar c/ Asaas” solta `running` após 3 min.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e #171 Discriminacao antiga travada em SYNCHRONIZED
+
+- FAT #171 ainda tinha `serviceDescription` = Escolta Armada/cliente/OS (payload que a SP já rejeitou na #170). Asaas `SYNCHRONIZED` sem RPS; **recusa cancelar** (“Processando emissão”).
+- FAT #170 já está com Discriminacao oficial + RPS 295 — fila real da prefeitura.
+- Catch-up: cancel+POST só se Discriminacao antiga e Asaas deixar cancelar; se recusar, espera 30 min. Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e processando: sync não reemite; relógio e rejeição oculta
+
+- `SYNCHRONIZED` sem nº municipal continua só consulta (satélite Asaas). Rejeição escondida em `statusDescription` vira `ERROR` local.
+- `/sync` não grava `updated_at` em no-op; `nfReconcileState.running` solta após 3 min se o isolate morrer.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-SYNC-PROCESSANDO-2026-09-09.md`.
+
+## 2026-09-09 — NFS-e Discriminacao (Asaas / prefeitura SP)
+
+- `serviceDescription` da NFS-e passa a ser sempre o texto CNAE oficial; nome do cliente e período ficam em `observations`, sem travessão tipográfico.
+- Reprocesso de NF em ERROR reutiliza o `inv_*` existente (`PUT` + `authorize`) — não cria segunda nota na mesma cobrança.
+- Catch-up automático só para rejeição de schema Discriminacao e cliente `emite_nf=true`. Processando (ex.: FAT #171) continua só consulta. Inscrição municipal da empresa no Asaas (MULTILOG) não é auto-retry.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-DISCRIMINACAO-ASAAS-2026-09-09.md`.
+
+## 2026-09-09 — ACL de linha do perfil comercial
+
+- Perfil `comercial` só lê clientes com `responsavel_comercial_id = users.comercial_id` **ou** `created_by_user_id = users.id`.
+- Sem vínculo e sem cadastro próprio: lista vazia (fail-closed). Recurso fora do escopo responde 404.
+- Sem tabela `comerciais` e sem FK. Relatório: `docs/governanca/RELATORIO-ENTREGA-ACL-COMERCIAL-ESCOPO-2026-09-09.md`.
+
+## 2026-09-09 — vínculo comercial + ingestão de comissões (TORRES → TM SEG)
+
+- Cadastro de cliente passa a gravar `clients.responsavel_comercial_id` (UUID, sem FK/tabela `comerciais`).
+- Lista de comerciais ativos via proxy autenticado `GET /api/comerciais` (token só no servidor).
+- Emissão/baixa/cancelamento de fatura disparam POST fail-soft `FATURADO`/`PAGO`/`CANCELADO` para a TM SEG.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-COMISSAO-INGEST-TMSEG-2026-09-09.md`.
+
 ## 2026-08-06 — security(users): close plain password removal (PR4C / Fase 4.9)
 
 - PR4B confirmado pelo proprietário como aplicado no projeto Torres (`erjhxwbutjyylxdthuuz`) via migration versionada `20260805210000_drop_users_plain_password`.

@@ -1,11 +1,12 @@
 import type { Express } from "express";
   import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria, requireComercial } from "../auth";
   import { insertServiceOrderSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
-  import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
+  import { clientOutboundMail } from "../../shared/client-emails";
   import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
@@ -16,7 +17,14 @@ import type { Express } from "express";
   import { randomUUID } from "crypto";
   import { estimateTolls, estimateTollsAlongPath, getAllTollPlazas } from "../toll-engine";
   import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
-  import { computeRouteTolls } from "../lib/google-routes-tolls";
+  import { computeRouteTolls, googleMapsServerKey } from "../lib/google-routes-tolls";
+  import {
+    allowedClientIdsFromRequest,
+    clientIdAllowed,
+    createComercialOsScopeMiddleware,
+    denyIfComercialClientOutOfScope,
+    isComercialScoped,
+  } from "../lib/comercial-scope";
 
   async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
     if (!so?.escortContractId) {
@@ -94,21 +102,27 @@ import type { Express } from "express";
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit as string) || 1000));
     const offset = (page - 1) * limit;
+    const allowed = await allowedClientIdsFromRequest(req);
+    if (allowed && allowed.length === 0) return res.json([]);
 
     const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
 
     let data: any[];
     try {
-      const { data: rows, error } = await supabaseAdmin.from("service_orders")
+      let query = supabaseAdmin.from("service_orders")
         .select(SO_LIST_COLS)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
+        .order("created_at", { ascending: false });
+      if (allowed) query = query.in("client_id", allowed);
+      const { data: rows, error } = await query.range(offset, offset + limit - 1);
       if (error) throw error;
       data = rows?.map((r: any) => toCamelObj(r)) || [];
     } catch (err: any) {
       console.warn(`[so-list] supabase error, falling back: ${err.message}`);
       const all = await storage.getServiceOrders();
-      data = all.slice(offset, offset + limit);
+      const scoped = allowed
+        ? all.filter((o: any) => clientIdAllowed(o.clientId ?? o.client_id, allowed))
+        : all;
+      data = scoped.slice(offset, offset + limit);
     }
 
     const osIds = data.map((o: any) => o.id).filter(Boolean);
@@ -151,6 +165,8 @@ import type { Express } from "express";
     res.json(enriched);
   });
 
+  app.use("/api/service-orders/:id", requireAuth, createComercialOsScopeMiddleware((id) => storage.getServiceOrder(id)));
+
   app.get("/api/service-orders/invoice-map", requireAuth, requireAdminRole, async (_req, res) => {
     try {
       const { data: billings } = await supabaseAdmin
@@ -169,13 +185,17 @@ import type { Express } from "express";
     }
   });
 
-  app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireAdminRole, async (_req, res) => {
+  app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireComercial, async (req, res) => {
     try {
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (allowed && allowed.length === 0) return res.json([]);
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
+        (allowed == null || clientIdAllowed(o.clientId, allowed)) && (
         o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada" ||
         o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt) ||
         o.status === "cancelada" || o.status === "recusada"
+        )
       );
 
       const osIds = concluidas.map(o => o.id);
@@ -269,7 +289,7 @@ import type { Express } from "express";
           ...os,
           clientName: client?.name || "—",
           clientCnpj: client?.cnpj || null,
-          clientEmail: (client as any)?.email || null,
+          clientEmail: clientOutboundMail(client, "medicao")?.to.join(", ") || null,
           clientBillingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || null,
           clientPrazoAprovacaoDias: (client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || null,
           clientPaymentTermsDays: (client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || null,
@@ -306,11 +326,12 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/boletim-medicao/calcular/:osId", requireAdminRole, async (req, res) => {
+  app.post("/api/boletim-medicao/calcular/:osId", requireComercial, async (req, res) => {
     try {
       const serviceOrderId = Number(req.params.osId);
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+      if (await denyIfComercialClientOutOfScope(req, res, so.clientId, "OS nao encontrada")) return;
 
       const isConcluded =
         so.status === "concluida" ||
@@ -923,12 +944,18 @@ import type { Express } from "express";
     }
   });
 
-  app.post("/api/service-orders", requireAuth, requireAdminRole, async (req, res) => {
+  app.post("/api/service-orders", requireAuth, requireComercial, async (req, res) => {
     console.log(`[DEBUG-OS] POST body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     console.log(`[DEBUG-OS] POST parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
     if (!parsed.data.scheduledDate) return res.status(400).json({ message: "Data do Agendamento é obrigatória" });
+    if (isComercialScoped(req.user as any)) {
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (!clientIdAllowed(parsed.data.clientId, allowed)) {
+        return res.status(400).json({ message: "Cliente não encontrado" });
+      }
+    }
     // Bloqueio operacional: cliente com fatura em cobrança judicial não recebe nova OS.
     if (parsed.data.clientId) {
       const { data: judicial } = await supabaseAdmin
@@ -1220,10 +1247,16 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/service-orders/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.patch("/api/service-orders/:id", requireAuth, requireComercial, async (req, res) => {
     console.log(`[DEBUG-OS] PATCH body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (isComercialScoped(req.user as any) && parsed.data.clientId != null) {
+      const allowed = await allowedClientIdsFromRequest(req);
+      if (!clientIdAllowed(parsed.data.clientId, allowed)) {
+        return res.status(400).json({ message: "Cliente não encontrado" });
+      }
+    }
     console.log(`[DEBUG-OS] PATCH parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
 
     if (parsed.data.status === "em_andamento" && parsed.data.missionStatus === "aguardando") {
@@ -1994,11 +2027,9 @@ import type { Express } from "express";
     if (!osData.scheduledDate) return { sent: false, reason: "Data agendada não definida" };
 
     const client = await storage.getClient(osData.clientId);
-    const operacionalEmails = parseEmailList(client?.emailOperacional);
-    const geralEmails = parseEmailList(client?.email);
-    const recipientEmails = operacionalEmails.length > 0 ? operacionalEmails : geralEmails;
-    if (recipientEmails.length === 0) return { sent: false, reason: "Cliente sem email cadastrado" };
-    const recipientEmail = recipientEmails.join(", ");
+    const mail = clientOutboundMail(client, "operacional");
+    if (!mail) return { sent: false, reason: "Cliente sem e-mail operacional cadastrado" };
+    const recipientEmail = mail.to.join(", ");
 
     const transporter = createSmtpTransporter();
     if (!transporter) return { sent: false, reason: "SMTP não configurado" };
@@ -2094,7 +2125,8 @@ import type { Express } from "express";
 
     const mailOptions: any = {
       from: getSmtpFrom(),
-      to: recipientEmail,
+      to: mail.to,
+      cc: mail.cc,
       bcc: SMTP_BCC_OS,
       subject: `Confirmação de Escolta — ${osData.osNumber}`,
       html: htmlBody,
@@ -2743,7 +2775,7 @@ import type { Express } from "express";
         return res.json({ distKm: cached.distKm, durationMin: cached.durationMin, source: "cache" });
       }
 
-      const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+      const apiKey = googleMapsServerKey();
       if (!apiKey) {
         const haversine = (() => {
           const R = 6371;
@@ -3020,7 +3052,7 @@ import type { Express } from "express";
       }
 
       if (!plannedRoute && (hasOrigin || hasDest)) {
-        const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+        const apiKey = googleMapsServerKey();
         if (apiKey) {
           try {
             let dirOrigin = "";

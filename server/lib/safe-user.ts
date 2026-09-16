@@ -10,6 +10,7 @@ export type SafeUser = {
   name: string;
   role: string;
   employeeId: number | null;
+  comercialId: string | null;
   mustChangePassword: boolean;
   supabaseUid: string | null;
   avatarUrl: string | null;
@@ -38,6 +39,7 @@ export function toSafeUser(user: unknown): SafeUser {
       name: "",
       role: "funcionario",
       employeeId: null,
+      comercialId: null,
       mustChangePassword: false,
       supabaseUid: null,
       avatarUrl: null,
@@ -61,6 +63,7 @@ export function toSafeUser(user: unknown): SafeUser {
       pick(u, "employeeId", "employee_id") == null
         ? null
         : Number(pick(u, "employeeId", "employee_id")),
+    comercialId: (pick(u, "comercialId", "comercial_id") as string | null | undefined) ?? null,
     mustChangePassword: mustRaw === 1 || mustRaw === true,
     supabaseUid: (pick(u, "supabaseUid", "supabase_uid") as string | null | undefined) ?? null,
     avatarUrl: (pick(u, "avatarUrl", "avatar_url") as string | null | undefined) ?? null,
@@ -76,7 +79,7 @@ export function toSafeUser(user: unknown): SafeUser {
 
 /** Colunas explícitas para leituras que alimentam API (nunca inclui plain_password). */
 export const USER_SAFE_SELECT =
-  "id, email, username, name, role, employee_id, must_change_password, supabase_uid, avatar_url, terms_accepted_at, terms_ip_address, terms_user_agent, created_at";
+  "id, email, username, name, role, employee_id, comercial_id, must_change_password, supabase_uid, avatar_url, terms_accepted_at, terms_ip_address, terms_user_agent, created_at";
 
 /** Garante que um payload serializável não contém campos sensíveis. */
 export function assertNoPasswordFields(payload: unknown): boolean {

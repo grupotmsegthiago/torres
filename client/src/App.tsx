@@ -1,7 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient, apiRequest } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
@@ -10,6 +10,7 @@ import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 import { ConfigError } from "@/components/config-error";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { canSeeAdminPath, parsePermissions, usesAclMenu } from "@shared/perfis-acesso";
 
 import Home from "@/pages/home";
 import LoginPage from "@/pages/admin/login";
@@ -35,6 +36,7 @@ const WhatsappPage = lazy(() => import("@/pages/admin/whatsapp"));
 const AgendaVtrPage = lazy(() => import("@/pages/admin/agenda-vtr"));
 const RelatorioNFPage = lazy(() => import("@/pages/admin/relatorio-nf"));
 const AuditoriaFaturamentoPage = lazy(() => import("@/pages/admin/auditoria-faturamento"));
+const FaturamentoDiretoriaPage = lazy(() => import("@/pages/admin/faturamento"));
 const GuiaMissaoPage = lazy(() => import("@/pages/admin/guia-missao"));
 const WeaponsPage = lazy(() => import("@/pages/admin/weapons"));
 const UsersPage = lazy(() => import("@/pages/admin/users"));
@@ -119,7 +121,12 @@ function LazyFallback() {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { data: perfilData, isLoading: perfilLoading } = useQuery<{ permissions?: string[] | string }>({
+    queryKey: ["/api/auth/perfil"],
+    enabled: !!user && usesAclMenu(user.role),
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -137,6 +144,14 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (user.role === "funcionario") {
     return <AccessDeniedPage />;
+  }
+
+  if (usesAclMenu(user.role)) {
+    if (perfilLoading && !perfilData) return <LazyFallback />;
+    const perms = parsePermissions(perfilData?.permissions as any);
+    if (!canSeeAdminPath(perms, location)) {
+      return <AccessDeniedPage variant="screen" />;
+    }
   }
 
   return <Component />;
@@ -256,6 +271,7 @@ function Router() {
         <Route path="/admin/agenda-vtr">{() => <ProtectedRoute component={AgendaVtrPage} />}</Route>
         <Route path="/admin/relatorio-nf">{() => <ProtectedRoute component={RelatorioNFPage} />}</Route>
         <Route path="/admin/auditoria-faturamento">{() => <ProtectedRoute component={AuditoriaFaturamentoPage} />}</Route>
+        <Route path="/admin/faturamento">{() => <ProtectedRoute component={FaturamentoDiretoriaPage} />}</Route>
         <Route path="/admin/laudo/:osId">{() => <ProtectedRoute component={LaudoPage} />}</Route>
         <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>

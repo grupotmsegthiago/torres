@@ -3,21 +3,50 @@
  * de runtime (Supabase / Express). Extraídos para permitir testes unitários.
  */
 
+import {
+  isNfOkStatus,
+  isFinalNfNumber,
+  isNfFullyIssued,
+  classifyIssuedOrProcessing,
+} from "../../shared/nfse-status";
+
+export {
+  isNfOkStatus,
+  isFinalNfNumber,
+  isNfFullyIssued,
+  classifyIssuedOrProcessing,
+  isLocalNfProcessingPlaceholder,
+  isQueuedAtPrefecture,
+} from "../../shared/nfse-status";
+
 export const TORRES_CNPJ = "36982392000189";
 
 export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
 /**
- * ID do serviço municipal na prefeitura (Asaas GET /invoices/municipalServices).
- * 07870 | 11.02 — Vigilância, segurança ou monitoramento de bens e pessoas.
- * Emissão via prefeitura usa municipalServiceId; municipalServiceCode é só Portal Nacional.
+ * ID Asaas do serviço 07870 | 11.02 (GET /invoices/municipalServices).
+ * Emissão via prefeitura: enviar municipalServiceId; NÃO enviar municipalServiceCode
+ * (esse campo é só Portal Nacional — orientação Asaas 2026-09-16).
  */
-export const MUNICIPAL_SERVICE_ID = 402;
+export const MUNICIPAL_SERVICE_ID_DEFAULT = 402;
 export const MUNICIPAL_SERVICE_EXTERNAL_ID = 402;
-export const ISS_ALIQUOTA = 0;
+/** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
+export const ISS_ALIQUOTA = 2;
+export const ISS_RETAIN = true;
+/** INSS legal 11%; na NF/boleto retemos 50% dessa alíquota (5,5% do bruto). */
+export const INSS_BASE_FRACTION = 0.5;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
+
+/** Nome do serviço no padrão TM SEG: "07870 - descrição". Código NÃO vai na discriminação (NFe003). */
+export function municipalServiceNameOficial(): string {
+  return `${CODIGO_SERVICO_MUNICIPAL_CODE} - ${DESCRICAO_SERVICO_FIXA}`;
+}
+
+/** Discriminacao municipal (SP) — texto do serviço. Observações da NF: 250 caracteres. */
+export const NF_DISCRIMINACAO_MAX = 2000;
+export const NF_OBSERVATIONS_MAX = 250;
 
 export const INSS_OBSERVACAO_LEGAL =
   "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
@@ -67,12 +96,17 @@ export function parseInvoicePeriodInfo(
 ): { competencia: string; dataExecucao: string } {
   const desc = String(description || "");
   const m = desc.match(
-    /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})\s*\(([^)]+)\)/i,
+    /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})(?:\s*\(([^)]+)\))?/i,
   );
   if (m) {
     const inicio = m[1];
     const fim = m[2];
-    const competencia = m[3].trim();
+    let competencia = (m[3] || "").trim();
+    if (!competencia) {
+      const mm = Number(inicio.slice(3, 5)) - 1;
+      const yyyy = inicio.slice(6, 10);
+      if (mm >= 0 && mm < 12) competencia = `${MESES_PT[mm]}/${yyyy}`;
+    }
     const dataExecucao = inicio === fim ? inicio : `${inicio} a ${fim}`;
     return { competencia, dataExecucao };
   }
@@ -119,15 +153,23 @@ export function buildNfClientEmail(invoice: {
   pix_copia_e_cola?: string | null;
   valor_inss_retido?: number | string | null;
   inss_aliquota?: number | string | null;
+  valor_iss_retido?: number | string | null;
+  iss_aliquota?: number | string | null;
 }): { subject: string; html: string } {
   const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
   const valueFormatted = fmtBRL(invoice.value);
   const inssRetido = Number(invoice.valor_inss_retido || 0);
+  const issRetido = invoice.valor_iss_retido != null && invoice.valor_iss_retido !== ""
+    ? Number(invoice.valor_iss_retido)
+    : Number((Number(invoice.value || 0) * ISS_ALIQUOTA / 100).toFixed(2));
   const temInss = inssRetido > 0.005;
+  const temIss = issRetido > 0.005;
   const inssAliq = Number(invoice.inss_aliquota || 0);
-  const liquidoPagar = temInss ? Number((invoice.value - inssRetido).toFixed(2)) : invoice.value;
+  const issAliq = Number(invoice.iss_aliquota || ISS_ALIQUOTA);
+  const liquidoPagar = Number((invoice.value - inssRetido - issRetido).toFixed(2));
   const liquidoFormatted = fmtBRL(liquidoPagar);
   const inssFormatted = fmtBRL(inssRetido);
+  const issFormatted = fmtBRL(issRetido);
 
   const pixCode = String(invoice.pix_copia_e_cola || "").trim();
   const { competencia, dataExecucao } = parseInvoicePeriodInfo(invoice.description, invoice.due_date);
@@ -167,10 +209,9 @@ export function buildNfClientEmail(invoice: {
         ${infoRow("Nº da Nota Fiscal:", nfNumber || "—")}
         ${infoRow("Serviço Prestado:", "Escolta Armada")}
         ${infoRow("Valor Total da Prestação de Serviço:", valueFormatted)}
-        ${temInss ? `
-        ${infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`)}
-        ${infoRow("Valor líquido a pagar:", liquidoFormatted)}
-        ` : ``}
+        ${temInss ? infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`) : ""}
+        ${temIss ? infoRow(`(-) Retenção ISS${issAliq ? ` (${issAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${issFormatted}`) : ""}
+        ${(temInss || temIss) ? infoRow("Valor líquido a pagar:", liquidoFormatted) : ""}
         ${infoRow("Vencimento:", dueDateFormatted)}
       </table>
     </div>
@@ -208,52 +249,151 @@ export function buildNfClientEmail(invoice: {
   return { subject, html };
 }
 
+export function inssAliquotaEfetiva(retemInss: boolean, legalAliquota?: number): number {
+  if (!retemInss) return 0;
+  return Number((Number(legalAliquota ?? 11) * INSS_BASE_FRACTION).toFixed(2));
+}
+
+export function nfPeriodoPhrase(description?: string | null, extra?: string | null): string {
+  const from = (text: string) => {
+    const m = String(text || "").match(
+      /Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})(?:\s*\(([^)]+)\))?/i,
+    );
+    if (!m) return "";
+    let comp = (m[3] || "").trim();
+    if (!comp) {
+      const mm = Number(m[1].slice(3, 5)) - 1;
+      const yyyy = m[1].slice(6, 10);
+      if (mm >= 0 && mm < 12) comp = `${MESES_PT[mm]}/${yyyy}`;
+    }
+    return `${m[1]} a ${m[2]} (${comp})`;
+  };
+  return from(description || "") || from(extra || "");
+}
+
+function nfObsBRL(v: number): string {
+  return `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
+}
+
+/**
+ * Observação da NFS-e (Asaas): resumo do modelo do financeiro, ≤ 250 caracteres.
+ * Parametriza período, alíquota e valores; Discriminacao continua o CNAE oficial.
+ */
+export function buildNfseObservations(opts: {
+  value: number;
+  description?: string | null;
+  observationsHint?: string | null;
+  retemInss?: boolean;
+  inssAliquota?: number;
+  retainIss?: boolean;
+}): string {
+  const value = Number(opts.value || 0);
+  const periodo = nfPeriodoPhrase(opts.description, opts.observationsHint);
+  const retemInss = !!opts.retemInss;
+  const legal = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
+  const efetiva = inssAliquotaEfetiva(retemInss, legal);
+  const inssValor = Number((value * efetiva / 100).toFixed(2));
+  const retainIss = opts.retainIss !== false && ISS_RETAIN;
+  const issAliq = retainIss ? ISS_ALIQUOTA : 0;
+  const issValor = Number((value * issAliq / 100).toFixed(2));
+  const liquido = Number((value - inssValor - issValor).toFixed(2));
+  const aliqTxt = efetiva.toFixed(2).replace(".", ",");
+  const servico = periodo
+    ? `Referente aos serviços de Escolta Armada - Período: ${periodo}`
+    : "Referente aos serviços de Escolta Armada";
+  const servicoCurto = periodo
+    ? `Escolta Armada - Período: ${periodo}`
+    : "Escolta Armada";
+  const inssLong = retemInss
+    ? `INSS Anexo IV Art.111 II IN RFB 2.110/2022. Alíquota: ${aliqTxt}%. Valor retido: ${nfObsBRL(inssValor)}.`
+    : "Sem retenção INSS (Art.115 IN RFB 2.110/2022).";
+  const inssCurto = retemInss
+    ? `INSS Anexo IV Art.111 II IN 2.110/2022 Aliq ${aliqTxt}% ret. ${nfObsBRL(inssValor)}.`
+    : "Sem ret. INSS (Art.115 IN 2.110/2022).";
+  const issBit = issValor > 0.005 ? ` ISS ${issAliq.toFixed(0)}% ret. ${nfObsBRL(issValor)}.` : "";
+  const valoresLong = `Valor bruto: ${nfObsBRL(value)}.${retemInss ? ` INSS retido (${aliqTxt}%): ${nfObsBRL(inssValor)}.` : ""}${issValor > 0.005 ? ` ISS retido (${issAliq.toFixed(0)}%): ${nfObsBRL(issValor)}.` : ""}${inssValor > 0.005 || issValor > 0.005 ? ` Valor líquido: ${nfObsBRL(liquido)}.` : ""}`;
+  const valoresMini = `Bruto ${nfObsBRL(value)}.${issValor > 0.005 ? ` ISS ${nfObsBRL(issValor)}.` : ""}${inssValor > 0.005 || issValor > 0.005 ? ` Liq ${nfObsBRL(liquido)}.` : ""}`;
+  const simplesLong = "Empresa optante pelo Simples Nacional. Dispensada da retenção de PIS, COFINS e CSLL (Lei 10.833/03 art.30).";
+  const simplesCurto = "Simples Nac. s/ PIS/COFINS/CSLL (Lei 10.833/03 art.30).";
+
+  const pack = (...parts: string[]) => parts.join(" ").replace(/\s+/g, " ").trim();
+  const candidates = [
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servico}.`, inssLong, simplesLong, valoresLong),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servico}.`, inssCurto + issBit, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto + issBit, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto, simplesCurto, valoresMini),
+    pack(`CNAE ${CNAE_PRINCIPAL}. ${servicoCurto}.`, inssCurto, simplesCurto, `Bruto ${nfObsBRL(value)}. Liq ${nfObsBRL(liquido)}.`),
+  ];
+  const fit = candidates.find((c) => c.length <= NF_OBSERVATIONS_MAX);
+  if (fit) return fit;
+  return candidates[candidates.length - 1].slice(0, NF_OBSERVATIONS_MAX).trim();
+}
+
+export function buildIssObservation(issValor: number, issAliquota: number = ISS_ALIQUOTA): string {
+  if (issValor <= 0.005) return "";
+  return `ISS ${issAliquota.toFixed(2)}% retido pelo tomador: R$ ${issValor.toFixed(2).replace(".", ",")}.`;
+}
+
 export function buildInssObservation(
   retemInss: boolean,
-  aliquota: number,
+  aliquotaLegal: number,
   valor: number,
 ): string {
   if (!retemInss) return INSS_DISPENSA_OBSERVACAO;
-  return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
+  const efetiva = inssAliquotaEfetiva(true, aliquotaLegal);
+  return `${INSS_OBSERVACAO_LEGAL} Alíquota legal: ${aliquotaLegal.toFixed(2)}% sobre ${Math.round(INSS_BASE_FRACTION * 100)}% da base (efetivo ${efetiva.toFixed(2)}%). Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
 }
 
 /**
  * Texto com valor BRUTO e LÍQUIDO pro corpo da NF (exigência fiscal).
  * Sem retenção de INSS: bruto == líquido (mostra só o bruto).
  * Com retenção: bruto, INSS retido e líquido (= bruto − INSS).
- * O ISS NÃO é tratado aqui (decisão do dono 23/06/2026: não mexer no ISS).
+ * ISS 2% retido na NF (pedido 2026-09-10; substitui a decisão de 23/06/2026 de não mexer no ISS).
  */
 export function buildValoresObservation(
   grossValue: number,
   retemInss: boolean,
-  inssAliquota: number,
+  inssAliquotaLegal: number,
+  opts?: { retainIss?: boolean; issAliquota?: number },
 ): string {
   const brl = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-  if (!retemInss) return `Valor bruto: ${brl(grossValue)}.`;
-  const inssValor = Number((grossValue * inssAliquota / 100).toFixed(2));
-  const liquido = Number((grossValue - inssValor).toFixed(2));
-  return `Valor bruto: ${brl(grossValue)}. INSS retido (${inssAliquota.toFixed(2)}%): ${brl(inssValor)}. Valor líquido: ${brl(liquido)}.`;
+  const inssAliq = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
+  const inssValor = Number((grossValue * inssAliq / 100).toFixed(2));
+  const retainIss = opts?.retainIss !== false && ISS_RETAIN;
+  const issAliq = retainIss ? Number(opts?.issAliquota ?? ISS_ALIQUOTA) : 0;
+  const issValor = Number((grossValue * issAliq / 100).toFixed(2));
+  const liquido = Number((grossValue - inssValor - issValor).toFixed(2));
+  const parts = [`Valor bruto: ${brl(grossValue)}.`];
+  if (inssValor > 0.005) {
+    parts.push(`INSS retido (${inssAliq.toFixed(2)}% = ${Number(inssAliquotaLegal || 11).toFixed(2)}% sobre ${Math.round(INSS_BASE_FRACTION * 100)}% da base): ${brl(inssValor)}.`);
+  }
+  if (issValor > 0.005) {
+    parts.push(`ISS retido (${issAliq.toFixed(2)}%): ${brl(issValor)}.`);
+  }
+  if (inssValor > 0.005 || issValor > 0.005) {
+    parts.push(`Valor líquido: ${brl(liquido)}.`);
+  }
+  return parts.join(" ");
 }
 
 /**
- * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga) quando
- * há retenção de INSS. A NF continua sendo emitida pelo valor BRUTO (com a
- * observação legal da retenção); só a cobrança sai líquida (bruto − INSS retido).
- *
- * - Sem retenção: boleto = bruto, inssValor = 0.
- * - Com retenção: inssValor = bruto × alíquota%, boleto = bruto − inssValor.
+ * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga).
+ * A NF continua no valor BRUTO; o boleto desconta as retenções da NF:
+ * INSS efetivo (50% da alíquota legal, se retemInss) e ISS 2% (se retainIss).
  */
 export function netBoletoValue(
   grossValue: number,
-  opts?: { retemInss?: boolean; inssAliquota?: number },
-): { boleto: number; inssValor: number; inssAliquota: number } {
+  opts?: { retemInss?: boolean; inssAliquota?: number; retainIss?: boolean; issAliquota?: number },
+): { boleto: number; inssValor: number; inssAliquota: number; issValor: number; issAliquota: number } {
   const retemInss = !!opts?.retemInss;
-  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss
-    ? Number((grossValue * inssAliquota / 100).toFixed(2))
-    : 0;
-  const boleto = Number((grossValue - inssValor).toFixed(2));
-  return { boleto, inssValor, inssAliquota };
+  const inssAliquotaLegal = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssAliquota = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
+  const inssValor = Number((grossValue * inssAliquota / 100).toFixed(2));
+  const retainIss = opts?.retainIss === true;
+  const issAliquota = retainIss ? Number(opts?.issAliquota ?? ISS_ALIQUOTA) : 0;
+  const issValor = Number((grossValue * issAliquota / 100).toFixed(2));
+  const boleto = Number((grossValue - inssValor - issValor).toFixed(2));
+  return { boleto, inssValor, inssAliquota, issValor, issAliquota };
 }
 
 export function buildFiscalPayload(
@@ -262,30 +402,141 @@ export function buildFiscalPayload(
   opts?: { retemInss?: boolean; inssAliquota?: number },
 ): Record<string, any> {
   const retemInss = !!opts?.retemInss;
-  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
+  const inssAliquotaLegal = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
   return {
     serviceListItem: CODIGO_SERVICO_MUNICIPAL,
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(value, retemInss, inssAliquota)}`.trim(),
+    observations: buildNfseObservations({ value, retemInss, inssAliquota: inssAliquotaLegal || 11 }),
     taxes: {
-      retainIss: false,
+      retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
       cofins: 0,
       csll: 0,
-      inss: inssAliquota,
+      inss: inssAliquotaNf,
       ir: 0,
       pis: 0,
     },
   };
 }
 
-export function todayDateStr(): string {
-  return new Date().toISOString().split("T")[0];
+/** Data civil BRT. UTC (`toISOString`) depois das 21h vira o dia seguinte e a NFS-e fica SCHEDULED. */
+export function todayDateStr(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Discriminacao da NFS-e (SP/ABRASF): sem travessão tipográfico, sem XML
+ * control chars. A descrição da fatura (cliente/período) NÃO vai neste campo —
+ * a prefeitura rejeita o schema. Período fica em observations.
+ */
+export function sanitizeNfDiscriminacao(raw: string | null | undefined): string {
+  let s = String(raw || "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) s = DESCRICAO_SERVICO_FIXA;
+  return s.slice(0, NF_DISCRIMINACAO_MAX);
+}
+
+export function nfDiscriminacaoOficial(): string {
+  return sanitizeNfDiscriminacao(DESCRICAO_SERVICO_FIXA);
+}
+
+export function isDiscriminacaoSchemaError(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("discriminacao") ||
+    m.includes("discriminação") ||
+    m.includes("xml não compatível") ||
+    m.includes("xml nao compativel")
+  );
+}
+
+/** Discriminacao da fatura (Escolta Armada / cliente / período) — SP rejeita ou trava SYNCHRONIZED. */
+export function isLegacyEscoltaDiscriminacao(serviceDescription: string | null | undefined): boolean {
+  const s = String(serviceDescription || "");
+  if (!s.trim()) return false;
+  if (sanitizeNfDiscriminacao(s) === nfDiscriminacaoOficial()) return false;
+  return /escolta\s+armada/i.test(s) || /[\u2010-\u2015\u2212]/.test(s) || /per[ií]odo\s*:/i.test(s);
+}
+
+export const LEGACY_DISCRIMINACAO_STUCK_MSG =
+  "Discriminacao antiga sem RPS nem número municipal — não é espera da prefeitura. Cancele esta NF no painel Asaas (Notas fiscais). Quando o Asaas ficar ERROR ou cancelada, use Resolver agora: o Torres faz PUT na mesma inv_* com o texto oficial. Não clique Emitir enquanto essa inv_* existir.";
+
+export function hasAsaasRps(nf: { rpsNumber?: string | number | null } | null | undefined): boolean {
+  return String(nf?.rpsNumber ?? "").trim() !== "";
+}
+
+/**
+ * SYNCHRONIZED/AUTHORIZED sem RPS, sem nº municipal, Discriminacao ≠ CNAE oficial.
+ * É rejeição escondida (#171), não fila da prefeitura (#170 tem RPS + texto oficial).
+ */
+export function isHiddenDiscriminacaoRejection(
+  nf: {
+    status?: string | null;
+    number?: string | null;
+    nfeNumber?: string | null;
+    rpsNumber?: string | number | null;
+    serviceDescription?: string | null;
+  } | null | undefined,
+  emiteNf: boolean,
+): boolean {
+  if (emiteNf !== true || !nf) return false;
+  if (isNfFullyIssued(nf.status, nf.number) || isNfFullyIssued(nf.status, nf.nfeNumber)) return false;
+  if (extractAsaasMunicipalNumber(nf)) return false;
+  if (hasAsaasRps(nf)) return false;
+  const st = String(nf.status || "").toUpperCase();
+  if (st !== "SYNCHRONIZED" && st !== "AUTHORIZED") return false;
+  return isLegacyEscoltaDiscriminacao(nf.serviceDescription);
+}
+
+/** @deprecated nome antigo — equivalente a isHiddenDiscriminacaoRejection (não cancela via API). */
+export function shouldCancelRescheduleLegacyDiscriminacao(
+  nf: Parameters<typeof isHiddenDiscriminacaoRejection>[0],
+  emiteNf: boolean,
+): boolean {
+  return isHiddenDiscriminacaoRejection(nf, emiteNf);
+}
+
+/**
+ * PUT /invoices/{id} só SCHEDULED ou ERROR. Mesma inv_*; nunca segundo POST.
+ */
+export function asaasNfIdForOfficialPut(
+  nf: {
+    id?: string | null;
+    status?: string | null;
+    number?: string | null;
+    nfeNumber?: string | null;
+    serviceDescription?: string | null;
+  } | null | undefined,
+  emiteNf: boolean,
+): string | null {
+  if (emiteNf !== true || !nf) return null;
+  const id = String(nf.id || "").trim();
+  if (!isAsaasInvoiceId(id)) return null;
+  if (extractAsaasMunicipalNumber(nf) || isNfFullyIssued(nf.status, nf.number)) return null;
+  const st = String(nf.status || "").toUpperCase();
+  if (st.includes("CANCEL")) return null;
+  const retry = existingAsaasNfIdToRetry({ id, status: st });
+  if (retry) return retry;
+  if (st === "SCHEDULED" && isLegacyEscoltaDiscriminacao(nf.serviceDescription)) return id;
+  return null;
 }
 
 export function buildNfseInvoicePayload(opts: {
@@ -299,36 +550,59 @@ export function buildNfseInvoicePayload(opts: {
   municipalServiceIdOverride?: number;
 }): Record<string, any> {
   const retemInss = !!opts.retemInss;
-  const inssAliquota = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
-  const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
-  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
-  const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
-  const serviceDescription =
-    (opts.description && opts.description.trim()) || DESCRICAO_SERVICO_FIXA;
-  const municipalServiceId =
-    opts.municipalServiceIdOverride && opts.municipalServiceIdOverride > 0
-      ? opts.municipalServiceIdOverride
-      : MUNICIPAL_SERVICE_ID;
-  // Prefeitura: municipalServiceId (+ externalId). NÃO enviar municipalServiceCode
-  // (esse campo é só Portal Nacional e faz a NF sair com serviço errado).
+  const inssAliquotaLegal = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
+  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
+  const oficial = nfDiscriminacaoOficial();
   const payload: Record<string, any> = {
-    serviceDescription,
-    observations: `${baseObs} ${inssObs} ${SIMPLES_NACIONAL_OBSERVACAO} ${buildValoresObservation(opts.value, retemInss, inssAliquota)}`.trim(),
+    serviceDescription: oficial,
+    observations: buildNfseObservations({
+      value: opts.value,
+      description: opts.description,
+      observationsHint: opts.observations,
+      retemInss,
+      inssAliquota: inssAliquotaLegal || 11,
+    }),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
-    municipalServiceId,
-    municipalServiceExternalId: MUNICIPAL_SERVICE_EXTERNAL_ID,
-    municipalServiceName: DESCRICAO_SERVICO_FIXA,
+    municipalServiceName: municipalServiceNameOficial(),
     taxes: {
-      retainIss: false,
+      retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
-      cofins: 0, csll: 0, inss: inssAliquota, ir: 0, pis: 0,
+      cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
     },
   };
+  // Prefeitura: municipalServiceId 402 (+ externalId). NÃO enviar municipalServiceCode.
+  const municipalServiceId =
+    opts.municipalServiceIdOverride && Number.isFinite(opts.municipalServiceIdOverride) && opts.municipalServiceIdOverride > 0
+      ? opts.municipalServiceIdOverride
+      : MUNICIPAL_SERVICE_ID_DEFAULT;
+  payload.municipalServiceId = municipalServiceId;
+  payload.municipalServiceExternalId = MUNICIPAL_SERVICE_EXTERNAL_ID;
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;
+}
+
+/**
+ * PUT /invoices/{id} no Asaas é substituição (só SCHEDULED ou ERROR).
+ * Sem payment/customer — não cria segunda nota na mesma cobrança.
+ */
+export function buildNfsePutPayload(postPayload: Record<string, any>): Record<string, any> {
+  const put: Record<string, any> = {
+    serviceDescription: postPayload.serviceDescription,
+    observations: postPayload.observations,
+    value: postPayload.value,
+    deductions: postPayload.deductions ?? 0,
+    effectiveDate: postPayload.effectiveDate,
+    municipalServiceName: postPayload.municipalServiceName,
+    municipalServiceId: postPayload.municipalServiceId ?? MUNICIPAL_SERVICE_ID_DEFAULT,
+    municipalServiceExternalId: postPayload.municipalServiceExternalId ?? MUNICIPAL_SERVICE_EXTERNAL_ID,
+    taxes: postPayload.taxes,
+    updatePayment: false,
+  };
+  if (postPayload.externalReference) put.externalReference = postPayload.externalReference;
+  return put;
 }
 
 export function fmtBRL(val: number): string {
@@ -371,43 +645,9 @@ export function isNfCorrectionError(message: string | null | undefined): boolean
 
 /** Status de NFS-e que indicam erro/rejeição (espelha normalizeInvoiceStatus). */
 const NF_ERROR_STATUSES = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"];
-const NF_OK_STATUSES = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"];
 
 export function isNfErrorStatus(status: string | null | undefined): boolean {
   return NF_ERROR_STATUSES.includes(String(status || "").toUpperCase());
-}
-
-export function isNfOkStatus(status: string | null | undefined): boolean {
-  return NF_OK_STATUSES.includes(String(status || "").toUpperCase());
-}
-
-/** Número municipal real — ignora o id interno do Asaas (`inv_...`). */
-export function isFinalNfNumber(nfseNumber: unknown): boolean {
-  const n = String(nfseNumber || "").trim();
-  return n.length > 0 && !/^inv_/i.test(n);
-}
-
-/** NF de fato emitida na prefeitura: status ok + número municipal (não só o id Asaas). */
-export function isNfFullyIssued(nfseStatus: unknown, nfseNumber: unknown): boolean {
-  return isNfOkStatus(nfseStatus) && isFinalNfNumber(nfseNumber);
-}
-
-/**
- * Relatório de NF: AUTHORIZED/ISSUED sem número municipal = ainda processando
- * (igual ao fluxo TM SEG / Asaas — a nota só existe quando a prefeitura devolve o nº).
- */
-export function classifyIssuedOrProcessing(
-  nfseStatus: unknown,
-  nfseNumber: unknown,
-): "NF_EMITIDA" | "NF_PROCESSANDO" | null {
-  const st = String(nfseStatus || "").toUpperCase();
-  if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(st)) {
-    return isFinalNfNumber(nfseNumber) ? "NF_EMITIDA" : "NF_PROCESSANDO";
-  }
-  if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(st)) {
-    return "NF_PROCESSANDO";
-  }
-  return null;
 }
 
 /** Persiste o retorno do POST /invoices (Asaas). Nunca inventa AUTHORIZED. */
@@ -427,8 +667,79 @@ export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
   return /^inv_/i.test(String(nfseNumber || "").trim());
 }
 
+/** Número municipal no objeto Asaas (number pode vir numérico). RPS não conta. */
+export function extractAsaasMunicipalNumber(nf: any): string | null {
+  const candidates = [nf?.number, nf?.nfeNumber];
+  for (const c of candidates) {
+    if (c == null || c === "") continue;
+    if (isFinalNfNumber(c)) return String(c).trim();
+  }
+  return null;
+}
+
+/** CCM do tomador: só envia ao Asaas se o cadastro Torres tiver valor diferente. */
+export function municipalInscriptionIfChanged(
+  existingAtAsaas: string | null | undefined,
+  fromClient: string | null | undefined,
+): string | null {
+  const next = String(fromClient || "").trim();
+  if (!next) return null;
+  const digits = (s: string) => String(s || "").replace(/\D/g, "");
+  const norm = (s: string) => {
+    const d = digits(s);
+    if (!d) return "";
+    return d.replace(/^0+/, "") || "0";
+  };
+  const a = norm(existingAtAsaas || "");
+  const b = norm(next);
+  if (b && a === b) return null;
+  if (!b && String(existingAtAsaas || "").trim() === next) return null;
+  return next;
+}
+
+/**
+ * Rejeição real da prefeitura/Asaas — não confundir com “aguardando fila”.
+ * SYNCHRONIZED às vezes traz o erro só em statusDescription.
+ */
+export function isAsaasPrefeituraRejection(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  if (!m.trim()) return false;
+  if (/aguardand|em fila|processando|enviad[oa] para a prefeitura|sincroniz/.test(m) && !isMunicipalCommFailure(m) && !isMissingMunicipalServiceCode(m)) {
+    return false;
+  }
+  if (isDiscriminacaoSchemaError(m)) return true;
+  if (isMunicipalCommFailure(m) || isMissingMunicipalServiceCode(m)) return true;
+  return (
+    m.includes("inscrição municipal") ||
+    m.includes("inscricao municipal") ||
+    m.includes("informações fiscais") ||
+    m.includes("informacoes fiscais") ||
+    m.includes("falha na autenticação") ||
+    m.includes("falha na autenticacao") ||
+    m.includes("rejeit") ||
+    m.includes("xml não compatível") ||
+    m.includes("xml nao compativel") ||
+    m.includes("the 'discriminacao'")
+  );
+}
+
+/**
+ * Reusa a NFS-e já criada no Asaas (ERROR) em vez de POST /invoices de novo.
+ * SYNCHRONIZED/AUTHORIZED sem nº municipal NÃO entram — isso é processamento.
+ */
+export function existingAsaasNfIdToRetry(opts: {
+  id?: string | null;
+  status?: string | null;
+}): string | null {
+  const id = String(opts.id || "").trim();
+  if (!isAsaasInvoiceId(id)) return null;
+  if (!isNfErrorStatus(opts.status)) return null;
+  return id;
+}
+
 /** Horas em aberto sem nº municipal para tratar “AUTHORIZED fantasma” como erro. */
 export const NF_PROCESSING_STALE_HOURS = 2;
+export const NF_RECONCILE_STALE_MS = 3 * 60 * 1000;
 
 export const NF_MISSING_AT_ASAAS_MSG =
   "NFS-e não encontrada no Asaas para esta cobrança. O status local não tem nota correspondente na prefeitura. Use Resolver agora para emitir.";
@@ -438,6 +749,29 @@ export function hoursSince(iso: string | null | undefined, now: Date = new Date(
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
   return (now.getTime() - t) / 3_600_000;
+}
+
+/** Asaas recusa cancelar NFS-e ainda “em processamento”. Não martelar cancel a cada cron. */
+export function isAsaasNfCancelBlockedProcessing(message: string | null | undefined): boolean {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("não pode ser cancelada")
+    || m.includes("nao pode ser cancelada")
+    || m.includes("processando emissão")
+    || m.includes("processando emissao")
+  );
+}
+
+/** Isolates serverless/cron: se o reconcile ficou `running` após timeout, libera o botão. */
+export function unstickStaleNfReconcile(state: {
+  running: boolean;
+  startedAt: string | null;
+}, now: Date = new Date()): boolean {
+  if (!state.running || !state.startedAt) return false;
+  const t = new Date(state.startedAt).getTime();
+  if (!Number.isFinite(t) || now.getTime() - t < NF_RECONCILE_STALE_MS) return false;
+  state.running = false;
+  return true;
 }
 
 export function isStuckNfWithoutNumber(invoice: {
@@ -462,15 +796,43 @@ export function describeNfProcessingWait(
     created_at?: string | null;
   },
   now: Date = new Date(),
+  liveAsaasDetail?: string | null,
+  rpsNumber?: string | number | null,
 ): string | null {
   if (!isStuckNfWithoutNumber(invoice)) return null;
   const st = String(invoice.nfse_status || "").toUpperCase() || "SEM STATUS";
   const hours = hoursSince(invoice.updated_at || invoice.created_at, now);
   const age = formatNfWaitAge(hours);
+  const live = String(liveAsaasDetail || "").trim();
+  const liveBit = live && !isAsaasPrefeituraRejection(live) ? ` Detalhe Asaas: ${live.slice(0, 180)}.` : "";
+  const rps = String(rpsNumber ?? "").trim();
+  const rpsBit = rps ? ` RPS ${rps} já na prefeitura; falta o nº da NFS-e.` : "";
   if (isNfOkStatus(st)) {
-    return `Asaas: ${st}, sem número da prefeitura${age}. O Torres consulta o Asaas até o número sair; não reenvia emissão.`;
+    return `Asaas: ${st}, sem número da prefeitura${age}. Em fila na prefeitura — o Torres só consulta o Asaas; não reenvia a emissão.${rpsBit}${liveBit}`;
   }
-  return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.`;
+  return `NF em processamento no Asaas (${st})${age}. Sem número municipal ainda. O Torres segue batendo no Asaas até concluir.${rpsBit}${liveBit}`;
+}
+
+function sameInvoiceField(current: unknown, next: unknown): boolean {
+  if ((next == null || next === "") && (current == null || current === "")) return true;
+  if (typeof next === "number" || typeof current === "number" || (typeof next === "string" && typeof current === "string" && /^-?\d+(\.\d+)?$/.test(String(next).trim()) && /^-?\d+(\.\d+)?$/.test(String(current).trim()))) {
+    const na = Number(next);
+    const nb = Number(current);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 0.005;
+  }
+  return String(next ?? "") === String(current ?? "");
+}
+
+/** UPDATE de /sync sem mudança real não deve gravar só `updated_at` (zera o relógio de espera). */
+export function invoiceUpdatesAreMaterial(
+  current: Record<string, any>,
+  updates: Record<string, any>,
+): boolean {
+  for (const [k, v] of Object.entries(updates)) {
+    if (k === "updated_at") continue;
+    if (!sameInvoiceField(current[k], v)) return true;
+  }
+  return false;
 }
 
 const PAID_OR_CANCELED_PAY = ["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH", "CANCELLED", "CANCELED"];
@@ -518,12 +880,13 @@ export function nfseUpdatesFromAsaasObject(
   },
 ): Record<string, any> {
   const next: Record<string, any> = {};
+  const municipal = extractAsaasMunicipalNumber(nf);
   if (nf?.status && String(nf.status) !== String(current.nfse_status || "")) {
     next.nfse_status = String(nf.status);
   }
 
   let desiredNumber: string | null = null;
-  if (isFinalNfNumber(nf?.number)) desiredNumber = String(nf.number);
+  if (municipal) desiredNumber = municipal;
   else if (!isFinalNfNumber(current.nfse_number) && nf?.id) desiredNumber = String(nf.id);
   if (desiredNumber && desiredNumber !== String(current.nfse_number || "")) {
     next.nfse_number = desiredNumber;
@@ -535,7 +898,23 @@ export function nfseUpdatesFromAsaasObject(
   }
 
   const st = String(next.nfse_status || nf?.status || current.nfse_status || "");
-  if (isNfErrorStatus(st)) {
+  if (isHiddenDiscriminacaoRejection(nf, true)) {
+    next.nfse_status = "ERROR";
+    if (current.nfse_error_message !== LEGACY_DISCRIMINACAO_STUCK_MSG) {
+      next.nfse_error_message = LEGACY_DISCRIMINACAO_STUCK_MSG;
+    }
+    return next;
+  }
+  const rejectionText = extractConcreteNfErrorMessage(nf);
+  if (
+    !isNfFullyIssued(st, next.nfse_number || current.nfse_number)
+    && isAsaasPrefeituraRejection(rejectionText)
+  ) {
+    next.nfse_status = "ERROR";
+    if (rejectionText && rejectionText !== current.nfse_error_message) {
+      next.nfse_error_message = rejectionText.slice(0, 1000);
+    }
+  } else if (isNfErrorStatus(st)) {
     const msg = resolveNfErrorMessage(nf, st, current.nfse_error_message);
     if (msg !== current.nfse_error_message) next.nfse_error_message = msg;
   } else if (
@@ -550,28 +929,94 @@ export function nfseUpdatesFromAsaasObject(
   return next;
 }
 
+export function isMunicipalCommFailure(message: string | null | undefined): boolean {
+  return /falha ao comunicar/i.test(String(message || ""));
+}
+
+export function isMissingMunicipalServiceCode(message: string | null | undefined): boolean {
+  const m = String(message || "");
+  return /_nfe002/i.test(m) || /c[oó]digo de servi[cç]o municipal deve ser informado/i.test(m);
+}
+
 /**
- * Cron / sync automático NÃO deve autorizar. Cada POST /invoices/{id}/authorize
- * manda e-mail ao cliente (“tentando emitir”). Emissão só na criação da fatura
- * ou no botão explícito (emit-nfse / resolver-nf-erro).
+ * Cron / sync automático NÃO autoriza NF em fila (cada authorize manda e-mail).
+ * Exceção TM-like: ERROR com “falha ao comunicar com a prefeitura” na mesma inv_* —
+ * isso é retry de transporte, não segunda emissão.
  */
-export function shouldNudgeNfseAuthorize(_status?: unknown, _nfseNumber?: unknown): boolean {
+export function shouldNudgeNfseAuthorize(
+  status?: unknown,
+  nfseNumber?: unknown,
+  message?: string | null,
+): boolean {
+  if (isFinalNfNumber(nfseNumber)) return false;
+  if (!isAsaasInvoiceId(nfseNumber)) return false;
+  if (isMunicipalCommFailure(message) || isMissingMunicipalServiceCode(message)) return true;
+  if (!isNfErrorStatus(status)) return false;
   return false;
 }
 
-export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o POST inicial
+export const NF_AUTO_EMIT_MIN_AGE_HOURS = 10 / 60; // 10 min — evita corrida com o kick isolado
 
-/** Cron nunca cria NFS-e. Emissão só na criação da fatura ou ação explícita. */
+export const INCOMPLETE_FISCAL_ADDRESS_MSG =
+  "Endereço fiscal incompleto. Cadastre CEP (8 dígitos), logradouro, número, cidade e UF. A Prefeitura rejeita a NFS-e sem isso — o sistema não completa pela Receita.";
+
+export function fiscalAddressMissingFields(client?: {
+  address?: string | null;
+  address_number?: string | null;
+  addressNumber?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+} | null): string[] {
+  const missing: string[] = [];
+  if (!String(client?.address || "").trim()) missing.push("logradouro");
+  const num = client?.address_number || client?.addressNumber;
+  if (!String(num || "").trim()) missing.push("número");
+  if (!String(client?.city || "").trim()) missing.push("cidade");
+  const uf = String(client?.state || "").trim();
+  if (uf.length !== 2) missing.push("UF");
+  if (String(client?.zip || "").replace(/\D/g, "").length !== 8) missing.push("CEP (8 dígitos)");
+  return missing;
+}
+
+/** Bloqueia cobrança+NF quando o cliente emite NFS-e e o cadastro fiscal está incompleto. */
+export function assertFiscalAddressForNf(
+  client: Parameters<typeof fiscalAddressMissingFields>[0],
+  emiteNf: boolean,
+): string | null {
+  if (!emiteNf) return null;
+  const missing = fiscalAddressMissingFields(client);
+  if (missing.length === 0) return null;
+  return `${INCOMPLETE_FISCAL_ADDRESS_MSG} Falta: ${missing.join(", ")}.`;
+}
+
+/**
+ * Worker/cron pode POST /invoices quando a cobrança existe, o cliente emite NF
+ * e o Asaas ainda não tem nota (fila TM: NF isolada). Não cria segunda nota.
+ */
 export function shouldAutoEmitMissingNfse(
-  _invoice?: {
+  invoice?: {
     status?: string | null;
     nfse_status?: string | null;
     nfse_number?: string | null;
     created_at?: string | null;
   },
-  _opts?: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
+  opts?: { paymentLookupEmpty: boolean; emiteNf: boolean; now?: Date },
 ): boolean {
-  return false;
+  if (!opts?.emiteNf) return false;
+  if (!opts.paymentLookupEmpty) return false;
+  const pay = String(invoice?.status || "").toUpperCase();
+  if (["CANCELLED", "CANCELED"].includes(pay)) return false;
+  if (isNfFullyIssued(invoice?.nfse_status, invoice?.nfse_number)) return false;
+  if (isAsaasInvoiceId(invoice?.nfse_number)) return false;
+  const nf = String(invoice?.nfse_status || "").toUpperCase();
+  if (nf.includes("CANCEL")) return false;
+  const placeholder = nf === "PROCESSING";
+  if (!placeholder) {
+    const ageH = hoursSince(invoice?.created_at, opts.now);
+    if (ageH != null && ageH < NF_AUTO_EMIT_MIN_AGE_HOURS) return false;
+  }
+  return true;
 }
 
 export function isOpenNfFollowUpStatus(invoice: {
@@ -715,6 +1160,24 @@ export function canReemitNfse(invoice: {
     };
   }
   return { allowed: true, reason: "" };
+}
+
+/**
+ * Catch-up automático só para rejeição de schema Discriminacao (prefeitura SP).
+ * Não cobre inscrição municipal da empresa no Asaas nem NF em processamento.
+ */
+export function shouldAutoRetryDiscriminacaoError(
+  invoice: {
+    nfse_status?: string | null;
+    nfse_number?: string | null;
+    nfse_error_message?: string | null;
+  },
+  emiteNf: boolean,
+): boolean {
+  if (emiteNf !== true) return false;
+  if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) return false;
+  if (!isNfErrorStatus(invoice.nfse_status) && !invoice.nfse_error_message) return false;
+  return isDiscriminacaoSchemaError(invoice.nfse_error_message);
 }
 
 /**

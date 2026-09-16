@@ -11,9 +11,18 @@ declare global {
   }
 }
 
-function loadGoogleMapsScript(callback: () => void) {
-  if (window._gmapsLoaded && window.google?.maps?.places) {
-    callback();
+async function ensureGmapsLibraries(): Promise<void> {
+  const maps = window.google?.maps;
+  if (!maps?.importLibrary) return;
+  await maps.importLibrary("places");
+  await maps.importLibrary("geometry");
+}
+
+export function loadGoogleMapsScript(callback: () => void) {
+  const ready = () => !!(window.google?.maps?.Map && window.google?.maps?.places);
+
+  if (window._gmapsLoaded && ready()) {
+    void ensureGmapsLibraries().finally(() => callback());
     return;
   }
 
@@ -29,19 +38,24 @@ function loadGoogleMapsScript(callback: () => void) {
 
   window._gmapsLoading = true;
   const s = document.createElement("script");
-  s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
+  s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,geometry&loading=async`;
   s.async = true;
   s.onload = () => {
     const check = () => {
-      if (window.google?.maps?.places) {
-        window._gmapsLoaded = true;
-        window._gmapsCallbacks?.forEach((cb) => cb());
-        window._gmapsCallbacks = [];
+      if (ready()) {
+        void ensureGmapsLibraries().finally(() => {
+          window._gmapsLoaded = true;
+          window._gmapsCallbacks?.forEach((cb) => cb());
+          window._gmapsCallbacks = [];
+        });
       } else {
         setTimeout(check, 100);
       }
     };
     check();
+  };
+  s.onerror = () => {
+    window._gmapsLoading = false;
   };
   document.head.appendChild(s);
 }

@@ -123,6 +123,22 @@ export async function apiRequest(
   return res;
 }
 
+/** Kick NFS-e isolada (cobrança já gravada). Fire-and-forget — o cron reprocessa se falhar. */
+export function kickNfRetry(invoiceId: unknown): void {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return;
+  void authFetch(`/api/nf/retry/${id}`, { method: "POST" }).catch(() => {});
+}
+
+export function kickNfRetryFromInvoicePayload(data: any): void {
+  if (!data || typeof data !== "object") return;
+  kickNfRetry(data.id);
+  kickNfRetry(data.invoice?.id);
+  if (Array.isArray(data.invoices)) {
+    for (const inv of data.invoices) kickNfRetry(inv?.id);
+  }
+}
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;

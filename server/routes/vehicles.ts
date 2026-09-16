@@ -5,7 +5,20 @@ import type { Express } from "express";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import { notifyVehicleMaintenance } from "../notifications";
+  import {
+    insuranceColumn,
+    parseInsuranceKind,
+    signVehicleInsuranceDoc,
+    uploadVehicleInsuranceDoc,
+  } from "../lib/vehicle-doc-storage";
 
+function stripInsuranceDataUrls<T extends Record<string, any>>(body: T): T {
+  const next = { ...body };
+  for (const k of ["insurancePolicyFile", "insuranceContractFile"] as const) {
+    if (typeof next[k] === "string" && next[k].startsWith("data:")) delete next[k];
+  }
+  return next;
+}
 
   export function registerVehicleRoutes(app: Express) {
     app.get("/api/vehicles", requireAuth, async (_req, res) => {
@@ -20,7 +33,7 @@ import type { Express } from "express";
   });
 
   app.post("/api/vehicles", requireAuth, requireAdminRole, async (req, res) => {
-    const parsed = insertVehicleSchema.safeParse(req.body);
+    const parsed = insertVehicleSchema.safeParse(stripInsuranceDataUrls(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createVehicle(parsed.data);
     if (data.plate) {
@@ -30,7 +43,7 @@ import type { Express } from "express";
   });
 
   app.patch("/api/vehicles/:id", requireAuth, requireAdminRole, async (req, res) => {
-    const parsed = insertVehicleSchema.partial().safeParse(req.body);
+    const parsed = insertVehicleSchema.partial().safeParse(stripInsuranceDataUrls(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const id = Number(req.params.id);
     const previous = await storage.getVehicle(id);
@@ -70,6 +83,56 @@ import type { Express } from "express";
         `troca de óleo necessária — ${kmRodadosCalc.toLocaleString("pt-BR")} km desde a última troca`
       ).catch((e) => console.error("[notify-maint] async err:", e?.message));
     }
+    res.json(data);
+  });
+
+  app.post("/api/vehicles/:id/insurance/:kind", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const kind = parseInsuranceKind(req.params.kind);
+      if (!kind) return res.status(400).json({ message: "Tipo inválido. Use policy ou contract." });
+      const vehicle = await storage.getVehicle(id);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      const { fileBase64, fileName, contentType } = req.body || {};
+      if (!fileBase64 || !fileName) return res.status(400).json({ message: "fileBase64 e fileName são obrigatórios" });
+      const path = await uploadVehicleInsuranceDoc({
+        vehicleId: id,
+        kind,
+        fileBase64: String(fileBase64),
+        fileName: String(fileName),
+        contentType: contentType ? String(contentType) : null,
+      });
+      const data = await storage.updateVehicle(id, { [insuranceColumn(kind)]: path } as any);
+      res.json(data);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Falha ao anexar documento de seguro" });
+    }
+  });
+
+  app.get("/api/vehicles/:id/insurance/:kind/url", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const kind = parseInsuranceKind(req.params.kind);
+      if (!kind) return res.status(400).json({ message: "Tipo inválido. Use policy ou contract." });
+      const vehicle = await storage.getVehicle(id);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      const stored = (vehicle as any)[insuranceColumn(kind)];
+      if (!stored) return res.status(404).json({ message: "Documento não anexado" });
+      const url = await signVehicleInsuranceDoc(String(stored));
+      if (!url) return res.status(404).json({ message: "Não foi possível abrir o documento" });
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/vehicles/:id/insurance/:kind", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const kind = parseInsuranceKind(req.params.kind);
+    if (!kind) return res.status(400).json({ message: "Tipo inválido. Use policy ou contract." });
+    const vehicle = await storage.getVehicle(id);
+    if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+    const data = await storage.updateVehicle(id, { [insuranceColumn(kind)]: null } as any);
     res.json(data);
   });
 

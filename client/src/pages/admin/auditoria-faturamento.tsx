@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ShieldCheck, AlertTriangle, FileText, CheckCircle2, Clock, DollarSign, RefreshCw, ExternalLink, Receipt, Wrench, CalendarRange } from "lucide-react";
+import { periodForDate, normalizeBillingCycle, billingCycleLabel } from "@shared/billing-cycle";
 
 type Row = {
   tipo: "BILLING" | "OS_ESQUECIDA";
@@ -20,7 +21,7 @@ type Row = {
   dataMissao: string;
   clientId: number;
   clientName: string;
-  billingCycle: "quinzenal" | "mensal";
+  billingCycle: string;
   quinzena: string;
   periodoStart: string;
   periodoEnd: string;
@@ -110,27 +111,13 @@ export default function AuditoriaFaturamentoPage() {
   // hoje; mensal: 01-fim do mês de hoje).
   const aplicarCicloDoCliente = () => {
     if (!selectedClient) return;
-    const ciclo = String(selectedClient.billingCycle || "mensal").toLowerCase();
-    const [y, m, d] = today.split("-").map(Number);
-    const lastDay = new Date(y, m, 0).getDate(); // último dia do mês corrente
-    const mm = String(m).padStart(2, "0");
-    const yyyy = String(y);
-    const isQuinz = ciclo === "quinzenal" || ciclo === "quinzena";
-    if (isQuinz) {
-      if (d <= 15) {
-        setFrom(`${yyyy}-${mm}-01`);
-        setTo(`${yyyy}-${mm}-15`);
-      } else {
-        setFrom(`${yyyy}-${mm}-16`);
-        setTo(`${yyyy}-${mm}-${String(lastDay).padStart(2, "0")}`);
-      }
-    } else {
-      setFrom(`${yyyy}-${mm}-01`);
-      setTo(`${yyyy}-${mm}-${String(lastDay).padStart(2, "0")}`);
-    }
+    const cycle = normalizeBillingCycle(selectedClient.billingCycle);
+    const period = periodForDate(cycle === "indefinido" ? "mensal" : cycle, today);
+    setFrom(period.start);
+    setTo(period.end);
     setFilter("esquecidas");
     toast({
-      title: `Ciclo ${isQuinz ? "quinzenal" : "mensal"} aplicado`,
+      title: `Ciclo ${billingCycleLabel(period.cycle)} aplicado`,
       description: `Mostrando OS sem faturar de ${selectedClient.name} no período corrente.`,
     });
   };
@@ -454,7 +441,7 @@ export default function AuditoriaFaturamentoPage() {
                           <td className="py-2 pr-2 max-w-[260px] truncate" title={r.clientName}>{r.clientName}</td>
                           <td className="py-2 pr-2 text-xs">
                             <Badge variant="outline" className="text-[10px]">
-                              {r.billingCycle === "quinzenal" ? `Quinz. ${r.quinzena}` : "Mensal"}
+                              {r.quinzena}
                             </Badge>
                           </td>
                           <td className="py-2 pr-2 text-right whitespace-nowrap">{r.valorOperacional ? fmt(r.valorOperacional) : "—"}</td>

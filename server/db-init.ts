@@ -120,7 +120,8 @@ export async function ensureDbSchema() {
       ('diretoria', 'Diretoria', '["*"]'),
       ('admin', 'Administrador', '["dashboard","clients","employees","vehicles","trips","fueling","maintenance","timesheets","tracker","service_orders","mission","operational_grid","consultas","guia_missao","users"]'),
       ('funcionario', 'Funcionário', '["dashboard","mission","timesheets","guia_missao"]'),
-      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]')
+      ('financeiro', 'Financeiro', '["dashboard","clients","relatorio_nf","controle_faturamento","invoice_baixa","invoice_comprovante","invoice_ocorrencia","invoice_resolver_nf"]'),
+      ('comercial', 'Comercial', '["dashboard","leads","clients","service_orders","boletim_medicao"]')
       ON CONFLICT (role) DO NOTHING
     `);
 
@@ -299,6 +300,8 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS insurance_policy_file TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS insurance_contract_file TEXT`);
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS full_tank BOOLEAN DEFAULT true`);
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS receipt_photo TEXT`);
 
@@ -724,6 +727,8 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_user_agent TEXT`).catch(() => {});
+    // UUID do comercial TM SEG no usuário TORRES. Sem tabela local e SEM FK.
+    await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS comercial_id UUID`).catch(() => {});
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS audit_logs (
@@ -781,6 +786,11 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS inscricao_estadual TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_group_id TEXT`).catch(() => {});
+    // UUID do comercial TM SEG. Sem tabela local e SEM FK (SSOT na TM SEG).
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS responsavel_comercial_id UUID`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_responsavel_comercial_id ON clients (responsavel_comercial_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_created_by_user_id ON clients (created_by_user_id)`).catch(() => {});
     // Tabela de controle do "Agente Central": rastreia última cobrança de
     // atualização enviada via WhatsApp pra cada OS, pra não spamar (intervalo
     // mínimo de 30min entre cobranças). Linha é deletada quando o vigilante
@@ -1392,6 +1402,12 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_created ON service_orders (status, created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_client_id ON service_orders (client_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_url TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_path TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS protocolo_anexado_em TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_diretoria BOOLEAN DEFAULT FALSE`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_por TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMP`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
     // Trava de duplicação: uma OS só pode ter UM billing. Previne race condition em UPSERTs concorrentes
@@ -1452,14 +1468,15 @@ export async function ensureDbSchema() {
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_unread ON mission_updates(read_by_admin, created_at DESC) WHERE read_by_admin = 0`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_created_at ON mission_updates(created_at DESC)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mu_employee ON mission_updates(employee_id)`).catch(() => {});
-    // Índice GIN trigram pra ILIKE '%...%' em description (usado por
-    // syncFuelingMissionCosts no padrão "%[F#%"). text_pattern_ops NÃO
-    // ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
+    // Índice GIN trigram pra ILIKE '%...%' em description.
+    // text_pattern_ops NÃO ajuda nesse padrão (precisa ser GIN + gin_trgm_ops).
     await execSql(`CREATE EXTENSION IF NOT EXISTS pg_trgm`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mc_description_trgm ON mission_costs USING gin (description gin_trgm_ops)`).catch(() => {});
     // Se a versão errada tiver sido criada num boot anterior, remove pra
     // não confundir o planner.
     await execSql(`DROP INDEX IF EXISTS idx_mc_description_trgm_btree`).catch(() => {});
+    // Um abastecimento (vehicle_fueling.id) só pode virar um mission_cost.
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_fueling_tag_unique ON mission_costs ((substring(description from '\\[F#(\\d+)\\]'))) WHERE description ~ '\\[F#\\d+\\]'`).catch(() => {});
 
     // Tabelas geridas anteriormente via exec_sql em runtime (leads.ts, asaas.ts).
     // Movidas pra cá em 2026-05 — runtime exec_sql derrubava o pool.

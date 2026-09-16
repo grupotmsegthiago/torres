@@ -55,6 +55,7 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: "relatorio_nf", label: "Relatório de NFs / Faturas", group: "Controladoria", path: "/admin/relatorio-nf" },
   { key: "cobranca_judicial", label: "Cobrança Judicial", group: "Controladoria", path: "/admin/cobranca-judicial" },
   { key: "auditoria_faturamento", label: "Auditoria de Ciclo", group: "Controladoria", path: "/admin/auditoria-faturamento" },
+  { key: "controle_faturamento", label: "Faturamento (Diretoria)", group: "Controladoria", path: "/admin/faturamento" },
   { key: "balanco", label: "Balanço Gerencial", group: "Controladoria", path: "/admin/balanco-gerencial" },
   { key: "custos_fixos", label: "Custos Fixos", group: "Controladoria", path: "/admin/custos-fixos" },
   { key: "relatorio_abastecimento", label: "Relatório Abastecimento", group: "Controladoria", path: "/admin/relatorio-abastecimento" },
@@ -86,10 +87,18 @@ export const DEFAULT_PROFILE_PERMISSIONS: Record<string, string[]> = {
     "dashboard",
     "clients",
     "relatorio_nf",
+    "controle_faturamento",
     "invoice_baixa",
     "invoice_comprovante",
     "invoice_ocorrencia",
     "invoice_resolver_nf",
+  ],
+  comercial: [
+    "dashboard",
+    "leads",
+    "clients",
+    "service_orders",
+    "boletim_medicao",
   ],
   funcionario: ["dashboard", "guia_missao"],
 };
@@ -98,8 +107,22 @@ export const PROFILE_LABELS: Record<string, string> = {
   diretoria: "Diretoria",
   admin: "Administrador",
   financeiro: "Financeiro",
+  comercial: "Comercial",
   funcionario: "Funcionário",
 };
+
+export const ALLOWED_USER_ROLES = Object.keys(PROFILE_LABELS);
+
+export function isPrivilegedRole(role?: string | null): boolean {
+  return role === "diretoria" || role === "admin";
+}
+
+/** Perfis cujo menu e rotas seguem o JSON de `perfis_acesso` (fail-closed). */
+export function usesAclMenu(role?: string | null): boolean {
+  return !!role && !isPrivilegedRole(role) && role !== "funcionario";
+}
+
+const ALWAYS_ALLOWED_ADMIN_PATHS = new Set(["/admin/perfil", "/admin/chat"]);
 
 export function parsePermissions(raw: string | string[] | null | undefined): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -122,6 +145,24 @@ export function canSeePath(permissions: string[] | null | undefined, path: strin
   const key = PATH_TO_PERMISSION[path];
   if (!key) return hasPermission(permissions, "*");
   return hasPermission(permissions, key);
+}
+
+export function normalizeAdminPath(path: string): string {
+  return String(path || "").split("?")[0].replace(/\/+$/, "") || "/";
+}
+
+/** Fail-closed para perfil restrito: path fora do catálogo = negado (exceto perfil/chat). */
+export function canSeeAdminPath(permissions: string[] | null | undefined, pathname: string): boolean {
+  const path = normalizeAdminPath(pathname);
+  if (ALWAYS_ALLOWED_ADMIN_PATHS.has(path)) return true;
+  if (hasPermission(permissions, "*")) return true;
+  if (PATH_TO_PERMISSION[path]) return canSeePath(permissions, path);
+  const stripped = path.replace(/\/\d+.*$/, "");
+  if (stripped !== path && PATH_TO_PERMISSION[stripped]) return canSeePath(permissions, stripped);
+  if (path.startsWith("/admin/laudo")) {
+    return hasPermission(permissions, "service_orders") || hasPermission(permissions, "boletim_medicao");
+  }
+  return false;
 }
 
 export const NFSE_ERROR_ALERT_TO = [

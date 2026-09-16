@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries, kickNfRetryFromInvoicePayload } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -779,6 +779,11 @@ export default function BoletimMedicaoPage() {
               const prevEnd = new Date(brToday.getFullYear(), brToday.getMonth(), 1);
               return { start: prevStart, end: prevEnd, label: `2ª Quinzena (${ymd(prevStart)} a ${ymd(new Date(prevEnd.getTime() - 86400000))})` };
             }
+            if (billingCycle === "diario") {
+              const s = new Date(brToday.getFullYear(), brToday.getMonth(), brToday.getDate());
+              const e = new Date(s.getTime() + 86400000);
+              return { start: s, end: e, label: `Diário ${ymd(s)}` };
+            }
             if (billingCycle === "mensal") {
               const s = new Date(brToday.getFullYear(), brToday.getMonth() - 1, 1);
               const e = new Date(brToday.getFullYear(), brToday.getMonth(), 1);
@@ -1066,7 +1071,7 @@ export default function BoletimMedicaoPage() {
                       )}
                       {group.orders[0]?.clientBillingCycle && (
                         <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]">
-                          {group.orders[0].clientBillingCycle === "quinzenal" ? "Quinzenal" : group.orders[0].clientBillingCycle === "mensal" ? "Mensal" : "Por Missão"}
+                          {group.orders[0].clientBillingCycle === "quinzenal" ? "Quinzenal" : group.orders[0].clientBillingCycle === "mensal" ? "Mensal" : group.orders[0].clientBillingCycle === "diario" ? "Diário" : "Por Missão"}
                           {group.orders[0].clientPaymentTermsDays ? ` · D+${group.orders[0].clientPaymentTermsDays}` : ""}
                         </Badge>
                       )}
@@ -1527,6 +1532,10 @@ export default function BoletimMedicaoPage() {
                       dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
                       startDate: aprovarFaturarDialog.minDate,
                       endDate: aprovarFaturarDialog.maxDate,
+                    }).then(async (res) => {
+                      const json = await res.json().catch(() => ({}));
+                      kickNfRetryFromInvoicePayload(json);
+                      return json;
                     });
                     invalidateAllRelated();
                     setCheckedOsIds(new Set());
@@ -1579,12 +1588,13 @@ export default function BoletimMedicaoPage() {
               <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider">E-mail do cliente *</label>
               <Input
                 data-testid="input-email-aprovacao"
-                type="email"
+                type="text"
                 value={enviarAprovacaoEmail}
                 onChange={(e) => setEnviarAprovacaoEmail(e.target.value)}
                 placeholder="email@cliente.com.br"
                 className="text-sm"
               />
+              <p className="text-[10px] text-slate-500 mt-1">Usa o e-mail de medição do cadastro. A Torres vai em cópia.</p>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setEnviarAprovacaoDialog(null)} className="text-xs font-bold uppercase" data-testid="button-cancel-enviar-aprovacao">
@@ -1615,7 +1625,15 @@ export default function BoletimMedicaoPage() {
                     setEnviarAprovacaoDialog(null);
                     setCheckedOsIds(new Set());
                   } catch (err: any) {
-                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                    let msg = String(err?.message || "Falha");
+                    const jsonStart = msg.indexOf("{");
+                    if (jsonStart >= 0) {
+                      try {
+                        const parsed = JSON.parse(msg.slice(jsonStart));
+                        if (parsed?.message) msg = parsed.message;
+                      } catch { /* keep raw */ }
+                    }
+                    toast({ title: "Boletim bloqueado", description: msg, variant: "destructive" });
                   } finally {
                     setEnviarAprovacaoLoading(false);
                   }

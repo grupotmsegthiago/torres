@@ -1,16 +1,21 @@
 ---
 name: Boleto líquido com retenção de INSS
-description: Cliente com retem_inss recebe boleto Asaas LÍQUIDO (bruto − INSS); NF e invoices.value continuam BRUTOS.
+description: Cliente com retem_inss recebe boleto Asaas LÍQUIDO (bruto − INSS efetivo − ISS se emite NF); NF e invoices.value continuam BRUTOS.
 ---
 
-# Boleto líquido com retenção de INSS
+# Boleto líquido com retenção de INSS + ISS na NF
 
-Para clientes com `clients.retem_inss = true`, a cobrança Asaas (`POST /payments`) deve sair pelo valor **LÍQUIDO** = bruto − INSS retido. A **NF (`emitNfseImmediate`) e `invoices.value` permanecem BRUTOS** (regra fiscal: NF sempre cheia; quem retém é o tomador).
+Para clientes com `clients.retem_inss = true`, a cobrança Asaas (`POST /payments`) sai pelo valor **LÍQUIDO**. A **NF (`emitNfseImmediate`) e `invoices.value` permanecem BRUTOS**.
 
-**Cálculo:** helper `netBoletoValue(gross, { retemInss, inssAliquota })` em `server/lib/asaas-helpers.ts` → `{ boleto, inssValor, inssAliquota }`. `inssValor = round(gross*aliquota/100, 2)`, `boleto = round(gross − inssValor, 2)`. Alíquota default = 11.
+Pedido do dono em 2026-09-10 (substitui “não mexer no ISS” de 23/06/2026 e o desconto integral de 11% no boleto):
 
-**Why:** o tomador (cliente) recolhe o INSS direto à Receita; se o boleto cobrasse o bruto, a Torres receberia a mais e haveria acerto manual. NF bruta é exigência fiscal — não pode ser reduzida.
+- **INSS na NF/boleto:** 50% da alíquota legal (`INSS_BASE_FRACTION = 0.5`). Padrão 11% → **5,5% do bruto**. Cadastro `clients.inss_aliquota` continua a alíquota legal.
+- **ISS na NF:** **2%** com `retainIss: true`. No boleto, o ISS só entra se `emite_nf` (`retainIss: true` no helper).
 
-**How to apply:** TODO endpoint que cria cobrança Asaas e seja para cliente que possa reter INSS precisa: (1) carregar `retem_inss`/`inss_aliquota` do cliente; (2) `payment.value = netBoletoValue(...).boleto`; (3) NF e `invoices.value` com o BRUTO; (4) persistir `valor_inss_retido`/`inss_aliquota` na invoice; (5) `fiscalObservations` com `buildInssObservation(...)`. São **5** caminhos em `server/asaas.ts`: emitInvoiceAuto, `POST /api/invoices`, split por CNPJ, consolidado gerar-fatura, e `POST /api/invoices/:id/emitir` (esse último foi o que ficou esquecido na 1ª passada — sempre conferir todos). E-mail `sendBillingEmail` mostra bruto / (−) INSS / líquido quando há retenção.
+**Cálculo:** `netBoletoValue(gross, { retemInss, inssAliquota, retainIss })` em `server/lib/asaas-helpers.ts`. `inssAliquota` de retorno é a **efetiva** (5,5). `buildNfseInvoicePayload` recebe a alíquota **legal** e aplica a fração internamente — não passar 5,5 de novo (dobraria).
 
-**Consistência:** manter `invoices.value` BRUTO é proposital — `autoLinkOrphanBillingsForInvoice` casa `invoice.value` com a soma de billings brutos (tol. 2%); reconcile de PIX órfão usa `livePayment.value` (líquido) só para casar pagamentos por valor.
+**How to apply:** os 5 caminhos em `server/asaas.ts`: emitInvoiceAuto, `POST /api/invoices`, split por CNPJ, consolidado gerar-fatura, `POST /api/invoices/:id/emitir`. Persistência: `valor_inss_retido` = valor efetivo; `invoices.inss_aliquota` = efetiva. E-mail mostra bruto / (−) INSS / (−) ISS / líquido.
+
+**Observação da NF (≤250):** `buildNfseObservations` no mesmo helper. Discriminacao = texto CNAE oficial. Não concatenar `buildInssObservation` + Simples longo.
+
+**Consistência:** `invoices.value` BRUTO. Boletos já emitidos com 11% líquido **não** são reescritos automaticamente.

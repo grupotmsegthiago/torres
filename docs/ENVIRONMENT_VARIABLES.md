@@ -43,6 +43,7 @@
 | VITE_GOOGLE_MAPS_API_KEY | frontend maps | Pública | Vercel | todos | Migrar |
 | GOOGLE_MAPS_API_KEY | `leads.ts` | Privada | Vercel/Local | todos | Migrar |
 | ASAAS_* | `server/asaas.ts` | Privada | Vercel/Local | todos | Migrar |
+| COMISSAO_INGEST_TOKEN / COMISSAO_INGEST_URL | `server/lib/comissao-ingest.ts` | Privada | Vercel/Local | todos | Completar (token TM SEG; URL default do painel) |
 | INTER_INTEGRATION_ENABLED | `server/lib/inter-integration.ts` | Privada | Vercel/Local | todos | Preservar (default off; só `true`/`1`/`yes`/`on` habilita) |
 | INTER_* (CLIENT/SECRET/CONTA/CERT/AMBIENTE) | `server/services/inter` | Privada | Vercel/Local | todos | Obsoleta operacional — manter até PR4; não reativa sozinha |
 | ZAPI_* | WhatsApp | Privada | Vercel/Local | todos | Migrar |

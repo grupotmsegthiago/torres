@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { formatBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
+import { VEHICLE_ICON_OPTIONS, inferVehicleIcon, vehicleRequiresInsuranceDocs, isMobiInsuranceIncomplete, type VehicleIconOption } from "@shared/vehicle-icons";
+import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,111 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye, Video } from "lucide-react";
 import { VehicleCamerasHover } from "@/components/admin/vehicle-cameras-hover";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
-import { VEHICLE_ICON_OPTIONS, inferVehicleIcon, type VehicleIconOption } from "@shared/vehicle-icons";
+
+type PendingInsurance = { fileName: string; dataUrl: string; contentType: string };
+
+function insuranceFileLabel(path: string | null | undefined, pendingName?: string | null) {
+  if (pendingName) return pendingName;
+  const p = String(path || "");
+  if (!p) return "";
+  const base = p.split("/").pop() || p;
+  if (base.includes("apolice")) return "Apólice anexada";
+  if (base.includes("contrato")) return "Contrato anexado";
+  return base;
+}
+
+function InsuranceAttachField({
+  label,
+  kind,
+  vehicleId,
+  storedPath,
+  pending,
+  missing,
+  onPending,
+  onCleared,
+  testId,
+}: {
+  label: string;
+  kind: "policy" | "contract";
+  vehicleId?: number;
+  storedPath: string;
+  pending: PendingInsurance | null;
+  missing: boolean;
+  onPending: (p: PendingInsurance | null) => void;
+  onCleared: () => void;
+  testId: string;
+}) {
+  const { toast } = useToast();
+  const attached = !!(pending || storedPath);
+  const border = missing && !attached ? "border-red-400 bg-red-50" : attached ? "border-emerald-200 bg-emerald-50/40" : "border-neutral-300 bg-white";
+
+  async function openStored() {
+    if (!vehicleId || !storedPath) return;
+    const res = await authFetch(`/api/vehicles/${vehicleId}/insurance/${kind}/url`);
+    if (!res.ok) {
+      toast({ title: "Não foi possível abrir o documento", variant: "destructive" });
+      return;
+    }
+    const { url } = await res.json();
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <div>
+      <label className={`text-sm font-semibold mb-1.5 block ${missing && !attached ? "text-red-700" : "text-neutral-700"}`}>
+        {label} {missing ? "*" : ""}
+      </label>
+      {attached ? (
+        <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 border ${border}`}>
+          <FileText className={`w-5 h-5 shrink-0 ${missing && !attached ? "text-red-600" : "text-neutral-600"}`} />
+          <span className="text-sm text-neutral-700 font-medium truncate flex-1">
+            {insuranceFileLabel(storedPath, pending?.fileName)}
+          </span>
+          {storedPath && vehicleId && !pending && (
+            <button type="button" onClick={openStored} className="p-1 hover:bg-neutral-200 rounded" title="Abrir" data-testid={`${testId}-view`}>
+              <Eye className="w-4 h-4 text-neutral-500" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCleared}
+            className="p-1 hover:bg-red-100 rounded"
+            title="Remover"
+            data-testid={`${testId}-remove`}
+          >
+            <X className="w-4 h-4 text-red-500" />
+          </button>
+        </div>
+      ) : (
+        <label className={`flex items-center gap-3 px-3 py-3 rounded-lg border-2 border-dashed cursor-pointer hover:border-neutral-400 ${border}`}>
+          <FileText className={`w-5 h-5 ${missing ? "text-red-400" : "text-neutral-400"}`} />
+          <span className={`text-sm ${missing ? "text-red-600" : "text-neutral-500"}`}>Clique para anexar PDF ou imagem (máx. 10MB)</span>
+          <input
+            type="file"
+            accept="image/*,.pdf"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (file.size > 10 * 1024 * 1024) {
+                toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => onPending({
+                fileName: file.name,
+                dataUrl: String(reader.result || ""),
+                contentType: file.type || "application/octet-stream",
+              });
+              reader.readAsDataURL(file);
+            }}
+            data-testid={testId}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
   const { toast } = useToast();
@@ -43,8 +148,12 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     photoRear: vehicle?.photoRear || "",
     photoRight: vehicle?.photoRight || "",
     iconType: (vehicle as any)?.iconType || "polo",
+    insurancePolicyFile: (vehicle as any)?.insurancePolicyFile || "",
+    insuranceContractFile: (vehicle as any)?.insuranceContractFile || "",
     notes: vehicle?.notes || "",
   });
+  const [pendingPolicy, setPendingPolicy] = useState<PendingInsurance | null>(null);
+  const [pendingContract, setPendingContract] = useState<PendingInsurance | null>(null);
 
   // A LISTA de veículos não traz mais as colunas pesadas (documento + fotos laterais/traseira)
   // pra não derrubar o Supabase. Ao EDITAR, buscamos o veículo completo e hidratamos o form —
@@ -106,6 +215,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         photoLeft: fullVehicle.photoLeft || "",
         photoRear: fullVehicle.photoRear || "",
         photoRight: fullVehicle.photoRight || "",
+        insurancePolicyFile: (fullVehicle as any).insurancePolicyFile || prev.insurancePolicyFile || "",
+        insuranceContractFile: (fullVehicle as any).insuranceContractFile || prev.insuranceContractFile || "",
       }));
       setPhotosLoaded(true);
     }
@@ -154,11 +265,26 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
+      const { insurancePolicyFile: _p, insuranceContractFile: _c, ...rest } = data as any;
+      let vehicleId = vehicle?.id;
       if (vehicle) {
-        await apiRequest("PATCH", `/api/vehicles/${vehicle.id}`, data);
+        await apiRequest("PATCH", `/api/vehicles/${vehicle.id}`, rest);
       } else {
-        await apiRequest("POST", "/api/vehicles", data);
+        const res = await apiRequest("POST", "/api/vehicles", rest);
+        const created = await res.json();
+        vehicleId = created?.id;
       }
+      if (!vehicleId) return;
+      async function putDoc(kind: "policy" | "contract", pending: PendingInsurance | null) {
+        if (!pending) return;
+        await apiRequest("POST", `/api/vehicles/${vehicleId}/insurance/${kind}`, {
+          fileBase64: pending.dataUrl,
+          fileName: pending.fileName,
+          contentType: pending.contentType,
+        });
+      }
+      await putDoc("policy", pendingPolicy);
+      await putDoc("contract", pendingContract);
     },
     onSuccess: () => {
       invalidateRelatedQueries("vehicle");
@@ -321,6 +447,53 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             </label>
           )}
         </div>
+        {vehicleRequiresInsuranceDocs(form.iconType, form.brand, form.model) && (
+          <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg border ${
+            (!form.insurancePolicyFile && !pendingPolicy) || (!form.insuranceContractFile && !pendingContract)
+              ? "border-red-200 bg-red-50/30"
+              : "border-emerald-200 bg-emerald-50/20"
+          }`} data-testid="section-mobi-insurance">
+            <p className={`md:col-span-2 text-sm font-semibold ${
+              (!form.insurancePolicyFile && !pendingPolicy) || (!form.insuranceContractFile && !pendingContract)
+                ? "text-red-800"
+                : "text-emerald-800"
+            }`}>Seguro obrigatório (Mobi) — apólice e contrato, um de cada carro</p>
+            <InsuranceAttachField
+              label="Apólice de seguro"
+              kind="policy"
+              vehicleId={vehicle?.id}
+              storedPath={form.insurancePolicyFile}
+              pending={pendingPolicy}
+              missing={!form.insurancePolicyFile && !pendingPolicy}
+              testId="input-insurance-policy"
+              onPending={setPendingPolicy}
+              onCleared={async () => {
+                setPendingPolicy(null);
+                if (vehicle?.id && form.insurancePolicyFile) {
+                  await apiRequest("DELETE", `/api/vehicles/${vehicle.id}/insurance/policy`);
+                }
+                setForm((prev) => ({ ...prev, insurancePolicyFile: "" }));
+              }}
+            />
+            <InsuranceAttachField
+              label="Contrato do seguro"
+              kind="contract"
+              vehicleId={vehicle?.id}
+              storedPath={form.insuranceContractFile}
+              pending={pendingContract}
+              missing={!form.insuranceContractFile && !pendingContract}
+              testId="input-insurance-contract"
+              onPending={setPendingContract}
+              onCleared={async () => {
+                setPendingContract(null);
+                if (vehicle?.id && form.insuranceContractFile) {
+                  await apiRequest("DELETE", `/api/vehicles/${vehicle.id}/insurance/contract`);
+                }
+                setForm((prev) => ({ ...prev, insuranceContractFile: "" }));
+              }}
+            />
+          </div>
+        )}
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-vehicle-status">
@@ -693,6 +866,7 @@ export default function VehiclesPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Rodados</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Média</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Seguro</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
@@ -701,8 +875,16 @@ export default function VehiclesPage() {
                   const lastOilKm = (v as any).lastOilChangeKm || 0;
                   const kmRodados = (v.km || 0) - lastOilKm;
                   const needsMaint = kmRodados >= 9000;
+                  const missingInsurance = isMobiInsuranceIncomplete({
+                    iconType: (v as any).iconType,
+                    brand: v.brand,
+                    model: v.model,
+                    insurancePolicyFile: (v as any).insurancePolicyFile,
+                    insuranceContractFile: (v as any).insuranceContractFile,
+                  });
+                  const requiresInsurance = vehicleRequiresInsuranceDocs((v as any).iconType, v.brand, v.model);
                   return (
-                  <tr key={v.id} className={`border-b border-neutral-100 hover:bg-neutral-50 ${needsMaint ? "bg-red-50/50" : ""}`} data-testid={`row-vehicle-${v.id}`}>
+                  <tr key={v.id} className={`border-b border-neutral-100 hover:bg-neutral-50 ${needsMaint || missingInsurance ? "bg-red-50/70" : ""}`} data-testid={`row-vehicle-${v.id}`}>
                     <td className="p-3 font-medium text-neutral-900">
                       <div className="flex items-center gap-2">
                         <span>{v.plate}</span>
@@ -762,6 +944,21 @@ export default function VehiclesPage() {
                         v.status === "manutenção" ? "bg-red-50 text-red-700 border border-red-200" :
                         "bg-neutral-100 text-neutral-600 border border-neutral-200"
                       }`}>{v.status === "em_uso" ? "EM USO" : v.status === "disponível" ? "DISPONÍVEL" : v.status === "manutenção" ? "MANUTENÇÃO" : v.status}</span>
+                    </td>
+                    <td className="p-3">
+                      {requiresInsurance ? (
+                        missingInsurance ? (
+                          <span className="text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide bg-red-600 text-white" data-testid={`badge-seguro-faltando-${v.id}`}>
+                            Sem seguro
+                          </span>
+                        ) : (
+                          <span className="text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200" data-testid={`badge-seguro-ok-${v.id}`}>
+                            Completo
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[11px] text-neutral-400">—</span>
+                      )}
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">

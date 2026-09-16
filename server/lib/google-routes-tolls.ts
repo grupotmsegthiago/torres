@@ -29,6 +29,10 @@ function routesApiKey(): string | undefined {
   );
 }
 
+export function googleMapsServerKey(): string | undefined {
+  return routesApiKey();
+}
+
 function parseMoney(units?: string, nanos?: string | number): number {
   return parseFloat(units || "0") + parseFloat(String(nanos || "0")) / 1e9;
 }

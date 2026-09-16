@@ -99,7 +99,8 @@ const VEHICLE_LIST_COLS =
   "id,plate,model,brand,year,color,chassi,renavam,status,tracker_id,tracker_api_url,tracker_type," +
   "truckscontrol_identifier,ssx_integration_code,km,initial_km,last_km_update,frota,photo_front,icon_type," +
   "last_latitude,last_longitude,last_ignition,last_speed,last_gps_signal,last_address,last_position_time," +
-  "stopped_since,ignition_on_since,no_signal_since,last_oil_change_km,notes,created_at";
+  "stopped_since,ignition_on_since,no_signal_since,last_oil_change_km,notes,created_at," +
+  "insurance_policy_file,insurance_contract_file";
 
 async function resilientList<T>(
   table: string,

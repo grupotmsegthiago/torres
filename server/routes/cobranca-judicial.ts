@@ -4,6 +4,7 @@ import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import { logSystemAudit } from "../audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
+import { clientOutboundMail, withTorresAlwaysCc } from "../../shared/client-emails";
 import { signMissionPhoto } from "../lib/mission-photos";
 
 // ---------------------------------------------------------------------------
@@ -695,11 +696,12 @@ async function sendJudicialEmail(dossie: any, processo: any): Promise<void> {
   const baseUrl = (process.env.PUBLIC_SITE_URL || "https://torresseguranca.com.br").replace(/\/$/, "");
   const linkAdvogado = processo?.share_token ? `${baseUrl}/api/juridico/dossie/${processo.share_token}` : null;
 
-  const to: string[] = [];
-  const fin = dossie.client?.email_financeiro || dossie.client?.email;
-  if (fin) to.push(fin);
-  if (process.env.JURIDICO_EMAIL) to.push(process.env.JURIDICO_EMAIL);
-  const recipients = to.length ? to : [getSmtpFrom()];
+  const finMail = clientOutboundMail(dossie.client, "financeiro");
+  const envelope = withTorresAlwaysCc([
+    ...(finMail?.to || []),
+    ...(process.env.JURIDICO_EMAIL ? [process.env.JURIDICO_EMAIL] : []),
+  ]);
+  const recipients = envelope.to.length ? envelope.to : [getSmtpFrom()];
 
   const html = `
     <h2>Cobrança Judicial — Fatura #${inv.id}</h2>
@@ -715,6 +717,7 @@ async function sendJudicialEmail(dossie: any, processo: any): Promise<void> {
   await transporter.sendMail({
     from: getSmtpFrom(),
     to: recipients,
+    cc: envelope.cc,
     bcc: ["thiago@grupotmseg.com.br"],
     subject: `[Jurídico] Cobrança judicial — ${inv.client_name} — Fatura #${inv.id}`,
     html,

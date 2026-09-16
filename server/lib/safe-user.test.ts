@@ -57,6 +57,7 @@ describe("toSafeUser (allowlist)", () => {
       termsIpAddress: "1.1.1.1",
       termsUserAgent: "ua",
       createdAt: "2026-01-02",
+      comercialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     });
     assert.equal(safe.id, 7);
     assert.equal(safe.email, "x@y.com");
@@ -66,6 +67,7 @@ describe("toSafeUser (allowlist)", () => {
     assert.equal(safe.employeeId, 9);
     assert.equal(safe.supabaseUid, "uid-1");
     assert.equal(safe.avatarUrl, "http://a");
+    assert.equal(safe.comercialId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
   });
 
   it("funciona com snake_case", () => {
@@ -100,6 +102,7 @@ describe("toSafeUser (allowlist)", () => {
     const keys = Object.keys(safe).sort();
     assert.deepEqual(keys, [
       "avatarUrl",
+      "comercialId",
       "createdAt",
       "email",
       "employeeId",
@@ -172,6 +175,12 @@ describe("API/UI contratos (fonte)", () => {
     const storage = readFileSync(path.join(root, "server/storage.ts"), "utf8");
     assert.match(storage, /USER_SAFE_SELECT/);
     assert.match(storage, /\.select\(USER_SAFE_SELECT\)/);
+  });
+
+  it("UsersPage importa useAuth — sem isso /admin/usuarios fica em tela branca", () => {
+    const ui = readFileSync(path.join(root, "client/src/pages/admin/users.tsx"), "utf8");
+    assert.match(ui, /import \{ useAuth \} from "@\/hooks\/use-auth"/);
+    assert.match(ui, /useAuth\(\)/);
   });
 
   it("UI não renderiza plainPassword nem fallback torres@123", () => {
