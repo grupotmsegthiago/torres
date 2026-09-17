@@ -5,7 +5,7 @@ import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, withTorresAlwaysCc, parseEmailList } from "../shared/client-emails";
 import { bustBalancoCaches } from "./lib/balanco-cache";
-import { fetchBillingsForOsScheduledInWindow } from "./lib/billing-period";
+import { fetchBillingsByScheduledWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
 import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
 import {
@@ -3371,33 +3371,14 @@ export function registerAsaasRoutes(app: Express) {
       // Recusadas (operacional não atendeu) e Faturadas/Pagas ficam FORA.
       // Mesma regra que o card "Total p/ Faturamento" do frontend aplica.
       const FATURAVEIS = ["APROVADA", "A_VERIFICAR", "PENDENTE", "ENVIADA_APROVACAO", "CANCELADA", "CANCELADO"];
-      let query = supabaseAdmin
-        .from("escort_billings")
-        .select("*")
-        .eq("client_id", clientId)
-        .in("status", FATURAVEIS)
-        .gte("data_missao", fromDate)
-        .lte("data_missao", toDate);
-
-      const { data: rawBillings, error: billErr } = await query;
-
-      if (billErr) throw billErr;
-
-      const extraByOs = await fetchBillingsForOsScheduledInWindow({
+      const scheduledBillings = await fetchBillingsByScheduledWindow({
         clientId,
         fromIso: fromDate,
         toIso: toDate,
-        alreadyHaveOsIds: (rawBillings || []).map((b: any) => b.service_order_id),
       });
-      const seenBill = new Set((rawBillings || []).map((b: any) => String(b.id)));
-      const periodBillings = [...(rawBillings || [])];
-      for (const b of extraByOs) {
-        const st = String(b.status || "").toUpperCase();
-        if (!seenBill.has(String(b.id)) && FATURAVEIS.includes(st)) {
-          seenBill.add(String(b.id));
-          periodBillings.push(b);
-        }
-      }
+      const periodBillings = scheduledBillings.filter((b: any) =>
+        FATURAVEIS.includes(String(b.status || "").toUpperCase()),
+      );
 
       // Exclui billings cuja OS foi RECUSADA pelo operacional (mesmo que o
       // bill.status ainda esteja A_VERIFICAR). Vamos buscar so.status pra
@@ -3417,14 +3398,10 @@ export function registerAsaasRoutes(app: Express) {
       });
 
       if (billings.length === 0) {
-        const { data: allBillings } = await supabaseAdmin
-          .from("escort_billings")
-          .select("id, status")
-          .eq("client_id", clientId)
-          .gte("data_missao", fromDate)
-          .lte("data_missao", toDate);
-
-        const faturados = allBillings?.filter((b: any) => b.status === "FATURADO" || b.status === "FATURADA").length || 0;
+        const faturados = scheduledBillings.filter((b: any) => {
+          const st = String(b.status || "").toUpperCase();
+          return st === "FATURADO" || st === "FATURADA" || st === "PAGO";
+        }).length;
 
         if (faturados > 0) {
           return res.status(400).json({ message: `Todas as ${faturados} OS neste período já foram faturadas. Para gerar nova fatura, exclua a fatura existente primeiro.` });

@@ -96,6 +96,6 @@ Edição manual excepcional, se existir, exige autorização de role adequada e 
 
 ## Quinzena / boletim
 
-- Período do boletim deriva de `data_missao` / regras de quinzena do projeto.
+- Período do boletim deriva da **data de agendamento** (`service_orders.scheduled_date`): dias 1–15 = 1ª quinzena; 16–último dia do mês = 2ª. `escort_billings.data_missao` não define o ciclo (pode ser o dia do lançamento).
 - Bloquear cruzamento indevido de quinzenas no envio.
 - Snapshot no envio garante tela = e-mail = Excel = aprovação.

@@ -18,7 +18,8 @@ import {
   planContractHeals,
 } from "../lib/boletim-send-prepare";
 import { logSystemAudit } from "../audit";
-import { assessBoletimCoverage, normalizeBillingCycle, periodForDate } from "../../shared/billing-cycle";
+import { assessBoletimCoverage, missionDateYmd, normalizeBillingCycle, periodForDate } from "../../shared/billing-cycle";
+import { fetchBillingsByScheduledWindow, fetchServiceOrdersScheduledInWindow } from "../lib/billing-period";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
@@ -295,7 +296,7 @@ async function generateBoletimExcel(
     const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
     const viatura = b.placa_viatura || so.vehicle_plate || "—";
     const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "—";
-    const dataMissao = b.data_missao || so.scheduled_date || b.created_at;
+    const dataMissao = so.scheduled_date || b.data_missao || b.created_at;
 
     const baseRowData = [
       osNum, routeStr, Number(valorAcionamento.toFixed(2)), fmtHHMM(franquiaHoras), franquiaKm > 0 ? franquiaKm : 0,
@@ -529,33 +530,52 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const resolvedClientEmail = mail.to.join(", ");
 
       // ============================================================
-      // Regra unificada: período do boletim é derivado da data_missao
-      // (data de agendamento/início) das escort_billings selecionadas.
-      // Garante que toda a aplicação use a mesma referência temporal.
+      // Período do boletim = data de agendamento da OS (1–15 / 16–fim).
+      // billing.data_missao pode ser o dia do lançamento da cancelada.
       // ============================================================
       const { data: billingsForPeriod } = await supabaseAdmin
         .from("escort_billings")
         .select("id, data_missao, created_at, service_order_id")
         .in("id", billingIds);
 
+      const soIdsForDates = Array.from(new Set(
+        (billingsForPeriod || []).map((b: any) => b.service_order_id).filter(Boolean),
+      ));
+      const soDateById = new Map<number, any>();
+      if (soIdsForDates.length > 0) {
+        const { data: sosForDates } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, scheduled_date, completed_date")
+          .in("id", soIdsForDates);
+        for (const o of sosForDates || []) soDateById.set(Number(o.id), o);
+      }
+
       const missionDates = (billingsForPeriod || [])
-        .map((b: any) => (b.data_missao || b.created_at || "").split("T")[0])
+        .map((b: any) => missionDateYmd(soDateById.get(Number(b.service_order_id)), b))
         .filter(Boolean)
         .sort();
 
+      const cycle = normalizeBillingCycle(clientRow?.billing_cycle);
       if (missionDates.length > 0) {
         const computedStart = missionDates[0];
         const computedEnd = missionDates[missionDates.length - 1];
 
-        // Bloqueia quando as missões cruzam quinzenas diferentes do mesmo mês
-        // (ex.: misturar dia 15 e dia 16). Cada quinzena precisa de boletim próprio.
-        const startQuinz = Number(computedStart.split("-")[2]) <= 15 ? 1 : 2;
-        const endQuinz = Number(computedEnd.split("-")[2]) <= 15 ? 1 : 2;
-        const sameMonth = computedStart.slice(0, 7) === computedEnd.slice(0, 7);
-        if (sameMonth && startQuinz !== endQuinz) {
-          return res.status(400).json({
-            message: `As OS selecionadas pertencem a quinzenas diferentes (${computedStart} a ${computedEnd}). Gere um boletim para cada quinzena separadamente.`,
-          });
+        if (cycle !== "por_missao" && cycle !== "indefinido") {
+          const keys = new Set(missionDates.map((d) => periodForDate(cycle, d).key));
+          if (keys.size > 1) {
+            return res.status(400).json({
+              message: `As OS selecionadas pertencem a quinzenas diferentes (${computedStart} a ${computedEnd}). Gere um boletim para cada quinzena separadamente.`,
+            });
+          }
+        } else {
+          const startQuinz = Number(computedStart.split("-")[2]) <= 15 ? 1 : 2;
+          const endQuinz = Number(computedEnd.split("-")[2]) <= 15 ? 1 : 2;
+          const sameMonth = computedStart.slice(0, 7) === computedEnd.slice(0, 7);
+          if (sameMonth && startQuinz !== endQuinz) {
+            return res.status(400).json({
+              message: `As OS selecionadas pertencem a quinzenas diferentes (${computedStart} a ${computedEnd}). Gere um boletim para cada quinzena separadamente.`,
+            });
+          }
         }
 
         periodStart = computedStart;
@@ -565,7 +585,6 @@ export function registerBoletimApprovalRoutes(app: Express) {
       // Cobertura do ciclo do cadastro: todas as OS faturáveis do período
       // e internamente APROVADAS. Recusada fica de fora (§8.1).
       {
-        const cycle = normalizeBillingCycle(clientRow?.billing_cycle);
         if (cycle === "quinzenal" || cycle === "mensal" || cycle === "diario") {
           const seed = (periodStart || missionDates[0] || "").slice(0, 10);
           if (seed) {
@@ -573,21 +592,16 @@ export function registerBoletimApprovalRoutes(app: Express) {
             periodStart = period.start;
             periodEnd = period.end;
 
-            const { data: osWindow } = await supabaseAdmin
-              .from("service_orders")
-              .select("id, os_number, status, scheduled_date, completed_date")
-              .eq("client_id", clientId)
-              .gte("scheduled_date", `${period.start}T00:00:00`)
-              .lte("scheduled_date", `${period.end}T23:59:59`)
-              .limit(2000);
-
-            const { data: billsWindow } = await supabaseAdmin
-              .from("escort_billings")
-              .select("id, service_order_id, status, data_missao")
-              .eq("client_id", clientId)
-              .gte("data_missao", period.start)
-              .lte("data_missao", period.end)
-              .limit(2000);
+            const osWindow = await fetchServiceOrdersScheduledInWindow({
+              clientId: Number(clientId),
+              fromIso: period.start,
+              toIso: period.end,
+            });
+            const billsWindow = await fetchBillingsByScheduledWindow({
+              clientId: Number(clientId),
+              fromIso: period.start,
+              toIso: period.end,
+            });
 
             const billByOs = new Map<number, any>();
             for (const b of billsWindow || []) {
@@ -595,20 +609,9 @@ export function registerBoletimApprovalRoutes(app: Express) {
               if (soId) billByOs.set(soId, b);
             }
 
-            const osById = new Map<number, any>();
-            for (const o of osWindow || []) osById.set(Number(o.id), o);
-            const extraIds = [...billByOs.keys()].filter((id) => !osById.has(id));
-            if (extraIds.length > 0) {
-              const { data: extraOs } = await supabaseAdmin
-                .from("service_orders")
-                .select("id, os_number, status, scheduled_date, completed_date")
-                .in("id", extraIds);
-              for (const o of extraOs || []) osById.set(Number(o.id), o);
-            }
-
-            const allOsInWindow = [...osById.values()].map((o: any) => {
+            const allOsInWindow = (osWindow || []).map((o: any) => {
               const bill = billByOs.get(Number(o.id));
-              const date = String(bill?.data_missao || o.scheduled_date || o.completed_date || "").slice(0, 10);
+              const date = missionDateYmd(o, bill);
               return {
                 id: Number(o.id),
                 osNumber: String(o.os_number || `OS-${o.id}`),

@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-17 — Quinzena do boletim pela data de agendamento
+
+- Filtro do Relatório de Faturamento, envio ao cliente e gerar fatura usam `service_orders.scheduled_date` (1–15 = 1ª quinzena; 16–último dia = 2ª).
+- `escort_billings.data_missao` deixa de definir o ciclo (cancelada lançada depois não mistura quinzenas).
+- Gate `enviar-aprovacao` e cobertura do boletim leem a data da OS, não a gravação do billing.
+
 ## 2026-09-17 — NFS-e: `municipalServiceId` string `"402"` (não 402.0)
 
 - Causa: o Asaas recebia número (`402.0` no log). Natan: o JSON tem de ser `"municipalServiceId": "402"`.

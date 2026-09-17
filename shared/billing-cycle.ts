@@ -184,6 +184,28 @@ export function daysBetween(fromYmd: string, toYmd: string): number {
   return Math.round((b - a) / 86400000);
 }
 
+/**
+ * Data comercial da missão (YYYY-MM-DD): agendamento da OS.
+ * Não usar o instante em que o billing foi gravado (`data_missao` pode ser
+ * o dia do lançamento da cancelada, fora da quinzena da missão).
+ */
+export function missionDateYmd(os?: any, billing?: any): string {
+  const raw =
+    os?.scheduledDate ??
+    os?.scheduled_date ??
+    os?.completedDate ??
+    os?.completed_date ??
+    billing?.data_missao ??
+    "";
+  const m = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : "";
+}
+
+export function ymdInInclusiveRange(ymd: string, startYmd: string, endYmd: string): boolean {
+  if (!ymd || !startYmd || !endYmd) return false;
+  return ymd >= startYmd.slice(0, 10) && ymd <= endYmd.slice(0, 10);
+}
+
 export interface CoverageOs {
   id: number;
   osNumber: string;

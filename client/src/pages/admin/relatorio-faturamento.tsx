@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
-import { appearsInFaturamentoReport } from "@shared/billing-cycle";
+import { appearsInFaturamentoReport, missionDateYmd, ymdInInclusiveRange } from "@shared/billing-cycle";
 import { clientEmailsJoined } from "@shared/client-emails";
 import { OsDetailModal, NumInput } from "./boletim-medicao";
 
@@ -400,15 +400,26 @@ export default function RelatorioFaturamentoPage() {
             }
             if (!b.placa_escoltado && so.escortedVehiclePlate) b.placa_escoltado = so.escortedVehiclePlate;
             if (!b.os_number && so.osNumber) b.os_number = so.osNumber;
-            if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
+            if (so.scheduledDate) b.scheduled_date = so.scheduledDate;
             if (!b.completed_date && so.completedDate) b.completed_date = so.completedDate;
             b._so_status = so.status;
             b._so_mission_status = so.missionStatus || so.mission_status || "";
             b._so_cancellation_reason = so.cancellationReason || so.cancellation_reason || "";
+            b._so_scheduled_date = so.scheduledDate || so.scheduled_date || b._so_scheduled_date;
           }
           return b;
         })
-        .filter((b: any) => appearsInFaturamentoReport(b._so_status, b.status));
+        .filter((b: any) => appearsInFaturamentoReport(b._so_status, b.status))
+        .filter((b: any) => {
+          const so = oMap.get(b.service_order_id);
+          const ymd = missionDateYmd(
+            so
+              ? { scheduledDate: so.scheduledDate || so.scheduled_date, completedDate: so.completedDate || so.completed_date }
+              : { scheduled_date: b._so_scheduled_date, completed_date: b._so_completed_date },
+            b,
+          );
+          return ymdInInclusiveRange(ymd, startDate, endDate);
+        });
 
       setBillings(approved);
       setReportGenerated(true);
@@ -683,9 +694,11 @@ export default function RelatorioFaturamentoPage() {
 
   const rowsData = useMemo(() => {
     const sorted = [...billings].sort((a, b) => {
-      const da = new Date(a.data_missao || a.created_at || 0).getTime();
-      const db = new Date(b.data_missao || b.created_at || 0).getTime();
-      if (da !== db) return da - db;
+      const soA = ordersMap.get(a.service_order_id);
+      const soB = ordersMap.get(b.service_order_id);
+      const da = missionDateYmd(soA || { scheduled_date: a._so_scheduled_date }, a);
+      const db = missionDateYmd(soB || { scheduled_date: b._so_scheduled_date }, b);
+      if (da !== db) return da.localeCompare(db);
       const ta = (a.horario_inicio || "").toString();
       const tb = (b.horario_inicio || "").toString();
       return ta.localeCompare(tb);
@@ -736,7 +749,8 @@ export default function RelatorioFaturamentoPage() {
       // DATA/HORA INÍCIO = sempre o AGENDAMENTO (o que o cliente solicitou),
       // nunca o "início real" (missionStartedAt) nem o "fim".
       // Prioridade: scheduled_date (do snapshot da OS) → data_missao → created_at.
-      const sched = b.snapshot_data?.scheduled_date || b.scheduled_date || b.scheduledDate;
+      const so = ordersMap.get(b.service_order_id);
+      const sched = b.snapshot_data?.scheduled_date || so?.scheduledDate || so?.scheduled_date || b._so_scheduled_date || b.scheduled_date || b.scheduledDate;
       const dataMissao = sched || b.data_missao || b.created_at;
       const dataFimMissao = b.completed_date || b.finished_at || dataMissao;
       const horarioAgendadoStr =
@@ -788,7 +802,7 @@ export default function RelatorioFaturamentoPage() {
         _raw: b,
       };
     });
-  }, [billings, contracts]);
+  }, [billings, contracts, ordersMap]);
 
   const dashboardStats = useMemo(() => {
     if (!rowsData.length) return null;

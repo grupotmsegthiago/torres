@@ -7,7 +7,7 @@ import type { Express } from "express";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
-  import { fetchBillingsForOsScheduledInWindow } from "../lib/billing-period";
+  import { fetchBillingsByScheduledWindow } from "../lib/billing-period";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
@@ -1757,36 +1757,33 @@ import type { Express } from "express";
       const allowed = await allowedClientIdsFromRequest(req);
       if (allowed && allowed.length === 0) return res.json([]);
       if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
-      // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista
-      // (ordenada DESC) perde billings antigos; o Boletim "parece ok" só porque
-      // os recentes cabem na 1ª página — o Balanço (ASC) perdia os recentes.
-      const list = await fetchAllSupabaseRows((offset, limitTo) => {
-        let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
-        if (client_id) query = query.eq("client_id", client_id);
-        else if (allowed) query = query.in("client_id", allowed);
-        if (status) query = query.eq("status", status as string);
-        if (from) query = query.gte("data_missao", from as string);
-        if (to) query = query.lte("data_missao", to as string);
-        return query.range(offset, limitTo);
-      });
-
+      // Quinzena comercial = agendamento da OS (1–15 / 16–fim), não data_missao
+      // do billing (cancelada lançada depois caía na quinzena errada).
+      let list: any[];
       if (client_id && from && to) {
-        const extra = await fetchBillingsForOsScheduledInWindow({
+        list = await fetchBillingsByScheduledWindow({
           clientId: Number(client_id),
           fromIso: String(from),
           toIso: String(to),
-          alreadyHaveOsIds: list.map((b: any) => b.service_order_id),
         });
-        if (extra.length > 0) {
-          const seen = new Set(list.map((b: any) => String(b.id)));
-          for (const b of extra) {
-            const id = String(b.id);
-            if (!seen.has(id)) {
-              seen.add(id);
-              list.push(b);
-            }
-          }
+        if (status) {
+          const st = String(status);
+          list = list.filter((b: any) => String(b.status) === st);
         }
+        list.sort((a: any, b: any) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+      } else {
+        // Paginação obrigatória: PostgREST limita a 1000 linhas. Sem range, a lista
+        // (ordenada DESC) perde billings antigos; o Boletim "parece ok" só porque
+        // os recentes cabem na 1ª página — o Balanço (ASC) perdia os recentes.
+        list = await fetchAllSupabaseRows((offset, limitTo) => {
+          let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
+          if (client_id) query = query.eq("client_id", client_id);
+          else if (allowed) query = query.in("client_id", allowed);
+          if (status) query = query.eq("status", status as string);
+          if (from) query = query.gte("data_missao", from as string);
+          if (to) query = query.lte("data_missao", to as string);
+          return query.range(offset, limitTo);
+        });
       }
 
       // Enriquecer com status real da OS para que o cliente saiba diferenciar
@@ -1796,7 +1793,7 @@ import type { Express } from "express";
       if (osIds.length > 0) {
         const { data: osList } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, status, mission_status, cancellation_reason")
+          .select("id, os_number, status, mission_status, cancellation_reason, scheduled_date, completed_date")
           .in("id", osIds);
         for (const o of (osList || [])) {
           osMap[String(o.id)] = o;
@@ -1810,6 +1807,8 @@ import type { Express } from "express";
           _so_status: os.status || null,
           _so_mission_status: os.mission_status || null,
           _so_cancellation_reason: os.cancellation_reason || null,
+          _so_scheduled_date: os.scheduled_date || null,
+          _so_completed_date: os.completed_date || null,
         };
       });
       res.json(enriched);

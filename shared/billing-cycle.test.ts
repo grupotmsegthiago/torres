@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import {
   appearsInFaturamentoReport,
   assessBoletimCoverage,
@@ -10,9 +12,11 @@ import {
   isOsReadyForBoletim,
   isRecusadaOs,
   lastDayOfMonth,
+  missionDateYmd,
   normalizeBillingCycle,
   periodClosed,
   periodForDate,
+  ymdInInclusiveRange,
 } from "./billing-cycle.ts";
 
 test("normalizeBillingCycle: quinzenal / mensal / diario / por_missao", () => {
@@ -125,4 +129,42 @@ test("appearsInFaturamentoReport: oculta recusada; faturada permanece", () => {
   assert.equal(appearsInFaturamentoReport("cancelada", "CANCELADO"), true);
   assert.equal(appearsInFaturamentoReport("concluida", "APROVADA"), true);
   assert.equal(isOsInvoicedStatus("FATURADA"), true);
+});
+
+test("missionDateYmd: quinzena segue o agendamento, não a gravação do billing", () => {
+  const d = missionDateYmd(
+    { scheduled_date: "2026-09-14T15:00:00-03:00" },
+    { data_missao: "2026-09-17T10:30:05-03:00" },
+  );
+  assert.equal(d, "2026-09-14");
+  assert.equal(periodForDate("quinzenal", d).key, "Q1:2026-09");
+  assert.equal(periodForDate("quinzenal", "2026-09-17").key, "Q2:2026-09");
+  assert.equal(ymdInInclusiveRange(d, "2026-09-01", "2026-09-15"), true);
+  assert.equal(ymdInInclusiveRange(d, "2026-09-16", "2026-09-30"), false);
+  assert.equal(ymdInInclusiveRange("2026-09-16", "2026-09-16", "2026-09-30"), true);
+  assert.equal(ymdInInclusiveRange("2026-09-30", "2026-09-16", "2026-09-30"), true);
+});
+
+test("assessBoletimCoverage: 14 e 15 na 1ª quinzena; misturar 17 bloqueia", () => {
+  const q1 = assessBoletimCoverage({
+    cycle: "quinzenal",
+    selectedOsIds: [833, 845],
+    allOsInWindow: [
+      { id: 833, osNumber: "TOR-0833", status: "cancelada", date: "2026-09-14", billingStatus: "CANCELADO" },
+      { id: 845, osNumber: "TOR-0845", status: "cancelada", date: "2026-09-15", billingStatus: "CANCELADO" },
+    ],
+  });
+  assert.equal(q1.ok, true);
+  assert.equal(q1.period?.key, "Q1:2026-09");
+
+  const mixed = assessBoletimCoverage({
+    cycle: "quinzenal",
+    selectedOsIds: [833, 900],
+    allOsInWindow: [
+      { id: 833, osNumber: "TOR-0833", status: "cancelada", date: "2026-09-14", billingStatus: "CANCELADO" },
+      { id: 900, osNumber: "TOR-0900", status: "concluida", date: "2026-09-17", billingStatus: "APROVADA" },
+    ],
+  });
+  assert.equal(mixed.ok, false);
+  assert.equal(mixed.code, "BOLETIM_CICLOS_MISTURADOS");
 });
