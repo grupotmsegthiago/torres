@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-17 — NFS-e: `municipalServiceId` string `"402"` (não 402.0)
+
+- Causa: o Asaas recebia número (`402.0` no log). Natan: o JSON tem de ser `"municipalServiceId": "402"`.
+- Correção: `asMunicipalServiceIdString` no motor único; omitir `municipalServiceCode`; log `[asaas] NFS-e wire JSON` com `typeof` e `JSON.stringify` do ID.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-MUNICIPAL-ID-STRING-2026-09-17.md`.
+
 ## 2026-09-14 — NFS-e Asaas: `_NFe002` código municipal ausente
 
 - Causa: Torres no Portal Nacional enviava `municipalServiceId` 402; o portal ignora o código `07870` e devolve `_NFe002`.

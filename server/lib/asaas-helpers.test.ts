@@ -61,8 +61,11 @@ import {
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
   municipalServiceNameOficial,
+  asMunicipalServiceIdString,
+  summarizeNfseWirePayload,
   todayDateStr,
   isMissingMunicipalServiceCode,
+  shouldCancelRescheduleNfse,
   isQueuedAtPrefecture,
   isLocalNfProcessingPlaceholder,
   asaasCustomerEmailAllowed,
@@ -285,9 +288,11 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
   assert.match(p.observations, /CNAE 7870/);
   assert.match(p.observations, /Escolta Armada/);
-  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal("municipalServiceCode" in p, false);
   assert.equal(p.municipalServiceName, municipalServiceNameOficial());
-  assert.equal(p.municipalServiceId, null);
+  assert.equal(p.municipalServiceId, "402");
+  assert.equal(typeof p.municipalServiceId, "string");
+  assert.equal(JSON.stringify({ municipalServiceId: p.municipalServiceId }), '{"municipalServiceId":"402"}');
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
@@ -313,9 +318,10 @@ test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () =
   assert.equal("payment" in put, false);
   assert.equal("customer" in put, false);
   assert.equal(put.serviceDescription, DESCRICAO_SERVICO_FIXA);
-  assert.equal(put.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal("municipalServiceCode" in put, false);
   assert.equal(put.municipalServiceName, municipalServiceNameOficial());
-  assert.equal(put.municipalServiceId, null);
+  assert.equal(put.municipalServiceId, "402");
+  assert.equal(typeof put.municipalServiceId, "string");
   assert.equal(put.updatePayment, false);
   assert.equal(put.taxes.iss, 2);
   assert.equal(put.taxes.retainIss, true);
@@ -487,20 +493,33 @@ test("buildNfseInvoicePayload: retemInss=true seta INSS efetivo 5,5% e ISS 2%", 
   assert.match(p.observations, /R\$ 55,00/);
 });
 
-test("buildNfseInvoicePayload: override de municipalServiceId aplica", () => {
+test("buildNfseInvoicePayload: override de municipalServiceId aplica como string", () => {
   const p = buildNfseInvoicePayload({
     paymentId: "p", value: 100, description: "X", municipalServiceIdOverride: 999,
   });
-  assert.equal(p.municipalServiceId, 999);
+  assert.equal(p.municipalServiceId, "999");
+  assert.equal(typeof p.municipalServiceId, "string");
 });
 
-test("buildNfseInvoicePayload: Portal Nacional omite ID interno e manda código 07870", () => {
+test("buildNfseInvoicePayload: prefeitura manda municipalServiceId texto 402, sem código 07870", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
-  assert.equal(p.municipalServiceId, null);
-  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal(p.municipalServiceId, "402");
+  assert.equal(typeof p.municipalServiceId, "string");
+  assert.equal("municipalServiceCode" in p, false);
   assert.equal(p.municipalServiceName, "07870 - Vigilância, segurança ou monitoramento de bens, pessoas e semoventes");
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
   assert.equal(String(p.serviceDescription).startsWith("07870"), false);
+  assert.equal(JSON.stringify({ municipalServiceId: p.municipalServiceId }), '{"municipalServiceId":"402"}');
+  const wire = summarizeNfseWirePayload(p);
+  assert.equal(wire.municipalServiceIdType, "string");
+  assert.equal(wire.municipalServiceIdJson, '"402"');
+});
+
+test("asMunicipalServiceIdString: nunca serializa 402.0", () => {
+  assert.equal(asMunicipalServiceIdString(402), "402");
+  assert.equal(asMunicipalServiceIdString(402.0), "402");
+  assert.equal(asMunicipalServiceIdString("402"), "402");
+  assert.equal(JSON.stringify(asMunicipalServiceIdString(402.0)), '"402"');
 });
 
 test("buildNfseInvoicePayload: observations custom não sobrescreve o modelo oficial", () => {
@@ -866,6 +885,21 @@ test("isAsaasPrefeituraRejection: rejeição ≠ fila da prefeitura", () => {
   assert.equal(isAsaasPrefeituraRejection("Retorno do portal nacional: Falha ao comunicar com o sistema da prefeitura"), true);
   assert.equal(isAsaasPrefeituraRejection("Código: _NFe002\nDescrição: O Código de Serviço municipal deve ser informado"), true);
   assert.equal(isMissingMunicipalServiceCode("_NFe002 código de serviço municipal deve ser informado"), true);
+});
+
+test("shouldCancelRescheduleNfse: _NFe002 cancela; SYNCHRONIZED só no pedido explícito", () => {
+  assert.equal(shouldCancelRescheduleNfse({
+    id: "inv_1", status: "ERROR", message: "_NFe002 código municipal",
+  }), "inv_1");
+  assert.equal(shouldCancelRescheduleNfse({
+    id: "inv_1", status: "SYNCHRONIZED", number: null,
+  }), null);
+  assert.equal(shouldCancelRescheduleNfse({
+    id: "inv_1", status: "SYNCHRONIZED", number: null, explicit: true,
+  }), "inv_1");
+  assert.equal(shouldCancelRescheduleNfse({
+    id: "inv_1", status: "AUTHORIZED", number: "309", explicit: true,
+  }), null);
 });
 
 test("nfseUpdatesFromAsaasObject: SYNCHRONIZED com rejeição vira ERROR", () => {

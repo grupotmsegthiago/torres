@@ -62,6 +62,11 @@ import {
   isOpenNfFollowUpStatus,
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
+  shouldCancelRescheduleNfse,
+  isAsaasNfCancelBlockedProcessing,
+  MUNICIPAL_SERVICE_ID_DEFAULT,
+  asMunicipalServiceIdString,
+  summarizeNfseWirePayload,
   assertFiscalAddressForNf,
   asaasCustomerEmailAllowed,
   isAsaasNotificationPolicyCompliant,
@@ -136,18 +141,16 @@ function getApiKey(): string {
 }
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  // Portal Nacional: NÃO enviar municipalServiceId (FAQ Asaas / padrão TM SEG).
-  // ASAAS_MUNICIPAL_SERVICE_ID=402 na Vercel provocava _NFe002 — ignorar de propósito.
   const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
+  let override: number | undefined;
   if (raw && raw.trim()) {
-    console.warn("[asaas] ASAAS_MUNICIPAL_SERVICE_ID ignorada — Portal Nacional exige municipalServiceCode (07870). Enviar ID interno provoca _NFe002.");
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) override = n;
+    else console.error(`[asaas] ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — usando ${asMunicipalServiceIdString(MUNICIPAL_SERVICE_ID_DEFAULT)}`);
   }
-  const payload = buildNfseInvoicePayloadBase({ ...opts });
-  console.log("[asaas] NFS-e payload:", JSON.stringify({
-    municipalServiceCode: payload.municipalServiceCode,
-    municipalServiceName: payload.municipalServiceName,
-    municipalServiceId: payload.municipalServiceId,
-  }));
+  const payload = buildNfseInvoicePayloadBase({ ...opts, municipalServiceIdOverride: override });
+  payload.municipalServiceId = asMunicipalServiceIdString(payload.municipalServiceId);
+  console.log("[asaas] NFS-e payload:", JSON.stringify(summarizeNfseWirePayload(payload)));
   return payload;
 }
 
@@ -212,6 +215,8 @@ async function emitNfseImmediate(opts: {
   existingNfNumber?: string | null;
   existingServiceDescription?: string | null;
   existingRpsNumber?: string | number | null;
+  existingNfErrorMessage?: string | null;
+  forceReschedule?: boolean;
 }): Promise<{ id: string; status: string; number?: string }> {
   // Validação preventiva: se o caller informa o e-mail do cliente e ele está
   // ausente/inválido, nem chamamos o Asaas — a NF seria rejeitada de qualquer
@@ -236,8 +241,28 @@ async function emitNfseImmediate(opts: {
   let result: any;
   let nfId: string;
   const existingId = String(opts.existingNfId || "").trim();
+  const cancelId = shouldCancelRescheduleNfse({
+    id: existingId,
+    status: opts.existingNfStatus,
+    number: opts.existingNfNumber,
+    message: opts.existingNfErrorMessage,
+    explicit: opts.forceReschedule === true,
+  });
 
-  if (putId) {
+  if (cancelId) {
+    try {
+      const cancelResult = await asaasRequest("POST", `/invoices/${cancelId}/cancel`);
+      console.log(`[asaas] NFS-e ${cancelId} cancelada para nova emissão: status=${cancelResult?.status}`);
+    } catch (cancelErr: any) {
+      if (isAsaasNfCancelBlockedProcessing(cancelErr.message)) {
+        throw new Error(`NFS-e ainda em processamento na prefeitura — não foi possível cancelar (${cancelErr.message}).`);
+      }
+      console.log(`[asaas] cancel ${cancelId}: ${cancelErr.message}`);
+    }
+    result = await asaasRequest("POST", "/invoices", payload);
+    nfId = result.id;
+    console.log(`[asaas] NFS-e recriada via POST /invoices: id=${nfId}, status=${result.status}`);
+  } else if (putId) {
     result = await asaasRequest("PUT", `/invoices/${putId}`, buildNfsePutPayload(payload));
     nfId = String(result.id || putId);
     console.log(`[asaas] NFS-e atualizada via PUT /invoices/${putId}: status=${result.status}`);
@@ -377,7 +402,7 @@ export function enqueueIsolatedNfse(invoiceId: number): void {
  */
 export async function retryNfseForInvoice(
   invoiceId: number,
-  opts?: { source?: string; bypassAge?: boolean },
+  opts?: { source?: string; bypassAge?: boolean; rescheduleStuck?: boolean },
 ): Promise<{ ok: boolean; message: string; status?: string }> {
   const id = Number(invoiceId);
   if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
@@ -436,13 +461,20 @@ export async function retryNfseForInvoice(
       existing.nf?.id || invoice.nfse_number,
       liveMsg,
     );
+    const rescheduleId = shouldCancelRescheduleNfse({
+      id: existing.nf?.id || invoice.nfse_number,
+      status: existing.nf?.status || invoice.nfse_status,
+      number: existing.nf?.number ?? invoice.nfse_number,
+      message: liveMsg,
+      explicit: opts?.rescheduleStuck === true,
+    });
     const missing = shouldAutoEmitMissingNfse(invoice, {
       paymentLookupEmpty: existing.paymentLookupEmpty,
       emiteNf: true,
     });
     const kickMissing = opts?.bypassAge === true && existing.paymentLookupEmpty;
 
-    if (!putId && !nudge && !missing && !kickMissing) {
+    if (!putId && !nudge && !missing && !kickMissing && !rescheduleId) {
       const nfSync = await collectNfseSyncUpdates(invoice);
       if (Object.keys(nfSync.updates).length > 0) {
         await supabaseAdmin.from("invoices").update({ ...nfSync.updates, updated_at: new Date().toISOString() }).eq("id", id);
@@ -462,6 +494,8 @@ export async function retryNfseForInvoice(
       existingNfNumber: existing.nf?.number ?? null,
       existingServiceDescription: existing.nf?.serviceDescription ?? null,
       existingRpsNumber: existing.nf?.rpsNumber ?? null,
+      existingNfErrorMessage: liveMsg,
+      forceReschedule: !!rescheduleId,
     });
     await supabaseAdmin.from("invoices").update({
       ...nfseFieldsFromEmitResult(result),
@@ -1187,7 +1221,13 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
 
   const opts: RequestInit = { method, headers };
   if (body && method !== "GET") {
+    if (body.municipalServiceId != null) {
+      body.municipalServiceId = asMunicipalServiceIdString(body.municipalServiceId);
+    }
     opts.body = JSON.stringify(body);
+    if (/\/invoices/.test(path) && !/\/authorize|\/cancel/.test(path)) {
+      console.log("[asaas] NFS-e wire JSON:", JSON.stringify(summarizeNfseWirePayload(body)));
+    }
   }
 
   const timeoutMs = /\/invoices/.test(path) ? ASAAS_INVOICE_TIMEOUT_MS : ASAAS_REQUEST_TIMEOUT_MS;

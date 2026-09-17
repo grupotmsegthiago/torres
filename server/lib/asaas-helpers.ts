@@ -25,11 +25,35 @@ export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
 /**
- * ID interno Asaas (lista municipal). No Portal Nacional NÃO enviar:
- * o portal devolve `_NFe002` (código de serviço municipal ausente).
- * Só use se GET /fiscalInfo/services devolver lista (prefeitura própria).
+ * ID Asaas do serviço 07870 | 11.02 (GET /invoices/municipalServices).
+ * Prefeitura: enviar municipalServiceId como STRING JSON `"402"` — nunca número 402 / 402.0
+ * (orientação Natan/Asaas 2026-09-17). Não enviar municipalServiceCode.
  */
 export const MUNICIPAL_SERVICE_ID_DEFAULT = 402;
+export const MUNICIPAL_SERVICE_EXTERNAL_ID = 402;
+
+/** Sempre texto `"402"`. Número vira 402.0 no log do Asaas e a prefeitura rejeita. */
+export function asMunicipalServiceIdString(raw?: number | string | null): string {
+  const n = parseInt(String(raw ?? MUNICIPAL_SERVICE_ID_DEFAULT), 10);
+  const id = Number.isFinite(n) && n > 0 ? n : MUNICIPAL_SERVICE_ID_DEFAULT;
+  return String(id);
+}
+
+/** Recorte do JSON que vai no fio — para log e para o Natan conferir as aspas. */
+export function summarizeNfseWirePayload(body: Record<string, any>): Record<string, unknown> {
+  const id = body?.municipalServiceId;
+  return {
+    municipalServiceId: id ?? null,
+    municipalServiceIdType: typeof id,
+    municipalServiceIdJson: JSON.stringify(id),
+    municipalServiceCode: Object.prototype.hasOwnProperty.call(body, "municipalServiceCode")
+      ? body.municipalServiceCode
+      : "(omitido)",
+    municipalServiceName: body?.municipalServiceName ?? null,
+    municipalServiceExternalId: body?.municipalServiceExternalId ?? "(omitido)",
+    taxes: body?.taxes ?? null,
+  };
+}
 /** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
 export const ISS_ALIQUOTA = 2;
 export const ISS_RETAIN = true;
@@ -564,7 +588,6 @@ export function buildNfseInvoicePayload(opts: {
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
-    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     municipalServiceName: municipalServiceNameOficial(),
     taxes: {
       retainIss: ISS_RETAIN,
@@ -572,13 +595,14 @@ export function buildNfseInvoicePayload(opts: {
       cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
     },
   };
-  // Portal Nacional: municipalServiceCode + municipalServiceId null.
-  // ID interno (ex. 402) faz o portal ignorar o código e devolver _NFe002.
-  if (opts.municipalServiceIdOverride && Number.isFinite(opts.municipalServiceIdOverride) && opts.municipalServiceIdOverride > 0) {
-    payload.municipalServiceId = opts.municipalServiceIdOverride;
-  } else {
-    payload.municipalServiceId = null;
-  }
+  // Prefeitura: municipalServiceId STRING "402". NÃO enviar municipalServiceCode
+  // (esse campo é Portal Nacional; número 402.0 é o que o Asaas acusou).
+  payload.municipalServiceId = asMunicipalServiceIdString(
+    opts.municipalServiceIdOverride && Number.isFinite(opts.municipalServiceIdOverride) && opts.municipalServiceIdOverride > 0
+      ? opts.municipalServiceIdOverride
+      : MUNICIPAL_SERVICE_ID_DEFAULT,
+  );
+  payload.municipalServiceExternalId = MUNICIPAL_SERVICE_EXTERNAL_ID;
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;
@@ -595,9 +619,9 @@ export function buildNfsePutPayload(postPayload: Record<string, any>): Record<st
     value: postPayload.value,
     deductions: postPayload.deductions ?? 0,
     effectiveDate: postPayload.effectiveDate,
-    municipalServiceCode: postPayload.municipalServiceCode,
     municipalServiceName: postPayload.municipalServiceName,
-    municipalServiceId: postPayload.municipalServiceId ?? null,
+    municipalServiceId: asMunicipalServiceIdString(postPayload.municipalServiceId),
+    municipalServiceExternalId: postPayload.municipalServiceExternalId ?? MUNICIPAL_SERVICE_EXTERNAL_ID,
     taxes: postPayload.taxes,
     updatePayment: false,
   };
@@ -936,6 +960,28 @@ export function isMunicipalCommFailure(message: string | null | undefined): bool
 export function isMissingMunicipalServiceCode(message: string | null | undefined): boolean {
   const m = String(message || "");
   return /_nfe002/i.test(m) || /c[oó]digo de servi[cç]o municipal deve ser informado/i.test(m);
+}
+
+/**
+ * PUT do Asaas não grava municipalServiceCode em nota já aberta (Portal Nacional).
+ * Padrão TM: cancelar a inv_* e POST outra na mesma cobrança.
+ * Cron: só ERROR / _NFe002. Manual (`explicit`): também SYNCHRONIZED/SCHEDULED sem nº municipal.
+ */
+export function shouldCancelRescheduleNfse(opts: {
+  id?: string | null;
+  status?: string | null;
+  number?: string | null;
+  message?: string | null;
+  explicit?: boolean;
+}): string | null {
+  const id = String(opts.id || "").trim();
+  if (!isAsaasInvoiceId(id)) return null;
+  if (isNfFullyIssued(opts.status, opts.number)) return null;
+  const st = String(opts.status || "").toUpperCase();
+  if (st.includes("CANCEL")) return null;
+  if (isMissingMunicipalServiceCode(opts.message)) return id;
+  if (opts.explicit === true && (st === "SYNCHRONIZED" || st === "SCHEDULED" || st === "ERROR" || st === "AUTHORIZED")) return id;
+  return null;
 }
 
 /**
