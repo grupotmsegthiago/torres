@@ -1,10 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  appearsInFaturamentoReport,
   assessBoletimCoverage,
   billingCycleLabel,
   daysBetween,
+  isCanceladaOs,
+  isOsInvoicedStatus,
   isOsReadyForBoletim,
+  isRecusadaOs,
   lastDayOfMonth,
   normalizeBillingCycle,
   periodClosed,
@@ -105,4 +109,20 @@ test("periodClosed: quinzena vigente ainda não venceu", () => {
 test("daysBetween: atraso de pagamento", () => {
   assert.equal(daysBetween("2026-09-01", "2026-09-11"), 10);
   assert.equal(daysBetween("2026-09-11", "2026-09-11"), 0);
+});
+
+test("isCanceladaOs: recusada com billing CANCELADO não conta como cancelada", () => {
+  assert.equal(isCanceladaOs("cancelada", "CANCELADO"), true);
+  assert.equal(isCanceladaOs("concluida", "CANCELADO"), true);
+  assert.equal(isCanceladaOs("recusada", "CANCELADO"), false);
+  assert.equal(isRecusadaOs("recusada", "CANCELADO"), true);
+});
+
+test("appearsInFaturamentoReport: oculta recusada; faturada permanece", () => {
+  assert.equal(appearsInFaturamentoReport("recusada", "CANCELADO"), false);
+  assert.equal(appearsInFaturamentoReport("recusada", "REJEITADA"), false);
+  assert.equal(appearsInFaturamentoReport("recusada", "FATURADO"), true);
+  assert.equal(appearsInFaturamentoReport("cancelada", "CANCELADO"), true);
+  assert.equal(appearsInFaturamentoReport("concluida", "APROVADA"), true);
+  assert.equal(isOsInvoicedStatus("FATURADA"), true);
 });

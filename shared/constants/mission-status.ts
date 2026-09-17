@@ -1,3 +1,5 @@
+import { isOsInvoicedStatus } from "../billing-cycle";
+
 export type OsStatus =
   | "pending"
   | "accepted"
@@ -61,7 +63,7 @@ export const OS_STATUS_MAP: Record<OsStatus, StatusDescriptor> = {
   in_progress: desc("Em Andamento", "indigo",  { appearsInMedicao: false, appearsInFaturamento: false, countsRevenue: false }),
   completed:   desc("Concluída",    "emerald", { appearsInMedicao: true,  appearsInFaturamento: true,  countsRevenue: true  }),
   cancelada:   desc("Cancelada",    "red",     { appearsInMedicao: true,  appearsInFaturamento: true,  countsRevenue: false }),
-  recusada:    desc("Recusada",     "orange",  { appearsInMedicao: true,  appearsInFaturamento: true,  countsRevenue: false }),
+  recusada:    desc("Recusada",     "orange",  { appearsInMedicao: true,  appearsInFaturamento: false, countsRevenue: false }),
 };
 
 export const BILLING_STATUS_MAP: Record<BillingStatus, StatusDescriptor> = {
@@ -94,6 +96,9 @@ export function getRelatorioStatus(
   billingStatus: string | null | undefined,
   osMissionStatus?: string | null | undefined
 ): StatusDescriptor {
+  // Fatura do período já gerada: permanece Faturada/Paga, mesmo se a OS
+  // foi recusada ou cancelada depois.
+  if (isOsInvoicedStatus(billingStatus)) return getBillingStatusInfo(billingStatus);
   if (osStatus === "recusada") return OS_STATUS_MAP.recusada;
   if (osStatus === "cancelada") return OS_STATUS_MAP.cancelada;
   // Operacional manda no Faturamento: OS concluída + missão encerrada vale como APROVADA
@@ -132,17 +137,14 @@ export function getRelatorioBadges(
   billingStatus: string | null | undefined,
   osMissionStatus?: string | null | undefined
 ): StatusDescriptor[] {
-  // Recusada = operacional não atendeu — selo único
+  if (isOsInvoicedStatus(billingStatus)) return [getBillingStatusInfo(billingStatus)];
+
+  // Recusada = operacional não atendeu — selo único (oculta no relatório)
   if (osStatus === "recusada") return [OS_STATUS_MAP.recusada];
 
   // Cancelada pelo cliente: se já tinha sido aprovada antes, mostra o selo combinado
   if (osStatus === "cancelada") {
-    const wasApproved =
-      billingStatus === "APROVADA" ||
-      billingStatus === "FATURADO" ||
-      billingStatus === "FATURADA" ||
-      billingStatus === "PAGO";
-    if (wasApproved) {
+    if (billingStatus === "APROVADA") {
       return [APROVADA_CANCELADA_DESCRIPTOR];
     }
     return [OS_STATUS_MAP.cancelada];

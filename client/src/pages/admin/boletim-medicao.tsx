@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
+import { appearsInFaturamentoReport, isCanceladaOs, isOsInvoicedStatus, isRecusadaOs } from "@shared/billing-cycle";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -404,11 +405,11 @@ export default function BoletimMedicaoPage() {
     if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => o.status !== "recusada" && o.status !== "cancelada" && !(String((o as any).cancellationReason || "").trim().length > 2) && (!o.billing || o.billing?.status === "A_VERIFICAR"));
     else if (statusFilter === "ENVIADA_APROVACAO") orders = orders.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
-    else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
-    else if (statusFilter === "A_FATURAR") orders = orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
-    else if (statusFilter === "FATURADA") orders = orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO");
-    else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
-    else if (statusFilter === "CANCELADA") orders = orders.filter(o => o.status === "cancelada" || o.status === "recusada" || (String((o as any).cancellationReason || "").trim().length > 2) || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO");
+    else if (statusFilter === "APROVADA") orders = orders.filter(o => !isRecusadaOs(o.status, o.billing?.status) && !isCanceladaOs(o.status, o.billing?.status) && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado));
+    else if (statusFilter === "A_FATURAR") orders = orders.filter(o => !isRecusadaOs(o.status, o.billing?.status) && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
+    else if (statusFilter === "FATURADA") orders = orders.filter(o => isOsInvoicedStatus(o.billing?.status));
+    else if (statusFilter === "REJEITADA") orders = orders.filter(o => isRecusadaOs(o.status, o.billing?.status) && !isOsInvoicedStatus(o.billing?.status));
+    else if (statusFilter === "CANCELADA") orders = orders.filter(o => isCanceladaOs(o.status, o.billing?.status) && !isOsInvoicedStatus(o.billing?.status));
     else if (statusFilter === "FORA_CICLO") {
       orders = orders.filter(o => {
         if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
@@ -454,10 +455,11 @@ export default function BoletimMedicaoPage() {
   const liveCount = periodFilteredOs.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
   const pendingCount = periodFilteredOs.filter(o => o.status !== "recusada" && o.status !== "cancelada" && !(String((o as any).cancellationReason || "").trim().length > 2) && (!o.billing || o.billing?.status === "A_VERIFICAR")).length;
   const sentForApprovalCount = periodFilteredOs.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
-  const approvedCount = periodFilteredOs.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
-  const faturadoCount = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").length;
-  const aFaturarCount = periodFilteredOs.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
-  const canceladasCount = periodFilteredOs.filter(o => o.status === "cancelada" || o.status === "recusada" || (String((o as any).cancellationReason || "").trim().length > 2) || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO").length;
+  const approvedCount = periodFilteredOs.filter(o => !isRecusadaOs(o.status, o.billing?.status) && !isCanceladaOs(o.status, o.billing?.status) && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado)).length;
+  const faturadoCount = periodFilteredOs.filter(o => isOsInvoicedStatus(o.billing?.status)).length;
+  const aFaturarCount = periodFilteredOs.filter(o => !isRecusadaOs(o.status, o.billing?.status) && (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
+  const canceladasCount = periodFilteredOs.filter(o => isCanceladaOs(o.status, o.billing?.status) && !isOsInvoicedStatus(o.billing?.status)).length;
+  const recusadasCount = periodFilteredOs.filter(o => isRecusadaOs(o.status, o.billing?.status) && !isOsInvoicedStatus(o.billing?.status)).length;
   const foraCicloCount = periodFilteredOs.filter(o => {
     if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
     const bStatus = o.billing?.status;
@@ -504,9 +506,10 @@ export default function BoletimMedicaoPage() {
   const isLiveOs = (os: any) => os.status !== "recusada" && os.status !== "cancelada" && (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
 
   const exportBoletimExcel = () => {
-    if (periodFilteredOs.length === 0) return;
+    const excelOs = periodFilteredOs.filter(o => appearsInFaturamentoReport(o.status, o.billing?.status));
+    if (excelOs.length === 0) return;
     const headers = ["#", "OS", "Cliente", "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Total", "Status"];
-    const rows = periodFilteredOs.map((os: any, i: number) => {
+    const rows = excelOs.map((os: any, i: number) => {
       const b = os.billing;
       const route = [os.origin, os.destination].filter(Boolean).join(" → ");
       return [
@@ -536,13 +539,13 @@ export default function BoletimMedicaoPage() {
     });
     const totals: (string | number)[] = Array(22).fill("");
     totals[0] = "TOTAL";
-    totals[14] = `${periodFilteredOs.length} OS`;
-    totals[15] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
-    totals[16] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_hora_extra || 0), 0).toFixed(2));
-    totals[17] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
-    totals[18] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
-    totals[19] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
-    totals[20] = Number(totalFaturamento.toFixed(2));
+    totals[14] = `${excelOs.length} OS`;
+    totals[15] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
+    totals[16] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_hora_extra || 0), 0).toFixed(2));
+    totals[17] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
+    totals[18] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
+    totals[19] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
+    totals[20] = Number(excelOs.reduce((s: number, o: any) => s + getBillingTotal(o), 0).toFixed(2));
     const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
     exportFormattedExcel({
       title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
@@ -664,7 +667,7 @@ export default function BoletimMedicaoPage() {
             ["APROVADA", `Aprovadas (${approvedCount})`],
             ["A_FATURAR", `A Faturar (${aFaturarCount})`],
             ["FATURADA", `Faturadas (${faturadoCount})`],
-            ["REJEITADA", "Recusadas"],
+            ["REJEITADA", `Recusadas (${recusadasCount})`],
             ["CANCELADA", `Canceladas (${canceladasCount})`],
             ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : []),
           ] as [StatusFilter, string][]).map(([val, label]) => (
@@ -1398,9 +1401,8 @@ export default function BoletimMedicaoPage() {
                               const checkedInGroup = group.orders.filter(o => checkedOsIds.has(o.id));
                               const checkedCount = checkedInGroup.length;
                               const checkedTotal = checkedInGroup.reduce((acc, o) => {
-                                if (o.status === "recusada" || o.status === "cancelada") return acc;
-                                const b = o.billing;
-                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0);
+                                if (isRecusadaOs(o.status, o.billing?.status) && !isOsInvoicedStatus(o.billing?.status)) return acc;
+                                return acc + getBillingTotal(o);
                               }, 0);
                               return checkedCount > 0 ? (
                                 <tr className="bg-blue-50/80 border-b">

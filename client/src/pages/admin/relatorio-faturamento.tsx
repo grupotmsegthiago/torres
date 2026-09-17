@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
+import { appearsInFaturamentoReport } from "@shared/billing-cycle";
 import { clientEmailsJoined } from "@shared/client-emails";
 import { OsDetailModal, NumInput } from "./boletim-medicao";
 
@@ -155,9 +156,8 @@ export default function RelatorioFaturamentoPage() {
   const activeApproval = approvalStatus?.active || null;
 
   // Para faturamento: ENTRAM Aprovadas + A Verificar + Canceladas pelo cliente.
-  // SAEM Recusadas (operacional não atendeu) e Faturadas/Pagas (já viraram fatura).
-  // A regra "OS concluída + missão encerrada" também conta como aprovada,
-  // espelhando getRelatorioStatus (shared/constants/mission-status.ts).
+  // SAEM Recusadas (operacional não atendeu). Faturadas/Pagas saem da NOVA fatura
+  // mas continuam no relatório com selo FATURADA.
   const isFaturavelBilling = (b: any) => {
     const st = String(b.status || "").toUpperCase();
     if (st === "FATURADO" || st === "FATURADA" || st === "PAGO") return false;
@@ -407,7 +407,8 @@ export default function RelatorioFaturamentoPage() {
             b._so_cancellation_reason = so.cancellationReason || so.cancellation_reason || "";
           }
           return b;
-        });
+        })
+        .filter((b: any) => appearsInFaturamentoReport(b._so_status, b.status));
 
       setBillings(approved);
       setReportGenerated(true);
@@ -798,9 +799,8 @@ export default function RelatorioFaturamentoPage() {
     let totalHours = 0;
     let totalMissoes = 0;
 
-    // Dashboard exclui RECUSADAS (operacional não atendeu, R$ 0, não conta).
-    // Conta apenas APROVADAS + CANCELADAS pelo cliente (que cobram acionamento+extras).
-    const dashRows = rowsData.filter(r => r.osStatus !== "recusada");
+    // Dashboard: recusadas ocultas; faturadas do período permanecem.
+    const dashRows = rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status));
 
     for (const r of dashRows) {
       totalKm += r.kmTotal;
@@ -977,7 +977,7 @@ export default function RelatorioFaturamentoPage() {
     console.log("[Excel] clientLabel:", clientLabel, "isLuft:", isLuft, "isOmega:", isOmega, "rows:", rowsData.length);
 
     if (isLuft) {
-      const filteredRows = rowsData.filter(r => r.osStatus !== "recusada");
+      const filteredRows = rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status));
       const empIds = [...new Set(filteredRows.flatMap(r => {
         const b = r._raw;
         return [b?.vigilante_id, b?.vigilante2_id].filter(Boolean);
@@ -1084,7 +1084,7 @@ export default function RelatorioFaturamentoPage() {
     }
 
     const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
-    const baseDataRows = rowsData.filter(r => r.osStatus !== "recusada").map(r => [
+    const baseDataRows = rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status)).map(r => [
       r.id, r.route, Number(r.activationFee || 0), r.franchiseHoursFmt, r.franchiseKm > 0 ? r.franchiseKm : 0, Number(r.unitHr || 0), Number(r.unitKm || 0),
       r.startDate, r.startTime, r.viatura, r.cargoPlate, r.endDate, r.endTime,
       r.kmStart > 0 ? r.kmStart : 0, r.kmEnd > 0 ? r.kmEnd : 0, r.kmTotal > 0 ? r.kmTotal : 0,
@@ -1419,8 +1419,7 @@ export default function RelatorioFaturamentoPage() {
         // do badge da linha) — assim OS concluída + missão encerrada conta
         // como Aprovada mesmo que o billing ainda esteja A_VERIFICAR.
         const aprovadasRows = rowsData.filter(r => effectiveLabel(r) === "Aprovada");
-        const canceladasRows = rowsData.filter(r => effectiveLabel(r) === "Cancelada");
-        const recusadasRows = rowsData.filter(r => effectiveLabel(r) === "Recusada");
+        const canceladasRows = rowsData.filter(r => effectiveLabel(r) === "Cancelada" || effectiveLabel(r) === "Aprovada / Cancelada");
         const faturadasRows = rowsData.filter(r => {
           const st = String(r.status || "").toUpperCase();
           return st === "FATURADO" || st === "FATURADA" || st === "PAGO";
@@ -1429,17 +1428,17 @@ export default function RelatorioFaturamentoPage() {
           const lbl = effectiveLabel(r);
           return lbl === "A Verificar" || lbl === "Pendente" || lbl === "Enviada Aprovação";
         });
+        const visibleRows = rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status));
         const sumTotal = (arr: typeof rowsData) => arr.reduce((s, r) => s + r.totalGeral, 0);
         const aprovadasTotal = sumTotal(aprovadasRows);
         const pendentesTotal = sumTotal(pendentesRows);
         const canceladasTotal = sumTotal(canceladasRows);
         const faturadasTotal = sumTotal(faturadasRows);
         // Total p/ Faturamento = Aprovadas + A Verificar + Canceladas pelo
-        // cliente. Recusadas (operacional não atendeu) e já Faturadas ficam
-        // de fora. É o valor que o botão "Gerar Fatura" vai cobrar.
+        // cliente. Recusadas (ocultas) e já Faturadas ficam de fora da nova fatura.
         const totalFaturamento = aprovadasTotal + pendentesTotal + canceladasTotal;
         const totalCount = aprovadasRows.length + pendentesRows.length + canceladasRows.length;
-        const tooltip = "Total p/ Faturamento = Aprovadas + A Verificar + Canceladas. Recusadas e Faturadas não entram.";
+        const tooltip = "Total p/ Faturamento = Aprovadas + A Verificar + Canceladas. Recusadas ocultas; já faturadas permanecem visíveis.";
         return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
@@ -1458,10 +1457,10 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-lg font-black text-red-900 font-mono">{canceladasRows.length}</p>
               <p className="text-[10px] font-bold text-red-800 font-mono">{fmt(canceladasTotal)}</p>
             </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5" data-testid="stat-recusadas" title="Operacional não atendeu — não entra no faturamento">
-              <p className="text-[9px] font-black uppercase tracking-wider text-orange-700">Recusadas</p>
-              <p className="text-lg font-black text-orange-900 font-mono">{recusadasRows.length}</p>
-              <p className="text-[10px] font-bold text-orange-800 font-mono">R$ 0,00</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5" data-testid="stat-faturadas" title="Fatura do período já gerada — OS permanece faturada">
+              <p className="text-[9px] font-black uppercase tracking-wider text-amber-800">Faturadas</p>
+              <p className="text-lg font-black text-amber-900 font-mono">{faturadasRows.length}</p>
+              <p className="text-[10px] font-bold text-amber-800 font-mono">{fmt(faturadasTotal)}</p>
             </div>
             <div className="bg-gray-900 border border-gray-900 rounded-lg px-3 py-2.5" data-testid="stat-total" title={tooltip}>
               <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total p/ Faturamento</p>
@@ -1474,9 +1473,6 @@ export default function RelatorioFaturamentoPage() {
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700 flex-1">
               {totalCount} OS &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
-              {recusadasRows.length > 0 && (
-                <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">{recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
-              )}
               {faturadasRows.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadasRows.length} já faturada{faturadasRows.length > 1 ? "s" : ""}</span>
               )}
@@ -1493,7 +1489,7 @@ export default function RelatorioFaturamentoPage() {
             </button>
           </div>
           <div className="space-y-1">
-            {rowsData.map((r, i) => {
+            {visibleRows.map((r, i) => {
               const isExpanded = expandedRows.has(r.billingId);
               return (
                 <div key={r.billingId} className={`border rounded-lg ${isExpanded ? "border-gray-300 bg-gray-50" : "border-gray-100"}`}>
@@ -1636,7 +1632,7 @@ export default function RelatorioFaturamentoPage() {
                 </tr>
               </thead>
               <tbody>
-                {rowsData.filter(r => r.osStatus !== "recusada").map((r, i) => (
+                {rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status)).map((r, i) => (
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
                     <td style={{ ...cellBold, fontSize: "10.5px", backgroundColor: "#f3f4f6", color: "#111", fontWeight: 900 }}>{i + 1}</td>
                     <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.id}</td>
@@ -2024,7 +2020,7 @@ export default function RelatorioFaturamentoPage() {
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Valor Total</p>
                   <p className="text-xl font-black font-mono text-blue-800" data-testid="text-send-total">{fmt(sendableTotal)}</p>
-                  <p className="text-[10px] text-blue-500">{sendableBillings.length} OS no boletim{billings.length > sendableBillings.length ? ` (${billings.length - sendableBillings.length} recusada(s)/fora)` : ""}</p>
+                  <p className="text-[10px] text-blue-500">{sendableBillings.length} OS no boletim{billings.length > sendableBillings.length ? ` (${billings.length - sendableBillings.length} já faturada(s))` : ""}</p>
                 </div>
               </div>
             </div>

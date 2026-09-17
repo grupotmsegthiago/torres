@@ -139,6 +139,23 @@ export function isRecusadaOs(osStatus?: string | null, billingStatus?: string | 
   return os === "recusada" || bill === "REJEITADA" || bill === "RECUSADA";
 }
 
+/** Cancelada pelo cliente — nunca recusada. Billing CANCELADO de recusada não conta aqui. */
+export function isCanceladaOs(osStatus?: string | null, billingStatus?: string | null): boolean {
+  if (isRecusadaOs(osStatus, billingStatus)) return false;
+  const os = String(osStatus || "").toLowerCase();
+  const bill = String(billingStatus || "").toUpperCase();
+  return os === "cancelada" || bill === "CANCELADA" || bill === "CANCELADO";
+}
+
+/**
+ * Relatório de faturamento: ocultar recusada; aprovada/cancelada entram.
+ * Se a fatura do período já foi gerada, a OS permanece visível como faturada.
+ */
+export function appearsInFaturamentoReport(osStatus?: string | null, billingStatus?: string | null): boolean {
+  if (isOsInvoicedStatus(billingStatus)) return true;
+  return !isRecusadaOs(osStatus, billingStatus);
+}
+
 /** OS que entra no boletim / precisa ser faturada. Recusada fica de fora (§8.1). */
 export function isBillableOs(osStatus?: string | null, billingStatus?: string | null): boolean {
   return !isRecusadaOs(osStatus, billingStatus);
