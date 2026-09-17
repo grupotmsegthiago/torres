@@ -7,6 +7,7 @@ import type { Express } from "express";
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
+  import { fetchBillingsForOsScheduledInWindow } from "../lib/billing-period";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
@@ -1768,6 +1769,25 @@ import type { Express } from "express";
         if (to) query = query.lte("data_missao", to as string);
         return query.range(offset, limitTo);
       });
+
+      if (client_id && from && to) {
+        const extra = await fetchBillingsForOsScheduledInWindow({
+          clientId: Number(client_id),
+          fromIso: String(from),
+          toIso: String(to),
+          alreadyHaveOsIds: list.map((b: any) => b.service_order_id),
+        });
+        if (extra.length > 0) {
+          const seen = new Set(list.map((b: any) => String(b.id)));
+          for (const b of extra) {
+            const id = String(b.id);
+            if (!seen.has(id)) {
+              seen.add(id);
+              list.push(b);
+            }
+          }
+        }
+      }
 
       // Enriquecer com status real da OS para que o cliente saiba diferenciar
       // RECUSADA (operacional não atendeu) de CANCELADA (cliente cancelou).

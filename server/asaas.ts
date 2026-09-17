@@ -5,6 +5,7 @@ import { logSystemAudit } from "./audit";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, withTorresAlwaysCc, parseEmailList } from "../shared/client-emails";
 import { bustBalancoCaches } from "./lib/balanco-cache";
+import { fetchBillingsForOsScheduledInWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
 import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
 import {
@@ -3382,10 +3383,26 @@ export function registerAsaasRoutes(app: Express) {
 
       if (billErr) throw billErr;
 
+      const extraByOs = await fetchBillingsForOsScheduledInWindow({
+        clientId,
+        fromIso: fromDate,
+        toIso: toDate,
+        alreadyHaveOsIds: (rawBillings || []).map((b: any) => b.service_order_id),
+      });
+      const seenBill = new Set((rawBillings || []).map((b: any) => String(b.id)));
+      const periodBillings = [...(rawBillings || [])];
+      for (const b of extraByOs) {
+        const st = String(b.status || "").toUpperCase();
+        if (!seenBill.has(String(b.id)) && FATURAVEIS.includes(st)) {
+          seenBill.add(String(b.id));
+          periodBillings.push(b);
+        }
+      }
+
       // Exclui billings cuja OS foi RECUSADA pelo operacional (mesmo que o
       // bill.status ainda esteja A_VERIFICAR). Vamos buscar so.status pra
       // o conjunto carregado e filtrar.
-      const soIds = (rawBillings || []).map((b: any) => b.service_order_id).filter(Boolean);
+      const soIds = periodBillings.map((b: any) => b.service_order_id).filter(Boolean);
       const soStatusMap = new Map<string, string>();
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
@@ -3394,7 +3411,7 @@ export function registerAsaasRoutes(app: Express) {
           .in("id", soIds);
         for (const so of (sos || [])) soStatusMap.set(String(so.id), String(so.status || "").toLowerCase());
       }
-      const billings = (rawBillings || []).filter((b: any) => {
+      const billings = periodBillings.filter((b: any) => {
         const soSt = soStatusMap.get(String(b.service_order_id)) || "";
         return soSt !== "recusada";
       });

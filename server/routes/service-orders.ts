@@ -371,7 +371,7 @@ import type { Express } from "express";
           client_id: so.clientId, client_name: client?.name || "--",
           os_number: so.osNumber || null,
           origem: so.origin || null, destino: so.destination || null,
-          data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
+          data_missao: so.scheduledDate || (so as any).scheduled_date || (so as any).missionStartedAt || (so as any).mission_started_at || new Date().toISOString(),
           created_by: user.name,
         };
 
@@ -1551,7 +1551,7 @@ import type { Express } from "express";
                   origem: existing.origin || null,
                   destino: existing.destination || null,
                   placa_viatura: vehicle?.plate || null,
-                  data_missao: existing.scheduledDate || existing.missionStartedAt || new Date().toISOString(),
+                  data_missao: existing.scheduledDate || (existing as any).scheduled_date || existing.missionStartedAt || new Date().toISOString(),
                   created_by: adminName,
                   observacoes: `OS CANCELADA — contrato vinculado à OS${reason ? " | Motivo: " + reason : ""}`,
                 };
