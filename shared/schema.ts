@@ -75,12 +75,15 @@ export const clients = pgTable("clients", {
   responsavelComercialId: uuid("responsavel_comercial_id"),
   /** Usuário TORRES que cadastrou o cliente (escopo do perfil comercial). Sem FK. */
   createdByUserId: integer("created_by_user_id"),
+  /** Cadastro: ativo | inativo. Desativar preserva OS/contratos; não excluir. */
+  status: text("status").notNull().default("ativo"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertClientSchema = createInsertSchema(clients, {
   responsavelComercialId: z.string().uuid().nullable().optional(),
   createdByUserId: z.number().int().nullable().optional(),
+  status: z.enum(["ativo", "inativo"]).optional(),
 }).omit({ id: true, createdAt: true });
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;

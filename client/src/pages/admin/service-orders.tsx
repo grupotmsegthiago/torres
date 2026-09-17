@@ -17,6 +17,7 @@ import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield,
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
+import { isClientActive } from "@shared/client-duplicates";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -1603,7 +1604,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   data-testid="select-os-client"
                 >
                   <option value={0}>Selecione...</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
+                  {clients.filter((c) => isClientActive(c) || c.id === form.clientId).map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
                 </select>
               </div>
 

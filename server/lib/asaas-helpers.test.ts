@@ -20,6 +20,8 @@ import {
   CNAE_PRINCIPAL,
   CODIGO_SERVICO_MUNICIPAL,
   CODIGO_SERVICO_MUNICIPAL_CODE,
+  MUNICIPAL_SERVICE_ID_DEFAULT,
+  MUNICIPAL_SERVICE_EXTERNAL_ID,
   DESCRICAO_SERVICO_FIXA,
   TORRES_CNPJ,
   buildMarkEmittedInvoiceUpdates,
@@ -292,6 +294,7 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   assert.equal(p.municipalServiceName, municipalServiceNameOficial());
   assert.equal(p.municipalServiceId, "402");
   assert.equal(typeof p.municipalServiceId, "string");
+  assert.equal(p.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
   assert.equal(JSON.stringify({ municipalServiceId: p.municipalServiceId }), '{"municipalServiceId":"402"}');
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
@@ -322,6 +325,7 @@ test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () =
   assert.equal(put.municipalServiceName, municipalServiceNameOficial());
   assert.equal(put.municipalServiceId, "402");
   assert.equal(typeof put.municipalServiceId, "string");
+  assert.equal(put.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
   assert.equal(put.updatePayment, false);
   assert.equal(put.taxes.iss, 2);
   assert.equal(put.taxes.retainIss, true);
@@ -499,12 +503,14 @@ test("buildNfseInvoicePayload: override de municipalServiceId aplica como string
   });
   assert.equal(p.municipalServiceId, "999");
   assert.equal(typeof p.municipalServiceId, "string");
+  assert.equal("municipalServiceCode" in p, false);
 });
 
 test("buildNfseInvoicePayload: prefeitura manda municipalServiceId texto 402, sem código 07870", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
   assert.equal(p.municipalServiceId, "402");
   assert.equal(typeof p.municipalServiceId, "string");
+  assert.equal(p.municipalServiceExternalId, 402);
   assert.equal("municipalServiceCode" in p, false);
   assert.equal(p.municipalServiceName, "07870 - Vigilância, segurança ou monitoramento de bens, pessoas e semoventes");
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);

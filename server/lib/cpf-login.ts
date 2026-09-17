@@ -27,6 +27,54 @@ export function isSyntheticCpfEmail(email: string | null | undefined): boolean {
   return parseCpfFromSyntheticEmail(email) !== null;
 }
 
+/**
+ * CPF placeholder / provisório (ex.: 000.000.000-00, 000.000.000-24).
+ * Não entra na unicidade real — vários cadastros incompletos podem coexistir.
+ */
+export function isPlaceholderEmployeeCpf(cpf: string | null | undefined): boolean {
+  const d = cleanCpfDigits(cpf);
+  if (d.length !== 11) return true;
+  return /^0{9}/.test(d);
+}
+
+/** CPF real de 11 dígitos sujeito à unicidade em `employees`. */
+export function isEnforceableEmployeeCpf(cpf: string | null | undefined): boolean {
+  return isValidCpfDigits(cpf) && !isPlaceholderEmployeeCpf(cpf);
+}
+
+export type EmployeeCpfConflict = {
+  id: number;
+  name: string;
+  matricula: string | null;
+};
+
+/**
+ * Busca outro funcionário com o mesmo CPF (dígitos ou máscara).
+ * Placeholders não geram conflito.
+ */
+export async function findEmployeeCpfConflict(
+  cpf: string,
+  exceptEmployeeId: number | null = null,
+): Promise<EmployeeCpfConflict | null> {
+  if (!isEnforceableEmployeeCpf(cpf)) return null;
+  const { supabaseAdmin } = await import("../supabase");
+  const digits = cleanCpfDigits(cpf);
+  const masked = formatCpfMasked(digits);
+  let q = supabaseAdmin
+    .from("employees")
+    .select("id, name, matricula")
+    .or(`cpf.eq.${digits},cpf.eq.${masked}`)
+    .limit(1);
+  if (exceptEmployeeId != null) q = q.neq("id", exceptEmployeeId);
+  const { data } = await q.maybeSingle();
+  if (!data) return null;
+  return {
+    id: Number((data as any).id),
+    name: String((data as any).name || ""),
+    matricula: (data as any).matricula != null ? String((data as any).matricula) : null,
+  };
+}
+
 export type CpfLoginChangeOk = {
   ok: true;
   email: string;
@@ -50,17 +98,7 @@ async function anotherUserHasEmail(email: string, exceptUserId: number): Promise
 }
 
 async function anotherEmployeeHasCpf(cpf: string, exceptEmployeeId: number | null): Promise<boolean> {
-  const { supabaseAdmin } = await import("../supabase");
-  const digits = cleanCpfDigits(cpf);
-  const masked = formatCpfMasked(digits);
-  let q = supabaseAdmin
-    .from("employees")
-    .select("id")
-    .or(`cpf.eq.${digits},cpf.eq.${masked}`)
-    .limit(1);
-  if (exceptEmployeeId) q = q.neq("id", exceptEmployeeId);
-  const { data } = await q.maybeSingle();
-  return !!data;
+  return !!(await findEmployeeCpfConflict(cpf, exceptEmployeeId));
 }
 
 /**
