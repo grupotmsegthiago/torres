@@ -12,7 +12,7 @@ import type { Express } from "express";
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
-  import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { computeCanceladaBilling, syncOsEscortContractForCancelada } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
@@ -2022,6 +2022,7 @@ import type { Express } from "express";
               message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
             });
           }
+          await syncOsEscortContractForCancelada(body.service_order_id, cancelada.contrato);
           specialPayload = {
             ...specialPayload,
             contract_id: cancelada.contrato?.id || linkedSo.escort_contract_id || body.contract_id || null,
@@ -2165,6 +2166,7 @@ import type { Express } from "express";
               stepLogs: lotSo.step_logs,
             });
             if (!cancelada) { errors++; continue; }
+            await syncOsEscortContractForCancelada(existing.service_order_id, cancelada.contrato);
             await writeEscortBillingAtomic({
               action: "WRITE_CANCELLED",
               billingId: existing.id,
@@ -2173,7 +2175,7 @@ import type { Express } from "express";
               payload: {
               ...cancelada.fatFields,
               service_order_id: existing.service_order_id,
-              contract_id: lotSo.escort_contract_id,
+              contract_id: cancelada.contrato.id,
               horario_agendado: cancelada.horarios.horario_agendado,
               horario_inicio: cancelada.horarios.horario_inicio,
               horario_fim: cancelada.horarios.horario_fim,

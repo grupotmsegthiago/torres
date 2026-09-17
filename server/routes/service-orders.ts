@@ -8,7 +8,7 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { clientOutboundMail } from "../../shared/client-emails";
   import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
-  import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { computeCanceladaBilling, syncOsEscortContractForCancelada } from "../lib/cancelada-billing";
   import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { bustBalancoCaches } from "../lib/balanco-cache";
@@ -399,13 +399,14 @@ import type { Express } from "express";
               message: "Cancelada sem tabela 100 km ou contrato utilizável; billing não foi alterado.",
             });
           }
+          await syncOsEscortContractForCancelada(serviceOrderId, cancelada.contrato);
           statusPayload = {
             contract_id: cancelada.contrato?.id || so.escortContractId || null,
             ...cancelada.fatFields,
             horario_agendado: cancelada.horarios.horario_agendado,
             horario_inicio: cancelada.horarios.horario_inicio,
             horario_fim: cancelada.horarios.horario_fim,
-            observacoes: `OS CANCELADA — Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
+            observacoes: `OS CANCELADA — Tabela 100 km${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
           };
         }
 
@@ -1534,6 +1535,8 @@ import type { Express } from "express";
                 stepLogs: existing.stepLogs as any,
               });
               if (cb) {
+                await syncOsEscortContractForCancelada(soId, cb.contrato);
+                (parsed.data as any).escortContractId = cb.contrato.id;
                 const client = existing.clientId ? await storage.getClient(existing.clientId) : null;
                 const emp = existing.assignedEmployeeId ? await storage.getEmployee(existing.assignedEmployeeId) : null;
                 const vehicle = existing.vehicleId ? await storage.getVehicle(existing.vehicleId) : null;
@@ -1553,7 +1556,7 @@ import type { Express } from "express";
                   placa_viatura: vehicle?.plate || null,
                   data_missao: existing.scheduledDate || existing.missionStartedAt || new Date().toISOString(),
                   created_by: adminName,
-                  observacoes: `OS CANCELADA — contrato vinculado à OS${reason ? " | Motivo: " + reason : ""}`,
+                  observacoes: `OS CANCELADA — Tabela 100 km${reason ? " | Motivo: " + reason : ""}`,
                 };
                 await writeEscortBillingAtomic({
                   action: "WRITE_CANCELLED",

@@ -4,7 +4,7 @@ import { log } from "./lib/logger";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
 import { computeBillingPayloadForOs } from "./billing-calc";
-import { computeCanceladaBilling } from "./lib/cancelada-billing";
+import { computeCanceladaBilling, syncOsEscortContractForCancelada } from "./lib/cancelada-billing";
 import { buildRecusadaZeroPayload } from "./lib/recusada-guard";
 import { writeEscortBillingAtomic } from "./lib/atomic-billing";
 import { getDiretoriaSnapshot } from "./financial-snapshot";
@@ -1003,6 +1003,7 @@ export async function executeBillingCron() {
           log(`CRON Billing: OS ${so.os_number} cancelada sem contrato utilizável — sem billing criado`, "cron");
           return;
         }
+        await syncOsEscortContractForCancelada(so.id, cancelada.contrato);
         billingPayload = {
           service_order_id: so.id,
           client_id: so.client_id,
@@ -1012,7 +1013,7 @@ export async function executeBillingCron() {
           horario_agendado: cancelada.horarios.horario_agendado,
           horario_inicio: cancelada.horarios.horario_inicio,
           horario_fim: cancelada.horarios.horario_fim,
-          observacoes: `OS CANCELADA — Tabela 100 km${cancelada.usouTabela100 ? "" : " (fallback: contrato da OS)"}`,
+          observacoes: "OS CANCELADA — Tabela 100 km",
           created_by: "CRON",
         };
       } else if (so.status === "recusada") {
