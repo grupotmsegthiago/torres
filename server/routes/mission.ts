@@ -9,7 +9,7 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, SMTP_BCC_OS, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { withTorresAlwaysCc } from "../../shared/client-emails";
   import { computeBillingPayloadForOs, extractKmFromText } from "../billing-calc";
-  import { computeCanceladaBilling } from "../lib/cancelada-billing";
+  import { computeCanceladaBilling, syncOsEscortContractForCancelada } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
@@ -1973,10 +1973,16 @@ Responda APENAS com JSON: {"km_lido": number}`;
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
 
+      const motivo = String(reason || "").trim();
+      if (motivo.length < 3) {
+        return res.status(400).json({ message: "Informe o motivo do cancelamento (mínimo 3 caracteres)." });
+      }
+
       const updates: any = {
         status: "cancelada",
         missionStatus: so.missionStatus,
         completedDate: nowBRTString(),
+        cancellationReason: motivo,
       };
 
       if (so.kitId) {
@@ -1995,7 +2001,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         agentId: user.id,
         geo: null,
         nextStep: "cancelada",
-        reason: reason || "Cancelada pelo administrador",
+        reason: motivo,
       };
       updates.stepLogs = [...existingLogs, cancelEntry];
 
@@ -2034,6 +2040,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
           });
 
           if (cb) {
+            await syncOsEscortContractForCancelada(serviceOrderId, cb.contrato);
             await removeAutoTransaction("service_order", String(serviceOrderId));
             console.log(`[OS-Financial] Removed auto-transaction for cancelled OS ${so.osNumber}`);
             const client = so.clientId ? await storage.getClient(so.clientId) : null;
@@ -2056,7 +2063,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
               placa_viatura: vehicle?.plate || null,
               data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
               created_by: user.name,
-              observacoes: `OS CANCELADA — contrato vinculado à OS | Motivo: ${reason || "Cancelada pelo administrador"}`,
+              observacoes: `OS CANCELADA — Tabela 100 km | Motivo: ${motivo}`,
             };
             await writeEscortBillingAtomic({
               action: "WRITE_CANCELLED",
@@ -2070,7 +2077,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
                 userId: user.id,
                 userName: user.name,
                 userRole: user.role,
-                reason: reason || "Cancelada pelo administrador",
+                reason: motivo,
                 ipAddress: req.ip,
               },
             });
@@ -3278,6 +3285,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       await storage.updateServiceOrder(osId, {
         status: "recusada",
         revenueValue: 0,
+        cancellationReason: notes.trim(),
       } as any);
       await supabaseAdmin.from("service_orders").update({
         fat_calculado: 0,
@@ -3286,6 +3294,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         margem_calculada: 0,
         valor_estimado: 0,
         pedagio_estimado: 0,
+        cancellation_reason: notes.trim(),
         custos_congelados_em: now.toISOString(),
         custos_congelados_por: `recusada_por_${emp.name}`,
       }).eq("id", osId);
