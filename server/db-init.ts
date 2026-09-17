@@ -789,8 +789,11 @@ export async function ensureDbSchema() {
     // UUID do comercial TM SEG. Sem tabela local e SEM FK (SSOT na TM SEG).
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS responsavel_comercial_id UUID`).catch(() => {});
     await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ativo'`).catch(() => {});
+    await execSql(`UPDATE clients SET status = 'ativo' WHERE status IS NULL OR btrim(status) = ''`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_responsavel_comercial_id ON clients (responsavel_comercial_id)`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_created_by_user_id ON clients (created_by_user_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status)`).catch(() => {});
     // Tabela de controle do "Agente Central": rastreia última cobrança de
     // atualização enviada via WhatsApp pra cada OS, pra não spamar (intervalo
     // mínimo de 30min entre cobranças). Linha é deletada quando o vigilante

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  Plus, X, Pencil, Trash2, Search, Loader2, FileDown,
+  Plus, X, Pencil, Trash2, Search, Loader2, FileDown, Ban, RotateCcw,
   ShieldCheck, AlertTriangle, CheckCircle2, Building2, Users,
   MapPin, Phone, Mail, Calendar, Banknote, BadgeCheck,
   FileText, DollarSign, BarChart3, ChevronLeft, Save,
@@ -26,6 +26,12 @@ import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dial
 import { WhatsappGroupPicker } from "@/components/admin/whatsapp-group-picker";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 import { billingCycleLabel, normalizeBillingCycle } from "@shared/billing-cycle";
+import {
+  applyClientListFilter,
+  buildClientDuplicateIndex,
+  isClientActive,
+  type ClientListFilter,
+} from "@shared/client-duplicates";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
 
 const fmt = (val: number | null | undefined) => {
@@ -1621,7 +1627,12 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
       <div className="flex items-center gap-4">
         <button onClick={onBack} className="p-2 rounded-lg hover:bg-neutral-100 transition-colors" data-testid="button-back-to-clients"><ChevronLeft size={20} className="text-neutral-600" /></button>
         <div className="flex-1">
-          <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight" data-testid="text-client-pasta-name">{client.name}</h2>
+          <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight" data-testid="text-client-pasta-name">
+            {client.name}
+            {!isClientActive(client) && (
+              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-300 align-middle" data-testid="badge-client-inactive-pasta">Inativo</span>
+            )}
+          </h2>
           <p className="text-xs text-neutral-500">{client.cnpj || "CNPJ não cadastrado"} — Pasta do Cliente</p>
         </div>
         <div className="flex items-center gap-2">
@@ -2780,6 +2791,7 @@ export default function ClientsPage() {
   const [analysisClient, setAnalysisClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [listFilter, setListFilter] = useState<ClientListFilter>("todos");
   const [showBulkFix, setShowBulkFix] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -2800,9 +2812,14 @@ export default function ClientsPage() {
   };
   const { data: clients = [], isLoading } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
 
-  const deleteMutation = useMutation({
+  const deactivateMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/clients/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients"] }); toast({ title: "Cliente removido" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients"] }); toast({ title: "Cliente desativado" }); },
+  });
+  const reactivateMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("PATCH", `/api/clients/${id}`, { status: "ativo" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients"] }); toast({ title: "Cliente reativado" }); },
+    onError: (err: Error) => toast({ title: "Erro ao reativar", description: err.message, variant: "destructive" }),
   });
 
   if (viewingClient) {
@@ -2838,41 +2855,72 @@ export default function ClientsPage() {
         ) : (clients || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400">Nenhum cliente cadastrado</div>
         ) : (() => {
-          const incompleteCount = (clients || []).filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0).length;
-          const visible = onlyIncomplete
-            ? (clients || []).filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0)
-            : (clients || []);
+          const all = clients || [];
+          const dupIndex = buildClientDuplicateIndex(all);
+          const incompleteCount = all.filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0).length;
+          const counts = {
+            todos: all.length,
+            duplicados: [...dupIndex.keys()].length,
+            ativos: all.filter(isClientActive).length,
+            inativos: all.filter(c => !isClientActive(c)).length,
+          };
+          const filterTabs: Array<{ key: ClientListFilter; label: string; cls: string }> = [
+            { key: "todos", label: "Todos", cls: "data-[active=true]:bg-blue-50 data-[active=true]:text-blue-700 data-[active=true]:border-blue-200" },
+            { key: "duplicados", label: "Duplicados", cls: "data-[active=true]:bg-amber-50 data-[active=true]:text-amber-800 data-[active=true]:border-amber-300" },
+            { key: "ativos", label: "Ativos", cls: "data-[active=true]:bg-emerald-50 data-[active=true]:text-emerald-700 data-[active=true]:border-emerald-200" },
+            { key: "inativos", label: "Inativos", cls: "data-[active=true]:bg-neutral-100 data-[active=true]:text-neutral-700 data-[active=true]:border-neutral-300" },
+          ];
+          let visible = applyClientListFilter(all, listFilter, dupIndex);
+          if (onlyIncomplete) {
+            visible = visible.filter(c => getContactIssues(c, { phones: ["phone"], zips: ["zip"] }).length > 0);
+          }
           return (
           <>
-          <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
-            <span className="text-xs text-neutral-500">{visible.length} de {(clients || []).length} cliente{(clients || []).length !== 1 ? "s" : ""}</span>
-            <div className="flex items-center gap-2">
-              <button
-                data-active={onlyIncomplete}
-                onClick={() => setOnlyIncomplete(v => !v)}
-                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
-                data-testid="toggle-only-incomplete-clients"
-                title="Mostrar apenas clientes com telefone ou CEP incompletos"
-              >
-                <AlertTriangle className="w-3 h-3" />
-                Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
-              </button>
-              {incompleteCount > 0 && (
+          <div className="px-4 py-3 border-b border-neutral-200 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-neutral-500">{visible.length} de {all.length} cliente{all.length !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => setShowBulkFix(true)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700"
-                  data-testid="button-bulk-fix-clients"
-                  title="Corrigir telefone e CEP de todos os clientes incompletos"
+                  data-active={onlyIncomplete}
+                  onClick={() => setOnlyIncomplete(v => !v)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 data-[active=true]:bg-red-50 data-[active=true]:text-red-700 data-[active=true]:border-red-200"
+                  data-testid="toggle-only-incomplete-clients"
+                  title="Mostrar apenas clientes com telefone ou CEP incompletos"
                 >
-                  Corrigir incompletos
+                  <AlertTriangle className="w-3 h-3" />
+                  Só incompletos <span className="ml-1 text-[10px] opacity-70">({incompleteCount})</span>
                 </button>
-              )}
+                {incompleteCount > 0 && (
+                  <button
+                    onClick={() => setShowBulkFix(true)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-red-600 border-red-600 text-white hover:bg-red-700"
+                    data-testid="button-bulk-fix-clients"
+                    title="Corrigir telefone e CEP de todos os clientes incompletos"
+                  >
+                    Corrigir incompletos
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap" data-testid="filter-clients-status">
+              {filterTabs.map(t => (
+                <button
+                  key={t.key}
+                  data-active={listFilter === t.key}
+                  onClick={() => setListFilter(t.key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 ${t.cls}`}
+                  data-testid={`tab-clients-${t.key}`}
+                >
+                  {t.label} <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
+                </button>
+              ))}
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-clients">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider w-10">#</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CNPJ/CPF</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Telefone</th>
@@ -2882,17 +2930,32 @@ export default function ClientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((c) => {
+                {visible.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-neutral-400" data-testid="empty-clients-filter">Nenhum cliente neste filtro</td>
+                  </tr>
+                ) : visible.map((c, rowIndex) => {
                   const contactIssues = getContactIssues(c, { phones: ["phone"], zips: ["zip"] });
+                  const dup = dupIndex.get(c.id);
+                  const active = isClientActive(c);
                   return (
-                  <tr key={c.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" data-testid={`row-client-${c.id}`} onClick={() => setViewingClient(c)}>
+                  <tr key={c.id} className={`border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer ${active ? "" : "opacity-60"}`} data-testid={`row-client-${c.id}`} onClick={() => setViewingClient(c)}>
+                    <td className="px-3 py-3 text-xs font-bold text-neutral-400 tabular-nums" data-testid={`cell-client-index-${c.id}`}>{rowIndex + 1}</td>
                     <td className="p-3 font-medium text-neutral-900">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {c.name}
                         {(c as any).emiteNf || (c as any).emite_nf ? (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" data-testid={`badge-nf-${c.id}`}>NF</span>
                         ) : (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-50 text-neutral-400 border border-neutral-200" data-testid={`badge-isento-${c.id}`}>Isento</span>
+                        )}
+                        {dup && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200" data-testid={`badge-dup-client-${c.id}`} title="Mesmo CNPJ/CPF em mais de um cadastro">
+                            Dup {dup.index}/{dup.total}
+                          </span>
+                        )}
+                        {!active && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-100 text-neutral-600 border border-neutral-300" data-testid={`badge-inactive-client-${c.id}`}>Inativo</span>
                         )}
                         {contactIssues.length > 0 && (
                           <span
@@ -2948,9 +3011,14 @@ export default function ClientsPage() {
                       <Button variant="ghost" size="icon" onClick={() => { setEditClient(c); setShowForm(true); }} data-testid={`button-edit-client-${c.id}`}>
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      {isDiretoria && (
-                        <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente ${c.name}?`)) deleteMutation.mutate(c.id); }} data-testid={`button-delete-client-${c.id}`}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
+                      {isDiretoria && active && (
+                        <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Desativar o cliente ${c.name}? O cadastro permanece e as OS não são apagadas.`)) deactivateMutation.mutate(c.id); }} data-testid={`button-deactivate-client-${c.id}`} title="Desativar">
+                          <Ban className="w-4 h-4 text-amber-500" />
+                        </Button>
+                      )}
+                      {isDiretoria && !active && (
+                        <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Reativar o cliente ${c.name}?`)) reactivateMutation.mutate(c.id); }} data-testid={`button-reactivate-client-${c.id}`} title="Reativar">
+                          <RotateCcw className="w-4 h-4 text-emerald-600" />
                         </Button>
                       )}
                     </td>

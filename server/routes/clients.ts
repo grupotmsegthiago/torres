@@ -12,6 +12,7 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     filterComerciaisForUser,
   } from "../lib/comercial-scope";
+  import { parseClientStatus } from "@shared/client-duplicates";
 
   import { generateContractPDF } from "../contract-pdf";
 import { listGroups as listZapiGroups } from "../lib/zapi";
@@ -123,13 +124,14 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   app.post("/api/clients", requireAuth, requireComercial, async (req, res) => {
     const parsed = insertClientSchema.safeParse(coerceComercialId(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
-    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    const payload = { ...parsed.data, status: "ativo" as const };
+    const contactErrors = validateContactFields(payload, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
-    if (!hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
+    if (!hasWhoPaysEmail(payload.emailFinanceiro)) {
       return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
     }
     const data = await storage.createClient(
-      applyComercialCreateClientPayload(req.user as any, parsed.data) as any,
+      applyComercialCreateClientPayload(req.user as any, payload) as any,
     );
     const doc = data.cnpj || data.cpf || "";
     if (doc.replace(/\D/g, "").length >= 11) {
@@ -141,16 +143,27 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   app.patch("/api/clients/:id", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
     const parsed = insertClientSchema.partial().safeParse(coerceComercialId(req.body || {}));
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
-    const contactErrors = validateContactFields(parsed.data, { phones: ["phone"], zips: ["zip"] });
+    const patch: Record<string, any> = { ...parsed.data };
+    const role = (req.user as any)?.role;
+    if ("status" in patch) {
+      if (role !== "diretoria") {
+        delete patch.status;
+      } else {
+        const status = parseClientStatus(patch.status);
+        if (!status) return res.status(400).json({ message: "Status do cliente deve ser ativo ou inativo." });
+        patch.status = status;
+      }
+    }
+    const contactErrors = validateContactFields(patch, { phones: ["phone"], zips: ["zip"] });
     if (contactErrors.length) return res.status(400).json({ message: contactErrors[0].message, errors: contactErrors });
-    if ("emailFinanceiro" in parsed.data && !hasWhoPaysEmail(parsed.data.emailFinanceiro)) {
+    if ("emailFinanceiro" in patch && !hasWhoPaysEmail(patch.emailFinanceiro)) {
       return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
     }
     if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
     try {
       const data = await storage.updateClient(
         Number(req.params.id),
-        applyComercialPatchClientPayload(req.user as any, parsed.data) as any,
+        applyComercialPatchClientPayload(req.user as any, patch) as any,
       );
       if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
       res.json(data);
@@ -163,12 +176,12 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
   app.delete("/api/clients/:id", requireAuth, requireDiretoria, async (req, res) => {
     const clientId = Number(req.params.id);
     try {
-      await supabaseAdmin.from("client_vehicles").delete().eq("client_id", clientId);
-      await storage.deleteClient(clientId);
-      res.json({ message: "Cliente removido" });
+      const data = await storage.updateClient(clientId, { status: "inativo" } as any);
+      if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
+      res.json({ message: "Cliente desativado", client: data });
     } catch (err: any) {
-      console.error("Erro ao remover cliente:", err.message);
-      res.status(500).json({ message: "Erro ao remover. Existem OS ou contratos vinculados a este cliente." });
+      console.error("Erro ao desativar cliente:", err.message);
+      res.status(500).json({ message: "Erro ao desativar cliente." });
     }
   });
 
