@@ -43,3 +43,9 @@ test("webhook de pagamento é fail-closed: recusa sem secret", () => {
   assert.match(asaas, /evaluateAsaasWebhookAuth/);
   assert.doesNotMatch(asaas, /Webhook ACEITO sem validação/);
 });
+
+test("NFS-e oficial: código 07870 sem ID e sem authorize imediato", () => {
+  assert.match(helpers, /effectiveDatePeriod: "ON_PAYMENT_CREATION"/);
+  assert.match(helpers, /municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE/);
+  assert.doesNotMatch(asaas, /\/invoices\/\$\{nfId\}\/authorize/);
+});

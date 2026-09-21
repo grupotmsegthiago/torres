@@ -25,9 +25,8 @@ export const CNAE_PRINCIPAL = "7870";
 export const CODIGO_SERVICO_MUNICIPAL = "25";
 export const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
 /**
- * ID Asaas do serviço 07870 | 11.02 (GET /invoices/municipalServices).
- * Prefeitura: enviar municipalServiceId como STRING JSON `"402"` — nunca número 402 / 402.0
- * (orientação Natan/Asaas 2026-09-17). Não enviar municipalServiceCode.
+ * ID interno Asaas do 07870 | 11.02 — só para consulta/log.
+ * POST /invoices segue a TM: municipalServiceCode `"07870"`, sem municipalServiceId.
  */
 export const MUNICIPAL_SERVICE_ID_DEFAULT = 402;
 export const MUNICIPAL_SERVICE_EXTERNAL_ID = 402;
@@ -54,11 +53,11 @@ export function summarizeNfseWirePayload(body: Record<string, any>): Record<stri
     taxes: body?.taxes ?? null,
   };
 }
-/** ISS retido pelo tomador na NFS-e (pedido do dono 2026-09-10). */
-export const ISS_ALIQUOTA = 2;
+/** ISS 5% retido na NFS-e e no boleto quando emite NF. */
+export const ISS_ALIQUOTA = 5;
 export const ISS_RETAIN = true;
-/** INSS legal 11%; na NF/boleto retemos 50% dessa alíquota (5,5% do bruto). */
-export const INSS_BASE_FRACTION = 0.5;
+/** INSS 11% integral na NF/boleto (sem reduzir a 50% da base). */
+export const INSS_BASE_FRACTION = 1;
 export const DESCRICAO_SERVICO_FIXA =
   "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
 
@@ -184,7 +183,7 @@ export function buildNfClientEmail(invoice: {
   const inssRetido = Number(invoice.valor_inss_retido || 0);
   const issRetido = invoice.valor_iss_retido != null && invoice.valor_iss_retido !== ""
     ? Number(invoice.valor_iss_retido)
-    : Number((Number(invoice.value || 0) * ISS_ALIQUOTA / 100).toFixed(2));
+    : (ISS_RETAIN ? Number((Number(invoice.value || 0) * ISS_ALIQUOTA / 100).toFixed(2)) : 0);
   const temInss = inssRetido > 0.005;
   const temIss = issRetido > 0.005;
   const inssAliq = Number(invoice.inss_aliquota || 0);
@@ -275,6 +274,15 @@ export function buildNfClientEmail(invoice: {
 export function inssAliquotaEfetiva(retemInss: boolean, legalAliquota?: number): number {
   if (!retemInss) return 0;
   return Number((Number(legalAliquota ?? 11) * INSS_BASE_FRACTION).toFixed(2));
+}
+
+/** Quando emite NFS-e: INSS 11% + ISS 5% no boleto. Sem NF, só INSS se o cliente retém. */
+export function boletoRetentionOpts(emiteNf: boolean, retemInss: boolean, inssAliquota?: number) {
+  return {
+    retemInss: emiteNf || retemInss,
+    inssAliquota: emiteNf ? 11 : Number(inssAliquota ?? 11),
+    retainIss: ISS_RETAIN && emiteNf,
+  };
 }
 
 export function nfPeriodoPhrase(description?: string | null, extra?: string | null): string {
@@ -369,9 +377,8 @@ export function buildInssObservation(
 
 /**
  * Texto com valor BRUTO e LÍQUIDO pro corpo da NF (exigência fiscal).
- * Sem retenção de INSS: bruto == líquido (mostra só o bruto).
- * Com retenção: bruto, INSS retido e líquido (= bruto − INSS).
- * ISS 2% retido na NF (pedido 2026-09-10; substitui a decisão de 23/06/2026 de não mexer no ISS).
+ * Sem retenção de INSS: ainda pode mostrar ISS 5% e o líquido.
+ * Com retenção: bruto, INSS 11% integral, ISS 5% e líquido.
  */
 export function buildValoresObservation(
   grossValue: number,
@@ -402,7 +409,7 @@ export function buildValoresObservation(
 /**
  * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga).
  * A NF continua no valor BRUTO; o boleto desconta as retenções da NF:
- * INSS efetivo (50% da alíquota legal, se retemInss) e ISS 2% (se retainIss).
+ * INSS integral (11% se retemInss) e ISS 5% (se retainIss).
  */
 export function netBoletoValue(
   grossValue: number,
@@ -426,7 +433,6 @@ export function buildFiscalPayload(
 ): Record<string, any> {
   const retemInss = !!opts?.retemInss;
   const inssAliquotaLegal = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
-  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
   return {
     serviceListItem: CODIGO_SERVICO_MUNICIPAL,
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
@@ -439,7 +445,7 @@ export function buildFiscalPayload(
       iss: ISS_ALIQUOTA,
       cofins: 0,
       csll: 0,
-      inss: inssAliquotaNf,
+      inss: inssAliquotaEfetiva(retemInss, inssAliquotaLegal || 11),
       ir: 0,
       pis: 0,
     },
@@ -728,7 +734,6 @@ export function buildNfseInvoicePayload(opts: {
 }): Record<string, any> {
   const retemInss = !!opts.retemInss;
   const inssAliquotaLegal = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
-  const inssAliquotaNf = inssAliquotaEfetiva(retemInss, inssAliquotaLegal);
   const oficial = nfDiscriminacaoOficial();
   const payload: Record<string, any> = {
     serviceDescription: oficial,
@@ -736,27 +741,22 @@ export function buildNfseInvoicePayload(opts: {
       value: opts.value,
       description: opts.description,
       observationsHint: opts.observations,
-      retemInss,
+      retemInss: true,
       inssAliquota: inssAliquotaLegal || 11,
     }),
     value: opts.value,
     deductions: 0,
-    effectiveDate: todayDateStr(),
+    effectiveDatePeriod: "ON_PAYMENT_CREATION",
     municipalServiceName: municipalServiceNameOficial(),
+    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     taxes: {
       retainIss: ISS_RETAIN,
       iss: ISS_ALIQUOTA,
-      cofins: 0, csll: 0, inss: inssAliquotaNf, ir: 0, pis: 0,
+      cofins: 0, csll: 0, inss: inssAliquotaEfetiva(true, inssAliquotaLegal || 11), ir: 0, pis: 0,
     },
   };
-  // Prefeitura: municipalServiceId STRING "402". NÃO enviar municipalServiceCode
-  // (esse campo é Portal Nacional; número 402.0 é o que o Asaas acusou).
-  payload.municipalServiceId = asMunicipalServiceIdString(
-    opts.municipalServiceIdOverride && Number.isFinite(opts.municipalServiceIdOverride) && opts.municipalServiceIdOverride > 0
-      ? opts.municipalServiceIdOverride
-      : MUNICIPAL_SERVICE_ID_DEFAULT,
-  );
-  payload.municipalServiceExternalId = MUNICIPAL_SERVICE_EXTERNAL_ID;
+  // Mesmo contrato da TM: código municipal, sem ID/externalId (Portal Nacional).
+  // Torres permanece em 07870 — não copiar 07930.
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;
@@ -772,10 +772,9 @@ export function buildNfsePutPayload(postPayload: Record<string, any>): Record<st
     observations: postPayload.observations,
     value: postPayload.value,
     deductions: postPayload.deductions ?? 0,
-    effectiveDate: postPayload.effectiveDate,
-    municipalServiceName: postPayload.municipalServiceName,
-    municipalServiceId: asMunicipalServiceIdString(postPayload.municipalServiceId),
-    municipalServiceExternalId: postPayload.municipalServiceExternalId ?? MUNICIPAL_SERVICE_EXTERNAL_ID,
+    effectiveDatePeriod: postPayload.effectiveDatePeriod || "ON_PAYMENT_CREATION",
+    municipalServiceName: postPayload.municipalServiceName || municipalServiceNameOficial(),
+    municipalServiceCode: postPayload.municipalServiceCode || CODIGO_SERVICO_MUNICIPAL_CODE,
     taxes: postPayload.taxes,
     updatePayment: false,
   };

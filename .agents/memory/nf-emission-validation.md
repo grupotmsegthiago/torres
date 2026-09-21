@@ -47,7 +47,7 @@ O Torres segue o fluxo isolado da TM:
 6. `SYNCHRONIZED` com RPS **não** gera segundo POST. Retry de transporte = PUT (se ERROR) ou `/authorize` na mesma `inv_*` se “falha ao comunicar” **ou** `_NFe002` (código municipal).
 7. Webhook de pagamento (`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`) **não** emite NF.
 8. Sem endereço fiscal completo (CEP 8 dígitos, logradouro, número, cidade, UF) a cobrança com `emite_nf` é bloqueada no servidor.
-9. `effectiveDate` é data civil BRT (`todayDateStr`). Timeout Asaas `/invoices` = 45s. Portal Nacional: `municipalServiceCode` `07870` + `municipalServiceName` `"07870 - …"` + `municipalServiceId: null`. **Não** enviar ID 402 (provoca `_NFe002`). Código da Torres é 07870 (CNAE 7870), **não** 07930 da TM. Discriminação (`serviceDescription`) **sem** o código (NFe003). `ASAAS_MUNICIPAL_SERVICE_ID` no env é ignorada.
+9. `effectiveDatePeriod` = `ON_PAYMENT_CREATION` (sem `effectiveDate`). Sem `/authorize` imediato. Portal Nacional: `municipalServiceCode` `07870` + `municipalServiceName` `"07870 - …"`, **sem** `municipalServiceId` / `municipalServiceExternalId`. Código da Torres é 07870 (CNAE 7870), **não** 07930 da TM. ISS 5% retido + INSS 11% integral no boleto e no taxes da NF. Discriminação (`serviceDescription`) **sem** o código (NFe003).
 10. UI: PROCESSING local sem `inv_*` **não** é “fila da prefeitura” — o botão Emitir permanece.
 
 `SYNCHRONIZED` **sem** nº municipal **não** é NF emitida. Badge verde só com número da prefeitura. `isQueuedAtPrefecture` em `shared/nfse-status.ts`.

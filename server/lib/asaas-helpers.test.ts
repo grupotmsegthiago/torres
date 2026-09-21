@@ -5,6 +5,7 @@ import {
   buildInvoiceDescription,
   buildInssObservation,
   netBoletoValue,
+  boletoRetentionOpts,
   buildFiscalPayload,
   buildNfseInvoicePayload,
   buildValoresObservation,
@@ -141,13 +142,13 @@ test("buildInssObservation: sem retenção retorna texto de dispensa", () => {
   assert.equal(buildInssObservation(false, 0, 0), INSS_DISPENSA_OBSERVACAO);
 });
 
-test("buildInssObservation: com retenção inclui alíquota legal, base 50% e valor formatados BRL", () => {
-  const obs = buildInssObservation(true, 11, 55);
+test("buildInssObservation: com retenção inclui alíquota legal 11% integral", () => {
+  const obs = buildInssObservation(true, 11, 110);
   assert.ok(obs.startsWith(INSS_OBSERVACAO_LEGAL));
   assert.match(obs, /Alíquota legal: 11\.00%/);
-  assert.match(obs, /50% da base/);
-  assert.match(obs, /efetivo 5\.50%/);
-  assert.match(obs, /R\$ 55,00/);
+  assert.match(obs, /100% da base/);
+  assert.match(obs, /efetivo 11\.00%/);
+  assert.match(obs, /R\$ 110,00/);
 });
 
 test("buildInssObservation: valor com centavos é formatado com vírgula", () => {
@@ -173,83 +174,99 @@ test("netBoletoValue: opts ausente = sem retenção", () => {
   assert.equal(r.inssValor, 0);
 });
 
-test("netBoletoValue: com retenção 11% desconta 50% da alíquota (5,5%)", () => {
+test("netBoletoValue: com retenção 11% desconta a alíquota integral", () => {
   const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 11 });
-  assert.equal(r.inssValor, 55);
-  assert.equal(r.boleto, 945);
-  assert.equal(r.inssAliquota, 5.5);
+  assert.equal(r.inssValor, 110);
+  assert.equal(r.boleto, 890);
+  assert.equal(r.inssAliquota, 11);
   assert.equal(r.issValor, 0);
 });
 
-test("netBoletoValue: retenção sem alíquota explícita usa 11% legal → 5,5% efetivo", () => {
+test("netBoletoValue: retenção sem alíquota explícita usa 11% integral", () => {
   const r = netBoletoValue(2000, { retemInss: true });
-  assert.equal(r.inssAliquota, 5.5);
-  assert.equal(r.inssValor, 110);
-  assert.equal(r.boleto, 1890);
+  assert.equal(r.inssAliquota, 11);
+  assert.equal(r.inssValor, 220);
+  assert.equal(r.boleto, 1780);
 });
 
 test("netBoletoValue: arredonda INSS e boleto a 2 casas (sem dízima)", () => {
   const r = netBoletoValue(1234.56, { retemInss: true, inssAliquota: 11 });
-  // 1234.56 * 0.055 = 67.9008 -> 67.90 ; 1234.56 - 67.90 = 1166.66
-  assert.equal(r.inssValor, 67.9);
-  assert.equal(r.boleto, 1166.66);
+  assert.equal(r.inssValor, 135.8);
+  assert.equal(r.boleto, 1098.76);
   assert.equal(Number((r.boleto + r.inssValor).toFixed(2)), 1234.56);
 });
 
-test("netBoletoValue: alíquota legal diferente de 11% também aplica 50% da base", () => {
+test("netBoletoValue: alíquota legal diferente de 11% aplica a alíquota integral", () => {
   const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 3.5 });
-  assert.equal(r.inssAliquota, 1.75);
-  assert.equal(r.inssValor, 17.5);
-  assert.equal(r.boleto, 982.5);
+  assert.equal(r.inssAliquota, 3.5);
+  assert.equal(r.inssValor, 35);
+  assert.equal(r.boleto, 965);
 });
 
-test("netBoletoValue: emite NF desconta ISS 2% além do INSS efetivo", () => {
+test("netBoletoValue: emite NF desconta ISS 5% além do INSS 11%", () => {
   const r = netBoletoValue(1000, { retemInss: true, inssAliquota: 11, retainIss: true });
-  assert.equal(r.inssValor, 55);
-  assert.equal(r.issValor, 20);
-  assert.equal(r.issAliquota, 2);
-  assert.equal(r.boleto, 925);
+  assert.equal(r.inssValor, 110);
+  assert.equal(r.issValor, 50);
+  assert.equal(r.issAliquota, 5);
+  assert.equal(r.boleto, 840);
+});
+
+test("boletoRetentionOpts: emite NF força INSS 11% e ISS 5%", () => {
+  const opts = boletoRetentionOpts(true, false);
+  assert.equal(opts.retemInss, true);
+  assert.equal(opts.inssAliquota, 11);
+  assert.equal(opts.retainIss, true);
+  const r = netBoletoValue(1000, opts);
+  assert.equal(r.boleto, 840);
+});
+
+test("boletoRetentionOpts: sem NF só retém INSS se o cliente retém", () => {
+  const sem = boletoRetentionOpts(false, false);
+  assert.equal(sem.retemInss, false);
+  assert.equal(sem.retainIss, false);
+  const com = boletoRetentionOpts(false, true, 11);
+  assert.equal(com.retemInss, true);
+  assert.equal(com.retainIss, false);
+  assert.equal(com.inssAliquota, 11);
 });
 
 // ============================================================================
 // buildFiscalPayload
 // ============================================================================
 
-test("buildFiscalPayload: padrão sem INSS zera inss e retém ISS 2%", () => {
+test("buildFiscalPayload: padrão sem INSS zera inss e informa ISS 5% retido", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ);
   assert.equal(p.serviceListItem, CODIGO_SERVICO_MUNICIPAL);
   assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.equal(p.deductions, 0);
   assert.equal(p.effectiveDatePeriod, "MONTHLY");
   assert.equal(p.taxes.inss, 0);
-  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.iss, 5);
   assert.equal(p.taxes.retainIss, true);
   assert.ok(p.observations.includes(`CNAE ${CNAE_PRINCIPAL}`));
   assert.match(p.observations, /Sem ret\. INSS|Sem retenção INSS/);
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: retemInss=true usa 50% de 11% (5,5%)", () => {
+test("buildFiscalPayload: retemInss=true manda INSS 11% e ISS 5% retido", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ, { retemInss: true });
-  assert.equal(p.taxes.inss, 5.5);
-  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.inss, 11);
+  assert.equal(p.taxes.iss, 5);
   assert.equal(p.taxes.retainIss, true);
-  assert.match(p.observations, /5,50%/);
-  // 1000 * 5.5% = 55.00
-  assert.match(p.observations, /R\$ 55,00/);
+  assert.match(p.observations, /11,00%/);
+  assert.match(p.observations, /R\$ 110,00/);
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: alíquota INSS customizada aplica 50% da base", () => {
+test("buildFiscalPayload: alíquota INSS customizada aplica a alíquota integral", () => {
   const p = buildFiscalPayload(2000, TORRES_CNPJ, { retemInss: true, inssAliquota: 4.5 });
-  assert.equal(p.taxes.inss, 2.25);
-  // 2000 * 2.25% = 45.00
-  assert.match(p.observations, /R\$ 45,00/);
+  assert.equal(p.taxes.inss, 4.5);
+  assert.match(p.observations, /R\$ 90,00/);
 });
 
 test("buildFiscalPayload: valor zero gera retenção zero", () => {
   const p = buildFiscalPayload(0, TORRES_CNPJ, { retemInss: true });
-  assert.equal(p.taxes.inss, 5.5);
+  assert.equal(p.taxes.inss, 11);
   assert.match(p.observations, /R\$ 0,00/);
 });
 
@@ -261,12 +278,12 @@ test("buildFiscalPayload: inclui Simples Nacional resumido e valor bruto", () =>
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
-test("buildFiscalPayload: com INSS mostra bruto, INSS 5,5%, ISS e líquido em até 250 chars", () => {
+test("buildFiscalPayload: com INSS mostra bruto, INSS 11%, ISS 5% e líquido", () => {
   const p = buildFiscalPayload(1000, TORRES_CNPJ, { retemInss: true });
   assert.match(p.observations, /R\$ 1000,00/);
-  assert.match(p.observations, /R\$ 55,00/);
-  assert.match(p.observations, /R\$ 20,00/);
-  assert.match(p.observations, /R\$ 925,00/);
+  assert.match(p.observations, /R\$ 110,00/);
+  assert.match(p.observations, /R\$ 50,00/);
+  assert.match(p.observations, /R\$ 840,00/);
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
@@ -274,19 +291,19 @@ test("buildFiscalPayload: com INSS mostra bruto, INSS 5,5%, ISS e líquido em at
 // buildValoresObservation
 // ============================================================================
 
-test("buildValoresObservation: sem INSS ainda mostra ISS 2% e líquido", () => {
+test("buildValoresObservation: sem INSS ainda mostra ISS 5% e líquido", () => {
   const out = buildValoresObservation(1500, false, 0);
   assert.match(out, /Valor bruto: R\$ 1500,00/);
-  assert.match(out, /ISS retido \(2\.00%\): R\$ 30,00/);
-  assert.match(out, /Valor líquido: R\$ 1470,00/);
+  assert.match(out, /ISS retido \(5\.00%\): R\$ 75,00/);
+  assert.match(out, /Valor líquido: R\$ 1425,00/);
 });
 
-test("buildValoresObservation: com INSS calcula líquido = bruto − INSS efetivo − ISS", () => {
+test("buildValoresObservation: com INSS 11% e ISS 5%", () => {
   const out = buildValoresObservation(2000, true, 11);
   assert.match(out, /Valor bruto: R\$ 2000,00/);
-  assert.match(out, /INSS retido \(5\.50%/);
-  assert.match(out, /ISS retido \(2\.00%\): R\$ 40,00/);
-  assert.match(out, /Valor líquido: R\$ 1850,00/);
+  assert.match(out, /INSS retido \(11\.00%/);
+  assert.match(out, /ISS retido \(5\.00%\): R\$ 100,00/);
+  assert.match(out, /Valor líquido: R\$ 1680,00/);
 });
 
 // ============================================================================
@@ -304,12 +321,12 @@ test("buildNfseInvoicePayload: anexa payment quando informado", () => {
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
   assert.match(p.observations, /CNAE 7870/);
   assert.match(p.observations, /Escolta Armada/);
-  assert.equal("municipalServiceCode" in p, false);
+  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.equal(p.municipalServiceName, municipalServiceNameOficial());
-  assert.equal(p.municipalServiceId, "402");
-  assert.equal(typeof p.municipalServiceId, "string");
-  assert.equal(p.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
-  assert.equal(JSON.stringify({ municipalServiceId: p.municipalServiceId }), '{"municipalServiceId":"402"}');
+  assert.equal("municipalServiceId" in p, false);
+  assert.equal("municipalServiceExternalId" in p, false);
+  assert.equal(p.effectiveDatePeriod, "ON_PAYMENT_CREATION");
+  assert.equal("effectiveDate" in p, false);
   assert.ok(p.observations.length <= NF_OBSERVATIONS_MAX);
 });
 
@@ -335,13 +352,13 @@ test("buildNfsePutPayload: omite payment/customer e envia taxes completos", () =
   assert.equal("payment" in put, false);
   assert.equal("customer" in put, false);
   assert.equal(put.serviceDescription, DESCRICAO_SERVICO_FIXA);
-  assert.equal("municipalServiceCode" in put, false);
+  assert.equal(put.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.equal(put.municipalServiceName, municipalServiceNameOficial());
-  assert.equal(put.municipalServiceId, "402");
-  assert.equal(typeof put.municipalServiceId, "string");
-  assert.equal(put.municipalServiceExternalId, MUNICIPAL_SERVICE_EXTERNAL_ID);
+  assert.equal("municipalServiceId" in put, false);
+  assert.equal("municipalServiceExternalId" in put, false);
+  assert.equal(put.effectiveDatePeriod, "ON_PAYMENT_CREATION");
   assert.equal(put.updatePayment, false);
-  assert.equal(put.taxes.iss, 2);
+  assert.equal(put.taxes.iss, 5);
   assert.equal(put.taxes.retainIss, true);
 });
 
@@ -501,38 +518,36 @@ test("buildNfseInvoicePayload: description só com espaços cai para descrição
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
 });
 
-test("buildNfseInvoicePayload: retemInss=true seta INSS efetivo 5,5% e ISS 2%", () => {
+test("buildNfseInvoicePayload: manda INSS 11% e ISS 5% retido", () => {
   const p = buildNfseInvoicePayload({
     paymentId: "p", value: 1000, description: "X", retemInss: true,
   });
-  assert.equal(p.taxes.inss, 5.5);
-  assert.equal(p.taxes.iss, 2);
+  assert.equal(p.taxes.inss, 11);
+  assert.equal(p.taxes.iss, 5);
   assert.equal(p.taxes.retainIss, true);
-  assert.match(p.observations, /R\$ 55,00/);
+  assert.match(p.observations, /R\$ 110,00/);
 });
 
-test("buildNfseInvoicePayload: override de municipalServiceId aplica como string", () => {
+test("buildNfseInvoicePayload: override de ID é ignorado — sempre código 07870", () => {
   const p = buildNfseInvoicePayload({
     paymentId: "p", value: 100, description: "X", municipalServiceIdOverride: 999,
   });
-  assert.equal(p.municipalServiceId, "999");
-  assert.equal(typeof p.municipalServiceId, "string");
-  assert.equal("municipalServiceCode" in p, false);
+  assert.equal(p.municipalServiceCode, CODIGO_SERVICO_MUNICIPAL_CODE);
+  assert.equal("municipalServiceId" in p, false);
 });
 
-test("buildNfseInvoicePayload: prefeitura manda municipalServiceId texto 402, sem código 07870", () => {
+test("buildNfseInvoicePayload: Portal Nacional manda código 07870, sem ID", () => {
   const p = buildNfseInvoicePayload({ paymentId: "p", value: 100, description: "X" });
-  assert.equal(p.municipalServiceId, "402");
-  assert.equal(typeof p.municipalServiceId, "string");
-  assert.equal(p.municipalServiceExternalId, 402);
-  assert.equal("municipalServiceCode" in p, false);
+  assert.equal(p.municipalServiceCode, "07870");
+  assert.equal("municipalServiceId" in p, false);
+  assert.equal("municipalServiceExternalId" in p, false);
+  assert.equal(p.effectiveDatePeriod, "ON_PAYMENT_CREATION");
   assert.equal(p.municipalServiceName, "07870 - Vigilância, segurança ou monitoramento de bens, pessoas e semoventes");
   assert.equal(p.serviceDescription, DESCRICAO_SERVICO_FIXA);
   assert.equal(String(p.serviceDescription).startsWith("07870"), false);
-  assert.equal(JSON.stringify({ municipalServiceId: p.municipalServiceId }), '{"municipalServiceId":"402"}');
   const wire = summarizeNfseWirePayload(p);
-  assert.equal(wire.municipalServiceIdType, "string");
-  assert.equal(wire.municipalServiceIdJson, '"402"');
+  assert.equal(wire.municipalServiceCode, "07870");
+  assert.equal(wire.municipalServiceId, null);
 });
 
 test("asMunicipalServiceIdString: nunca serializa 402.0", () => {
@@ -564,14 +579,13 @@ test("buildNfseObservations: modelo do financeiro com período, INSS, Simples e 
   assert.match(obs, /17\/07\/2026 a 17\/07\/2026 \(Julho\/2026\)/);
   assert.match(obs, /Anexo IV/);
   assert.match(obs, /2\.110\/2022/);
-  assert.match(obs, /5,50%/);
-  assert.match(obs, /R\$ 34,80/); // 632.80 * 5.5%
+  assert.match(obs, /11,00%/);
+  assert.match(obs, /R\$ 69,61/);
   assert.match(obs, /Simples Nac\./);
   assert.match(obs, /PIS\/COFINS\/CSLL/);
   assert.match(obs, /10\.833/);
   assert.match(obs, /R\$ 632,80/);
-  assert.match(obs, /R\$ 12,66/); // ISS 2%
-  assert.match(obs, /R\$ 585,34/); // líquido
+  assert.match(obs, /R\$ 531,55/);
   assert.ok(obs.length <= 250, `observations ${obs.length}: ${obs}`);
 });
 
@@ -745,7 +759,7 @@ test("buildNfClientEmail: com retenção de INSS mostra retenção, ISS e líqui
   assert.match(html, /925,00/);
 });
 
-test("buildNfClientEmail: sem INSS ainda mostra ISS 2% padrão da NF", () => {
+test("buildNfClientEmail: sem INSS ainda mostra ISS 5% padrão da NF", () => {
   const { html } = buildNfClientEmail({
     value: 500,
     due_date: "2026-07-10",

@@ -26,6 +26,7 @@ import {
   buildInvoiceDescription,
   buildNfseObservations,
   netBoletoValue,
+  boletoRetentionOpts,
   buildNfClientEmail,
   buildFiscalPayload,
   todayDateStr,
@@ -292,20 +293,7 @@ async function emitNfseImmediate(opts: {
     console.log(`[asaas] NFS-e criada via /invoices: id=${nfId}, status=${result.status}`);
   }
 
-  if (nfId && !isNfFullyIssued(result.status, result.number || opts.existingNfNumber)) {
-    try {
-      const authResult = await asaasRequest("POST", `/invoices/${nfId}/authorize`);
-      console.log(`[asaas] NFS-e ${nfId} authorize called: status=${authResult.status}`);
-      return {
-        id: nfId,
-        status: authResult.status || result.status || "SCHEDULED",
-        number: authResult.number ? String(authResult.number) : (result.number ? String(result.number) : undefined),
-      };
-    } catch (authErr: any) {
-      console.log(`[asaas] NFS-e ${nfId} authorize failed (non-blocking): ${authErr.message}`);
-    }
-  }
-
+  // TM não chama /authorize — a prefeitura processa a nota agendada.
   return { id: nfId, status: result.status || "SCHEDULED", number: result.number ? String(result.number) : undefined };
 }
 
@@ -1585,8 +1573,8 @@ export async function emitInvoiceAuto(
   const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
   const billingType = asAsaasBillingType(opts.billingType);
 
-  // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF). invoice.value = bruto.
-  const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
+  // Boleto líquido: INSS 11% + ISS 5% quando emite NF. invoice.value = bruto.
+  const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
 
   const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
   if (fiscalAddrErr) return { success: false, message: fiscalAddrErr, nfEmitted: false };
@@ -2088,9 +2076,9 @@ export function registerAsaasRoutes(app: Express) {
 
         // Boleto LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; NF
         // continua bruta (value=parsedValue mais abaixo). invoice.value = bruto.
-        const { boleto: boletoValue, inssValor: inssValorBoleto } = netBoletoValue(parsedValue, { retemInss, inssAliquota, retainIss: emiteNf });
-        if (retemInss) {
-          console.log(`[asaas] Cobrança c/ retenção INSS: bruto=R$${parsedValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)} (INSS R$${inssValorBoleto.toFixed(2)} @ ${inssAliquota}%)`);
+        const { boleto: boletoValue, inssValor: inssValorBoleto } = netBoletoValue(parsedValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
+        if (emiteNf || retemInss) {
+          console.log(`[asaas] Cobrança c/ retenção: bruto=R$${parsedValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)} (INSS R$${inssValorBoleto.toFixed(2)})`);
         }
 
         const paymentPayload: AsaasPaymentCreatePayload = {
@@ -2151,8 +2139,8 @@ export function registerAsaasRoutes(app: Express) {
 
       let inssAliquotaPersist: number | null = null;
       let inssValorPersist: number | null = null;
-      if (retemInss) {
-        const net = netBoletoValue(parsedValue, { retemInss: true, inssAliquota, retainIss: emiteNf });
+      if (emiteNf || retemInss) {
+        const net = netBoletoValue(parsedValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
         inssAliquotaPersist = net.inssAliquota;
         inssValorPersist = net.inssValor;
       }
@@ -2885,8 +2873,8 @@ export function registerAsaasRoutes(app: Express) {
       }
       const retemInss = clientData?.retem_inss === true;
       const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
-      // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF); NF e invoices.value continuam BRUTOS.
-      const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
+      // Boleto líquido: INSS 11% + ISS 5% quando emite NF; NF e invoices.value continuam BRUTOS.
+      const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
 
       const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
       if (fiscalAddrErr) return res.status(400).json({ message: fiscalAddrErr });
@@ -3628,11 +3616,7 @@ export function registerAsaasRoutes(app: Express) {
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const retemInssConsolidado = clientData?.retem_inss === true;
       const inssAliquotaConsolidadoLegal = Number(clientData?.inss_aliquota ?? 11);
-      const netConsolidado = netBoletoValue(totalValue, {
-        retemInss: retemInssConsolidado,
-        inssAliquota: inssAliquotaConsolidadoLegal,
-        retainIss: emiteNfConsolidado,
-      });
+      const netConsolidado = netBoletoValue(totalValue, boletoRetentionOpts(emiteNfConsolidado, retemInssConsolidado, inssAliquotaConsolidadoLegal));
       const inssAliquotaConsolidado = netConsolidado.inssAliquota;
       const inssValorConsolidado = netConsolidado.inssValor;
 
@@ -3704,11 +3688,7 @@ export function registerAsaasRoutes(app: Express) {
           let spNfseNumber: string | null = null;
           let spNfseErrorMessage: string | null = null;
 
-          const spNet = netBoletoValue(splitValue, {
-            retemInss: retemInssConsolidado,
-            inssAliquota: inssAliquotaConsolidadoLegal,
-            retainIss: emiteNfConsolidado,
-          });
+          const spNet = netBoletoValue(splitValue, boletoRetentionOpts(emiteNfConsolidado, retemInssConsolidado, inssAliquotaConsolidadoLegal));
           const spInssValor = spNet.inssValor;
 
           if (sendToAsaas && hasAsaasApiKey() && splitCnpj) {
