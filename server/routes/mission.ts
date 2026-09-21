@@ -16,6 +16,7 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
+  import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -2236,27 +2237,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       } catch (_e) {}
 
       try {
-        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
-          .select("id, asaas_payment_id")
-          .eq("origin_type", "service_order")
-          .eq("origin_id", String(serviceOrderId))
-          .not("asaas_payment_id", "is", null);
-        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
-          const apiKey = process.env.ASAAS_API_KEY;
-          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
-          for (const tx of pendingTxs) {
-            if (!tx.asaas_payment_id) continue;
-            try {
-              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
-                method: "DELETE",
-                headers: { "access_token": apiKey },
-              });
-              console.log(`[OS-Refuse] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${so.osNumber}`);
-            } catch (asaasErr: any) {
-              console.error(`[OS-Refuse] Asaas cancel failed: ${asaasErr.message}`);
-            }
-          }
-        }
+        await cancelAsaasPaymentsLinkedToOs(serviceOrderId, "OS-Refuse");
       } catch (_e) {}
 
       console.log(`[OS-Refuse] OS ${so.osNumber} recusada por ${adminName} — motivo: ${motivo}`);
@@ -3344,27 +3325,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       }
 
       try {
-        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
-          .select("id, asaas_payment_id")
-          .eq("origin_type", "service_order")
-          .eq("origin_id", String(osId))
-          .not("asaas_payment_id", "is", null);
-        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
-          const apiKey = process.env.ASAAS_API_KEY;
-          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
-          for (const tx of pendingTxs) {
-            if (!tx.asaas_payment_id) continue;
-            try {
-              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
-                method: "DELETE",
-                headers: { "access_token": apiKey },
-              });
-              console.log(`[OS-recusada] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${osCheck.osNumber}`);
-            } catch (asaasErr: any) {
-              console.error(`[OS-recusada] Asaas cancel failed: ${asaasErr.message}`);
-            }
-          }
-        }
+        await cancelAsaasPaymentsLinkedToOs(osId, "OS-recusada");
       } catch (_e) {}
 
       try {

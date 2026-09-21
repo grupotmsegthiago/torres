@@ -460,6 +460,160 @@ export function todayDateStr(now: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+export const ASAAS_PROD_URL = "https://api.asaas.com/v3";
+export const ASAAS_SANDBOX_URL = "https://api-sandbox.asaas.com/v3";
+
+export type AsaasBillingType = "BOLETO" | "PIX" | "UNDEFINED" | "CREDIT_CARD";
+
+export interface AsaasPaymentCreatePayload {
+  customer: string;
+  billingType: AsaasBillingType;
+  value: number;
+  dueDate: string;
+  description?: string;
+  externalReference?: string;
+  notificationDisabled?: boolean;
+  postalService?: boolean;
+  fiscalObservations?: string;
+}
+
+export function isAsaasSandboxKey(key: string | null | undefined): boolean {
+  return /_hmlg_|_sandbox_|\$aact_hmlg_/i.test(String(key || ""));
+}
+
+/** www.asaas.com e sandbox.asaas.com/api são aliases legados — a API oficial é api / api-sandbox. */
+export function normalizeAsaasUrl(url: string | null | undefined): string {
+  const u = String(url || "").trim().replace(/\/$/, "");
+  if (/^https:\/\/www\.asaas\.com\/api\/v3$/i.test(u)) return ASAAS_PROD_URL;
+  if (/^https:\/\/sandbox\.asaas\.com\/api\/v3$/i.test(u)) return ASAAS_SANDBOX_URL;
+  return u;
+}
+
+export function resolveAsaasBaseUrl(opts: {
+  key?: string | null;
+  prodUrl?: string | null;
+  sandboxUrl?: string | null;
+  legacyUrl?: string | null;
+}): string {
+  const sandbox = isAsaasSandboxKey(opts.key);
+  const dedicated = String(sandbox ? (opts.sandboxUrl || "") : (opts.prodUrl || "")).trim();
+  if (dedicated) return normalizeAsaasUrl(dedicated);
+  const legacy = String(opts.legacyUrl || "").trim();
+  if (legacy) return normalizeAsaasUrl(legacy);
+  return sandbox ? ASAAS_SANDBOX_URL : ASAAS_PROD_URL;
+}
+
+/** Dia 15 do mês seguinte em calendário BRT — não usa toISOString() (UTC). */
+export function defaultInvoiceDueDate(now: Date = new Date()): string {
+  const [ys, ms] = todayDateStr(now).split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  return `${nextY}-${String(nextM).padStart(2, "0")}-15`;
+}
+
+export function asAsaasBillingType(raw: unknown): AsaasBillingType {
+  const t = String(raw || "BOLETO").toUpperCase();
+  if (t === "PIX" || t === "UNDEFINED" || t === "CREDIT_CARD" || t === "BOLETO") return t;
+  return "BOLETO";
+}
+
+export function assertAsaasDate(raw: unknown, field = "dueDate"): string {
+  const s = String(raw || "").trim();
+  const isoPrefix = s.length >= 10 && s[4] === "-" && s[7] === "-" ? s.slice(0, 10) : s;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoPrefix)) {
+    throw new Error(`${field} deve estar no formato AAAA-MM-DD`);
+  }
+  const y = Number(isoPrefix.slice(0, 4));
+  const m = Number(isoPrefix.slice(5, 7));
+  const d = Number(isoPrefix.slice(8, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    throw new Error(`${field} inválida (data inexistente no calendário)`);
+  }
+  return isoPrefix;
+}
+
+export function parseAsaasMoney(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  const s = String(raw ?? "").replace(/R\$\s?/i, "").trim();
+  if (!s) return null;
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s) || /^-?\d+,\d+$/.test(s)) {
+    const n = Number(s.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(s.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+export function assertAsaasMoney(raw: unknown, field = "value"): number {
+  const n = parseAsaasMoney(raw);
+  if (n == null || n <= 0) throw new Error(`${field} deve ser número > 0`);
+  return Number(n.toFixed(2));
+}
+
+export function assertCpfCnpj(raw: unknown): string {
+  const d = String(raw || "").replace(/\D/g, "");
+  if (d.length !== 11 && d.length !== 14) {
+    throw new Error("CPF/CNPJ inválido (11 ou 14 dígitos)");
+  }
+  return d;
+}
+
+export type AsaasWebhookAuthDecision =
+  | { allow: true }
+  | { allow: false; reason: "missing_server_secret" | "invalid_token" };
+
+export function extractAsaasWebhookToken(headers: {
+  "asaas-access-token"?: string | string[];
+  "x-asaas-access-token"?: string | string[];
+  authorization?: string | string[];
+}): string {
+  const first = (v?: string | string[]) => String(Array.isArray(v) ? v[0] : v || "");
+  const rawAuth = first(headers.authorization);
+  const bearer = rawAuth.toLowerCase().startsWith("bearer ") ? rawAuth.slice(7).trim() : rawAuth.trim();
+  return (first(headers["asaas-access-token"]) || first(headers["x-asaas-access-token"]) || bearer).trim();
+}
+
+export function resolveAsaasWebhookExpectedToken(opts: {
+  webhookToken?: string | null;
+  apiKey?: string | null;
+}): string {
+  return String(opts.webhookToken || opts.apiKey || "").trim();
+}
+
+function asaasTokensEqual(expected: string, received: string): boolean {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(received);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+/** Fail-closed: sem secret no servidor ou token divergente → recusa. Nunca aceita aberto. */
+export function evaluateAsaasWebhookAuth(expected: string, received: string): AsaasWebhookAuthDecision {
+  if (!String(expected || "").trim()) return { allow: false, reason: "missing_server_secret" };
+  if (!asaasTokensEqual(String(expected).trim(), String(received || "").trim())) {
+    return { allow: false, reason: "invalid_token" };
+  }
+  return { allow: true };
+}
+
+/** Junta errors[] do Asaas (code + description). Equivale a response.data.errors no axios. */
+export function formatAsaasErrors(data: unknown, status: number): string {
+  const body = data as { errors?: Array<{ code?: string; description?: string; message?: string }>; message?: string } | null;
+  const items = Array.isArray(body?.errors) ? body.errors : [];
+  if (items.length > 0) {
+    const detail = items.map((e, i) =>
+      `[${i}] code=${e?.code ?? "?"} desc=${e?.description || e?.message || "?"}`,
+    ).join(" | ");
+    return `Asaas HTTP ${status}: ${detail}`;
+  }
+  return body?.message || `Asaas API error ${status}`;
+}
+
 /**
  * Discriminacao da NFS-e (SP/ABRASF): sem travessão tipográfico, sem XML
  * control chars. A descrição da fatura (cliente/período) NÃO vai neste campo —

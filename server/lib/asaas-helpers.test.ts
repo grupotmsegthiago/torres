@@ -76,6 +76,20 @@ import {
   asaasDueDateIfDifferent,
   isManualInvoiceDueDate,
   planDueDateReconcile,
+  resolveAsaasBaseUrl,
+  normalizeAsaasUrl,
+  isAsaasSandboxKey,
+  ASAAS_PROD_URL,
+  ASAAS_SANDBOX_URL,
+  assertAsaasDate,
+  assertAsaasMoney,
+  assertCpfCnpj,
+  formatAsaasErrors,
+  defaultInvoiceDueDate,
+  asAsaasBillingType,
+  extractAsaasWebhookToken,
+  resolveAsaasWebhookExpectedToken,
+  evaluateAsaasWebhookAuth,
 } from "./asaas-helpers.ts";
 
 // ============================================================================
@@ -1164,5 +1178,77 @@ test("nfseUpdatesFromAsaasObject: falha de comunicação do portal vira ERROR", 
   );
   assert.equal(u.nfse_status, "ERROR");
   assert.match(String(u.nfse_error_message), /Falha ao comunicar/);
+});
+
+test("resolveAsaasBaseUrl: produção oficial e normaliza www legado", () => {
+  assert.equal(isAsaasSandboxKey("$aact_prod_xxx"), false);
+  assert.equal(isAsaasSandboxKey("$aact_hmlg_xxx"), true);
+  assert.equal(isAsaasSandboxKey("$aact_sandbox_xxx"), true);
+  assert.equal(normalizeAsaasUrl("https://www.asaas.com/api/v3/"), ASAAS_PROD_URL);
+  assert.equal(normalizeAsaasUrl("https://sandbox.asaas.com/api/v3"), ASAAS_SANDBOX_URL);
+  assert.equal(resolveAsaasBaseUrl({ key: "$aact_prod_abc" }), ASAAS_PROD_URL);
+  assert.equal(resolveAsaasBaseUrl({ key: "$aact_hmlg_abc" }), ASAAS_SANDBOX_URL);
+  assert.equal(resolveAsaasBaseUrl({ key: "$aact_prod_abc", legacyUrl: "https://www.asaas.com/api/v3" }), ASAAS_PROD_URL);
+  assert.equal(resolveAsaasBaseUrl({ key: "$aact_hmlg_abc", sandboxUrl: "https://api-sandbox.asaas.com/v3/" }), ASAAS_SANDBOX_URL);
+  assert.equal(resolveAsaasBaseUrl({ key: "$aact_prod_abc", prodUrl: "https://api.asaas.com/v3" }), ASAAS_PROD_URL);
+});
+
+test("assertAsaasDate: só AAAA-MM-DD civil; recusa BR e calendário inválido", () => {
+  assert.equal(assertAsaasDate("2026-09-21"), "2026-09-21");
+  assert.equal(assertAsaasDate("2026-09-21T00:00:00.000Z"), "2026-09-21");
+  assert.throws(() => assertAsaasDate("21/09/2026"), /AAAA-MM-DD/);
+  assert.throws(() => assertAsaasDate("2026-02-30"), /inexistente/);
+  assert.throws(() => assertAsaasDate(""), /AAAA-MM-DD/);
+});
+
+test("assertAsaasMoney: number, ponto decimal e milhar BR", () => {
+  assert.equal(assertAsaasMoney(1234.56), 1234.56);
+  assert.equal(assertAsaasMoney("1234.56"), 1234.56);
+  assert.equal(assertAsaasMoney("1.234,56"), 1234.56);
+  assert.equal(assertAsaasMoney("1234,56"), 1234.56);
+  assert.equal(assertAsaasMoney("R$ 1.234,56"), 1234.56);
+  assert.throws(() => assertAsaasMoney(0), /> 0/);
+  assert.throws(() => assertAsaasMoney("abc"), /> 0/);
+});
+
+test("assertCpfCnpj: 11 ou 14 dígitos; aceita máscara", () => {
+  assert.equal(assertCpfCnpj("249.715.637-92"), "24971563792");
+  assert.equal(assertCpfCnpj("36.982.392/0001-89"), "36982392000189");
+  assert.throws(() => assertCpfCnpj("123456789012"), /11 ou 14/);
+  assert.throws(() => assertCpfCnpj(""), /11 ou 14/);
+});
+
+test("formatAsaasErrors: junta errors[] com code e description", () => {
+  const msg = formatAsaasErrors({
+    errors: [
+      { code: "invalid_date", description: "dueDate inválida" },
+      { code: "invalid_value", description: "value deve ser numérico" },
+    ],
+  }, 400);
+  assert.match(msg, /Asaas HTTP 400/);
+  assert.match(msg, /invalid_date/);
+  assert.match(msg, /dueDate inválida/);
+  assert.match(msg, /invalid_value/);
+  assert.equal(formatAsaasErrors({ message: "offline" }, 503), "offline");
+  assert.equal(formatAsaasErrors({}, 500), "Asaas API error 500");
+});
+
+test("evaluateAsaasWebhookAuth: fail-closed sem secret e com token errado", () => {
+  assert.deepEqual(evaluateAsaasWebhookAuth("", "qualquer"), { allow: false, reason: "missing_server_secret" });
+  assert.deepEqual(evaluateAsaasWebhookAuth("secret", ""), { allow: false, reason: "invalid_token" });
+  assert.deepEqual(evaluateAsaasWebhookAuth("secret", "errado"), { allow: false, reason: "invalid_token" });
+  assert.deepEqual(evaluateAsaasWebhookAuth("secret", "secret"), { allow: true });
+  assert.equal(resolveAsaasWebhookExpectedToken({ webhookToken: "wh", apiKey: "key" }), "wh");
+  assert.equal(resolveAsaasWebhookExpectedToken({ webhookToken: "", apiKey: "key" }), "key");
+  assert.equal(resolveAsaasWebhookExpectedToken({}), "");
+  assert.equal(extractAsaasWebhookToken({ "asaas-access-token": "tok" }), "tok");
+  assert.equal(extractAsaasWebhookToken({ authorization: "Bearer tok2" }), "tok2");
+});
+
+test("defaultInvoiceDueDate: dia 15 do mês seguinte em BRT, não UTC", () => {
+  assert.equal(defaultInvoiceDueDate(new Date("2026-09-15T02:30:00.000Z")), "2026-10-15");
+  assert.equal(defaultInvoiceDueDate(new Date("2026-12-20T15:00:00.000-03:00")), "2027-01-15");
+  assert.equal(asAsaasBillingType("pix"), "PIX");
+  assert.equal(asAsaasBillingType("foo"), "BOLETO");
 });
 

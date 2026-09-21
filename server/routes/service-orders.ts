@@ -14,6 +14,7 @@ import type { Express } from "express";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { logSystemAudit } from "../audit";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
+  import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
   import { randomUUID } from "crypto";
   import { estimateTolls, estimateTollsAlongPath, getAllTollPlazas } from "../toll-engine";
   import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
@@ -1593,27 +1594,7 @@ import type { Express } from "express";
       }
 
       try {
-        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
-          .select("id, asaas_payment_id")
-          .eq("origin_type", "service_order")
-          .eq("origin_id", String(req.params.id))
-          .not("asaas_payment_id", "is", null);
-        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
-          const apiKey = process.env.ASAAS_API_KEY;
-          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
-          for (const tx of pendingTxs) {
-            if (!tx.asaas_payment_id) continue;
-            try {
-              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
-                method: "DELETE",
-                headers: { "access_token": apiKey },
-              });
-              console.log(`[OS-${actionLabel}] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${existing.osNumber}`);
-            } catch (asaasErr: any) {
-              console.error(`[OS-${actionLabel}] Asaas cancel failed: ${asaasErr.message}`);
-            }
-          }
-        }
+        await cancelAsaasPaymentsLinkedToOs(req.params.id, `OS-${actionLabel}`);
       } catch (_e) {}
 
       try {

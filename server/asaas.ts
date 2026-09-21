@@ -75,6 +75,17 @@ import {
   buildAsaasNotificationPolicyUpdate,
   isManualInvoiceDueDate,
   planDueDateReconcile,
+  resolveAsaasBaseUrl,
+  assertAsaasDate,
+  assertAsaasMoney,
+  assertCpfCnpj,
+  formatAsaasErrors,
+  defaultInvoiceDueDate,
+  asAsaasBillingType,
+  type AsaasPaymentCreatePayload,
+  extractAsaasWebhookToken,
+  resolveAsaasWebhookExpectedToken,
+  evaluateAsaasWebhookAuth,
 } from "./lib/asaas-helpers";
 import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
 import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
@@ -94,14 +105,13 @@ function hasAsaasApiKey(): boolean {
   return !!resolveAsaasApiKey();
 }
 
-function getAsaasBaseUrl(): string {
-  const override = String(
-    process.env.ASAAS_API_BASE_URL || process.env.ASAAS_BASE_URL || process.env.ASAAS_API_URL || "",
-  ).trim().replace(/\/$/, "");
-  if (override) return override;
-  const key = resolveAsaasApiKey() || "";
-  if (/_hmlg_|_sandbox_/i.test(key)) return "https://sandbox.asaas.com/api/v3";
-  return "https://www.asaas.com/api/v3";
+export function getAsaasBaseUrl(): string {
+  return resolveAsaasBaseUrl({
+    key: resolveAsaasApiKey(),
+    prodUrl: process.env.ASAAS_API_URL_PROD,
+    sandboxUrl: process.env.ASAAS_API_URL_SANDBOX,
+    legacyUrl: process.env.ASAAS_API_BASE_URL || process.env.ASAAS_BASE_URL || process.env.ASAAS_API_URL,
+  });
 }
 
 // Status terminais "pagos" — uma fatura nesses estados NUNCA pode ser
@@ -1248,16 +1258,62 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   let data: any;
   try { data = JSON.parse(text); } catch { data = { rawText: text }; }
 
-  if (!resp.ok) {
-    const errMsg = data?.errors?.[0]?.description || data?.message || `Asaas API error ${resp.status}`;
-    throw new Error(errMsg);
-  }
-  // Asaas sometimes returns 200 OK with errors[] in body (validation failures)
-  if (Array.isArray(data?.errors) && data.errors.length > 0) {
-    const errMsg = data.errors[0]?.description || data.errors[0]?.code || "Erro de validação Asaas";
-    throw new Error(errMsg);
+  if (!resp.ok || (Array.isArray(data?.errors) && data.errors.length > 0)) {
+    const errMsg = formatAsaasErrors(data, resp.status);
+    console.error("[asaas] API error", {
+      method,
+      path,
+      status: resp.status,
+      errors: data?.errors ?? null,
+      message: data?.message ?? null,
+      raw: typeof data?.rawText === "string" ? String(data.rawText).slice(0, 500) : undefined,
+    });
+    const err = new Error(errMsg) as Error & { asaasErrors?: unknown; asaasStatus?: number; asaasGateway?: boolean };
+    err.asaasErrors = data?.errors;
+    err.asaasStatus = resp.status;
+    err.asaasGateway = true;
+    throw err;
   }
   return data;
+}
+
+export function getAsaasApiKey(): string | null {
+  return resolveAsaasApiKey();
+}
+
+/** DELETE /payments/{id} pelo cliente oficial (URL + chave + errors[]). */
+export async function cancelAsaasPayment(paymentId: string): Promise<void> {
+  const id = String(paymentId || "").trim();
+  if (!id || !hasAsaasApiKey()) return;
+  await asaasRequest("DELETE", `/payments/${id}`);
+}
+
+/** Recusa/cancelamento de OS: encerra cobranças Asaas ligadas à FT da OS. */
+export async function cancelAsaasPaymentsLinkedToOs(
+  serviceOrderId: string | number,
+  logLabel = "asaas",
+): Promise<number> {
+  const { data: pendingTxs, error } = await supabaseAdmin.from("financial_transactions")
+    .select("id, asaas_payment_id")
+    .eq("origin_type", "service_order")
+    .eq("origin_id", String(serviceOrderId))
+    .not("asaas_payment_id", "is", null);
+  if (error) {
+    console.error(`[${logLabel}] query FT Asaas: ${error.message}`);
+    return 0;
+  }
+  let cancelled = 0;
+  for (const tx of pendingTxs || []) {
+    if (!tx.asaas_payment_id) continue;
+    try {
+      await cancelAsaasPayment(tx.asaas_payment_id);
+      cancelled += 1;
+      console.log(`[${logLabel}] Asaas payment ${tx.asaas_payment_id} cancelled for OS ${serviceOrderId}`);
+    } catch (asaasErr: any) {
+      console.error(`[${logLabel}] Asaas cancel failed: ${asaasErr.message}`, asaasErr.asaasErrors || "");
+    }
+  }
+  return cancelled;
 }
 
 async function fetchAsaasPix(paymentId: string): Promise<{ pix_qr_code: string | null; pix_copia_e_cola: string | null }> {
@@ -1363,8 +1419,7 @@ interface AsaasCustomerOpts {
 }
 
 async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string, opts: AsaasCustomerOpts = {}): Promise<string> {
-  const cleanDoc = cpfCnpj.replace(/[^\d]/g, "");
-  if (!cleanDoc) throw new Error("CPF/CNPJ é obrigatório para criar cobrança no Asaas");
+  const cleanDoc = assertCpfCnpj(cpfCnpj);
 
   function fallbackParse(raw?: string) {
     if (!raw) return { addressNumber: "S/N" as string | undefined, complement: undefined as string | undefined };
@@ -1416,7 +1471,10 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
       await applyAsaasCustomerEmailPolicy(existing.id);
       return existing.id;
     }
-  } catch {}
+  } catch (e: any) {
+    console.error(`[asaas] GET /customers?cpfCnpj falhou: ${e.message}`, e.asaasErrors || "");
+    throw e;
+  }
 
   const emails = (email || "").split(/[;,]\s*/);
   const primaryEmail = emails[0]?.trim() || undefined;
@@ -1508,8 +1566,16 @@ export async function emitInvoiceAuto(
     const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
     clientData = r.data?.[0] || null;
   }
-  const cpfCnpj = (clientData?.cnpj || clientData?.cpf || invoice.client_cpf_cnpj || "").toString().replace(/[^\d]/g, "");
-  if (!cpfCnpj || cpfCnpj.length < 11) return { success: false, message: "Cliente sem CPF/CNPJ cadastrado", nfEmitted: false };
+  let cpfCnpj: string;
+  let totalValue: number;
+  let dueDate: string;
+  try {
+    cpfCnpj = assertCpfCnpj(clientData?.cnpj || clientData?.cpf || invoice.client_cpf_cnpj);
+    totalValue = assertAsaasMoney(invoice.value);
+    dueDate = assertAsaasDate(opts.dueDate);
+  } catch (e: any) {
+    return { success: false, message: e.message, nfEmitted: false };
+  }
 
   const clientName = clientData?.name || invoice.client_name;
   const clientEmail = asaasTomadorEmail(clientData);
@@ -1517,10 +1583,7 @@ export async function emitInvoiceAuto(
   const emiteNf = clientData?.emite_nf === true;
   const retemInss = clientData?.retem_inss === true;
   const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
-  const totalValue = parseFloat(invoice.value);
-  const billingType = opts.billingType || "BOLETO";
-
-  if (totalValue <= 0) return { success: false, message: "Valor da fatura é R$ 0,00", nfEmitted: false };
+  const billingType = asAsaasBillingType(opts.billingType);
 
   // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF). invoice.value = bruto.
   const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
@@ -1540,11 +1603,11 @@ export async function emitInvoiceAuto(
     }
   );
 
-  const paymentPayload: any = {
+  const paymentPayload: AsaasPaymentCreatePayload = {
     customer: asaasCustomerId,
     billingType,
-    value: boletoValue,
-    dueDate: opts.dueDate,
+    value: assertAsaasMoney(boletoValue, "boleto"),
+    dueDate,
     description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
     externalReference: invoice.external_reference || `FATURA-${invoiceId}`,
     notificationDisabled: false,
@@ -1559,7 +1622,7 @@ export async function emitInvoiceAuto(
     });
   }
 
-  console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${opts.dueDate}`);
+  console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${dueDate}`);
   const payment = await asaasRequest("POST", "/payments", paymentPayload);
   await applyAsaasPaymentEmailPolicy(payment.id);
 
@@ -1567,7 +1630,7 @@ export async function emitInvoiceAuto(
     asaas_customer_id: asaasCustomerId,
     asaas_payment_id: payment.id,
     client_cpf_cnpj: cpfCnpj,
-    due_date: opts.dueDate,
+    due_date: dueDate,
     billing_type: billingType,
     status: payment.status || "PENDING",
     invoice_url: payment.invoiceUrl,
@@ -1604,7 +1667,7 @@ export async function emitInvoiceAuto(
 
   await logSystemAudit({
     action: "EMITIR_FATURA_AUTO_APROVACAO", targetId: String(invoiceId), targetType: "invoice",
-    details: `Fatura #${invoiceId} auto-emitida após aprovação do cliente. ${clientName} R$${totalValue.toFixed(2)} venc=${opts.dueDate}. Asaas=${payment.id}${nfEmitted ? " + NFS-e" : ""}`,
+    details: `Fatura #${invoiceId} auto-emitida após aprovação do cliente. ${clientName} R$${totalValue.toFixed(2)} venc=${dueDate}. Asaas=${payment.id}${nfEmitted ? " + NFS-e" : ""}`,
   });
 
   notifyComissaoInvoiceEvent("FATURADO", { invoiceId });
@@ -1641,8 +1704,10 @@ export function registerAsaasRoutes(app: Express) {
   const TRANSFER_RESERVE = 100;
 
   app.post("/api/asaas/webhook-transfer-approve", async (req: Request, res: Response) => {
-    const headerToken = (req.headers["asaas-access-token"] || req.headers["x-asaas-access-token"] || req.headers["authorization"] || "") as string;
-    const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
+    const headerToken = extractAsaasWebhookToken(req.headers);
+    const expectedToken = resolveAsaasWebhookExpectedToken({
+      webhookToken: process.env.ASAAS_WEBHOOK_TOKEN,
+    });
     const body: any = req.body || {};
     const event: string = String(body?.event || "").toUpperCase();
 
@@ -1679,14 +1744,13 @@ export function registerAsaasRoutes(app: Express) {
     console.log(`[asaas-webhook-approve] >>> headers: ${JSON.stringify({ "asaas-access-token-presente": !!req.headers["asaas-access-token"], "x-asaas-access-token-presente": !!req.headers["x-asaas-access-token"], "authorization-presente": !!req.headers["authorization"], "user-agent": req.headers["user-agent"] })}`);
     console.log(`[asaas-webhook-approve] >>> body raw keys=${Object.keys(body).join(",")}`);
 
-    if (!expectedToken) {
-      console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
-      return res.status(200).json({ status: "REFUSED", refuseReason: "Servidor sem ASAAS_WEBHOOK_TOKEN configurado." });
-    }
-
-    const tokenLimpo = headerToken.replace(/^Bearer\s+/i, "").trim();
-    if (tokenLimpo !== expectedToken) {
-      console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido. recebido(len=${tokenLimpo.length}) esperado(len=${expectedToken.length})`);
+    const approveAuth = evaluateAsaasWebhookAuth(expectedToken, headerToken);
+    if (!approveAuth.allow) {
+      if (approveAuth.reason === "missing_server_secret") {
+        console.error(`[asaas-webhook-approve] BLOQUEADO: ASAAS_WEBHOOK_TOKEN não configurado no servidor.`);
+        return res.status(200).json({ status: "REFUSED", refuseReason: "Servidor sem ASAAS_WEBHOOK_TOKEN configurado." });
+      }
+      console.error(`[asaas-webhook-approve] BLOQUEADO: token inválido. recebido(len=${headerToken.length}) esperado(len=${expectedToken.length})`);
       return res.status(401).json({ status: "REFUSED", refuseReason: "Token de autenticação do webhook inválido." });
     }
 
@@ -1942,8 +2006,17 @@ export function registerAsaasRoutes(app: Express) {
         }
       }
 
-      if (!clientName || !value || !dueDate || !description) {
+      if (!clientName || value == null || value === "" || !dueDate || !description) {
         return res.status(400).json({ message: "Campos obrigatórios: clientName, value, dueDate, description" });
+      }
+
+      let parsedDue: string;
+      let parsedValue: number;
+      try {
+        parsedDue = assertAsaasDate(dueDate);
+        parsedValue = assertAsaasMoney(value);
+      } catch (e: any) {
+        return res.status(400).json({ message: e.message });
       }
 
       if (serviceOrderId) {
@@ -2005,12 +2078,13 @@ export function registerAsaasRoutes(app: Express) {
       if (sendToAsaas && hasAsaasApiKey()) {
         const fiscalAddrErr = assertFiscalAddressForNf(clientFiscal, emiteNf);
         if (fiscalAddrErr) return res.status(400).json({ message: fiscalAddrErr });
-        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientOpts);
-
-        const parsedValue = parseFloat(value);
-        if (!parsedValue || parsedValue <= 0) {
-          return res.status(400).json({ message: "Valor da cobrança deve ser maior que R$ 0,00. OS recusada/cancelada não pode gerar cobrança." });
+        let customerDoc: string;
+        try {
+          customerDoc = assertCpfCnpj(clientCpfCnpj);
+        } catch (e: any) {
+          return res.status(400).json({ message: e.message });
         }
+        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, customerDoc, clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip, clientOpts);
 
         // Boleto LÍQUIDO (bruto − INSS retido) quando o cliente retém INSS; NF
         // continua bruta (value=parsedValue mais abaixo). invoice.value = bruto.
@@ -2019,11 +2093,11 @@ export function registerAsaasRoutes(app: Express) {
           console.log(`[asaas] Cobrança c/ retenção INSS: bruto=R$${parsedValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)} (INSS R$${inssValorBoleto.toFixed(2)} @ ${inssAliquota}%)`);
         }
 
-        const paymentPayload: any = {
+        const paymentPayload: AsaasPaymentCreatePayload = {
           customer: asaasCustomerId,
-          billingType: billingType || "BOLETO",
-          value: boletoValue,
-          dueDate,
+          billingType: asAsaasBillingType(billingType),
+          value: assertAsaasMoney(boletoValue, "boleto"),
+          dueDate: parsedDue,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
           notificationDisabled: false,
@@ -2059,7 +2133,7 @@ export function registerAsaasRoutes(app: Express) {
           await logSystemAudit({
             userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
             action: "ASAAS_COBRANCA_GERADA", targetId: asaasPaymentId, targetType: "invoice",
-            details: `Cobrança ${billingType || "BOLETO"} R$${parseFloat(value).toFixed(2)} gerada para ${clientName}. Asaas ID: ${asaasPaymentId}`,
+            details: `Cobrança ${asAsaasBillingType(billingType)} R$${parsedValue.toFixed(2)} gerada para ${clientName}. Asaas ID: ${asaasPaymentId}`,
             ipAddress: (req as any).ip,
           });
         } catch (asaasErr: any) {
@@ -2078,22 +2152,27 @@ export function registerAsaasRoutes(app: Express) {
       let inssAliquotaPersist: number | null = null;
       let inssValorPersist: number | null = null;
       if (retemInss) {
-        const net = netBoletoValue(parseFloat(value), { retemInss: true, inssAliquota, retainIss: emiteNf });
+        const net = netBoletoValue(parsedValue, { retemInss: true, inssAliquota, retainIss: emiteNf });
         inssAliquotaPersist = net.inssAliquota;
         inssValorPersist = net.inssValor;
+      }
+
+      let storedDoc: string | null = null;
+      if (clientCpfCnpj) {
+        try { storedDoc = assertCpfCnpj(clientCpfCnpj); } catch { storedDoc = String(clientCpfCnpj).replace(/\D/g, "") || null; }
       }
 
       const { data, error } = await supabaseAdmin.from("invoices").insert({
         client_id: clientId || null,
         client_name: clientName,
-        client_cpf_cnpj: clientCpfCnpj || null,
+        client_cpf_cnpj: storedDoc,
         asaas_customer_id: asaasCustomerId,
         asaas_payment_id: asaasPaymentId,
         service_order_id: serviceOrderId || null,
         description,
-        value: parseFloat(value),
-        due_date: dueDate,
-        billing_type: billingType || "BOLETO",
+        value: parsedValue,
+        due_date: parsedDue,
+        billing_type: asAsaasBillingType(billingType),
         status,
         invoice_url: invoiceUrl,
         bank_slip_url: bankSlipUrl,
@@ -2137,7 +2216,11 @@ export function registerAsaasRoutes(app: Express) {
       const { data: withNf } = await supabaseAdmin.from("invoices").select("*").eq("id", data.id).maybeSingle();
       res.json(withNf || data);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      const status = err?.asaasGateway ? 502 : 500;
+      res.status(status).json({
+        message: err.message,
+        ...(err.asaasErrors ? { errors: err.asaasErrors } : {}),
+      });
     }
   });
 
@@ -2737,7 +2820,12 @@ export function registerAsaasRoutes(app: Express) {
       const id = parseInt(req.params.id);
       const { dueDate, billingType } = req.body;
 
-      if (!dueDate) return res.status(400).json({ message: "Data de vencimento é obrigatória." });
+      let parsedDue: string;
+      try {
+        parsedDue = assertAsaasDate(dueDate);
+      } catch (e: any) {
+        return res.status(400).json({ message: e.message });
+      }
 
       const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!invoice) return res.status(404).json({ message: "Fatura não encontrada." });
@@ -2789,13 +2877,16 @@ export function registerAsaasRoutes(app: Express) {
       const clientEmail = asaasTomadorEmail(clientData);
       const clientPhone = clientData?.phone || undefined;
       const emiteNf = clientData?.emite_nf === true;
-      const totalValue = parseFloat(invoice.value);
+      let totalValue: number;
+      try {
+        totalValue = assertAsaasMoney(invoice.value);
+      } catch {
+        return res.status(400).json({ message: "Valor da fatura é R$ 0,00." });
+      }
       const retemInss = clientData?.retem_inss === true;
       const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
       // Boleto sai LÍQUIDO (bruto − INSS efetivo − ISS 2% se emite NF); NF e invoices.value continuam BRUTOS.
       const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, { retemInss, inssAliquota, retainIss: emiteNf });
-
-      if (totalValue <= 0) return res.status(400).json({ message: "Valor da fatura é R$ 0,00." });
 
       const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
       if (fiscalAddrErr) return res.status(400).json({ message: fiscalAddrErr });
@@ -2822,11 +2913,11 @@ export function registerAsaasRoutes(app: Express) {
         else console.log(`[emitir #${id}] clients.asaas_customer_id=${asaasCustomerId} salvo (cliente ${clientData.id})`);
       }
 
-      const paymentPayload: any = {
+      const paymentPayload: AsaasPaymentCreatePayload = {
         customer: asaasCustomerId,
-        billingType: billingType || "BOLETO",
-        value: boletoValue,
-        dueDate,
+        billingType: asAsaasBillingType(billingType),
+        value: assertAsaasMoney(boletoValue, "boleto"),
+        dueDate: parsedDue,
         description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
         externalReference: invoice.external_reference || `FATURA-${id}`,
         notificationDisabled: false,
@@ -2842,7 +2933,7 @@ export function registerAsaasRoutes(app: Express) {
         });
       }
 
-      console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${dueDate}`);
+      console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${parsedDue}`);
       const payment = await asaasRequest("POST", "/payments", paymentPayload);
       await applyAsaasPaymentEmailPolicy(payment.id);
 
@@ -2850,8 +2941,8 @@ export function registerAsaasRoutes(app: Express) {
         asaas_customer_id: asaasCustomerId,
         asaas_payment_id: payment.id,
         client_cpf_cnpj: cpfCnpj,
-        due_date: dueDate,
-        billing_type: billingType || "BOLETO",
+        due_date: parsedDue,
+        billing_type: asAsaasBillingType(billingType),
         status: payment.status || "PENDING",
         invoice_url: payment.invoiceUrl,
         bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
@@ -2886,7 +2977,7 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
         action: "EMITIR_FATURA_APROVADA", targetId: String(id), targetType: "invoice",
-        details: `Fatura #${id} emitida via Asaas. ${clientName} R$${totalValue.toFixed(2)} venc=${dueDate}. Asaas=${payment.id}`,
+        details: `Fatura #${id} emitida via Asaas. ${clientName} R$${totalValue.toFixed(2)} venc=${parsedDue}. Asaas=${payment.id}`,
         ipAddress: (req as any).ip,
       });
 
@@ -2901,8 +2992,12 @@ export function registerAsaasRoutes(app: Express) {
         invoice: afterNf || updated,
       });
     } catch (err: any) {
-      console.error("[asaas] Erro ao emitir fatura aprovada:", err.message);
-      res.status(500).json({ message: err.message });
+      console.error("[asaas] Erro ao emitir fatura aprovada:", err.message, err.asaasErrors || "");
+      const status = err?.asaasGateway ? 502 : 500;
+      res.status(status).json({
+        message: err.message,
+        ...(err.asaasErrors ? { errors: err.asaasErrors } : {}),
+      });
     }
   });
 
@@ -3149,31 +3244,24 @@ export function registerAsaasRoutes(app: Express) {
 
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
     try {
-      // Asaas envia em "asaas-access-token" (preferido). Aceitamos também
-      // "x-asaas-access-token" e "Authorization: Bearer ..." por compatibilidade.
-      const rawAuth = (req.headers["authorization"] as string | undefined) || "";
-      const bearer = rawAuth.toLowerCase().startsWith("bearer ") ? rawAuth.slice(7).trim() : rawAuth.trim();
-      const webhookToken = (
-        (req.headers["asaas-access-token"] as string | undefined) ||
-        (req.headers["x-asaas-access-token"] as string | undefined) ||
-        bearer ||
-        ""
-      ).trim();
-
-      // Token esperado: ASAAS_WEBHOOK_TOKEN (correto). Mantém ASAAS_API_KEY como fallback de compatibilidade.
-      const expectedToken = (process.env.ASAAS_WEBHOOK_TOKEN || process.env.ASAAS_API_KEY || "").trim();
-
-      if (!expectedToken) {
-        console.error("[asaas] Webhook ACEITO sem validação: ASAAS_WEBHOOK_TOKEN não configurado.");
-      } else if (webhookToken !== expectedToken) {
-        console.warn(`[asaas] Webhook REJEITADO: token inválido. recebido(len=${webhookToken.length}) esperado(len=${expectedToken.length}) IP=${(req as any).ip} UA=${req.headers["user-agent"]}`);
+      const webhookToken = extractAsaasWebhookToken(req.headers);
+      const expectedToken = resolveAsaasWebhookExpectedToken({
+        webhookToken: process.env.ASAAS_WEBHOOK_TOKEN,
+        apiKey: process.env.ASAAS_API_KEY,
+      });
+      const auth = evaluateAsaasWebhookAuth(expectedToken, webhookToken);
+      if (!auth.allow) {
+        const reason = auth.reason === "missing_server_secret"
+          ? "ASAAS_WEBHOOK_TOKEN/ASAAS_API_KEY ausentes — fail-closed"
+          : "token inválido";
+        console.error(`[asaas] Webhook REJEITADO: ${reason}. recebido(len=${webhookToken.length}) esperado(len=${expectedToken.length}) IP=${(req as any).ip}`);
         await logSystemAudit({
           userId: null, userName: "SISTEMA", userRole: "system",
           action: "ASAAS_WEBHOOK_REJEITADO", targetId: "N/A", targetType: "security",
-          details: `Webhook rejeitado por token inválido. IP: ${(req as any).ip}. UA: ${req.headers["user-agent"]}. Headers recebidos: ${Object.keys(req.headers).join(", ")}`,
+          details: `Webhook rejeitado (${auth.reason}). IP: ${(req as any).ip}. UA: ${req.headers["user-agent"]}.`,
           ipAddress: (req as any).ip,
         });
-        return res.status(401).json({ error: "Unauthorized" });
+        return res.status(401).json({ error: "Unauthorized", reason: auth.reason });
       }
 
       const { event, payment } = req.body || {};
@@ -3512,7 +3600,13 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const now = new Date();
-      const invoiceDueDate = dueDate || new Date(now.getFullYear(), now.getMonth() + 1, 15).toISOString().split("T")[0];
+      let invoiceDueDate: string;
+      try {
+        invoiceDueDate = dueDate ? assertAsaasDate(dueDate) : defaultInvoiceDueDate(now);
+      } catch (e: any) {
+        gerarFaturaLocks.delete(clientId);
+        return res.status(400).json({ message: e.message });
+      }
 
       const datasOs = billings.map(b => b.data_missao || b.created_at).filter(Boolean).sort();
       const periodoInicio = datasOs[0]?.split("T")[0] || invoiceDueDate;
@@ -3520,8 +3614,17 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-  const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, email_medicao, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
-      const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, email_medicao, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
+      let cpfCnpj = String(clientData?.cnpj || clientData?.cpf || "").replace(/\D/g, "");
+      const isSplitMode = Array.isArray(splits) && splits.length > 1;
+      if (sendToAsaas && hasAsaasApiKey() && !isSplitMode) {
+        try {
+          cpfCnpj = assertCpfCnpj(clientData?.cnpj || clientData?.cpf || cpfCnpj);
+        } catch (e: any) {
+          gerarFaturaLocks.delete(clientId);
+          return res.status(400).json({ message: e.message });
+        }
+      }
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const retemInssConsolidado = clientData?.retem_inss === true;
       const inssAliquotaConsolidadoLegal = Number(clientData?.inss_aliquota ?? 11);
@@ -3583,7 +3686,10 @@ export function registerAsaasRoutes(app: Express) {
         for (let idx = 0; idx < splits.length; idx++) {
           const sp = splits[idx];
           const splitValue = Number(sp.valor);
-          const splitCnpj = String(sp.cnpj || "").replace(/\D/g, "");
+          let splitCnpj = String(sp.cnpj || "").replace(/\D/g, "");
+          if (sendToAsaas && hasAsaasApiKey()) {
+            splitCnpj = assertCpfCnpj(sp.cnpj);
+          }
           const splitName = sp.razao_social || clientName;
           const splitDescricao = `${buildInvoiceDescription(splitName, periodoInicio, periodoFim)} - ${splitName}`;
 
@@ -3614,10 +3720,10 @@ export function registerAsaasRoutes(app: Express) {
                 municipalInscription: clientData?.inscricao_municipal || undefined,
                 stateInscription: clientData?.inscricao_estadual || undefined,
               });
-              const payload: any = {
+              const payload: AsaasPaymentCreatePayload = {
                 customer: spAsaasCustomerId,
-                billingType: billingType || "BOLETO",
-                value: spNet.boleto,
+                billingType: asAsaasBillingType(billingType),
+                value: assertAsaasMoney(spNet.boleto, "boleto"),
                 dueDate: invoiceDueDate,
                 description: splitDescricao.substring(0, 500),
                 externalReference: `FATURA-SPLIT-${clientId}-${idx + 1}de${splits.length}-${now.getTime()}`,
@@ -3654,13 +3760,14 @@ export function registerAsaasRoutes(app: Express) {
                 ipAddress: (req as any).ip,
               });
             } catch (asaasErr: any) {
-              console.error(`[asaas] Erro split ${idx + 1}: ${asaasErr.message}`);
+              console.error(`[asaas] Erro split ${idx + 1}: ${asaasErr.message}`, asaasErr.asaasErrors || "");
               await logSystemAudit({
                 userId: user?.id, userName: user?.name, userRole: user?.role,
                 action: "ASAAS_FATURA_ERRO", targetId: String(clientId), targetType: "invoice",
                 details: `ERRO fatura split ${idx + 1}/${splits.length} CNPJ ${splitCnpj}: ${asaasErr.message}. Valor: R$${splitValue.toFixed(2)}`,
                 ipAddress: (req as any).ip,
               });
+              throw asaasErr;
             }
           }
 
@@ -3784,10 +3891,10 @@ export function registerAsaasRoutes(app: Express) {
             municipalInscription: clientData?.inscricao_municipal || undefined,
             stateInscription: clientData?.inscricao_estadual || undefined,
           });
-          const consolidadoPayload: any = {
+          const consolidadoPayload: AsaasPaymentCreatePayload = {
             customer: asaasCustomerId,
-            billingType: billingType || "BOLETO",
-            value: netConsolidado.boleto,
+            billingType: asAsaasBillingType(billingType),
+            value: assertAsaasMoney(netConsolidado.boleto, "boleto"),
             dueDate: invoiceDueDate,
             description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
@@ -3826,13 +3933,14 @@ export function registerAsaasRoutes(app: Express) {
             ipAddress: (req as any).ip,
           });
         } catch (asaasErr: any) {
-          console.error("[asaas] Erro ao gerar cobrança:", asaasErr.message);
+          console.error("[asaas] Erro ao gerar cobrança:", asaasErr.message, asaasErr.asaasErrors || "");
           await logSystemAudit({
             userId: user?.id, userName: user?.name, userRole: user?.role,
             action: "ASAAS_FATURA_ERRO", targetId: String(clientId), targetType: "invoice",
             details: `ERRO fatura consolidada ${clientName}: ${asaasErr.message}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}`,
             ipAddress: (req as any).ip,
           });
+          throw asaasErr;
         }
       }
 
@@ -3896,8 +4004,12 @@ export function registerAsaasRoutes(app: Express) {
       gerarFaturaLocks.delete(clientId);
     } catch (err: any) {
       gerarFaturaLocks.delete(clientId);
-      console.error("[billing] Erro ao gerar fatura:", err.message);
-      res.status(500).json({ message: err.message });
+      console.error("[billing] Erro ao gerar fatura:", err.message, err.asaasErrors || "");
+      const status = err?.asaasGateway || Array.isArray(err?.asaasErrors) ? 502 : 500;
+      res.status(status).json({
+        message: err.message,
+        ...(err.asaasErrors ? { errors: err.asaasErrors } : {}),
+      });
     }
   });
 
@@ -4982,13 +5094,10 @@ export function registerAsaasRoutes(app: Express) {
         const reason = String(req.body?.reason || "").trim();
 
         if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(newDueDate)) {
-          return res.status(400).json({ message: "dueDate (YYYY-MM-DD) obrigatório" });
-        }
-        // Garante que é uma data real (não 2026-02-30 nem 2026-13-01)
-        const parsed = new Date(newDueDate + "T12:00:00");
-        if (Number.isNaN(parsed.getTime()) || newDueDate.slice(0, 10) !== parsed.toISOString().slice(0, 10)) {
-          return res.status(400).json({ message: "dueDate inválida (data inexistente no calendário)" });
+        try {
+          assertAsaasDate(newDueDate);
+        } catch (e: any) {
+          return res.status(400).json({ message: e.message });
         }
         if (reason.length < 5) {
           return res.status(400).json({ message: "Motivo obrigatório (mín. 5 caracteres)" });
