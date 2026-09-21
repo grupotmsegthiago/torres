@@ -18,7 +18,6 @@ import {
   CNAE_PRINCIPAL,
   CODIGO_SERVICO_MUNICIPAL,
   CODIGO_SERVICO_MUNICIPAL_CODE,
-  MUNICIPAL_SERVICE_ID_DEFAULT,
   ISS_ALIQUOTA,
   DESCRICAO_SERVICO_FIXA,
   MESES_PT,
@@ -67,8 +66,6 @@ import {
   shouldAutoEmitMissingNfse,
   shouldCancelRescheduleNfse,
   isAsaasNfCancelBlockedProcessing,
-  MUNICIPAL_SERVICE_ID_DEFAULT,
-  asMunicipalServiceIdString,
   summarizeNfseWirePayload,
   assertFiscalAddressForNf,
   asaasCustomerEmailAllowed,
@@ -154,15 +151,9 @@ function getApiKey(): string {
 }
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
-  const raw = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
-  let override: number | undefined;
-  if (raw && raw.trim()) {
-    const n = parseInt(raw, 10);
-    if (Number.isFinite(n) && n > 0) override = n;
-    else console.error(`[asaas] ASAAS_MUNICIPAL_SERVICE_ID inválida ("${raw}") — usando ${asMunicipalServiceIdString(MUNICIPAL_SERVICE_ID_DEFAULT)}`);
-  }
-  const payload = buildNfseInvoicePayloadBase({ ...opts, municipalServiceIdOverride: override });
-  payload.municipalServiceId = asMunicipalServiceIdString(payload.municipalServiceId);
+  const payload = buildNfseInvoicePayloadBase(opts);
+  delete payload.municipalServiceId;
+  delete payload.municipalServiceExternalId;
   console.log("[asaas] NFS-e payload:", JSON.stringify(summarizeNfseWirePayload(payload)));
   return payload;
 }
@@ -1221,13 +1212,12 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
 
   const opts: RequestInit = { method, headers };
   if (body && method !== "GET") {
-    if (body.municipalServiceId != null) {
-      body.municipalServiceId = asMunicipalServiceIdString(body.municipalServiceId);
-    }
-    opts.body = JSON.stringify(body);
     if (/\/invoices/.test(path) && !/\/authorize|\/cancel/.test(path)) {
+      delete body.municipalServiceId;
+      delete body.municipalServiceExternalId;
       console.log("[asaas] NFS-e wire JSON:", JSON.stringify(summarizeNfseWirePayload(body)));
     }
+    opts.body = JSON.stringify(body);
   }
 
   const timeoutMs = /\/invoices/.test(path) ? ASAAS_INVOICE_TIMEOUT_MS : ASAAS_REQUEST_TIMEOUT_MS;
