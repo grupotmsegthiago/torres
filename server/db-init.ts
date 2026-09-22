@@ -294,6 +294,7 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dependentes_declarados BOOLEAN DEFAULT FALSE`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS doc_grace_until DATE`);
     // Regime de contratação: "clt" (default) ou "pj" (legado "fixo" = alias de pj).
     // PJ = valor fixo mensal, sem impostos, variáveis nem hora extra.
     await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tipo_contratacao TEXT DEFAULT 'clt'`);

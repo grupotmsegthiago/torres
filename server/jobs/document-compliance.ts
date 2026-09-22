@@ -6,7 +6,13 @@ import {
   profileFromRole,
   DOCS_WITH_EXPIRY,
   RECICLAGEM_ESCOLTA_TYPE,
-  isReciclagemDue,
+  FORMACAO_VIGILANTE_TYPE,
+  FORMACAO_ESCOLTA_TYPE,
+  isInactiveEmployee,
+  isFormacaoTrainingType,
+  filterFormacaoOnce,
+  resolveReciclagemClock,
+  isReciclagemRenewalDue,
 } from "@shared/documents-catalog";
 
 const ESCOLTA_EMAIL = "escolta@torresseguranca.com.br";
@@ -57,33 +63,64 @@ export async function buildDocComplianceReport(): Promise<EmployeeReport[]> {
   const empIds = employees.map((e: any) => e.id);
   const { data: docs, error: docErr } = await supabaseAdmin
     .from("employee_documents")
-    .select("id, employee_id, type, expiry_date")
+    .select("id, employee_id, type, issue_date, expiry_date")
     .in("employee_id", empIds);
   if (docErr) throw new Error(`Falha ao carregar documentos: ${docErr.message}`);
+
+  const { data: trainings, error: trErr } = await supabaseAdmin
+    .from("employee_trainings")
+    .select("employee_id, type, completed_at, expiry_date")
+    .in("employee_id", empIds);
+  if (trErr) throw new Error(`Falha ao carregar treinamentos: ${trErr.message}`);
 
   const docsByEmp = new Map<number, any[]>();
   for (const d of (docs || [])) {
     if (!docsByEmp.has(d.employee_id)) docsByEmp.set(d.employee_id, []);
     docsByEmp.get(d.employee_id)!.push(d);
   }
+  const trainingsByEmp = new Map<number, any[]>();
+  for (const t of (trainings || [])) {
+    if (!trainingsByEmp.has(t.employee_id)) trainingsByEmp.set(t.employee_id, []);
+    trainingsByEmp.get(t.employee_id)!.push(t);
+  }
 
   const report: EmployeeReport[] = [];
 
   for (const emp of employees as any[]) {
+    if (isInactiveEmployee(emp.status)) continue;
     const empDocs = docsByEmp.get(emp.id) || [];
+    const empTrainings = trainingsByEmp.get(emp.id) || [];
     const hasType = (type: string) => {
       if (type === "Fotos 3x4" && emp.photo_url) return true;
+      if ((type === FORMACAO_VIGILANTE_TYPE || type === FORMACAO_ESCOLTA_TYPE)
+        && (empDocs.some((d: any) => d.type === FORMACAO_VIGILANTE_TYPE || d.type === FORMACAO_ESCOLTA_TYPE)
+          || empTrainings.some((t: any) => isFormacaoTrainingType(t.type)))) return true;
       return empDocs.some(d => d.type === type);
     };
 
     const missing: { type: string; label: string }[] = [];
     const expired: ExpiredDoc[] = [];
 
-    // Reciclagem de escolta armada só entra como pendência quando o CNV tem >= 2
-    // anos a partir da data de emissão (vide isReciclagemDue). Sem data → não cobra.
+    const presentTypes = empDocs.map((d: any) => d.type);
+    if (empTrainings.some((t: any) => isFormacaoTrainingType(t.type))) presentTypes.push(FORMACAO_VIGILANTE_TYPE);
+    const clock = resolveReciclagemClock(
+      [
+        ...empDocs.map((d: any) => ({ type: d.type, issueDate: d.issue_date, expiryDate: d.expiry_date })),
+        ...empTrainings.map((t: any) => ({ type: t.type, completedAt: t.completed_at, expiryDate: t.expiry_date })),
+      ],
+      emp.cnv_issue_date,
+    );
+    const recicDue = isReciclagemRenewalDue(clock);
+    const allowed = new Set(filterFormacaoOnce(presentTypes.concat(mandatoryItemsForProfile(emp.role).map(i => i.type)), presentTypes));
     const mandatory = mandatoryItemsForProfile(emp.role)
-      .filter(it => it.type !== RECICLAGEM_ESCOLTA_TYPE || isReciclagemDue(emp.cnv_issue_date));
+      .filter(it => allowed.has(it.type))
+      .filter(it => it.type !== RECICLAGEM_ESCOLTA_TYPE || recicDue);
     for (const item of mandatory) {
+      if (item.type === RECICLAGEM_ESCOLTA_TYPE && recicDue) {
+        if (!clock.hasReciclagem) missing.push({ type: item.type, label: item.label });
+        else expired.push({ type: item.type, label: item.label, expiryDate: clock.reciclagemExpiry || clock.reciclagemOn || "" });
+        continue;
+      }
       // Compat: aceita "Antecedentes Criminais" do perfil admin como satisfeito
       // por qualquer um dos dois nomes antigos (Civil/Militar), pra não forçar
       // re-upload de quem cadastrou sob o nome antigo.

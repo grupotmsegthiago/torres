@@ -9,7 +9,15 @@ import {
   getAllDocTypesForProfile,
   isReciclagemDue,
   filterReciclagemByCnv,
+  filterFormacaoOnce,
+  isReciclagemRenewalDue,
+  resolveReciclagemClock,
+  isWithinDiretoriaGrace,
+  isInactiveEmployee,
+  reciclagemBlocksEmployee,
   RECICLAGEM_ESCOLTA_TYPE,
+  FORMACAO_VIGILANTE_TYPE,
+  FORMACAO_ESCOLTA_TYPE,
 } from "./documents-catalog";
 
 test("profileFromRole: vigilante variants", () => {
@@ -30,9 +38,11 @@ test("profileFromRole: admin variants (Aux Limpeza inclusive)", () => {
   assert.equal(profileFromRole(undefined), "admin");
 });
 
-test("Vigilante: 14 obrigatórios + 5 opcionais (não-Dependentes) = 19 no checklist", () => {
+test("Vigilante: 13 obrigatórios + 6 opcionais (não-Dependentes) = 19 no checklist", () => {
   const mandatory = getMandatoryDocTypesForProfile("vigilante");
-  assert.equal(mandatory.length, 14, `vigilante obrigatórios = 14, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
+  assert.equal(mandatory.length, 13, `vigilante obrigatórios = 13, recebeu ${mandatory.length}: ${mandatory.join(", ")}`);
+  assert.ok(mandatory.includes(FORMACAO_VIGILANTE_TYPE), "formação de vigilante continua obrigatória uma vez");
+  assert.ok(!mandatory.includes(FORMACAO_ESCOLTA_TYPE), "formação de escolta é extensão e não entra como pendência separada");
   // Decidido com o dono (jun/2026): Pontuação CNH e Antecedentes (Civil/Militar) NÃO
   // são obrigatórios — viram opcionais (aparecem no checklist, não contam no alerta).
   assert.ok(!mandatory.includes("Certidão de Pontuação CNH"));
@@ -100,6 +110,7 @@ test("Opcionais não entram nos mandatórios (Vacinação, Form. Escolar, Pontua
     assert.ok(!mand.includes("Certidão de Pontuação CNH"), `${profile} não pode ter Pontuação CNH como obrigatório`);
     assert.ok(!mand.includes("Antecedente Criminal Polícia Civil"), `${profile} não pode ter Antec. Civil como obrigatório`);
     assert.ok(!mand.includes("Antecedente Criminal Polícia Militar"), `${profile} não pode ter Antec. Militar como obrigatório`);
+    assert.ok(!mand.includes(FORMACAO_ESCOLTA_TYPE), `${profile} não pode ter formação de escolta como pendência separada`);
   }
 });
 
@@ -135,6 +146,75 @@ test("filterReciclagemByCnv: remove reciclagem quando não cobra, mantém quando
 
   // não mexe nos outros tipos
   assert.deepEqual(antigo, base);
+});
+
+test("filterFormacaoOnce: formação no sistema zera as duas cobranças", () => {
+  const base = [FORMACAO_VIGILANTE_TYPE, FORMACAO_ESCOLTA_TYPE, "RG", RECICLAGEM_ESCOLTA_TYPE];
+  assert.deepEqual(filterFormacaoOnce(base, []), [FORMACAO_VIGILANTE_TYPE, "RG", RECICLAGEM_ESCOLTA_TYPE]);
+  assert.deepEqual(
+    filterFormacaoOnce(base, [FORMACAO_VIGILANTE_TYPE]),
+    ["RG", RECICLAGEM_ESCOLTA_TYPE],
+  );
+  assert.deepEqual(
+    filterFormacaoOnce(base, [FORMACAO_ESCOLTA_TYPE]),
+    ["RG", RECICLAGEM_ESCOLTA_TYPE],
+  );
+});
+
+test("isInactiveEmployee e prazo da diretoria", () => {
+  assert.equal(isInactiveEmployee("inativo"), true);
+  assert.equal(isInactiveEmployee(" Inativo "), true);
+  assert.equal(isInactiveEmployee("ativo"), false);
+  assert.equal(isWithinDiretoriaGrace(null, "2026-09-22"), false);
+  assert.equal(isWithinDiretoriaGrace("2026-09-22", "2026-09-22"), true);
+  assert.equal(isWithinDiretoriaGrace("2026-09-21", "2026-09-22"), false);
+  assert.equal(isWithinDiretoriaGrace("2026-10-01T00:00:00", "2026-09-22"), true);
+});
+
+test("reciclagem renova pela validade, pela data ou pelo CNV", () => {
+  const hoje = "2026-09-22";
+  assert.equal(isReciclagemRenewalDue({ cnvIssueDate: "2025-01-01", hasReciclagem: false }, hoje), false);
+  assert.equal(isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", hasReciclagem: false }, hoje), true);
+  assert.equal(isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", hasReciclagem: true }, hoje), false);
+  assert.equal(
+    isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", reciclagemOn: "2025-01-01", hasReciclagem: true }, hoje),
+    false,
+  );
+  assert.equal(
+    isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", reciclagemOn: "2024-01-01", hasReciclagem: true }, hoje),
+    true,
+  );
+  assert.equal(
+    isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", reciclagemExpiry: "2026-09-22", hasReciclagem: true }, hoje),
+    true,
+  );
+  assert.equal(
+    isReciclagemRenewalDue({ cnvIssueDate: "2020-01-01", reciclagemExpiry: "2026-12-01", hasReciclagem: true }, hoje),
+    false,
+  );
+});
+
+test("resolveReciclagemClock usa o certificado que vale mais longe", () => {
+  const clock = resolveReciclagemClock([
+    { type: "Reciclagem Escolta Armada", issueDate: "2020-01-01" },
+    { type: "Reciclagem", completedAt: "2025-06-01", expiryDate: "2027-06-01" },
+    { type: "RG" },
+  ], "2018-01-01");
+  assert.equal(clock.hasReciclagem, true);
+  assert.equal(clock.reciclagemExpiry, "2027-06-01");
+  assert.equal(clock.reciclagemOn, "2025-06-01");
+  assert.equal(isReciclagemRenewalDue(clock, "2026-09-22"), false);
+});
+
+test("reciclagem não trava inativo nem dentro do prazo da diretoria", () => {
+  const clock = { cnvIssueDate: "2020-01-01", hasReciclagem: false };
+  assert.equal(reciclagemBlocksEmployee({ status: "inativo", clock, today: "2026-09-22" }).block, false);
+  assert.equal(
+    reciclagemBlocksEmployee({ status: "ativo", docGraceUntil: "2026-12-31", clock, today: "2026-09-22" }).block,
+    false,
+  );
+  assert.equal(reciclagemBlocksEmployee({ status: "ativo", role: "Vigilante", clock, today: "2026-09-22" }).block, true);
+  assert.equal(reciclagemBlocksEmployee({ status: "ativo", role: "Adm", clock, today: "2026-09-22" }).block, false);
 });
 
 test("isReciclagemDue: ano bissexto (29/fev) → vence em 01/mar do 2º ano", () => {

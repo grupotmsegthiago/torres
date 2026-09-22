@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
+import { isCltContrato } from "@shared/contratacao";
 
 /**
  * Quadro de Pendências — agrega itens que exigem ação da administração:
@@ -26,7 +27,7 @@ export function registerPendenciasRoutes(app: Express) {
       // Mapa funcionários para enriquecimento de nomes
       const { data: empsRaw } = await supabaseAdmin
         .from("employees")
-        .select("id, name, role, status, matricula");
+        .select("id, name, role, status, matricula, tipo_contratacao");
       const empMap = new Map<number, any>();
       for (const e of empsRaw || []) empMap.set(e.id, e);
 
@@ -37,7 +38,11 @@ export function registerPendenciasRoutes(app: Express) {
         .neq("assinatura_status", "assinado")
         .order("year", { ascending: false }).order("month", { ascending: false })
         .limit(50);
-      const holerites = (psRaw || []).map((p: any) => ({
+      const ativo = (employeeId: number) => {
+        const st = String(empMap.get(employeeId)?.status || "").toLowerCase();
+        return st !== "inativo";
+      };
+      const holerites = (psRaw || []).filter((p: any) => ativo(p.employee_id)).map((p: any) => ({
         id: p.id,
         employeeId: p.employee_id,
         employeeName: empMap.get(p.employee_id)?.name || "—",
@@ -53,7 +58,7 @@ export function registerPendenciasRoutes(app: Express) {
         .order("created_at", { ascending: false })
         .limit(50);
       const probacao = (probRaw || [])
-        .filter((c: any) => !c.bypass_diretoria)
+        .filter((c: any) => !c.bypass_diretoria && ativo(c.employee_id) && isCltContrato(empMap.get(c.employee_id)?.tipo_contratacao))
         .map((c: any) => ({
           id: c.id,
           employeeId: c.employee_id,
@@ -71,7 +76,7 @@ export function registerPendenciasRoutes(app: Express) {
         .order("created_at", { ascending: false })
         .limit(50);
       const definitivo = (permRaw || [])
-        .filter((c: any) => !c.bypass_diretoria)
+        .filter((c: any) => !c.bypass_diretoria && ativo(c.employee_id))
         .map((c: any) => ({
           id: c.id,
           employeeId: c.employee_id,

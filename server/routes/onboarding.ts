@@ -3,7 +3,23 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
-import { getMandatoryDocTypesForProfile, profileFromRole, filterReciclagemByCnv } from "@shared/documents-catalog";
+import {
+  getMandatoryDocTypesForProfile,
+  profileFromRole,
+  FORMACAO_VIGILANTE_TYPE,
+  FORMACAO_ESCOLTA_TYPE,
+  RECICLAGEM_ESCOLTA_TYPE,
+  DOCS_WITH_EXPIRY,
+  isInactiveEmployee,
+  isFormacaoTrainingType,
+  isWithinDiretoriaGrace,
+  filterFormacaoOnce,
+  resolveReciclagemClock,
+  isReciclagemRenewalDue,
+  reciclagemBlocksEmployee,
+  dateOnly,
+} from "@shared/documents-catalog";
+import { isCltContrato } from "@shared/contratacao";
 
 /**
  * Onboarding em 4 etapas: Documentação → Contratos → Treinamento → Holerites.
@@ -41,14 +57,13 @@ export const DOCUMENT_GATE_ENABLED = false;
 const ONBOARDING_BLOCK_START_DATE = "2026-06-30";
 
 const REQUIRED_TRAININGS: Record<string, { type: string; validityMonths?: number }[]> = {
+  // Formação é uma vez. Escolta armada é extensão — não vira segunda cobrança
+  // nem renova em 24 meses. Reciclagem é cobrada na documentação e renova.
   vigilante: [
-    { type: "Formação de Vigilante", validityMonths: 24 },
-    { type: "Reciclagem", validityMonths: 24 },
+    { type: "Formação de Vigilante" },
   ],
   escolta: [
-    { type: "Formação de Vigilante", validityMonths: 24 },
-    { type: "Especialização Escolta Armada", validityMonths: 24 },
-    { type: "Reciclagem", validityMonths: 24 },
+    { type: "Formação de Vigilante" },
   ],
   motorista: [],
   "*": [],
@@ -110,12 +125,64 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   if (!emp) throw new Error(`Funcionário ${employeeId} não encontrado`);
 
   const today = todayBRT();
-  const roles = rolesForEmployee(emp.role);
+  if (isInactiveEmployee(emp.status)) {
+    const neutro = (label: string): OnboardingStage => ({
+      key: label === "Documentação" ? "documentacao" : label === "Contratos" ? "contratos" : label === "Treinamento" ? "treinamento" : "holerites",
+      label,
+      status: "neutro",
+      blocking: false,
+      pendencias: [],
+      itens: [{ label, status: "neutro", detail: "Funcionário inativo — sem cobrança de pendências ou documentação" }],
+    });
+    return {
+      employeeId,
+      employeeName: emp.name,
+      role: emp.role || null,
+      status: "ok",
+      apto: true,
+      stages: [neutro("Documentação"), neutro("Contratos"), neutro("Treinamento"), neutro("Holerites")],
+      pendencias: [],
+      computedAt: new Date().toISOString(),
+    };
+  }
 
-  const reqDocs = filterReciclagemByCnv(
-    getMandatoryDocTypesForProfile(profileFromRole(emp.role)),
+  const roles = rolesForEmployee(emp.role);
+  const docs = await storage.getEmployeeDocuments(employeeId);
+  const { data: trRows } = await supabaseAdmin
+    .from("employee_trainings")
+    .select("id, type, completed_at, expiry_date")
+    .eq("employee_id", employeeId)
+    .order("completed_at", { ascending: false });
+
+  const docsForClock = docs.map((d: any) => ({
+    type: d.type,
+    issueDate: d.issueDate || d.issue_date,
+    expiryDate: d.expiryDate || d.expiry_date,
+  }));
+  const trainingsForClock = (trRows || []).map((t: any) => ({
+    type: t.type,
+    completedAt: t.completed_at,
+    expiryDate: t.expiry_date,
+  }));
+  const formacaoNoSistema = docsForClock.some((d: any) => d.type === FORMACAO_VIGILANTE_TYPE || d.type === FORMACAO_ESCOLTA_TYPE)
+    || trainingsForClock.some((t: any) => isFormacaoTrainingType(t.type));
+  const recicClock = resolveReciclagemClock(
+    [...docsForClock, ...trainingsForClock],
     (emp as any).cnvIssueDate,
   );
+  const graceUntil = dateOnly((emp as any).docGraceUntil || (emp as any).doc_grace_until);
+  const recicDue = isReciclagemRenewalDue(recicClock, today);
+  const recicLiberada = recicDue && isWithinDiretoriaGrace(graceUntil, today);
+  let reqDocs = filterFormacaoOnce(
+    getMandatoryDocTypesForProfile(profileFromRole(emp.role)),
+    docsForClock.map((d: any) => d.type),
+  );
+  if (formacaoNoSistema) {
+    reqDocs = reqDocs.filter(t => t !== FORMACAO_VIGILANTE_TYPE && t !== FORMACAO_ESCOLTA_TYPE);
+  }
+  if (!recicDue || recicLiberada) {
+    reqDocs = reqDocs.filter(t => t !== RECICLAGEM_ESCOLTA_TYPE);
+  }
   const reqTrainings = Array.from(
     new Map(
       roles.flatMap(r => REQUIRED_TRAININGS[r] || []).map(t => [t.type, t])
@@ -123,8 +190,14 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   );
 
   // ===== Etapa 1: Documentação (inclui dependentes informados) =====
-  const docs = await storage.getEmployeeDocuments(employeeId);
   const itensDoc: OnboardingStage["itens"] = [];
+  if (recicLiberada && graceUntil) {
+    itensDoc.push({
+      label: RECICLAGEM_ESCOLTA_TYPE,
+      status: "ok",
+      detail: `Prazo da Diretoria até ${graceUntil} — sem trava no sistema`,
+    });
+  }
   // Carência ASO: 15 dias contados a partir de hireDate
   const hireDateStr = emp.hireDate ? String(emp.hireDate).slice(0, 10) : null;
   let asoGraceUntil: string | null = null;
@@ -149,8 +222,10 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
       } else {
         itensDoc.push({ label: tipo, status: "pendente", detail: "Documento não cadastrado" });
       }
-    } else if (has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
+    } else if (DOCS_WITH_EXPIRY.has(tipo) && has.expiryDate && String(has.expiryDate).slice(0, 10) < today) {
       itensDoc.push({ label: tipo, status: "vencido", detail: `Venceu em ${String(has.expiryDate).slice(0, 10)}` });
+    } else if (tipo === RECICLAGEM_ESCOLTA_TYPE && recicDue) {
+      itensDoc.push({ label: tipo, status: "vencido", detail: "Reciclagem vencida — renovação obrigatória" });
     } else if ((has as any)._fromAvatar) {
       itensDoc.push({ label: tipo, status: "ok", detail: "Foto cadastral do sistema" });
     } else {
@@ -178,7 +253,10 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
 
   // ===== Etapa 2: Contratos =====
   const itensCon: OnboardingStage["itens"] = [];
-  if (/vigilan|escolt/.test((emp.role || "").toLowerCase())) {
+  const regimePj = !isCltContrato((emp as any).tipoContratacao ?? (emp as any).tipo_contratacao);
+  if (regimePj && /vigilan|escolt/.test((emp.role || "").toLowerCase())) {
+    itensCon.push({ label: "Contrato de Experiência (45d)", status: "ok", detail: "Não aplicável — regime PJ" });
+  } else if (/vigilan|escolt/.test((emp.role || "").toLowerCase())) {
     const { data: probRows } = await supabaseAdmin
       .from("employee_probation_contracts")
       .select("id, assinatura_status, bypass_diretoria, end_date, start_date, created_at")
@@ -230,13 +308,16 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   if (reqTrainings.length === 0) {
     itensTr.push({ label: "Treinamentos", status: "ok", detail: "Não aplicável a esta função" });
   } else {
-    const { data: trRows } = await supabaseAdmin
-      .from("employee_trainings")
-      .select("id, type, completed_at, expiry_date")
-      .eq("employee_id", employeeId)
-      .order("completed_at", { ascending: false });
     const all = trRows || [];
     for (const req of reqTrainings) {
+      if (req.type === "Formação de Vigilante") {
+        if (formacaoNoSistema) {
+          itensTr.push({ label: req.type, status: "ok", detail: "Formação registrada uma vez — escolta armada é extensão e não cobra de novo" });
+        } else {
+          itensTr.push({ label: req.type, status: "pendente", detail: "Não realizado (cobrado uma única vez)" });
+        }
+        continue;
+      }
       const matches = all.filter((t: any) => (t.type || "").toLowerCase().includes(req.type.toLowerCase()) || req.type.toLowerCase().includes((t.type || "").toLowerCase()));
       if (matches.length === 0) {
         itensTr.push({ label: req.type, status: "pendente", detail: "Não realizado" });
@@ -315,9 +396,39 @@ export async function computeOnboarding(employeeId: number): Promise<OnboardingR
   };
 }
 
+async function assertReciclagemGate(employeeId: number): Promise<void> {
+  const emp = await storage.getEmployee(employeeId);
+  if (!emp || isInactiveEmployee(emp.status)) return;
+  const docs = await storage.getEmployeeDocuments(employeeId);
+  const { data: trRows } = await supabaseAdmin
+    .from("employee_trainings")
+    .select("type, completed_at, expiry_date")
+    .eq("employee_id", employeeId);
+  const clock = resolveReciclagemClock(
+    [
+      ...docs.map((d: any) => ({ type: d.type, issueDate: d.issueDate || d.issue_date, expiryDate: d.expiryDate || d.expiry_date })),
+      ...(trRows || []).map((t: any) => ({ type: t.type, completedAt: t.completed_at, expiryDate: t.expiry_date })),
+    ],
+    (emp as any).cnvIssueDate,
+  );
+  const decision = reciclagemBlocksEmployee({
+    status: emp.status,
+    role: emp.role,
+    docGraceUntil: (emp as any).docGraceUntil || (emp as any).doc_grace_until,
+    clock,
+  });
+  if (!decision.block) return;
+  const err: any = new Error(`Reciclagem obrigatória de ${emp.name}: ${decision.detail}`);
+  err.code = "ONBOARDING_INCOMPLETE";
+  err.detail = { employeeId, pendencias: [decision.detail] };
+  throw err;
+}
+
 export async function assertOnboardingComplete(employeeId: number): Promise<void> {
-  // Trava LIBERADA "até segunda ordem" (ordem do dono, 01/07/2026): não bloqueia
-  // nada enquanto ONBOARDING_GATE_ENABLED = false. Nem calcula onboarding (rápido).
+  // Reciclagem vencida trava a escala. Inativo não trava. Diretoria pode liberar prazo.
+  await assertReciclagemGate(employeeId);
+
+  // Trava geral de onboarding LIBERADA "até segunda ordem" (ordem do dono, 01/07/2026).
   if (!ONBOARDING_GATE_ENABLED) {
     console.log(`[onboarding-liberado] gate desligado (até segunda ordem) — emp=${employeeId} não bloqueado.`);
     return;

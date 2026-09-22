@@ -38,7 +38,7 @@ import { resolveOcrDocumentPayload } from "../lib/photo-data-uri";
   // Ao adicionar uma nova coluna date em `employees`, incluir aqui — o teste
   // employees-date-fields.test.ts compara com o schema e falha se faltar alguma.
   export const EMPLOYEE_DATE_FIELDS = [
-    "birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry", "cnvIssueDate", "vestExpiry",
+    "birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry", "cnvIssueDate", "vestExpiry", "docGraceUntil",
   ];
 
 const EMPLOYEE_OCR_SYSTEM = `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CNV, CTPS, Certificado de Reservista, comprovantes de residência, etc).
@@ -316,6 +316,9 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
   app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
+    if ("docGraceUntil" in body && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Somente a Diretoria pode liberar prazo para não travar o funcionário." });
+    }
     console.log(`[emp-debug PATCH ${req.params.id}] rg recebido:`, JSON.stringify(body.rg), "| hasRg:", "rg" in body);
     const dateFields = EMPLOYEE_DATE_FIELDS;
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }

@@ -1386,17 +1386,56 @@ ${empNames}`,
   // exatamente o que está marcado verde no cadastro de cada um.
   app.get("/api/employee-documents-summary", requireAdminRole, async (_req, res) => {
     const { supabaseAdmin } = await import("../supabase");
-    const { data, error } = await supabaseAdmin
-      .from("employee_documents")
-      .select("employee_id, type");
+    const [{ data, error }, { data: trainings, error: trErr }, { data: emps, error: empErr }] = await Promise.all([
+      supabaseAdmin.from("employee_documents").select("employee_id, type, issue_date, expiry_date"),
+      supabaseAdmin.from("employee_trainings").select("employee_id, type, completed_at, expiry_date"),
+      supabaseAdmin.from("employees").select("id, cnv_issue_date"),
+    ]);
     if (error) return res.status(500).json({ message: error.message });
-    const byEmp: Record<string, string[]> = {};
+    if (trErr) return res.status(500).json({ message: trErr.message });
+    if (empErr) return res.status(500).json({ message: empErr.message });
+    const { FORMACAO_VIGILANTE_TYPE, isFormacaoTrainingType, resolveReciclagemClock, isReciclagemRenewalDue, RECICLAGEM_ESCOLTA_TYPE } = await import("@shared/documents-catalog");
+    const cnvByEmp = new Map<number, string | null>();
+    for (const e of emps || []) cnvByEmp.set((e as any).id, (e as any).cnv_issue_date || null);
+    const trainingsByEmp = new Map<number, any[]>();
+    for (const t of trainings || []) {
+      const eid = (t as any).employee_id;
+      if (!trainingsByEmp.has(eid)) trainingsByEmp.set(eid, []);
+      trainingsByEmp.get(eid)!.push(t);
+    }
+    const docsByEmp = new Map<number, any[]>();
     for (const row of data || []) {
-      const eid = String((row as any).employee_id);
-      const tp = String((row as any).type || "");
-      if (!eid || !tp) continue;
-      if (!byEmp[eid]) byEmp[eid] = [];
-      if (!byEmp[eid].includes(tp)) byEmp[eid].push(tp);
+      const eid = (row as any).employee_id;
+      if (!docsByEmp.has(eid)) docsByEmp.set(eid, []);
+      docsByEmp.get(eid)!.push(row);
+    }
+    const ids = new Set<number>([...docsByEmp.keys(), ...trainingsByEmp.keys()]);
+    const byEmp: Record<string, string[]> = {};
+    for (const eid of ids) {
+      const rows = docsByEmp.get(eid) || [];
+      const trs = trainingsByEmp.get(eid) || [];
+      const types: string[] = [];
+      for (const row of rows) {
+        const tp = String(row.type || "");
+        if (tp && !types.includes(tp)) types.push(tp);
+      }
+      if (trs.some((t: any) => isFormacaoTrainingType(t.type)) && !types.includes(FORMACAO_VIGILANTE_TYPE)) {
+        types.push(FORMACAO_VIGILANTE_TYPE);
+      }
+      const clock = resolveReciclagemClock(
+        [
+          ...rows.map((d: any) => ({ type: d.type, issueDate: d.issue_date, expiryDate: d.expiry_date })),
+          ...trs.map((t: any) => ({ type: t.type, completedAt: t.completed_at, expiryDate: t.expiry_date })),
+        ],
+        cnvByEmp.get(eid),
+      );
+      if (isReciclagemRenewalDue(clock)) {
+        const idx = types.indexOf(RECICLAGEM_ESCOLTA_TYPE);
+        if (idx >= 0) types.splice(idx, 1);
+      } else if (clock.hasReciclagem && !types.includes(RECICLAGEM_ESCOLTA_TYPE)) {
+        types.push(RECICLAGEM_ESCOLTA_TYPE);
+      }
+      byEmp[String(eid)] = types;
     }
     res.json(byEmp);
   });

@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel, Users, Baby, Receipt, PiggyBank, Calendar, CreditCard, FileSignature, Bell } from "lucide-react";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
+import { isCltContrato } from "@shared/contratacao";
 import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 import { BrandedContractDialog } from "@/components/branded-contract-dialog";
@@ -58,7 +59,14 @@ import {
   filterDocsCatalogByRole,
   profileFromRole,
   isReciclagemDue,
+  isReciclagemRenewalDue,
+  resolveReciclagemClock,
+  filterFormacaoOnce,
+  isInactiveEmployee,
+  isWithinDiretoriaGrace,
   RECICLAGEM_ESCOLTA_TYPE,
+  FORMACAO_VIGILANTE_TYPE,
+  FORMACAO_ESCOLTA_TYPE,
   type DocItem,
   type DocGroup,
 } from "@shared/documents-catalog";
@@ -1988,6 +1996,7 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
     return <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700">Status do onboarding indisponível no momento. Tente recarregar em alguns instantes.</div>;
   }
   const apto = data.apto;
+  const semCobranca = data.stages.every(s => s.status === "neutro");
   const total = data.stages.length;
   const concluidoCount = data.stages.filter(s => s.status === "ok" || s.status === "neutro").length;
   const stageColor = (s: OnboardingStage["status"]) =>
@@ -2010,10 +2019,14 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
   };
 
   return (
-    <div className={`mb-4 rounded-xl border-2 ${apto ? "border-emerald-300 bg-emerald-50/30" : "border-amber-300 bg-amber-50/40"} p-4`} data-testid="onboarding-timeline">
+    <div className={`mb-4 rounded-xl border-2 ${semCobranca ? "border-neutral-200 bg-neutral-50" : apto ? "border-emerald-300 bg-emerald-50/30" : "border-amber-300 bg-amber-50/40"} p-4`} data-testid="onboarding-timeline">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          {apto ? (
+          {semCobranca ? (
+            <div className="w-9 h-9 rounded-full bg-neutral-400 flex items-center justify-center">
+              <span className="text-white text-base leading-none">–</span>
+            </div>
+          ) : apto ? (
             <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center">
               <CheckCircle2 className="w-5 h-5 text-white" />
             </div>
@@ -2024,10 +2037,12 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
           )}
           <div>
             <div className="text-sm font-bold text-neutral-900">
-              {apto ? "Apto a entrar em OS" : "Funcionário NÃO pode entrar em OS"}
+              {semCobranca ? "Inativo — sem cobrança de pendências ou documentação" : apto ? "Apto a entrar em OS" : "Funcionário NÃO pode entrar em OS"}
             </div>
             <div className="text-[11px] text-neutral-600">
-              {apto
+              {semCobranca
+                ? "Funcionário inativo não entra no alerta nem trava escala por documento."
+                : apto
                 ? "Todas as etapas do onboarding estão concluídas."
                 : `Etapas concluídas: ${concluidoCount} de ${total} — corrija as pendências abaixo para liberar.`}
             </div>
@@ -2062,7 +2077,7 @@ function OnboardingTimeline({ employeeId, onJumpToTab }: { employeeId: number; o
       </div>
 
       {/* Pendências detalhadas por etapa */}
-      {!apto && (
+      {!apto && !semCobranca && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
           {data.stages.map(s => (
             <div key={s.key} className={`p-3 rounded-lg border ${s.status === "ok" ? "border-emerald-200 bg-white" : s.status === "vencido" ? "border-red-200 bg-white" : s.status === "neutro" ? "border-neutral-200 bg-white" : "border-amber-200 bg-white"}`}>
@@ -3668,6 +3683,24 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const { toast } = useToast();
   const { user } = useAuth();
   const canEdit = user?.role === "diretoria" || user?.role === "admin";
+  const diretoria = user?.role === "diretoria";
+  const [prazoDocs, setPrazoDocs] = useState(String((employee as any).docGraceUntil || "").slice(0, 10));
+  useEffect(() => {
+    setPrazoDocs(String((employee as any).docGraceUntil || "").slice(0, 10));
+  }, [employee.id, (employee as any).docGraceUntil]);
+  const savePrazo = useMutation({
+    mutationFn: async (value: string | null) => {
+      const r = await apiRequest("PATCH", `/api/employees/${employee.id}`, { docGraceUntil: value });
+      if (!r.ok) throw new Error((await r.json()).message || "Erro ao salvar prazo");
+      return r.json();
+    },
+    onSuccess: () => {
+      invalidateRelatedQueries("employee");
+      queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "onboarding"] });
+      toast({ title: "Prazo da Diretoria atualizado" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
   const [tab, setTab] = useState<PastaTab>("documentos");
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelMonth, setExcelMonth] = useState(new Date().getMonth() + 1);
@@ -4103,14 +4136,21 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const empIsVig = isVigilanteRole(employee.role);
 
   const ALL_REQUIRED_DOCS_FULL = buildRequiredDocsCatalog();
-  // Reciclagem de escolta armada só é cobrada 2 anos após a emissão do CNV
-  // (vide isReciclagemDue). Sem data ou < 2 anos → sai do checklist e da contagem.
-  const reciclagemDue = isReciclagemDue((employee as any).cnvIssueDate);
+  const employeeInativo = isInactiveEmployee(employee.status);
+  const recicClock = resolveReciclagemClock(
+    (docs as any[]).map((d) => ({ type: d.type, issueDate: d.issueDate, expiryDate: d.expiryDate })),
+    (employee as any).cnvIssueDate,
+  );
+  const reciclagemDue = !employeeInativo && isReciclagemRenewalDue(recicClock);
+  const deliveredDocTypes = (docs as any[]).map((d) => d.type);
   const REQUIRED_DOCS = filterDocsCatalogByRole(ALL_REQUIRED_DOCS_FULL, empIsVig)
     .map(g => reciclagemDue ? g : { ...g, items: g.items.filter(i => i.type !== RECICLAGEM_ESCOLTA_TYPE) })
     .filter(g => g.items.length > 0);
 
   const getDocStatus = (docType: string) => {
+    if (docType === RECICLAGEM_ESCOLTA_TYPE && reciclagemDue) return false;
+    if ((docType === FORMACAO_VIGILANTE_TYPE || docType === FORMACAO_ESCOLTA_TYPE)
+      && deliveredDocTypes.some((t: string) => t === FORMACAO_VIGILANTE_TYPE || t === FORMACAO_ESCOLTA_TYPE)) return true;
     if (docType === "Fotos 3x4" && employee.photoUrl) return true;
     // Pra Antecedentes Criminais unificado (perfil admin), aceita também
     // qualquer um dos dois antigos (Civil/Militar) como entregue, pra não
@@ -4123,10 +4163,13 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     return docs.some((d: any) => d.type === docType);
   };
 
-  const MANDATORY_DOC_TYPES = REQUIRED_DOCS
-    .filter(g => g.group !== "Dependentes (se necessário)")
-    .flatMap(g => g.items.filter(i => !(i as any).optional).map(i => i.type));
-  const missingDocs = MANDATORY_DOC_TYPES.filter(t => !getDocStatus(t));
+  const MANDATORY_DOC_TYPES = filterFormacaoOnce(
+    REQUIRED_DOCS
+      .filter(g => g.group !== "Dependentes (se necessário)")
+      .flatMap(g => g.items.filter(i => !(i as any).optional).map(i => i.type)),
+    deliveredDocTypes,
+  );
+  const missingDocs = employeeInativo ? [] : MANDATORY_DOC_TYPES.filter(t => !getDocStatus(t));
   const allDocsComplete = missingDocs.length === 0;
   const isDiretoria = user?.role === "diretoria";
 
@@ -4193,6 +4236,37 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
       <OnboardingTimeline employeeId={employee.id} onJumpToTab={(t) => setTab(t)} />
 
+      {!isInactiveEmployee(employee.status) && (
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3" data-testid="prazo-diretoria-docs">
+          <div className="text-xs font-bold text-neutral-800">Prazo da Diretoria</div>
+          <p className="text-[11px] text-neutral-500 mt-0.5">
+            Reciclagem vencida trava a escala. A Diretoria pode liberar uma data para o funcionário não travar até o prazo.
+          </p>
+          {diretoria ? (
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <Input type="date" value={prazoDocs} onChange={(e) => setPrazoDocs(e.target.value)} className="h-8 w-40" data-testid="input-prazo-diretoria" />
+              <Button size="sm" onClick={() => savePrazo.mutate(prazoDocs || null)} disabled={savePrazo.isPending} data-testid="button-salvar-prazo-diretoria">
+                {savePrazo.isPending ? "Salvando..." : "Salvar prazo"}
+              </Button>
+              {prazoDocs && (
+                <Button size="sm" variant="outline" onClick={() => { setPrazoDocs(""); savePrazo.mutate(null); }} disabled={savePrazo.isPending}>
+                  Remover
+                </Button>
+              )}
+              {isWithinDiretoriaGrace((employee as any).docGraceUntil) && (
+                <span className="text-[11px] font-semibold text-emerald-700">Vigente — sem trava</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-[11px] text-neutral-600 mt-2">
+              {(employee as any).docGraceUntil
+                ? `Liberado até ${formatDateBRT((employee as any).docGraceUntil)}`
+                : "Nenhum prazo liberado."}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-1 border-b border-neutral-200 mb-4 overflow-x-auto">
         {PASTA_TABS.map((t) => (
           <button
@@ -4224,6 +4298,11 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 </span>
               </div>
               <div className="p-3 space-y-3 bg-neutral-50/50">
+                {employeeInativo && (
+                  <p className="text-[11px] text-neutral-600 bg-neutral-100 border border-neutral-200 rounded px-2 py-1.5">
+                    Funcionário inativo — pendências e documentação não são cobradas.
+                  </p>
+                )}
                 {REQUIRED_DOCS.map((group) => (
                   <div key={group.group}>
                     <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">{group.group}</h4>
@@ -4399,8 +4478,8 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
         {tab === "contrato" && (
           <div className="space-y-4">
-            {/* ===== Contrato de Experiência (45 dias) — vigilantes ===== */}
-            {empIsVig && (
+            {/* ===== Contrato de Experiência (45 dias) — vigilantes CLT ===== */}
+            {empIsVig && isCltContrato((employee as any).tipoContratacao ?? (employee as any).tipo_contratacao) && (
               <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg p-3 space-y-2">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Contrato de Experiência (45 dias)</h3>
@@ -5588,21 +5667,23 @@ export default function EmployeesPage() {
               const m: string[] = [];
               const isVig = isVigilante(e);
               const filtered = filterDocsCatalogByRole(CATALOG, isVig);
+              const labelByType = new Map<string, string>();
+              const types: string[] = [];
               for (const g of filtered) {
                 if (g.group === "Dependentes (se necessário)") continue;
                 for (const doc of g.items) {
                   if (doc.optional) continue;
-                  // Reciclagem de escolta armada só é cobrada 2 anos após a emissão
-                  // do CNV (vide isReciclagemDue). Sem data ou < 2 anos → não acusa.
-                  if (doc.type === RECICLAGEM_ESCOLTA_TYPE && !isReciclagemDue((e as any).cnvIssueDate)) continue;
-                  if (doc.type === "Fotos 3x4" && e.photoUrl) continue;
-                  // Backcompat: Antecedentes Criminais aceita qualquer um dos 3 nomes.
-                  if (doc.type === "Antecedentes Criminais") {
-                    if (deliveredTypes.some(t => ANTEC_ALIASES.has(t))) continue;
-                  }
-                  if (deliveredTypes.includes(doc.type)) continue;
-                  m.push(SHORT_LABEL[doc.label] || doc.label);
+                  types.push(doc.type);
+                  labelByType.set(doc.type, SHORT_LABEL[doc.label] || doc.label);
                 }
+              }
+              const charged = filterFormacaoOnce(types, deliveredTypes);
+              for (const type of charged) {
+                if (type === RECICLAGEM_ESCOLTA_TYPE && !isReciclagemDue((e as any).cnvIssueDate)) continue;
+                if (type === "Fotos 3x4" && e.photoUrl) continue;
+                if (type === "Antecedentes Criminais" && deliveredTypes.some(t => ANTEC_ALIASES.has(t))) continue;
+                if (deliveredTypes.includes(type)) continue;
+                m.push(labelByType.get(type) || type);
               }
               return m;
             };

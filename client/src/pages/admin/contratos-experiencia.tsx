@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { isCltContrato } from "@shared/contratacao";
 
 const BRL = (v: any) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 function fmtDate(d: string | null) {
@@ -51,8 +52,13 @@ export default function ContratosExperienciaPage() {
     refetchInterval: 180000,
   });
 
-  const pendentes = contratos.filter(c => c.assinaturaStatus !== "assinado");
-  const assinados = contratos.filter(c => c.assinaturaStatus === "assinado");
+  const visiveis = contratos.filter((c) => {
+    const clt = isCltContrato(c.employee?.tipoContratacao ?? c.employee?.tipo_contratacao);
+    if (!clt && c.assinaturaStatus !== "assinado") return false;
+    return true;
+  });
+  const pendentes = visiveis.filter(c => c.assinaturaStatus !== "assinado");
+  const assinados = visiveis.filter(c => c.assinaturaStatus === "assinado");
 
   return (
     <AdminLayout>
@@ -75,14 +81,14 @@ export default function ContratosExperienciaPage() {
         <TemplateEditorDialog open={tplOpen} onClose={() => setTplOpen(false)} canEdit={isAdmin} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <SummaryCard title="Total" value={contratos.length} color="text-neutral-800" />
+          <SummaryCard title="Total" value={visiveis.length} color="text-neutral-800" />
           <SummaryCard title="Pendentes" value={pendentes.length} color="text-amber-700" icon={<AlertCircle className="w-5 h-5" />} />
           <SummaryCard title="Assinados" value={assinados.length} color="text-emerald-700" icon={<ShieldCheck className="w-5 h-5" />} />
         </div>
 
         {isLoading ? (
           <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-neutral-400" /></div>
-        ) : contratos.length === 0 ? (
+        ) : visiveis.length === 0 ? (
           <Card className="p-8 text-center text-neutral-400">Nenhum contrato emitido ainda</Card>
         ) : (
           <Card className="overflow-hidden">
@@ -99,7 +105,7 @@ export default function ContratosExperienciaPage() {
                 </tr>
               </thead>
               <tbody>
-                {contratos.map(c => (
+                {visiveis.map(c => (
                   <tr key={c.id} className="border-b border-neutral-100 text-sm hover:bg-neutral-50" data-testid={`row-contrato-${c.id}`}>
                     <td className="p-3">
                       <div className="font-bold text-neutral-800">{c.employee?.name || `#${c.employeeId}`}</div>

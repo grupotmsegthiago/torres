@@ -869,7 +869,7 @@ export async function runAlertaDocRhCron(): Promise<void> {
   try {
     const { data: employees } = await supabaseAdmin
       .from("employees")
-      .select("id, name, status, cnh_expiry, cnv_expiry, cnv_number, vest_expiry")
+      .select("id, name, status, cnh_expiry, cnv_expiry, cnv_issue_date, cnv_number, vest_expiry")
       .eq("status", "ativo");
 
     if (!employees?.length) return;
@@ -887,9 +887,9 @@ export async function runAlertaDocRhCron(): Promise<void> {
       }
     };
 
-    const checkReciclagem = (name: string, cnvExpiry: string | null) => {
-      if (!cnvExpiry) return;
-      const cnvDate = new Date(cnvExpiry);
+    const checkReciclagem = (name: string, cnvIssue: string | null) => {
+      if (!cnvIssue) return;
+      const cnvDate = new Date(String(cnvIssue).slice(0, 10) + "T00:00:00-03:00");
       const twoYearsFromCnv = new Date(cnvDate);
       twoYearsFromCnv.setFullYear(twoYearsFromCnv.getFullYear() + 2);
       const daysUntilRecicla = Math.floor((twoYearsFromCnv.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -904,7 +904,7 @@ export async function runAlertaDocRhCron(): Promise<void> {
       checkExpiry(emp.name, "CNH", emp.cnh_expiry);
       checkExpiry(emp.name, "CNV", emp.cnv_expiry);
       checkExpiry(emp.name, "Colete Balístico", emp.vest_expiry);
-      checkReciclagem(emp.name, emp.cnv_expiry);
+      checkReciclagem(emp.name, emp.cnv_issue_date);
     }
 
     const { data: weapons } = await supabaseAdmin
@@ -932,7 +932,11 @@ export async function runAlertaDocRhCron(): Promise<void> {
 
     if (docs?.length) {
       const empMap = new Map(employees.map((e) => [e.id, e.name]));
+      const formacaoSemValidade = new Set(["Certificado Formação Vigilante", "Certificado Formação Escolta Armada"]);
       for (const doc of docs) {
+        if (formacaoSemValidade.has(doc.type)) continue;
+        const empNameKnown = empMap.get(doc.employee_id);
+        if (!empNameKnown) continue;
         const expiry = new Date(doc.expiry_date);
         const daysUntil = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         const empName = empMap.get(doc.employee_id) || `Func. #${doc.employee_id}`;

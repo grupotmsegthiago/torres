@@ -4,6 +4,7 @@ import { requireAuth, requireAdminRole } from "../auth";
 import { toCamelObj, toCamelArray } from "../storage";
 import { generateProbationContractPDF, type ProbationContractData, type ProbationContractTemplate, DEFAULT_PROBATION_TEMPLATE } from "../probation-contract-pdf";
 import { resolveWafSafeImage } from "../lib/photo-data-uri";
+import { isCltContrato } from "@shared/contratacao";
 
 async function loadProbationTemplate(): Promise<ProbationContractTemplate> {
   try {
@@ -46,9 +47,12 @@ export function isVigilante(role: string | null | undefined): boolean {
  * se for vigilante e ainda não tiver contrato ativo.
  * Retorna { created, contractId, error }
  */
-export async function autoCreateProbationContract(employee: any): Promise<{ created: boolean; contractId?: number; error?: string }> {
+export async function autoCreateProbationContract(employee: any): Promise<{ created: boolean; contractId?: number; error?: string; reason?: "pj" | "cargo" }> {
   try {
-    if (!isVigilante(employee.role)) return { created: false };
+    if (!isCltContrato(employee.tipoContratacao ?? employee.tipo_contratacao)) {
+      return { created: false, reason: "pj" };
+    }
+    if (!isVigilante(employee.role)) return { created: false, reason: "cargo" };
 
     // Já existe contrato para este funcionário?
     const { data: existing } = await supabaseAdmin
@@ -121,7 +125,7 @@ export function registerProbationContractRoutes(app: Express) {
       if (empIds.length > 0) {
         const { data: emps } = await supabaseAdmin
           .from("employees")
-          .select("id,name,role,matricula")
+          .select("id,name,role,matricula,tipo_contratacao")
           .in("id", empIds);
         empMap = Object.fromEntries((emps || []).map((e: any) => [e.id, e]));
       }
@@ -158,6 +162,7 @@ export function registerProbationContractRoutes(app: Express) {
       const { data: empRows } = await supabaseAdmin.from("employees").select("*").eq("id", employeeId).limit(1);
       if (!empRows || !empRows[0]) return res.status(404).json({ message: "Funcionário não encontrado" });
       const result = await autoCreateProbationContract(toCamelObj(empRows[0]));
+      if (result.reason === "pj") return res.status(400).json({ message: "PJ não exige contrato de experiência." });
       if (result.error) return res.status(500).json({ message: result.error });
       if (!result.created && !result.contractId) return res.status(400).json({ message: "Funcionário não é vigilante" });
       const { data: contract } = await supabaseAdmin
@@ -325,12 +330,23 @@ export function registerProbationContractRoutes(app: Express) {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.json({ blocked: false, pendingContracts: [] });
 
-      const { data: probations } = await supabaseAdmin
-        .from("employee_probation_contracts")
-        .select("id, start_date, end_date, funcao, assinatura_status, bypass_diretoria")
-        .eq("employee_id", employeeId)
-        .neq("assinatura_status", "assinado")
-        .neq("bypass_diretoria", true);
+      const { data: empGate } = await supabaseAdmin
+        .from("employees")
+        .select("tipo_contratacao")
+        .eq("id", employeeId)
+        .maybeSingle();
+      const cobraExperiencia = isCltContrato(empGate?.tipo_contratacao);
+
+      let probations: any[] = [];
+      if (cobraExperiencia) {
+        const { data } = await supabaseAdmin
+          .from("employee_probation_contracts")
+          .select("id, start_date, end_date, funcao, assinatura_status, bypass_diretoria")
+          .eq("employee_id", employeeId)
+          .neq("assinatura_status", "assinado")
+          .neq("bypass_diretoria", true);
+        probations = data || [];
+      }
 
       const { data: permanents } = await supabaseAdmin
         .from("employee_permanent_contracts")
@@ -339,7 +355,7 @@ export function registerProbationContractRoutes(app: Express) {
         .neq("assinatura_status", "assinado")
         .neq("bypass_diretoria", true);
 
-      const pendingProbation = (probations || []).map((c: any) => ({ ...c, contract_kind: "probation" }));
+      const pendingProbation = probations.map((c: any) => ({ ...c, contract_kind: "probation" }));
       const pendingPermanent = (permanents || []).map((c: any) => ({ ...c, contract_kind: "permanent" }));
       const pending = [...pendingProbation, ...pendingPermanent];
 

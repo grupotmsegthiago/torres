@@ -56,8 +56,11 @@ export function buildRequiredDocsCatalog(): DocGroup[] {
       // Opcionais (decidido 27/05/2026): aparecem no checklist mas não bloqueiam alerta.
       { type: "Carteira de Vacinação", label: "Carteira de Vacinação", optional: true },
       { type: "Comprovante de Formação Escolar", label: "Comprovante de Formação Escolar", optional: true },
+      // Formação é cobrada uma única vez. Escolta armada é extensão: o certificado
+      // aparece no checklist, mas não é pendência separada — se a formação já está
+      // no sistema, não cobra de novo. Quem renova é só a reciclagem.
       { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante (validade dispensada)", vigilanteOnly: true },
-      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada (validade dispensada)", vigilanteOnly: true },
+      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada (validade dispensada)", vigilanteOnly: true, optional: true },
       { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada", vigilanteOnly: true },
       { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional" },
     ]},
@@ -125,8 +128,63 @@ export const DOCS_WITH_EXPIRY = new Set<string>([
   "CNV",
 ]);
 
-/** Tipo do doc de reciclagem de escolta armada (cobrança condicional). */
+/** Tipo do doc de reciclagem de escolta armada (cobrança que renova). */
 export const RECICLAGEM_ESCOLTA_TYPE = "Reciclagem Escolta Armada";
+
+/** Formação de vigilante — cobrança única. */
+export const FORMACAO_VIGILANTE_TYPE = "Certificado Formação Vigilante";
+
+/** Extensão de escolta armada. Não é pendência separada da formação. */
+export const FORMACAO_ESCOLTA_TYPE = "Certificado Formação Escolta Armada";
+
+const FORMACAO_TYPE_SET = new Set<string>([FORMACAO_VIGILANTE_TYPE, FORMACAO_ESCOLTA_TYPE]);
+
+/** Inativo não entra em cobrança de pendência nem de documentação. */
+export function isInactiveEmployee(status?: string | null): boolean {
+  return String(status || "").trim().toLowerCase() === "inativo";
+}
+
+/** Prazo liberado pela Diretoria (inclusive no dia). Sem data → não libera. */
+export function isWithinDiretoriaGrace(graceUntil?: string | null, today: string = brtToday()): boolean {
+  const grace = dateOnly(graceUntil);
+  if (!grace) return false;
+  return today <= grace;
+}
+
+export function dateOnly(value?: string | null): string | null {
+  if (!value) return null;
+  const s = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+export function addYearsYmd(ymd: string, years: number): string | null {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return `${y + years}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Formação é uma vez. Escolta armada é extensão: se qualquer certificado de
+ * formação já está no sistema, nenhum dos dois entra como pendência.
+ * Sem nenhum, cobra só a formação de vigilante.
+ */
+export function filterFormacaoOnce(types: string[], presentTypes: string[]): string[] {
+  const present = new Set(presentTypes);
+  const hasFormacao = [...FORMACAO_TYPE_SET].some(t => present.has(t));
+  if (hasFormacao) return types.filter(t => !FORMACAO_TYPE_SET.has(t));
+  return types.filter(t => t !== FORMACAO_ESCOLTA_TYPE);
+}
+
+/** Curso de formação ou extensão de escolta. Reciclagem não conta. */
+export function isFormacaoTrainingType(type?: string | null): boolean {
+  const t = (type || "").toLowerCase();
+  if (t.includes("recicl") || t.includes("escolar")) return false;
+  return t.includes("forma") || t.includes("especializ");
+}
+
+export function isReciclagemType(type?: string | null): boolean {
+  return (type || "").toLowerCase().includes("recicl");
+}
 
 function brtToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -152,4 +210,93 @@ export function isReciclagemDue(cnvIssueDate?: string | null, today: string = br
 export function filterReciclagemByCnv(types: string[], cnvIssueDate?: string | null, today: string = brtToday()): string[] {
   if (isReciclagemDue(cnvIssueDate, today)) return types;
   return types.filter(t => t !== RECICLAGEM_ESCOLTA_TYPE);
+}
+
+export type ReciclagemSource = {
+  type?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  completedAt?: string | null;
+};
+
+export type ReciclagemClock = {
+  cnvIssueDate?: string | null;
+  reciclagemOn?: string | null;
+  reciclagemExpiry?: string | null;
+  hasReciclagem: boolean;
+};
+
+/**
+ * Relógio da reciclagem a partir dos certificados e cursos já lançados.
+ * Vale o registro cuja validade termina mais tarde. Registro sem data conta
+ * como entregue, mas não abre um novo ciclo.
+ */
+export function resolveReciclagemClock(sources: ReciclagemSource[], cnvIssueDate?: string | null): ReciclagemClock {
+  let bestUntil = "";
+  let bestOn: string | null = null;
+  let bestExpiry: string | null = null;
+  let has = false;
+  for (const src of sources) {
+    if (!isReciclagemType(src.type)) continue;
+    has = true;
+    const expiry = dateOnly(src.expiryDate);
+    const on = dateOnly(src.issueDate) || dateOnly(src.completedAt);
+    const until = expiry || (on ? addYearsYmd(on, 2) || "" : "");
+    if (until >= bestUntil) {
+      bestUntil = until;
+      bestOn = on;
+      bestExpiry = expiry;
+    }
+  }
+  return {
+    cnvIssueDate,
+    reciclagemOn: bestOn,
+    reciclagemExpiry: bestExpiry,
+    hasReciclagem: has,
+  };
+}
+
+/**
+ * Reciclagem é a cobrança que renova.
+ * - Com validade explícita: cobra no vencimento.
+ * - Com data da reciclagem e sem validade: cobra 2 anos depois.
+ * - Sem reciclagem no sistema: cobra quando o CNV completa 2 anos.
+ * - Reciclagem sem data nenhuma: não cobra de novo (já está no sistema).
+ */
+export function isReciclagemRenewalDue(clock: ReciclagemClock, today: string = brtToday()): boolean {
+  const expiry = dateOnly(clock.reciclagemExpiry);
+  if (expiry) return today >= expiry;
+  const on = dateOnly(clock.reciclagemOn);
+  if (on) {
+    const due = addYearsYmd(on, 2);
+    return !!due && today >= due;
+  }
+  if (clock.hasReciclagem) return false;
+  return isReciclagemDue(clock.cnvIssueDate, today);
+}
+
+export function reciclagemBlocksEmployee(input: {
+  status?: string | null;
+  role?: string | null;
+  docGraceUntil?: string | null;
+  clock: ReciclagemClock;
+  today?: string;
+}): { block: boolean; detail: string } {
+  if (isInactiveEmployee(input.status)) {
+    return { block: false, detail: "Funcionário inativo — sem cobrança" };
+  }
+  if (input.role != null && profileFromRole(input.role) !== "vigilante") {
+    return { block: false, detail: "Cargo sem cobrança de reciclagem" };
+  }
+  const today = input.today || brtToday();
+  if (isWithinDiretoriaGrace(input.docGraceUntil, today)) {
+    return { block: false, detail: `Prazo da Diretoria até ${dateOnly(input.docGraceUntil)} — sem trava` };
+  }
+  if (!isReciclagemRenewalDue(input.clock, today)) {
+    return { block: false, detail: "Reciclagem em dia" };
+  }
+  return {
+    block: true,
+    detail: "Reciclagem de escolta armada pendente ou vencida. A Diretoria pode liberar um prazo para não travar no sistema.",
+  };
 }

@@ -162,6 +162,8 @@ export const employees = pgTable("employees", {
   blockType: text("block_type"),
   blockReason: text("block_reason"),
   dependentesDeclarados: boolean("dependentes_declarados").default(false),
+  /** Prazo da Diretoria: até esta data a reciclagem vencida não trava a escala. */
+  docGraceUntil: date("doc_grace_until"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
