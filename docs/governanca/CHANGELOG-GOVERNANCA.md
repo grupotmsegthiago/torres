@@ -1,5 +1,10 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Ver NF: PDF DANFSe, nunca HTML da prefeitura
+
+- Causa: `nfse_url` da fatura 191 era `notaprint.aspx` da prefeitura. Essa página só mostra “Aguarde... Carregando Nota Fiscal...” e depende de JavaScript — o proxy do Torres removia os scripts.
+- Correção: `focusPdfUrl` ignora a URL da prefeitura; Ver NF baixa o DANFSe da Focus (S3, PDF de verdade) e grava esse endereço na invoice.
+
 ## 2026-09-22 — Ver NF Focus (DANFSe) + sync ao abrir Relatório + e-mail com 3 anexos
 
 - **Ver NF** usa o PDF DANFSe da Focus (`url_danfse`), não a página HTML da prefeitura nem `fiscalInfo` do Asaas.

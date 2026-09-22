@@ -28,6 +28,7 @@ import {
   ibgeMunicipioFromCityUf,
   isFocusManagedInvoice,
   isLikelyPdfUrl,
+  isPrefeituraNfseHtmlUrl,
   nfseUpdatesFromFocusObject,
   resolveFocusApiBaseUrl,
   type FocusTomadorInput,
@@ -190,21 +191,22 @@ export async function loadFocusNfsePdf(invoice: any): Promise<{ buf: Buffer; con
   const candidates = [
     focusPdfUrl(live, resolveFocusBaseUrl()),
     live?.url_danfse,
-    invoice?.nfse_url,
+    isLikelyPdfUrl(String(invoice?.nfse_url || "")) ? invoice.nfse_url : null,
   ].map((u) => String(u || "").trim()).filter(Boolean);
 
   for (const url of candidates) {
-    if (!isLikelyPdfUrl(url) && /prefeitura\.sp\.gov\.br/i.test(url)) continue;
+    if (isPrefeituraNfseHtmlUrl(url) || !isLikelyPdfUrl(url)) continue;
     const got = await fetchFocusAsset(url);
     if (!got || got.buf.length < 8) continue;
     const isPdf = got.contentType.includes("pdf") || got.buf.slice(0, 4).toString() === "%PDF";
-    if (isPdf) return { buf: got.buf, contentType: "application/pdf", url };
-  }
-
-  const htmlUrl = String(live?.url || invoice?.nfse_url || "").trim();
-  if (htmlUrl && !/prefeitura\.sp\.gov\.br/i.test(htmlUrl)) {
-    const got = await fetchFocusAsset(htmlUrl);
-    if (got && got.buf.length > 20) return { buf: got.buf, contentType: got.contentType || "text/html", url: htmlUrl };
+    if (!isPdf) continue;
+    if (invoice?.id && url !== String(invoice?.nfse_url || "")) {
+      await supabaseAdmin.from("invoices").update({
+        nfse_url: url,
+        updated_at: new Date().toISOString(),
+      }).eq("id", invoice.id);
+    }
+    return { buf: got.buf, contentType: "application/pdf", url };
   }
   return null;
 }

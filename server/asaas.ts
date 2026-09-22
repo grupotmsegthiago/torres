@@ -2741,25 +2741,17 @@ export function registerAsaasRoutes(app: Express) {
       if (!got) return res.status(404).send("PDF da NFS-e indisponível na Focus");
 
       const isPdf = got.contentType.includes("pdf") || got.buf.slice(0, 4).toString() === "%PDF";
-      let buf = got.buf;
-      if (isPdf) {
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `inline; filename="nfse-${id}.pdf"`);
-      } else {
-        let html = buf.toString("utf-8");
-        html = html.replace(/<script[\s\S]*?<\/script>/gi, "");
-        html = html.replace(/\son[a-z]+="[^"]*"/gi, "");
-        html = html.replace(/\son[a-z]+='[^']*'/gi, "");
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        buf = Buffer.from(html, "utf-8");
-      }
+      if (!isPdf) return res.status(404).send("PDF da NFS-e indisponível na Focus");
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="nfse-${id}.pdf"`);
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
       res.setHeader("Cache-Control", "no-store, must-revalidate");
       res.setHeader("Pragma", "no-cache");
       res.removeHeader("Content-Security-Policy");
       res.removeHeader("ETag");
       res.removeHeader("Last-Modified");
-      res.send(buf);
+      res.send(got.buf);
     } catch (err: any) {
       console.error("[focus-nfe] nfse-pdf error:", err.message);
       res.status(500).send(err.message);

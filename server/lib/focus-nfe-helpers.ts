@@ -133,9 +133,14 @@ export function focusMunicipalNumber(nf: any): string | null {
   return null;
 }
 
+export function isPrefeituraNfseHtmlUrl(u: string): boolean {
+  return /nfe\.prefeitura\.sp\.gov\.br/i.test(String(u || ""));
+}
+
 export function isLikelyPdfUrl(u: string): boolean {
   const s = String(u || "").trim();
   if (!s) return false;
+  if (isPrefeituraNfseHtmlUrl(s)) return false;
   return /\.pdf(\?|#|$)/i.test(s) || /danfse/i.test(s) || /\/DANFSEs\//i.test(s);
 }
 
@@ -150,9 +155,9 @@ export function absoluteFocusAssetUrl(raw: string, apiBase?: string | null): str
 export function focusPdfUrl(nf: any, apiBase?: string | null): string | null {
   const candidates = [nf?.url_danfse, nf?.url_pdf, nf?.pdfUrl, nf?.url]
     .map((c) => absoluteFocusAssetUrl(String(c || "").trim(), apiBase))
-    .filter(Boolean);
-  const pdf = candidates.find(isLikelyPdfUrl);
-  return pdf || candidates[0] || null;
+    .filter(Boolean)
+    .filter((u) => !isPrefeituraNfseHtmlUrl(u));
+  return candidates.find(isLikelyPdfUrl) || null;
 }
 
 export function focusXmlPath(nf: any): string | null {

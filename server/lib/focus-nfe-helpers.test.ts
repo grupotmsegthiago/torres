@@ -27,6 +27,7 @@ import {
   shouldEmitNfseViaFocus,
   focusPdfUrl,
   isLikelyPdfUrl,
+  isPrefeituraNfseHtmlUrl,
 } from "./focus-nfe-helpers";
 import { isFinalNfNumber, isLocalNfProcessingPlaceholder, isQueuedAtPrefecture } from "../../shared/nfse-status";
 
@@ -192,6 +193,7 @@ test("extractFocusErrorMessage e justificativa de cancelamento", () => {
 });
 
 test("focusPdfUrl prefere DANFSe e ignora HTML da prefeitura", () => {
+  assert.equal(isPrefeituraNfseHtmlUrl("https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325"), true);
   assert.equal(isLikelyPdfUrl("https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325"), false);
   assert.equal(isLikelyPdfUrl("https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/x/DANFSEs/nf.pdf"), true);
   const url = focusPdfUrl({
@@ -199,5 +201,8 @@ test("focusPdfUrl prefere DANFSe e ignora HTML da prefeitura", () => {
     url_danfse: "https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/x/DANFSEs/nf.pdf",
   });
   assert.match(String(url), /DANFSEs\/nf\.pdf/);
+  assert.equal(focusPdfUrl({
+    url: "https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325",
+  }), null);
 });
 

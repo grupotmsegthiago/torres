@@ -557,12 +557,12 @@ export default function RelatorioNFPage() {
       }
       const ct = (res.headers.get("content-type") || "").toLowerCase();
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      let htmlText: string | null = null;
-      if (ct.includes("html")) {
-        try { htmlText = await blob.text(); } catch {}
+      const header = await blob.slice(0, 8).text();
+      if (!ct.includes("pdf") && !header.startsWith("%PDF")) {
+        throw new Error("A Focus não devolveu o PDF da nota. Tente de novo em instantes.");
       }
-      setNfModal({ id, url, contentType: ct, htmlText, loading: false, error: null });
+      const url = URL.createObjectURL(blob);
+      setNfModal({ id, url, contentType: "application/pdf", htmlText: null, loading: false, error: null });
     } catch (e: any) {
       setNfModal({ id, url: null, contentType: null, htmlText: null, loading: false, error: e?.message || "Erro ao carregar NF" });
     }
@@ -1553,46 +1553,11 @@ export default function RelatorioNFPage() {
               </div>
             )}
             {nfModal?.url && !nfModal.loading && !nfModal.error && (
-              <>
-                {(nfModal.contentType || "").includes("pdf") ? (
-                  <object
-                    data={nfModal.url}
-                    type="application/pdf"
-                    className="w-full h-full"
-                    aria-label="Espelho da NFS-e"
-                  >
-                    <div className="flex flex-col items-center justify-center h-full p-6 gap-3 text-center">
-                      <FileText className="h-10 w-10 text-slate-400" />
-                      <div className="text-sm text-slate-600">
-                        Seu navegador não consegue exibir o PDF dentro da página.
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="default" onClick={() => window.open(nfModal.url!, "_blank")}>
-                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir em nova aba
-                        </Button>
-                        <Button size="sm" variant="outline" asChild>
-                          <a href={nfModal.url!} download={`nfse-${nfModal.id}.pdf`}>
-                            <Download className="h-3.5 w-3.5 mr-1" /> Baixar PDF
-                          </a>
-                        </Button>
-                      </div>
-                    </div>
-                  </object>
-                ) : nfModal.htmlText ? (
-                  <iframe
-                    srcDoc={nfModal.htmlText}
-                    className="w-full h-full border-0 bg-white"
-                    title="Espelho NF"
-                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                  />
-                ) : (
-                  <iframe
-                    src={nfModal.url}
-                    className="w-full h-full border-0 bg-white"
-                    title="Espelho NF"
-                  />
-                )}
-              </>
+              <iframe
+                src={nfModal.url}
+                className="w-full h-full border-0 bg-white"
+                title="Espelho da NFS-e"
+              />
             )}
           </div>
         </DialogContent>
