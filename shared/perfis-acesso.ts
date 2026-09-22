@@ -15,7 +15,7 @@ export function resolveActorName(opts: {
   return INTEGRATION_ACTOR;
 }
 
-export type PermissionGroup = "Geral" | "Comercial" | "Operações" | "Pessoas" | "Controladoria" | "Sistema" | "Fatura";
+export type PermissionGroup = "Geral" | "Comercial" | "Patrimonial" | "Operações" | "Pessoas" | "Controladoria" | "Sistema" | "Fatura";
 
 export type PermissionDef = {
   key: string;
@@ -34,6 +34,9 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: "service_orders", label: "Ordens de Serviço", group: "Comercial", path: "/admin/service-orders" },
   { key: "boletim_medicao", label: "Boletim de Medição", group: "Comercial", path: "/admin/boletim-medicao" },
   { key: "relatorio_faturamento", label: "Relatório Faturamento", group: "Comercial", path: "/admin/relatorio-faturamento" },
+
+  { key: "patrimonial", label: "Precificação patrimonial", group: "Patrimonial", path: "/admin/patrimonial/precificacao" },
+  { key: "patrimonial_proposta", label: "Proposta comercial patrimonial", group: "Patrimonial", path: "/admin/patrimonial/proposta" },
 
   { key: "operational_grid", label: "Painel Operacional", group: "Operações", path: "/admin/operational-grid" },
   { key: "agenda_vtr", label: "Agenda da VTR", group: "Operações", path: "/admin/agenda-vtr" },
@@ -156,6 +159,7 @@ export function canSeeAdminPath(permissions: string[] | null | undefined, pathna
   const path = normalizeAdminPath(pathname);
   if (ALWAYS_ALLOWED_ADMIN_PATHS.has(path)) return true;
   if (hasPermission(permissions, "*")) return true;
+  if (path === "/admin/patrimonial") return canSeePath(permissions, "/admin/patrimonial/precificacao");
   if (PATH_TO_PERMISSION[path]) return canSeePath(permissions, path);
   const stripped = path.replace(/\/\d+.*$/, "");
   if (stripped !== path && PATH_TO_PERMISSION[stripped]) return canSeePath(permissions, stripped);

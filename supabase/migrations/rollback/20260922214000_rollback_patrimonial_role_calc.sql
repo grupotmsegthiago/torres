@@ -1,0 +1,9 @@
+alter table public.patrimonial_roles drop column if exists holiday_dsr;
+alter table public.patrimonial_roles drop column if exists holiday_hours;
+alter table public.patrimonial_roles drop column if exists he100_hours;
+alter table public.patrimonial_roles drop column if exists he60_hours;
+alter table public.patrimonial_roles drop column if exists gratification_percent;
+alter table public.patrimonial_roles drop column if exists interval_indenizado;
+alter table public.patrimonial_roles drop column if exists night;
+alter table public.patrimonial_roles drop column if exists armed;
+alter table public.patrimonial_roles drop column if exists scale;

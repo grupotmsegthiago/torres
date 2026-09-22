@@ -747,6 +747,8 @@ async function ensureSystemSettingsTable() {
   import { registerConferenciaTmsegRoutes } from "./routes/conferencia-tmseg";
   import { registerControleFaturamentoRoutes } from "./routes/controle-faturamento";
   import { registerComissaoPushRoutes } from "./routes/comissao-push";
+  import { registerPatrimonialRoutes } from "./routes/patrimonial";
+  import { registerPatrimonialPricingRoutes } from "./routes/patrimonial-pricing";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -1442,6 +1444,8 @@ async function ensureSystemSettingsTable() {
     registerControleFaturamentoRoutes(app);
     registerComissaoPushRoutes(app);
     registerLeadRoutes(app);
+    registerPatrimonialRoutes(app);
+    registerPatrimonialPricingRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
     registerBalancoMetaRoutes(app);

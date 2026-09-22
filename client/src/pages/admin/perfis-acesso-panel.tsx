@@ -15,7 +15,7 @@ import {
 
 type PerfilRow = { id: number; role: string; label: string; permissions: string };
 
-const GROUPS: PermissionGroup[] = ["Geral", "Comercial", "Operações", "Pessoas", "Controladoria", "Sistema", "Fatura"];
+const GROUPS: PermissionGroup[] = ["Geral", "Comercial", "Patrimonial", "Operações", "Pessoas", "Controladoria", "Sistema", "Fatura"];
 
 export function PerfisAcessoPanel({ canEdit }: { canEdit: boolean }) {
   const { toast } = useToast();

@@ -110,6 +110,8 @@ type MenuSection = {
 const PREFETCH_MAP: Record<string, string[]> = {
   "/admin/dashboard": ["/api/service-orders", "/api/clients", "/api/employees", "/api/vehicles"],
   "/admin/clients": ["/api/clients"],
+  "/admin/patrimonial/precificacao": ["/api/patrimonial/precificacao"],
+  "/admin/patrimonial/proposta": ["/api/patrimonial/precificacao", "/api/patrimonial/precificacao/propostas"],
   "/admin/service-orders": ["/api/service-orders", "/api/clients", "/api/employees", "/api/vehicles"],
   "/admin/employees": ["/api/employees"],
   "/admin/vehicles": ["/api/vehicles"],
@@ -136,6 +138,16 @@ const menuSections: MenuSection[] = [
       { path: "/admin/service-orders", label: "Ordens de Serviço", icon: FileText },
       { path: "/admin/boletim-medicao", label: "Boletim de Medição", icon: Calculator },
       { path: "/admin/relatorio-faturamento", label: "Relatório Faturamento", icon: BarChart3 },
+    ],
+  },
+  {
+    title: "PATRIMONIAL",
+    icon: Shield,
+    iconColor: "text-blue-400",
+    adminOnly: true,
+    items: [
+      { path: "/admin/patrimonial/precificacao", label: "Precificação", icon: Shield, adminOnly: true },
+      { path: "/admin/patrimonial/proposta", label: "Proposta comercial", icon: FileText, adminOnly: true },
     ],
   },
   {
@@ -357,7 +369,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
 
 const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isAclRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isAclRole: boolean; aclPermissions: string[] }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "DIRETORIA": true, "CONTROLADORIA": true, "SISTEMA": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "PATRIMONIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "DIRETORIA": true, "CONTROLADORIA": true, "SISTEMA": true });
 
   const toggleGroup = useCallback((label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));

@@ -70,6 +70,8 @@ const PhotoInspectionPage = lazy(() => import("@/pages/admin/photo-inspection"))
 
 const ControleCondutorPage = lazy(() => import("@/pages/admin/controle-condutor"));
 const LeadsPage = lazy(() => import("@/pages/admin/leads"));
+const PatrimonialPage = lazy(() => import("@/pages/admin/patrimonial"));
+const PatrimonialPropostaPage = lazy(() => import("@/pages/admin/patrimonial-proposta"));
 const DatabasePage = lazy(() => import("@/pages/admin/database"));
 
 const MobileHomePage = lazy(() => import("@/pages/mobile/home"));
@@ -301,6 +303,9 @@ function Router() {
         <Route path="/admin/ponto-operacional">{() => <ProtectedRoute component={PontoOperacionalPage} />}</Route>
         <Route path="/admin/controle-condutor">{() => <ProtectedRoute component={ControleCondutorPage} />}</Route>
         <Route path="/admin/leads">{() => <ProtectedRoute component={LeadsPage} />}</Route>
+        <Route path="/admin/patrimonial">{() => <ProtectedRoute component={PatrimonialPage} />}</Route>
+        <Route path="/admin/patrimonial/precificacao">{() => <ProtectedRoute component={PatrimonialPage} />}</Route>
+        <Route path="/admin/patrimonial/proposta">{() => <ProtectedRoute component={PatrimonialPropostaPage} />}</Route>
         <Route path="/admin/database">{() => <ProtectedRoute component={DatabasePage} />}</Route>
         <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
         <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>

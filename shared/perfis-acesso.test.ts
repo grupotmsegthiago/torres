@@ -47,6 +47,9 @@ test("comercial: vê telas comerciais e não vê controladoria/RH/sistema", () =
   assert.equal(usesAclMenu("diretoria"), false);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/clients"), true);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/leads"), true);
+  assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/patrimonial"), false);
+  assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/patrimonial/precificacao"), false);
+  assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/patrimonial/proposta"), false);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/service-orders"), true);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/boletim-medicao"), true);
   assert.equal(canSeeAdminPath(DEFAULT_PROFILE_PERMISSIONS.comercial, "/admin/financeiro"), false);
