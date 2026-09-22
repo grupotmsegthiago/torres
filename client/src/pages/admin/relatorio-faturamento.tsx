@@ -1412,7 +1412,7 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-sm font-bold text-indigo-900">
                 {approvedBillings.length} OS para fatura — {fmt(approvedTotal)}
               </p>
-              <p className="text-xs text-indigo-600">Clique em "Gerar Fatura" para emitir boleto + NFS-e (Aprovadas + A Verificar + Canceladas)</p>
+              <p className="text-xs text-indigo-600">Gera boleto Asaas + NFS-e Focus e envia e-mail ao cliente (CC financeiro/adm)</p>
             </div>
           </div>
           <button

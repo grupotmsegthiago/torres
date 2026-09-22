@@ -1,5 +1,24 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Ver NF Focus (DANFSe) + sync ao abrir Relatório + e-mail com 3 anexos
+
+- **Ver NF** usa o PDF DANFSe da Focus (`url_danfse`), não a página HTML da prefeitura nem `fiscalInfo` do Asaas.
+- Abrir o Relatório de NF dispara `POST /api/relatorio-nf/sync-focus`: consulta status ativo/cancelado na Focus e grava na `invoices`.
+- NFS-e Asaas desligada de ponta a ponta (`asaasRequest` recusa `/invoices` fiscal). Boleto/PIX/baixa continuam no Asaas.
+- E-mail ao cliente: To do cliente, CC financeiro@ e adm@, BCC thiago@; anexos boleto Asaas + NFS-e Focus + boletim de medição (espelho do snapshot).
+
+## 2026-09-22 — Sync Focus: não usar homologação no ar
+
+- `FOCUS_NFE_ENV` vazio/`[SENSITIVE]` em Vercel production consulta `api.focusnfe.com.br`, não `homologacao.focusnfe.com.br`.
+- `/sync` de fatura já autorizada não apaga a NF se a consulta Focus falhar.
+
+## 2026-09-22 — Faturar: boleto Asaas + NFS-e Focus + e-mail; Asaas não emite mais NF
+
+- Gerar Fatura (Relatório de Faturamento) sempre cria boleto Asaas e NFS-e Focus na mesma operação.
+- E-mail ao cliente só depois de boleto + NF: To do cliente, CC financeiro@ e adm@, BCC thiago@grupotmseg.com.br.
+- Baixa: webhook Asaas (RECEIVED/CONFIRMED) marca fatura/OS pagas (`applyPaymentToInvoice` + MARK_PAID).
+- Emissão de NFS-e no Asaas (`POST /invoices` fiscal) bloqueada. Relatório de NFs: boleto Asaas × NF Focus.
+
 ## 2026-09-22 — Relatório de NF: tela em branco + coluna Boleto Asaas
 
 - Causa: o import de `AdminLayout` foi trocado por `classifyIssuedOrProcessing` e a página quebrava ao abrir.

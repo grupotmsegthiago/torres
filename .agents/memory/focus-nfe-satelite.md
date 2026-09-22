@@ -8,7 +8,10 @@ description: Emissão de NFS-e vai pela Focus NFe; Asaas fica com boleto. invoic
 Novas NFS-e: `server/lib/focus-nfe.ts` via `POST /v2/nfse?ref=torres-inv-{id}` (Basic Auth token, senha vazia).
 Homologação padrão (`https://homologacao.focusnfe.com.br`); produção só com `FOCUS_NFE_ENV=producao`.
 
-Boleto/PIX/baixa: Asaas. Documento `inv_*` ainda vivo: não migrar (duplicidade fiscal).
+Boleto/PIX/baixa: Asaas. **Nunca emitir NFS-e no Asaas** (`emitNfseImmediate` recusa). Documento `inv_*` vivo: só consulta.
+
+Gerar Fatura: boleto Asaas + NF Focus + e-mail (CC financeiro/adm, BCC thiago) quando os dois existem.
+Webhook Asaas RECEIVED/CONFIRMED marca fatura paga.
 
 Tabela: `invoices` existente (integer PK). Colunas: `nfse_ref`, `nfse_codigo_verificacao`, `nfse_xml_path`, `nfse_provider`.
 Não criar segunda tabela nem Edge Function — rotas oficiais `/api/invoices/:id/emit-nfse` com role.

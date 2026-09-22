@@ -18,12 +18,41 @@ import {
 } from "./asaas-helpers";
 import { isFinalNfNumber, isFocusNfseRef, isNfOkStatus } from "../../shared/nfse-status";
 
-export const FOCUS_ITEM_LISTA_SERVICO = "11.02";
+/** Paulistana: item da lista municipal (Focus SP usa 7870; Torres homologou 07870). LC 116 11.02 não é aceito como 1102. */
+export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
 export const FOCUS_NATUREZA_OPERACAO = "1";
 export const FOCUS_REGIME_SIMPLES_ME_EPP = "6";
 export const FOCUS_PROVIDER = "focus";
 export const FOCUS_REF_PREFIX = "torres-inv-";
+export const FOCUS_API_PRODUCTION_URL = "https://api.focusnfe.com.br";
+export const FOCUS_API_HOMOLOG_URL = "https://homologacao.focusnfe.com.br";
+
+function foldFocusEnv(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Homologação só em runtime local/dev. Em Vercel/Node production a API é
+ * sempre api.focusnfe.com.br — senão o Relatório consulta homologacao.focus
+ * e a NF real some.
+ */
+export function resolveFocusApiBaseUrl(
+  focusNfeEnv?: string | null,
+  runtime?: { vercelEnv?: string | null; nodeEnv?: string | null },
+): string {
+  const rt = foldFocusEnv(String(runtime?.vercelEnv || runtime?.nodeEnv || ""));
+  if (rt === "production" || rt === "prod") return FOCUS_API_PRODUCTION_URL;
+  const env = foldFocusEnv(String(focusNfeEnv || ""));
+  if (env === "producao" || env === "production" || env === "prod") {
+    return FOCUS_API_PRODUCTION_URL;
+  }
+  return FOCUS_API_HOMOLOG_URL;
+}
 
 export function focusNfseRef(invoiceId: number): string {
   const id = Number(invoiceId);
@@ -104,10 +133,26 @@ export function focusMunicipalNumber(nf: any): string | null {
   return null;
 }
 
-export function focusPdfUrl(nf: any): string | null {
-  const u = nf?.url || nf?.url_danfse || nf?.url_pdf || nf?.pdfUrl;
+export function isLikelyPdfUrl(u: string): boolean {
   const s = String(u || "").trim();
-  return s || null;
+  if (!s) return false;
+  return /\.pdf(\?|#|$)/i.test(s) || /danfse/i.test(s) || /\/DANFSEs\//i.test(s);
+}
+
+export function absoluteFocusAssetUrl(raw: string, apiBase?: string | null): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  const base = String(apiBase || FOCUS_API_PRODUCTION_URL).replace(/\/$/, "");
+  return s.startsWith("/") ? `${base}${s}` : `${base}/${s}`;
+}
+
+export function focusPdfUrl(nf: any, apiBase?: string | null): string | null {
+  const candidates = [nf?.url_danfse, nf?.url_pdf, nf?.pdfUrl, nf?.url]
+    .map((c) => absoluteFocusAssetUrl(String(c || "").trim(), apiBase))
+    .filter(Boolean);
+  const pdf = candidates.find(isLikelyPdfUrl);
+  return pdf || candidates[0] || null;
 }
 
 export function focusXmlPath(nf: any): string | null {

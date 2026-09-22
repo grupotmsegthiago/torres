@@ -7,6 +7,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
 import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS } from "../../shared/client-emails";
+import { maybeSendInvoiceReadyEmail } from "./invoice-billing-email";
 import {
   DESCRICAO_SERVICO_FIXA,
   MISSING_EMAIL_NF_MSG,
@@ -18,13 +19,17 @@ import {
 } from "../../shared/nfse-status";
 import {
   FOCUS_PROVIDER,
+  absoluteFocusAssetUrl,
   buildFocusNfsePayload,
   extractFocusErrorMessage,
   focusCancelJustification,
   focusNfseRef,
+  focusPdfUrl,
   ibgeMunicipioFromCityUf,
   isFocusManagedInvoice,
+  isLikelyPdfUrl,
   nfseUpdatesFromFocusObject,
+  resolveFocusApiBaseUrl,
   type FocusTomadorInput,
 } from "./focus-nfe-helpers";
 
@@ -40,15 +45,10 @@ export function hasFocusApiToken(): boolean {
 }
 
 export function resolveFocusBaseUrl(): string {
-  const env = String(process.env.FOCUS_NFE_ENV || process.env.FOCUS_API_ENV || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  if (env === "producao" || env === "production" || env === "prod") {
-    return "https://api.focusnfe.com.br";
-  }
-  return "https://homologacao.focusnfe.com.br";
+  return resolveFocusApiBaseUrl(process.env.FOCUS_NFE_ENV || process.env.FOCUS_API_ENV, {
+    vercelEnv: process.env.VERCEL_ENV,
+    nodeEnv: process.env.NODE_ENV,
+  });
 }
 
 export function resolveFocusPrestadorIm(): string {
@@ -94,7 +94,10 @@ export async function focusRequest(method: string, path: string, body?: unknown)
     return json;
   } catch (e: any) {
     if (e?.name === "AbortError") throw new Error("Timeout ao chamar a Focus NFe");
-    throw e;
+    if (e?.status) throw e;
+    const host = resolveFocusBaseUrl().includes("homologacao") ? "homologação" : "produção";
+    const cause = String(e?.cause?.message || e?.cause?.code || e?.message || e).slice(0, 240);
+    throw new Error(`Falha ao consultar Focus (${host}): ${cause}`);
   } finally {
     clearTimeout(timer);
   }
@@ -149,16 +152,103 @@ export async function cancelFocusNfse(ref: string, reason?: string | null): Prom
   });
 }
 
+function focusAssetNeedsAuth(url: string): boolean {
+  return /focusnfe\.com\.br/i.test(url) && !/amazonaws|\.s3\./i.test(url);
+}
+
+export async function fetchFocusAsset(url: string): Promise<{ buf: Buffer; contentType: string } | null> {
+  const href = String(url || "").trim();
+  if (!href) return null;
+  const abs = absoluteFocusAssetUrl(href, resolveFocusBaseUrl());
+  const headers: Record<string, string> = { Accept: "application/pdf,application/octet-stream,*/*" };
+  if (focusAssetNeedsAuth(abs)) {
+    const token = resolveFocusApiToken();
+    if (token) headers.Authorization = basicAuthHeader(token);
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FOCUS_TIMEOUT_MS);
+  try {
+    const res = await fetch(abs, { headers, redirect: "follow", signal: ctrl.signal });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ct = String(res.headers.get("content-type") || "").toLowerCase();
+    return { buf, contentType: ct };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function loadFocusNfsePdf(invoice: any): Promise<{ buf: Buffer; contentType: string; url: string } | null> {
+  const ref = String(invoice?.nfse_ref || "").trim()
+    || (isFocusManagedInvoice(invoice) ? String(invoice?.nfse_number || "") : "");
+  let live: any = null;
+  if (ref && hasFocusApiToken()) {
+    try { live = await consultFocusNfse(ref); } catch { live = null; }
+  }
+  const candidates = [
+    focusPdfUrl(live, resolveFocusBaseUrl()),
+    live?.url_danfse,
+    invoice?.nfse_url,
+  ].map((u) => String(u || "").trim()).filter(Boolean);
+
+  for (const url of candidates) {
+    if (!isLikelyPdfUrl(url) && /prefeitura\.sp\.gov\.br/i.test(url)) continue;
+    const got = await fetchFocusAsset(url);
+    if (!got || got.buf.length < 8) continue;
+    const isPdf = got.contentType.includes("pdf") || got.buf.slice(0, 4).toString() === "%PDF";
+    if (isPdf) return { buf: got.buf, contentType: "application/pdf", url };
+  }
+
+  const htmlUrl = String(live?.url || invoice?.nfse_url || "").trim();
+  if (htmlUrl && !/prefeitura\.sp\.gov\.br/i.test(htmlUrl)) {
+    const got = await fetchFocusAsset(htmlUrl);
+    if (got && got.buf.length > 20) return { buf: got.buf, contentType: got.contentType || "text/html", url: htmlUrl };
+  }
+  return null;
+}
+
+export async function syncFocusNfsesForInvoices(
+  invoices: any[],
+  opts?: { limit?: number },
+): Promise<{ processed: number; updated: number }> {
+  const limit = Math.max(1, Math.min(opts?.limit ?? 30, 80));
+  let processed = 0;
+  let updated = 0;
+  if (!hasFocusApiToken()) return { processed, updated };
+  for (const inv of invoices || []) {
+    if (processed >= limit) break;
+    if (!isFocusManagedInvoice(inv) && !String(inv?.nfse_ref || "").trim()) continue;
+    processed += 1;
+    const r = await syncFocusNfseForInvoice(inv);
+    if (r.nf) {
+      const persisted = await persistFocusNfse(inv.id, r.nf, String(inv.nfse_ref || r.updates.nfse_ref || "").trim(), inv);
+      if (Object.keys(persisted).length > 0 || Object.keys(r.updates).length > 0) updated += 1;
+      continue;
+    }
+    if (Object.keys(r.updates).length === 0) continue;
+    const { error } = await supabaseAdmin.from("invoices").update(invoiceUpdatesNow(r.updates)).eq("id", inv.id);
+    if (!error) updated += 1;
+  }
+  return { processed, updated };
+}
+
 function invoiceUpdatesNow(updates: Record<string, any>): Record<string, any> {
   return { ...updates, updated_at: new Date().toISOString() };
 }
 
 export async function persistFocusNfse(invoiceId: number, nf: any, ref: string, current: any): Promise<Record<string, any>> {
   const updates = nfseUpdatesFromFocusObject(nf, current || {}, ref);
-  if (Object.keys(updates).length === 0) return {};
-  const payload = invoiceUpdatesNow(updates);
-  const { error } = await supabaseAdmin.from("invoices").update(payload).eq("id", invoiceId);
-  if (error) throw error;
+  let payload: Record<string, any> = {};
+  if (Object.keys(updates).length > 0) {
+    payload = invoiceUpdatesNow(updates);
+    const { error } = await supabaseAdmin.from("invoices").update(payload).eq("id", invoiceId);
+    if (error) throw error;
+  }
+  void maybeSendInvoiceReadyEmail(invoiceId).catch((e: any) => {
+    console.error(`[billing-email] pós-Focus fatura #${invoiceId}: ${e?.message || e}`);
+  });
   return payload;
 }
 
@@ -290,10 +380,18 @@ export async function syncFocusNfseForInvoice(invoice: any): Promise<{ updates: 
   const ref = String(invoice?.nfse_ref || "").trim()
     || (isFocusManagedInvoice(invoice) ? String(invoice?.nfse_number || "") : "");
   if (!ref || !hasFocusApiToken()) return { updates: {}, source: "none", nf: null };
-  const nf = await consultFocusNfse(ref);
-  if (!nf) return { updates: {}, source: "focus-miss", nf: null };
-  const updates = nfseUpdatesFromFocusObject(nf, invoice, ref);
-  return { updates, source: "focus", nf };
+  try {
+    const nf = await consultFocusNfse(ref);
+    if (!nf) return { updates: {}, source: "focus-miss", nf: null };
+    const updates = nfseUpdatesFromFocusObject(nf, invoice, ref);
+    return { updates, source: "focus", nf };
+  } catch (e: any) {
+    const msg = String(e?.message || "Falha ao consultar Focus").slice(0, 1000);
+    if (isNfFullyIssued(invoice?.nfse_status, invoice?.nfse_number)) {
+      return { updates: {}, source: "focus-error-keep", nf: null };
+    }
+    return { updates: { nfse_error_message: msg }, source: "focus-error", nf: null };
+  }
 }
 
 export function extractFocusWebhookToken(req: Request): string {

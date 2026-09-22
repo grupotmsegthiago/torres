@@ -11,6 +11,8 @@ import {
   FOCUS_CODIGO_MUNICIPIO_SP,
   FOCUS_ITEM_LISTA_SERVICO,
   FOCUS_PROVIDER,
+  FOCUS_API_HOMOLOG_URL,
+  FOCUS_API_PRODUCTION_URL,
   buildFocusNfsePayload,
   extractFocusErrorMessage,
   focusCancelJustification,
@@ -21,7 +23,10 @@ import {
   isFocusNfseRef,
   mapFocusStatusToTorres,
   nfseUpdatesFromFocusObject,
+  resolveFocusApiBaseUrl,
   shouldEmitNfseViaFocus,
+  focusPdfUrl,
+  isLikelyPdfUrl,
 } from "./focus-nfe-helpers";
 import { isFinalNfNumber, isLocalNfProcessingPlaceholder, isQueuedAtPrefecture } from "../../shared/nfse-status";
 
@@ -37,6 +42,15 @@ const tomadorOk = {
   zip: "01310-100",
   inscricaoMunicipal: "1234567",
 };
+
+test("resolveFocusApiBaseUrl: produção no ar não cai em homologação por omissão", () => {
+  assert.equal(resolveFocusApiBaseUrl("producao"), FOCUS_API_PRODUCTION_URL);
+  assert.equal(resolveFocusApiBaseUrl("homologação"), FOCUS_API_HOMOLOG_URL);
+  assert.equal(resolveFocusApiBaseUrl("homologação", { vercelEnv: "production" }), FOCUS_API_PRODUCTION_URL);
+  assert.equal(resolveFocusApiBaseUrl("", { vercelEnv: "production" }), FOCUS_API_PRODUCTION_URL);
+  assert.equal(resolveFocusApiBaseUrl("[SENSITIVE]", { vercelEnv: "production" }), FOCUS_API_PRODUCTION_URL);
+  assert.equal(resolveFocusApiBaseUrl("", { nodeEnv: "development" }), FOCUS_API_HOMOLOG_URL);
+});
 
 test("focusNfseRef e isFocusNfseRef", () => {
   assert.equal(focusNfseRef(44), "torres-inv-44");
@@ -93,6 +107,7 @@ test("buildFocusNfsePayload: SP, 07870, ISS 5% retido, discriminacao escolta+leg
   assert.equal(p.tomador.endereco.codigo_municipio, FOCUS_CODIGO_MUNICIPIO_SP);
   assert.equal(p.tomador.endereco.cep, "01310100");
   assert.equal(p.servico.item_lista_servico, FOCUS_ITEM_LISTA_SERVICO);
+  assert.equal(p.servico.item_lista_servico, "07870");
   assert.equal(p.servico.codigo_tributario_municipio, CODIGO_SERVICO_MUNICIPAL_CODE);
   assert.match(p.servico.discriminacao, /Escolta Armada/);
   assert.match(p.servico.discriminacao, /16\/09\/2026/);
@@ -136,13 +151,14 @@ test("ibgeMunicipioFromCityUf", () => {
   assert.equal(ibgeMunicipioFromCityUf("Foo", "SP"), null);
 });
 
-test("nfseUpdatesFromFocusObject: autorizada com PDF e número municipal", () => {
+test("nfseUpdatesFromFocusObject: autorizada prefere DANFSe PDF à página HTML da prefeitura", () => {
   const u = nfseUpdatesFromFocusObject(
     {
       status: "autorizado",
       numero: "325",
       codigo_verificacao: "ABCD",
-      url: "https://focus.example/nf.pdf",
+      url: "https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325",
+      url_danfse: "https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/x/DANFSEs/nf.pdf",
       caminho_xml_nota_fiscal: "notas/xml.xml",
       ref: "torres-inv-7",
     },
@@ -151,7 +167,7 @@ test("nfseUpdatesFromFocusObject: autorizada com PDF e número municipal", () =>
   );
   assert.equal(u.nfse_status, "AUTHORIZED");
   assert.equal(u.nfse_number, "325");
-  assert.equal(u.nfse_url, "https://focus.example/nf.pdf");
+  assert.match(String(u.nfse_url), /DANFSEs\/nf\.pdf/);
   assert.equal(u.nfse_codigo_verificacao, "ABCD");
   assert.equal(u.nfse_xml_path, "notas/xml.xml");
   assert.equal(u.nfse_provider, FOCUS_PROVIDER);
@@ -174,3 +190,14 @@ test("extractFocusErrorMessage e justificativa de cancelamento", () => {
   assert.equal(focusMunicipalNumber({ numero: "torres-inv-1" }), null);
   assert.equal(focusMunicipalNumber({ numero: "400" }), "400");
 });
+
+test("focusPdfUrl prefere DANFSe e ignora HTML da prefeitura", () => {
+  assert.equal(isLikelyPdfUrl("https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325"), false);
+  assert.equal(isLikelyPdfUrl("https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/x/DANFSEs/nf.pdf"), true);
+  const url = focusPdfUrl({
+    url: "https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325",
+    url_danfse: "https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/x/DANFSEs/nf.pdf",
+  });
+  assert.match(String(url), /DANFSEs\/nf\.pdf/);
+});
+

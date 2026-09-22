@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card } from "@/components/ui/card";
@@ -199,7 +199,7 @@ export default function RelatorioNFPage() {
   const isDiretoria = user?.role === "diretoria";
   const isFinanceiro = user?.role === "diretoria" || user?.role === "admin" || user?.role === "financeiro";
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; contentType: string | null; htmlText: string | null; loading: boolean; error: string | null } | null>(null);
-  const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
+  const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "focus" | "local"; reason: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
@@ -238,6 +238,27 @@ export default function RelatorioNFPage() {
     refetchOnWindowFocus: false,
   });
 
+  const focusSyncedFor = useRef("");
+  useEffect(() => {
+    const key = `${from}|${to}`;
+    if (focusSyncedFor.current === key) return;
+    focusSyncedFor.current = key;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await authFetch("/api/relatorio-nf/sync-focus", {
+          method: "POST",
+          body: JSON.stringify({ from, to }),
+        });
+        if (!r.ok || cancelled) return;
+        queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+      } catch {
+        /* sync não bloqueia a tela */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [from, to, queryClient]);
+
   const reconcileMutation = useMutation({
     mutationFn: async (force: boolean) => {
       const r = await authFetch(`/api/asaas/reconcile-all`, {
@@ -249,8 +270,8 @@ export default function RelatorioNFPage() {
     },
     onSuccess: () => {
       toast({
-        title: "Consulta ao Asaas iniciada",
-        description: "Atualiza status de pagamento e NFS-e. Não reemite nota. Se o CCM do cadastro estiver diferente, envia ao tomador Asaas — isso não altera NF já na prefeitura.",
+        title: "Sincronização iniciada",
+        description: "Atualiza boleto no Asaas e NFS-e na Focus. Não reemite nota.",
       });
       // Refetch após 8s para dar tempo do Asaas responder
       setTimeout(() => {
@@ -518,7 +539,7 @@ export default function RelatorioNFPage() {
       return json;
     },
     onSuccess: (data: any) => {
-      toast({ title: "NF consultada no Asaas", description: data?.message || "Status atualizado." });
+      toast({ title: "NF consultada na Focus", description: data?.message || "Status atualizado." });
       invalidateRelatedQueries("invoice");
       queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
     },
@@ -703,19 +724,19 @@ export default function RelatorioNFPage() {
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900" data-testid="text-page-title">Relatório de Notas Fiscais</h1>
-            <p className="text-xs text-slate-500 mt-1">Visão completa: boletins enviados ao cliente, faturas geradas e status da NFS-e no Asaas</p>
+            <p className="text-xs text-slate-500 mt-1">Boleto Asaas + NFS-e Focus. Pagamento baixa a fatura automaticamente.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
-              title="Consulta pagamento e NFS-e no Asaas. Não reemite nota nem gera segundo RPS."
+              title="Consulta boleto no Asaas e NFS-e na Focus. Não reemite nota."
               onClick={() => reconcileMutation.mutate(false)}
               disabled={reconcileMutation.isPending || lastSync?.running}
               data-testid="button-sync-asaas"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${(reconcileMutation.isPending || lastSync?.running) ? "animate-spin" : ""}`} />
-              {lastSync?.running ? "Sincronizando…" : "Sincronizar c/ Asaas"}
+              {lastSync?.running ? "Sincronizando…" : "Sincronizar boleto e NF"}
             </Button>
             <Button
               variant="outline"
@@ -1098,7 +1119,7 @@ export default function RelatorioNFPage() {
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
-                              title="Consultar NFS-e no gateway (Focus ou Asaas legado)"
+                              title="Consultar NFS-e na Focus"
                               disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
                               onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
                               data-testid={`button-sync-nf-${r.id}`}
@@ -1247,13 +1268,13 @@ export default function RelatorioNFPage() {
                               type="button"
                               onClick={() => {
                                 if (resendMutation.isPending) return;
-                                if (window.confirm(`Reenviar boleto + NF da fatura para ${r.clientName} por e-mail?`)) {
+                                if (window.confirm(`Reenviar boleto + NF + boletim da fatura para ${r.clientName} por e-mail?`)) {
                                   resendMutation.mutate(r.invoiceId!);
                                 }
                               }}
                               disabled={resendMutation.isPending}
                               className="h-7 w-7 inline-flex items-center justify-center text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-50"
-                              title="Reenviar fatura por e-mail (boleto + NF)"
+                              title="Reenviar fatura por e-mail (boleto + NF + boletim)"
                               data-testid={`button-resend-invoice-${r.id}`}
                             >
                               {resendMutation.isPending && resendMutation.variables === r.invoiceId ? (
@@ -1266,7 +1287,7 @@ export default function RelatorioNFPage() {
                           {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
                             <button
                               type="button"
-                              onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "asaas", reason: "" })}
+                              onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "focus", reason: "" })}
                               className="h-7 w-7 inline-flex items-center justify-center text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors"
                               title="Cancelar NF"
                               data-testid={`button-cancel-nf-${r.id}`}
@@ -1599,17 +1620,17 @@ export default function RelatorioNFPage() {
               <div className="space-y-2">
                 <label className="text-xs font-medium text-slate-700">Tipo de cancelamento</label>
                 <div className="space-y-2">
-                  <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer ${cancelModal.mode === "asaas" ? "border-violet-400 bg-violet-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer ${cancelModal.mode === "focus" ? "border-violet-400 bg-violet-50" : "border-slate-200 hover:bg-slate-50"}`}>
                     <input
                       type="radio"
-                      checked={cancelModal.mode === "asaas"}
-                      onChange={() => setCancelModal({ ...cancelModal, mode: "asaas" })}
+                      checked={cancelModal.mode === "focus"}
+                      onChange={() => setCancelModal({ ...cancelModal, mode: "focus" })}
                       className="mt-0.5"
-                      data-testid="radio-cancel-asaas"
+                      data-testid="radio-cancel-focus"
                     />
                     <div className="text-xs">
-                      <div className="font-semibold text-slate-800">Cancelar no Asaas + local</div>
-                      <div className="text-slate-600">Tenta cancelar a NF no Asaas e marca como cancelada no sistema. Use quando a NF ainda está ativa no Asaas/prefeitura.</div>
+                      <div className="font-semibold text-slate-800">Cancelar na Focus + local</div>
+                      <div className="text-slate-600">Tenta cancelar a NF na Focus NFe e marca como cancelada no sistema. Use quando a NF ainda está ativa na prefeitura.</div>
                     </div>
                   </label>
                   <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer ${cancelModal.mode === "local" ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"}`}>
@@ -1622,7 +1643,7 @@ export default function RelatorioNFPage() {
                     />
                     <div className="text-xs">
                       <div className="font-semibold text-slate-800">Apenas marcar como cancelada (cancelamento já feito na prefeitura)</div>
-                      <div className="text-slate-600">Não chama o Asaas. Use quando a NF já foi cancelada diretamente no portal da prefeitura e precisa ser refletida aqui.</div>
+                      <div className="text-slate-600">Não chama a Focus. Use quando a NF já foi cancelada diretamente no portal da prefeitura e precisa ser refletida aqui.</div>
                     </div>
                   </label>
                 </div>
