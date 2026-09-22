@@ -1,5 +1,9 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Relatório de NF: valor bruto e líquido
+
+- O Relatório de NF passa a mostrar **Valor bruto (NF)** (`invoices.value`) e **Valor líquido** após ISS 5% + INSS 11%, com o mesmo motor do boleto (`netBoletoValue` / `boletoRetentionOpts`). Excel e tabela de notas pagas seguem a mesma regra.
+
 ## 2026-09-22 — NFS-e 192 Nimbus: tomador fora de SP
 
 - A Paulistana recusou: município da prestação era São Paulo, mas o tomador é Serra/ES (serviço tributado fora).

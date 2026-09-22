@@ -501,6 +501,18 @@ export function netBoletoValue(
   return { boleto, inssValor, inssAliquota, issValor, issAliquota };
 }
 
+/** Bruto da NF e líquido após ISS/INSS — mesma regra do boleto (`netBoletoValue`). */
+export function nfGrossAndLiquid(
+  grossValue: number,
+  emiteNf: boolean,
+  retemInss = false,
+  inssAliquota?: number,
+): { gross: number; liquid: number; issValor: number; inssValor: number } {
+  const gross = Number((Number(grossValue) || 0).toFixed(2));
+  const n = netBoletoValue(gross, boletoRetentionOpts(!!emiteNf, !!retemInss, inssAliquota));
+  return { gross, liquid: n.boleto, issValor: n.issValor, inssValor: n.inssValor };
+}
+
 export function buildFiscalPayload(
   value: number,
   clientCpfCnpj: string,

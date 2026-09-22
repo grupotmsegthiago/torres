@@ -6,6 +6,7 @@ import {
   buildInssObservation,
   netBoletoValue,
   boletoRetentionOpts,
+  nfGrossAndLiquid,
   buildFiscalPayload,
   buildNfseInvoicePayload,
   buildValoresObservation,
@@ -245,6 +246,22 @@ test("netBoletoValue: emite NF desconta ISS 5% além do INSS 11%", () => {
   assert.equal(r.issValor, 50);
   assert.equal(r.issAliquota, 5);
   assert.equal(r.boleto, 840);
+});
+
+test("nfGrossAndLiquid: NF desconta ISS 5% e INSS 11% (550 → 462)", () => {
+  const r = nfGrossAndLiquid(550, true);
+  assert.equal(r.gross, 550);
+  assert.equal(r.issValor, 27.5);
+  assert.equal(r.inssValor, 60.5);
+  assert.equal(r.liquid, 462);
+});
+
+test("nfGrossAndLiquid: sem NF o líquido = bruto", () => {
+  const r = nfGrossAndLiquid(550, false, false);
+  assert.equal(r.gross, 550);
+  assert.equal(r.issValor, 0);
+  assert.equal(r.inssValor, 0);
+  assert.equal(r.liquid, 550);
 });
 
 test("boletoRetentionOpts: emite NF força INSS 11% e ISS 5%", () => {

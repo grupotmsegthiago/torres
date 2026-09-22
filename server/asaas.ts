@@ -28,6 +28,7 @@ import {
   buildNfseObservations,
   netBoletoValue,
   boletoRetentionOpts,
+  nfGrossAndLiquid,
   buildNfClientEmail,
   buildFiscalPayload,
   todayDateStr,
@@ -3769,19 +3770,29 @@ export function registerAsaasRoutes(app: Express) {
         // e das invoices em aberto (PENDING/OVERDUE) que estamos sempre mostrando
         const invClientIds = (invoicesCreatedInPeriod || []).map((i: any) => i.client_id).filter(Boolean);
         const openInvClientIds = openInvoicesAdded.map((i: any) => i.client_id).filter(Boolean);
+        const mapClientIds = [...invoiceMap.values()].map((i: any) => i.client_id).filter(Boolean);
         const allClientIds = Array.from(new Set([
           ...validBillings.map((b: any) => b.client_id).filter(Boolean),
           ...invClientIds,
           ...openInvClientIds,
+          ...mapClientIds,
         ])) as number[];
-        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean; email: string | null }>();
+        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean; retemInss: boolean; inssAliquota?: number; email: string | null }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, email_financeiro, email, email_contratual, email_operacional")
+            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, email_financeiro, email, email_contratual, email_operacional")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientMap.set(c.id, { name: c.name, fantasia: c.nome_fantasia || null, cpfCnpj: c.cnpj || c.cpf || null, emiteNf: c.emite_nf !== false, email: asaasTomadorEmail(c) || null });
+            clientMap.set(c.id, {
+              name: c.name,
+              fantasia: c.nome_fantasia || null,
+              cpfCnpj: c.cnpj || c.cpf || null,
+              emiteNf: c.emite_nf !== false,
+              retemInss: c.retem_inss === true,
+              inssAliquota: c.inss_aliquota != null ? Number(c.inss_aliquota) : undefined,
+              email: asaasTomadorEmail(c) || null,
+            });
           }
         }
 
@@ -3830,6 +3841,7 @@ export function registerAsaasRoutes(app: Express) {
           const cli = clientMap.get(inv.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
           const earliest = bills.map(b => b.data_missao).sort()[0];
+          const nfAmt = nfGrossAndLiquid(Number(inv.value || 0), cli?.emiteNf !== false, !!cli?.retemInss, cli?.inssAliquota);
           rows.push({
             id: `INV-${inv.id}`,
             source: "INVOICE",
@@ -3840,7 +3852,10 @@ export function registerAsaasRoutes(app: Express) {
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             clientEmail: cli?.email || null,
             description: inv.description,
-            value: Number(inv.value || 0),
+            value: nfAmt.gross,
+            liquidValue: nfAmt.liquid,
+            issValor: nfAmt.issValor,
+            inssValor: nfAmt.inssValor,
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
             dueDate: inv.due_date,
             paymentDate: inv.payment_date,
@@ -3926,6 +3941,7 @@ export function registerAsaasRoutes(app: Express) {
           ).values());
           const cli = clientMap.get(inv.client_id);
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
+          const nfAmt = nfGrossAndLiquid(Number(inv.value || 0), cli?.emiteNf !== false, !!cli?.retemInss, cli?.inssAliquota);
 
           // Raio-X + auto-vínculo on-demand: pra cada fatura sem OS vinculada,
           // tenta efetivar o vínculo na hora (CNPJ → valor → fallback período).
@@ -3973,7 +3989,10 @@ export function registerAsaasRoutes(app: Express) {
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             clientEmail: cli?.email || null,
             description: inv.description,
-            value: Number(inv.value || 0),
+            value: nfAmt.gross,
+            liquidValue: nfAmt.liquid,
+            issValor: nfAmt.issValor,
+            inssValor: nfAmt.inssValor,
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
             dueDate: inv.due_date,
             paymentDate: inv.payment_date,
