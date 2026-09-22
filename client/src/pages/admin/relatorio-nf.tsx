@@ -923,8 +923,7 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-left px-3 py-2 font-semibold">Período</th>
-                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor bruto (NF)</th>
-                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor líquido</th>
+                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Lançamento / autor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-center px-3 py-2 font-semibold">Dias</th>
@@ -936,9 +935,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={12} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const isPago = r.normalizedStatus === "PAGO";
                   const nfKind = nfFocusKind(r);
@@ -1038,12 +1037,10 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap" data-testid={`text-period-${r.id}`}>
                         {extractPeriod(r.description) || <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums" title={nfAmountTitle(r)} data-testid={`text-value-${r.id}`}>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" title={nfAmountTitle(r)} data-testid={`text-value-${r.id}`}>
                         <div className="font-semibold">{fmtBRL(r.value)}</div>
                         <div className="text-[10px] text-slate-400 font-medium">Bruto NF</div>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums" title={nfAmountTitle(r)} data-testid={`text-liquid-${r.id}`}>
-                        <div className="font-semibold text-slate-800">{fmtBRL(liquidOf(r))}</div>
+                        <div className="font-semibold text-slate-700 mt-0.5" data-testid={`text-liquid-${r.id}`}>{fmtBRL(liquidOf(r))}</div>
                         <div className="text-[10px] text-slate-400 font-medium">Líquido</div>
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-600">
@@ -1392,8 +1389,7 @@ export default function RelatorioNFPage() {
                 <tr className="text-xs text-emerald-900">
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
-                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor bruto (NF)</th>
-                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor líquido</th>
+                  <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-left px-3 py-2 font-semibold">Pago em</th>
                   <th className="text-center px-3 py-2 font-semibold">Boleto Asaas</th>
@@ -1403,9 +1399,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {isLoading ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filteredPaid.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
                 ) : filteredPaid.map(r => (
                   <tr key={`paid-${r.id}`} className="hover:bg-emerald-50/40" data-testid={`row-paid-${r.id}`}>
                     <td className="px-3 py-2">
@@ -1450,12 +1446,10 @@ export default function RelatorioNFPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums" title={nfAmountTitle(r)} data-testid={`text-paid-value-${r.id}`}>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" title={nfAmountTitle(r)} data-testid={`text-paid-value-${r.id}`}>
                       <div className="font-semibold text-emerald-800">{fmtBRL(r.value)}</div>
                       <div className="text-[10px] text-emerald-600/70 font-medium">Bruto NF</div>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums" title={nfAmountTitle(r)} data-testid={`text-paid-liquid-${r.id}`}>
-                      <div className="font-semibold text-emerald-700">{fmtBRL(liquidOf(r))}</div>
+                      <div className="font-semibold text-emerald-700 mt-0.5" data-testid={`text-paid-liquid-${r.id}`}>{fmtBRL(liquidOf(r))}</div>
                       <div className="text-[10px] text-emerald-600/70 font-medium">Líquido</div>
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
@@ -1535,8 +1529,10 @@ export default function RelatorioNFPage() {
                 <tfoot className="bg-emerald-50 border-t-2 border-emerald-300">
                   <tr className="text-emerald-900 font-bold">
                     <td className="px-3 py-2 text-xs uppercase tracking-wider" colSpan={2}>Total</td>
-                    <td className="px-3 py-2 text-right tabular-nums" data-testid="text-total-pago-footer">{fmtBRL(totalPaid)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums" data-testid="text-total-pago-liquid-footer">{fmtBRL(totalPaidLiquid)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums" data-testid="text-total-pago-footer">
+                      <div>{fmtBRL(totalPaid)}</div>
+                      <div className="text-[11px] font-semibold text-emerald-700" data-testid="text-total-pago-liquid-footer">Líq. {fmtBRL(totalPaidLiquid)}</div>
+                    </td>
                     <td colSpan={5}></td>
                   </tr>
                 </tfoot>

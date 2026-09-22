@@ -1,5 +1,10 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Relatório de NF: bruto e líquido na mesma coluna
+
+- O deploy anterior falhou: `asaas.ts` importava `invoice-payment` que não estava no git. Arquivo e o rateio puro (`invoice-allocation`) entram no repositório para o build da Vercel passar.
+- Bruto e líquido ficam na coluna Valor (sempre visíveis, sem rolagem extra). Excel continua com colunas separadas.
+
 ## 2026-09-22 — Relatório de NF: valor bruto e líquido
 
 - O Relatório de NF passa a mostrar **Valor bruto (NF)** (`invoices.value`) e **Valor líquido** após ISS 5% + INSS 11%, com o mesmo motor do boleto (`netBoletoValue` / `boletoRetentionOpts`). Excel e tabela de notas pagas seguem a mesma regra.
