@@ -20,6 +20,7 @@ import {
   focusNfseConsultRef,
   focusNfseRef,
   ibgeMunicipioFromCityUf,
+  isFocusConnectivityError,
   isFocusManagedInvoice,
   isFocusNfseRef,
   mapFocusStatusToTorres,
@@ -138,7 +139,34 @@ test("buildFocusNfsePayload: SP, 07870, ISS 5% retido, discriminacao escolta+leg
   assert.equal(p.servico.valor_iss_retido, 50);
   assert.equal(p.servico.valor_inss, 110);
   assert.equal(p.optante_simples_nacional, true);
+  assert.equal(p.natureza_operacao, "1");
+  assert.equal(p.servico.codigo_municipio, FOCUS_CODIGO_MUNICIPIO_SP);
   assert.equal("payment" in p, false);
+});
+
+test("buildFocusNfsePayload: tomador fora de SP não envia CCM paulistana", () => {
+  const fora = buildFocusNfsePayload({
+    value: 550,
+    prestadorIm: "65831527",
+    tomador: {
+      ...tomadorOk,
+      city: "Serra",
+      state: "ES",
+      zip: "29167032",
+      codigoMunicipioIbge: "3205002",
+      inscricaoMunicipal: "4372204",
+    },
+  });
+  assert.equal(fora.tomador.inscricao_municipal, undefined);
+  assert.equal(fora.tomador.endereco.codigo_municipio, "3205002");
+  assert.equal(fora.natureza_operacao, "2");
+  assert.equal(fora.servico.codigo_municipio, "3205002");
+  const sp = buildFocusNfsePayload({
+    value: 550,
+    prestadorIm: "65831527",
+    tomador: { ...tomadorOk, inscricaoMunicipal: "1234567" },
+  });
+  assert.equal(sp.tomador.inscricao_municipal, "1234567");
 });
 
 test("buildFocusNfsePayload: CPF no tomador e CCM só se ≤8 dígitos", () => {
@@ -222,6 +250,12 @@ test("extractFocusErrorMessage e justificativa de cancelamento", () => {
   assert.ok(focusCancelJustification("x").length >= 15);
   assert.equal(focusMunicipalNumber({ numero: "torres-inv-1" }), null);
   assert.equal(focusMunicipalNumber({ numero: "400" }), "400");
+});
+
+test("isFocusConnectivityError: token/homolog não é recusa da prefeitura", () => {
+  assert.equal(isFocusConnectivityError("Access token inválido (host: homologacao.focusnfe.com.br)"), true);
+  assert.equal(isFocusConnectivityError("Timeout ao chamar a Focus NFe"), true);
+  assert.equal(isFocusConnectivityError("EmailTomador maxLength 75"), false);
 });
 
 test("focusPdfUrl prefere DANFSe e ignora HTML da prefeitura", () => {

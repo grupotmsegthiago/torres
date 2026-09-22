@@ -23,6 +23,7 @@ import { parseEmailList } from "../../shared/client-emails";
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
 export const FOCUS_NATUREZA_OPERACAO = "1";
+export const FOCUS_NATUREZA_FORA_MUNICIPIO = "2";
 export const FOCUS_REGIME_SIMPLES_ME_EPP = "6";
 export const FOCUS_PROVIDER = "focus";
 export const FOCUS_REF_PREFIX = "torres-inv-";
@@ -161,6 +162,12 @@ export function extractFocusErrorMessage(obj: any): string | null {
   }
   const joined = chunks.join(" — ").slice(0, 1000);
   return joined || null;
+}
+
+/** Falha de satélite (token/host/rede). Não é recusa da prefeitura — não gravar como erro fiscal. */
+export function isFocusConnectivityError(msg: unknown): boolean {
+  const s = String(msg || "").toLowerCase();
+  return /access token inv[aá]lido|unauthorized|timeout ao chamar a focus|econnrefused|enotfound/.test(s);
 }
 
 export function focusMunicipalNumber(nf: any): string | null {
@@ -407,8 +414,12 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   };
   if (digits.length === 14) tomador.cnpj = digits;
   else tomador.cpf = digits;
-  if (ccmTomador) tomador.inscricao_municipal = ccmTomador;
+  const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
+  if (tomadorInSp && ccmTomador) tomador.inscricao_municipal = ccmTomador;
   if (phone.length >= 10) tomador.telefone = phone;
+
+  const municipioPrestacao = tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador;
+  const natureza = tomadorInSp ? FOCUS_NATUREZA_OPERACAO : FOCUS_NATUREZA_FORA_MUNICIPIO;
 
   const servico: Record<string, any> = {
     valor_servicos: value,
@@ -416,7 +427,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     item_lista_servico: FOCUS_ITEM_LISTA_SERVICO,
     codigo_tributario_municipio: CODIGO_SERVICO_MUNICIPAL_CODE,
     discriminacao: buildServicoDiscriminacao({ description: opts.description }),
-    codigo_municipio: FOCUS_CODIGO_MUNICIPIO_SP,
+    codigo_municipio: municipioPrestacao,
     aliquota: ISS_ALIQUOTA,
     base_calculo: value,
     valor_iss: issValor,
@@ -427,7 +438,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   const optante = opts.optanteSimplesNacional !== false;
   return {
     data_emissao: opts.dataEmissaoIso || new Date().toISOString(),
-    natureza_operacao: FOCUS_NATUREZA_OPERACAO,
+    natureza_operacao: natureza,
     optante_simples_nacional: optante,
     incentivador_cultural: false,
     regime_especial_tributacao: optante ? FOCUS_REGIME_SIMPLES_ME_EPP : undefined,

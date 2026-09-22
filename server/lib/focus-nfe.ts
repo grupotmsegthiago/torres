@@ -28,6 +28,7 @@ import {
   focusPdfUrl,
   focusTomadorEmail,
   ibgeMunicipioFromCityUf,
+  isFocusConnectivityError,
   isFocusManagedInvoice,
   isLikelyPdfUrl,
   isPrefeituraNfseHtmlUrl,
@@ -148,6 +149,7 @@ export async function consultFocusNfse(ref: string): Promise<any | null> {
     return await focusRequest("GET", `/nfse/${encodeURIComponent(r)}`);
   } catch (e: any) {
     if (e?.status === 404) return null;
+    if (isFocusConnectivityError(e?.message)) return null;
     throw e;
   }
 }
@@ -334,25 +336,28 @@ export async function emitFocusNfseForInvoice(
   const ref = String(invoice.nfse_ref || "").trim() || focusNfseRef(id);
 
   const existing = await consultFocusNfse(ref);
+  const existingStatus = String(existing?.status || "").toLowerCase();
   if (existing) {
-    await persistFocusNfse(id, existing, ref, invoice);
-    const st = String(existing.status || "").toLowerCase();
-    if (st === "autorizado" || st === "autorizada") {
+    if (existingStatus === "autorizado" || existingStatus === "autorizada") {
+      await persistFocusNfse(id, existing, ref, invoice);
       return { ok: true, message: "NFS-e já emitida na Focus", status: "AUTHORIZED" };
     }
-    if (st === "processando_autorizacao" || st === "processando") {
+    if (existingStatus === "processando_autorizacao" || existingStatus === "processando") {
+      await persistFocusNfse(id, existing, ref, invoice);
       return { ok: true, message: "NFS-e na fila da prefeitura (Focus) — só consulta", status: "PROCESSING" };
     }
-    if (st === "cancelado" || st === "cancelada") {
-      // ref cancelada: nova emissão precisa de nova ref. Mantemos a mesma fatura com sufixo.
-    } else if (st !== "erro_autorizacao" && st !== "erro") {
+    if (existingStatus === "cancelado" || existingStatus === "cancelada"
+      || existingStatus === "erro_autorizacao" || existingStatus === "erro") {
+      // ref morta: nova tentativa na mesma fatura, sem regravar o erro antigo.
+    } else {
+      await persistFocusNfse(id, existing, ref, invoice);
       return { ok: true, message: `NFS-e Focus status ${existing.status}`, status: existing.status };
     }
   }
 
   const tomador = tomadorFrom(invoice, client, clientEmail);
   tomador.codigoMunicipioIbge = await resolveTomadorIbge(tomador);
-  const emitRef = existing && /cancel/.test(String(existing.status || "").toLowerCase())
+  const emitRef = existing && /cancel|erro/.test(existingStatus)
     ? `${focusNfseRef(id)}-r${Date.now().toString(36)}`
     : ref;
 
@@ -377,7 +382,12 @@ export async function emitFocusNfseForInvoice(
       }
     }
     const msg = String(e?.message || "Erro ao emitir NFS-e na Focus").slice(0, 1000);
-    await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: msg }, emitRef, invoice);
+    const keepFiscal = isFocusConnectivityError(msg)
+      && invoice?.nfse_error_message
+      && !isFocusConnectivityError(invoice.nfse_error_message);
+    if (!keepFiscal) {
+      await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: msg }, emitRef, invoice);
+    }
     return { ok: false, message: msg };
   }
 
@@ -396,7 +406,7 @@ export async function syncFocusNfseForInvoice(invoice: any): Promise<{ updates: 
     return { updates, source: "focus", nf };
   } catch (e: any) {
     const msg = String(e?.message || "Falha ao consultar Focus").slice(0, 1000);
-    if (isNfFullyIssued(invoice?.nfse_status, invoice?.nfse_number)) {
+    if (isFocusConnectivityError(msg) || isNfFullyIssued(invoice?.nfse_status, invoice?.nfse_number)) {
       return { updates: {}, source: "focus-error-keep", nf: null };
     }
     return { updates: { nfse_error_message: msg }, source: "focus-error", nf: null };

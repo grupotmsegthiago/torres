@@ -3,7 +3,7 @@ import { requireAdminRole, requireFinanceiro, canActAsFinanceiro } from "./auth"
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { nowBRTString } from "./routes/_helpers";
-import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS } from "../shared/client-emails";
+import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../shared/client-emails";
 import { sendBillingEmail, maybeSendInvoiceReadyEmail } from "./lib/invoice-billing-email";
 import { applyPaymentToInvoice } from "./lib/invoice-payment";
 import { bustBalancoCaches } from "./lib/balanco-cache";
@@ -232,7 +232,7 @@ export async function retryNfseForInvoice(
       emiteNf = cli?.emite_nf === true;
       retemInss = cli?.retem_inss === true;
       inssAliquota = Number(cli?.inss_aliquota ?? 11);
-      clientEmail = asaasTomadorEmail(cli);
+      clientEmail = nfseTomadorEmail(cli);
     }
     if (!emiteNf) return { ok: false, message: "Cliente isento de NFS-e" };
 
@@ -254,11 +254,13 @@ export async function retryNfseForInvoice(
     return emitted;
   } catch (e: any) {
     const msg = String(e?.message || "Erro ao emitir NFS-e").slice(0, 1000);
-    await supabaseAdmin.from("invoices").update({
-      nfse_status: "ERROR",
-      nfse_error_message: msg,
-      updated_at: new Date().toISOString(),
-    }).eq("id", id);
+    if (!/access token inv[aá]lido|unauthorized|timeout ao chamar a focus/i.test(msg)) {
+      await supabaseAdmin.from("invoices").update({
+        nfse_status: "ERROR",
+        nfse_error_message: msg,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+    }
     return { ok: false, message: msg };
   } finally {
     nfRetryLocks.delete(id);
@@ -2131,7 +2133,12 @@ export function registerAsaasRoutes(app: Express) {
         assignAsaasPix(updates, await fetchAsaasPix(invoice.asaas_payment_id));
       }
 
-      const nfSync = await collectNfseSyncUpdates(invoice);
+      let nfSync: { updates: Record<string, any>; source: string; nf: any | null } = { updates: {}, source: "none", nf: null };
+      try {
+        nfSync = await collectNfseSyncUpdates(invoice);
+      } catch (e: any) {
+        console.log(`[asaas] /sync Focus #${id}: ${e?.message}`);
+      }
       Object.assign(updates, nfSync.updates);
       if (Object.keys(nfSync.updates).length > 0) {
         console.log(`[asaas] /sync NFS-e fatura #${id} via ${nfSync.source}:`, JSON.stringify(nfSync.updates));
@@ -2160,6 +2167,18 @@ export function registerAsaasRoutes(app: Express) {
         data = saved;
       }
 
+      const nfStatusAfter = String(data?.nfse_status || "").toUpperCase();
+      let retryMsg = "";
+      if (
+        ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatusAfter)
+        && !isNfFullyIssued(data?.nfse_status, data?.nfse_number)
+      ) {
+        const emitted = await retryNfseForInvoice(id, { source: "relatorio-sync", bypassAge: true });
+        retryMsg = emitted.ok ? ` Retransmitida: ${emitted.message}` : ` Retransmissão: ${emitted.message}`;
+        const { data: afterRetry } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
+        if (afterRetry) data = afterRetry;
+      }
+
       const liveDetail = extractConcreteNfErrorMessage(nfSync.nf);
       const wait = describeNfProcessingWait(data, new Date(), liveDetail, nfSync.nf?.rpsNumber);
       const ccmBit = ccmSync === "updated"
@@ -2167,7 +2186,7 @@ export function registerAsaasRoutes(app: Express) {
         : (ccmSync === "unchanged" ? " CCM do tomador no Asaas já conferia com o cadastro." : "");
       const message = isNfFullyIssued(data?.nfse_status, data?.nfse_number)
         ? `NF emitida: nº ${data.nfse_number}`
-        : `${data?.nfse_error_message || wait || `Consultado na Focus (${nfSync.source}). Status NF: ${data?.nfse_status || "sem NF"}.`}${ccmBit}`;
+        : `${data?.nfse_error_message || wait || `Consultado na Focus (${nfSync.source}). Status NF: ${data?.nfse_status || "sem NF"}.`}${retryMsg}${ccmBit}`;
       res.json({ ...data, nfSyncSource: nfSync.source, ccmSync, message });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2191,7 +2210,7 @@ export function registerAsaasRoutes(app: Express) {
           .select("email, email_financeiro, email_contratual, email_operacional")
           .eq("id", invoice.client_id)
           .single();
-        clientEmail = asaasTomadorEmail(cli);
+        clientEmail = nfseTomadorEmail(cli);
       }
 
       const r = await emitFocusNfseForInvoice(id, { source: "emit-nfse", clientEmail });
@@ -4030,7 +4049,16 @@ export function registerAsaasRoutes(app: Express) {
           .limit(80);
         if (error) throw error;
         const r = await syncFocusNfsesForInvoices(focusInvoices || [], { limit: 40 });
-        res.json({ ok: true, ...r });
+        let retried = 0;
+        for (const inv of focusInvoices || []) {
+          if (retried >= 8) break;
+          const st = String(inv.nfse_status || "").toUpperCase();
+          if (!["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(st)) continue;
+          if (isNfFullyIssued(inv.nfse_status, inv.nfse_number)) continue;
+          await retryNfseForInvoice(inv.id, { source: "relatorio-sync-focus", bypassAge: true });
+          retried += 1;
+        }
+        res.json({ ok: true, ...r, retried });
       } catch (err: any) {
         console.error("[relatorio-nf] sync-focus:", err.message);
         res.status(500).json({ message: err.message });

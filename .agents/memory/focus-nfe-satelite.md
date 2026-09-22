@@ -22,5 +22,5 @@ Status persistido no vocabulário Torres (`AUTHORIZED` / `PROCESSING` / `ERROR` 
 Secrets: `FOCUS_API_TOKEN`, `FOCUS_PRESTADOR_IM`, `FOCUS_WEBHOOK_TOKEN` (webhook fail-closed).
 `inv_*` cancelado (não vivo) pode emitir Focus na mesma fatura — `shouldEmitNfseViaFocus(..., asaasLiveDoc=false)` retorna true.
 Relatório `/admin/relatorio-nf` precisa do `AdminLayout`; colunas Boleto Asaas × NF Focus.
-Botão do topo: **Sincronizar Focus** (`POST /api/relatorio-nf/sync-focus`). Não usar `/api/asaas/reconcile-all` nessa tela.
-Código serviço: LC 116 `11.02` + municipal `07870`. Discriminacao Focus = escolta + período + ANEXO IV + Simples Nacional. ISS 5% retido + INSS 11% no boleto Asaas e na NF.
+Botão do topo: **Sincronizar Focus** (`POST /api/relatorio-nf/sync-focus`) consulta e retransmite NF em ERROR. Linha em erro: **Retransmitir**. Não usar `/api/asaas/reconcile-all` nessa tela.
+Código serviço: LC 116 `11.02` + municipal `07870`. Tomador fora de SP: natureza 2 e município da prestação = IBGE do tomador (Paulistana recusa SP). CCM do tomador só se for SP. Discriminacao Focus = escolta + período + ANEXO IV + Simples Nacional. ISS 5% retido + INSS 11% no boleto Asaas e na NF.

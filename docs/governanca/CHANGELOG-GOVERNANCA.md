@@ -1,5 +1,21 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — NFS-e 192 Nimbus: tomador fora de SP
+
+- A Paulistana recusou: município da prestação era São Paulo, mas o tomador é Serra/ES (serviço tributado fora).
+- Correção: tomador com IBGE ≠ 3550308 usa natureza 2 e `servico.codigo_municipio` da cidade do tomador. CCM do tomador só entra se ele for de SP.
+
+## 2026-09-22 — NFS-e 192 Nimbus: CCM do tomador só em São Paulo
+
+- A Paulistana recusou a fatura 192: Nimbus é Serra/ES e o cadastro tinha inscrição municipal 4372204. Esse campo só vale para tomador estabelecido em São Paulo.
+- Correção: a NFS-e Focus só envia CCM do tomador quando o IBGE é 3550308 (SP). Fora de SP o campo vai vazio.
+
+## 2026-09-22 — NFS-e em erro: consultar e retransmitir
+
+- O Relatório em NF com erro passa a **Retransmitir** (consulta Focus e, se continuar em ERROR, reemite na mesma fatura).
+- Token inválido / homologação não sobrescreve o erro fiscal (ex.: e-mail do tomador).
+- Abrir ou sincronizar o Relatório reprocessa até 8 NFs em erro. Cron continua a fila. Não gera segundo boleto nem segunda NF autorizada.
+
 ## 2026-09-22 — Focus: preview da Vercel não usa homologação com token de produção
 
 - Sintoma: Relatório “Falha ao sincronizar NF / Access token inválido (host: homologacao.focusnfe.com.br)”.

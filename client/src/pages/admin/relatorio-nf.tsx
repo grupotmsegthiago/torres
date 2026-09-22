@@ -280,7 +280,7 @@ export default function RelatorioNFPage() {
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
-      return json as { ok?: boolean; processed?: number; updated?: number };
+      return json as { ok?: boolean; processed?: number; updated?: number; retried?: number };
     },
     onSuccess: (json) => {
       setFocusSync({
@@ -288,9 +288,10 @@ export default function RelatorioNFPage() {
         processed: Number(json?.processed || 0),
         updated: Number(json?.updated || 0),
       });
+      const retried = Number(json?.retried || 0);
       toast({
         title: "Focus sincronizada",
-        description: `${Number(json?.processed || 0)} NFS-e consultadas, ${Number(json?.updated || 0)} atualizadas. Não reemite nota.`,
+        description: `${Number(json?.processed || 0)} consultadas, ${Number(json?.updated || 0)} atualizadas${retried ? `, ${retried} retransmitidas` : ""}.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
     },
@@ -552,7 +553,11 @@ export default function RelatorioNFPage() {
       return json;
     },
     onSuccess: (data: any) => {
-      toast({ title: "NF consultada na Focus", description: data?.message || "Status atualizado." });
+      const retried = /retransmit/i.test(String(data?.message || ""));
+      toast({
+        title: retried ? "NF retransmitida" : "NF consultada na Focus",
+        description: data?.message || "Status atualizado.",
+      });
       invalidateRelatedQueries("invoice");
       queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
     },
@@ -742,7 +747,7 @@ export default function RelatorioNFPage() {
             <Button
               variant="outline"
               size="sm"
-              title="Consulta NFS-e na Focus e atualiza o Relatório. Não reemite nota e não chama o Asaas."
+              title="Consulta a Focus e retransmite NFS-e em erro. Não gera outro boleto."
               onClick={() => syncFocusMutation.mutate()}
               disabled={syncFocusMutation.isPending}
               data-testid="button-sync-focus"
@@ -1129,14 +1134,14 @@ export default function RelatorioNFPage() {
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
-                              title="Consultar NFS-e na Focus"
+                              title={nfKind === "erro" ? "Consulta a Focus e, se ainda estiver em erro, retransmite a NFS-e. Não gera outro boleto." : "Consultar NFS-e na Focus"}
                               disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
                               onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
                               data-testid={`button-sync-nf-${r.id}`}
                             >
                               {syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId
-                                ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Consultando…</>
-                                : <><RefreshCw className="h-2.5 w-2.5" /> Sincronizar</>}
+                                ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> {nfKind === "erro" ? "Retransmitindo…" : "Consultando…"}</>
+                                : <><RefreshCw className="h-2.5 w-2.5" /> {nfKind === "erro" ? "Retransmitir" : "Sincronizar"}</>}
                             </button>
                           )}
                           {isFinanceiro && (nfKind === "erro" || nfKind === "corrigir") && r.source === "INVOICE" && r.invoiceId && (
