@@ -35,13 +35,13 @@ export async function notifyNfseIntegrationError(opts: {
   const motivo = String(opts.errorMessage || "Erro não informado").slice(0, 2000);
 
   const html = `
-    <p>Falha na emissão de NFS-e <strong>após a integração</strong> (Asaas).</p>
+    <p>Falha na emissão de NFS-e <strong>após a integração</strong> (Focus NFe / legado Asaas).</p>
     <table cellpadding="6" style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
       <tr><td>Fatura</td><td><strong>#${invoiceId}</strong></td></tr>
       <tr><td>Cliente</td><td>${cliente}</td></tr>
       <tr><td>Valor</td><td>${valor}</td></tr>
       <tr><td>Vencimento</td><td>${venc}</td></tr>
-      <tr><td>Nº NF / id Asaas</td><td>${nf}</td></tr>
+      <tr><td>Nº NF / ref</td><td>${nf}</td></tr>
       <tr><td>Status cobrança</td><td>${invoice.status || "—"}</td></tr>
       <tr><td>Motivo</td><td>${motivo.replace(/</g, "&lt;")}</td></tr>
     </table>

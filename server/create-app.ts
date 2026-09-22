@@ -8,6 +8,7 @@ import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
+import { registerFocusNfeRoutes } from "./lib/focus-nfe";
 import { registerDriverControlRoutes } from "./routes/driver-control";
 import { registerCobrancaJudicialRoutes } from "./routes/cobranca-judicial";
 import { registerPushRoutes } from "./routes/push";
@@ -167,6 +168,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
   }
 
   registerAsaasRoutes(app);
+  registerFocusNfeRoutes(app);
   registerDriverControlRoutes(app);
   registerCobrancaJudicialRoutes(app);
 

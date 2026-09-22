@@ -53,6 +53,10 @@ interface Invoice {
   nfse_url: string | null;
   nfse_status: string | null;
   nfse_number: string | null;
+  nfse_error_message?: string | null;
+  nfse_ref?: string | null;
+  nfse_codigo_verificacao?: string | null;
+  nfse_provider?: string | null;
   nf_anexo_url: string | null;
   email_sent: boolean | null;
   email_sent_at: string | null;
@@ -810,7 +814,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
             <Textarea
               value={form.description}
               onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Ex: Ref. ao Serviço de Escolta Armada — OS TOR-0019"
+              placeholder="Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)"
               rows={2}
               data-testid="input-description"
             />
@@ -865,7 +869,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <p className="text-[11px] text-emerald-700 font-medium">
-              Cobrança via Asaas com NFS-e (CNAE 7870). Integração Banco Inter desativada — invoices históricas Inter continuam visíveis.
+              Cobrança via Asaas (boleto líquido ISS 5% + INSS 11%); NFS-e via Focus NFe. A descrição deve ter período e escolta armada.
             </p>
           </div>
 
@@ -1018,12 +1022,16 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
 const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
   SCHEDULED:          { label: "Na prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
   AUTHORIZED:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  AUTORIZADO:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  AUTORIZADA:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
   SYNCHRONIZED:       { label: "Na prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
   CANCELLED:          { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
   CANCELED:           { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
   ERROR:              { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
   ERRO:               { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
+  ERRO_AUTORIZACAO:   { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
   PROCESSING:         { label: "Processando",   color: "bg-blue-50 text-blue-700 border-blue-200",       icon: Loader2 },
+  PROCESSANDO_AUTORIZACAO: { label: "Processando", color: "bg-blue-50 text-blue-700 border-blue-200", icon: Loader2 },
   WAITING_MUNICIPAL_PROCESSING: { label: "Aguardando Prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock },
 };
 
@@ -1045,7 +1053,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
   const canEmit = invoice.asaas_payment_id && !fullyIssued && !inPrefecture && invoice.status !== "CANCELLED";
 
   const handleCancelNfse = async () => {
-    if (!confirm(`Tem certeza que deseja CANCELAR a NFS-e desta fatura?\n\nEsta ação solicitará o cancelamento da nota junto à prefeitura via Asaas. Não pode ser desfeita.`)) return;
+    if (!confirm(`Tem certeza que deseja CANCELAR a NFS-e desta fatura?\n\nEsta ação solicitará o cancelamento da nota junto à prefeitura via Focus NFe. Não pode ser desfeita.`)) return;
     setCanceling(true);
     try {
       const r = await authFetch(`/api/invoices/${invoice.id}/cancel-nfse`, { method: "POST" });
@@ -1066,7 +1074,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
       const r = await authFetch(`/api/invoices/${invoice.id}/emit-nfse`, { method: "POST" });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       invalidateRelatedQueries("invoice");
-      toast({ title: "NFS-e solicitada com sucesso", description: "A nota será processada pelo Asaas e emitida automaticamente." });
+      toast({ title: "NFS-e solicitada com sucesso", description: "A nota será processada pela Focus NFe e emitida automaticamente." });
     } catch (err: any) {
       toast({ title: "Erro ao emitir NFS-e", description: err.message, variant: "destructive" });
     } finally {
@@ -1097,6 +1105,9 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
               {invoice.nfse_number && (
                 <span className="text-emerald-600 ml-2 font-mono text-[10px]">N° {invoice.nfse_number}</span>
               )}
+              {invoice.nfse_codigo_verificacao && (
+                <span className="text-emerald-600 ml-2 text-[10px]">Cód. {invoice.nfse_codigo_verificacao}</span>
+              )}
             </div>
           </div>
           {invoice.nfse_url ? (
@@ -1117,7 +1128,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
                 </a>
                 <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer" className="flex-1">
                   <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-asaas">
-                    <ExternalLink className="w-3 h-3 mr-1" /> Abrir no Asaas
+                    <ExternalLink className="w-3 h-3 mr-1" /> Abrir PDF da NFS-e
                   </Button>
                 </a>
               </div>
@@ -1135,7 +1146,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
             <div>
               <p className="text-blue-700 font-medium">NFS-e na fila da prefeitura</p>
               <p className="text-blue-600 text-[10px] mt-0.5">
-                O boleto já existe no Asaas. A nota ainda não tem número municipal — use Sincronizar no Relatório de NFs. Não reemita (gera duplicidade).
+            O boleto já existe no Asaas. A nota ainda não tem número municipal — use Sincronizar no Relatório de NFs. Não reemita (gera duplicidade).
               </p>
             </div>
           </div>
@@ -1148,7 +1159,9 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
             <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
             <div>
               <p className="text-red-700 font-medium">Erro na emissão da NFS-e</p>
-              <p className="text-red-600 text-[10px] mt-0.5">Verifique se a configuração fiscal do Asaas está correta (Configurações → Nota Fiscal → Inscrição Municipal) e tente novamente.</p>
+              <p className="text-red-600 text-[10px] mt-0.5">
+                {invoice.nfse_error_message || "Verifique o cadastro fiscal do tomador (e-mail, endereço, CCM) e tente novamente."}
+              </p>
             </div>
           </div>
         </div>
@@ -1177,7 +1190,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
           ) : hasNfse ? (
             <><RefreshCw className="w-3 h-3 mr-1" /> Re-emitir NFS-e</>
           ) : (
-            <><Receipt className="w-3 h-3 mr-1" /> Emitir NFS-e via Asaas</>
+            <><Receipt className="w-3 h-3 mr-1" /> Emitir NFS-e via Focus NFe</>
           )}
         </Button>
       )}

@@ -44,10 +44,10 @@ test("webhook de pagamento é fail-closed: recusa sem secret", () => {
   assert.doesNotMatch(asaas, /Webhook ACEITO sem validação/);
 });
 
-test("NFS-e oficial: código 07870 sem ID e sem authorize imediato", () => {
+test("NFS-e oficial: código 07870 sem ID e authorize após agendar", () => {
   assert.match(helpers, /effectiveDatePeriod: "ON_PAYMENT_CREATION"/);
   assert.match(helpers, /municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE/);
-  assert.doesNotMatch(asaas, /\/invoices\/\$\{nfId\}\/authorize/);
+  assert.match(asaas, /\/invoices\/\$\{nfId\}\/authorize/);
   assert.match(asaas, /delete payload\.municipalServiceId/);
   assert.match(asaas, /delete body\.municipalServiceId/);
   assert.doesNotMatch(asaas, /payload\.municipalServiceId = asMunicipalServiceIdString/);

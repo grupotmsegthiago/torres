@@ -17,7 +17,7 @@ Este documento define **como o sistema DEVE funcionar**, não apenas como está 
 5. Após aprovação comercial, o snapshot do boletim é lei.
 6. `financial_transactions` é a razão financeira da empresa.
 7. IA é assistente, nunca fonte de verdade.
-8. Gateways externos (Asaas, Inter, Z-API, RHID, OpenAI) são satélites.
+8. Gateways externos (Asaas, Focus NFe, Inter, Z-API, RHID, OpenAI) são satélites.
 9. Projeção pode divergir de snapshot só se rotulada.
 10. Nenhuma tela recalcula regra de negócio em paralelo ao motor oficial para número que vá a cliente, fatura ou balanço.
 
@@ -27,7 +27,7 @@ Este documento define **como o sistema DEVE funcionar**, não apenas como está 
 
 ```text
 0. SATÉLITES EXTERNOS
-   Asaas · Inter · Z-API · RHID · APIBrasil · SSX · OpenAI · TM SEG Comissões
+   Asaas · Focus NFe · Inter · Z-API · RHID · APIBrasil · SSX · OpenAI · TM SEG Comissões
         ↓ só sincronizam para dentro (Comissões: GET lista + POST ingest outbound fail-soft)
 
 1. FATOS MESTRES

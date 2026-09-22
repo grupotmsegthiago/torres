@@ -77,6 +77,12 @@ export const INSS_DISPENSA_OBSERVACAO =
 export const SIMPLES_NACIONAL_OBSERVACAO =
   "Empresa optante pelo Simples Nacional. Dispensada da retenção de PIS, COFINS e CSLL, conforme art. 30 da Lei nº 10.833/2003.";
 
+/** Textos oficiais na discriminação do boleto Asaas e da NFS-e Focus (pedido do proprietário). */
+export const NF_INSS_ANEXO_IV_TEXTO =
+  "Retenção de INSS sobre cessão de mão-de-obra (ANEXO IV) - Art. 111, II da IN RFB nº 2.110/2022";
+export const NF_SIMPLES_NACIONAL_TEXTO =
+  "Empresa optante pelo Simples Nacional. Não sujeita à retenção das contribuições conforme art. 30 da Lei 10.833/2003";
+
 export const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -152,6 +158,7 @@ export function formatNfNumber(nfseNumber: string | null | undefined): string | 
   const n = String(nfseNumber || "").trim();
   if (!n) return null;
   if (n.toLowerCase().startsWith("inv_")) return null;
+  if (/^torres-inv-/i.test(n)) return null;
   return n;
 }
 
@@ -300,6 +307,74 @@ export function nfPeriodoPhrase(description?: string | null, extra?: string | nu
     return `${m[1]} a ${m[2]} (${comp})`;
   };
   return from(description || "") || from(extra || "");
+}
+
+export function extractStreetNumber(
+  address?: string | null,
+  addressNumber?: string | null,
+): string {
+  const explicit = String(addressNumber || "").trim();
+  if (explicit) return explicit.slice(0, 10);
+  const addr = String(address || "");
+  const m = addr.match(/,\s*(\d+)\b/) || addr.match(/\s(\d+)\s*(?:,|$)/);
+  return (m?.[1] || "").slice(0, 10);
+}
+
+function servicoHeaderFromDescription(description?: string | null, extra?: string | null): string {
+  const desc = String(description || "").trim();
+  const firstLine = desc.split(/\n/)[0].replace(/\s+/g, " ").trim();
+  const periodo = nfPeriodoPhrase(desc, extra);
+  const hasEscolta = /escolta\s+armada/i.test(desc);
+  const hasPeriodo = /per[ií]odo:/i.test(desc);
+  const isCnaeOnly = firstLine && sanitizeNfDiscriminacao(firstLine) === nfDiscriminacaoOficial();
+  if (hasEscolta && hasPeriodo) return firstLine;
+  if (periodo) return `Referente aos serviços de Escolta Armada - Período: ${periodo}`;
+  if (hasEscolta && firstLine) return firstLine;
+  if (firstLine && !isCnaeOnly) return `Referente aos serviços de Escolta Armada. ${firstLine}`;
+  return "Referente aos serviços de Escolta Armada";
+}
+
+/**
+ * Discriminação conjunta boleto + NFS-e: escolta, período e textos legais (INSS Anexo IV + Simples).
+ * Focus aceita quebras de linha; Asaas description é a mesma frase em uma linha (500).
+ */
+export function buildServicoDiscriminacao(opts?: {
+  description?: string | null;
+  observationsHint?: string | null;
+}): string {
+  const raw = String(opts?.description || "");
+  if (/ANEXO IV/i.test(raw) && /Simples Nacional/i.test(raw) && /escolta\s+armada/i.test(raw)) {
+    return sanitizeFocusDiscriminacao(raw);
+  }
+  const header = servicoHeaderFromDescription(opts?.description, opts?.observationsHint);
+  return sanitizeFocusDiscriminacao(
+    [header, NF_INSS_ANEXO_IV_TEXTO, NF_SIMPLES_NACIONAL_TEXTO].join("\n"),
+  );
+}
+
+export function asaasBoletoDescription(
+  description?: string | null,
+  extra?: string | null,
+): string {
+  return buildServicoDiscriminacao({ description, observationsHint: extra })
+    .replace(/\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+export function sanitizeFocusDiscriminacao(raw: string | null | undefined): string {
+  let s = String(raw || "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!s) s = "Referente aos serviços de Escolta Armada";
+  return s.slice(0, NF_DISCRIMINACAO_MAX);
 }
 
 function nfObsBRL(v: number): string {
@@ -821,7 +896,7 @@ export function isNfCorrectionError(message: string | null | undefined): boolean
 }
 
 /** Status de NFS-e que indicam erro/rejeição (espelha normalizeInvoiceStatus). */
-const NF_ERROR_STATUSES = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"];
+const NF_ERROR_STATUSES = ["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA", "ERRO_AUTORIZACAO", "ERRO_CANCELAMENTO"];
 
 export function isNfErrorStatus(status: string | null | undefined): boolean {
   return NF_ERROR_STATUSES.includes(String(status || "").toUpperCase());
@@ -854,24 +929,32 @@ export function extractAsaasMunicipalNumber(nf: any): string | null {
   return null;
 }
 
-/** CCM do tomador: só envia ao Asaas se o cadastro Torres tiver valor diferente. */
+/**
+ * CCM do tomador para o Asaas / prefeitura SP: só números, no máximo 8 dígitos.
+ * IE paulista (12 dígitos, ex. 188.201.912.119) não é CCM — devolve null.
+ */
+export function normalizeMunicipalInscriptionForAsaas(raw?: string | null): string | null {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length >= 1 && digits.length <= 8) return digits;
+  return null;
+}
+
+/**
+ * CCM do tomador: só envia ao Asaas se o cadastro Torres tiver valor diferente.
+ * Retorna "" para limpar IE colada no customer; null = não altera.
+ */
 export function municipalInscriptionIfChanged(
   existingAtAsaas: string | null | undefined,
   fromClient: string | null | undefined,
 ): string | null {
-  const next = String(fromClient || "").trim();
-  if (!next) return null;
-  const digits = (s: string) => String(s || "").replace(/\D/g, "");
-  const norm = (s: string) => {
-    const d = digits(s);
-    if (!d) return "";
-    return d.replace(/^0+/, "") || "0";
-  };
-  const a = norm(existingAtAsaas || "");
-  const b = norm(next);
-  if (b && a === b) return null;
-  if (!b && String(existingAtAsaas || "").trim() === next) return null;
-  return next;
+  const next = normalizeMunicipalInscriptionForAsaas(fromClient);
+  const exist = normalizeMunicipalInscriptionForAsaas(existingAtAsaas);
+  const existingDigits = String(existingAtAsaas || "").replace(/\D/g, "");
+  const key = (d: string | null) => (d ? d.replace(/^0+/, "") || "0" : "");
+  if (next && key(exist) === key(next)) return null;
+  if (next) return next;
+  if (existingDigits.length > 8) return "";
+  return null;
 }
 
 /**
@@ -1138,9 +1221,9 @@ export function shouldCancelRescheduleNfse(opts: {
 }
 
 /**
- * Cron / sync automático NÃO autoriza NF em fila (cada authorize manda e-mail).
- * Exceção TM-like: ERROR com “falha ao comunicar com a prefeitura” na mesma inv_* —
- * isso é retry de transporte, não segunda emissão.
+ * Manda /authorize na mesma inv_* quando a nota está só agendada
+ * ou quando houve falha de transporte / código municipal.
+ * Não autoriza de novo se já existe número municipal.
  */
 export function shouldNudgeNfseAuthorize(
   status?: unknown,
@@ -1150,6 +1233,8 @@ export function shouldNudgeNfseAuthorize(
   if (isFinalNfNumber(nfseNumber)) return false;
   if (!isAsaasInvoiceId(nfseNumber)) return false;
   if (isMunicipalCommFailure(message) || isMissingMunicipalServiceCode(message)) return true;
+  const st = String(status || "").toUpperCase();
+  if (st === "SCHEDULED") return true;
   if (!isNfErrorStatus(status)) return false;
   return false;
 }
@@ -1169,7 +1254,7 @@ export function fiscalAddressMissingFields(client?: {
 } | null): string[] {
   const missing: string[] = [];
   if (!String(client?.address || "").trim()) missing.push("logradouro");
-  const num = client?.address_number || client?.addressNumber;
+  const num = extractStreetNumber(client?.address, client?.address_number || client?.addressNumber);
   if (!String(num || "").trim()) missing.push("número");
   if (!String(client?.city || "").trim()) missing.push("cidade");
   const uf = String(client?.state || "").trim();

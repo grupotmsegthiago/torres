@@ -18,7 +18,7 @@ import { exportFormattedExcel } from "@/lib/excel-export";
 import { formatDateOnlyBR } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import AdminLayout from "@/components/admin/layout";
+import { classifyIssuedOrProcessing } from "@shared/nfse-status";
 
 type NormalizedStatus =
   | "AGUARDANDO_BOLETIM"
@@ -43,8 +43,10 @@ type RelatorioRow = {
   updatedAt: string | null;
   asaasPaymentId: string | null;
   invoiceUrl: string | null;
+  bankSlipUrl: string | null;
   nfseUrl: string | null;
   nfseNumber: string | null;
+  nfseProvider: string | null;
   osCount: number;
   noLinkReason?: string | null;
   osList: Array<{ id: number; osNumber: string; value?: number }>;
@@ -111,6 +113,80 @@ const fmtDateTime = (s?: string | null) => {
   const d = new Date(s);
   return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
+
+function boletoViewHref(r: RelatorioRow): string | null {
+  return r.bankSlipUrl || r.invoiceUrl || null;
+}
+
+function asaasBoletoKind(r: RelatorioRow): "emitido" | "cancelado" | "nenhum" {
+  const pay = String(r.rawStatus || "").toUpperCase();
+  if (["CANCELLED", "CANCELED"].includes(pay)) return r.asaasPaymentId ? "cancelado" : "nenhum";
+  if (r.asaasPaymentId || boletoViewHref(r)) return "emitido";
+  return "nenhum";
+}
+
+type NfFocusKind = "emitida" | "emitindo" | "erro" | "corrigir" | "cancelada" | "nenhuma";
+
+const NF_FOCUS_META: Record<NfFocusKind, { label: string; cls: string; bg: string; icon: any }> = {
+  emitida: { label: "Emitida", cls: "text-emerald-800", bg: "bg-emerald-50 border-emerald-300", icon: CheckCircle2 },
+  emitindo: { label: "Emitindo", cls: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Hourglass },
+  erro: { label: "Erro", cls: "text-red-700", bg: "bg-red-50 border-red-200", icon: AlertTriangle },
+  corrigir: { label: "Corrigir", cls: "text-amber-800", bg: "bg-amber-50 border-amber-300", icon: Wrench },
+  cancelada: { label: "Cancelada", cls: "text-neutral-600", bg: "bg-neutral-100 border-neutral-200", icon: XCircle },
+  nenhuma: { label: "—", cls: "text-slate-400", bg: "", icon: FileText },
+};
+
+function nfFocusKind(r: RelatorioRow): NfFocusKind {
+  const st = String(r.rawNfseStatus || "").toUpperCase();
+  if (st.includes("CANCEL")) return "cancelada";
+  if (st === "AWAITING_CORRECTION" || r.normalizedStatus === "NF_CORRIGIR") return "corrigir";
+  if (["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(st)) return "erro";
+  const issued = classifyIssuedOrProcessing(st, r.nfseNumber);
+  if (issued === "NF_EMITIDA") return "emitida";
+  if (issued === "NF_PROCESSANDO" || r.normalizedStatus === "NF_PROCESSANDO") return "emitindo";
+  return "nenhuma";
+}
+
+function AsaasBoletoCell({ r, testId }: { r: RelatorioRow; testId: string }) {
+  const kind = asaasBoletoKind(r);
+  const href = boletoViewHref(r);
+  if (kind === "nenhum") return <span className="text-slate-300">—</span>;
+  if (kind === "cancelado") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border bg-neutral-100 text-neutral-600 border-neutral-200" data-testid={testId}>
+        <XCircle className="h-3 w-3" /> Cancelado
+      </span>
+    );
+  }
+  const badge = (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-emerald-50 text-emerald-800 border-emerald-300" data-testid={testId}>
+      <CheckCircle2 className="h-3 w-3" /> Emitido
+      {href && <ExternalLink className="h-3 w-3" />}
+    </span>
+  );
+  if (!href) return badge;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex hover:opacity-90" title="Abrir boleto Asaas">
+      {badge}
+    </a>
+  );
+}
+
+function FocusNfStatusBadge({ r, testId }: { r: RelatorioRow; testId: string }) {
+  const kind = nfFocusKind(r);
+  if (kind === "nenhuma") return <span className="text-slate-300">—</span>;
+  const meta = NF_FOCUS_META[kind];
+  const Icon = meta.icon;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}${kind === "erro" ? " alerta-piscando" : ""}`}
+      data-testid={testId}
+    >
+      <Icon className={`h-3 w-3${kind === "emitindo" ? " animate-spin" : ""}`} />
+      {meta.label}
+    </span>
+  );
+}
 
 export default function RelatorioNFPage() {
   const { toast } = useToast();
@@ -532,9 +608,9 @@ export default function RelatorioNFPage() {
   const exportXlsx = () => {
     const headers = [
       "Origem", "Cliente", "CPF/CNPJ", "Descrição", "Valor (R$)",
-      "Status", "Vencimento", "Dias Atraso", "Pagamento", "Situação Pgto",
-      "Status NF (Asaas)", "Status Cobrança (Asaas)", "Status Boletim",
-      "Nº NF", "Lembretes Enviados", "Criado em", "Asaas ID",
+      "Boleto Asaas", "Vencimento", "Dias Atraso", "Pagamento", "Situação Pgto",
+      "NF (Focus)", "Nº NF", "Status Cobrança (Asaas)", "Status Boletim",
+      "Lembretes Enviados", "Criado em", "Asaas ID",
     ];
     const dataExp = filtered.map(r => {
       const isPago = r.normalizedStatus === "PAGO";
@@ -552,15 +628,15 @@ export default function RelatorioNFPage() {
         r.clientCpfCnpj || "",
         r.description || "",
         Number(r.value || 0),
-        STATUS_META[r.normalizedStatus]?.label || r.normalizedStatus,
+        asaasBoletoKind(r) === "emitido" ? "Emitido" : asaasBoletoKind(r) === "cancelado" ? "Cancelado" : "",
         fmtDate(r.dueDate),
         diasAtraso > 0 ? diasAtraso : "",
         fmtDate(r.paymentDate),
         situacao,
-        r.rawNfseStatus || "",
+        NF_FOCUS_META[nfFocusKind(r)].label === "—" ? "" : NF_FOCUS_META[nfFocusKind(r)].label,
+        r.nfseNumber || "",
         r.rawStatus || "",
         r.rawBoletimStatus || "",
-        r.nfseNumber || "",
         r.reminderCount || "",
         fmtDate(r.createdAt),
         r.asaasPaymentId || "",
@@ -765,9 +841,9 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Lançamento / autor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-center px-3 py-2 font-semibold">Dias</th>
-                  <th className="text-center px-3 py-2 font-semibold">Status</th>
+                  <th className="text-center px-3 py-2 font-semibold">Asaas</th>
                   <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
-                  <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
+                  <th className="text-center px-3 py-2 font-semibold">NF (Focus)</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
                 </tr>
               </thead>
@@ -777,13 +853,8 @@ export default function RelatorioNFPage() {
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={11} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
-                  const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
-                  const Icon = meta.icon;
-                  const asaasParts: string[] = [];
-                  if (r.rawBoletimStatus) asaasParts.push(`Boletim: ${r.rawBoletimStatus}`);
-                  if (r.rawStatus) asaasParts.push(`Cobrança: ${r.rawStatus}`);
-                  if (r.rawNfseStatus) asaasParts.push(`NF: ${r.rawNfseStatus}`);
                   const isPago = r.normalizedStatus === "PAGO";
+                  const nfKind = nfFocusKind(r);
                   const isCancelada = r.normalizedStatus === "NF_CANCELADA"
                     || String(r.rawStatus || "").toUpperCase() === "CANCELLED"
                     || String(r.rawStatus || "").toUpperCase() === "CANCELED";
@@ -933,65 +1004,7 @@ export default function RelatorioNFPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.bg} ${meta.cls}${r.normalizedStatus === "NF_ERRO" ? " alerta-piscando" : ""}`}
-                          title={r.nfseErrorMessage || r.nfProcessingDetail || (r.rawNfseStatus ? `Asaas: ${r.rawNfseStatus}` : undefined)}
-                          data-testid={`status-${r.id}`}
-                        >
-                          <Icon className="h-3 w-3" />
-                          {meta.label}
-                        </span>
-                        {r.rawNfseStatus && r.normalizedStatus === "NF_PROCESSANDO" && (
-                          <div className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-nf-raw-${r.id}`}>
-                            Asaas: {r.rawNfseStatus}
-                          </div>
-                        )}
-                        {r.normalizedStatus === "NF_PROCESSANDO" && r.nfProcessingDetail && !r.nfseErrorMessage && (
-                          <button
-                            type="button"
-                            className="block mx-auto mt-1 text-[10px] text-blue-700 hover:text-blue-900 hover:underline max-w-[200px]"
-                            title={r.nfProcessingDetail}
-                            onClick={() => alert(r.nfProcessingDetail)}
-                            data-testid={`button-nf-wait-${r.id}`}
-                          >
-                            {r.nfProcessingDetail}
-                          </button>
-                        )}
-                        {(r.normalizedStatus === "NF_ERRO" || r.normalizedStatus === "NF_CORRIGIR" || r.normalizedStatus === "NF_PROCESSANDO") && r.nfseErrorMessage && (
-                          <button
-                            type="button"
-                            className="block mx-auto mt-1 text-[10px] text-red-600 hover:text-red-800 hover:underline max-w-[180px] truncate"
-                            title={r.nfseErrorMessage}
-                            onClick={() => alert(`Erro retornado pelo Asaas ao emitir a NFS-e:\n\n${r.nfseErrorMessage}`)}
-                            data-testid={`button-nfse-error-${r.id}`}
-                          >
-                            {r.nfseErrorMessage}
-                          </button>
-                        )}
-                        {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && (r.normalizedStatus === "NF_PROCESSANDO" || r.normalizedStatus === "AUTORIZADO" || r.normalizedStatus === "NF_ERRO") && (
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
-                            title="Consulta esta NF no Asaas. Não reemite. Envia o CCM do cadastro ao tomador se estiver diferente."
-                            disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
-                            onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
-                            data-testid={`button-sync-nf-${r.id}`}
-                          >
-                            {syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId
-                              ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Consultando…</>
-                              : <><RefreshCw className="h-2.5 w-2.5" /> Sincronizar</>}
-                          </button>
-                        )}
-                        {isFinanceiro && (r.normalizedStatus === "NF_ERRO" || r.normalizedStatus === "NF_CORRIGIR") && r.source === "INVOICE" && r.invoiceId && (
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 mx-auto mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
-                            onClick={() => setResolverModal({ invoiceId: r.invoiceId!, clientName: r.clientFantasia || r.clientName, email: r.clientEmail || "", errorMsg: r.nfseErrorMessage })}
-                            data-testid={`button-resolver-nf-${r.id}`}
-                          >
-                            <Wrench className="h-2.5 w-2.5" /> Resolver agora
-                          </button>
-                        )}
+                        <AsaasBoletoCell r={r} testId={`asaas-boleto-${r.id}`} />
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {r.normalizedStatus === "NF_CANCELADA" || String(r.rawStatus || "").toUpperCase() === "CANCELLED" || String(r.rawStatus || "").toUpperCase() === "CANCELED" ? (
@@ -1014,8 +1027,61 @@ export default function RelatorioNFPage() {
                           <span className="text-amber-600 text-[11px]">Aguardando</span>
                         ) : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-xs text-slate-700">
-                        {r.nfseNumber || <span className="text-slate-300">—</span>}
+                      <td className="px-3 py-2 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <FocusNfStatusBadge r={r} testId={`nf-focus-${r.id}`} />
+                          {r.nfseNumber && (
+                            <span className="text-[11px] font-semibold text-slate-700 tabular-nums" data-testid={`nf-number-${r.id}`}>
+                              {r.nfseNumber}
+                            </span>
+                          )}
+                          {r.source === "INVOICE" && r.invoiceId && (nfKind === "emitida" || r.nfseUrl) && (
+                            <button
+                              type="button"
+                              onClick={() => openNfMirror(r.invoiceId!)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm"
+                              title="Ver NFS-e"
+                              data-testid={`button-open-nf-col-${r.id}`}
+                            >
+                              <FileText className="h-2.5 w-2.5" /> Ver NF
+                            </button>
+                          )}
+                          {(nfKind === "erro" || nfKind === "corrigir") && r.nfseErrorMessage && (
+                            <button
+                              type="button"
+                              className="text-[10px] text-red-600 hover:text-red-800 hover:underline max-w-[180px] truncate"
+                              title={r.nfseErrorMessage}
+                              onClick={() => alert(`Erro na NFS-e:\n\n${r.nfseErrorMessage}`)}
+                              data-testid={`button-nfse-error-${r.id}`}
+                            >
+                              {r.nfseErrorMessage}
+                            </button>
+                          )}
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && (nfKind === "emitindo" || nfKind === "erro" || nfKind === "nenhuma") && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
+                              title="Consultar NFS-e no gateway (Focus ou Asaas legado)"
+                              disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
+                              onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
+                              data-testid={`button-sync-nf-${r.id}`}
+                            >
+                              {syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId
+                                ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Consultando…</>
+                                : <><RefreshCw className="h-2.5 w-2.5" /> Sincronizar</>}
+                            </button>
+                          )}
+                          {isFinanceiro && (nfKind === "erro" || nfKind === "corrigir") && r.source === "INVOICE" && r.invoiceId && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
+                              onClick={() => setResolverModal({ invoiceId: r.invoiceId!, clientName: r.clientFantasia || r.clientName, email: r.clientEmail || "", errorMsg: r.nfseErrorMessage })}
+                              data-testid={`button-resolver-nf-${r.id}`}
+                            >
+                              <Wrench className="h-2.5 w-2.5" /> Resolver agora
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <div className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white divide-x divide-slate-200 overflow-hidden shadow-sm">
@@ -1222,15 +1288,16 @@ export default function RelatorioNFPage() {
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-left px-3 py-2 font-semibold">Pago em</th>
-                  <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
+                  <th className="text-center px-3 py-2 font-semibold">Asaas</th>
+                  <th className="text-center px-3 py-2 font-semibold">NF (Focus)</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {isLoading ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filteredPaid.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
                 ) : filteredPaid.map(r => (
                   <tr key={`paid-${r.id}`} className="hover:bg-emerald-50/40" data-testid={`row-paid-${r.id}`}>
                     <td className="px-3 py-2">
@@ -1288,8 +1355,27 @@ export default function RelatorioNFPage() {
                         </span>
                       ) : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-700">
-                      {r.nfseNumber || <span className="text-slate-300">—</span>}
+                    <td className="px-3 py-2 text-center">
+                      <AsaasBoletoCell r={r} testId={`paid-asaas-boleto-${r.id}`} />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <FocusNfStatusBadge r={r} testId={`paid-nf-focus-${r.id}`} />
+                        {r.nfseNumber && (
+                          <span className="text-[11px] font-semibold text-slate-700 tabular-nums">{r.nfseNumber}</span>
+                        )}
+                        {r.source === "INVOICE" && r.invoiceId && (nfFocusKind(r) === "emitida" || r.nfseUrl) && (
+                          <button
+                            type="button"
+                            onClick={() => openNfMirror(r.invoiceId!)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                            title="Ver NFS-e"
+                            data-testid={`button-paid-open-nf-col-${r.id}`}
+                          >
+                            <FileText className="h-2.5 w-2.5" /> Ver NF
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white divide-x divide-slate-200 overflow-hidden shadow-sm">
@@ -1337,7 +1423,7 @@ export default function RelatorioNFPage() {
                   <tr className="text-emerald-900 font-bold">
                     <td className="px-3 py-2 text-xs uppercase tracking-wider" colSpan={2}>Total</td>
                     <td className="px-3 py-2 text-right tabular-nums" data-testid="text-total-pago-footer">{fmtBRL(totalPaid)}</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={5}></td>
                   </tr>
                 </tfoot>
               )}

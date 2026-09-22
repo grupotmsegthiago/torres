@@ -764,7 +764,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           </div>
           {form.emiteNf && (
             <div className="mt-4 p-3 rounded-md border border-amber-300 bg-amber-50 text-[11px] text-amber-900">
-              <b>Para emissão de NFS-e via Asaas</b>, todos os campos marcados com <span className="text-red-600 font-bold">*</span> são obrigatórios: Razão Social, Nome do Tomador, CNPJ/CPF, e-mail, Logradouro, Número, Bairro, Cidade (nome), UF, CEP (8 dígitos) e Inscrição Municipal. A Inscrição Estadual é opcional (usada apenas em NF-e de produto/ICMS).
+              <b>Para emissão de NFS-e via Focus NFe (São Paulo)</b>, todos os campos marcados com <span className="text-red-600 font-bold">*</span> são obrigatórios: Razão Social, Nome do Tomador, CNPJ/CPF, e-mail, Logradouro, Número, Bairro, Cidade (nome), UF, CEP (8 dígitos) e Inscrição Municipal. A Inscrição Estadual é opcional (usada apenas em NF-e de produto/ICMS).
             </div>
           )}
         </div>

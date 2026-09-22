@@ -1397,6 +1397,11 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_url TEXT`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_path TEXT`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS comprovante_anexado_em TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_ref TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_codigo_verificacao TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_xml_path TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_provider TEXT`).catch(() => {});
+    await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_nfse_ref ON invoices (nfse_ref) WHERE nfse_ref IS NOT NULL`).catch(() => {});
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});

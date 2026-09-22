@@ -1,14 +1,18 @@
-/** Status NFS-e Asaas que, com número municipal, significam nota emitida. */
-const NF_OK_STATUSES = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED"];
+/** Status NFS-e (Asaas ou Focus mapeado) que, com número municipal, significam nota emitida. */
+const NF_OK_STATUSES = ["AUTHORIZED", "SYNCHRONIZED", "ISSUED", "AUTORIZADO", "AUTORIZADA"];
 
 export function isNfOkStatus(status: string | null | undefined): boolean {
   return NF_OK_STATUSES.includes(String(status || "").toUpperCase());
 }
 
-/** Número municipal real — ignora o id interno do Asaas (`inv_...`). */
+export function isFocusNfseRef(nfseNumber: unknown): boolean {
+  return /^torres-inv-/i.test(String(nfseNumber || "").trim());
+}
+
+/** Número municipal real — ignora id interno Asaas (`inv_...`) e ref Focus (`torres-inv-...`). */
 export function isFinalNfNumber(nfseNumber: unknown): boolean {
   const n = String(nfseNumber || "").trim();
-  return n.length > 0 && !/^inv_/i.test(n);
+  return n.length > 0 && !/^inv_/i.test(n) && !isFocusNfseRef(n);
 }
 
 export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
@@ -16,16 +20,16 @@ export function isAsaasInvoiceId(nfseNumber: unknown): boolean {
 }
 
 /**
- * PROCESSING/PENDING local sem `inv_*`: o Torres ainda não criou a NFS-e no Asaas.
+ * PROCESSING/PENDING local sem `inv_*` / `torres-inv-*`: ainda não há documento no gateway.
  * Não é fila da prefeitura — esconder o botão Emitir aqui trava a fatura para sempre.
  */
 export function isLocalNfProcessingPlaceholder(
   nfseStatus: unknown,
   nfseNumber: unknown,
 ): boolean {
-  if (isAsaasInvoiceId(nfseNumber) || isFinalNfNumber(nfseNumber)) return false;
+  if (isAsaasInvoiceId(nfseNumber) || isFocusNfseRef(nfseNumber) || isFinalNfNumber(nfseNumber)) return false;
   const st = String(nfseStatus || "").toUpperCase();
-  return st === "" || ["PROCESSING", "PENDING", "SCHEDULED"].includes(st);
+  return st === "" || ["PROCESSING", "PENDING", "SCHEDULED", "PROCESSANDO_AUTORIZACAO"].includes(st);
 }
 
 /** Já existe documento no Asaas (inv_* ou status de fila) — só consultar, não POST. */
@@ -48,10 +52,10 @@ export function classifyIssuedOrProcessing(
   nfseNumber: unknown,
 ): "NF_EMITIDA" | "NF_PROCESSANDO" | null {
   const st = String(nfseStatus || "").toUpperCase();
-  if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(st)) {
+  if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED", "AUTORIZADO", "AUTORIZADA"].includes(st)) {
     return isFinalNfNumber(nfseNumber) ? "NF_EMITIDA" : "NF_PROCESSANDO";
   }
-  if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(st)) {
+  if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING", "PROCESSANDO_AUTORIZACAO"].includes(st)) {
     return "NF_PROCESSANDO";
   }
   return null;

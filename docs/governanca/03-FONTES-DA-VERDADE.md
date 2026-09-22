@@ -46,7 +46,8 @@
 | Custo RH Balanço | `calcularFolha` / `calculateAgentMonthlyCost` | RESULTADO | `server/lib/*` | — | balanço, rh-summary | `folha_historico_mensal` | `buildFolhaStats` | **Alto** |
 | Holerite | `employee_payslips` | FATO documental | payslips | routes/hr | FT se pago | OCR transitório | — | Baixo |
 | WhatsApp | `whatsapp_messages` / `whatsapp_chats` | FATO de produto | tabelas locais | webhook + send | UI, Agent Central | caches Z-API identity | Z-API parcial | Médio |
-| Asaas | API Asaas → `invoices` | SATELITE → FATO interno | `server/asaas.ts` | emit/reconcile/webhook | faturas, NF | customer/payment ids | Inter no mesmo invoice | Médio |
+| Asaas | API Asaas → `invoices` (boleto/PIX/baixa) | SATELITE → FATO interno | `server/asaas.ts` | emit/reconcile/webhook de cobrança | faturas, caixa | customer/payment ids | Inter no mesmo invoice | Médio |
+| Focus NFe | API Focus → `invoices` (NFS-e SP) | SATELITE → FATO interno | `server/lib/focus-nfe.ts` | emit/consult/cancel/webhook NF | faturas, Relatório de NFs | `nfse_ref`, PDF/XML | Asaas NF legado (`inv_*`) | Médio |
 | TM SEG Comissões | Painel central TM SEG | SATELITE | `server/lib/comissao-ingest.ts` | GET lista comerciais; POST FATURADO/PAGO/CANCELADO (fail-soft) | cadastro cliente (`responsavel_comercial_id`) e usuário TORRES (`users.comercial_id`) UUID, sem FK; ingestão de fatura; ACL comercial (`comercial-scope`) | — | tabela/FK locais de comerciais (**proibido**) | Médio |
 | Inter | API Inter → `invoices` + `inter_*` | SATELITE → espelhos (**DESATIVADO** por padrão) | `routes/inter.ts` + `lib/inter-integration.ts` | legado / leitura histórica | labels, tabelas `inter_*` | `inter_extrato_*`, `inter_pagamentos`, `inter_webhook_events` | Asaas | Baixo (off) |
 | IA / OpenAI | nenhum (assistente) | PROJECAO auxiliar | `openai` SDK, campos `ai_*` | endpoints OCR/agent | UI/WhatsApp | — | uso como SSOT (proibido) | Médio |

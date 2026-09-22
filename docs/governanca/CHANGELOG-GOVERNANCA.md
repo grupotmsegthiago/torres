@@ -1,5 +1,24 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Relatório de NF: coluna Asaas (boleto) × coluna NF Focus
+
+- A tela `/admin/relatorio-nf` deixa de misturar boleto e NFS-e na mesma coluna de status.
+- **Asaas**: badge verde “Emitido” com link do boleto (`bank_slip_url` / `invoice_url`).
+- **NF (Focus)**: status próprio (Emitida / Emitindo / Erro / Corrigir / Cancelada), número municipal e botão verde “Ver NF”.
+
+## 2026-09-22 — Boleto Asaas + NFS-e Focus em conjunto (ISS 5% / INSS 11%)
+
+- Discriminação única: escolta armada, período, texto INSS Anexo IV e Simples Nacional (art. 30 Lei 10.833/2003) no boleto Asaas e na NFS-e Focus.
+- Boleto líquido = bruto − INSS 11% − ISS 5% quando emite NF. NFS-e bruta na Focus.
+- Número do tomador extraído do logradouro quando `address_number` está vazio.
+
+## 2026-09-22 — NFS-e via Focus NFe (substitui emissão Asaas)
+
+- Emissão, consulta e cancelamento de NFS-e passam ao satélite Focus NFe (São Paulo / Nota Fiscal Paulistana). Boleto/PIX continuam no Asaas.
+- Tabela `invoices` estendida (`nfse_ref`, `nfse_codigo_verificacao`, `nfse_xml_path`, `nfse_provider`). Sem segunda tabela de notas.
+- Backend Express (`/api/invoices/:id/emit-nfse`); sem Edge Function (auth/roles oficiais).
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-FOCUS-NFE-2026-09-22.md`.
+
 ## 2026-09-17 — Quinzena do boletim pela data de agendamento
 
 - Filtro do Relatório de Faturamento, envio ao cliente e gerar fatura usam `service_orders.scheduled_date` (1–15 = 1ª quinzena; 16–último dia = 2ª).

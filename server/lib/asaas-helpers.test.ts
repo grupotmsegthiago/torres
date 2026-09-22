@@ -37,6 +37,7 @@ import {
   describeNfProcessingWait,
   extractAsaasMunicipalNumber,
   municipalInscriptionIfChanged,
+  normalizeMunicipalInscriptionForAsaas,
   isAsaasPrefeituraRejection,
   invoiceUpdatesAreMaterial,
   unstickStaleNfReconcile,
@@ -60,6 +61,11 @@ import {
   shouldNudgeNfseAuthorize,
   shouldAutoEmitMissingNfse,
   fiscalAddressMissingFields,
+  asaasBoletoDescription,
+  extractStreetNumber,
+  buildServicoDiscriminacao,
+  NF_INSS_ANEXO_IV_TEXTO,
+  NF_SIMPLES_NACIONAL_TEXTO,
   assertFiscalAddressForNf,
   isOpenNfFollowUpStatus,
   NF_PROCESSING_STALE_HOURS,
@@ -132,6 +138,36 @@ test("buildInvoiceDescription: usa mês do início para mes/ano de referência",
 test("buildInvoiceDescription: dezembro mapeia corretamente", () => {
   const desc = buildInvoiceDescription("X", "2024-12-01", "2024-12-31");
   assert.match(desc, /Dezembro\/2024/);
+});
+
+test("buildServicoDiscriminacao: escolta + período + ANEXO IV + Simples", () => {
+  const desc = buildInvoiceDescription("TM SEG", "2026-09-16", "2026-09-30");
+  const d = buildServicoDiscriminacao({ description: desc });
+  assert.match(d, /Escolta Armada/);
+  assert.match(d, /16\/09\/2026/);
+  assert.match(d, /30\/09\/2026/);
+  assert.match(d, /ANEXO IV/);
+  assert.match(d, /Art\. 111, II da IN RFB nº 2\.110\/2022/);
+  assert.match(d, /Simples Nacional/);
+  assert.match(d, /art\. 30 da Lei 10\.833\/2003/);
+  assert.ok(d.includes(NF_INSS_ANEXO_IV_TEXTO));
+  assert.ok(d.includes(NF_SIMPLES_NACIONAL_TEXTO));
+});
+
+test("asaasBoletoDescription: cabe em 500 e não perde o período", () => {
+  const desc = buildInvoiceDescription("TM SEG", "2026-09-16", "2026-09-30");
+  const boleto = asaasBoletoDescription(desc);
+  assert.ok(boleto.length <= 500);
+  assert.match(boleto, /Escolta Armada/);
+  assert.match(boleto, /16\/09\/2026 a 30\/09\/2026/);
+  assert.match(boleto, /ANEXO IV/);
+  assert.match(boleto, /Simples Nacional/);
+});
+
+test("extractStreetNumber: tira o número do logradouro tipo TM SEG", () => {
+  assert.equal(extractStreetNumber("PARADA PINTO, 745, APT 24 BLOCO D", ""), "745");
+  assert.equal(extractStreetNumber("Rua A", "10"), "10");
+  assert.equal(extractStreetNumber("Rua A", ""), "");
 });
 
 // ============================================================================
@@ -662,6 +698,7 @@ test("formatNfNumber: número fiscal definitivo é retornado", () => {
 test("formatNfNumber: id interno do Asaas (inv_) é tratado como sem número", () => {
   assert.equal(formatNfNumber("inv_8a9b"), null);
   assert.equal(formatNfNumber("INV_8a9b"), null);
+  assert.equal(formatNfNumber("torres-inv-44"), null);
 });
 
 test("formatNfNumber: vazio/null retorna null", () => {
@@ -901,6 +938,13 @@ test("extractAsaasMunicipalNumber: aceita number numérico e ignora RPS", () => 
   assert.equal(extractAsaasMunicipalNumber({ number: "inv_abc" }), null);
 });
 
+test("normalizeMunicipalInscriptionForAsaas: SP só aceita até 8 dígitos", () => {
+  assert.equal(normalizeMunicipalInscriptionForAsaas("07930"), "07930");
+  assert.equal(normalizeMunicipalInscriptionForAsaas("5.446.436-6"), "54464366");
+  assert.equal(normalizeMunicipalInscriptionForAsaas("188.201.912.119"), null);
+  assert.equal(normalizeMunicipalInscriptionForAsaas(""), null);
+});
+
 test("municipalInscriptionIfChanged: CCM do tomador, não número da NFS-e", () => {
   assert.equal(municipalInscriptionIfChanged(null, null), null);
   assert.equal(municipalInscriptionIfChanged("07930", ""), null);
@@ -909,6 +953,8 @@ test("municipalInscriptionIfChanged: CCM do tomador, não número da NFS-e", () 
   assert.equal(municipalInscriptionIfChanged("07930", "7.930"), null);
   assert.equal(municipalInscriptionIfChanged("", "07930"), "07930");
   assert.equal(municipalInscriptionIfChanged("00000", "07930"), "07930");
+  assert.equal(municipalInscriptionIfChanged("188.201.912.119", "188.201.912.119"), "");
+  assert.equal(municipalInscriptionIfChanged("188.201.912.119", ""), "");
 });
 
 test("isAsaasPrefeituraRejection: rejeição ≠ fila da prefeitura", () => {
@@ -1060,9 +1106,9 @@ test("pickPreferredAsaasNf: prefere emitida, depois processando", () => {
   assert.equal(pickPreferredAsaasNf([]), null);
 });
 
-test("shouldNudgeNfseAuthorize: falha de comunicação ou código municipal na mesma inv_*", () => {
+test("shouldNudgeNfseAuthorize: SCHEDULED na mesma inv_* ou falha de comunicação", () => {
   assert.equal(shouldNudgeNfseAuthorize("ERROR", null), false);
-  assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), false);
+  assert.equal(shouldNudgeNfseAuthorize("SCHEDULED", "inv_x"), true);
   assert.equal(shouldNudgeNfseAuthorize("AUTHORIZED", null), false);
   assert.equal(shouldNudgeNfseAuthorize("ERROR", "inv_x"), false);
   assert.equal(
@@ -1103,6 +1149,16 @@ test("fiscalAddressMissingFields: CEP 8 dígitos + logradouro, número, cidade, 
     [],
   );
   assert.ok(fiscalAddressMissingFields({ address: "Rua A", city: "São Paulo", state: "SP", zip: "01310100" }).includes("número"));
+  assert.equal(
+    fiscalAddressMissingFields({
+      address: "PARADA PINTO, 745, APT 24 BLOCO D",
+      address_number: "",
+      city: "SAO PAULO",
+      state: "SP",
+      zip: "02611003",
+    }).includes("número"),
+    false,
+  );
   assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "SP", state: "S", zip: "01310100" }).includes("UF"));
   assert.ok(fiscalAddressMissingFields({ address: "Rua A", address_number: "10", city: "São Paulo", state: "SP", zip: "01310" }).includes("CEP (8 dígitos)"));
   assert.equal(assertFiscalAddressForNf({ address: "Rua A" }, false), null);
