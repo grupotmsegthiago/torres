@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench, History, Paperclip, MessageSquare,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Banknote, Ban, Trash2, FileCheck2, AlertOctagon, Send, Mail, CalendarCog, Wrench, History, Paperclip, MessageSquare,
 } from "lucide-react";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,7 +18,8 @@ import { exportFormattedExcel } from "@/lib/excel-export";
 import { formatDateOnlyBR } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { classifyIssuedOrProcessing } from "@shared/nfse-status";
+import { classifyIssuedOrProcessing, isFinalNfNumber } from "@shared/nfse-status";
+import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
   | "AGUARDANDO_BOLETIM"
@@ -84,11 +85,11 @@ type RelatorioResponse = {
 };
 
 const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: string; icon: any }> = {
-  AGUARDANDO_BOLETIM: { label: "Sem fatura",        cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
+  AGUARDANDO_BOLETIM: { label: "Sem fatura",        cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Clock },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
   AUTORIZADO:         { label: "NF não emitida",    cls: "text-indigo-700",  bg: "bg-indigo-50 border-indigo-200",     icon: FileText },
   AGUARDANDO_PAGAMENTO: { label: "Aguard. pagto (s/ NF)", cls: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Banknote },
-  NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
+  NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Clock },
   NF_CORRIGIR:        { label: "Corrigir cadastro", cls: "text-amber-800",   bg: "bg-amber-50 border-amber-300",       icon: Wrench },
   NF_EMITIDA:         { label: "NF emitida",        cls: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200",   icon: FileText },
   NF_ERRO:            { label: "NF com erro",       cls: "text-red-700",     bg: "bg-red-50 border-red-200",           icon: AlertTriangle },
@@ -129,16 +130,20 @@ type NfFocusKind = "emitida" | "emitindo" | "erro" | "corrigir" | "cancelada" | 
 
 const NF_FOCUS_META: Record<NfFocusKind, { label: string; cls: string; bg: string; icon: any }> = {
   emitida: { label: "Emitida", cls: "text-emerald-800", bg: "bg-emerald-50 border-emerald-300", icon: CheckCircle2 },
-  emitindo: { label: "Emitindo", cls: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Hourglass },
+  emitindo: { label: "Emitindo", cls: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: Loader2 },
   erro: { label: "Erro", cls: "text-red-700", bg: "bg-red-50 border-red-200", icon: AlertTriangle },
   corrigir: { label: "Corrigir", cls: "text-amber-800", bg: "bg-amber-50 border-amber-300", icon: Wrench },
   cancelada: { label: "Cancelada", cls: "text-neutral-600", bg: "bg-neutral-100 border-neutral-200", icon: XCircle },
   nenhuma: { label: "—", cls: "text-slate-400", bg: "", icon: FileText },
 };
 
+function displayNfNumber(r: RelatorioRow): string | null {
+  return isFinalNfNumber(r.nfseNumber) ? String(r.nfseNumber).trim() : null;
+}
+
 function nfFocusKind(r: RelatorioRow): NfFocusKind {
   const st = String(r.rawNfseStatus || "").toUpperCase();
-  if (st.includes("CANCEL")) return "cancelada";
+  if (st.includes("CANCEL")) return displayNfNumber(r) ? "cancelada" : "nenhuma";
   if (st === "AWAITING_CORRECTION" || r.normalizedStatus === "NF_CORRIGIR") return "corrigir";
   if (["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(st)) return "erro";
   const issued = classifyIssuedOrProcessing(st, r.nfseNumber);
@@ -313,6 +318,24 @@ export default function RelatorioNFPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
     },
     onError: (e: any) => toast({ title: "Erro ao emitir fatura", description: e?.message, variant: "destructive" }),
+  });
+
+  const [emittingInvoiceId, setEmittingInvoiceId] = useState<number | null>(null);
+  const emitNfMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      setEmittingInvoiceId(invoiceId);
+      const r = await authFetch(`/api/invoices/${invoiceId}/emit-nfse`, { method: "POST" });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data) => {
+      toast({ title: "NFS-e enviada", description: data?.message || "Emissão Focus iniciada. O boleto Asaas não é alterado." });
+      invalidateRelatedQueries("invoice");
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao emitir NF", description: e?.message, variant: "destructive" }),
+    onSettled: () => setEmittingInvoiceId(null),
   });
 
   const markEmittedMutation = useMutation({
@@ -660,10 +683,10 @@ export default function RelatorioNFPage() {
   // Cards de resumo
   const cards: Array<{ key: NormalizedStatus | "TOTAL"; label: string; icon: any; cls: string; }> = [
     { key: "TOTAL",              label: "Total no período",  icon: Receipt,        cls: "from-slate-700 to-slate-900 text-white" },
-    { key: "AGUARDANDO_BOLETIM", label: "Sem fatura",        icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
+    { key: "AGUARDANDO_BOLETIM", label: "Sem fatura",        icon: Clock,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
     { key: "AUTORIZADO",         label: "NF não emitida",    icon: FileText,       cls: "from-indigo-500 to-indigo-700 text-white" },
-    { key: "NF_PROCESSANDO",     label: "NF processando",    icon: Hourglass,      cls: "from-blue-500 to-blue-700 text-white" },
+    { key: "NF_PROCESSANDO",     label: "NF processando",    icon: Clock,      cls: "from-blue-500 to-blue-700 text-white" },
     { key: "AGUARDANDO_PAGAMENTO", label: "Aguard. pagto (s/ NF)", icon: Banknote, cls: "from-indigo-500 to-indigo-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
@@ -841,7 +864,7 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Lançamento / autor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-center px-3 py-2 font-semibold">Dias</th>
-                  <th className="text-center px-3 py-2 font-semibold">Asaas</th>
+                  <th className="text-center px-3 py-2 font-semibold">Boleto Asaas</th>
                   <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
                   <th className="text-center px-3 py-2 font-semibold">NF (Focus)</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
@@ -1030,12 +1053,12 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-center">
                         <div className="flex flex-col items-center gap-1">
                           <FocusNfStatusBadge r={r} testId={`nf-focus-${r.id}`} />
-                          {r.nfseNumber && (
+                          {displayNfNumber(r) && (
                             <span className="text-[11px] font-semibold text-slate-700 tabular-nums" data-testid={`nf-number-${r.id}`}>
-                              {r.nfseNumber}
+                              {displayNfNumber(r)}
                             </span>
                           )}
-                          {r.source === "INVOICE" && r.invoiceId && (nfKind === "emitida" || r.nfseUrl) && (
+                          {r.source === "INVOICE" && r.invoiceId && nfKind === "emitida" && (
                             <button
                               type="button"
                               onClick={() => openNfMirror(r.invoiceId!)}
@@ -1055,6 +1078,20 @@ export default function RelatorioNFPage() {
                               data-testid={`button-nfse-error-${r.id}`}
                             >
                               {r.nfseErrorMessage}
+                            </button>
+                          )}
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && nfKind === "nenhuma" && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
+                              title="Emitir só a NFS-e na Focus. Não gera outro boleto."
+                              disabled={emitNfMutation.isPending && emittingInvoiceId === r.invoiceId}
+                              onClick={() => emitNfMutation.mutate(r.invoiceId!)}
+                              data-testid={`button-emit-nf-col-${r.id}`}
+                            >
+                              {emitNfMutation.isPending && emittingInvoiceId === r.invoiceId
+                                ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Emitindo…</>
+                                : <><FileText className="h-2.5 w-2.5" /> Emitir NF</>}
                             </button>
                           )}
                           {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && (nfKind === "emitindo" || nfKind === "erro" || nfKind === "nenhuma") && (
@@ -1288,7 +1325,7 @@ export default function RelatorioNFPage() {
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
                   <th className="text-left px-3 py-2 font-semibold">Pago em</th>
-                  <th className="text-center px-3 py-2 font-semibold">Asaas</th>
+                  <th className="text-center px-3 py-2 font-semibold">Boleto Asaas</th>
                   <th className="text-center px-3 py-2 font-semibold">NF (Focus)</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
                 </tr>
@@ -1361,10 +1398,10 @@ export default function RelatorioNFPage() {
                     <td className="px-3 py-2 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <FocusNfStatusBadge r={r} testId={`paid-nf-focus-${r.id}`} />
-                        {r.nfseNumber && (
-                          <span className="text-[11px] font-semibold text-slate-700 tabular-nums">{r.nfseNumber}</span>
+                        {displayNfNumber(r) && (
+                          <span className="text-[11px] font-semibold text-slate-700 tabular-nums">{displayNfNumber(r)}</span>
                         )}
-                        {r.source === "INVOICE" && r.invoiceId && (nfFocusKind(r) === "emitida" || r.nfseUrl) && (
+                        {r.source === "INVOICE" && r.invoiceId && nfFocusKind(r) === "emitida" && (
                           <button
                             type="button"
                             onClick={() => openNfMirror(r.invoiceId!)}

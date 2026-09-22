@@ -222,8 +222,14 @@ export async function emitFocusNfseForInvoice(
     return { ok: false, message: fiscalErr };
   }
 
+  const prestadorImRaw = String(process.env.FOCUS_PRESTADOR_IM || process.env.FOCUS_IM || "").trim();
   const prestadorIm = resolveFocusPrestadorIm();
-  if (!prestadorIm) return { ok: false, message: "FOCUS_PRESTADOR_IM não configurado (CCM da Torres em São Paulo)" };
+  if (!prestadorIm) {
+    const msg = prestadorImRaw
+      ? "FOCUS_PRESTADOR_IM precisa ser o CCM numérico da Torres em São Paulo (não o nome do ambiente)"
+      : "FOCUS_PRESTADOR_IM não configurado (CCM da Torres em São Paulo)";
+    return { ok: false, message: msg };
+  }
 
   const ref = String(invoice.nfse_ref || "").trim() || focusNfseRef(id);
 

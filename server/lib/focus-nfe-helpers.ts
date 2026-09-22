@@ -54,8 +54,6 @@ export function shouldEmitNfseViaFocus(invoice?: {
 } | null, asaasHasLiveDocument = false): boolean {
   if (isFocusManagedInvoice(invoice)) return true;
   if (asaasHasLiveDocument) return false;
-  const n = String(invoice?.nfse_number || "").trim();
-  if (/^inv_/i.test(n)) return false;
   return true;
 }
 

@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Relatório de NF: tela em branco + coluna Boleto Asaas
+
+- Causa: o import de `AdminLayout` foi trocado por `classifyIssuedOrProcessing` e a página quebrava ao abrir.
+- Colunas: **Boleto Asaas** (badge verde Emitido + link) e **NF (Focus)** (status, nº municipal, Ver NF / Emitir NF). Não exibe `inv_*`.
+- `inv_*` Asaas já cancelado deixa de bloquear nova emissão Focus na mesma fatura.
+
 ## 2026-09-22 — Relatório de NF: coluna Asaas (boleto) × coluna NF Focus
 
 - A tela `/admin/relatorio-nf` deixa de misturar boleto e NFS-e na mesma coluna de status.

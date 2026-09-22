@@ -62,6 +62,7 @@ test("placeholder local vs fila Focus", () => {
 test("shouldEmitNfseViaFocus: legado Asaas vivo não migra", () => {
   assert.equal(shouldEmitNfseViaFocus({ nfse_number: null }, false), true);
   assert.equal(shouldEmitNfseViaFocus({ nfse_number: "inv_abc" }, true), false);
+  assert.equal(shouldEmitNfseViaFocus({ nfse_number: "inv_abc" }, false), true);
   assert.equal(shouldEmitNfseViaFocus({ nfse_provider: "focus", nfse_ref: "torres-inv-1" }, true), true);
   assert.equal(isFocusManagedInvoice({ nfse_ref: "torres-inv-12" }), true);
   assert.equal(isFocusManagedInvoice({ nfse_number: "inv_x" }), false);
