@@ -17,6 +17,7 @@ import {
   extractStreetNumber,
 } from "./asaas-helpers";
 import { isFinalNfNumber, isFocusNfseRef, isNfOkStatus } from "../../shared/nfse-status";
+import { parseEmailList } from "../../shared/client-emails";
 
 /** Paulistana: item da lista municipal (Focus SP usa 7870; Torres homologou 07870). LC 116 11.02 não é aceito como 1102. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
@@ -27,6 +28,8 @@ export const FOCUS_PROVIDER = "focus";
 export const FOCUS_REF_PREFIX = "torres-inv-";
 export const FOCUS_API_PRODUCTION_URL = "https://api.focusnfe.com.br";
 export const FOCUS_API_HOMOLOG_URL = "https://homologacao.focusnfe.com.br";
+/** Schema Paulistana: EmailTomador maxLength 75. */
+export const FOCUS_TOMADOR_EMAIL_MAX = 75;
 
 function foldFocusEnv(raw: string): string {
   return String(raw || "")
@@ -36,21 +39,31 @@ function foldFocusEnv(raw: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function isFocusProdLabel(v: string): boolean {
+  return v === "producao" || v === "production" || v === "prod";
+}
+
+function isFocusHomologLabel(v: string): boolean {
+  return v === "homologacao" || v === "homolog" || v === "homologation";
+}
+
 /**
- * Homologação só em runtime local/dev. Em Vercel/Node production a API é
- * sempre api.focusnfe.com.br — senão o Relatório consulta homologacao.focus
- * e a NF real some.
+ * Homologação só com FOCUS_NFE_ENV explícito em runtime local/dev.
+ * Preview da Vercel tem NODE_ENV=production e VERCEL_ENV=preview — se o
+ * preview vier primeiro, o Relatório caía em homologacao.focus e o token
+ * de produção voltava "Access token inválido".
  */
 export function resolveFocusApiBaseUrl(
   focusNfeEnv?: string | null,
   runtime?: { vercelEnv?: string | null; nodeEnv?: string | null },
 ): string {
-  const rt = foldFocusEnv(String(runtime?.vercelEnv || runtime?.nodeEnv || ""));
-  if (rt === "production" || rt === "prod") return FOCUS_API_PRODUCTION_URL;
   const env = foldFocusEnv(String(focusNfeEnv || ""));
-  if (env === "producao" || env === "production" || env === "prod") {
-    return FOCUS_API_PRODUCTION_URL;
-  }
+  const vercel = foldFocusEnv(String(runtime?.vercelEnv || ""));
+  const node = foldFocusEnv(String(runtime?.nodeEnv || ""));
+  if (isFocusProdLabel(env)) return FOCUS_API_PRODUCTION_URL;
+  if (isFocusProdLabel(vercel)) return FOCUS_API_PRODUCTION_URL;
+  if (isFocusProdLabel(node) && !isFocusHomologLabel(env)) return FOCUS_API_PRODUCTION_URL;
+  if (isFocusHomologLabel(env)) return FOCUS_API_HOMOLOG_URL;
   return FOCUS_API_HOMOLOG_URL;
 }
 
@@ -70,6 +83,32 @@ export function isFocusManagedInvoice(invoice?: {
   if (!invoice) return false;
   if (String(invoice.nfse_provider || "").toLowerCase() === FOCUS_PROVIDER) return true;
   return isFocusNfseRef(invoice.nfse_ref) || isFocusNfseRef(invoice.nfse_number);
+}
+
+/** Ref usada na consulta Focus: nfse_ref, senão torres-inv-{id} em NF Focus/PROCESSANDO/ERRO. */
+export function focusNfseConsultRef(invoice?: {
+  id?: number | null;
+  nfse_provider?: string | null;
+  nfse_ref?: string | null;
+  nfse_number?: string | null;
+  nfse_status?: string | null;
+} | null): string {
+  if (!invoice) return "";
+  const fromRef = String(invoice.nfse_ref || "").trim();
+  if (fromRef) return fromRef;
+  if (isFocusManagedInvoice(invoice)) {
+    const n = String(invoice.nfse_number || "").trim();
+    if (n) return n;
+  }
+  const status = String(invoice.nfse_status || "").toUpperCase();
+  const tryDefault =
+    status === "PROCESSING" ||
+    status === "ERROR" ||
+    String(invoice.nfse_provider || "").toLowerCase() === FOCUS_PROVIDER ||
+    isFocusManagedInvoice(invoice);
+  const id = Number(invoice.id);
+  if (tryDefault && Number.isFinite(id) && id > 0) return focusNfseRef(id);
+  return "";
 }
 
 /**
@@ -135,6 +174,12 @@ export function focusMunicipalNumber(nf: any): string | null {
 
 export function isPrefeituraNfseHtmlUrl(u: string): boolean {
   return /nfe\.prefeitura\.sp\.gov\.br/i.test(String(u || ""));
+}
+
+/** Um único e-mail do tomador, dentro do teto da Paulistana (75). */
+export function focusTomadorEmail(raw: string | null | undefined): string | undefined {
+  const emails = parseEmailList(raw);
+  return emails.find((e) => e.length > 0 && e.length <= FOCUS_TOMADOR_EMAIL_MAX);
 }
 
 export function isLikelyPdfUrl(u: string): boolean {
@@ -255,6 +300,7 @@ const IBGE_BY_CITY_UF: Record<string, string> = {
   "taboao da serra|sp": "3552809",
   "cotia|sp": "3513009",
   "rio de janeiro|rj": "3304557",
+  "serra|es": "3205002",
   "belo horizonte|mg": "3106200",
   "curitiba|pr": "4106902",
   "porto alegre|rs": "4314902",
@@ -348,7 +394,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
 
   const tomador: Record<string, any> = {
     razao_social: String(opts.tomador.name || "").trim().slice(0, 115),
-    email: String(opts.tomador.email || "").trim().slice(0, 80) || undefined,
+    email: focusTomadorEmail(opts.tomador.email),
     endereco: {
       logradouro: String(opts.tomador.address || "").trim().slice(0, 125),
       numero: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",

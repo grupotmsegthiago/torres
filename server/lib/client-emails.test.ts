@@ -6,6 +6,8 @@ import {
   withTorresAlwaysCc,
   clientOutboundMail,
   asaasTomadorEmail,
+  financeiroCadastroEmails,
+  nfseTomadorEmail,
   TORRES_ALWAYS_CC,
 } from "@shared/client-emails";
 
@@ -79,4 +81,20 @@ test("asaasTomadorEmail: só financeiro, não operacional", () => {
     "fin@c.com, fin2@c.com",
   );
   assert.equal(asaasTomadorEmail({ email_operacional: "ops@c.com" }), undefined);
+});
+
+test("nfseTomadorEmail: só o primeiro do campo financeiro do cadastro", () => {
+  const nimbus = {
+    email: "legado@nimbus.com",
+    email_operacional: "ops@nimbus.com",
+    email_financeiro: "igor@nimbusexpress.com.br; financeiro@nimbusexpress.com.br; financeiro2@nimbusexpress.com.br; mota@torresseguranca.com.br",
+  };
+  assert.equal(nfseTomadorEmail(nimbus), "igor@nimbusexpress.com.br");
+  assert.deepEqual(financeiroCadastroEmails(nimbus), [
+    "igor@nimbusexpress.com.br",
+    "financeiro@nimbusexpress.com.br",
+    "financeiro2@nimbusexpress.com.br",
+    "mota@torresseguranca.com.br",
+  ]);
+  assert.equal(nfseTomadorEmail({ email: "legado@c.com", email_operacional: "ops@c.com" }), undefined);
 });

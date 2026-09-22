@@ -17,6 +17,7 @@ import {
   extractFocusErrorMessage,
   focusCancelJustification,
   focusMunicipalNumber,
+  focusNfseConsultRef,
   focusNfseRef,
   ibgeMunicipioFromCityUf,
   isFocusManagedInvoice,
@@ -26,6 +27,7 @@ import {
   resolveFocusApiBaseUrl,
   shouldEmitNfseViaFocus,
   focusPdfUrl,
+  focusTomadorEmail,
   isLikelyPdfUrl,
   isPrefeituraNfseHtmlUrl,
 } from "./focus-nfe-helpers";
@@ -51,6 +53,15 @@ test("resolveFocusApiBaseUrl: produção no ar não cai em homologação por omi
   assert.equal(resolveFocusApiBaseUrl("", { vercelEnv: "production" }), FOCUS_API_PRODUCTION_URL);
   assert.equal(resolveFocusApiBaseUrl("[SENSITIVE]", { vercelEnv: "production" }), FOCUS_API_PRODUCTION_URL);
   assert.equal(resolveFocusApiBaseUrl("", { nodeEnv: "development" }), FOCUS_API_HOMOLOG_URL);
+  assert.equal(resolveFocusApiBaseUrl("producao", { nodeEnv: "development" }), FOCUS_API_PRODUCTION_URL);
+  assert.equal(
+    resolveFocusApiBaseUrl("", { vercelEnv: "preview", nodeEnv: "production" }),
+    FOCUS_API_PRODUCTION_URL,
+  );
+  assert.equal(
+    resolveFocusApiBaseUrl("homologação", { vercelEnv: "preview", nodeEnv: "production" }),
+    FOCUS_API_HOMOLOG_URL,
+  );
 });
 
 test("focusNfseRef e isFocusNfseRef", () => {
@@ -59,6 +70,13 @@ test("focusNfseRef e isFocusNfseRef", () => {
   assert.equal(isFocusNfseRef("inv_abc"), false);
   assert.equal(isFocusNfseRef("2562"), false);
   assert.throws(() => focusNfseRef(0));
+});
+
+test("focusNfseConsultRef: PROCESSING/ERROR usa torres-inv-{id} sem nfse_ref", () => {
+  assert.equal(focusNfseConsultRef({ id: 192, nfse_status: "ERROR" }), "torres-inv-192");
+  assert.equal(focusNfseConsultRef({ id: 191, nfse_status: "PROCESSING" }), "torres-inv-191");
+  assert.equal(focusNfseConsultRef({ id: 191, nfse_ref: "torres-inv-191", nfse_status: "AUTHORIZED" }), "torres-inv-191");
+  assert.equal(focusNfseConsultRef({ id: 10, nfse_status: "AUTHORIZED" }), "");
 });
 
 test("isFinalNfNumber ignora ref Focus como ignora inv_ Asaas", () => {
@@ -149,7 +167,21 @@ test("buildFocusNfsePayload falha sem IM do prestador ou IBGE", () => {
 test("ibgeMunicipioFromCityUf", () => {
   assert.equal(ibgeMunicipioFromCityUf("São Paulo", "SP"), "3550308");
   assert.equal(ibgeMunicipioFromCityUf("campinas", "sp"), "3509502");
+  assert.equal(ibgeMunicipioFromCityUf("Serra", "ES"), "3205002");
   assert.equal(ibgeMunicipioFromCityUf("Foo", "SP"), null);
+});
+
+test("focusTomadorEmail: um e-mail curto, nunca a lista inteira", () => {
+  const lista = "igor@nimbusexpress.com.br; financeiro@nimbusexpress.com.br; financeiro2@nimbusexpress.com.br; mota@torresseguranca.com.br";
+  assert.equal(focusTomadorEmail(lista), "igor@nimbusexpress.com.br");
+  assert.ok(String(focusTomadorEmail(lista)).length <= 75);
+  const p = buildFocusNfsePayload({
+    value: 550,
+    prestadorIm: "65831527",
+    tomador: { ...tomadorOk, email: lista, city: "Serra", state: "ES", codigoMunicipioIbge: "3205002" },
+  });
+  assert.equal(p.tomador.email, "igor@nimbusexpress.com.br");
+  assert.ok(String(p.tomador.email).length <= 75);
 });
 
 test("nfseUpdatesFromFocusObject: autorizada prefere DANFSe PDF à página HTML da prefeitura", () => {

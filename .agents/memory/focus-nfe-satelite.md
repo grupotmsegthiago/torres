@@ -6,7 +6,7 @@ description: Emissão de NFS-e vai pela Focus NFe; Asaas fica com boleto. invoic
 # NFS-e Focus NFe
 
 Novas NFS-e: `server/lib/focus-nfe.ts` via `POST /v2/nfse?ref=torres-inv-{id}` (Basic Auth token, senha vazia).
-Homologação padrão (`https://homologacao.focusnfe.com.br`); produção só com `FOCUS_NFE_ENV=producao`.
+Homologação só com `FOCUS_NFE_ENV=homologacao` em runtime local/dev. Preview/production da Vercel (`NODE_ENV=production`) usa `api.focusnfe.com.br` — senão o token de produção falha em homologacao.focus.
 
 Boleto/PIX/baixa: Asaas. **Nunca emitir NFS-e no Asaas** (`emitNfseImmediate` recusa). Documento `inv_*` vivo: só consulta.
 
@@ -22,4 +22,5 @@ Status persistido no vocabulário Torres (`AUTHORIZED` / `PROCESSING` / `ERROR` 
 Secrets: `FOCUS_API_TOKEN`, `FOCUS_PRESTADOR_IM`, `FOCUS_WEBHOOK_TOKEN` (webhook fail-closed).
 `inv_*` cancelado (não vivo) pode emitir Focus na mesma fatura — `shouldEmitNfseViaFocus(..., asaasLiveDoc=false)` retorna true.
 Relatório `/admin/relatorio-nf` precisa do `AdminLayout`; colunas Boleto Asaas × NF Focus.
+Botão do topo: **Sincronizar Focus** (`POST /api/relatorio-nf/sync-focus`). Não usar `/api/asaas/reconcile-all` nessa tela.
 Código serviço: LC 116 `11.02` + municipal `07870`. Discriminacao Focus = escolta + período + ANEXO IV + Simples Nacional. ISS 5% retido + INSS 11% no boleto Asaas e na NF.

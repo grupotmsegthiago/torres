@@ -4,7 +4,7 @@
  */
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "../routes/_helpers";
-import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, parseEmailList } from "../../shared/client-emails";
+import { CLIENT_EMAIL_COLUMNS, parseEmailList, financeiroCadastroEmails } from "../../shared/client-emails";
 import { buildNfClientEmail } from "./asaas-helpers";
 import { isNfFullyIssued } from "../../shared/nfse-status";
 import { buildBoletimMedicaoPdfForInvoice } from "./boletim-medicao-pdf";
@@ -167,7 +167,8 @@ export async function maybeSendInvoiceReadyEmail(invoiceId: number): Promise<boo
       .eq("id", inv.client_id)
       .maybeSingle();
     emiteNf = cli?.emite_nf === true;
-    clientEmail = asaasTomadorEmail(cli) || "";
+    const fin = financeiroCadastroEmails(cli);
+    clientEmail = fin.length ? fin.join(", ") : "";
   }
   if (!invoiceReadyForClientEmail(inv, emiteNf)) return false;
   if (!clientEmail) {

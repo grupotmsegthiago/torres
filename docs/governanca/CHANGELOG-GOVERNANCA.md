@@ -1,5 +1,27 @@
 # Changelog — Governança Torres
 
+## 2026-09-22 — Focus: preview da Vercel não usa homologação com token de produção
+
+- Sintoma: Relatório “Falha ao sincronizar NF / Access token inválido (host: homologacao.focusnfe.com.br)”.
+- Causa: preview tem `VERCEL_ENV=preview` e `NODE_ENV=production`. O preview vinha primeiro e a consulta ia para homologação com o token de produção.
+- Correção: `FOCUS_NFE_ENV=producao` e `NODE_ENV=production` (sem homolog explícito) usam `api.focusnfe.com.br`.
+
+## 2026-09-22 — Relatório de NF: Sincronizar Focus, não Asaas
+
+- O botão do topo deixa de chamar `/api/asaas/reconcile-all`.
+- Passa a consultar a Focus em `/api/relatorio-nf/sync-focus` (o mesmo sync ao abrir a tela).
+- Não reemite nota. Boleto continua no Asaas; o Relatório só atualiza o espelho da NFS-e.
+
+## 2026-09-22 — NFS-e: e-mail do tomador só do campo financeiro
+
+- A nota na Focus usa o primeiro e-mail de `clients.email_financeiro` (cadastro Torres). Não mistura operacional, contratual nem o e-mail genérico.
+- O e-mail da fatura ao cliente vai para a lista do campo financeiro. CC interno permanece financeiro@ / adm@.
+
+## 2026-09-22 — NFS-e Nimbus 192: e-mail do tomador > 75 caracteres
+
+- Causa: a Paulistana recusou `EmailTomador` com 80 caracteres. O Torres juntava todos os e-mails financeiros da Nimbus numa string e cortava em 80.
+- Correção: a NFS-e Focus envia só o primeiro e-mail válido (teto 75). Boleto Asaas da fatura 192 já estava emitido.
+
 ## 2026-09-22 — Ver NF: PDF DANFSe, nunca HTML da prefeitura
 
 - Causa: `nfse_url` da fatura 191 era `notaprint.aspx` da prefeitura. Essa página só mostra “Aguarde... Carregando Nota Fiscal...” e depende de JavaScript — o proxy do Torres removia os scripts.

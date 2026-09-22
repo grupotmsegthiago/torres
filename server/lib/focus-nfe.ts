@@ -6,7 +6,7 @@
 import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
-import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS } from "../../shared/client-emails";
+import { CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../../shared/client-emails";
 import { maybeSendInvoiceReadyEmail } from "./invoice-billing-email";
 import {
   DESCRICAO_SERVICO_FIXA,
@@ -23,8 +23,10 @@ import {
   buildFocusNfsePayload,
   extractFocusErrorMessage,
   focusCancelJustification,
+  focusNfseConsultRef,
   focusNfseRef,
   focusPdfUrl,
+  focusTomadorEmail,
   ibgeMunicipioFromCityUf,
   isFocusManagedInvoice,
   isLikelyPdfUrl,
@@ -86,7 +88,10 @@ export async function focusRequest(method: string, path: string, body?: unknown)
     let json: any = null;
     try { json = text ? JSON.parse(text) : null; } catch { json = { mensagem: text }; }
     if (!res.ok) {
-      const msg = extractFocusErrorMessage(json) || text || `Focus NFe HTTP ${res.status}`;
+      let host = "";
+      try { host = new URL(url).host; } catch { host = ""; }
+      const raw = extractFocusErrorMessage(json) || text || `Focus NFe HTTP ${res.status}`;
+      const msg = host ? `${raw} (host: ${host})` : raw;
       const err: any = new Error(msg.slice(0, 1000));
       err.status = res.status;
       err.body = json;
@@ -221,7 +226,7 @@ export async function syncFocusNfsesForInvoices(
   if (!hasFocusApiToken()) return { processed, updated };
   for (const inv of invoices || []) {
     if (processed >= limit) break;
-    if (!isFocusManagedInvoice(inv) && !String(inv?.nfse_ref || "").trim()) continue;
+    if (!focusNfseConsultRef(inv)) continue;
     processed += 1;
     const r = await syncFocusNfseForInvoice(inv);
     if (r.nf) {
@@ -264,11 +269,11 @@ async function loadClientForNf(invoice: any): Promise<any | null> {
   return data;
 }
 
-function tomadorFrom(invoice: any, client: any): FocusTomadorInput {
+function tomadorFrom(invoice: any, client: any, emailOverride?: string): FocusTomadorInput {
   return {
     name: client?.name || invoice.client_name,
     cpfCnpj: client?.cnpj || client?.cpf || invoice.client_cpf_cnpj,
-    email: asaasTomadorEmail(client),
+    email: focusTomadorEmail(emailOverride) || nfseTomadorEmail(client),
     phone: client?.phone,
     inscricaoMunicipal: client?.inscricao_municipal,
     address: client?.address,
@@ -302,7 +307,9 @@ export async function emitFocusNfseForInvoice(
   const emiteNf = client ? client.emite_nf === true : true;
   if (!emiteNf) return { ok: false, message: "Cliente isento de NFS-e" };
 
-  const clientEmail = opts?.clientEmail !== undefined ? opts.clientEmail : asaasTomadorEmail(client);
+  const clientEmail = opts?.clientEmail !== undefined
+    ? (focusTomadorEmail(opts.clientEmail) || nfseTomadorEmail(client))
+    : nfseTomadorEmail(client);
   if (shouldBlockNfEmission(clientEmail)) {
     await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: MISSING_EMAIL_NF_MSG }, focusNfseRef(id), invoice);
     return { ok: false, message: MISSING_EMAIL_NF_MSG };
@@ -320,6 +327,7 @@ export async function emitFocusNfseForInvoice(
     const msg = prestadorImRaw
       ? "FOCUS_PRESTADOR_IM precisa ser o CCM numérico da Torres em São Paulo (não o nome do ambiente)"
       : "FOCUS_PRESTADOR_IM não configurado (CCM da Torres em São Paulo)";
+    await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: msg }, focusNfseRef(id), invoice);
     return { ok: false, message: msg };
   }
 
@@ -342,7 +350,7 @@ export async function emitFocusNfseForInvoice(
     }
   }
 
-  const tomador = tomadorFrom(invoice, client);
+  const tomador = tomadorFrom(invoice, client, clientEmail);
   tomador.codigoMunicipioIbge = await resolveTomadorIbge(tomador);
   const emitRef = existing && /cancel/.test(String(existing.status || "").toLowerCase())
     ? `${focusNfseRef(id)}-r${Date.now().toString(36)}`
@@ -379,8 +387,7 @@ export async function emitFocusNfseForInvoice(
 }
 
 export async function syncFocusNfseForInvoice(invoice: any): Promise<{ updates: Record<string, any>; source: string; nf: any | null }> {
-  const ref = String(invoice?.nfse_ref || "").trim()
-    || (isFocusManagedInvoice(invoice) ? String(invoice?.nfse_number || "") : "");
+  const ref = focusNfseConsultRef(invoice);
   if (!ref || !hasFocusApiToken()) return { updates: {}, source: "none", nf: null };
   try {
     const nf = await consultFocusNfse(ref);

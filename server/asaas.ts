@@ -4026,7 +4026,7 @@ export function registerAsaasRoutes(app: Express) {
         const { data: focusInvoices, error } = await supabaseAdmin
           .from("invoices")
           .select("id, nfse_status, nfse_number, nfse_ref, nfse_provider, nfse_url, nfse_error_message, nfse_codigo_verificacao, nfse_xml_path")
-          .or("nfse_provider.eq.focus,nfse_ref.not.is.null")
+          .or("nfse_provider.eq.focus,nfse_ref.not.is.null,nfse_status.eq.PROCESSING,nfse_status.eq.ERROR")
           .limit(80);
         if (error) throw error;
         const r = await syncFocusNfsesForInvoices(focusInvoices || [], { limit: 40 });

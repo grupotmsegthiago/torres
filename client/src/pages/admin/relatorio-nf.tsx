@@ -239,6 +239,12 @@ export default function RelatorioNFPage() {
   });
 
   const focusSyncedFor = useRef("");
+  const [focusSync, setFocusSync] = useState<{
+    at: string;
+    processed: number;
+    updated: number;
+  } | null>(null);
+
   useEffect(() => {
     const key = `${from}|${to}`;
     if (focusSyncedFor.current === key) return;
@@ -251,6 +257,13 @@ export default function RelatorioNFPage() {
           body: JSON.stringify({ from, to }),
         });
         if (!r.ok || cancelled) return;
+        const json = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        setFocusSync({
+          at: new Date().toISOString(),
+          processed: Number(json?.processed || 0),
+          updated: Number(json?.updated || 0),
+        });
         queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
       } catch {
         /* sync não bloqueia a tela */
@@ -259,29 +272,29 @@ export default function RelatorioNFPage() {
     return () => { cancelled = true; };
   }, [from, to, queryClient]);
 
-  const reconcileMutation = useMutation({
-    mutationFn: async (force: boolean) => {
-      const r = await authFetch(`/api/asaas/reconcile-all`, {
+  const syncFocusMutation = useMutation({
+    mutationFn: async () => {
+      const r = await authFetch("/api/relatorio-nf/sync-focus", {
         method: "POST",
-        body: JSON.stringify({ force, limit: 80 }),
+        body: JSON.stringify({ from, to }),
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json as { ok?: boolean; processed?: number; updated?: number };
     },
-    onSuccess: () => {
+    onSuccess: (json) => {
+      setFocusSync({
+        at: new Date().toISOString(),
+        processed: Number(json?.processed || 0),
+        updated: Number(json?.updated || 0),
+      });
       toast({
-        title: "Sincronização iniciada",
-        description: "Atualiza boleto no Asaas e NFS-e na Focus. Não reemite nota.",
+        title: "Focus sincronizada",
+        description: `${Number(json?.processed || 0)} NFS-e consultadas, ${Number(json?.updated || 0)} atualizadas. Não reemite nota.`,
       });
-      // Refetch após 8s para dar tempo do Asaas responder
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
-      }, 8000);
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
-      }, 25000);
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
     },
-    onError: (e: any) => toast({ title: "Erro ao sincronizar", description: e?.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Erro ao sincronizar Focus", description: e?.message, variant: "destructive" }),
   });
 
   const cancelMutation = useMutation({
@@ -570,7 +583,6 @@ export default function RelatorioNFPage() {
 
   const rows = data?.rows || [];
   const totals = data?.totals;
-  const lastSync = data?.lastSync;
 
   const filtered = useMemo(() => {
     return rows
@@ -730,18 +742,18 @@ export default function RelatorioNFPage() {
             <Button
               variant="outline"
               size="sm"
-              title="Consulta boleto no Asaas e NFS-e na Focus. Não reemite nota."
-              onClick={() => reconcileMutation.mutate(false)}
-              disabled={reconcileMutation.isPending || lastSync?.running}
-              data-testid="button-sync-asaas"
+              title="Consulta NFS-e na Focus e atualiza o Relatório. Não reemite nota e não chama o Asaas."
+              onClick={() => syncFocusMutation.mutate()}
+              disabled={syncFocusMutation.isPending}
+              data-testid="button-sync-focus"
             >
-              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${(reconcileMutation.isPending || lastSync?.running) ? "animate-spin" : ""}`} />
-              {lastSync?.running ? "Sincronizando…" : "Sincronizar boleto e NF"}
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncFocusMutation.isPending ? "animate-spin" : ""}`} />
+              {syncFocusMutation.isPending ? "Sincronizando…" : "Sincronizar Focus"}
             </Button>
             <Button
               variant="outline"
               size="sm"
-              title="Recarrega a lista salva no Torres. Não consulta o Asaas."
+              title="Recarrega a lista salva no Torres. Não consulta a Focus."
               onClick={() => refetch()}
               disabled={isFetching}
               data-testid="button-refresh"
@@ -761,16 +773,14 @@ export default function RelatorioNFPage() {
         </div>
 
         {/* Last sync badge */}
-        {lastSync && (lastSync.completedAt || lastSync.startedAt) && (
+        {focusSync && (
           <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1" data-testid="text-last-sync">
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              Última sincronização Asaas: <strong className="text-slate-700">{fmtDateTime(lastSync.completedAt || lastSync.startedAt)}</strong>
+              Última sincronização Focus: <strong className="text-slate-700">{fmtDateTime(focusSync.at)}</strong>
             </span>
-            <span>processadas: <strong>{lastSync.processed}</strong></span>
-            <span className="text-emerald-700">atualizadas: <strong>{lastSync.updated}</strong></span>
-            {lastSync.errors > 0 && <span className="text-red-700">erros: <strong>{lastSync.errors}</strong></span>}
-            {lastSync.lastError && <span className="text-red-600 truncate max-w-[400px]" title={lastSync.lastError}>{lastSync.lastError}</span>}
+            <span>consultadas: <strong>{focusSync.processed}</strong></span>
+            <span className="text-emerald-700">atualizadas: <strong>{focusSync.updated}</strong></span>
           </div>
         )}
 

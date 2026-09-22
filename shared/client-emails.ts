@@ -88,6 +88,16 @@ export function clientOutboundMail(
   return withTorresAlwaysCc(to);
 }
 
+/** E-mails do campo financeiro do cadastro Torres. Não cai no e-mail genérico. */
+export function financeiroCadastroEmails(client: any): string[] {
+  return parseEmailList(fieldRaw(client, "email_financeiro", "emailFinanceiro"));
+}
+
+/** E-mail do tomador na NFS-e: só o primeiro do campo financeiro, no teto da Paulistana. */
+export function nfseTomadorEmail(client: any): string | undefined {
+  return financeiroCadastroEmails(client).find((e) => e.length > 0 && e.length <= 75);
+}
+
 /** E-mail do tomador no Asaas: só financeiro (não mistura operacional/contratual). */
 export function asaasTomadorEmail(client: any): string | undefined {
   const list = pickClientEmails(client, "financeiro");
