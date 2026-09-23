@@ -459,6 +459,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     );
     assert.match(manual, /computeBillingPayloadForOs\s*\(/);
     assert.match(manual, /computeCanceladaBilling\s*\(/);
+    assert.match(manual, /syncOsEscortContractForCancelada\s*\(/);
     assert.match(manual, /buildRecusadaZeroPayload\s*\(/);
     assert.match(manual, /isBillingProtected\s*\(/);
     assert.match(manual, /writeEscortBillingAtomic\s*\(/);
@@ -473,6 +474,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     );
     assert.match(batch, /isBillingProtected\s*\(/);
     assert.match(batch, /computeCanceladaBilling\s*\(/);
+    assert.match(batch, /syncOsEscortContractForCancelada\s*\(/);
     assert.match(batch, /buildRecusadaZeroPayload\s*\(/);
     assert.match(batch, /computeBillingPayloadForOs\s*\(/);
     assert.doesNotMatch(batch, /calcularFaturamentoLive\s*\(/);
@@ -486,6 +488,7 @@ describe("PR5B.1 — contratos puros já normativos", () => {
     );
     assert.match(submit, /computeBillingPayloadForOs\s*\(/);
     assert.match(submit, /computeCanceladaBilling\s*\(/);
+    assert.match(submit, /syncOsEscortContractForCancelada\s*\(/);
     assert.match(submit, /buildRecusadaZeroPayload\s*\(/);
     assert.match(submit, /isBillingProtected\s*\(/);
     assert.doesNotMatch(submit, /calcularFaturamentoLive\s*\(/);
@@ -530,10 +533,19 @@ describe("PR5B.1 — contratos puros já normativos", () => {
       'app.get("/api/missions/:osId/acceptances/:employeeId/comprovante"',
     );
     const serviceOrders = readFileSync(path.join(root, "server/routes/service-orders.ts"), "utf8");
+    const adminCancel = sourceSection(
+      "server/routes/mission.ts",
+      'app.post("/api/mission/cancel"',
+      'app.post("/api/mission/refuse"',
+    );
     assert.match(adminRefuse, /buildRecusadaZeroPayload\s*\(/);
     assert.match(adminRefuse, /isBillingProtected\s*\(/);
+    assert.match(adminRefuse, /cancellationReason:\s*motivo/);
     assert.match(employeeRefuse, /buildRecusadaZeroPayload\s*\(/);
     assert.match(employeeRefuse, /isBillingProtected\s*\(/);
+    assert.match(employeeRefuse, /cancellationReason:\s*notes\.trim\(\)/);
+    assert.match(adminCancel, /cancellationReason:\s*motivo/);
+    assert.match(adminCancel, /syncOsEscortContractForCancelada\s*\(/);
     assert.match(serviceOrders, /OS-Refuse-Billing[\s\S]*buildRecusadaZeroPayload/);
   });
 

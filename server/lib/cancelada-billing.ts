@@ -5,15 +5,23 @@ import { calcularEscolta } from "../billing-calc";
 // FATURAMENTO DE OS CANCELADA — Tabela de 100 km (funcionamento mínimo)
 // -----------------------------------------------------------------------------
 // Regra do dono (ordem explícita p/ mudar a §8.1 de "cancelada"):
-//   Toda OS CANCELADA usa exclusivamente a tabela persistida em
-//   service_orders.escort_contract_id. Cobra-se o valor base dessa tabela
-//   (acionamento). Se houver excedente real de km/horas, computa-se normalmente
-//   (km extra + hora extra fracionada). Se ficar dentro da franquia (≤100 km e
-//   ≤3 h), cobra-se SOMENTE o valor da tabela de 100 km. Isso vale para toda OS
-//   cancelada, inclusive quando a equipe nem foi acionada (mínimo = acionamento).
+//   Toda OS CANCELADA puxa automaticamente a "tabela de 100 km" do cliente
+//   (tabela de funcionamento mínimo). Cobra-se o valor base dessa tabela
+//   (acionamento). Se o KM real for ≤ 100, cobra-se SOMENTE o acionamento da
+//   tabela 100 km. Se rodou mais de 100 km, cobra-se 100 km + km extra + hora
+//   extra se houver. Vale para todos os clientes.
 //
-// A OS deve estar vinculada à tabela 100 km/3 h aplicável. Não há fallback por
-// cliente, ordem, nome, vigência implícita ou default inline.
+// Identificação da tabela de 100 km (docs/governanca/04 + SYSTEM_BRAIN §8.1b):
+//   1) Se a OS já está na tabela Ativa franquia_km=100 E franquia_horas=3, usa ela.
+//   2) Senão, contrato Ativo do cliente com franquia_km=100 E franquia_horas=3.
+//      Com várias tabelas 100/3, escolhe a da mesma família de nome (ORIGEM,
+//      DEDICADA, região) da tabela da OS; se não houver família, a de menor
+//      acionamento (comportamento histórico).
+//   3) Fallback: Ativo do cliente com franquia_km=100.
+//   Sem tabela 100 km utilizável ⇒ null (fail-closed: WRITE_CANCELLED exige 100/3).
+//
+// WRITE_CANCELLED valida o contrato persistido em service_orders.escort_contract_id.
+// Por isso o caller DEVE chamar syncOsEscortContractForCancelada antes da RPC.
 //
 // NUNCA usar pagamento aqui: cancelamento é faturamento (receita); pag_* = 0,
 // resultado = fat_total. Consistente com o billing de cancelamento histórico.
@@ -22,6 +30,17 @@ import { calcularEscolta } from "../billing-calc";
 const n = (v: any) => Number(v) || 0;
 const toBRT = (d: Date) =>
   d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+
+const FAMILY_TOKENS = [
+  "ORIGEM",
+  "DEDICADA",
+  "SUDESTE",
+  "NORDESTE",
+  "NOROESTE",
+  "CENTRO",
+  "SUL",
+  "NORTE",
+] as const;
 
 export const CANCELADA_CLEAN_FINANCIAL_FIELDS = {
   receitas_os: 0,
@@ -65,20 +84,125 @@ export function isCanceladaContract100km3(contrato: any): boolean {
     contrato?.status === "Ativo";
 }
 
-// Resolve somente o contrato persistido na OS, extrai km/tempo reais e calcula
-// o faturamento de cancelamento via calcularEscolta.
-export async function computeCanceladaBilling(input: CanceladaInput): Promise<CanceladaResult | null> {
-  if (!input.escortContractId) return null;
-  const { data: cc, error: contractError } = await supabaseAdmin
+export function contractNameTokens(name: string | null | undefined): string[] {
+  return String(name || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+}
+
+export function contractNameFamilies(name: string | null | undefined): Set<string> {
+  const tokens = new Set(contractNameTokens(name));
+  return new Set(FAMILY_TOKENS.filter((family) => tokens.has(family)));
+}
+
+function cheapestTabela(list: any[]): any | null {
+  if (!list.length) return null;
+  return [...list].sort((a, b) => {
+    const va = n(a?.valor_acionamento);
+    const vb = n(b?.valor_acionamento);
+    if (va !== vb) return va - vb;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  })[0];
+}
+
+/** Escolhe a tabela 100 km aplicável entre candidatas do cliente. Puro / testável. */
+export function pickTabela100km(candidates: any[], osContract?: any | null): any | null {
+  const usable = (candidates || []).filter(Boolean);
+  if (!usable.length) return null;
+  if (osContract?.id && usable.some((c) => String(c.id) === String(osContract.id))) {
+    return usable.find((c) => String(c.id) === String(osContract.id)) || cheapestTabela(usable);
+  }
+  const osFamilies = contractNameFamilies(osContract?.name);
+  if (osFamilies.size > 0) {
+    const scored = usable.map((c) => {
+      const families = contractNameFamilies(c?.name);
+      let score = 0;
+      for (const family of osFamilies) if (families.has(family)) score += 1;
+      return { c, score };
+    });
+    const best = Math.max(...scored.map((s) => s.score));
+    if (best > 0) {
+      return cheapestTabela(scored.filter((s) => s.score === best).map((s) => s.c));
+    }
+  }
+  return cheapestTabela(usable);
+}
+
+export async function getTabela100km(
+  clientId: number | null | undefined,
+  osContract?: any | null,
+): Promise<any | null> {
+  if (!clientId) return null;
+  const { data, error } = await supabaseAdmin
     .from("escort_contracts")
     .select("*")
-    .eq("id", input.escortContractId)
-    .single();
-  if (contractError) throw contractError;
-  const contrato = cc;
-  if (!contrato) return null;
-  const usouTabela100 = isCanceladaContract100km3(contrato);
-  if (!usouTabela100) return null;
+    .eq("client_id", clientId)
+    .eq("franquia_km", 100)
+    .eq("franquia_horas", 3)
+    .eq("status", "Ativo");
+  if (error) throw error;
+  const picked1003 = pickTabela100km(data || [], osContract);
+  if (picked1003) return picked1003;
+
+  const { data: d2, error: err2 } = await supabaseAdmin
+    .from("escort_contracts")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("franquia_km", 100)
+    .eq("status", "Ativo");
+  if (err2) throw err2;
+  return pickTabela100km(d2 || [], osContract);
+}
+
+/** WRITE_CANCELLED lê o contrato da OS — aponta a OS para a tabela 100 km antes da RPC. */
+export async function syncOsEscortContractForCancelada(
+  serviceOrderId: number,
+  contrato: { id?: string | null } | null | undefined,
+): Promise<void> {
+  const contractId = contrato?.id ? String(contrato.id) : "";
+  if (!contractId) {
+    throw new Error("Cancelada sem contract_id da tabela 100 km para vincular à OS.");
+  }
+  const { data: so, error } = await supabaseAdmin
+    .from("service_orders")
+    .select("escort_contract_id")
+    .eq("id", serviceOrderId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!so) throw new Error(`OS ${serviceOrderId} não encontrada ao vincular tabela 100 km.`);
+  if (String(so.escort_contract_id || "") === contractId) return;
+  const { error: updErr } = await supabaseAdmin
+    .from("service_orders")
+    .update({ escort_contract_id: contractId })
+    .eq("id", serviceOrderId);
+  if (updErr) throw updErr;
+}
+
+// Resolve a tabela de 100 km do cliente (com preservação se a OS já estiver nela),
+// extrai km/tempo reais e calcula o faturamento de cancelamento via calcularEscolta.
+export async function computeCanceladaBilling(input: CanceladaInput): Promise<CanceladaResult | null> {
+  let osContract: any | null = null;
+  if (input.escortContractId) {
+    const { data: cc, error: contractError } = await supabaseAdmin
+      .from("escort_contracts")
+      .select("*")
+      .eq("id", input.escortContractId)
+      .maybeSingle();
+    if (contractError) throw contractError;
+    osContract = cc || null;
+  }
+
+  let contrato: any | null = null;
+  if (isCanceladaContract100km3(osContract)) {
+    contrato = osContract;
+  } else {
+    contrato = await getTabela100km(input.clientId, osContract);
+  }
+  if (!contrato || !isCanceladaContract100km3(contrato)) return null;
+  const usouTabela100 = true;
 
   // KM real da OS — mesma convenção do recálculo de boletim: a franquia conta a
   // partir da chegada na origem (km_chegada); km_saida é fallback.

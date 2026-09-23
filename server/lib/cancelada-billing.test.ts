@@ -4,6 +4,7 @@ import { calcularEscolta } from "../billing-calc";
 import {
   CANCELADA_CLEAN_FINANCIAL_FIELDS,
   isCanceladaContract100km3,
+  pickTabela100km,
 } from "./cancelada-billing";
 
 // Regra do dono p/ OS CANCELADA: puxar a "tabela de 100 km" do cliente e cobrar
@@ -35,6 +36,31 @@ test("cancelada aceita somente contrato Ativo com franquia 100 km / 3 h", () => 
   assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_km: 50 }), false);
   assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_horas: 4 }), false);
   assert.equal(isCanceladaContract100km3({ ...tabela100km, status: "Inativo" }), false);
+});
+
+const origem100 = { id: "origem-100", name: "TABELA ORIGEM 100 KM", status: "Ativo", franquia_km: 100, franquia_horas: 3, valor_acionamento: 480 };
+const dedicada100 = { id: "dedicada-100", name: "DEDICADA SUL 100 KM", status: "Ativo", franquia_km: 100, franquia_horas: 3, valor_acionamento: 1200 };
+const origem1000 = { id: "origem-1000", name: "TABELA ORIGEM 1000 KM", status: "Ativo", franquia_km: 1000, franquia_horas: 10, valor_acionamento: 4800 };
+
+test("pickTabela100km preserva a tabela 100/3 já vinculada à OS", () => {
+  const picked = pickTabela100km([origem100, dedicada100], dedicada100);
+  assert.equal(picked?.id, "dedicada-100");
+});
+
+test("pickTabela100km casa a família ORIGEM quando a OS está na tabela de 1000 km", () => {
+  const picked = pickTabela100km([dedicada100, origem100], origem1000);
+  assert.equal(picked?.id, "origem-100");
+});
+
+test("pickTabela100km usa o menor acionamento quando não há família", () => {
+  const picked = pickTabela100km([dedicada100, origem100], { id: "x", name: "ROTA ESPECIAL 500 KM" });
+  assert.equal(picked?.id, "origem-100");
+});
+
+test("pickTabela100km não devolve tabela fora de 100 km", () => {
+  const picked = pickTabela100km([origem100, dedicada100], origem1000);
+  assert.notEqual(picked?.id, "origem-1000");
+  assert.equal(Number(picked?.franquia_km), 100);
 });
 
 const base = {
@@ -72,6 +98,25 @@ test("cancelada com km excedente cobra acionamento + km extra", () => {
   assert.equal(r.km_excedente, 50);
   assert.equal(r.fat_km, 240);
   assert.equal(r.fat_total, 720);
+});
+
+test("cancelada com km e hora excedentes cobra 100 km + km extra + HE", () => {
+  // 150 km (50 extra × 4,8 = 240) + 5 h (2 HE × 110 = 220) + acionamento 480 = 940
+  const r = calcularEscolta({
+    ...base,
+    km_inicial: 0,
+    km_final: 150,
+    horario_agendado: "10:00",
+    horario_inicio: "10:00",
+    inicio_ts: "2026-06-10T10:00:00-03:00",
+    fim_ts: "2026-06-10T15:00:00-03:00",
+    scheduled_date: "2026-06-10T10:00:00-03:00",
+  });
+  assert.equal(r.km_excedente, 50);
+  assert.equal(r.fat_km, 240);
+  assert.equal(r.fat_hora_extra, 220);
+  assert.equal(r.fat_acionamento, 480);
+  assert.equal(r.fat_total, 940);
 });
 
 test("cancelada com horas excedentes cobra acionamento + hora extra fracionada", () => {
