@@ -53,9 +53,9 @@ export function summarizeNfseWirePayload(body: Record<string, any>): Record<stri
     taxes: body?.taxes ?? null,
   };
 }
-/** ISS 5% retido na NFS-e e no boleto quando emite NF. */
+/** Alíquota ISS de referência (NFS-e). Retenção desligada: não cobra no boleto nem retém na Focus. */
 export const ISS_ALIQUOTA = 5;
-export const ISS_RETAIN = true;
+export const ISS_RETAIN = false;
 /** INSS 11% integral na NF/boleto (sem reduzir a 50% da base). */
 export const INSS_BASE_FRACTION = 1;
 export const DESCRICAO_SERVICO_FIXA =
@@ -283,7 +283,7 @@ export function inssAliquotaEfetiva(retemInss: boolean, legalAliquota?: number):
   return Number((Number(legalAliquota ?? 11) * INSS_BASE_FRACTION).toFixed(2));
 }
 
-/** Quando emite NFS-e: INSS 11% + ISS 5% no boleto. Sem NF, só INSS se o cliente retém. */
+/** Quando emite NFS-e: INSS 11% no boleto (ISS só se ISS_RETAIN). Sem NF, só INSS se o cliente retém. */
 export function boletoRetentionOpts(emiteNf: boolean, retemInss: boolean, inssAliquota?: number) {
   return {
     retemInss: emiteNf || retemInss,
@@ -452,8 +452,7 @@ export function buildInssObservation(
 
 /**
  * Texto com valor BRUTO e LÍQUIDO pro corpo da NF (exigência fiscal).
- * Sem retenção de INSS: ainda pode mostrar ISS 5% e o líquido.
- * Com retenção: bruto, INSS 11% integral, ISS 5% e líquido.
+ * Mostra INSS e/ou ISS retidos somente quando aplicáveis (ISS_RETAIN / retainIss).
  */
 export function buildValoresObservation(
   grossValue: number,
@@ -484,7 +483,7 @@ export function buildValoresObservation(
 /**
  * Calcula o valor do BOLETO/cobrança (o que o cliente efetivamente paga).
  * A NF continua no valor BRUTO; o boleto desconta as retenções da NF:
- * INSS integral (11% se retemInss) e ISS 5% (se retainIss).
+ * INSS integral (11% se retemInss) e ISS (se retainIss / ISS_RETAIN).
  */
 export function netBoletoValue(
   grossValue: number,

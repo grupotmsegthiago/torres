@@ -111,7 +111,7 @@ test("mapFocusStatusToTorres", () => {
   assert.equal(mapFocusStatusToTorres("AUTHORIZED"), "AUTHORIZED");
 });
 
-test("buildFocusNfsePayload: SP, 07870, ISS 5% retido, discriminacao escolta+legais", () => {
+test("buildFocusNfsePayload: SP, 07870, ISS sem retenção, discriminacao escolta+legais", () => {
   const p = buildFocusNfsePayload({
     value: 1000,
     description: "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)",
@@ -133,10 +133,10 @@ test("buildFocusNfsePayload: SP, 07870, ISS 5% retido, discriminacao escolta+leg
   assert.match(p.servico.discriminacao, /16\/09\/2026/);
   assert.ok(p.servico.discriminacao.includes(NF_INSS_ANEXO_IV_TEXTO));
   assert.ok(p.servico.discriminacao.includes(NF_SIMPLES_NACIONAL_TEXTO));
-  assert.equal(p.servico.iss_retido, true);
+  assert.equal(p.servico.iss_retido, false);
   assert.equal(p.servico.aliquota, ISS_ALIQUOTA);
   assert.equal(p.servico.valor_iss, 50);
-  assert.equal(p.servico.valor_iss_retido, 50);
+  assert.equal("valor_iss_retido" in p.servico, false);
   assert.equal(p.servico.valor_inss, 110);
   assert.equal(p.optante_simples_nacional, true);
   assert.equal(p.natureza_operacao, "1");

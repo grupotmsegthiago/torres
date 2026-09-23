@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-09-23 — ISS 5%: retenção desligada (Focus + boleto Asaas)
+
+- Pedido do dono: não cobrar mais ISS 5% na NFS-e Focus nem no boleto Asaas.
+- Fonte única: `ISS_RETAIN = false` em `server/lib/asaas-helpers.ts` (Focus `iss_retido`, boleto via `boletoRetentionOpts`, taxes Asaas, e-mail/relatório líquido).
+- INSS 11% quando emite NF permanece. Alíquota de referência `ISS_ALIQUOTA = 5` só informa o campo fiscal; sem `valor_iss_retido`.
+
 ## 2026-09-22 — Relatório de NF: bruto e líquido na mesma coluna
 
 - O deploy anterior falhou: `asaas.ts` importava `invoice-payment` que não estava no git. Arquivo e o rateio puro (`invoice-allocation`) entram no repositório para o build da Vercel passar.

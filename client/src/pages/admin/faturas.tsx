@@ -869,7 +869,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <p className="text-[11px] text-emerald-700 font-medium">
-              Cobrança via Asaas (boleto líquido ISS 5% + INSS 11%); NFS-e via Focus NFe. A descrição deve ter período e escolta armada.
+              Cobrança via Asaas (boleto líquido com INSS 11% quando emite NF; sem retenção de ISS); NFS-e via Focus NFe. A descrição deve ter período e escolta armada.
             </p>
           </div>
 

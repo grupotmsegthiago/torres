@@ -1277,7 +1277,7 @@ export async function emitInvoiceAuto(
   const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
   const billingType = asAsaasBillingType(opts.billingType);
 
-  // Boleto líquido: INSS 11% + ISS 5% quando emite NF. invoice.value = bruto.
+  // Boleto líquido: INSS 11% quando emite NF (ISS só se ISS_RETAIN). invoice.value = bruto.
   const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
 
   const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
@@ -2478,7 +2478,7 @@ export function registerAsaasRoutes(app: Express) {
       }
       const retemInss = clientData?.retem_inss === true;
       const inssAliquota = retemInss ? Number(clientData?.inss_aliquota ?? 11) : 0;
-      // Boleto líquido: INSS 11% + ISS 5% quando emite NF; NF e invoices.value continuam BRUTOS.
+      // Boleto líquido: INSS 11% quando emite NF (ISS só se ISS_RETAIN); NF e invoices.value BRUTOS.
       const { boleto: boletoValue, inssValor, inssAliquota: inssAliquotaNf } = netBoletoValue(totalValue, boletoRetentionOpts(emiteNf, retemInss, inssAliquota));
 
       const fiscalAddrErr = assertFiscalAddressForNf(clientData, emiteNf);
