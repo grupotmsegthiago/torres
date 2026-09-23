@@ -1,9 +1,20 @@
 # Changelog — Governança Torres
 
+## 2026-09-23 — Datas de input em DD/MM/YYYY (DateInputBR)
+
+- Inputs nativos `type="date"` trocados por `DateInputBR`: exibição sempre `dd/mm/aaaa`, valor interno `YYYY-MM-DD`.
+- Independente do locale do SO/navegador (evita `01/21/2026` no Windows em inglês).
+
 ## 2026-09-23 — Pedágio: +20% na cobrança, exceto operação DHL
 
 - OS nova com **Operação DHL** desmarcada cobra pedágio ao cliente com acréscimo de 20%. DHL marcado, ou OS antiga sem a escolha, segue repasse 1:1.
 - O comprovante e o reembolso operacional não levam o acréscimo. Billing já congelado não é recalculado.
+
+## 2026-09-23 — ISS 5%: retenção desligada (Focus + boleto Asaas)
+
+- Pedido do dono: não cobrar mais ISS 5% na NFS-e Focus nem no boleto Asaas.
+- Fonte única: `ISS_RETAIN = false` em `server/lib/asaas-helpers.ts` (Focus `iss_retido`, boleto via `boletoRetentionOpts`, taxes Asaas, e-mail/relatório líquido).
+- INSS 11% quando emite NF permanece. Alíquota de referência `ISS_ALIQUOTA = 5` só informa o campo fiscal; sem `valor_iss_retido`.
 
 ## 2026-09-22 — Relatório de NF: bruto e líquido na mesma coluna
 

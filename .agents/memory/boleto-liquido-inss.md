@@ -1,21 +1,19 @@
 ---
 name: Boleto líquido com retenção de INSS
-description: Cliente com retem_inss recebe boleto Asaas LÍQUIDO (bruto − INSS efetivo − ISS se emite NF); NF e invoices.value continuam BRUTOS.
+description: Cliente com retem_inss (ou emite_nf) recebe boleto Asaas LÍQUIDO (bruto − INSS); ISS retido desligado (ISS_RETAIN=false). NF e invoices.value continuam BRUTOS.
 ---
 
-# Boleto líquido com retenção de INSS + ISS na NF
+# Boleto líquido com retenção de INSS (sem ISS retido)
 
-Para clientes com `clients.retem_inss = true`, a cobrança Asaas (`POST /payments`) sai pelo valor **LÍQUIDO**. A **NF (`emitNfseImmediate`) e `invoices.value` permanecem BRUTOS**.
+Para clientes com `clients.retem_inss = true` ou `emite_nf`, a cobrança Asaas (`POST /payments`) sai pelo valor **LÍQUIDO**. A **NF Focus e `invoices.value` permanecem BRUTOS**.
 
-Pedido do dono em 2026-09-21 (substitui 5,5% + ISS 2% de 10/09):
+Pedido do dono em 2026-09-23: **desligar retenção de ISS 5%** na Focus e no boleto Asaas.
 
-- **INSS na NF/boleto:** alíquota legal integral (`INSS_BASE_FRACTION = 1`). Padrão **11% do bruto**. Cadastro `clients.inss_aliquota` continua a alíquota legal.
-- **ISS na NF:** **5%** com `retainIss: true`. No boleto, o ISS só entra se `emite_nf` (`boletoRetentionOpts`).
+- **INSS na NF/boleto:** alíquota legal integral (`INSS_BASE_FRACTION = 1`). Padrão **11% do bruto** quando emite NF. Cadastro `clients.inss_aliquota` continua a alíquota legal.
+- **ISS:** `ISS_RETAIN = false`. Focus manda `iss_retido: false` (sem `valor_iss_retido`). Boleto **não** desconta ISS (`boletoRetentionOpts.retainIss = false`).
 
-**Cálculo:** `netBoletoValue(gross, boletoRetentionOpts(emiteNf, retemInss, inssAliquota))` em `server/lib/asaas-helpers.ts`. `inssAliquota` de retorno é a **efetiva** (11). `buildNfseInvoicePayload` manda `taxes.inss = 11` e `taxes.iss = 5`.
+**Cálculo:** `netBoletoValue(gross, boletoRetentionOpts(emiteNf, retemInss, inssAliquota))` em `server/lib/asaas-helpers.ts`.
 
-**How to apply:** os 5 caminhos em `server/asaas.ts`: emitInvoiceAuto, `POST /api/invoices`, split por CNPJ, consolidado gerar-fatura, `POST /api/invoices/:id/emitir`. Persistência: `valor_inss_retido` = valor efetivo; `invoices.inss_aliquota` = efetiva. E-mail mostra bruto / (−) INSS / (−) ISS / líquido.
+**How to apply:** os 5 caminhos em `server/asaas.ts`. E-mail/relatório mostram ISS só se houver valor retido persistido (legado).
 
-**Observação da NF (≤250):** `buildNfseObservations` no mesmo helper. Discriminacao = texto CNAE oficial. Não concatenar `buildInssObservation` + Simples longo.
-
-**Consistência:** `invoices.value` BRUTO. Boletos já emitidos com 5,5% / 2% **não** são reescritos automaticamente.
+**Consistência:** `invoices.value` BRUTO. Boletos já emitidos com ISS descontado **não** são reescritos automaticamente.
