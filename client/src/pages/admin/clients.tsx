@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { parseBRL, formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
@@ -1160,7 +1161,7 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
               <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><FileText size={12} /> Identificação</p>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={labelCls}>Nº Contrato</label><input type="text" className={`${monoCls} uppercase`} placeholder="CT-2026/001" value={form.contract_number} onChange={e => sf("contract_number", e.target.value)} data-testid="input-contract-number" /></div>
-                <div><label className={labelCls}>Data Assinatura / Registro</label><input type="date" className={monoCls} value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
+                <div><label className={labelCls}>Data Assinatura / Registro</label><DateInputBR  className={monoCls} value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
               </div>
               <div className="mt-3">
                 <label className={labelCls}>Objeto</label>
@@ -1201,7 +1202,7 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
                     <option value="indeterminado">Indeterminado</option>
                   </select>
                 </div>
-                <div><label className={labelCls}>Início</label><input type="date" className={monoCls} value={form.vigencia_inicio} onChange={e => {
+                <div><label className={labelCls}>Início</label><DateInputBR  className={monoCls} value={form.vigencia_inicio} onChange={e => {
                   sf("vigencia_inicio", e.target.value);
                   if (form.vigencia_tipo === "determinado") {
                     const d = new Date(e.target.value); d.setFullYear(d.getFullYear() + 1);
@@ -1209,7 +1210,7 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
                   }
                 }} /></div>
                 {form.vigencia_tipo === "determinado" && (
-                  <div><label className={labelCls}>Término</label><input type="date" className={monoCls} value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
+                  <div><label className={labelCls}>Término</label><DateInputBR  className={monoCls} value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
@@ -1636,8 +1637,8 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           <p className="text-xs text-neutral-500">{client.cnpj || "CNPJ não cadastrado"} — Pasta do Cliente</p>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
+          <DateInputBR
+            
             id="contract-date"
             className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs text-neutral-700 bg-white"
             defaultValue={new Date().toISOString().split("T")[0]}
@@ -1647,7 +1648,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             onClick={async () => {
               try {
                 const dateInput = document.getElementById("contract-date") as HTMLInputElement;
-                const dateVal = dateInput?.value || "";
+                const dateVal = dateInput?.getAttribute("data-date-ymd") || dateInput?.value || "";
                 const url = `/api/clients/${client.id}/contrato-pdf${dateVal ? `?date=${dateVal}` : ""}`;
                 const r = await authFetch(url);
                 if (!r.ok) throw new Error("Erro ao gerar PDF");

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -753,7 +754,7 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         </div>
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">Próximo Contato</label>
-          <Input type="date" value={form.proximo_contato || ""} onChange={e => setForm({ ...form, proximo_contato: e.target.value })} className="h-9 text-sm" data-testid="input-proximo-contato" />
+          <DateInputBR  value={form.proximo_contato || ""} onChange={e => setForm({ ...form, proximo_contato: e.target.value })} className="h-9 text-sm" data-testid="input-proximo-contato" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">

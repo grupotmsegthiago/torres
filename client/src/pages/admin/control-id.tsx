@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -740,9 +741,9 @@ function PunchesTab() {
             {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-from" />
+        <DateInputBR  value={from} onChange={e => setFrom(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-from" />
         <span className="text-xs text-neutral-500">até</span>
-        <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-to" />
+        <DateInputBR  value={to} onChange={e => setTo(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-to" />
         <span className="text-xs text-neutral-500">{punches.length} batida(s)</span>
         <Button size="sm" className="ml-auto" onClick={() => setManualOpen(true)} data-testid="button-manual-punch">
           <Plus className="w-3.5 h-3.5 mr-1" /> Bater Ponto
@@ -1008,11 +1009,11 @@ function AbsencesTab() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-bold text-neutral-600 mb-1 block">Data Início *</label>
-                  <Input type="date" value={editing.start_date || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} data-testid="input-absence-start" />
+                  <DateInputBR  value={editing.start_date || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} data-testid="input-absence-start" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-neutral-600 mb-1 block">Data Fim</label>
-                  <Input type="date" value={editing.end_date || ""} onChange={e => setEditing({ ...editing, end_date: e.target.value })} data-testid="input-absence-end" />
+                  <DateInputBR  value={editing.end_date || ""} onChange={e => setEditing({ ...editing, end_date: e.target.value })} data-testid="input-absence-end" />
                 </div>
               </div>
               <div>
@@ -3116,7 +3117,7 @@ function AddDayDialog({ employeeId, defaultDate, onClose, onChanged }: { employe
         <div className="space-y-4">
           <div>
             <label className="text-xs font-bold text-neutral-600 uppercase mb-1.5 block">Data</label>
-            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9" data-testid="input-add-day-date" />
+            <DateInputBR  value={date} onChange={e => setDate(e.target.value)} className="h-9" data-testid="input-add-day-date" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

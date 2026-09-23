@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
@@ -1243,8 +1244,8 @@ export default function RelatorioFaturamentoPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={startDate} onChange={e => setStartDate(e.target.value)} data-testid="input-billing-start" />
-                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} data-testid="input-billing-end" />
+                <DateInputBR  className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={startDate} onChange={e => setStartDate(e.target.value)} data-testid="input-billing-start" />
+                <DateInputBR  className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} data-testid="input-billing-end" />
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -1961,7 +1962,7 @@ export default function RelatorioFaturamentoPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Vencimento</Label>
-                <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1 text-xs font-mono" data-testid="input-fatura-due-date" />
+                <DateInputBR  value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1 text-xs font-mono" data-testid="input-fatura-due-date" />
               </div>
               <div>
                 <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Tipo de Cobrança</Label>

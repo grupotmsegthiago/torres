@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -504,7 +505,11 @@ function Field({ label, value, onChange, testId, type = "text", full = false }: 
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <label className="text-xs font-bold uppercase text-neutral-600 mb-1 block">{label}</label>
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId} />
+      {type === "date" ? (
+        <DateInputBR value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId} />
+      ) : (
+        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId} />
+      )}
     </div>
   );
 }

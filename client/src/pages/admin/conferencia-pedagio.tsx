@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -115,9 +116,9 @@ export default function ConferenciaPedagioPage() {
               <Label htmlFor="data-inicio" className="text-zinc-300">
                 Data início
               </Label>
-              <Input
+              <DateInputBR
                 id="data-inicio"
-                type="date"
+              
                 value={inicio}
                 onChange={(e) => setInicio(e.target.value)}
                 className="mt-1 bg-zinc-950 border-zinc-700 text-white"
@@ -128,9 +129,9 @@ export default function ConferenciaPedagioPage() {
               <Label htmlFor="data-fim" className="text-zinc-300">
                 Data fim
               </Label>
-              <Input
+              <DateInputBR
                 id="data-fim"
-                type="date"
+              
                 value={fim}
                 onChange={(e) => setFim(e.target.value)}
                 className="mt-1 bg-zinc-950 border-zinc-700 text-white"

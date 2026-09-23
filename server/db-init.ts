@@ -1264,6 +1264,10 @@ export async function ensureDbSchema() {
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
     `).catch(() => {});
 
+    await execSql(`
+      ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS operacao_dhl BOOLEAN
+    `).catch(() => {});
+
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`).catch(() => {});

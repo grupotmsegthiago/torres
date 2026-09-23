@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase";
+import { applyPedagioClientMarkup, osCobraMarkupPedagio } from "../shared/pedagio-markup";
 
 export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -383,6 +384,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
   const endTime = toBRT(missionEndDate);
 
   const { despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os } = splitMissionCostsForBilling(mCosts);
+  const aplicarMarkupPedagio = osCobraMarkupPedagio(so);
   const canonical = calcularEscolta({
     km_inicial: kmInicial,
     km_final: kmFinal,
@@ -400,6 +402,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
     despesas_combustivel,
     despesas_outras,
     receitas_os,
+    aplicar_markup_pedagio: aplicarMarkupPedagio,
     contrato,
   });
 
@@ -442,7 +445,7 @@ export function computeBillingPayloadForOs(input: ComputeBillingPayloadInput) {
     placa_viatura: vehPlate || null,
     placa_escoltado: so.escorted_vehicle_plate || null,
     motorista_escoltado: so.escorted_driver_name || null,
-    despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
+    despesas_pedagio: r(canonical.despesas.pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
     desp_total: r(canonical.despesas.total), receitas_os: r(receitas_os),
     data_missao: (() => {
       const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
@@ -497,6 +500,8 @@ export function calcularEscolta(dados: {
   scheduled_date?: string | null;
   despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
   receitas_os?: number;
+  /** true = cobrança ao cliente com +20%. O reembolso continua no custo. */
+  aplicar_markup_pedagio?: boolean;
   contrato: any;
   kmRota?: number;
 }) {
@@ -557,7 +562,9 @@ export function calcularEscolta(dados: {
     return checkHour(inicio_considerado) || checkHour(horario_fim);
   })();
 
-  const despesas_total = despesas_pedagio + despesas_combustivel + despesas_outras;
+  const custoPedagio = despesas_pedagio;
+  const pedagioCobrado = applyPedagioClientMarkup(custoPedagio, dados.aplicar_markup_pedagio === true);
+  const despesas_total = custoPedagio + despesas_combustivel + despesas_outras;
 
   let fat_km_carregado: number;
   let fat_km_vazio: number;
@@ -596,7 +603,7 @@ export function calcularEscolta(dados: {
   if (isNoturno) {
     fat_adicional_noturno = (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
   }
-  const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_pedagio + despesas_outras + receitas_os;
+  const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + pedagioCobrado + despesas_outras + receitas_os;
 
   let pag_vrp = n(contrato.vrp_base);
   let pag_periculosidade = 0;
@@ -637,7 +644,7 @@ export function calcularEscolta(dados: {
       adicional_noturno: r(pag_adicional_noturno), reembolsos: pag_reembolsos,
       total: r(pag_total),
     },
-    despesas: { pedagio: despesas_pedagio, combustivel: despesas_combustivel, outras: despesas_outras, total: despesas_total },
+    despesas: { pedagio: pedagioCobrado, pedagio_custo: custoPedagio, combustivel: despesas_combustivel, outras: despesas_outras, total: despesas_total },
     receitas_os: r(receitas_os),
     resultado: { bruto: r(resultado_bruto), liquido: r(resultado_liquido), margem_pct: r(margem_pct) },
     fat_km: r(fat_km), fat_estadia: r(fat_estadia), fat_pernoite,

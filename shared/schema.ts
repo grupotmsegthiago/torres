@@ -328,6 +328,8 @@ export const serviceOrders = pgTable("service_orders", {
   valorEstimado: real("valor_estimado"),
   pedagioEstimado: real("pedagio_estimado"),
   pedagioIdaVolta: boolean("pedagio_ida_volta").default(false),
+  /** false = cobrança de pedágio com +20%. true = operação DHL, repasse sem acréscimo. null = OS anterior à regra. */
+  operacaoDhl: boolean("operacao_dhl"),
   fuelAllocated: boolean("fuel_allocated"),
   cancellationReason: text("cancellation_reason"),
   processoOmega: text("processo_omega"),

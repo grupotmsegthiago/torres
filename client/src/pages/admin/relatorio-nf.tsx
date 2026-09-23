@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card } from "@/components/ui/card";
@@ -823,14 +824,14 @@ export default function RelatorioNFPage() {
               <label className="text-xs font-medium text-slate-600 mb-1 block">De</label>
               <div className="relative">
                 <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="pl-8 h-9" data-testid="input-from" />
+                <DateInputBR  value={from} onChange={e => setFrom(e.target.value)} className="pl-8 h-9" data-testid="input-from" />
               </div>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Até</label>
               <div className="relative">
                 <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="pl-8 h-9" data-testid="input-to" />
+                <DateInputBR  value={to} onChange={e => setTo(e.target.value)} className="pl-8 h-9" data-testid="input-to" />
               </div>
             </div>
             <div>
@@ -1848,8 +1849,8 @@ export default function RelatorioNFPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 mb-1 block">Vencimento</label>
-                <Input
-                  type="date"
+                <DateInputBR
+                  
                   value={emitirFaturaModal.dueDate}
                   onChange={e => setEmitirFaturaModal({ ...emitirFaturaModal, dueDate: e.target.value })}
                   className="text-xs"
@@ -1994,7 +1995,7 @@ export default function RelatorioNFPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-700 mb-1 block">Data do pagamento</label>
-                  <Input type="date" value={receiveModal.paymentDate} onChange={e => setReceiveModal({ ...receiveModal, paymentDate: e.target.value })} data-testid="input-receive-date" />
+                  <DateInputBR  value={receiveModal.paymentDate} onChange={e => setReceiveModal({ ...receiveModal, paymentDate: e.target.value })} data-testid="input-receive-date" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-700 mb-1 block">Valor recebido (R$)</label>
@@ -2039,7 +2040,7 @@ export default function RelatorioNFPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 mb-1 block">Novo vencimento</label>
-                <Input type="date" value={dueDateModal.newDueDate} onChange={e => setDueDateModal({ ...dueDateModal, newDueDate: e.target.value })} data-testid="input-new-due-date" />
+                <DateInputBR  value={dueDateModal.newDueDate} onChange={e => setDueDateModal({ ...dueDateModal, newDueDate: e.target.value })} data-testid="input-new-due-date" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo <span className="text-rose-600">*</span></label>

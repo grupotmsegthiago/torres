@@ -6,10 +6,12 @@ import type { Express } from "express";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
+  import { osCobraMarkupPedagio } from "../../shared/pedagio-markup";
   import { haversineDist } from "./_helpers";
   import { resolveVehicleIcon } from "@shared/vehicle-icons";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
+  import { fetchAllSupabaseRows } from "../lib/supabase-page";
 
   const SWR_TTL_3H = 3 * 60 * 60 * 1000;
 
@@ -22,6 +24,39 @@ import type { Express } from "express";
   const SMART_INTERVAL_DISPLACEMENT_M = 500;
   function pruneMap<K, V>(map: Map<K, V>, max = 500) {
     if (map.size > max) { const excess = map.size - max; const iter = map.keys(); for (let i = 0; i < excess; i++) { const k = iter.next().value; if (k !== undefined) map.delete(k); } }
+  }
+
+  /**
+   * OS do grid para um intervalo YYYY-MM-DD.
+   * Pré-filtra por scheduled/mission_started/completed (datas calendário) e pagina
+   * além do teto 1000 do PostgREST. O filtro fino por brtDateKey continua no handler.
+   */
+  async function loadServiceOrdersForGridRange(fromYmd: string, toYmd: string) {
+    // Só YYYY-MM-DD no .or() — timestamps ISO com ":" quebram o parser do PostgREST.
+    // Folga ±1 dia nas pontas; o brtDateKey abaixo afunila o intervalo exato.
+    const fromPad = (() => {
+      const d = new Date(`${fromYmd}T12:00:00-03:00`);
+      d.setDate(d.getDate() - 1);
+      return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    })();
+    const toPad = (() => {
+      const d = new Date(`${toYmd}T12:00:00-03:00`);
+      d.setDate(d.getDate() + 1);
+      return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    })();
+    const orFilter =
+      `and(scheduled_date.gte.${fromPad},scheduled_date.lte.${toPad}),` +
+      `and(mission_started_at.gte.${fromPad},mission_started_at.lte.${toPad}),` +
+      `and(completed_date.gte.${fromPad},completed_date.lte.${toPad})`;
+    const rows = await fetchAllSupabaseRows((offset, limitTo) =>
+      supabaseAdmin
+        .from("service_orders")
+        .select("*")
+        .or(orFilter)
+        .order("created_at", { ascending: false })
+        .range(offset, limitTo),
+    );
+    return toCamelArray(rows);
   }
 
   export function registerOperationalRoutes(app: Express) {
@@ -37,13 +72,17 @@ import type { Express } from "express";
       res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       res.set("Pragma", "no-cache");
     }
-    const orders = await storage.getServiceOrders();
-    const gridVehicles = await storage.getVehicles();
-    const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-
     const qFrom = typeof _req.query.from === "string" ? _req.query.from : null;
     const qTo = typeof _req.query.to === "string" ? _req.query.to : null;
-    const isDateRange = qFrom && qTo;
+    const isDateRange = !!(qFrom && qTo && /^\d{4}-\d{2}-\d{2}$/.test(qFrom) && /^\d{4}-\d{2}-\d{2}$/.test(qTo));
+
+    // Personalizado / filtros from-to: pagina + pré-filtra no banco (evita teto 1000 do
+    // getServiceOrders e o custo de carregar o histórico inteiro só pra descartar).
+    const orders = isDateRange
+      ? await loadServiceOrdersForGridRange(qFrom!, qTo!)
+      : await storage.getServiceOrders();
+    const gridVehicles = await storage.getVehicles();
+    const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
     const activeOrders = orders.filter(
       (o) => {
@@ -610,6 +649,7 @@ import type { Express } from "express";
                 despesas_combustivel: custoCombustivel,
                 despesas_outras: 0,
                 receitas_os: receitasOsGrid,
+                aplicar_markup_pedagio: osCobraMarkupPedagio(o),
                 contrato,
               } as any);
               let canonFat = esc.fat_total;

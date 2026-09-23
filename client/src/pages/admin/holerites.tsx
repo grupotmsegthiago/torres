@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -652,7 +653,7 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
             </div>
             <div>
               <label className="text-[11px] font-bold text-neutral-600 mb-1 block">Data de Pagamento</label>
-              <Input type="date" value={form.dataPagamento} onChange={e => setForm({ ...form, dataPagamento: e.target.value })} data-testid="input-data-pagamento" />
+              <DateInputBR  value={form.dataPagamento} onChange={e => setForm({ ...form, dataPagamento: e.target.value })} data-testid="input-data-pagamento" />
             </div>
           </div>
 

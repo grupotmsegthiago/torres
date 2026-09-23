@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { DateInputBR } from "@/components/date-input-br";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1124,9 +1125,9 @@ function DailyAllowancesSection() {
         </h3>
         <div className="flex items-center gap-2 text-xs">
           <Label className="text-xs">De</Label>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-auto" data-testid="input-allow-from" />
+          <DateInputBR  value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-auto" data-testid="input-allow-from" />
           <Label className="text-xs">Até</Label>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 w-auto" data-testid="input-allow-to" />
+          <DateInputBR  value={to} onChange={(e) => setTo(e.target.value)} className="h-8 w-auto" data-testid="input-allow-to" />
         </div>
       </div>
 
@@ -1146,7 +1147,7 @@ function DailyAllowancesSection() {
         </div>
         <div>
           <Label className="text-xs">Data *</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-allow-date" />
+          <DateInputBR  value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-allow-date" />
         </div>
         <div>
           <Label className="text-xs">Valor (R$) *</Label>
@@ -1275,7 +1276,7 @@ function HolidaysSection() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 p-3 bg-rose-50/40 dark:bg-rose-950/20 rounded">
         <div>
           <Label className="text-xs">Data *</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-holiday-date" />
+          <DateInputBR  value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-holiday-date" />
         </div>
         <div>
           <Label className="text-xs">Nome *</Label>

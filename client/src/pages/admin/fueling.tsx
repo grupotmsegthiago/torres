@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { parseBRL, maskBRL, formatDateOnlyBR, toDateKey } from "@/lib/utils";
 import { listCyclesFromDates, getCycleByValue, getCurrentCycle } from "@/lib/fuel-cycles";
 import { calcKmL } from "@/lib/fuel-kml";
@@ -393,7 +394,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
-            <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-fueling-date" />
+            <DateInputBR  value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-fueling-date" />
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM no Hodômetro *</label>

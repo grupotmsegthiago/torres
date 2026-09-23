@@ -37,3 +37,68 @@ export function formatDateOnlyBR(value: unknown): string {
   const [y, mo, d] = key.split("-");
   return `${d}/${mo}/${y}`;
 }
+
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const BR_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+/** Valida dia/mês/ano de calendário (sem Date/UTC). */
+export function isValidCalendarYmd(y: number, m: number, d: number): boolean {
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  if (y < 1000 || y > 9999 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  return d <= daysInMonth;
+}
+
+/** YYYY-MM-DD → Date local (meio-dia local evita edge de DST). */
+export function ymdToLocalDate(ymd: string): Date | null {
+  const m = YMD_RE.exec(String(ymd || "").trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!isValidCalendarYmd(y, mo, d)) return null;
+  return new Date(y, mo - 1, d, 12, 0, 0, 0);
+}
+
+/** Date local → YYYY-MM-DD (calendário local, sem UTC). */
+export function localDateToYmd(date: Date): string | null {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return null;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Converte digitação BR (dd/mm/aaaa, com ou sem zeros) → YYYY-MM-DD.
+ * Retorna null se incompleto/inválido. Nunca interpreta como MM/DD.
+ */
+export function parseBrDateToYmd(display: string): string | null {
+  const raw = String(display || "").trim();
+  if (!raw) return null;
+  const asKey = toDateKey(raw);
+  if (asKey && YMD_RE.test(asKey) && raw.includes("-")) return asKey;
+  const m = BR_RE.exec(raw);
+  if (!m) return null;
+  const d = Number(m[1]);
+  const mo = Number(m[2]);
+  const y = Number(m[3]);
+  if (!isValidCalendarYmd(y, mo, d)) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** Máscara de digitação: só dígitos → dd/mm/aaaa (até 8 dígitos). */
+export function maskBrDateInput(raw: string): string {
+  const digits = String(raw || "").replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/** YYYY-MM-DD (ou vazio) → texto dd/mm/aaaa para o input. */
+export function ymdToBrDisplay(ymd: string | null | undefined): string {
+  const key = toDateKey(ymd ?? "");
+  if (!key) return "";
+  const [y, mo, d] = key.split("-");
+  return `${d}/${mo}/${y}`;
+}

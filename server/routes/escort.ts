@@ -11,6 +11,7 @@ import type { Express } from "express";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
+  import { applyPedagioClientMarkup, osCobraMarkupPedagio } from "../../shared/pedagio-markup";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
@@ -2972,6 +2973,7 @@ import type { Express } from "express";
             receitasOs = _splitE2.receitas_os;
             const pedEstimado = Number((so as any).pedagioEstimado) || 0;
             if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
+            despesas_pedagio = applyPedagioClientMarkup(despesas_pedagio, osCobraMarkupPedagio(so));
           } catch (_e) {}
 
           const fat_total = billing.fat_total + despesas_pedagio + receitasOs;
@@ -3174,14 +3176,15 @@ import type { Express } from "express";
           try {
             const osMC = mcByOS.get(Number(b.service_order_id)) || [];
             const _splitL = splitMissionCostsForBilling(osMC);
-            if (_splitL.despesas_pedagio > 0) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + _splitL.despesas_pedagio;
+            const soDataMc = osLookup.get(b.service_order_id);
+            const cobraMarkup = osCobraMarkupPedagio(soDataMc);
+            if (_splitL.despesas_pedagio > 0) b.despesas_pedagio = applyPedagioClientMarkup(_splitL.despesas_pedagio, cobraMarkup);
             if (_splitL.despesas_combustivel > 0) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + _splitL.despesas_combustivel;
             if (_splitL.despesas_outras > 0) b.despesas_outras = (Number(b.despesas_outras) || 0) + _splitL.despesas_outras;
             if (_splitL.receitas_os > 0 && !b.receitas_os) b.receitas_os = _splitL.receitas_os;
             if ((Number(b.despesas_pedagio) || 0) === 0) {
-              const soData = osLookup.get(b.service_order_id);
-              const pedEst = Number(soData?.pedagioEstimado) || 0;
-              if (pedEst > 0) b.despesas_pedagio = pedEst;
+              const pedEst = Number(soDataMc?.pedagioEstimado) || 0;
+              if (pedEst > 0) b.despesas_pedagio = applyPedagioClientMarkup(pedEst, cobraMarkup);
             }
           } catch (_e) {}
         }

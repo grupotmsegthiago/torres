@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -80,7 +81,7 @@ function TimesheetForm({ timesheet, employees, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
-          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-timesheet-date" />
+          <DateInputBR  value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-timesheet-date" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Entrada</label>
@@ -100,7 +101,7 @@ function TimesheetForm({ timesheet, employees, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Saída</label>
-          <Input type="date" value={form.checkOutDate} onChange={(e) => setForm({ ...form, checkOutDate: e.target.value })} data-testid="input-timesheet-checkout-date" />
+          <DateInputBR  value={form.checkOutDate} onChange={(e) => setForm({ ...form, checkOutDate: e.target.value })} data-testid="input-timesheet-checkout-date" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Trabalhadas</label>

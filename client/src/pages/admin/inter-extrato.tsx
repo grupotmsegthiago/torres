@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
@@ -283,11 +284,11 @@ export default function InterExtratoPage() {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
             <div>
               <label className="text-xs text-neutral-600 flex items-center gap-1 mb-1"><Calendar className="w-3 h-3" /> De</label>
-              <Input type="date" value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
+              <DateInputBR  value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
             </div>
             <div>
               <label className="text-xs text-neutral-600 flex items-center gap-1 mb-1"><Calendar className="w-3 h-3" /> Até</label>
-              <Input type="date" value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
+              <DateInputBR  value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
             </div>
             <div className="md:col-span-2 flex flex-wrap gap-1">
               {[

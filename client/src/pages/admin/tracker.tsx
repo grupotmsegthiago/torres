@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { DateInputBR } from "@/components/date-input-br";
 import { getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -148,8 +149,8 @@ function AgentCard({ loc }: { loc: AgentLoc }) {
             </DialogTitle>
           </DialogHeader>
           <div className="flex gap-2 items-center mb-3">
-            <Input
-              type="date"
+            <DateInputBR
+              
               value={histDate}
               onChange={(e) => setHistDate(e.target.value)}
               className="text-sm"

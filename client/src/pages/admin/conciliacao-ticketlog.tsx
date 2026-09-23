@@ -1,4 +1,5 @@
 import { useState, useMemo, createContext, useContext } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -169,8 +170,8 @@ export default function ConciliacaoTicketlogPage() {
                   <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1 block">
                     Considerar a partir de
                   </label>
-                  <Input
-                    type="date"
+                  <DateInputBR
+                    
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
                     data-testid="input-date-from"

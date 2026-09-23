@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { DateInputBR } from "@/components/date-input-br";
 import { formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
@@ -138,14 +139,15 @@ export default function BalancoGerencialPage() {
   const [, navigate] = useLocation();
   const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
-  const [customFrom, setCustomFrom] = useState(() => fmtYmdLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
-  const [customTo, setCustomTo] = useState(() => fmtYmdLocal(new Date()));
+  // Datas APLICADAS do Personalizado (disparam o fetch). Draft fica nos inputs até "Aplicar".
+  const [appliedFrom, setAppliedFrom] = useState(() => fmtYmdLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [appliedTo, setAppliedTo] = useState(() => fmtYmdLocal(new Date()));
   const [showCustomPeriod, setShowCustomPeriod] = useState(false);
-  const [draftFrom, setDraftFrom] = useState(customFrom);
-  const [draftTo, setDraftTo] = useState(customTo);
+  const [draftFrom, setDraftFrom] = useState(appliedFrom);
+  const [draftTo, setDraftTo] = useState(appliedTo);
   const range = useMemo(
-    () => getDateRange(period, refDate, customFrom, customTo),
-    [period, refDate, customFrom, customTo],
+    () => getDateRange(period, refDate, appliedFrom, appliedTo),
+    [period, refDate, appliedFrom, appliedTo],
   );
   // Range em YYYY-MM-DD do filtro — usado pelo grid E pelo rh-summary (o custo
   // de RH precisa acompanhar o período filtrado, não o mês corrente).
@@ -156,8 +158,26 @@ export default function BalancoGerencialPage() {
   const [showEficienciaModal, setShowEficienciaModal] = useState(false);
 
   const openCustomPeriod = () => {
-    setDraftFrom(period === "CUSTOM" ? customFrom : gridRange.from);
-    setDraftTo(period === "CUSTOM" ? customTo : gridRange.to);
+    setDraftFrom(period === "CUSTOM" ? appliedFrom : gridRange.from);
+    setDraftTo(period === "CUSTOM" ? appliedTo : gridRange.to);
+    setShowCustomPeriod(true);
+  };
+
+  /** Ativa Personalizado na hora (barra inline) e abre o seletor — sem depender só do Dialog. */
+  const selectCustomPeriod = () => {
+    if (period !== "CUSTOM") {
+      const from = gridRange.from;
+      const to = gridRange.to;
+      setDraftFrom(from);
+      setDraftTo(to);
+      setAppliedFrom(from);
+      setAppliedTo(to);
+      setPeriod("CUSTOM");
+      setRefDate(parseYmdLocal(from));
+    } else {
+      setDraftFrom(appliedFrom);
+      setDraftTo(appliedTo);
+    }
     setShowCustomPeriod(true);
   };
 
@@ -169,8 +189,8 @@ export default function BalancoGerencialPage() {
       return;
     }
     const { from, to } = resolved;
-    setCustomFrom(from);
-    setCustomTo(to);
+    setAppliedFrom(from);
+    setAppliedTo(to);
     setDraftFrom(from);
     setDraftTo(to);
     setPeriod("CUSTOM");
@@ -237,7 +257,7 @@ export default function BalancoGerencialPage() {
   });
 
   // Custos de RH = Custo Empresa CCT do cadastro do funcionário (calcularFolha)
-  const { data: rhSummaryRaw, isFetching: rhFetching, isPlaceholderData: rhPlaceholder } = useQuery<{
+  const { data: rhSummaryRaw, isFetching: rhFetching, isPlaceholderData: rhPlaceholder, isError: rhError } = useQuery<{
     monthly: number;
     monthlyOperacional?: number;
     daily: number;
@@ -288,7 +308,7 @@ export default function BalancoGerencialPage() {
         }
       } catch { /* private mode */ }
       const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1${force}&from=${gridRange.from}&to=${gridRange.to}`);
-      if (!res.ok) throw new Error("Falha ao carregar RH");
+      if (!res.ok) throw new Error(`Falha ao carregar RH (${res.status})`);
       return res.json();
     },
     staleTime: SWR_3H,
@@ -327,20 +347,22 @@ export default function BalancoGerencialPage() {
   // FONTE ÚNICA AO VIVO: o Balanço usa o MESMO /api/operational-grid do Relatório de OS, para
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
-  const { data: gridDataRaw, isFetching: gridFetching, isPlaceholderData: gridPlaceholder } = useQuery<any[]>({
+  const { data: gridDataRaw, isFetching: gridFetching, isPlaceholderData: gridPlaceholder, isError: gridError } = useQuery<any[]>({
     queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
     queryFn: async () => {
       const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`Falha ao carregar o grid do período (${res.status})`);
       return res.json();
     },
     staleTime: SWR_3H,
     refetchInterval: SWR_3H,
     placeholderData: (prev: any) => prev,
+    retry: 1,
   });
   // Enquanto a query do NOVO período ainda não chegou, não usa OS/RH do período anterior.
   const gridData = gridPlaceholder ? [] : (gridDataRaw || []);
-  const periodDataPending = gridPlaceholder || rhPlaceholder || gridFetching || rhFetching;
+  const periodDataPending = !gridError && !rhError && (gridPlaceholder || rhPlaceholder || gridFetching || rhFetching);
+  const periodLoadFailed = gridError || rhError;
 
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
   // Dias usados pra ratear custos fixos/RH — sempre mês comercial (30 dias),
@@ -870,7 +892,7 @@ export default function BalancoGerencialPage() {
                   </button>
                 ))}
                 <button
-                  onClick={openCustomPeriod}
+                  onClick={selectCustomPeriod}
                   data-testid="period-custom"
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all inline-flex items-center gap-1.5 ${
                     period === "CUSTOM" ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
@@ -895,6 +917,12 @@ export default function BalancoGerencialPage() {
                     Calculando…
                   </span>
                 )}
+                {periodLoadFailed && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-rose-300 uppercase whitespace-nowrap" data-testid="status-period-error">
+                    <AlertTriangle size={12} />
+                    Falha no período
+                  </span>
+                )}
                 {period !== "CUSTOM" && (
                   <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} className="text-slate-300 hover:text-white hover:bg-slate-800" data-testid="button-next-period">
                     <ChevronRight size={16} />
@@ -914,24 +942,30 @@ export default function BalancoGerencialPage() {
                 </Button>
               </div>
             </div>
+            {periodLoadFailed && (
+              <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100" data-testid="banner-period-error">
+                Não foi possível carregar o período {gridRange.from} → {gridRange.to}.
+                {gridError ? " (missões)" : ""}
+                {rhError ? " (RH)" : ""}
+                {" "}Use <strong>Atualizar agora</strong> ou escolha um intervalo menor.
+              </div>
+            )}
             {period === "CUSTOM" && (
               <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-2.5" data-testid="custom-period-inline">
                 <div className="flex-1 min-w-0">
                   <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data inicial</label>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
+                  <DateInputBR
+                    value={draftFrom}
+                    onChange={(e) => setDraftFrom(e.target.value)}
                     className="w-full h-9 rounded-md border border-slate-600 bg-slate-900 px-2 text-sm font-mono text-slate-100"
                     data-testid="input-period-from"
                   />
                 </div>
                 <div className="flex-1 min-w-0">
                   <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data final</label>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
+                  <DateInputBR
+                    value={draftTo}
+                    onChange={(e) => setDraftTo(e.target.value)}
                     className="w-full h-9 rounded-md border border-slate-600 bg-slate-900 px-2 text-sm font-mono text-slate-100"
                     data-testid="input-period-to"
                   />
@@ -939,7 +973,7 @@ export default function BalancoGerencialPage() {
                 <Button
                   size="sm"
                   className="h-9 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black uppercase"
-                  onClick={() => applyCustomPeriod(customFrom, customTo)}
+                  onClick={() => applyCustomPeriod(draftFrom, draftTo)}
                   data-testid="button-apply-custom-period-inline"
                 >
                   Aplicar
@@ -962,8 +996,7 @@ export default function BalancoGerencialPage() {
             <div className="space-y-3 pt-1">
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data inicial</label>
-                <input
-                  type="date"
+                <DateInputBR
                   value={draftFrom}
                   onChange={(e) => setDraftFrom(e.target.value)}
                   className="w-full h-10 rounded-md border border-slate-600 bg-slate-900 px-3 text-sm font-mono text-slate-100"
@@ -972,8 +1005,7 @@ export default function BalancoGerencialPage() {
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Data final</label>
-                <input
-                  type="date"
+                <DateInputBR
                   value={draftTo}
                   onChange={(e) => setDraftTo(e.target.value)}
                   className="w-full h-10 rounded-md border border-slate-600 bg-slate-900 px-3 text-sm font-mono text-slate-100"

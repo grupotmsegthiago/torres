@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { formatDateBRT, formatBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
@@ -261,7 +262,7 @@ function BatchImportDialog({ open, onClose }: { open: boolean; onClose: () => vo
                         </div>
                         <div>
                           <label className="text-sm font-semibold text-neutral-700 block">Validade Registro</label>
-                          <Input type="date" value={w.registrationExpiry} onChange={(e) => updateWeapon(idx, "registrationExpiry", e.target.value)} className="h-7 text-xs" data-testid={`batch-expiry-${idx}`} />
+                          <DateInputBR  value={w.registrationExpiry} onChange={(e) => updateWeapon(idx, "registrationExpiry", e.target.value)} className="h-7 text-xs" data-testid={`batch-expiry-${idx}`} />
                         </div>
                         <div className="col-span-2">
                           <label className="text-sm font-semibold text-neutral-700 block">Obs</label>
@@ -515,7 +516,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade do Registro</label>
-            <Input type="date" value={form.registrationExpiry} onChange={(e) => setForm({ ...form, registrationExpiry: e.target.value })} data-testid="input-weapon-reg-expiry" />
+            <DateInputBR  value={form.registrationExpiry} onChange={(e) => setForm({ ...form, registrationExpiry: e.target.value })} data-testid="input-weapon-reg-expiry" />
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>

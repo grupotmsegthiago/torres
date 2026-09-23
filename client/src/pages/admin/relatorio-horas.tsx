@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { getPayrollPeriod } from "@shared/payroll-period";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Users, Filter, ChevronDown, ChevronRight, Download, Calendar, BarChart3, Loader2 } from "lucide-react";
@@ -230,8 +231,8 @@ export default function RelatorioHorasPage() {
               <>
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data inicial</label>
-                  <input
-                    type="date"
+                  <DateInputBR
+                    
                     value={start}
                     onChange={e => setStart(e.target.value)}
                     className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"
@@ -240,8 +241,8 @@ export default function RelatorioHorasPage() {
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-neutral-500 uppercase mb-1 block">Data final</label>
-                  <input
-                    type="date"
+                  <DateInputBR
+                    
                     value={end}
                     onChange={e => setEnd(e.target.value)}
                     className="w-full p-2 border border-neutral-300 rounded-lg text-sm font-medium"

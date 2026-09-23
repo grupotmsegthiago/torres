@@ -1,4 +1,5 @@
 import { parseBRL } from "@/lib/utils";
+import { DateInputBR } from "@/components/date-input-br";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
@@ -387,7 +388,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
             </div>
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Calendar size={12} /> Vencimento</label>
-              <input required type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold bg-white" value={dueDate} onChange={e => setDueDate(e.target.value)} data-testid="input-due-date" />
+              <DateInputBR required className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold bg-white" value={dueDate} onChange={e => setDueDate(e.target.value)} data-testid="input-due-date" />
             </div>
           </div>
           {!isEdit && (
@@ -2274,11 +2275,11 @@ export default function FinanceiroPage() {
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="text-[10px] font-bold text-neutral-400 mb-1 block">Início</label>
-            <input type="date" className="w-full p-2 border border-neutral-200 rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} data-testid="input-custom-start" />
+            <DateInputBR  className="w-full p-2 border border-neutral-200 rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} data-testid="input-custom-start" />
           </div>
           <div className="flex-1">
             <label className="text-[10px] font-bold text-neutral-400 mb-1 block">Fim</label>
-            <input type="date" className="w-full p-2 border border-neutral-200 rounded-lg text-xs" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} data-testid="input-custom-end" />
+            <DateInputBR  className="w-full p-2 border border-neutral-200 rounded-lg text-xs" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} data-testid="input-custom-end" />
           </div>
         </div>
       )}

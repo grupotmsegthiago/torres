@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries, kickNfRetry, kickNfRetryFromInvoicePayload } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -833,8 +834,8 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
             </div>
             <div>
               <Label className="text-xs font-bold">Vencimento</Label>
-              <Input
-                type="date"
+              <DateInputBR
+                
                 value={form.dueDate}
                 onChange={e => setForm(prev => ({ ...prev, dueDate: e.target.value }))}
                 data-testid="input-due-date"
@@ -1407,8 +1408,8 @@ function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, o
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs font-bold text-orange-800">Data de Vencimento *</Label>
-                  <Input
-                    type="date"
+                  <DateInputBR
+                    
                     value={emitirDueDate}
                     onChange={e => setEmitirDueDate(e.target.value)}
                     placeholder="Selecione a data"

@@ -1,4 +1,5 @@
 import { useMemo, useState, Fragment } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
@@ -164,8 +165,8 @@ export default function FaturamentoDiretoriaPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-[140px] bg-white/90 text-neutral-900" data-testid="input-from" />
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-[140px] bg-white/90 text-neutral-900" data-testid="input-to" />
+            <DateInputBR  value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-[140px] bg-white/90 text-neutral-900" data-testid="input-from" />
+            <DateInputBR  value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-[140px] bg-white/90 text-neutral-900" data-testid="input-to" />
             <Button variant="secondary" size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="button-refresh">
               <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
             </Button>

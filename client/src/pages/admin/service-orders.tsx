@@ -18,6 +18,7 @@ import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/compon
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { isClientActive } from "@shared/client-duplicates";
+import { applyPedagioClientMarkup, osCobraMarkupPedagio, pedagioCobrancaCliente } from "@shared/pedagio-markup";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -923,6 +924,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     queryFn: getQueryFn({ on401: "throw" }),
     enabled: !!order?.id,
   });
+  const [operacaoDhlTouched, setOperacaoDhlTouched] = useState(false);
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
@@ -953,6 +955,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     valorEstimado: (order as any)?.valorEstimado ? Number((order as any).valorEstimado).toFixed(2).replace(".", ",") : "",
     pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
     pedagioIdaVolta: !!(order as any)?.pedagioIdaVolta,
+    operacaoDhl: (order as any)?.operacaoDhl === true,
     waypoints: ((order as any)?.waypoints || []) as Array<{ address: string; lat: number | null; lng: number | null }>,
     cancellationReason: (order as any)?.cancellationReason || "",
     processoOmega: (order as any)?.processoOmega || "",
@@ -1266,6 +1269,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
     pedagioEstimado: data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null,
     pedagioIdaVolta: !!data.pedagioIdaVolta,
+    ...((isNewOs || operacaoDhlTouched || (order as any)?.operacaoDhl === true || (order as any)?.operacaoDhl === false)
+      ? { operacaoDhl: !!data.operacaoDhl }
+      : {}),
     escortedDriverName: data.escortedDriverName ?? "",
     escortedDriverPhone: data.escortedDriverPhone ?? "",
     escortedVehiclePlate: data.escortedVehiclePlate ?? "",
@@ -1843,6 +1849,51 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
+                <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer" data-testid="toggle-operacao-dhl">
+                  <input
+                    type="checkbox"
+                    checked={form.operacaoDhl}
+                    onChange={(e) => {
+                      setOperacaoDhlTouched(true);
+                      setForm((prev) => ({ ...prev, operacaoDhl: e.target.checked }));
+                    }}
+                    className="mt-0.5 rounded border-neutral-300 text-blue-600 w-3.5 h-3.5"
+                  />
+                  <span className="text-[10px] text-neutral-600 font-medium leading-snug">
+                    Operação DHL
+                    <span className="block text-neutral-500 font-normal">
+                      Marcado: pedágio repassado sem acréscimo. Desmarcado: cobrança ao cliente com +20%.
+                    </span>
+                  </span>
+                </label>
+                {(() => {
+                  const custoIda = parseBRL(form.pedagioEstimado);
+                  if (custoIda <= 0) return null;
+                  const aplicaMarkup = isNewOs || operacaoDhlTouched
+                    ? !form.operacaoDhl
+                    : osCobraMarkupPedagio(order as any);
+                  const cobranca = pedagioCobrancaCliente(custoIda, form.pedagioIdaVolta, aplicaMarkup);
+                  const legado = !isNewOs && !operacaoDhlTouched && (order as any)?.operacaoDhl == null;
+                  return (
+                    <p className="text-[11px] text-neutral-700 mt-1.5" data-testid="text-pedagio-cobranca-cliente">
+                      Cobrança ao cliente:{" "}
+                      <span className="font-mono font-bold">
+                        {cobranca.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </span>
+                      {aplicaMarkup ? (
+                        <span className="text-amber-800"> · inclui +20% sobre o custo{form.pedagioIdaVolta ? " (ida e volta)" : ""}</span>
+                      ) : (
+                        <span className="text-neutral-500"> · sem acréscimo{form.operacaoDhl ? " (DHL)" : ""}</span>
+                      )}
+                      {legado && (
+                        <span className="block text-[10px] text-neutral-500">OS anterior à regra: o pedágio segue no valor do custo até você alterar esta opção.</span>
+                      )}
+                      <span className="block text-[10px] text-neutral-500">
+                        Custo {applyPedagioClientMarkup(form.pedagioIdaVolta ? custoIda * 2 : custoIda, false).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} — o reembolso do comprovante não leva os 20%.
+                      </span>
+                    </p>
+                  );
+                })()}
                 {routeReadyForTable && (
                   <div
                     className={`mt-2 rounded-md border px-2.5 py-2 space-y-1.5 ${

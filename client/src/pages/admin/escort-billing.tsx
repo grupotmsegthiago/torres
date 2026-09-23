@@ -1,4 +1,5 @@
 import { parseBRL, formatDateBRT } from "@/lib/utils";
+import { DateInputBR } from "@/components/date-input-br";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -128,7 +129,7 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
             <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><FileText size={12} /> Identificação</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nº Contrato</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold uppercase" placeholder="CT-2026/001" value={form.contract_number} onChange={e => sf("contract_number", e.target.value)} data-testid="input-contract-number" /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Data Assinatura</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Data Assinatura</label><DateInputBR  className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
             </div>
           </div>
 
@@ -154,9 +155,9 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
                   <option value="determinado">Determinado</option>
                 </select>
               </div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Início</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_inicio} onChange={e => sf("vigencia_inicio", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Início</label><DateInputBR  className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_inicio} onChange={e => sf("vigencia_inicio", e.target.value)} /></div>
               {form.vigencia_tipo === "determinado" && (
-                <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Término</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
+                <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Término</label><DateInputBR  className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
               )}
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Aviso Prévio (dias)</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.aviso_previo_dias} onChange={e => sf("aviso_previo_dias", e.target.value)} /></div>
             </div>

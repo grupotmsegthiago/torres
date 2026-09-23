@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -84,7 +85,7 @@ function MaintenanceForm({ maintenance, vehicles, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
-          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-maintenance-date" />
+          <DateInputBR  value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-maintenance-date" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Custo (R$)</label>
@@ -100,7 +101,7 @@ function MaintenanceForm({ maintenance, vehicles, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Próx. Manutenção (Data)</label>
-          <Input type="date" value={form.nextMaintenanceDate} onChange={(e) => setForm({ ...form, nextMaintenanceDate: e.target.value })} data-testid="input-maintenance-next-date" />
+          <DateInputBR  value={form.nextMaintenanceDate} onChange={(e) => setForm({ ...form, nextMaintenanceDate: e.target.value })} data-testid="input-maintenance-next-date" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Prestador</label>

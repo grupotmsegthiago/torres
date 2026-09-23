@@ -10,7 +10,7 @@
 1. Calcular pelo **contrato tarifário** vinculado (`escort_contracts`).
 2. Respeitar franquias de KM e horas do contrato.
 3. Cobrar somente **excedentes** acima da franquia (KM e/ou hora), conforme modelo do contrato (acionamento / km / misto).
-4. Pedágio conforme regra oficial do motor (repasse + markup quando aplicável).
+4. Pedágio conforme regra oficial do motor: repasse do custo, com **+20% na cobrança ao cliente** quando `service_orders.operacao_dhl = false`. Operação DHL (`true`) e OS antigas (`null`) ficam no repasse 1:1.
 5. Usar **somente** o motor canônico `calcularEscolta`.
 6. Inputs: odômetro (`mission_photos`), timestamps reais da missão, `mission_costs` agregados via `splitMissionCostsForBilling`.
 7. Resultado materializado em `escort_billings` (snapshot por OS).
@@ -76,6 +76,9 @@ Edição manual excepcional, se existir, exige autorização de role adequada e 
 3. Em `splitMissionCostsForBilling`, a **revenue de pedágio NÃO soma em `receitas_os`** (evita duplicar com `despesas_pedagio` no `fat_total`) — bug histórico TOR-0179.
 4. Ledger (`financial_transactions`) deve refletir o evento sem double-count no P&L.
 5. Estimativa `service_orders.pedagio_estimado` **não** é pedágio realizado.
+6. Na criação da OS, **Operação DHL** desmarcada grava `operacao_dhl = false` e a cobrança final do pedágio é o custo × 1,20. Marcada grava `true` e não aplica o acréscimo.
+7. O acréscimo entra só na cobrança ao cliente (`despesas_pedagio` dentro de `fat_total`). O lançamento de custo (`mission_costs` expense) e o reembolso operacional (`pag_reembolsos`) permanecem no valor do comprovante.
+8. OS já existentes, com `operacao_dhl` nulo, não recebem o acréscimo. Billing congelado (`APROVADA`, `FATURADO`, `FATURADA`, `PAGO`) não é reaberto por esta regra.
 
 ---
 

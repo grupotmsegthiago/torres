@@ -8,6 +8,7 @@ import type { Express } from "express";
   import { createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { clientOutboundMail } from "../../shared/client-emails";
   import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
+  import { osCobraMarkupPedagio, pedagioCobrancaCliente } from "../../shared/pedagio-markup";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
@@ -106,7 +107,7 @@ import type { Express } from "express";
     const allowed = await allowedClientIdsFromRequest(req);
     if (allowed && allowed.length === 0) return res.json([]);
 
-    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,operacao_dhl,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
 
     let data: any[];
     try {
@@ -1101,6 +1102,8 @@ import type { Express } from "express";
     }
 
     parsed.data.createdByUserId = req.user?.id || null;
+    // Nova OS: DHL explícito (true) não leva acréscimo. Qualquer outro valor grava false e cobra +20%.
+    (parsed.data as any).operacaoDhl = (parsed.data as any).operacaoDhl === true;
     if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
     if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
     if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
@@ -1215,7 +1218,8 @@ import type { Express } from "express";
             console.error(`[OS ${data.osNumber}] Erro pedágio despesa:`, e.message);
           }
 
-          const receitaCliente = idaVolta ? totalIdaCusto * 2 : totalIdaCusto;
+          const operacaoDhl = (parsed.data as any).operacaoDhl === true;
+          const receitaCliente = pedagioCobrancaCliente(totalIdaCusto, idaVolta, !operacaoDhl);
           try {
             const costReceita = await storage.createMissionCost({
               serviceOrderId: data.id,
@@ -3877,7 +3881,9 @@ import type { Express } from "express";
           inicio_ts: os.missionStartedAt ? new Date(os.missionStartedAt as any).toISOString() : null,
           fim_ts: os.completedDate ? new Date(os.completedDate as any).toISOString() : null,
           scheduled_date: os.scheduledDate ? new Date(os.scheduledDate as any).toISOString() : null,
-          despesas_pedagio: despPedPdf, despesas_combustivel: despCombPdf, despesas_outras: despOutPdf, contrato,
+          despesas_pedagio: despPedPdf, despesas_combustivel: despCombPdf, despesas_outras: despOutPdf,
+          aplicar_markup_pedagio: osCobraMarkupPedagio(os),
+          contrato,
         });
 
         const isLive = os.status !== "concluida" && os.missionStatus !== "encerrada";

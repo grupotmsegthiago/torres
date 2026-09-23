@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import AdminLayout from "@/components/admin/layout";
@@ -245,11 +246,11 @@ export default function AuditoriaFaturamentoPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div>
                 <label className="text-xs text-muted-foreground">De</label>
-                <Input type="date" value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
+                <DateInputBR  value={from} onChange={e => setFrom(e.target.value)} data-testid="input-from" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Até</label>
-                <Input type="date" value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
+                <DateInputBR  value={to} onChange={e => setTo(e.target.value)} data-testid="input-to" />
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs text-muted-foreground">Cliente</label>

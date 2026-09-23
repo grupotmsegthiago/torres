@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, formatDateBRT } from "@/lib/utils";
@@ -119,7 +120,7 @@ function formatCepBR(value: string): string {
   return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
-/** Normaliza datas da API (ISO) para YYYY-MM-DD — senão o input type="date" invalida o form e o Salvar “não faz nada”. */
+/** Normaliza datas da API (ISO) para YYYY-MM-DD — senão o DateInputBR / form rejeitam o valor. */
 function toDateInput(value: unknown): string {
   if (value == null) return "";
   const s = String(value).trim();
@@ -409,7 +410,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Vigência *</label>
-              <Input type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} required data-testid="input-salary-date" />
+              <DateInputBR  value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} required data-testid="input-salary-date" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motivo</label>
@@ -731,12 +732,12 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
               </div>
               <div>
                 <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Emissão</label>
-                <Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue" />
+                <DateInputBR  value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue" />
               </div>
               {docRequiresExpiry(docForm.type) && (
                 <div>
                   <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade *</label>
-                  <Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
+                  <DateInputBR  value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
                 </div>
               )}
               <div>
@@ -1635,7 +1636,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Nascimento</label>
-              <Input type="date" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} data-testid="input-employee-birth" />
+              <DateInputBR  value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} data-testid="input-employee-birth" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nacionalidade</label>
@@ -1768,7 +1769,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNH</label>
-              <Input type="date" value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
+              <DateInputBR  value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
             </div>
           </div>
           <div className="mt-3">
@@ -1809,11 +1810,11 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
-              <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
+              <DateInputBR  value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Emissão / Formação</label>
-              <Input type="date" value={form.cnvIssueDate} onChange={(e) => setForm({ ...form, cnvIssueDate: e.target.value })} data-testid="input-employee-cnv-issue-date" />
+              <DateInputBR  value={form.cnvIssueDate} onChange={(e) => setForm({ ...form, cnvIssueDate: e.target.value })} data-testid="input-employee-cnv-issue-date" />
               <p className="text-[11px] text-neutral-400 mt-1">A reciclagem só passa a ser cobrada 2 anos após esta data.</p>
             </div>
           </div>
@@ -1886,11 +1887,11 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Admissão</label>
-              <Input type="date" value={form.hireDate} onChange={(e) => setForm({ ...form, hireDate: e.target.value })} data-testid="input-employee-hire" />
+              <DateInputBR  value={form.hireDate} onChange={(e) => setForm({ ...form, hireDate: e.target.value })} data-testid="input-employee-hire" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Vencimento de Férias</label>
-              <Input type="date" value={form.vacationExpiry} onChange={(e) => setForm({ ...form, vacationExpiry: e.target.value })} data-testid="input-employee-vacation" />
+              <DateInputBR  value={form.vacationExpiry} onChange={(e) => setForm({ ...form, vacationExpiry: e.target.value })} data-testid="input-employee-vacation" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Sindicato</label>
@@ -2200,11 +2201,11 @@ function TreinamentoTab({ employeeId }: { employeeId: number }) {
             </div>
             <div>
               <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Realizado em *</label>
-              <Input type="date" value={form.completedAt} onChange={(e) => setForm({ ...form, completedAt: e.target.value })} data-testid="input-training-completed" />
+              <DateInputBR  value={form.completedAt} onChange={(e) => setForm({ ...form, completedAt: e.target.value })} data-testid="input-training-completed" />
             </div>
             <div>
               <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Validade (vencimento)</label>
-              <Input type="date" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} data-testid="input-training-expiry" />
+              <DateInputBR  value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} data-testid="input-training-expiry" />
             </div>
             <div>
               <label className="text-[10px] font-semibold text-neutral-600 block mb-1">Instrutor / Instituição</label>
@@ -2424,8 +2425,8 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="date" value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start" />
-                  <Input type="date" value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end" />
+                  <DateInputBR  value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start" />
+                  <DateInputBR  value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end" />
                 </div>
                 <Input value={absForm.reason} onChange={(e) => setAbsForm({ ...absForm, reason: e.target.value })} placeholder="Motivo" data-testid="input-absence-reason" />
                 <Button size="sm" onClick={() => addAbsence.mutate()} disabled={!absForm.startDate || addAbsence.isPending} data-testid="button-save-absence">Salvar</Button>
@@ -2472,7 +2473,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
             </div>
             {showFineForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-                <Input type="date" value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date" />
+                <DateInputBR  value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date" />
                 <Input value={fineForm.infraction} onChange={(e) => setFineForm({ ...fineForm, infraction: e.target.value })} placeholder="Infração" data-testid="input-fine-infraction" />
                 <div className="grid grid-cols-2 gap-2">
                   <Input type="number" value={fineForm.amount} onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })} placeholder="Valor (R$)" data-testid="input-fine-amount" />
@@ -2541,7 +2542,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-neutral-500 block mb-1">Data</label>
-                    <Input type="date" value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date" />
+                    <DateInputBR  value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date" />
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-neutral-500 block mb-1">Status</label>
@@ -2595,7 +2596,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
             </div>
             {showTsForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-                <Input type="date" value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date" />
+                <DateInputBR  value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date" />
                 <div className="grid grid-cols-2 gap-2">
                   <Input type="time" value={tsForm.clockIn} onChange={(e) => setTsForm({ ...tsForm, clockIn: e.target.value })} placeholder="Entrada" data-testid="input-ts-clockin" />
                   <Input type="time" value={tsForm.clockOut} onChange={(e) => setTsForm({ ...tsForm, clockOut: e.target.value })} placeholder="Saída" data-testid="input-ts-clockout" />
@@ -3320,7 +3321,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data da Ocorrência</label>
-                        <Input type="date" value={discountForm.occurrenceDate} onChange={(e) => setDiscountForm({ ...discountForm, occurrenceDate: e.target.value })} className="text-xs h-9" data-testid="input-falta-date" />
+                        <DateInputBR  value={discountForm.occurrenceDate} onChange={(e) => setDiscountForm({ ...discountForm, occurrenceDate: e.target.value })} className="text-xs h-9" data-testid="input-falta-date" />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor Calculado (R$)</label>
@@ -3411,7 +3412,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data Vigência</label>
-                <Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} className="text-xs h-9" data-testid="input-salary-date-pasta" />
+                <DateInputBR  value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} className="text-xs h-9" data-testid="input-salary-date-pasta" />
               </div>
             </div>
             <div>
@@ -4244,7 +4245,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           </p>
           {diretoria ? (
             <div className="flex flex-wrap items-center gap-2 mt-2">
-              <Input type="date" value={prazoDocs} onChange={(e) => setPrazoDocs(e.target.value)} className="h-8 w-40" data-testid="input-prazo-diretoria" />
+              <DateInputBR  value={prazoDocs} onChange={(e) => setPrazoDocs(e.target.value)} className="h-8 w-40" data-testid="input-prazo-diretoria" />
               <Button size="sm" onClick={() => savePrazo.mutate(prazoDocs || null)} disabled={savePrazo.isPending} data-testid="button-salvar-prazo-diretoria">
                 {savePrazo.isPending ? "Salvando..." : "Salvar prazo"}
               </Button>
@@ -4369,9 +4370,9 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 )}
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Nº do documento" data-testid="input-doc-number-pasta" />
                 <div className="grid grid-cols-2 gap-2">
-                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Emissão</label><Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue-pasta" /></div>
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Emissão</label><DateInputBR  value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue-pasta" /></div>
                   {docRequiresExpiry(docForm.type) && (
-                    <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade *</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
+                    <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade *</label><DateInputBR  value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
                   )}
                 </div>
                 {docForm.type !== "Diversos" && (
@@ -4700,7 +4701,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
             </div>
             {showFineForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-                <Input type="date" value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date-pasta" />
+                <DateInputBR  value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date-pasta" />
                 <Input value={fineForm.infraction} onChange={(e) => setFineForm({ ...fineForm, infraction: e.target.value })} placeholder="Infração" data-testid="input-fine-infraction-pasta" />
                 <div className="grid grid-cols-2 gap-2">
                   <Input type="number" value={fineForm.amount} onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })} placeholder="Valor (R$)" data-testid="input-fine-amount-pasta" />
@@ -4745,7 +4746,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <div className="bg-neutral-50 rounded-xl p-4 space-y-3 border border-neutral-200">
                 <div className="grid grid-cols-3 gap-3">
                   <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Tipo</label><select value={discForm.type} onChange={(e) => setDiscForm({...discForm, type: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-type-pasta"><option value="Advertência">Advertência</option><option value="Suspensão">Suspensão</option></select></div>
-                  <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Data</label><Input type="date" value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date-pasta" /></div>
+                  <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Data</label><DateInputBR  value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date-pasta" /></div>
                   <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Status</label><select value={discForm.status} onChange={(e) => setDiscForm({...discForm, status: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-status-pasta"><option value="ativa">Ativa</option><option value="cumprida">Cumprida</option><option value="revogada">Revogada</option></select></div>
                 </div>
                 <Input value={discForm.reason} onChange={(e) => setDiscForm({...discForm, reason: e.target.value})} placeholder="Motivo" data-testid="input-disc-reason-pasta" />
@@ -4791,8 +4792,8 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="date" value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start-pasta" />
-                  <Input type="date" value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end-pasta" />
+                  <DateInputBR  value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start-pasta" />
+                  <DateInputBR  value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end-pasta" />
                 </div>
                 <Input value={absForm.reason} onChange={(e) => setAbsForm({ ...absForm, reason: e.target.value })} placeholder="Motivo" data-testid="input-absence-reason-pasta" />
                 <Button size="sm" onClick={() => addAbsence.mutate()} disabled={!absForm.startDate || addAbsence.isPending} data-testid="button-save-absence-pasta">Salvar</Button>
@@ -4840,7 +4841,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
             </div>
             {canEdit && showTsForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-                <Input type="date" value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date-pasta" />
+                <DateInputBR  value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date-pasta" />
                 <div className="grid grid-cols-2 gap-2">
                   <Input type="time" value={tsForm.clockIn} onChange={(e) => setTsForm({ ...tsForm, clockIn: e.target.value })} placeholder="Entrada" data-testid="input-ts-clockin-pasta" />
                   <Input type="time" value={tsForm.clockOut} onChange={(e) => setTsForm({ ...tsForm, clockOut: e.target.value })} placeholder="Saída" data-testid="input-ts-clockout-pasta" />
@@ -5089,7 +5090,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-neutral-700 mb-1 block">Data de Nascimento *</label>
-                    <Input type="date" value={depForm.birthDate} onChange={(e) => setDepForm({ ...depForm, birthDate: e.target.value })} data-testid="input-dep-birth" />
+                    <DateInputBR  value={depForm.birthDate} onChange={(e) => setDepForm({ ...depForm, birthDate: e.target.value })} data-testid="input-dep-birth" />
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-neutral-700 mb-1 block">Parentesco</label>

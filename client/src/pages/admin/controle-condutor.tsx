@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { DateInputBR } from "@/components/date-input-br";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, authFetch } from "@/lib/queryClient";
@@ -468,11 +469,11 @@ export default function ControleCondutorPage() {
             </div>
             <div>
               <Label className="text-[10px] font-bold text-neutral-500 uppercase">De</Label>
-              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 mt-1 w-36" data-testid="filter-date-from" />
+              <DateInputBR  value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 mt-1 w-36" data-testid="filter-date-from" />
             </div>
             <div>
               <Label className="text-[10px] font-bold text-neutral-500 uppercase">Até</Label>
-              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 mt-1 w-36" data-testid="filter-date-to" />
+              <DateInputBR  value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 mt-1 w-36" data-testid="filter-date-to" />
             </div>
           </div>
         </div>

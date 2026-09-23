@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { DateInputBR } from "@/components/date-input-br";
 import { useState, useMemo, useEffect } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
@@ -486,11 +487,11 @@ export default function RelatorioAbastecimentoPage() {
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">De</label>
-              <Input type="date" className="h-9 text-sm w-[140px]" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCycleValue(""); }} data-testid="input-date-from" />
+              <DateInputBR  className="h-9 text-sm w-[140px]" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCycleValue(""); }} data-testid="input-date-from" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">Até</label>
-              <Input type="date" className="h-9 text-sm w-[140px]" value={dateTo} onChange={e => { setDateTo(e.target.value); setCycleValue(""); }} data-testid="input-date-to" />
+              <DateInputBR  className="h-9 text-sm w-[140px]" value={dateTo} onChange={e => { setDateTo(e.target.value); setCycleValue(""); }} data-testid="input-date-to" />
             </div>
           </div>
         </Card>
@@ -1193,7 +1194,7 @@ function AddFuelingModal({
             </div>
             <div>
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Data *</label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
+              <DateInputBR  value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
             </div>
           </div>
 

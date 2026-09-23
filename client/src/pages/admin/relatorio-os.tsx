@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { DateInputBR } from "@/components/date-input-br";
 import { useState, useMemo } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
@@ -751,16 +752,16 @@ export default function RelatorioOSPage() {
               </div>
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-neutral-400 shrink-0" />
-                <Input
-                  type="date"
+                <DateInputBR
+                  
                   value={dateFrom}
                   onChange={e => setDateFrom(e.target.value)}
                   className="bg-white/10 border-white/10 text-white h-9 text-sm w-[140px] [color-scheme:dark]"
                   data-testid="input-date-from"
                 />
                 <span className="text-neutral-500 text-xs">até</span>
-                <Input
-                  type="date"
+                <DateInputBR
+                  
                   value={dateTo}
                   onChange={e => setDateTo(e.target.value)}
                   className="bg-white/10 border-white/10 text-white h-9 text-sm w-[140px] [color-scheme:dark]"
