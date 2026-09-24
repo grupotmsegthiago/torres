@@ -36,11 +36,19 @@ async function heFromBatidas(opts: {
   employeeId: number;
   mesRef: string;
   horasMensais?: number;
+  /** Batidas pré-carregadas no bulk — mesma janela 26→25 do mesRef. */
+  punchesPreloaded?: any[];
 }): Promise<HorasPeriodoResult | null> {
   try {
     const { buildFolhaPonto } = await import("../control-id");
+    // heFromBatidas só usa Σ workedMin/noturnoMin; jornadaDiariaMin da folha
+    // não entra no banco mensal. Default 220 evita N+1 em employee_salaries
+    // quando o caller não informou horas_mensais (paridade com limit abaixo).
+    const horasMensais =
+      opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
     const dias = await buildFolhaPonto(opts.employeeId, opts.mesRef, {
-      horasMensais: opts.horasMensais,
+      horasMensais,
+      punchesPreloaded: opts.punchesPreloaded,
     });
     if (!dias || dias.length === 0) return null;
     const noturnoMin = dias.reduce(
@@ -49,7 +57,7 @@ async function heFromBatidas(opts: {
     );
     const hoursWorked =
       dias.reduce((s: number, d: any) => s + (Number(d.workedMin) || 0), 0) / 60;
-    const limit = opts.horasMensais && opts.horasMensais > 0 ? opts.horasMensais : 220;
+    const limit = horasMensais;
     // Banco mensal (= card Folha Control iD). NÃO usar Σ extraMin diário (8h48).
     const horasExtras = Math.max(0, hoursWorked - limit);
     const horasNoturnas = noturnoMin / 60;
@@ -196,16 +204,58 @@ export async function resolveHorasExtrasNoturnasBulk(opts: {
   }
   if (employeeIds.length === 0) return out;
 
-  // 1) Canônico: batidas para todos (pagamento = card Folha Control iD).
+  // 1) Canônico: batidas Control iD — 1 leitura paginada p/ todos os IDs
+  // (evita N queries iguais a buildFolhaPonto por funcionário no Balanço).
+  const punchesByEmp = new Map<number, any[]>();
+  let preloadOk = false;
+  try {
+    const { monthToFechamento } = await import("../control-id");
+    const { fetchAllSupabaseRows } = await import("./supabase-page");
+    const { start, end } = monthToFechamento(mesRef);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    // PostgREST .in() estoura com listas enormes — fatia em blocos.
+    const CHUNK = 80;
+    for (let i = 0; i < employeeIds.length; i += CHUNK) {
+      const chunk = employeeIds.slice(i, i + CHUNK);
+      const rows = await fetchAllSupabaseRows<any>((from, to) =>
+        supabaseAdmin
+          .from("control_id_punches")
+          .select("id, employee_id, punch_at, direction, source, control_id_user_id, external_id")
+          .in("employee_id", chunk)
+          .gte("punch_at", startIso)
+          .lt("punch_at", endIso)
+          .order("punch_at", { ascending: true })
+          .range(from, to),
+      );
+      for (const p of rows) {
+        const eid = Number(p.employee_id);
+        if (!eid) continue;
+        const list = punchesByEmp.get(eid) || [];
+        list.push(p);
+        punchesByEmp.set(eid, list);
+      }
+    }
+    preloadOk = true;
+  } catch (e: any) {
+    console.warn("[resolveHorasBulk] preload batidas:", e?.message || e);
+  }
+
   const { createLimit } = await import("./create-limit");
-  const limitBat = createLimit(4);
+  const limitBat = createLimit(8);
+  // Preload OK → só processa quem tem batida (CPU). Preload falhou →
+  // fallback N+1 igual ao comportamento anterior (não perder HE canônica).
+  const idsParaBatidas = preloadOk
+    ? employeeIds.filter((id) => (punchesByEmp.get(id) || []).length > 0)
+    : employeeIds;
   await Promise.all(
-    employeeIds.map((id) =>
+    idsParaBatidas.map((id) =>
       limitBat(async () => {
         const fromBatidas = await heFromBatidas({
           employeeId: id,
           mesRef,
           horasMensais: opts.horasMensaisByEmp?.get(id),
+          punchesPreloaded: preloadOk ? punchesByEmp.get(id) : undefined,
         });
         if (fromBatidas && (fromBatidas.horasExtras > 0 || fromBatidas.horasNoturnas > 0)) {
           out.set(id, fromBatidas);
