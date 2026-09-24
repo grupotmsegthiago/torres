@@ -2148,18 +2148,33 @@ function nightMinutesBRT(startMs: number, endMs: number): number {
 export async function buildFolhaPonto(
   employeeId: number,
   monthYear: string,
-  opts: { horasMensais?: number } = {},
+  opts: {
+    horasMensais?: number;
+    /** Batidas já carregadas (bulk do Balanço) — evita N+1 em control_id_punches. */
+    punchesPreloaded?: Array<{
+      id?: number;
+      punch_at: string;
+      direction?: string | null;
+      source?: string | null;
+      control_id_user_id?: number | null;
+      external_id?: string | null;
+    }>;
+  } = {},
 ): Promise<any[]> {
   // ciclo fechamento: dia 26 do mês anterior até dia 25 do mês informado
   const { start, end } = monthToFechamento(monthYear);
 
-  const { data: punchesRaw } = await supabaseAdmin
-    .from("control_id_punches")
-    .select("id, punch_at, direction, source, control_id_user_id, external_id")
-    .eq("employee_id", employeeId)
-    .gte("punch_at", start.toISOString())
-    .lt("punch_at", end.toISOString())
-    .order("punch_at", { ascending: true });
+  let punchesRaw = opts.punchesPreloaded;
+  if (!punchesRaw) {
+    const { data } = await supabaseAdmin
+      .from("control_id_punches")
+      .select("id, punch_at, direction, source, control_id_user_id, external_id")
+      .eq("employee_id", employeeId)
+      .gte("punch_at", start.toISOString())
+      .lt("punch_at", end.toISOString())
+      .order("punch_at", { ascending: true });
+    punchesRaw = data || [];
+  }
 
   if (!punchesRaw || punchesRaw.length === 0) return [];
 
