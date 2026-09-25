@@ -1490,13 +1490,25 @@ ${empNames}`,
     const parsed = insertEmployeeDocumentSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     if (parsed.data.fileData) {
-      const empId = parsed.data.employeeId;
+      let empId = parsed.data.employeeId;
+      let docType = parsed.data.type;
+      let fileName = parsed.data.fileName;
+      if (!empId) {
+        const { data: existing } = await supabaseAdmin
+          .from("employee_documents")
+          .select("employee_id, type, file_name")
+          .eq("id", parseInt(req.params.id))
+          .maybeSingle();
+        empId = existing?.employee_id;
+        docType = docType ?? existing?.type;
+        fileName = fileName ?? existing?.file_name;
+      }
       if (empId) {
         parsed.data.fileData = (await persistEmployeeDocBlob(
           empId,
-          parsed.data.type,
+          docType,
           parsed.data.fileData,
-          parsed.data.fileName,
+          fileName,
         )) || parsed.data.fileData;
       }
     }

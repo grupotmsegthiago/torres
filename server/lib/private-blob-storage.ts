@@ -14,7 +14,8 @@ const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 /** Path tipicamente gravado: `{folder}/{timestamp}_{rand}.{ext}` */
 const STORAGE_PATH_RE = /^[\w-]+\/[\w./-]+\.(jpe?g|png|webp|gif|pdf)$/i;
 
-export function isStoragePath(v: unknown): v is string {
+/** True se o valor é caminho de Storage (não use type predicate: quebraria o ramo `else` em `string`). */
+export function isStoragePath(v: unknown): boolean {
   if (typeof v !== "string" || v.length < 8) return false;
   if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return false;
   // Placeholders (ex.: "[ajuste-manual]") e marcadores não são paths.
