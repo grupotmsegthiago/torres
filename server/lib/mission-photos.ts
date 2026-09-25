@@ -1,51 +1,25 @@
-import { supabaseAdmin } from "../supabase";
+import {
+  buildStoragePath,
+  downloadBlobAsDataUri,
+  ensurePrivateBucket,
+  extFromMimeOrName,
+  hasBlobValue,
+  isStoragePath,
+  resolveBlobForView,
+  signStoragePath,
+  uploadBase64ToBucket,
+} from "./private-blob-storage";
 
-// Bucket privado onde ficam as fotos das mission_updates (antes guardadas como
-// base64 inline na coluna photo_url, o que inflava o banco em GBs). Mesmo padrão
-// dos comprovantes-pagamento: privado + signed URL de curta duração na leitura.
+// Bucket privado onde ficam as fotos das mission_updates e mission_photos
+// (antes guardadas como base64 inline, o que inflava o banco em GBs).
+// Mesmo padrão dos comprovantes-pagamento: privado + signed URL curta na leitura.
 export const MISSION_PHOTO_BUCKET = "mission-fotos";
 
-const SIGNED_URL_TTL_SEC = 300;
+export { isStoragePath, hasBlobValue as hasPhotoValue };
 
 /** Cria o bucket privado no boot (idempotente). */
 export async function ensureMissionFotosBucket(): Promise<void> {
-  try {
-    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-    const exists = (buckets || []).some((b: any) => b.name === MISSION_PHOTO_BUCKET);
-    if (!exists) {
-      const { error } = await supabaseAdmin.storage.createBucket(MISSION_PHOTO_BUCKET, {
-        public: false,
-        fileSizeLimit: 10 * 1024 * 1024,
-      });
-      if (error && !/already exists/i.test(error.message || "")) {
-        console.warn(`[storage] createBucket ${MISSION_PHOTO_BUCKET}:`, error.message);
-      } else {
-        console.log(`[storage] Bucket '${MISSION_PHOTO_BUCKET}' criado (private)`);
-      }
-    }
-  } catch (e: any) {
-    console.warn(`[storage] ensureMissionFotosBucket skipped:`, e?.message);
-  }
-}
-
-/**
- * Um valor de photo_url é "caminho do storage" quando NÃO é base64 (data:) nem
- * URL http(s) — ou seja, é tipo "123/1699999999_ab12cd.jpg". É isso que passa a
- * ser gravado no banco a partir de agora.
- */
-export function isStoragePath(v: unknown): v is string {
-  return (
-    typeof v === "string" &&
-    v.length > 0 &&
-    !v.startsWith("data:") &&
-    !v.startsWith("http://") &&
-    !v.startsWith("https://")
-  );
-}
-
-/** True se o valor representa uma foto (base64 OU caminho de storage OU url). */
-export function hasPhotoValue(v: unknown): boolean {
-  return typeof v === "string" && v.length > 0;
+  await ensurePrivateBucket(MISSION_PHOTO_BUCKET);
 }
 
 /**
@@ -58,61 +32,67 @@ export async function uploadMissionPhoto(
 ): Promise<string> {
   const mimeMatch = /^data:([^;]+);base64,/.exec(base64OrDataUri);
   const mime = mimeMatch?.[1] || "image/jpeg";
-  const cleanBase64 = String(base64OrDataUri).replace(/^data:[^;]+;base64,/, "");
-  const buffer = Buffer.from(cleanBase64, "base64");
-  if (buffer.length === 0) throw new Error("Foto vazia/ inválida");
-
-  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const ext = extFromMimeOrName(mime);
   const folder = serviceOrderId != null ? String(serviceOrderId) : "misc";
-  const rand = Math.random().toString(36).slice(2, 8);
-  const storagePath = `${folder}/${Date.now()}_${rand}.${ext}`;
+  const storagePath = buildStoragePath(folder, ext);
 
-  const { error } = await supabaseAdmin.storage
-    .from(MISSION_PHOTO_BUCKET)
-    .upload(storagePath, buffer, { contentType: mime, upsert: true });
-  if (error) throw error;
-  return storagePath;
+  return uploadBase64ToBucket({
+    bucket: MISSION_PHOTO_BUCKET,
+    storagePath,
+    base64OrDataUri,
+    contentType: mime,
+  });
+}
+
+/**
+ * Upload com fail-safe: se Storage falhar, devolve o data URI original
+ * (readers dual-read tratam legado; sweep migra depois).
+ * Placeholders / não-imagem passam intactos.
+ */
+export async function persistMissionPhotoBlob(
+  serviceOrderId: number | string | null | undefined,
+  value: string,
+): Promise<string> {
+  if (!value || typeof value !== "string") return value;
+  if (!value.startsWith("data:") && !/^[A-Za-z0-9+/=]{200,}/.test(value)) {
+    return value; // placeholder / path já migrado / marcador
+  }
+  const dataUri = value.startsWith("data:") ? value : `data:image/jpeg;base64,${value}`;
+  try {
+    return await uploadMissionPhoto(serviceOrderId, dataUri);
+  } catch (e: any) {
+    console.error(
+      `[storage] persistMissionPhotoBlob falhou (OS=${serviceOrderId}), fallback base64:`,
+      e?.message,
+    );
+    return dataUri;
+  }
 }
 
 /** Gera uma signed URL de curta duração pra um caminho do storage. */
 export async function signMissionPhoto(path: string): Promise<string | null> {
-  const { data, error } = await supabaseAdmin.storage
-    .from(MISSION_PHOTO_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_TTL_SEC);
-  if (error) {
-    console.warn(`[storage] signMissionPhoto erro (${path}):`, error.message);
+  if (!isStoragePath(path)) {
+    if (path?.startsWith("data:") || path?.startsWith("http")) return path;
     return null;
   }
-  return data?.signedUrl || null;
+  return signStoragePath(MISSION_PHOTO_BUCKET, path);
 }
 
 /**
- * Converte um photo_url do banco em algo renderizável/encaminhável:
+ * Converte um photo_url / photo_data do banco em algo renderizável:
  * - null/"" -> null
  * - base64 (data:) ou http(s) -> devolve igual (legado)
  * - caminho do storage -> gera signed URL
+ * - placeholder -> devolve igual
  */
 export async function resolvePhotoForView(v: unknown): Promise<string | null> {
-  if (!v || typeof v !== "string") return null;
-  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
-  return await signMissionPhoto(v);
+  return resolveBlobForView(MISSION_PHOTO_BUCKET, v);
 }
 
 /**
- * Baixa o arquivo do storage e devolve como data URI base64. Usado SÓ pro e-mail
- * (que precisa ser auto-contido e durar pra sempre — signed URL expira). Para
- * legado base64, devolve igual; http(s) também passa direto.
+ * Baixa o arquivo do storage e devolve como data URI base64. Usado SÓ pro e-mail,
+ * IA e PDF (signed URL expira). Legado base64 / http passam direto.
  */
 export async function downloadMissionPhotoDataUri(v: unknown): Promise<string | null> {
-  if (!v || typeof v !== "string") return null;
-  if (v.startsWith("data:") || v.startsWith("http://") || v.startsWith("https://")) return v;
-  const { data, error } = await supabaseAdmin.storage.from(MISSION_PHOTO_BUCKET).download(v);
-  if (error || !data) {
-    console.warn(`[storage] downloadMissionPhoto erro (${v}):`, error?.message);
-    return null;
-  }
-  const buf = Buffer.from(await data.arrayBuffer());
-  const ext = v.split(".").pop()?.toLowerCase();
-  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-  return `data:${mime};base64,${buf.toString("base64")}`;
+  return downloadBlobAsDataUri(MISSION_PHOTO_BUCKET, v);
 }

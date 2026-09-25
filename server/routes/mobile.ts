@@ -5,6 +5,7 @@ import type { Express } from "express";
   import { insertReferencePointSchema } from "@shared/schema";
   import { haversineDist, createAutoTransaction } from "./_helpers";
   import { uploadMissionPhoto } from "../lib/mission-photos";
+  import { persistFuelingPhotoBlob } from "../lib/fueling-photo-storage";
 
   const HQ_FALLBACK_LAT = -23.4890;
   const HQ_FALLBACK_LNG = -46.7234;
@@ -292,11 +293,19 @@ import type { Express } from "express";
         return res.status(409).json({ message: "Abastecimento já registrado — registro duplicado detectado." });
       }
 
+      // Persiste fotos no Storage (caminho curto no Postgres). Fail-safe mantém base64.
+      const [storedReceipt, storedPump, storedOdo, storedPlate] = await Promise.all([
+        persistFuelingPhotoBlob(null, "receipt", receiptPhoto),
+        persistFuelingPhotoBlob(null, "pump", pumpPhoto),
+        persistFuelingPhotoBlob(null, "odometer", odometerPhoto),
+        platePhoto ? persistFuelingPhotoBlob(null, "plate", platePhoto) : Promise.resolve(platePhoto),
+      ]);
+
       const { data: fueling } = await supabaseAdmin.from("vehicle_fueling").insert({
         vehicle_id: vehicleId, driver_id: employeeId, date: todayDate,
         liters: liters?.toString() || "0", cost_per_liter: costPerLiter?.toString(), total_cost: totalCost?.toString(),
         km, fuel_type: fuelType || "gasolina", full_tank: true, station,
-        receipt_photo: receiptPhoto, pump_photo: pumpPhoto, odometer_photo: odometerPhoto, plate_photo: platePhoto, latitude: latitude ? Number(latitude) : null, longitude: longitude ? Number(longitude) : null, address,
+        receipt_photo: storedReceipt, pump_photo: storedPump, odometer_photo: storedOdo, plate_photo: storedPlate, latitude: latitude ? Number(latitude) : null, longitude: longitude ? Number(longitude) : null, address,
         gasoline_price: gasolinePrice ? gasolinePrice.toString() : null,
         ethanol_price: ethanolPrice ? ethanolPrice.toString() : null,
         fuel_recommendation: fuelRecommendation || null,

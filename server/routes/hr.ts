@@ -4,6 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria, invalidateAuthCacheByUser } from "../auth";
   import { logSystemAudit } from "../audit";
   import { insertEmployeeDocumentSchema } from "@shared/schema";
+  import { persistEmployeeDocBlob, resolveEmployeeDocForView } from "../lib/employee-doc-storage";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
@@ -1378,7 +1379,11 @@ ${empNames}`,
   // ===== EMPLOYEE DOCUMENTS =====
   app.get("/api/employee-documents/:employeeId", requireAuth, async (req, res) => {
     const docs = await storage.getEmployeeDocuments(parseInt(req.params.employeeId));
-    res.json(docs);
+    const resolved = await Promise.all(docs.map(async (d) => ({
+      ...d,
+      fileData: d.fileData ? (await resolveEmployeeDocForView(d.fileData)) : d.fileData,
+    })));
+    res.json(resolved);
   });
 
   // Resumo dos tipos de documento entregues por funcionário — usado pelo alerta
@@ -1468,6 +1473,14 @@ ${empNames}`,
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const emp = await storage.getEmployee(parsed.data.employeeId);
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+    if (parsed.data.fileData) {
+      parsed.data.fileData = (await persistEmployeeDocBlob(
+        parsed.data.employeeId,
+        parsed.data.type,
+        parsed.data.fileData,
+        parsed.data.fileName,
+      )) || parsed.data.fileData;
+    }
     const doc = await storage.createEmployeeDocument(parsed.data);
     await syncDocToEmployee(parsed.data.type, parsed.data.employeeId, parsed.data.documentNumber, parsed.data.expiryDate);
     res.status(201).json(doc);
@@ -1476,6 +1489,17 @@ ${empNames}`,
   app.patch("/api/employee-documents/:id", requireAdminRole, async (req, res) => {
     const parsed = insertEmployeeDocumentSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (parsed.data.fileData) {
+      const empId = parsed.data.employeeId;
+      if (empId) {
+        parsed.data.fileData = (await persistEmployeeDocBlob(
+          empId,
+          parsed.data.type,
+          parsed.data.fileData,
+          parsed.data.fileName,
+        )) || parsed.data.fileData;
+      }
+    }
     const doc = await storage.updateEmployeeDocument(parseInt(req.params.id), parsed.data);
     if (!doc) return res.status(404).json({ message: "Documento não encontrado" });
     if (doc.type && doc.employeeId) {

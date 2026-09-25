@@ -333,6 +333,8 @@ if (isServerSupabaseConfigured()) {
   import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
   import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
   import("./lib/vehicle-doc-storage").then(m => m.ensureVehicleDocsBucket()).catch(() => {});
+  import("./lib/fueling-photo-storage").then(m => m.ensureFuelingFotosBucket()).catch(() => {});
+  import("./lib/employee-doc-storage").then(m => m.ensureEmployeeDocsBucket()).catch(() => {});
   ensureCategoryHierarchy().catch((e: any) =>
     console.warn("[categories] ensureCategoryHierarchy skipped:", e?.message),
   );

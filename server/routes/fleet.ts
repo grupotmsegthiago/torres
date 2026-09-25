@@ -6,6 +6,7 @@ import type { Express } from "express";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
   import { notifyVehicleMaintenance } from "../notifications";
+  import { persistFuelingPhotoBlob, resolveFuelingPhotosForView, downloadFuelingPhotoDataUri } from "../lib/fueling-photo-storage";
 
   // Diferença máxima de KM PRA CIMA tolerada num novo abastecimento (proteção
   // contra digitar o hodômetro errado). Lançamento retroativo (KM menor) é tratado
@@ -48,7 +49,7 @@ import type { Express } from "express";
   async function runAiValidation(fuelingId: number) {
     const fueling = await storage.getVehicleFueling(fuelingId);
     if (!fueling) return;
-    const receiptUrl = fueling.receiptPhoto;
+    const receiptUrl = (await downloadFuelingPhotoDataUri(fueling.receiptPhoto)) || fueling.receiptPhoto;
     if (!receiptUrl) {
       await supabaseAdmin.from("vehicle_fueling").update({ ai_validation_status: "sem_foto", ai_validation_result: { status: "sem_foto", observacao: "Sem foto de NF" } }).eq("id", fuelingId);
       return;
@@ -389,7 +390,7 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
   app.get("/api/fueling/:id", requireAuth, async (req, res) => {
     const data = await storage.getVehicleFueling(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Abastecimento não encontrado" });
-    res.json(data);
+    res.json(await resolveFuelingPhotosForView(data as any));
   });
 
   // Antes: baixava TODOS os abastecimentos do banco e fazia Math.max em JS pra
@@ -440,6 +441,11 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
       return res.status(409).json({ message: "Abastecimento duplicado — já existe um registro com o mesmo veículo, KM e data." });
     }
     parsed.data.createdByUserId = req.user?.id || null;
+    // Fotos → Storage (caminho curto). Fail-safe mantém data URI.
+    if (parsed.data.receiptPhoto) parsed.data.receiptPhoto = (await persistFuelingPhotoBlob(null, "receipt", parsed.data.receiptPhoto)) || parsed.data.receiptPhoto;
+    if (parsed.data.pumpPhoto) parsed.data.pumpPhoto = (await persistFuelingPhotoBlob(null, "pump", parsed.data.pumpPhoto)) || parsed.data.pumpPhoto;
+    if (parsed.data.odometerPhoto) parsed.data.odometerPhoto = (await persistFuelingPhotoBlob(null, "odometer", parsed.data.odometerPhoto)) || parsed.data.odometerPhoto;
+    if (parsed.data.platePhoto) parsed.data.platePhoto = (await persistFuelingPhotoBlob(null, "plate", parsed.data.platePhoto)) || parsed.data.platePhoto;
     const data = await storage.createVehicleFueling(parsed.data);
     if (parsed.data.vehicleId) {
       await syncVehicleKmFromFuelings(parsed.data.vehicleId);
@@ -497,7 +503,12 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     const parsed = insertVehicleFuelingSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const oldFueling = await storage.getVehicleFueling(Number(req.params.id));
-    const data = await storage.updateVehicleFueling(Number(req.params.id), parsed.data);
+    const fuelingId = Number(req.params.id);
+    if (parsed.data.receiptPhoto) parsed.data.receiptPhoto = (await persistFuelingPhotoBlob(fuelingId, "receipt", parsed.data.receiptPhoto)) || parsed.data.receiptPhoto;
+    if (parsed.data.pumpPhoto) parsed.data.pumpPhoto = (await persistFuelingPhotoBlob(fuelingId, "pump", parsed.data.pumpPhoto)) || parsed.data.pumpPhoto;
+    if (parsed.data.odometerPhoto) parsed.data.odometerPhoto = (await persistFuelingPhotoBlob(fuelingId, "odometer", parsed.data.odometerPhoto)) || parsed.data.odometerPhoto;
+    if (parsed.data.platePhoto) parsed.data.platePhoto = (await persistFuelingPhotoBlob(fuelingId, "plate", parsed.data.platePhoto)) || parsed.data.platePhoto;
+    const data = await storage.updateVehicleFueling(fuelingId, parsed.data);
     if (!data) return res.status(404).json({ message: "Abastecimento não encontrado" });
     if (oldFueling) {
       const auditChanges: { field: string; old: any; new_val: any }[] = [];

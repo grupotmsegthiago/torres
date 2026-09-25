@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage, toCamelObj, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { uploadMissionPhoto, resolvePhotoForView, downloadMissionPhotoDataUri } from "../lib/mission-photos";
+  import { uploadMissionPhoto, resolvePhotoForView, downloadMissionPhotoDataUri, persistMissionPhotoBlob } from "../lib/mission-photos";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
@@ -1597,13 +1597,16 @@ Responda APENAS com JSON: {"km_lido": number}`;
       return res.status(400).json({ message: "Valor de KM obrigatório para esta etapa" });
     }
 
+    // Upload único → Storage; coluna photo_data guarda caminho (dual-read legado).
+    const storedPhoto = await persistMissionPhotoBlob(serviceOrderId, photoData);
+
     let photo;
     try {
       photo = await storage.createMissionPhoto({
         serviceOrderId,
         employeeId: user.employeeId,
         step,
-        photoData,
+        photoData: storedPhoto,
         kmValue: kmValue ? Number(kmValue) : null,
         latitude: latitude || null,
         longitude: longitude || null,
@@ -1642,15 +1645,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const alertMsg = kmValue
       ? `📷 Foto: ${stepLabel} — KM ${Number(kmValue).toLocaleString("pt-BR")}`
       : `📷 Foto: ${stepLabel}`;
-    let alertPhotoPath: string | null = null;
-    try {
-      alertPhotoPath = await uploadMissionPhoto(serviceOrderId, photoData);
-    } catch (e: any) {
-      // Fail-safe: nunca perder a foto. Se o upload falhar, grava o base64
-      // inline (legado, tratado pelos readers) e o sweep migra depois.
-      console.error(`[mission-photo] upload foto (alerta) falhou, fallback base64: ${e?.message}`);
-      alertPhotoPath = photoData;
-    }
+    // Reusa o mesmo blob persistido (evita 2× upload da mesma foto).
+    const alertPhotoPath: string | null = storedPhoto;
     try {
       await supabaseAdmin.from("mission_updates").insert({
         service_order_id: serviceOrderId,
@@ -1760,10 +1756,10 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       const logMap = new Map((logs || []).map(l => [l.mission_photo_id, l]));
 
-      const result = (photos || []).map(p => ({
+      const result = await Promise.all((photos || []).map(async (p) => ({
         id: p.id,
         step: p.step,
-        photoData: p.photo_data,
+        photoData: await resolvePhotoForView(p.photo_data),
         kmValue: p.km_value,
         latitude: p.latitude,
         longitude: p.longitude,
@@ -1771,7 +1767,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         aiResult: p.ai_inspection_result || null,
         inspectionLog: logMap.get(p.id) || null,
         createdAt: p.created_at,
-      }));
+      })));
 
       res.json(result);
     } catch (err: any) {
@@ -1806,8 +1802,9 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       let started = 0;
       for (const p of toInspect) {
+        const photoForAi = (await downloadMissionPhotoDataUri(p.photo_data)) || p.photo_data;
         runPhotoInspection(
-          p.id, osId, p.employee_id || 0, p.step, p.photo_data,
+          p.id, osId, p.employee_id || 0, p.step, photoForAi,
           vehicle?.plate || "", escortedPlate, undefined, p.km_value
         ).catch(e => console.error(`[ai-reinspect] error photo #${p.id}: ${e.message}`));
         started++;
@@ -3562,22 +3559,22 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
       const totalCustos = (costs || []).reduce((sum: number, c: any) => sum + (Number(c.value) || 0), 0);
 
-      const cronologia = (updates || []).map((u: any) => ({
+      const cronologia = await Promise.all((updates || []).map(async (u: any) => ({
         horario: u.created_at,
         tipo: u.type,
         descricao: u.description,
         local: u.location || null,
-        fotoUrl: u.photo_url || null,
-      }));
+        fotoUrl: await resolvePhotoForView(u.photo_url),
+      })));
 
-      const evidencias = (photos || []).map((p: any) => ({
+      const evidencias = await Promise.all((photos || []).map(async (p: any) => ({
         id: p.id,
         step: p.step,
-        fotoUrl: p.photo_data,
+        fotoUrl: await resolvePhotoForView(p.photo_data),
         km: p.km_value,
         notas: p.notes,
         horario: p.created_at,
-      }));
+      })));
 
       const laudo = {
         geradoEm: new Date().toISOString(),

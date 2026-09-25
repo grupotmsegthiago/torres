@@ -6,6 +6,7 @@ import { isStoragePath, signMissionPhoto } from "./lib/mission-photos.js";
 import { typingSecondsForMessage } from "./lib/whatsapp-humanize.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
+import { downloadMissionPhotoDataUri } from "./lib/mission-photos";
 
 const TAG = "[whatsapp-forward-cron]";
 
@@ -607,7 +608,8 @@ export async function getKmFinalPhotoByOsId(
   }
   const row = (data || [])[0] as { photo_data: string | null; km_value: number | null } | undefined;
   if (!row?.photo_data) return null;
-  return { photoData: row.photo_data, kmValue: row.km_value ?? null };
+  const photoData = (await downloadMissionPhotoDataUri(row.photo_data)) || row.photo_data;
+  return { photoData, kmValue: row.km_value ?? null };
 }
 
 async function claim(id: number): Promise<boolean> {
