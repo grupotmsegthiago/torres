@@ -222,8 +222,7 @@ async function migrateEmployeeDocs(limit: number, report: BucketReport) {
       const { error: upErr } = await supabaseAdmin
         .from("employee_documents")
         .update({ file_data: path })
-        .eq("id", row.id)
-        .eq("file_data", v!);
+        .eq("id", row.id);
       if (upErr) {
         report.failed++;
         console.warn(`[migrate-media] employee_documents#${id}:`, upErr.message);
@@ -265,8 +264,7 @@ async function migrateMissionCosts(limit: number, report: BucketReport) {
       const { error: upErr } = await supabaseAdmin
         .from("mission_costs")
         .update({ photo_url: path })
-        .eq("id", row.id)
-        .eq("photo_url", v!);
+        .eq("id", row.id);
       if (upErr) {
         report.failed++;
         console.warn(`[migrate-media] mission_costs#${id}:`, upErr.message);
@@ -308,8 +306,7 @@ async function migrateLoginSelfies(limit: number, report: BucketReport) {
       const { error: upErr } = await supabaseAdmin
         .from("login_selfies")
         .update({ photo_data: path })
-        .eq("id", row.id)
-        .eq("photo_data", v!);
+        .eq("id", row.id);
       if (upErr) {
         report.failed++;
         console.warn(`[migrate-media] login_selfies#${id}:`, upErr.message);
