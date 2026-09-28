@@ -570,19 +570,22 @@ export default function DatabasePage() {
                       ) : confirmVacuum ? (
                         <div className="space-y-2" data-testid="confirm-vacuum">
                           <p className="text-[11px] leading-snug text-neutral-700">
-                            Isso vai <b>travar a tabela de missões por alguns minutos</b> enquanto recupera o espaço.
-                            Faça de preferência de madrugada. Confirmar agora?
+                            Isso vai <b>travar a tabela escolhida por alguns minutos</b> enquanto recupera o espaço.
+                            Faça preferencialmente de madrugada, depois de migrar as fotos. Qual tabela?
                           </p>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={startVacuum.isPending}
-                              onClick={() => startVacuum.mutate()}
-                              data-testid="button-vacuum-confirm"
-                            >
-                              {startVacuum.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Sim, compactar"}
-                            </Button>
+                          <div className="flex flex-wrap gap-2">
+                            {["mission_photos", "vehicle_fueling", "mission_costs", "employee_documents", "login_selfies"].map((t) => (
+                              <Button
+                                key={t}
+                                size="sm"
+                                variant="destructive"
+                                disabled={startVacuum.isPending}
+                                onClick={() => startVacuum.mutate(t)}
+                                data-testid={`button-vacuum-confirm-${t}`}
+                              >
+                                {startVacuum.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t}
+                              </Button>
+                            ))}
                             <Button size="sm" variant="outline" onClick={() => setConfirmVacuum(false)} data-testid="button-vacuum-cancel">
                               Cancelar
                             </Button>
